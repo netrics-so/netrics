@@ -48,6 +48,11 @@ does (see `docs/architecture.md`, "Application release").
    health-gates the rollout, runs a smoke test, and records the digests in
    `release/production.yaml`.
 
+   Migrations run as the API's pre-deploy command: `node dist/migrate.js`, an
+   entrypoint in the server image that applies the SQL migrations bundled in
+   `@netrics/database` via drizzle-orm's programmatic migrator — no drizzle-kit
+   dev dependency in the production image.
+
 The dispatch is not automatically retried: if it fails, re-run the release
 workflow manually (`workflow_dispatch`). Images, signatures, and SBOMs for the
 commit are republished idempotently before the dispatch is re-sent.
@@ -64,7 +69,7 @@ usable during normal rollback windows.
 ## Required GitHub setup
 
 - **GHCR packages.** On first push, set the `server`, `web`, and `renderer`
-  packages to public under the `netrics` GHCR namespace and connect them to
+  packages to public under the `netrics-so` GHCR namespace and connect them to
   this repository so `GITHUB_TOKEN` (`packages: write`) can push.
 - **`CLOUD_DISPATCH_TOKEN` secret.** A token that can dispatch workflows in the
   private `netrics-so/netrics-cloud` repository — either a GitHub App
