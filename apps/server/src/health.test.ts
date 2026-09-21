@@ -11,6 +11,8 @@ import { loadConfig } from "./env.js";
 const config = loadConfig({
   DATABASE_URL: "postgres://netrics:netrics@localhost:5432/netrics",
   LOG_LEVEL: "silent",
+  APP_VERSION: "0.1.0-test",
+  GIT_SHA: "test123",
 });
 
 describe("health endpoints", () => {
@@ -21,6 +23,20 @@ describe("health endpoints", () => {
     expect(healthLiveResponseSchema.parse(response.json())).toMatchObject({
       status: "ok",
       role: "api",
+      version: "0.1.0-test",
+      commit: "test123",
+    });
+    await app.close();
+  });
+
+  it("GET /health/live falls back to dev defaults without env", async () => {
+    const devConfig = loadConfig({ LOG_LEVEL: "silent" });
+    const app = await buildApp(devConfig, { checkDb: async () => false });
+    const response = await app.inject({ method: "GET", url: "/health/live" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      version: "0.0.0-dev",
+      commit: "dev",
     });
     await app.close();
   });
@@ -32,6 +48,8 @@ describe("health endpoints", () => {
     expect(healthReadyResponseSchema.parse(response.json())).toMatchObject({
       status: "ready",
       database: "up",
+      version: "0.1.0-test",
+      commit: "test123",
     });
     await app.close();
   });
