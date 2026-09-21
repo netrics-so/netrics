@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: netrics
+          POSTGRES_PASSWORD: netrics
+          POSTGRES_DB: netrics
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U netrics -d netrics"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://netrics:netrics@localhost:5432/netrics
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply migrations to an empty database
+        run: pnpm db:migrate
+      - name: Re-apply migrations (idempotency check)
+        run: pnpm db:migrate
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build server image
+        run: docker build -f apps/server/Dockerfile -t netrics-server:ci .
+      - name: Build web image
+        run: docker build -f apps/web/Dockerfile -t netrics-web:ci .
+      - name: Build renderer image
+        run: docker build -f apps/renderer/Dockerfile -t netrics-renderer:ci .

@@ -1,0 +1,31 @@
+# Optional: run the production app images together with PostgreSQL.
+# Use together with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml up --build
+# Apply migrations from the host (or CI) before/while starting:
+#   pnpm db:migrate
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      DATABASE_URL: postgres://netrics:netrics@postgres:5432/netrics
+      PORT: "3001"
+      HOST: 0.0.0.0
+      NETRICS_ROLE: api
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NETRICS_API_URL: http://api:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
