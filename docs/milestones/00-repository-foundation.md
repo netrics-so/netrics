@@ -66,3 +66,13 @@ Record these choices before product tables depend on them.
 Open the local web application, see a healthy API/database status, stop
 PostgreSQL and observe readiness fail, restore it, and observe recovery without
 rebuilding the application.
+
+## Completion
+
+- Completed: 2026-09-21
+- Release: none (pre-0.1.0; shipped via squash merge)
+- Pull requests: [#1](https://github.com/netrics-so/netrics/pull/1)
+- Material deviations: local compose binds host port 5433 (5432 occupied on the
+  dev machine); `DATABASE_URL` has a dev default for zero-config `pnpm dev`;
+  OpenAPI generation deferred until needed (recorded in
+  [ADR 0002](../decisions/0002-runtime-schemas.md))
