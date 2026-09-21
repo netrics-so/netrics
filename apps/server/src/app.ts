@@ -39,6 +39,8 @@ export async function buildApp(
       status: "ok",
       role: config.role,
       uptimeSeconds: process.uptime(),
+      version: config.version,
+      commit: config.commit,
     }),
   );
 
@@ -49,6 +51,8 @@ export async function buildApp(
       role: config.role,
       database: databaseUp ? "up" : "down",
       checkedAt: new Date().toISOString(),
+      version: config.version,
+      commit: config.commit,
     });
     return reply.code(databaseUp ? 200 : 503).send(payload);
   });

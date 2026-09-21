@@ -509,7 +509,7 @@ On a successful merge to the public `netrics` main branch:
 
 1. Run unit, integration, migration, connector-contract, and image smoke tests.
 2. Build server, web, and renderer images once.
-3. Push immutable commit tags to `ghcr.io/netrics/*` and record digests.
+3. Push immutable commit tags to `ghcr.io/netrics-so/*` and record digests.
 4. Sign images and generate software bills of materials.
 5. Trigger the private cloud release workflow with the candidate digests.
 6. Run database migrations with the exact candidate server image.
@@ -523,9 +523,9 @@ Example release state:
 release: 0.1.0
 commit: abc1234
 images:
-  server: ghcr.io/netrics/server@sha256:...
-  web: ghcr.io/netrics/web@sha256:...
-  renderer: ghcr.io/netrics/renderer@sha256:...
+  server: ghcr.io/netrics-so/server@sha256:...
+  web: ghcr.io/netrics-so/web@sha256:...
+  renderer: ghcr.io/netrics-so/renderer@sha256:...
 ```
 
 Terraform does not run for an ordinary application commit. The release workflow

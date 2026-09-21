@@ -14,6 +14,18 @@ describe("loadConfig", () => {
     expect(config.logLevel).toBe("info");
     expect(config.role).toBe("api");
     expect(config.databaseUrl).toContain("localhost:5433");
+    expect(config.version).toBe("0.0.0-dev");
+    expect(config.commit).toBe("dev");
+  });
+
+  it("reads version and commit from the environment", () => {
+    const config = loadConfig({
+      ...validEnv,
+      APP_VERSION: "0.1.0",
+      GIT_SHA: "abc1234",
+    });
+    expect(config.version).toBe("0.1.0");
+    expect(config.commit).toBe("abc1234");
   });
 
   it("coerces PORT from a string", () => {

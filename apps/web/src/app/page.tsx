@@ -32,12 +32,29 @@ export default async function Home() {
       : "down"
     : "unknown";
 
+  const webVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0-dev";
+  const webCommit = process.env.NEXT_PUBLIC_GIT_SHA ?? "dev";
+  const apiVersion = health.live ? health.live.version : "unknown";
+  const apiCommit = health.live ? health.live.commit : "unknown";
+
   return (
     <main>
       <h1>netrics</h1>
       <p className="subtitle">API status — milestone 00 foundation check</p>
 
       <div className="card">
+        <div className="row">
+          <span className="label">Web version</span>
+          <span className="value">
+            {webVersion} ({webCommit})
+          </span>
+        </div>
+        <div className="row">
+          <span className="label">API version</span>
+          <span className="value">
+            {apiVersion} ({apiCommit})
+          </span>
+        </div>
         <div className="row">
           <span className="label">API process (live)</span>
           <StatusValue

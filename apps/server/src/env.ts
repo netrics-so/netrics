@@ -16,6 +16,8 @@ const envSchema = z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
       .default("info"),
     NETRICS_ROLE: processRoleSchema.default("api"),
+    APP_VERSION: z.string().min(1).default("0.0.0-dev"),
+    GIT_SHA: z.string().min(1).default("dev"),
   })
   .transform((env) => ({
     nodeEnv: env.NODE_ENV,
@@ -24,6 +26,8 @@ const envSchema = z
     databaseUrl: env.DATABASE_URL,
     logLevel: env.LOG_LEVEL,
     role: env.NETRICS_ROLE,
+    version: env.APP_VERSION,
+    commit: env.GIT_SHA,
   }));
 
 export type Config = z.infer<typeof envSchema>;
