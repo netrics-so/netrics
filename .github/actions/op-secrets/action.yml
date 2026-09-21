@@ -1,0 +1,40 @@
+name: Secrets from 1Password
+description: >
+  Resolves this repository's CI secrets from 1Password at run time, so
+  1Password is the single source of truth and GitHub Actions stores exactly one
+  secret: the service account token that resolves the rest.
+
+# Every `op://` reference in this repository lives in THIS FILE and nowhere
+# else. That is the point of the indirection.
+#
+# References use item UUIDs rather than titles so an item can be renamed
+# without breaking CI — the same convention netrics-cloud follows. A UUID does
+# NOT survive moving the item to another vault (move copies and re-ids it);
+# keeping every reference here is what makes that affordable.
+
+inputs:
+  service-account-token:
+    description: The OP_SERVICE_ACCOUNT_TOKEN secret. Read-only, scoped to one vault.
+    required: true
+
+outputs:
+  release-bot-app-id:
+    description: App ID of the netrics Release Bot GitHub App (dispatches to netrics-cloud).
+    value: ${{ steps.load.outputs.RELEASE_BOT_APP_ID }}
+  release-bot-private-key:
+    description: Private key of the netrics Release Bot GitHub App.
+    value: ${{ steps.load.outputs.RELEASE_BOT_PRIVATE_KEY }}
+
+runs:
+  using: composite
+  steps:
+    # Outputs rather than `export-env`, which is what 1Password recommends: the
+    # values reach only the steps that name them. Loaded values are masked in
+    # the log either way.
+    - uses: 1password/load-secrets-action@24a7d5bdc04e9e8699efdaee16fa227e14d597eb # v5.0.1
+      id: load
+      env:
+        OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.service-account-token }}
+        # 1Password › Lab80, netrics Infrastructure › GitHub Release Bot
+        RELEASE_BOT_APP_ID: op://kvcwablhup7miwavjhrqlvpz3u/v5ftpdtuexbf4kkt2h5gylwrce/app_id
+        RELEASE_BOT_PRIVATE_KEY: op://kvcwablhup7miwavjhrqlvpz3u/v5ftpdtuexbf4kkt2h5gylwrce/credential

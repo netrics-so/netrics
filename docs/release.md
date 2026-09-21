@@ -71,11 +71,18 @@ usable during normal rollback windows.
 - **GHCR packages.** On first push, set the `server`, `web`, and `renderer`
   packages to public under the `netrics-so` GHCR namespace and connect them to
   this repository so `GITHUB_TOKEN` (`packages: write`) can push.
-- **`CLOUD_DISPATCH_TOKEN` secret.** A token that can dispatch workflows in the
-  private `netrics-so/netrics-cloud` repository — either a GitHub App
-  installation token source or a fine-grained PAT with `contents: write` on
-  `netrics-cloud`. Store it as an Actions secret named `CLOUD_DISPATCH_TOKEN`
-  in this repository. Without it the release workflow fails at the dispatch
-  step (after publishing images), and the run must be retried manually.
+- **netrics Release Bot GitHub App.** The dispatch into `netrics-cloud`
+  authenticates as a GitHub App, not a personal token: the app lives in the
+  `netrics-so` org, has `Contents: read and write`, and is installed on
+  `netrics-cloud` only. Its app ID and private key live in the 1Password
+  item "GitHub Release Bot" (vault "Lab80, netrics Infrastructure"); the
+  workflow resolves them via the `op-secrets` composite action and mints a
+  one-hour installation token at run time with
+  `actions/create-github-app-token`.
+- **`OP_SERVICE_ACCOUNT_TOKEN` secret.** This repository's own 1Password
+  service account (`netrics-ci`, read-only on the vault). It is the one
+  unavoidable long-lived GitHub secret; everything else resolves from `op://`
+  references at run time. Replacement instructions are in the 1Password item
+  "GitHub Actions Service Account Token, Public Repo".
 - **Branch protection on `main`.** Require the `ci` workflow checks to pass
   before merging so the release workflow only runs on green commits.

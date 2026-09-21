@@ -179,14 +179,33 @@ jobs:
           image: ${{ env.RENDERER_DIGEST_REF }}
           artifact-name: sbom-renderer
 
+      - name: Resolve secrets from 1Password
+        id: secrets
+        uses: ./.github/actions/op-secrets
+        with:
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      # The dispatch authenticates as the netrics Release Bot GitHub App
+      # (installed on netrics-cloud only, Contents: write). App credentials
+      # come from 1Password; the installation token minted here lives for one
+      # hour and is never stored. No personal access token is involved.
+      - name: Mint Release Bot installation token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ steps.secrets.outputs.release-bot-app-id }}
+          private-key: ${{ steps.secrets.outputs.release-bot-private-key }}
+          owner: netrics-so
+          repositories: netrics-cloud
+
       - name: Trigger netrics-cloud release workflow
         env:
-          CLOUD_DISPATCH_TOKEN: ${{ secrets.CLOUD_DISPATCH_TOKEN }}
+          CLOUD_DISPATCH_TOKEN: ${{ steps.app-token.outputs.token }}
           RELEASE: ${{ steps.meta.outputs.version }}
           COMMIT: ${{ github.sha }}
         run: |
           if [ -z "$CLOUD_DISPATCH_TOKEN" ]; then
-            echo "::error::CLOUD_DISPATCH_TOKEN is not configured. Create the secret (see docs/release.md) and retry with workflow_dispatch."
+            echo "::error::Release Bot token is empty. Check the OP_SERVICE_ACCOUNT_TOKEN secret and the 1Password 'GitHub Release Bot' item (see docs/release.md), then retry with workflow_dispatch."
             exit 1
           fi
           payload=$(jq -n \
