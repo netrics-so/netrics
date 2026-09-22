@@ -3,7 +3,20 @@ import { describe, expect, it } from "vitest";
 import {
   healthLiveResponseSchema,
   healthReadyResponseSchema,
+  workspaceRoleSchema,
 } from "./index.js";
+
+describe("workspaceRoleSchema", () => {
+  it("accepts the four membership roles", () => {
+    for (const role of ["owner", "admin", "editor", "viewer"]) {
+      expect(workspaceRoleSchema.parse(role)).toBe(role);
+    }
+  });
+
+  it("rejects unknown roles", () => {
+    expect(workspaceRoleSchema.safeParse("superadmin").success).toBe(false);
+  });
+});
 
 describe("health contracts", () => {
   it("accepts a valid liveness payload", () => {

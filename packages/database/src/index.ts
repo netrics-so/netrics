@@ -8,6 +8,8 @@ import postgres from "postgres";
 import * as schema from "./schema.js";
 
 export * as schema from "./schema.js";
+export { createWorkspace, withUserContext, withWorkspace } from "./context.js";
+export type { Transaction, UserContext, WorkspaceContext } from "./context.js";
 
 export type Database = ReturnType<typeof createDatabase>;
 

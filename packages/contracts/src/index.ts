@@ -3,6 +3,14 @@ import { z } from "zod";
 export const processRoleSchema = z.enum(["api", "worker", "scheduler"]);
 export type ProcessRole = z.infer<typeof processRoleSchema>;
 
+export const workspaceRoleSchema = z.enum([
+  "owner",
+  "admin",
+  "editor",
+  "viewer",
+]);
+export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
+
 export const versionInfoSchema = z.object({
   version: z.string().min(1),
   commit: z.string().min(1),
