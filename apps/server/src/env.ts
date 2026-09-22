@@ -11,7 +11,10 @@ const envSchema = z
     HOST: z.string().min(1).default("0.0.0.0"),
     DATABASE_URL: z
       .url()
-      .default("postgres://netrics:netrics@localhost:5433/netrics"),
+      .default("postgres://netrics_app:netrics_app@localhost:5433/netrics"),
+    // Role used by apps/server:migrate. Falls back to DATABASE_URL; set it to
+    // the owner/migration role (RLS applies to netrics_app).
+    DATABASE_MIGRATION_URL: z.url().optional(),
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
       .default("info"),
@@ -24,6 +27,7 @@ const envSchema = z
     port: env.PORT,
     host: env.HOST,
     databaseUrl: env.DATABASE_URL,
+    databaseMigrationUrl: env.DATABASE_MIGRATION_URL ?? env.DATABASE_URL,
     logLevel: env.LOG_LEVEL,
     role: env.NETRICS_ROLE,
     version: env.APP_VERSION,

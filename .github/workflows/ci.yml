@@ -8,6 +8,24 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: netrics
+          POSTGRES_PASSWORD: netrics
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U netrics -d postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      # Integration tests (packages/database) create and migrate scratch
+      # databases on this server.
+      NETRICS_TEST_ADMIN_URL: postgres://netrics:netrics@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -39,7 +57,7 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     env:
-      DATABASE_URL: postgres://netrics:netrics@localhost:5432/netrics
+      DATABASE_MIGRATION_URL: postgres://netrics:netrics@localhost:5432/netrics
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

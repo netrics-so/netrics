@@ -36,7 +36,7 @@ pnpm dev
 | `pnpm lint`        | ESLint (flat config)                                     |
 | `pnpm format`      | Prettier write                                           |
 | `pnpm typecheck`   | `tsc -b` project references + Next.js type check         |
-| `pnpm test`        | Vitest unit tests                                        |
+| `pnpm test`        | Vitest unit + DB integration tests (needs `pnpm db:up`)  |
 | `pnpm db:up`       | Start local PostgreSQL (waits for healthy)               |
 | `pnpm db:down`     | Stop local PostgreSQL (data persists in a named volume)  |
 | `pnpm db:migrate`  | Apply Drizzle migrations                                 |
@@ -45,6 +45,22 @@ pnpm dev
 Configuration uses environment variables with zod validation and readable
 startup errors; see `.env.example` for the variables and their defaults
 (local development works with zero configuration).
+
+### Database roles and tenancy
+
+PostgreSQL enforces tenant isolation with row-level security (RLS) on all
+tenant-owned tables. Two roles are created by the migration itself:
+
+- `netrics_app` — the application role (`DATABASE_URL`). It is not a
+  superuser and cannot bypass RLS; queries only see rows for the workspace
+  set via `withWorkspace()` / `withUserContext()` from `@netrics/database`.
+- `netrics` — the owner/migration role (`DATABASE_MIGRATION_URL`, used by
+  `pnpm db:migrate` and `apps/server` migrations). In production, provision
+  it (and the app role's password) with real secrets before migrating.
+
+Because the roles are created by the migration, first-run order matters:
+`pnpm db:up` → `pnpm db:migrate` → `pnpm dev` (`pnpm setup` does this for
+you).
 
 ## Repository layout
 
