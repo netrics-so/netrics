@@ -5,11 +5,32 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import * as authSchema from "./auth-schema.js";
 import * as schema from "./schema.js";
 
+export * as authSchema from "./auth-schema.js";
 export * as schema from "./schema.js";
-export { createWorkspace, withUserContext, withWorkspace } from "./context.js";
-export type { Transaction, UserContext, WorkspaceContext } from "./context.js";
+export {
+  BOOTSTRAP_CONFLICT_SQLSTATE,
+  bootstrapWorkspace,
+  createWorkspace,
+  hasSqlstate,
+  withUserContext,
+  withWorkspace,
+} from "./context.js";
+export type {
+  Db,
+  Transaction,
+  UserContext,
+  WorkspaceContext,
+} from "./context.js";
+export {
+  findUserByAuthUserId,
+  findUserById,
+  listMembershipsForUser,
+  provisionDomainUser,
+} from "./users.js";
+export type { DomainUser, MembershipInfo } from "./users.js";
 
 export type Database = ReturnType<typeof createDatabase>;
 
@@ -20,6 +41,16 @@ export const migrationsFolder = path.join(
   "..",
   "drizzle",
 );
+
+export type { Sql } from "postgres";
+
+/** Raw postgres.js client for tests/tooling that need untyped SQL access. */
+export function createRawSqlClient(
+  databaseUrl: string,
+  options: postgres.Options<Record<string, never>> = {},
+) {
+  return postgres(databaseUrl, options);
+}
 
 export async function runMigrations(databaseUrl: string): Promise<void> {
   const client = postgres(databaseUrl, { max: 1 });
@@ -32,7 +63,10 @@ export async function runMigrations(databaseUrl: string): Promise<void> {
 
 export function createDatabase(databaseUrl: string) {
   const client = postgres(databaseUrl);
-  return drizzle(client, { schema });
+  // The drizzle instance carries the domain tables and the generated
+  // better-auth tables (schema "auth") so the server auth adapter can share
+  // one connection.
+  return drizzle(client, { schema: { ...schema, ...authSchema } });
 }
 
 export async function checkDatabaseConnection(

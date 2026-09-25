@@ -4,6 +4,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createWorkspace, withUserContext, withWorkspace } from "./context.js";
+import * as authSchema from "./auth-schema.js";
 import * as schema from "./schema.js";
 import { createTestDatabase, type TestDatabase } from "./test-db.js";
 
@@ -34,7 +35,7 @@ async function expectDbError(
 
 let testDb: TestDatabase;
 let appClient: postgres.Sql;
-let db: PostgresJsDatabase<typeof schema>;
+let db: PostgresJsDatabase<typeof schema & typeof authSchema>;
 
 let u1: string;
 let u2: string;
@@ -45,7 +46,7 @@ let workspaceB: string;
 beforeAll(async () => {
   testDb = await createTestDatabase();
   appClient = postgres(testDb.appUrl);
-  db = drizzle(appClient, { schema });
+  db = drizzle(appClient, { schema: { ...schema, ...authSchema } });
 
   const [user1, user2, user3] = await db
     .insert(schema.users)

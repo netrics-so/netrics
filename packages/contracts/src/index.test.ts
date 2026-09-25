@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  bootstrapRequestSchema,
   healthLiveResponseSchema,
   healthReadyResponseSchema,
+  meResponseSchema,
   workspaceRoleSchema,
 } from "./index.js";
 
@@ -87,6 +89,57 @@ describe("health contracts", () => {
         checkedAt: new Date().toISOString(),
         version: "0.1.0",
         commit: "abc1234",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("session contracts", () => {
+  it("accepts a valid bootstrap request", () => {
+    expect(
+      bootstrapRequestSchema.parse({ workspaceName: "  Acme  " }).workspaceName,
+    ).toBe("Acme");
+  });
+
+  it("rejects an empty workspace name", () => {
+    expect(
+      bootstrapRequestSchema.safeParse({ workspaceName: "   " }).success,
+    ).toBe(false);
+  });
+
+  it("accepts a valid /v1/me payload", () => {
+    const parsed = meResponseSchema.parse({
+      user: {
+        id: "3f6b0746-3d1c-4f6b-9f6d-2f1c0a2b1e02",
+        email: "owner@example.com",
+        displayName: "Owner",
+      },
+      memberships: [
+        {
+          workspaceId: "8a7a4f60-1f6c-4a3b-9d2e-0f0e9c8b7a6f",
+          workspaceName: "Acme",
+          role: "owner",
+        },
+      ],
+    });
+    expect(parsed.memberships).toHaveLength(1);
+  });
+
+  it("rejects a membership with an unknown role", () => {
+    expect(
+      meResponseSchema.safeParse({
+        user: {
+          id: "3f6b0746-3d1c-4f6b-9f6d-2f1c0a2b1e02",
+          email: "owner@example.com",
+          displayName: "Owner",
+        },
+        memberships: [
+          {
+            workspaceId: "8a7a4f60-1f6c-4a3b-9d2e-0f0e9c8b7a6f",
+            workspaceName: "Acme",
+            role: "superadmin",
+          },
+        ],
       }).success,
     ).toBe(false);
   });
