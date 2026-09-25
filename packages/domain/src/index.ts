@@ -1,1 +1,1 @@
-export const DOMAIN_PLACEHOLDER = "netrics-domain";
+export * from "./authorization.js";
