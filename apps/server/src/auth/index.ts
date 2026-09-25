@@ -6,6 +6,7 @@ import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from "fastify";
 import {
   authSchema,
   findUserByAuthUserId,
+  insertInstallationAuditEvent,
   provisionDomainUser,
   type Database,
 } from "@netrics/database";
@@ -81,6 +82,43 @@ export function createAuthService(
               email: user.email,
               name: user.name,
             });
+          },
+        },
+      },
+      session: {
+        create: {
+          // Records an installation-level auth.login audit event (also fires
+          // for the session created on sign-up, which is correct). Failures
+          // must not block sign-in, so they are logged and swallowed.
+          after: async (session) => {
+            try {
+              const domainUser = await findUserByAuthUserId(db, session.userId);
+              if (!domainUser) {
+                logger.warn(
+                  { authUserId: session.userId },
+                  "skipping auth.login audit: no domain user for auth user",
+                );
+                return;
+              }
+              await insertInstallationAuditEvent(db, {
+                actorUserId: domainUser.id,
+                action: "auth.login",
+                target: domainUser.id,
+                metadata: {
+                  ...(session.ipAddress
+                    ? { ipAddress: session.ipAddress }
+                    : {}),
+                  ...(session.userAgent
+                    ? { userAgent: session.userAgent }
+                    : {}),
+                },
+              });
+            } catch (error) {
+              logger.error(
+                { err: error, authUserId: session.userId },
+                "failed to write auth.login audit event",
+              );
+            }
           },
         },
       },
