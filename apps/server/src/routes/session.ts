@@ -28,10 +28,24 @@ export interface SessionRouteDeps {
   db: Database;
 }
 
-function unauthorized(reply: FastifyReply) {
+export function unauthorized(reply: FastifyReply) {
   return reply
     .code(401)
     .send(errorResponseSchema.parse({ error: "unauthorized" }));
+}
+
+/**
+ * preHandler that resolves the better-auth session into
+ * request.sessionIdentity (401 otherwise). Shared by every /v1 route plugin.
+ */
+export function createRequireSession(authService: AuthService) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const identity = await authService.getSessionIdentity(request.headers);
+    if (!identity) {
+      return unauthorized(reply);
+    }
+    request.sessionIdentity = identity;
+  };
 }
 
 /**
@@ -43,16 +57,7 @@ export function registerSessionRoutes(
   app: FastifyInstance,
   deps: SessionRouteDeps,
 ): void {
-  const requireSession = async (
-    request: FastifyRequest,
-    reply: FastifyReply,
-  ) => {
-    const identity = await deps.authService.getSessionIdentity(request.headers);
-    if (!identity) {
-      return unauthorized(reply);
-    }
-    request.sessionIdentity = identity;
-  };
+  const requireSession = createRequireSession(deps.authService);
 
   void app.register(
     (scope, _opts, done) => {

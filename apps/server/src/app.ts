@@ -16,6 +16,7 @@ import {
 import { createAuthService, type AuthService } from "./auth/index.js";
 import type { Config } from "./env.js";
 import { registerSessionRoutes } from "./routes/session.js";
+import { registerWorkspaceRoutes } from "./routes/workspaces.js";
 
 export interface AppDeps {
   checkDb?: () => Promise<boolean>;
@@ -58,6 +59,7 @@ export async function buildApp(
   });
 
   registerSessionRoutes(app, { authService, db });
+  registerWorkspaceRoutes(app, { authService, db });
 
   app.get("/health/live", async () =>
     healthLiveResponseSchema.parse({
