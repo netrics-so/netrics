@@ -1,3 +1,5 @@
+import { createDatabase } from "@netrics/database";
+
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig } from "./env.js";
 
@@ -22,7 +24,8 @@ if (config.role !== "api") {
   process.exit(1);
 }
 
-const app = await buildApp(config);
+const db = createDatabase(config.databaseUrl);
+const app = await buildApp(config, { db });
 
 try {
   await app.listen({ port: config.port, host: config.host });

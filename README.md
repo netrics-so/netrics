@@ -62,6 +62,34 @@ Because the roles are created by the migration, first-run order matters:
 `pnpm db:up` → `pnpm db:migrate` → `pnpm dev` (`pnpm setup` does this for
 you).
 
+### Authentication
+
+Sign-up, sign-in, and sessions are handled by
+[better-auth](https://better-auth.com), mounted on the API under
+`/api/auth/*`. Its tables live in the dedicated PostgreSQL schema `auth`
+(installation-level, no tenant RLS) and only the server touches them — the
+rest of the app sees a narrow `AuthService` interface
+(`apps/server/src/auth/`). Each auth user is mirrored into the
+installation-level `users` table on sign-up.
+
+Relevant environment variables (see `.env.example`):
+
+- `BETTER_AUTH_SECRET` — session signing secret, >= 32 chars. Required when
+  `NODE_ENV=production`; an obviously insecure fixed default is used in
+  development.
+- `BETTER_AUTH_URL` — public base URL of the API (default
+  `http://localhost:3001`).
+- `WEB_ORIGIN` — web app origin allowed for credentialed CORS requests
+  (default `http://localhost:3000`).
+
+Email verification and password-reset emails are only logged by the server in
+this milestone (no SMTP yet); session cookies are `better-auth.session_token`
+with a 7-day expiry, validated against the database on every request so
+sign-out revokes immediately.
+
+Session-protected API routes live under `/v1` (currently `GET /v1/me` and
+`POST /v1/bootstrap`, the one-time first-workspace setup).
+
 ## Repository layout
 
 ```text
