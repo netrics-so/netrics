@@ -16,6 +16,9 @@ describe("loadConfig", () => {
     expect(config.databaseUrl).toContain("localhost:5433");
     expect(config.databaseUrl).toContain("netrics_app");
     expect(config.databaseMigrationUrl).toBe(config.databaseUrl);
+    expect(config.betterAuthUrl).toBe("http://localhost:3001");
+    expect(config.webOrigin).toBe("http://localhost:3000");
+    expect(config.betterAuthSecret.length).toBeGreaterThanOrEqual(32);
     expect(config.version).toBe("0.0.0-dev");
     expect(config.commit).toBe("dev");
   });
@@ -62,5 +65,36 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({ ...validEnv, NETRICS_ROLE: "wizard" }),
     ).toThrowError(/NETRICS_ROLE/);
+  });
+
+  it("requires BETTER_AUTH_SECRET in production", () => {
+    expect(() =>
+      loadConfig({ ...validEnv, NODE_ENV: "production" }),
+    ).toThrowError(/BETTER_AUTH_SECRET/);
+  });
+
+  it("accepts a production BETTER_AUTH_SECRET of at least 32 chars", () => {
+    const config = loadConfig({
+      ...validEnv,
+      NODE_ENV: "production",
+      BETTER_AUTH_SECRET: "a".repeat(32),
+    });
+    expect(config.betterAuthSecret).toBe("a".repeat(32));
+  });
+
+  it("rejects a BETTER_AUTH_SECRET shorter than 32 chars", () => {
+    expect(() =>
+      loadConfig({ ...validEnv, BETTER_AUTH_SECRET: "too-short" }),
+    ).toThrowError(/BETTER_AUTH_SECRET/);
+  });
+
+  it("reads BETTER_AUTH_URL and WEB_ORIGIN from the environment", () => {
+    const config = loadConfig({
+      ...validEnv,
+      BETTER_AUTH_URL: "https://api.example.com",
+      WEB_ORIGIN: "https://app.example.com",
+    });
+    expect(config.betterAuthUrl).toBe("https://api.example.com");
+    expect(config.webOrigin).toBe("https://app.example.com");
   });
 });

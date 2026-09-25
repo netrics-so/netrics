@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import { processRoleSchema } from "@netrics/contracts";
 
+// Obviously insecure fixed fallback so local development and tests work with
+// zero configuration; production MUST set BETTER_AUTH_SECRET (enforced below).
+const DEV_BETTER_AUTH_SECRET = "netrics-dev-only-insecure-secret-000000";
+
 const envSchema = z
   .object({
     NODE_ENV: z
@@ -15,6 +19,13 @@ const envSchema = z
     // Role used by apps/server:migrate. Falls back to DATABASE_URL; set it to
     // the owner/migration role (RLS applies to netrics_app).
     DATABASE_MIGRATION_URL: z.url().optional(),
+    // better-auth session signing secret (>= 32 chars).
+    BETTER_AUTH_SECRET: z.string().min(32).optional(),
+    // Base URL of this API server as reachable by browsers.
+    BETTER_AUTH_URL: z.url().default("http://localhost:3001"),
+    // Browser origin allowed to call the API with credentials (CORS +
+    // better-auth trustedOrigins).
+    WEB_ORIGIN: z.url().default("http://localhost:3000"),
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
       .default("info"),
@@ -22,12 +33,25 @@ const envSchema = z
     APP_VERSION: z.string().min(1).default("0.0.0-dev"),
     GIT_SHA: z.string().min(1).default("dev"),
   })
+  .superRefine((env, ctx) => {
+    if (env.NODE_ENV === "production" && !env.BETTER_AUTH_SECRET) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["BETTER_AUTH_SECRET"],
+        message:
+          "BETTER_AUTH_SECRET (>= 32 chars) is required when NODE_ENV=production",
+      });
+    }
+  })
   .transform((env) => ({
     nodeEnv: env.NODE_ENV,
     port: env.PORT,
     host: env.HOST,
     databaseUrl: env.DATABASE_URL,
     databaseMigrationUrl: env.DATABASE_MIGRATION_URL ?? env.DATABASE_URL,
+    betterAuthSecret: env.BETTER_AUTH_SECRET ?? DEV_BETTER_AUTH_SECRET,
+    betterAuthUrl: env.BETTER_AUTH_URL,
+    webOrigin: env.WEB_ORIGIN,
     logLevel: env.LOG_LEVEL,
     role: env.NETRICS_ROLE,
     version: env.APP_VERSION,
