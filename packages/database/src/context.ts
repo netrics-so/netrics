@@ -68,23 +68,31 @@ export async function withUserContext<T>(
  * Creates a workspace plus its owner membership via the SECURITY DEFINER
  * create_workspace() SQL function (the only path allowed to insert a
  * workspace without an existing tenant context). Returns the workspace id.
+ * Takes an existing transaction so callers can append more work (e.g. audit
+ * rows); the function adopts the new workspace as the transaction's tenant
+ * context.
  */
-export async function createWorkspace(
-  db: Db,
+export async function createWorkspaceInTransaction(
+  tx: Transaction,
   input: { name: string; ownerUserId: string },
 ): Promise<string> {
   const name = z.string().min(1).parse(input.name);
   const ownerUserId = uuidSchema.parse(input.ownerUserId);
-  return db.transaction(async (tx) => {
-    const rows = await tx.execute<{ id: string }>(
-      sql`select create_workspace(${name}, ${ownerUserId}::uuid) as id`,
-    );
-    const row = rows[0];
-    if (!row) {
-      throw new Error("create_workspace returned no row");
-    }
-    return row.id;
-  });
+  const rows = await tx.execute<{ id: string }>(
+    sql`select create_workspace(${name}, ${ownerUserId}::uuid) as id`,
+  );
+  const row = rows[0];
+  if (!row) {
+    throw new Error("create_workspace returned no row");
+  }
+  return row.id;
+}
+
+export async function createWorkspace(
+  db: Db,
+  input: { name: string; ownerUserId: string },
+): Promise<string> {
+  return db.transaction((tx) => createWorkspaceInTransaction(tx, input));
 }
 
 /** SQLSTATE raised by bootstrap_workspace() once a workspace already exists. */
@@ -124,4 +132,40 @@ export function hasSqlstate(error: unknown, sqlstate: string): boolean {
     current = current.cause;
   }
   return false;
+}
+
+/** Walks the cause chain looking for a PostgreSQL error matching a predicate. */
+function findPgError(
+  error: unknown,
+  match: (code: string | undefined, message: string) => boolean,
+): boolean {
+  let current: unknown = error;
+  while (current instanceof Error) {
+    if (match((current as { code?: string }).code, current.message)) {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
+}
+
+/**
+ * The last-owner trigger (guard_last_workspace_owner) raises a plain
+ * EXCEPTION (SQLSTATE P0001); the message is what identifies it.
+ */
+export function isLastOwnerError(error: unknown): boolean {
+  return findPgError(
+    error,
+    (code, message) => code === "P0001" && message.includes("last owner"),
+  );
+}
+
+/** Unique violation on memberships(workspace_id, user_id) = already a member. */
+export function isDuplicateMembershipError(error: unknown): boolean {
+  return findPgError(
+    error,
+    (code, message) =>
+      code === "23505" &&
+      message.includes("memberships_workspace_id_user_id_unique"),
+  );
 }
