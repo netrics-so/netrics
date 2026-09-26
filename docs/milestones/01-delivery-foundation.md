@@ -70,3 +70,30 @@ changes receive a Terraform plan on pull requests and apply after merge.
 Merge a visible version-string change. Confirm the new commit digest is
 published, deployed to Railway, reported by the health endpoint, recorded in the
 release manifest, and successfully rolled back once.
+
+## Completion
+
+- Completed: 2026-09-26
+- Release: v0.1.0
+- Pull requests: [#2](https://github.com/netrics-so/netrics/pull/2),
+  [#3](https://github.com/netrics-so/netrics/pull/3),
+  [#4](https://github.com/netrics-so/netrics/pull/4),
+  [#11](https://github.com/netrics-so/netrics/pull/11),
+  [#12](https://github.com/netrics-so/netrics/pull/12),
+  [#13](https://github.com/netrics-so/netrics/pull/13);
+  netrics-cloud [#1](https://github.com/netrics-so/netrics-cloud/pull/1),
+  [#2](https://github.com/netrics-so/netrics-cloud/pull/2),
+  [#3](https://github.com/netrics-so/netrics-cloud/pull/3)
+- Exit gate: the 0.1.0 version bump merged to main published signed digests to
+  GHCR, deployed to Railway (API health endpoint reported `0.1.0` at the merge
+  commit), and recorded them in `release/production.yaml`. Rollback drill:
+  workflow_dispatch with the previous entry's digests restored 0.0.0 (verified
+  via the health endpoint), then rolled forward to 0.1.0.
+- Material deviations: found during the first live deploy — the release
+  workflow's verify job needed its own Postgres service once integration tests
+  existed (#11); the web image needs its API rewrite destination as a build
+  arg (`NETRICS_WEB_API_URL` repo variable, #11); web health probing moved to a
+  dedicated `/healthz` route because `/` became session-guarded (#12,
+  netrics-cloud #3). Known hardening follow-up for later milestones: the API
+  currently connects to Railway Postgres with the provider role, not the
+  RLS-constrained `netrics_app` role.
