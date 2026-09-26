@@ -32,6 +32,17 @@ owner safely.
 - Billing and hosted limits
 - Connectors and dashboards
 
+## Scope notes (recorded at implementation)
+
+- Members are added directly by email; invitations land in milestone 14.
+  Because user accounts are installation-level, this makes account existence
+  probeable by any workspace admin (`404 user_not_found` vs success when
+  adding by email). This is a deliberate, documented trade-off (see ADR 0005)
+  to be revisited when invitation flows arrive.
+- Cross-tenant verification in this milestone covers the API path; the
+  equivalent worker-path cross-tenant tests land together with the worker in
+  milestone 03.
+
 ## Implementation slices
 
 1. Isolate Better Auth behind server and web adapters.
