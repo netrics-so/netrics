@@ -55,10 +55,13 @@ tenant-owned tables. The migration itself creates two login roles:
 - `netrics_app` — the application role (`DATABASE_URL`). It is not a
   superuser and cannot bypass RLS; queries only see rows for the workspace
   set via `withWorkspace()` / `withUserContext()` from `@netrics/database`.
-- `netrics_scheduler` — the scheduler/worker role. It can claim and advance
-  jobs across all workspaces and read the scheduling columns of
-  `connection_state`, but has no grant on `connections` at all, so it cannot
-  read credential material.
+- `netrics_scheduler` — the scheduler/worker role (`DATABASE_SCHEDULER_URL`,
+  used by `NETRICS_ROLE=worker` and `NETRICS_ROLE=scheduler`). It claims and
+  advances jobs across all workspaces, enqueues due syncs, writes
+  `worker_heartbeats`, and reads the scheduling columns of `connection_state`
+  — but has no grant on `connections` at all, so it cannot read credential
+  material. Job claiming runs through the SECURITY DEFINER `claim_jobs()`
+  function (ADR 0006), which deliberately bypasses tenant context.
 - `netrics` — the owner/migration role (`DATABASE_MIGRATION_URL`, used by
   `pnpm db:migrate` and `apps/server` migrations). In production, provision
   it (and the app role's password) with real secrets before migrating.
@@ -66,6 +69,36 @@ tenant-owned tables. The migration itself creates two login roles:
 Because the roles are created by the migration, first-run order matters:
 `pnpm db:up` → `pnpm db:migrate` → `pnpm dev` (`pnpm setup` does this for
 you).
+
+### Worker and scheduler processes
+
+`apps/server` runs one of three roles via `NETRICS_ROLE`:
+
+- `api` (default) — the Fastify REST API.
+- `worker` — claims durable jobs from the `jobs` table (`FOR UPDATE SKIP
+LOCKED` via `claim_jobs()`), executes handlers by job kind
+  (`apps/server/src/jobs/handlers.ts`), and completes/retries/dead-letters
+  them. Tenant work runs as `netrics_app` inside `withWorkspace()`; the
+  executor rejects jobs whose payload workspace/connection identity disagrees
+  with the job row (tampering guard). Retries use exponential backoff
+  (2^attempts × 15s, capped at 15 min); exhausted or non-retryable jobs go to
+  `dead`. Horizontally scalable.
+- `scheduler` — every `SCHEDULER_POLL_MS` it plans due syncs from
+  `connection_state` (idempotency-keyed per connection per hour), advancing
+  `next_due_at` by the connection's `poll_interval_seconds`. Single active
+  instance, enforced by a PostgreSQL advisory lock; contenders exit and wait
+  for the platform to restart them.
+
+Both send liveness heartbeats to `worker_heartbeats` and never read
+credentials: claiming runs as `netrics_scheduler`, which has no grant on
+`connections` (ADR 0006).
+
+Relevant environment variables (see `.env.example`):
+
+- `DATABASE_SCHEDULER_URL` — scheduler-role connection. Required in
+  production for worker/scheduler roles.
+- `SCHEDULER_POLL_MS` (default 5000), `WORKER_POLL_MS` (default 1000),
+  `WORKER_CONCURRENCY` (default 4).
 
 ### Authentication
 
@@ -156,7 +189,7 @@ Web environment variables:
 ```text
 apps/
   web/        Next.js product application
-  server/     Fastify API (worker/scheduler roles share this image later)
+  server/     Fastify API + job worker + scheduler (NETRICS_ROLE)
   renderer/   Playwright snapshot worker (placeholder)
 packages/
   domain/     Domain rules (role/permission matrix, pure functions)

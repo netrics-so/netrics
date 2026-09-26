@@ -129,4 +129,37 @@ describe("loadConfig", () => {
     expect(config.betterAuthUrl).toBe("https://api.example.com");
     expect(config.webOrigin).toBe("https://app.example.com");
   });
+
+  it("applies worker/scheduler defaults", () => {
+    const config = loadConfig({});
+    expect(config.databaseSchedulerUrl).toContain("netrics_scheduler");
+    expect(config.databaseSchedulerUrl).toContain("localhost:5433");
+    expect(config.schedulerPollMs).toBe(5000);
+    expect(config.workerPollMs).toBe(1000);
+    expect(config.workerConcurrency).toBe(4);
+  });
+
+  it("requires DATABASE_SCHEDULER_URL in production for worker/scheduler roles", () => {
+    const prod = {
+      ...validEnv,
+      NODE_ENV: "production",
+      BETTER_AUTH_SECRET: "a".repeat(32),
+      APP_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+    };
+    expect(() => loadConfig({ ...prod, NETRICS_ROLE: "worker" })).toThrowError(
+      /DATABASE_SCHEDULER_URL/,
+    );
+    expect(() =>
+      loadConfig({ ...prod, NETRICS_ROLE: "scheduler" }),
+    ).toThrowError(/DATABASE_SCHEDULER_URL/);
+    // The api role never opens a scheduler connection.
+    expect(() => loadConfig({ ...prod, NETRICS_ROLE: "api" })).not.toThrow();
+    const config = loadConfig({
+      ...prod,
+      NETRICS_ROLE: "worker",
+      DATABASE_SCHEDULER_URL:
+        "postgres://scheduler:secret@db.example.com/netrics",
+    });
+    expect(config.databaseSchedulerUrl).toContain("db.example.com");
+  });
 });
