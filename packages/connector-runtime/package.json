@@ -1,0 +1,23 @@
+{
+  "name": "@netrics/connector-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@netrics/connector-sdk": "workspace:*",
+    "@netrics/connectors": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

@@ -54,6 +54,12 @@ importers:
       '@fastify/cors':
         specifier: 11.3.0
         version: 11.3.0
+      '@netrics/connector-runtime':
+        specifier: workspace:*
+        version: link:../../packages/connector-runtime
+      '@netrics/connector-sdk':
+        specifier: workspace:*
+        version: link:../../packages/connector-sdk
       '@netrics/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -66,6 +72,9 @@ importers:
       better-auth:
         specifier: 1.7.5
         version: 1.7.5(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(kysely@0.29.6)(postgres@3.4.9))(next@16.3.5(@types/node@26.6.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.1(@types/node@26.6.2)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.2)(tsx@4.23.15)))
+      drizzle-orm:
+        specifier: 0.45.2
+        version: 0.45.2(kysely@0.29.6)(postgres@3.4.9)
       fastify:
         specifier: 5.12.5
         version: 5.12.5
@@ -119,6 +128,22 @@ importers:
       '@types/react-dom':
         specifier: 19.3.0
         version: 19.3.0(@types/react@19.3.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/connector-runtime:
+    dependencies:
+      '@netrics/connector-sdk':
+        specifier: workspace:*
+        version: link:../connector-sdk
+      '@netrics/connectors':
+        specifier: workspace:*
+        version: link:../connectors
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
