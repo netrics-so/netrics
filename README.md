@@ -23,7 +23,8 @@ and applies database migrations. Then:
 pnpm dev
 ```
 
-- Web: http://localhost:3000 — shows live API/database health
+- Web: http://localhost:3000 — sign up / sign in, workspaces, projects
+  (live API/database health moved to `/status`)
 - API: http://localhost:3001 — `GET /health/live`, `GET /health/ready`
 
 ## Common commands
@@ -108,6 +109,36 @@ Non-members always get 404 for workspace routes (existence is never leaked),
 and every mutation writes an audit event in the same transaction. Sign-ins
 additionally write an installation-level `auth.login` audit row
 (`workspace_id` NULL) that tenants cannot see.
+
+### Web app and the API proxy
+
+The web app has email+password UI for the flows above: `/signup` and `/login`
+(better-auth, auto sign-in on sign-up since verification is not enforced),
+`/` (redirects to your first workspace, or creates one when you have none),
+`/workspaces/:id` (projects + workspace switcher), `/workspaces/:id/settings`
+(rename, members, roles — owner/admin manage; editors/viewers read-only), and
+`/settings/account` (profile, memberships, change password, sign out).
+Members are added directly by email — the person must already have an
+account; email invitations arrive in a later milestone.
+
+The browser never talks to the API directly. Next.js rewrites
+(`apps/web/next.config.ts`) proxy `/api/auth/*` and `/v1/*` to the API, so
+the session cookie is a plain first-party cookie on the web origin — no CORS
+or cross-site cookie configuration is needed. Client-side code calls
+same-origin relative URLs; server components call the API at
+`NETRICS_API_URL` and forward the incoming `cookie` header verbatim (the web
+app transports the cookie but never inspects it). better-auth is imported in
+exactly one place, `apps/web/src/lib/auth.ts`.
+
+Web environment variables:
+
+- `NETRICS_API_URL` — where the web server reaches the API (default
+  `http://localhost:3001`). Used for server-side fetches **and** baked into
+  the rewrite destinations at build time, so when it differs from the default
+  it must be set for both `next build` and `next start`.
+- No `NEXT_PUBLIC_` API URL exists on purpose: the browser only ever uses
+  same-origin relative URLs, so nothing API-related is inlined into the
+  client bundle.
 
 ## Repository layout
 
