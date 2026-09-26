@@ -9,6 +9,7 @@ export default defineConfig({
     alias: {
       "@netrics/contracts": r("./packages/contracts/src/index.ts"),
       "@netrics/database": r("./packages/database/src/index.ts"),
+      "@netrics/domain": r("./packages/domain/src/index.ts"),
     },
   },
   test: {

@@ -31,6 +31,19 @@ export async function findUserById(
   return rows[0] ?? null;
 }
 
+/** Looks up an installation-level domain user by (unique) email. */
+export async function findUserByEmail(
+  db: Db,
+  email: string,
+): Promise<DomainUser | null> {
+  const rows = await db
+    .select()
+    .from(schema.users)
+    .where(eq(schema.users.email, email.toLowerCase()))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 /**
  * Inserts the domain user mirroring a freshly created auth user
  * (installation-level table, no tenant context needed). Idempotent: a
@@ -59,6 +72,7 @@ export interface MembershipInfo {
   workspaceId: string;
   workspaceName: string;
   role: string;
+  activeProjectId: string | null;
 }
 
 /**
@@ -76,6 +90,7 @@ export async function listMembershipsForUser(
       .select({
         workspaceId: schema.memberships.workspaceId,
         role: schema.memberships.role,
+        activeProjectId: schema.memberships.activeProjectId,
       })
       .from(schema.memberships)
       .where(eq(schema.memberships.userId, userId)),

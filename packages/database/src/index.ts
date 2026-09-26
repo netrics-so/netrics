@@ -14,7 +14,10 @@ export {
   BOOTSTRAP_CONFLICT_SQLSTATE,
   bootstrapWorkspace,
   createWorkspace,
+  createWorkspaceInTransaction,
   hasSqlstate,
+  isDuplicateMembershipError,
+  isLastOwnerError,
   withUserContext,
   withWorkspace,
 } from "./context.js";
@@ -26,11 +29,39 @@ export type {
 } from "./context.js";
 export {
   findUserByAuthUserId,
+  findUserByEmail,
   findUserById,
   listMembershipsForUser,
   provisionDomainUser,
 } from "./users.js";
 export type { DomainUser, MembershipInfo } from "./users.js";
+export {
+  addMembership,
+  createProject,
+  createWorkspaceWithOwner,
+  deleteMembership,
+  deleteProject,
+  findMembership,
+  findProject,
+  findWorkspace,
+  insertAuditEvent,
+  insertInstallationAuditEvent,
+  listAuditEvents,
+  listMembers,
+  listProjects,
+  renameProject,
+  renameWorkspace,
+  setActiveProject,
+  updateMembershipRole,
+} from "./workspaces.js";
+export type {
+  AuditEvent,
+  AuditEventInput,
+  MemberDetails,
+  Membership,
+  Project,
+  Workspace,
+} from "./workspaces.js";
 
 export type Database = ReturnType<typeof createDatabase>;
 

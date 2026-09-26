@@ -87,8 +87,27 @@ this milestone (no SMTP yet); session cookies are `better-auth.session_token`
 with a 7-day expiry, validated against the database on every request so
 sign-out revokes immediately.
 
-Session-protected API routes live under `/v1` (currently `GET /v1/me` and
-`POST /v1/bootstrap`, the one-time first-workspace setup).
+Session-protected API routes live under `/v1`:
+
+- `GET /v1/me` — current user and workspace memberships.
+- `POST /v1/bootstrap` — one-time first-workspace setup (409 afterwards).
+- `POST /v1/workspaces`, `GET /v1/workspaces`,
+  `GET/PATCH /v1/workspaces/:id` — workspace CRUD (rename: owner/admin).
+- `GET/POST /v1/workspaces/:id/members`,
+  `PATCH/DELETE /v1/workspaces/:id/members/:userId` — membership management
+  (owner/admin; only owners grant or touch the owner role; any member may
+  remove themselves; the last owner can never leave).
+- `PATCH /v1/workspaces/:id/active-project` — the caller's active project.
+- `POST/GET /v1/workspaces/:id/projects`,
+  `PATCH/DELETE /v1/workspaces/:id/projects/:projectId` — projects
+  (create/rename: owner/admin/editor; delete: owner/admin).
+- `GET /v1/workspaces/:id/audit-events` — workspace audit log (owner/admin,
+  newest first, limit 100).
+
+Non-members always get 404 for workspace routes (existence is never leaked),
+and every mutation writes an audit event in the same transaction. Sign-ins
+additionally write an installation-level `auth.login` audit row
+(`workspace_id` NULL) that tenants cannot see.
 
 ## Repository layout
 
@@ -98,7 +117,7 @@ apps/
   server/     Fastify API (worker/scheduler roles share this image later)
   renderer/   Playwright snapshot worker (placeholder)
 packages/
-  domain/     Domain rules (placeholder)
+  domain/     Domain rules (role/permission matrix, pure functions)
   database/   Drizzle schema, migrations, PostgreSQL access
   contracts/  Shared zod schemas for HTTP contracts
   ui/         Shared product UI (placeholder)
