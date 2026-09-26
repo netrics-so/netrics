@@ -6,6 +6,12 @@ import { processRoleSchema } from "@netrics/contracts";
 // zero configuration; production MUST set BETTER_AUTH_SECRET (enforced below).
 const DEV_BETTER_AUTH_SECRET = "netrics-dev-only-insecure-secret-000000";
 
+// Obviously insecure fixed fallback (base64 of a fixed 32-byte ASCII string)
+// so local development and tests work with zero configuration; production
+// MUST set APP_ENCRYPTION_KEY (enforced below). Generate a real one with
+// `openssl rand -base64 32`.
+const DEV_APP_ENCRYPTION_KEY = "bmV0cmljcy1kZXYtb25seS1pbnNlY3VyZS1rZXkhITE=";
+
 const envSchema = z
   .object({
     NODE_ENV: z
@@ -21,6 +27,13 @@ const envSchema = z
     DATABASE_MIGRATION_URL: z.url().optional(),
     // better-auth session signing secret (>= 32 chars).
     BETTER_AUTH_SECRET: z.string().min(32).optional(),
+    // Instance master key for credential envelopes (base64, 32 bytes decoded).
+    APP_ENCRYPTION_KEY: z
+      .base64()
+      .refine((value) => Buffer.from(value, "base64").length === 32, {
+        message: "APP_ENCRYPTION_KEY must decode to exactly 32 bytes",
+      })
+      .optional(),
     // Base URL of this API server as reachable by browsers.
     BETTER_AUTH_URL: z.url().default("http://localhost:3001"),
     // Browser origin allowed to call the API with credentials (CORS +
@@ -42,6 +55,14 @@ const envSchema = z
           "BETTER_AUTH_SECRET (>= 32 chars) is required when NODE_ENV=production",
       });
     }
+    if (env.NODE_ENV === "production" && !env.APP_ENCRYPTION_KEY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["APP_ENCRYPTION_KEY"],
+        message:
+          "APP_ENCRYPTION_KEY (base64, 32 bytes) is required when NODE_ENV=production",
+      });
+    }
   })
   .transform((env) => ({
     nodeEnv: env.NODE_ENV,
@@ -50,6 +71,7 @@ const envSchema = z
     databaseUrl: env.DATABASE_URL,
     databaseMigrationUrl: env.DATABASE_MIGRATION_URL ?? env.DATABASE_URL,
     betterAuthSecret: env.BETTER_AUTH_SECRET ?? DEV_BETTER_AUTH_SECRET,
+    appEncryptionKey: env.APP_ENCRYPTION_KEY ?? DEV_APP_ENCRYPTION_KEY,
     betterAuthUrl: env.BETTER_AUTH_URL,
     webOrigin: env.WEB_ORIGIN,
     logLevel: env.LOG_LEVEL,
