@@ -20,7 +20,12 @@ does (see `docs/architecture.md`, "Application release").
    `package.json` `version`) and commit SHA are baked in as build args
    (`APP_VERSION` / `GIT_SHA`; `NEXT_PUBLIC_*` for web), so the running API
    reports them on `/health/live` and `/health/ready` and the web status page
-   displays them.
+   displays them. The web image additionally bakes `NETRICS_API_URL` — the
+   build-time destination of the `/api/auth/*` and `/v1/*` rewrites — from the
+   `NETRICS_WEB_API_URL` repository variable (the API service's
+   private-networking URL in the target environment). If the variable is unset
+   the build warns and falls back to `http://localhost:3001`, which is only
+   correct for local Docker Compose.
 4. **Record digests.** The workflow captures the pushed digest of each image
    (`ghcr.io/netrics-so/server@sha256:…`) and writes them to the job summary.
 5. **Sign and attest.** Cosign signs each image digest keylessly via sigstore

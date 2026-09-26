@@ -77,3 +77,23 @@ owner safely.
 Create two workspaces with separate owners and projects. Demonstrate permitted
 role behavior, then run the cross-workspace API and database test suite with no
 leaks.
+
+## Completion
+
+- Completed: 2026-09-26
+- Release: none (pre-0.1.0; shipped via squash merges)
+- Pull requests: [#5](https://github.com/netrics-so/netrics/pull/5),
+  [#10](https://github.com/netrics-so/netrics/pull/10) (supersedes closed #6),
+  [#7](https://github.com/netrics-so/netrics/pull/7),
+  [#8](https://github.com/netrics-so/netrics/pull/8),
+  [#9](https://github.com/netrics-so/netrics/pull/9)
+- Exit gate: run locally against the built server with real PostgreSQL — two
+  workspaces with separate owners and projects, viewer role behavior
+  demonstrated (reads allowed, mutations 403), cross-workspace access answered
+  404 with no existence oracle, revoked sessions 401, and the cross-workspace
+  API and database suites green (101 tests). Production deploy still pending
+  milestone 01's live exit gate.
+- Material deviations: members are added directly by email until invitations
+  land in milestone 14 — this exposes an installation-level user-existence
+  oracle, recorded in [ADR 0005](../decisions/0005-authentication-integration.md);
+  worker-path cross-tenant tests land with the worker in milestone 03.
