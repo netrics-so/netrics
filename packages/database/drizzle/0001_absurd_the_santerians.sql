@@ -48,20 +48,22 @@ ALTER TABLE "memberships" ADD CONSTRAINT "memberships_user_id_users_id_fk" FOREI
 ALTER TABLE "projects" ADD CONSTRAINT "projects_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 -- Roles (hand-written, idempotent per ADR 0001). Dev passwords only; production
 -- must provision these roles with its own secrets before applying migrations.
--- The duplicate_object guard tolerates concurrent first-run migrations racing
--- on the shared pg_roles catalog (roles are cluster-global, not per-database).
+-- Roles are cluster-global, not per-database, so concurrent first-run
+-- migrations on different databases race on the shared pg_roles catalog: the
+-- loser of the race sees unique_violation (23505) from the catalog index
+-- rather than duplicate_object (42710), so both are caught here.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'netrics_app') THEN
     BEGIN
       CREATE ROLE netrics_app LOGIN NOINHERIT PASSWORD 'netrics_app';
-    EXCEPTION WHEN duplicate_object THEN NULL;
+    EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;
     END;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'netrics_scheduler') THEN
     BEGIN
       CREATE ROLE netrics_scheduler LOGIN NOINHERIT PASSWORD 'netrics_scheduler';
-    EXCEPTION WHEN duplicate_object THEN NULL;
+    EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;
     END;
   END IF;
 END
