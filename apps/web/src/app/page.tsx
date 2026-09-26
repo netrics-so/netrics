@@ -1,91 +1,29 @@
-import { fetchApiHealth } from "@/lib/api";
+import { redirect } from "next/navigation";
+
+import { CreateWorkspaceForm } from "./create-workspace-form";
+import { listWorkspaces } from "@/lib/api";
+import { requireSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-function StatusValue({
-  state,
-  text,
-}: {
-  state: "up" | "down" | "unknown";
-  text: string;
-}) {
-  return (
-    <span className="value">
-      <span className={`dot ${state}`} />
-      {text}
-    </span>
-  );
-}
-
 export default async function Home() {
-  const health = await fetchApiHealth();
+  const { cookieHeader, user } = await requireSession();
+  const { workspaces } = await listWorkspaces(cookieHeader);
 
-  const liveState = health.live ? "up" : "down";
-  const readyState = health.ready
-    ? health.ready.status === "ready"
-      ? "up"
-      : "down"
-    : "unknown";
-  const databaseState = health.ready
-    ? health.ready.database === "up"
-      ? "up"
-      : "down"
-    : "unknown";
-
-  const webVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0-dev";
-  const webCommit = process.env.NEXT_PUBLIC_GIT_SHA ?? "dev";
-  const apiVersion = health.live ? health.live.version : "unknown";
-  const apiCommit = health.live ? health.live.commit : "unknown";
+  const first = workspaces[0];
+  if (first) {
+    redirect(`/workspaces/${first.id}`);
+  }
 
   return (
-    <main>
-      <h1>netrics</h1>
-      <p className="subtitle">API status — milestone 00 foundation check</p>
-
-      <div className="card">
-        <div className="row">
-          <span className="label">Web version</span>
-          <span className="value">
-            {webVersion} ({webCommit})
-          </span>
-        </div>
-        <div className="row">
-          <span className="label">API version</span>
-          <span className="value">
-            {apiVersion} ({apiCommit})
-          </span>
-        </div>
-        <div className="row">
-          <span className="label">API process (live)</span>
-          <StatusValue
-            state={liveState}
-            text={health.live ? "live" : "unreachable"}
-          />
-        </div>
-        <div className="row">
-          <span className="label">API readiness</span>
-          <StatusValue
-            state={readyState}
-            text={health.ready ? health.ready.status : "unknown"}
-          />
-        </div>
-        <div className="row">
-          <span className="label">PostgreSQL</span>
-          <StatusValue
-            state={databaseState}
-            text={health.ready ? health.ready.database : "unknown"}
-          />
-        </div>
-      </div>
-
-      {health.error ? (
-        <div className="error">API unreachable: {health.error}</div>
-      ) : null}
-
-      <p className="meta">
-        Rendered server-side at {new Date().toISOString()} — refresh to
-        re-check.
+    <>
+      <h1>Welcome, {user.name}</h1>
+      <p className="subtitle">
+        You are not a member of any workspace yet — create the first one.
       </p>
-    </main>
+      <div className="card">
+        <CreateWorkspaceForm />
+      </div>
+    </>
   );
 }
