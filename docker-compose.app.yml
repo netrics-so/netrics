@@ -29,6 +29,10 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        # The rewrite destinations (/api/auth/*, /v1/*) are baked in at build
+        # time, so this must be a build arg, not just a runtime env var.
+        NETRICS_API_URL: http://api:3001
     environment:
       NETRICS_API_URL: http://api:3001
     ports:
