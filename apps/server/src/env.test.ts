@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import { ConfigError, loadConfig } from "./env.js";
@@ -78,8 +80,38 @@ describe("loadConfig", () => {
       ...validEnv,
       NODE_ENV: "production",
       BETTER_AUTH_SECRET: "a".repeat(32),
+      APP_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
     });
     expect(config.betterAuthSecret).toBe("a".repeat(32));
+  });
+
+  it("requires APP_ENCRYPTION_KEY in production", () => {
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        NODE_ENV: "production",
+        BETTER_AUTH_SECRET: "a".repeat(32),
+      }),
+    ).toThrowError(/APP_ENCRYPTION_KEY/);
+  });
+
+  it("requires APP_ENCRYPTION_KEY to be base64 of exactly 32 bytes", () => {
+    const config = loadConfig({
+      APP_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+    });
+    expect(Buffer.from(config.appEncryptionKey, "base64")).toHaveLength(32);
+
+    expect(() =>
+      loadConfig({ APP_ENCRYPTION_KEY: randomBytes(16).toString("base64") }),
+    ).toThrowError(/APP_ENCRYPTION_KEY/);
+    expect(() =>
+      loadConfig({ APP_ENCRYPTION_KEY: "not base64!!!" }),
+    ).toThrowError(/APP_ENCRYPTION_KEY/);
+  });
+
+  it("falls back to a documented insecure dev key outside production", () => {
+    const config = loadConfig({});
+    expect(Buffer.from(config.appEncryptionKey, "base64")).toHaveLength(32);
   });
 
   it("rejects a BETTER_AUTH_SECRET shorter than 32 chars", () => {
