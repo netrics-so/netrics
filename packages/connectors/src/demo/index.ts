@@ -185,6 +185,11 @@ export function createDemoConnector(): Connector {
       request: SyncRequest,
     ): Promise<SyncResult> {
       const config = resolveConfig(context.config);
+      if (config.simulate === "outage") {
+        throw new Error(
+          "Demo connector simulated provider outage (simulate=outage)",
+        );
+      }
       const selected = resourceIds(config).filter(
         (id) => !request.resources || request.resources.includes(id),
       );

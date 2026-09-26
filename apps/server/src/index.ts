@@ -1,8 +1,10 @@
+import { createDefaultRegistry } from "@netrics/connector-runtime";
 import { createDatabase } from "@netrics/database";
 
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig } from "./env.js";
 import { startScheduler } from "./scheduler.js";
+import { syncCatalog } from "./sync/catalog.js";
 import { startWorker } from "./worker.js";
 
 function loadConfigOrExit() {
@@ -25,6 +27,8 @@ if (config.role === "worker") {
   await startScheduler(config);
 } else {
   const db = createDatabase(config.databaseUrl);
+  // Installation-level connector catalog, synced from the reviewed bundle.
+  await syncCatalog(db, createDefaultRegistry());
   const app = await buildApp(config, { db });
 
   try {
