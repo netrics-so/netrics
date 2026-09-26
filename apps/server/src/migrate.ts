@@ -17,7 +17,7 @@ function loadConfigOrExit() {
 const config = loadConfigOrExit();
 
 try {
-  await runMigrations(config.databaseUrl);
+  await runMigrations(config.databaseMigrationUrl);
   console.log(
     `Migrations applied (version ${config.version}, commit ${config.commit})`,
   );

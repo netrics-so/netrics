@@ -9,7 +9,7 @@ services:
       context: .
       dockerfile: apps/server/Dockerfile
     environment:
-      DATABASE_URL: postgres://netrics:netrics@postgres:5432/netrics
+      DATABASE_URL: postgres://netrics_app:netrics_app@postgres:5432/netrics
       PORT: "3001"
       HOST: 0.0.0.0
       NETRICS_ROLE: api

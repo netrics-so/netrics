@@ -56,7 +56,7 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     env:
-      DATABASE_URL: postgres://netrics:netrics@localhost:5432/netrics
+      DATABASE_MIGRATION_URL: postgres://netrics:netrics@localhost:5432/netrics
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

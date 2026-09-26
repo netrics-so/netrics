@@ -14,6 +14,8 @@ describe("loadConfig", () => {
     expect(config.logLevel).toBe("info");
     expect(config.role).toBe("api");
     expect(config.databaseUrl).toContain("localhost:5433");
+    expect(config.databaseUrl).toContain("netrics_app");
+    expect(config.databaseMigrationUrl).toBe(config.databaseUrl);
     expect(config.version).toBe("0.0.0-dev");
     expect(config.commit).toBe("dev");
   });
@@ -31,6 +33,18 @@ describe("loadConfig", () => {
   it("coerces PORT from a string", () => {
     const config = loadConfig({ ...validEnv, PORT: "4010" });
     expect(config.port).toBe(4010);
+  });
+
+  it("uses DATABASE_MIGRATION_URL when provided", () => {
+    const config = loadConfig({
+      ...validEnv,
+      DATABASE_MIGRATION_URL:
+        "postgres://netrics:netrics@localhost:5433/netrics",
+    });
+    expect(config.databaseMigrationUrl).toBe(
+      "postgres://netrics:netrics@localhost:5433/netrics",
+    );
+    expect(config.databaseMigrationUrl).not.toBe(config.databaseUrl);
   });
 
   it("fails with a readable error when DATABASE_URL is invalid", () => {
