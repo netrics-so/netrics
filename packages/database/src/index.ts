@@ -28,6 +28,22 @@ export type {
   WorkspaceContext,
 } from "./context.js";
 export {
+  claimJobs,
+  completeJob,
+  enqueueJob,
+  enqueueSyncJob,
+  failJob,
+  heartbeat,
+  listDueConnections,
+  setConnectionNextDue,
+} from "./jobs.js";
+export type {
+  DueConnection,
+  EnqueueJobInput,
+  FailJobResult,
+  Job,
+} from "./jobs.js";
+export {
   findUserByAuthUserId,
   findUserByEmail,
   findUserById,
