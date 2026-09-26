@@ -38,3 +38,37 @@ export const healthReadyResponseSchema = z
   })
   .extend(versionInfoSchema.shape);
 export type HealthReadyResponse = z.infer<typeof healthReadyResponseSchema>;
+
+export const errorResponseSchema = z.object({
+  error: z.string().min(1),
+});
+export type ErrorResponse = z.infer<typeof errorResponseSchema>;
+
+export const bootstrapRequestSchema = z.object({
+  workspaceName: z.string().trim().min(1).max(100),
+});
+export type BootstrapRequest = z.infer<typeof bootstrapRequestSchema>;
+
+export const bootstrapResponseSchema = z.object({
+  workspace: z.object({
+    id: z.uuid(),
+    name: z.string().min(1),
+  }),
+});
+export type BootstrapResponse = z.infer<typeof bootstrapResponseSchema>;
+
+export const meResponseSchema = z.object({
+  user: z.object({
+    id: z.uuid(),
+    email: z.string().min(1),
+    displayName: z.string().min(1),
+  }),
+  memberships: z.array(
+    z.object({
+      workspaceId: z.uuid(),
+      workspaceName: z.string().min(1),
+      role: workspaceRoleSchema,
+    }),
+  ),
+});
+export type MeResponse = z.infer<typeof meResponseSchema>;

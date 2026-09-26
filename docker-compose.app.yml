@@ -13,6 +13,12 @@ services:
       PORT: "3001"
       HOST: 0.0.0.0
       NETRICS_ROLE: api
+      # Dev-only auth secret (the image runs with NODE_ENV=production, which
+      # requires it to be set); replace with a real secret in any real
+      # deployment, e.g. `openssl rand -base64 32`.
+      BETTER_AUTH_SECRET: netrics-dev-only-insecure-secret-000000
+      BETTER_AUTH_URL: http://localhost:3001
+      WEB_ORIGIN: http://localhost:3000
     ports:
       - "3001:3001"
     depends_on:

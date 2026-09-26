@@ -1,17 +1,26 @@
 import { randomUUID } from "node:crypto";
 
+import cors from "@fastify/cors";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import {
   healthLiveResponseSchema,
   healthReadyResponseSchema,
 } from "@netrics/contracts";
-import { checkDatabaseConnection } from "@netrics/database";
+import {
+  checkDatabaseConnection,
+  createDatabase,
+  type Database,
+} from "@netrics/database";
 
+import { createAuthService, type AuthService } from "./auth/index.js";
 import type { Config } from "./env.js";
+import { registerSessionRoutes } from "./routes/session.js";
 
 export interface AppDeps {
   checkDb?: () => Promise<boolean>;
+  db?: Database;
+  authService?: AuthService;
 }
 
 export async function buildApp(
@@ -33,6 +42,22 @@ export async function buildApp(
         : randomUUID();
     },
   });
+
+  const db = deps.db ?? createDatabase(config.databaseUrl);
+  const authService =
+    deps.authService ?? createAuthService(config, db, { logger: app.log });
+
+  await app.register(cors, { origin: config.webOrigin, credentials: true });
+
+  // better-auth owns everything under /api/auth/* (sign-up, sign-in, session
+  // management); the auth module bridges Fastify to its fetch-style handler.
+  app.route({
+    method: ["GET", "POST"],
+    url: "/api/auth/*",
+    handler: (request, reply) => authService.handle(request, reply),
+  });
+
+  registerSessionRoutes(app, { authService, db });
 
   app.get("/health/live", async () =>
     healthLiveResponseSchema.parse({
