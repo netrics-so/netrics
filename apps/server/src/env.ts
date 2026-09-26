@@ -22,9 +22,18 @@ const envSchema = z
     DATABASE_URL: z
       .url()
       .default("postgres://netrics_app:netrics_app@localhost:5433/netrics"),
+    // Scheduler-role connection (claiming jobs, planning due syncs, worker
+    // heartbeats). Used by NETRICS_ROLE=worker and =scheduler. Dev default
+    // matches the migration-created dev role; required in production.
+    DATABASE_SCHEDULER_URL: z.url().optional(),
     // Role used by apps/server:migrate. Falls back to DATABASE_URL; set it to
     // the owner/migration role (RLS applies to netrics_app).
     DATABASE_MIGRATION_URL: z.url().optional(),
+    // Scheduler: how often to plan due syncs.
+    SCHEDULER_POLL_MS: z.coerce.number().int().min(50).default(5000),
+    // Worker: idle sleep between claim attempts and max parallel jobs.
+    WORKER_POLL_MS: z.coerce.number().int().min(10).default(1000),
+    WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
     // better-auth session signing secret (>= 32 chars).
     BETTER_AUTH_SECRET: z.string().min(32).optional(),
     // Instance master key for credential envelopes (base64, 32 bytes decoded).
@@ -47,7 +56,11 @@ const envSchema = z
     GIT_SHA: z.string().min(1).default("dev"),
   })
   .superRefine((env, ctx) => {
-    if (env.NODE_ENV === "production" && !env.BETTER_AUTH_SECRET) {
+    if (
+      env.NODE_ENV === "production" &&
+      env.NETRICS_ROLE === "api" &&
+      !env.BETTER_AUTH_SECRET
+    ) {
       ctx.addIssue({
         code: "custom",
         path: ["BETTER_AUTH_SECRET"],
@@ -55,12 +68,29 @@ const envSchema = z
           "BETTER_AUTH_SECRET (>= 32 chars) is required when NODE_ENV=production",
       });
     }
-    if (env.NODE_ENV === "production" && !env.APP_ENCRYPTION_KEY) {
+    // The scheduler only plans and claims; it never decrypts credentials.
+    if (
+      env.NODE_ENV === "production" &&
+      env.NETRICS_ROLE !== "scheduler" &&
+      !env.APP_ENCRYPTION_KEY
+    ) {
       ctx.addIssue({
         code: "custom",
         path: ["APP_ENCRYPTION_KEY"],
         message:
           "APP_ENCRYPTION_KEY (base64, 32 bytes) is required when NODE_ENV=production",
+      });
+    }
+    if (
+      env.NODE_ENV === "production" &&
+      env.NETRICS_ROLE !== "api" &&
+      !env.DATABASE_SCHEDULER_URL
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["DATABASE_SCHEDULER_URL"],
+        message:
+          "DATABASE_SCHEDULER_URL is required for worker/scheduler roles when NODE_ENV=production",
       });
     }
   })
@@ -69,7 +99,13 @@ const envSchema = z
     port: env.PORT,
     host: env.HOST,
     databaseUrl: env.DATABASE_URL,
+    databaseSchedulerUrl:
+      env.DATABASE_SCHEDULER_URL ??
+      "postgres://netrics_scheduler:netrics_scheduler@localhost:5433/netrics",
     databaseMigrationUrl: env.DATABASE_MIGRATION_URL ?? env.DATABASE_URL,
+    schedulerPollMs: env.SCHEDULER_POLL_MS,
+    workerPollMs: env.WORKER_POLL_MS,
+    workerConcurrency: env.WORKER_CONCURRENCY,
     betterAuthSecret: env.BETTER_AUTH_SECRET ?? DEV_BETTER_AUTH_SECRET,
     appEncryptionKey: env.APP_ENCRYPTION_KEY ?? DEV_APP_ENCRYPTION_KEY,
     betterAuthUrl: env.BETTER_AUTH_URL,
