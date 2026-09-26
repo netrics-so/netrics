@@ -29,6 +29,39 @@ services:
       postgres:
         condition: service_healthy
 
+  # Job worker: claims and executes durable jobs (connector syncs etc.).
+  # Horizontally scalable — run more replicas for more throughput.
+  worker:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      DATABASE_URL: postgres://netrics_app:netrics_app@postgres:5432/netrics
+      DATABASE_SCHEDULER_URL: postgres://netrics_scheduler:netrics_scheduler@postgres:5432/netrics
+      NETRICS_ROLE: worker
+      WORKER_CONCURRENCY: "4"
+      # Dev-only credential encryption key (see api above); replace in any
+      # real deployment.
+      APP_ENCRYPTION_KEY: bmV0cmljcy1kZXYtb25seS1pbnNlY3VyZS1rZXkhITE=
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Due-sync planner. Exactly one active instance (enforced by a PostgreSQL
+  # advisory lock): extra replicas exit until the holder dies.
+  scheduler:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      DATABASE_URL: postgres://netrics_app:netrics_app@postgres:5432/netrics
+      DATABASE_SCHEDULER_URL: postgres://netrics_scheduler:netrics_scheduler@postgres:5432/netrics
+      NETRICS_ROLE: scheduler
+      SCHEDULER_POLL_MS: "5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   web:
     build:
       context: .
