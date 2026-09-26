@@ -43,6 +43,13 @@
       "when": 1790426081283,
       "tag": "0005_connector_metrics_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790427829533,
+      "tag": "0006_scheduler_queue_functions",
+      "breakpoints": true
     }
   ]
 }
