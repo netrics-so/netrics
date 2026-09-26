@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/contracts" },
     { "path": "packages/connector-sdk" },
+    { "path": "packages/connector-runtime" },
     { "path": "packages/connectors" },
     { "path": "packages/database" },
     { "path": "packages/domain" },

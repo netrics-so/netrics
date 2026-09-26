@@ -22,6 +22,10 @@ const envelopeSchema = z.object({
   data: z.base64(),
 });
 
+// redactSecrets lives in the connector runtime (the credential boundary) so
+// connector-facing code and server code share one implementation.
+export { redactSecrets } from "@netrics/connector-runtime";
+
 export class CredentialDecryptionError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
@@ -86,40 +90,4 @@ export function decryptCredentials(envelope: string, key: string): string {
       { cause: error },
     );
   }
-}
-
-const SECRET_KEY_PATTERN = /secret|token|password|credential|key/i;
-const REDACTED = "[redacted]";
-
-/**
- * Deep-clones `input`, replacing the value of any object key that looks like
- * it carries a secret (secret/token/password/credential/key) with
- * "[redacted]". For log and error paths: credentials must never appear in
- * either. Circular references are replaced with "[circular]".
- */
-export function redactSecrets(input: unknown): unknown {
-  const seen = new WeakSet<object>();
-  const walk = (value: unknown): unknown => {
-    if (Array.isArray(value)) {
-      if (seen.has(value)) {
-        return "[circular]";
-      }
-      seen.add(value);
-      return value.map(walk);
-    }
-    if (value !== null && typeof value === "object") {
-      if (seen.has(value)) {
-        return "[circular]";
-      }
-      seen.add(value);
-      return Object.fromEntries(
-        Object.entries(value).map(([entryKey, entryValue]) => [
-          entryKey,
-          SECRET_KEY_PATTERN.test(entryKey) ? REDACTED : walk(entryValue),
-        ]),
-      );
-    }
-    return value;
-  };
-  return walk(input);
 }
