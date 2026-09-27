@@ -25,6 +25,7 @@ import {
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
+import { addMemberViaInvitation } from "./test-helpers.js";
 import { createTestDatabase } from "./test-db.js";
 
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
@@ -141,12 +142,14 @@ async function addMember(
   email: string,
   role: WorkspaceRole,
 ) {
-  return call(world.app, {
-    method: "POST",
-    url: `/v1/workspaces/${workspaceId}/members`,
+  return addMemberViaInvitation(
+    world.app,
+    world.db,
     cookie,
-    payload: { email, role },
-  });
+    workspaceId,
+    email,
+    role,
+  );
 }
 
 async function createProject(
@@ -229,20 +232,30 @@ describe("happy path", () => {
       "viewer",
     );
     expect(added.statusCode).toBe(200);
-    const { member } = memberResponseSchema.parse(added.json());
-    expect(member).toMatchObject({
+    const afterInvite = await call(world.app, {
+      method: "GET",
+      url: `/v1/workspaces/${w1Id}/members`,
+      cookie: cookies.owner,
+    });
+    expect(
+      memberListResponseSchema
+        .parse(afterInvite.json())
+        .members.find((m) => m.email === "viewer@example.com"),
+    ).toMatchObject({
       userId: userIds.viewer,
-      email: "viewer@example.com",
       displayName: "viewer",
       role: "viewer",
     });
 
-    // Unknown users are not auto-provisioned.
-    expectError(
-      await addMember(cookies.owner, w1Id, "ghost@example.com", "viewer"),
-      404,
-      "user_not_found",
-    );
+    // Inviting an address without an account answers exactly like any other
+    // invitation: account existence is never revealed.
+    const ghost = await call(world.app, {
+      method: "POST",
+      url: `/v1/workspaces/${w1Id}/invitations`,
+      cookie: cookies.owner,
+      payload: { email: "ghost@example.com", role: "viewer" },
+    });
+    expect(ghost.statusCode).toBe(200);
 
     // Duplicate membership is a conflict.
     expectError(
@@ -849,7 +862,8 @@ describe("audit events", () => {
     for (const action of [
       "workspace.bootstrap",
       "workspace.renamed",
-      "membership.added",
+      "invitation.created",
+      "invitation.accepted",
       "membership.role_changed",
       "membership.removed",
       "project.created",
@@ -863,11 +877,19 @@ describe("audit events", () => {
       (e) => e.action === "project.created" && e.target === p1Id,
     );
     expect(created?.actorUserId).toBe(userIds.owner);
-    const addedViewer = events.find(
-      (e) => e.action === "membership.added" && e.target === userIds.viewer,
+    const invitedViewer = events.find(
+      (e) =>
+        e.action === "invitation.created" &&
+        e.metadata.email === "viewer@example.com",
     );
-    expect(addedViewer?.actorUserId).toBe(userIds.owner);
-    expect(addedViewer?.metadata).toMatchObject({ role: "viewer" });
+    expect(invitedViewer?.actorUserId).toBe(userIds.owner);
+    expect(invitedViewer?.metadata).toMatchObject({ role: "viewer" });
+    const acceptedViewer = events.find(
+      (e) =>
+        e.action === "invitation.accepted" &&
+        e.metadata.email === "viewer@example.com",
+    );
+    expect(acceptedViewer?.actorUserId).toBe(userIds.viewer);
 
     const timestamps = events.map((e) => Date.parse(e.createdAt));
     const sorted = [...timestamps].sort((a, b) => b - a);
@@ -899,7 +921,7 @@ describe("audit events", () => {
     const { events } = auditEventListResponseSchema.parse(response.json());
     const actions = new Set(events.map((e) => e.action));
     expect(actions).toContain("workspace.created");
-    expect(actions).toContain("membership.added");
+    expect(actions).toContain("invitation.accepted");
     expect(actions).toContain("membership.removed");
     expect(actions).toContain("project.created");
     expect(actions.has("workspace.bootstrap")).toBe(false);

@@ -45,6 +45,21 @@ export type {
   Job,
 } from "./jobs.js";
 export {
+  AcceptInvitationFailure,
+  acceptInvitation,
+  createInvitation,
+  listOpenInvitations,
+  previewInvitation,
+  revokeInvitation,
+} from "./invitations.js";
+export type {
+  AcceptInvitationError,
+  Invitation,
+  InvitationDelivery,
+  InvitationPreview,
+  InvitationStatus,
+} from "./invitations.js";
+export {
   consumeSetupToken,
   countUsers,
   findInstallationSetup,

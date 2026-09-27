@@ -24,7 +24,9 @@ import {
   registerHttpHardening,
   requestIdFromHeader,
 } from "./http-hardening.js";
+import { createMailer, type Mailer } from "./mail/mailer.js";
 import { registerConnectionRoutes } from "./routes/connections.js";
+import { registerInvitationRoutes } from "./routes/invitations.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerWorkspaceRoutes } from "./routes/workspaces.js";
 
@@ -32,6 +34,7 @@ export interface AppDeps {
   checkDb?: () => Promise<boolean>;
   db?: Database;
   authService?: AuthService;
+  mailer?: Mailer;
   registry?: ConnectorRegistry;
 }
 
@@ -52,8 +55,10 @@ export async function buildApp(
   registerHttpHardening(app, config);
 
   const db = deps.db ?? createDatabase(config.databaseUrl);
+  const mailer = deps.mailer ?? createMailer(config, app.log);
   const authService =
-    deps.authService ?? createAuthService(config, db, { logger: app.log });
+    deps.authService ??
+    createAuthService(config, db, { logger: app.log, mailer });
 
   await app.register(cors, { origin: config.webOrigin, credentials: true });
 
@@ -76,6 +81,12 @@ export async function buildApp(
 
   registerSessionRoutes(app, { authService, db });
   registerWorkspaceRoutes(app, { authService, db });
+  registerInvitationRoutes(app, {
+    authService,
+    db,
+    mailer,
+    webOrigin: config.webOrigin,
+  });
   registerConnectionRoutes(app, {
     authService,
     db,

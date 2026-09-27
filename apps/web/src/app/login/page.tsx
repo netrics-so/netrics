@@ -4,14 +4,20 @@ import { redirect } from "next/navigation";
 
 import { LoginForm } from "./login-form";
 import { getSetupStatus } from "@/lib/api";
+import { safeNextPath } from "@/lib/next-path";
 import { getSessionUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string | string[] }>;
+}) {
+  const next = safeNextPath((await searchParams).next) ?? "/";
   const cookieHeader = (await headers()).get("cookie") ?? "";
   if (await getSessionUser(cookieHeader)) {
-    redirect("/");
+    redirect(next);
   }
   const setup = await getSetupStatus();
   if (setup.setupRequired) {
@@ -23,7 +29,7 @@ export default async function LoginPage() {
       <h1>Sign in</h1>
       <p className="subtitle">Sign in to your netrics account</p>
       <div className="card">
-        <LoginForm />
+        <LoginForm next={next} />
       </div>
       {setup.signup === "open" ? (
         <p className="muted">

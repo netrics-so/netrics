@@ -184,10 +184,20 @@ Session-protected API routes live under `/v1`:
 - `POST /v1/bootstrap` — one-time first-workspace setup (409 afterwards).
 - `POST /v1/workspaces`, `GET /v1/workspaces`,
   `GET/PATCH /v1/workspaces/:id` — workspace CRUD (rename: owner/admin).
-- `GET/POST /v1/workspaces/:id/members`,
+- `GET /v1/workspaces/:id/members`,
   `PATCH/DELETE /v1/workspaces/:id/members/:userId` — membership management
   (owner/admin; only owners grant or touch the owner role; any member may
   remove themselves; the last owner can never leave).
+- `POST/GET /v1/workspaces/:id/invitations`,
+  `DELETE /v1/workspaces/:id/invitations/:invitationId` — invitations
+  (owner/admin; only owners invite owners). Inviting the same address again
+  replaces the open invitation. With SMTP the link is emailed; without it the
+  response carries `inviteUrl` for the admin to hand over.
+- `GET /v1/invitations/:token` (public preview) and
+  `POST /v1/invitations/:token/accept` (signed in). Accepting needs the token
+  and an account whose email matches the invitation; it grants the role once.
+  While sign-up is closed, the invited address may create its account with
+  the token (header `x-netrics-invitation-token`).
 - `PATCH /v1/workspaces/:id/active-project` — the caller's active project.
 - `POST/GET /v1/workspaces/:id/projects`,
   `PATCH/DELETE /v1/workspaces/:id/projects/:projectId` — projects
@@ -225,8 +235,9 @@ observations),
 `/workspaces/:id/settings`
 (rename, members, roles — owner/admin manage; editors/viewers read-only), and
 `/settings/account` (profile, memberships, change password, sign out).
-Members are added directly by email — the person must already have an
-account; email invitations arrive in a later milestone.
+People join a workspace through invitations: `/workspaces/:id/settings`
+invites by email and lists pending invitations, and `/invite/:token` lets the
+invitee sign in or create their account and accept.
 
 The browser never talks to the API directly. Next.js rewrites
 (`apps/web/next.config.ts`) proxy `/api/auth/*` and `/v1/*` to the API, so

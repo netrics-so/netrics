@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -91,6 +92,58 @@ export const memberships = pgTable(
       "memberships_role_valid",
       sql`${table.role} in ('owner', 'admin', 'editor', 'viewer')`,
     ),
+  ],
+);
+
+// Workspace invitations. Membership is granted only when the invited person
+// accepts with the token, which proves access to the invited mailbox (or,
+// with delivery "manual", that the inviting admin handed it over). Only the
+// SHA-256 of the token is stored. Rows are never deleted: revoked/accepted
+// invitations stay as history.
+export const invitations = pgTable(
+  "invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    // Stored lowercase; compared case-insensitively with account emails.
+    email: text("email").notNull(),
+    role: text("role").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    // "email": the link was mailed to the invitee; "manual": shown to the
+    // inviting admin to hand over (no email transport configured).
+    delivery: text("delivery").notNull(),
+    invitedByUserId: uuid("invited_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedByUserId: uuid("accepted_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      "invitations_role_valid",
+      sql`${table.role} in ('owner', 'admin', 'editor', 'viewer')`,
+    ),
+    check(
+      "invitations_delivery_valid",
+      sql`${table.delivery} in ('email', 'manual')`,
+    ),
+    check(
+      "invitations_email_lowercase",
+      sql`${table.email} = lower(${table.email})`,
+    ),
+    // At most one open invitation per address and workspace.
+    uniqueIndex("invitations_open_email")
+      .on(table.workspaceId, table.email)
+      .where(sql`${table.acceptedAt} is null and ${table.revokedAt} is null`),
   ],
 );
 

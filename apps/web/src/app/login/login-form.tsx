@@ -5,7 +5,7 @@ import { useState, type FormEvent } from "react";
 
 import { signIn } from "@/lib/auth";
 
-export function LoginForm() {
+export function LoginForm({ next }: { next: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -24,7 +24,7 @@ export function LoginForm() {
       setError(authError.message ?? "Sign-in failed.");
       return;
     }
-    router.push("/");
+    router.push(next);
     router.refresh();
   }
 

@@ -65,10 +65,10 @@ and a self-hosted web app served from a different origin than the API.
   regenerating `auth-schema.ts`; the adapter module isolates API churn.
 - Session checks cost one indexed DB read per request; acceptable at this
   scale, and `cookieCache` can be reconsidered if it ever matters.
-- Until invitations land (milestone 14), members are added by email against
-  the installation-level users table. This makes account existence
-  probeable by any workspace admin (`404 user_not_found` vs success on
-  `POST /members`) — an accepted trade-off, recorded in the milestone 02 doc
-  and pinned by tests, to be revisited with milestone 14.
+- Members join through invitations (#27, milestone 03.1). The former direct
+  `POST /members` by email made account existence probeable by workspace
+  admins and granted access without proof of mailbox ownership; both are
+  gone. Invitations answer identically for any address, and membership needs
+  the emailed (or admin-handed) token plus a matching account email.
 - The web image must be rebuilt (or the build arg supplied) when the API
   origin changes; runtime-only changes to `NETRICS_API_URL` have no effect.

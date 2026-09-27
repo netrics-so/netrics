@@ -5,7 +5,13 @@ import { can } from "@netrics/domain";
 
 import { MembersManager } from "./members-manager";
 import { RenameWorkspaceForm } from "./rename-workspace-form";
-import { getMe, getWorkspace, listMembers, listWorkspaces } from "@/lib/api";
+import {
+  getMe,
+  getWorkspace,
+  listInvitations,
+  listMembers,
+  listWorkspaces,
+} from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -30,10 +36,15 @@ export default async function WorkspaceSettingsPage({
     notFound();
   }
 
-  const { members } = await listMembers(cookieHeader, workspaceId);
   const role = membership.role;
   const canRename = can(role, "workspace:rename");
   const canAddMembers = can(role, "members:add");
+  const [{ members }, { invitations }] = await Promise.all([
+    listMembers(cookieHeader, workspaceId),
+    canAddMembers
+      ? listInvitations(cookieHeader, workspaceId)
+      : Promise.resolve({ invitations: [] }),
+  ]);
 
   return (
     <>
@@ -61,6 +72,7 @@ export default async function WorkspaceSettingsPage({
         actorRole={role}
         currentUserId={me.user.id}
         canAdd={canAddMembers}
+        invitations={invitations}
       />
     </>
   );

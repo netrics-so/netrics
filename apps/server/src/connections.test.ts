@@ -35,6 +35,7 @@ import { createAuthService } from "./auth/index.js";
 import { createCredentialKeyring } from "./credentials.js";
 import { loadConfig, type Config } from "./env.js";
 import { createJobHandlers } from "./jobs/handlers.js";
+import { addMemberViaInvitation } from "./test-helpers.js";
 import { createTestDatabase } from "./test-db.js";
 
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
@@ -186,12 +187,14 @@ async function addMember(
   email: string,
   role: WorkspaceRole,
 ) {
-  return call(world.app, {
-    method: "POST",
-    url: `/v1/workspaces/${workspaceId}/members`,
+  return addMemberViaInvitation(
+    world.app,
+    world.db,
     cookie,
-    payload: { email, role },
-  });
+    workspaceId,
+    email,
+    role,
+  );
 }
 
 async function createConnection(
