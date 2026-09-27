@@ -14,7 +14,7 @@ import {
   type Job,
 } from "@netrics/database";
 
-import { redactSecrets } from "./credentials.js";
+import { createCredentialKeyring, redactSecrets } from "./credentials.js";
 import type { Config } from "./env.js";
 import { syncCatalog } from "./sync/catalog.js";
 import {
@@ -258,7 +258,10 @@ export async function startWorker(config: Config): Promise<void> {
     appDb,
     handlers: createJobHandlers({
       registry,
-      appEncryptionKey: config.appEncryptionKey,
+      credentialKeyring: createCredentialKeyring(
+        config.appEncryptionKey,
+        config.appEncryptionKeysPrevious,
+      ),
     }),
     concurrency: config.workerConcurrency,
     pollMs: config.workerPollMs,

@@ -21,6 +21,7 @@ import {
   type Sql,
 } from "@netrics/database";
 
+import { createCredentialKeyring } from "../credentials.js";
 import { createJobHandlers, type JobHandler } from "../jobs/handlers.js";
 import { runSchedulerTick } from "../scheduler.js";
 import { createTestDatabase, type TestDatabase } from "../test-db.js";
@@ -140,7 +141,10 @@ async function startWorker(
   const worker = createWorker({
     schedulerDb,
     appDb,
-    handlers: createJobHandlers({ registry, appEncryptionKey: ENCRYPTION_KEY }),
+    handlers: createJobHandlers({
+      registry,
+      credentialKeyring: createCredentialKeyring(ENCRYPTION_KEY),
+    }),
     pollMs: 25,
     heartbeatMs: 50,
     ...overrides,
@@ -193,7 +197,7 @@ describe("concurrent scheduling", () => {
     const maxActive = new Map<string, number>();
     const base = createJobHandlers({
       registry,
-      appEncryptionKey: ENCRYPTION_KEY,
+      credentialKeyring: createCredentialKeyring(ENCRYPTION_KEY),
     });
     const instrumented: Record<string, JobHandler> = {};
     for (const [kind, handler] of Object.entries(base)) {
@@ -334,7 +338,7 @@ describe("crash-retry idempotency at the job level", () => {
     )[0]!;
     const handlers = createJobHandlers({
       registry,
-      appEncryptionKey: ENCRYPTION_KEY,
+      credentialKeyring: createCredentialKeyring(ENCRYPTION_KEY),
     });
     await handlers["connection.backfill"]!({
       job: {
@@ -600,7 +604,7 @@ describe("replay-every-job stability", () => {
     for (const row of succeeded) {
       const handlers = createJobHandlers({
         registry,
-        appEncryptionKey: ENCRYPTION_KEY,
+        credentialKeyring: createCredentialKeyring(ENCRYPTION_KEY),
       });
       const job: Job = {
         id: row.id as string,

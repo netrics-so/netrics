@@ -1,9 +1,10 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
 import {
   CredentialDecryptionError,
+  createCredentialKeyring,
   decryptCredentials,
   encryptCredentials,
   redactSecrets,
@@ -11,6 +12,27 @@ import {
 
 const keyA = randomBytes(32).toString("base64");
 const keyB = randomBytes(32).toString("base64");
+const ringA = createCredentialKeyring(keyA);
+const ringB = createCredentialKeyring(keyB);
+const binding = { workspaceId: randomUUID(), connectionId: randomUUID() };
+
+type Envelope = {
+  v: number;
+  kid: string;
+  iv: string;
+  tag: string;
+  data: string;
+};
+
+function decode(envelope: string): Envelope {
+  return JSON.parse(
+    Buffer.from(envelope, "base64").toString("utf8"),
+  ) as Envelope;
+}
+
+function encode(envelope: Envelope): string {
+  return Buffer.from(JSON.stringify(envelope), "utf8").toString("base64");
+}
 
 describe("encryptCredentials / decryptCredentials", () => {
   it("round-trips a credentials JSON document", () => {
@@ -18,65 +40,100 @@ describe("encryptCredentials / decryptCredentials", () => {
       accessToken: "tok-123",
       nested: { apiSecret: "shh" },
     });
-    const envelope = encryptCredentials(plaintext, keyA);
+    const envelope = encryptCredentials(plaintext, ringA, binding);
     expect(envelope).not.toContain("tok-123");
-    expect(decryptCredentials(envelope, keyA)).toBe(plaintext);
+    expect(decryptCredentials(envelope, ringA, binding)).toBe(plaintext);
+    expect(decode(envelope)).toMatchObject({ v: 2, kid: ringA.currentKeyId });
   });
 
   it("produces a fresh envelope per call (random IV)", () => {
     const plaintext = JSON.stringify({ token: "same-input" });
-    const first = encryptCredentials(plaintext, keyA);
-    const second = encryptCredentials(plaintext, keyA);
+    const first = encryptCredentials(plaintext, ringA, binding);
+    const second = encryptCredentials(plaintext, ringA, binding);
     expect(first).not.toBe(second);
-    expect(decryptCredentials(first, keyA)).toBe(plaintext);
-    expect(decryptCredentials(second, keyA)).toBe(plaintext);
+    expect(decryptCredentials(first, ringA, binding)).toBe(plaintext);
+    expect(decryptCredentials(second, ringA, binding)).toBe(plaintext);
   });
 
-  it("fails with the wrong key", () => {
-    const envelope = encryptCredentials(JSON.stringify({ token: "x" }), keyA);
-    expect(() => decryptCredentials(envelope, keyB)).toThrow(
+  it("fails with a keyring that lacks the key", () => {
+    const envelope = encryptCredentials('{"token":"x"}', ringA, binding);
+    expect(() => decryptCredentials(envelope, ringB, binding)).toThrow(
+      /unknown key/,
+    );
+    // Forging the kid does not help: authentication still fails.
+    const forged = encode({ ...decode(envelope), kid: ringB.currentKeyId });
+    expect(() => decryptCredentials(forged, ringB, binding)).toThrow(
       CredentialDecryptionError,
+    );
+  });
+
+  it("is bound to its workspace and connection", () => {
+    const envelope = encryptCredentials('{"token":"x"}', ringA, binding);
+    for (const other of [
+      { ...binding, workspaceId: randomUUID() },
+      { ...binding, connectionId: randomUUID() },
+    ]) {
+      expect(() => decryptCredentials(envelope, ringA, other)).toThrow(
+        /bound to another connection/,
+      );
+    }
+  });
+
+  it("rejects truncated authentication tags", () => {
+    const envelope = decode(
+      encryptCredentials('{"token":"x"}', ringA, binding),
+    );
+    const truncated = encode({
+      ...envelope,
+      tag: Buffer.from(envelope.tag, "base64")
+        .subarray(0, 4)
+        .toString("base64"),
+    });
+    expect(() => decryptCredentials(truncated, ringA, binding)).toThrow(
+      /truncated/,
     );
   });
 
   it("detects tampering when a ciphertext byte is flipped", () => {
-    const envelope = encryptCredentials(
-      JSON.stringify({ token: "sensitive-value" }),
-      keyA,
+    const envelope = decode(
+      encryptCredentials('{"token":"sensitive-value"}', ringA, binding),
     );
-    const decoded = JSON.parse(
-      Buffer.from(envelope, "base64").toString("utf8"),
-    ) as { data: string };
-    const data = Buffer.from(decoded.data, "base64");
+    const data = Buffer.from(envelope.data, "base64");
     data[0] = data[0]! ^ 0xff;
-    decoded.data = data.toString("base64");
-    const tampered = Buffer.from(JSON.stringify(decoded), "utf8").toString(
-      "base64",
-    );
-    expect(() => decryptCredentials(tampered, keyA)).toThrow(
+    const tampered = encode({ ...envelope, data: data.toString("base64") });
+    expect(() => decryptCredentials(tampered, ringA, binding)).toThrow(
       CredentialDecryptionError,
     );
   });
 
-  it("rejects malformed envelopes", () => {
-    expect(() => decryptCredentials("not-base64-json", keyA)).toThrow(
+  it("rejects malformed and v1 envelopes", () => {
+    expect(() => decryptCredentials("not-base64-json", ringA, binding)).toThrow(
       CredentialDecryptionError,
     );
-    expect(() =>
-      decryptCredentials(
-        Buffer.from(
-          JSON.stringify({ v: 2, iv: "", tag: "", data: "" }),
-        ).toString("base64"),
-        keyA,
-      ),
-    ).toThrow(CredentialDecryptionError);
+    const v1 = Buffer.from(
+      JSON.stringify({ v: 1, iv: "", tag: "", data: "" }),
+    ).toString("base64");
+    expect(() => decryptCredentials(v1, ringA, binding)).toThrow(
+      /re-enter the connection credentials/,
+    );
   });
 
   it("rejects keys that are not 32 bytes", () => {
-    const shortKey = randomBytes(16).toString("base64");
     expect(() =>
-      encryptCredentials(JSON.stringify({ token: "x" }), shortKey),
+      createCredentialKeyring(randomBytes(16).toString("base64")),
     ).toThrow(/32 bytes/);
+  });
+});
+
+describe("key rotation", () => {
+  it("decrypts with retired keys and encrypts with the current one", () => {
+    const old = encryptCredentials('{"token":"old"}', ringA, binding);
+    const rotated = createCredentialKeyring(keyB, [keyA]);
+    expect(rotated.currentKeyId).toBe(ringB.currentKeyId);
+    expect(decryptCredentials(old, rotated, binding)).toBe('{"token":"old"}');
+    const fresh = encryptCredentials('{"token":"new"}', rotated, binding);
+    expect(decode(fresh).kid).toBe(ringB.currentKeyId);
+    expect(decryptCredentials(fresh, ringB, binding)).toBe('{"token":"new"}');
   });
 });
 

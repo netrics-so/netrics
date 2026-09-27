@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -24,7 +24,7 @@ import {
   type Sql,
 } from "@netrics/database";
 
-import { encryptCredentials } from "../credentials.js";
+import { createCredentialKeyring, encryptCredentials } from "../credentials.js";
 import { createJobHandlers } from "../jobs/handlers.js";
 import { syncCatalog } from "./catalog.js";
 import { createTestDatabase, type TestDatabase } from "../test-db.js";
@@ -32,6 +32,7 @@ import { createWorker, type WorkerHandle } from "../worker.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ENCRYPTION_KEY = randomBytes(32).toString("base64");
+const KEYRING = createCredentialKeyring(ENCRYPTION_KEY);
 
 function testManifest(id: string, metricKey: string): ConnectorManifest {
   return {
@@ -179,17 +180,22 @@ async function seedConnection(
   config: Record<string, unknown> = {},
   credentials?: Record<string, unknown>,
 ): Promise<string> {
+  const connectionId = randomUUID();
   return withWorkspace(appDb, { workspaceId }, async (tx) => {
     const [connection] = await tx
       .insert(schema.connections)
       .values({
+        id: connectionId,
         workspaceId,
         connectorId,
         name: `${connectorId} connection`,
         config,
         credentialsEncrypted: credentials
           ? Buffer.from(
-              encryptCredentials(JSON.stringify(credentials), ENCRYPTION_KEY),
+              encryptCredentials(JSON.stringify(credentials), KEYRING, {
+                workspaceId,
+                connectionId,
+              }),
               "utf8",
             )
           : null,
@@ -286,7 +292,7 @@ beforeAll(async () => {
   worker = createWorker({
     schedulerDb,
     appDb,
-    handlers: createJobHandlers({ registry, appEncryptionKey: ENCRYPTION_KEY }),
+    handlers: createJobHandlers({ registry, credentialKeyring: KEYRING }),
     pollMs: 25,
     heartbeatMs: 50,
   });

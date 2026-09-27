@@ -32,6 +32,7 @@ import { eq } from "drizzle-orm";
 
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
+import { createCredentialKeyring } from "./credentials.js";
 import { loadConfig, type Config } from "./env.js";
 import { createJobHandlers } from "./jobs/handlers.js";
 import { createTestDatabase } from "./test-db.js";
@@ -143,7 +144,7 @@ async function runEngine(
 ): Promise<void> {
   const handlers = createJobHandlers({
     registry,
-    appEncryptionKey: world.config.appEncryptionKey,
+    credentialKeyring: createCredentialKeyring(world.config.appEncryptionKey),
   });
   const job: Job = {
     id: randomUUID(),

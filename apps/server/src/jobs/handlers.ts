@@ -2,6 +2,8 @@ import type { Database, Job, Transaction } from "@netrics/database";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import type { Logger } from "pino";
 
+import type { CredentialKeyring } from "../credentials.js";
+
 import { createSyncJobHandlers } from "../sync/engine.js";
 
 export interface JobHandlerContext {
@@ -59,8 +61,8 @@ const noopHandler: JobHandler = async () => {};
 export interface JobHandlerDeps {
   /** The reviewed connector bundle of this deployment. */
   registry: ConnectorRegistry;
-  /** Instance master key for decrypting connection credentials. */
-  appEncryptionKey: string;
+  /** Instance keyring for decrypting connection credentials. */
+  credentialKeyring: CredentialKeyring;
 }
 
 /**

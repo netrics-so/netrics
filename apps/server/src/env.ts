@@ -43,6 +43,26 @@ const envSchema = z
         message: "APP_ENCRYPTION_KEY must decode to exactly 32 bytes",
       })
       .optional(),
+    // Retired keys (comma-separated, same format) that may still protect
+    // stored credentials during a rotation; see README "Rotating the
+    // encryption key".
+    APP_ENCRYPTION_KEYS_PREVIOUS: z
+      .string()
+      .optional()
+      .transform((value) =>
+        (value ?? "")
+          .split(",")
+          .map((key) => key.trim())
+          .filter((key) => key.length > 0),
+      )
+      .pipe(
+        z.array(
+          z.base64().refine((key) => Buffer.from(key, "base64").length === 32, {
+            message:
+              "APP_ENCRYPTION_KEYS_PREVIOUS entries must decode to exactly 32 bytes",
+          }),
+        ),
+      ),
     // Public base URL of the auth endpoints as browsers reach them. Required
     // (https) for the api role in production; localhost default otherwise.
     BETTER_AUTH_URL: z.url().optional(),
@@ -175,6 +195,7 @@ const envSchema = z
     workerConcurrency: env.WORKER_CONCURRENCY,
     betterAuthSecret: env.BETTER_AUTH_SECRET ?? DEV_BETTER_AUTH_SECRET,
     appEncryptionKey: env.APP_ENCRYPTION_KEY ?? DEV_APP_ENCRYPTION_KEY,
+    appEncryptionKeysPrevious: env.APP_ENCRYPTION_KEYS_PREVIOUS,
     signup:
       env.NETRICS_SIGNUP ?? (env.NODE_ENV === "production" ? "closed" : "open"),
     setupToken: env.NETRICS_SETUP_TOKEN ?? null,
