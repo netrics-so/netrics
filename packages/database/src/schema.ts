@@ -179,6 +179,13 @@ export const connectionState = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" }),
     lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
     nextDueAt: timestamp("next_due_at", { withTimezone: true }),
+    // Denormalized from the connector manifest's minRefreshIntervalSeconds by
+    // the API at connection-creation time: the scheduler plans due syncs from
+    // connection_state alone (it has no grant on connections, so manifest
+    // lookups are impossible by design). See migration 0006.
+    pollIntervalSeconds: integer("poll_interval_seconds")
+      .notNull()
+      .default(300),
     cursor: text("cursor"),
     authState: text("auth_state").notNull().default("ok"),
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),
@@ -272,6 +279,30 @@ export const syncRuns = pgTable(
     index("sync_runs_connection_started_idx").on(
       table.connectionId,
       table.startedAt.desc(),
+    ),
+  ],
+);
+
+// Installation-level ops data (no tenant RLS): which worker/scheduler
+// processes are alive. netrics_app is read-only (admin UI); only the
+// scheduler role writes (migration 0006).
+export const workerHeartbeats = pgTable(
+  "worker_heartbeats",
+  {
+    workerId: text("worker_id").primaryKey(),
+    role: text("role").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    metadata: jsonb("metadata").notNull().default({}),
+  },
+  (table) => [
+    check(
+      "worker_heartbeats_role_valid",
+      sql`${table.role} in ('worker', 'scheduler')`,
     ),
   ],
 );
