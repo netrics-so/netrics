@@ -1,5 +1,9 @@
 import { createDefaultRegistry } from "@netrics/connector-runtime";
-import { createDatabase } from "@netrics/database";
+import {
+  PrivilegedDatabaseRoleError,
+  assertUnprivilegedRole,
+  createDatabase,
+} from "@netrics/database";
 
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig } from "./env.js";
@@ -20,6 +24,38 @@ function loadConfigOrExit() {
 }
 
 const config = loadConfigOrExit();
+
+/**
+ * Tenant isolation relies on row-level security, which PostgreSQL skips for
+ * superusers and BYPASSRLS roles. Refuse to serve with such a connection.
+ */
+async function assertDatabaseRolesOrExit(urls: string[]): Promise<void> {
+  if (config.allowPrivilegedDb) {
+    console.warn(
+      "NETRICS_ALLOW_PRIVILEGED_DB=true: skipping the privileged database role check",
+    );
+    return;
+  }
+  for (const url of urls) {
+    try {
+      await assertUnprivilegedRole(url);
+    } catch (error) {
+      if (error instanceof PrivilegedDatabaseRoleError) {
+        console.error(error.message);
+        process.exit(1);
+      }
+      throw error;
+    }
+  }
+}
+
+await assertDatabaseRolesOrExit(
+  config.role === "api"
+    ? [config.databaseUrl]
+    : config.role === "worker"
+      ? [config.databaseUrl, config.databaseSchedulerUrl]
+      : [config.databaseSchedulerUrl],
+);
 
 if (config.role === "worker") {
   await startWorker(config);

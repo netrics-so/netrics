@@ -1,7 +1,7 @@
 # Optional: run the production app images together with PostgreSQL.
 # Use together with the base file:
 #   docker compose -f docker-compose.yml -f docker-compose.app.yml up --build
-# Apply migrations from the host (or CI) before/while starting:
+# Apply migrations (and dev role passwords) from the host before starting:
 #   pnpm db:migrate
 services:
   api:

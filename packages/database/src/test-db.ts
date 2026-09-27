@@ -4,6 +4,7 @@ import postgres from "postgres";
 import { afterAll } from "vitest";
 
 import { runMigrations } from "./index.js";
+import { DEV_ROLE_PASSWORDS } from "./roles.js";
 
 // Hooks must be registered at collection time, so cleanup lives at module
 // scope (this file is only ever imported by *.test.ts files).
@@ -61,7 +62,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   app.password = "netrics_app";
   const appUrl = app.toString();
 
-  await runMigrations(adminUrl);
+  await runMigrations(adminUrl, { rolePasswords: DEV_ROLE_PASSWORDS });
 
   const database: TestDatabase = {
     name,

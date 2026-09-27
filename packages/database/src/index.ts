@@ -6,6 +6,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import * as authSchema from "./auth-schema.js";
+import { provisionRolePasswords, type RolePasswords } from "./roles.js";
 import * as schema from "./schema.js";
 
 export * as authSchema from "./auth-schema.js";
@@ -43,6 +44,21 @@ export type {
   FailJobResult,
   Job,
 } from "./jobs.js";
+export {
+  APPLICATION_ROLES,
+  DEV_ROLE_PASSWORDS,
+  PrivilegedDatabaseRoleError,
+  assertUnprivilegedRole,
+  findRolesWithDefaultPasswords,
+  inspectCurrentRole,
+  provisionRolePasswords,
+  setRolePassword,
+} from "./roles.js";
+export type {
+  ApplicationRole,
+  RolePasswords,
+  RolePrivileges,
+} from "./roles.js";
 export {
   findUserByAuthUserId,
   findUserByEmail,
@@ -99,10 +115,24 @@ export function createRawSqlClient(
   return postgres(databaseUrl, options);
 }
 
-export async function runMigrations(databaseUrl: string): Promise<void> {
-  const client = postgres(databaseUrl, { max: 1 });
+export interface RunMigrationsOptions {
+  /**
+   * Passwords to assign to the application login roles after migrating.
+   * Migrations never set credentials themselves.
+   */
+  rolePasswords?: RolePasswords;
+}
+
+export async function runMigrations(
+  databaseUrl: string,
+  options: RunMigrationsOptions = {},
+): Promise<void> {
+  const client = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
     await migrate(drizzle(client), { migrationsFolder });
+    if (options.rolePasswords) {
+      await provisionRolePasswords(client, options.rolePasswords);
+    }
   } finally {
     await client.end({ timeout: 5 }).catch(() => undefined);
   }

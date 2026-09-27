@@ -18,7 +18,7 @@
     "test": "vitest run",
     "db:up": "docker compose up -d --wait postgres",
     "db:down": "docker compose down",
-    "db:migrate": "pnpm --filter @netrics/database migrate",
+    "db:migrate": "pnpm --filter '@netrics/server^...' build && pnpm --filter @netrics/server migrate",
     "db:generate": "pnpm --filter @netrics/database generate",
     "setup": "pnpm install && pnpm db:up && pnpm build && pnpm db:migrate"
   },

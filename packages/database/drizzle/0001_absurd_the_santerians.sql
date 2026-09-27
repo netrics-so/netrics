@@ -46,8 +46,11 @@ ALTER TABLE "audit_events" ADD CONSTRAINT "audit_events_actor_user_id_users_id_f
 ALTER TABLE "memberships" ADD CONSTRAINT "memberships_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "memberships" ADD CONSTRAINT "memberships_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "projects" ADD CONSTRAINT "projects_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
--- Roles (hand-written, idempotent per ADR 0001). Dev passwords only; production
--- must provision these roles with its own secrets before applying migrations.
+-- Roles (hand-written, idempotent per ADR 0001). Created without credentials:
+-- runMigrations() assigns LOGIN and passwords from the environment afterwards
+-- (packages/database/src/roles.ts). Earlier revisions of this migration set
+-- well-known dev passwords; production migrations refuse to run while a role
+-- still accepts them.
 -- Roles are cluster-global, not per-database, so concurrent first-run
 -- migrations on different databases race on the shared pg_roles catalog: the
 -- loser of the race sees unique_violation (23505) from the catalog index
@@ -56,13 +59,13 @@ DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'netrics_app') THEN
     BEGIN
-      CREATE ROLE netrics_app LOGIN NOINHERIT PASSWORD 'netrics_app';
+      CREATE ROLE netrics_app NOLOGIN NOINHERIT;
     EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;
     END;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'netrics_scheduler') THEN
     BEGIN
-      CREATE ROLE netrics_scheduler LOGIN NOINHERIT PASSWORD 'netrics_scheduler';
+      CREATE ROLE netrics_scheduler NOLOGIN NOINHERIT;
     EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;
     END;
   END IF;
