@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { ConfigError, loadConfig } from "./env.js";
+import { ConfigError, loadConfig, loadMigrationConfig } from "./env.js";
 
 const validEnv = {
   DATABASE_URL: "postgres://netrics:netrics@localhost:5432/netrics",
@@ -161,5 +161,64 @@ describe("loadConfig", () => {
         "postgres://scheduler:secret@db.example.com/netrics",
     });
     expect(config.databaseSchedulerUrl).toContain("db.example.com");
+  });
+});
+
+describe("privileged database escape hatch", () => {
+  it("is off by default and can be enabled outside production", () => {
+    expect(loadConfig({}).allowPrivilegedDb).toBe(false);
+    expect(
+      loadConfig({ NETRICS_ALLOW_PRIVILEGED_DB: "true" }).allowPrivilegedDb,
+    ).toBe(true);
+  });
+
+  it("is refused in production", () => {
+    expect(() =>
+      loadConfig({
+        NODE_ENV: "production",
+        NETRICS_ALLOW_PRIVILEGED_DB: "true",
+        BETTER_AUTH_SECRET: randomBytes(32).toString("hex"),
+        APP_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+      }),
+    ).toThrow(/NETRICS_ALLOW_PRIVILEGED_DB/);
+  });
+});
+
+describe("loadMigrationConfig", () => {
+  it("provisions development role passwords outside production", () => {
+    const config = loadMigrationConfig({});
+    expect(config.databaseMigrationUrl).toContain("netrics:netrics@");
+    expect(config.rolePasswords).toEqual({
+      netrics_app: "netrics_app",
+      netrics_scheduler: "netrics_scheduler",
+    });
+  });
+
+  it("needs no runtime secrets in production and leaves roles unprovisioned without passwords", () => {
+    const config = loadMigrationConfig({
+      NODE_ENV: "production",
+      DATABASE_MIGRATION_URL: "postgres://owner:secret@db.example.com/netrics",
+    });
+    expect(config.rolePasswords).toEqual({
+      netrics_app: undefined,
+      netrics_scheduler: undefined,
+    });
+  });
+
+  it("uses provided role passwords and rejects short ones in production", () => {
+    const strong = randomBytes(24).toString("base64");
+    expect(
+      loadMigrationConfig({
+        NODE_ENV: "production",
+        NETRICS_APP_DB_PASSWORD: strong,
+        NETRICS_SCHEDULER_DB_PASSWORD: strong,
+      }).rolePasswords,
+    ).toEqual({ netrics_app: strong, netrics_scheduler: strong });
+    expect(() =>
+      loadMigrationConfig({
+        NODE_ENV: "production",
+        NETRICS_APP_DB_PASSWORD: "short",
+      }),
+    ).toThrow(ConfigError);
   });
 });

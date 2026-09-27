@@ -2,7 +2,11 @@ import { randomBytes } from "node:crypto";
 
 import { afterAll } from "vitest";
 
-import { createRawSqlClient, runMigrations } from "@netrics/database";
+import {
+  DEV_ROLE_PASSWORDS,
+  createRawSqlClient,
+  runMigrations,
+} from "@netrics/database";
 
 // Copy of packages/database/src/test-db.ts (kept local to avoid widening the
 // package's export map for test-only code). Hooks must be registered at
@@ -62,7 +66,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   app.password = "netrics_app";
   const appUrl = app.toString();
 
-  await runMigrations(adminUrl);
+  await runMigrations(adminUrl, { rolePasswords: DEV_ROLE_PASSWORDS });
 
   const database: TestDatabase = {
     name,

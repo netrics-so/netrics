@@ -52,10 +52,24 @@ const envSchema = z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
       .default("info"),
     NETRICS_ROLE: processRoleSchema.default("api"),
+    // Local-debugging escape hatch for the privileged-role startup guard.
+    // Refused in production.
+    NETRICS_ALLOW_PRIVILEGED_DB: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
     APP_VERSION: z.string().min(1).default("0.0.0-dev"),
     GIT_SHA: z.string().min(1).default("dev"),
   })
   .superRefine((env, ctx) => {
+    if (env.NODE_ENV === "production" && env.NETRICS_ALLOW_PRIVILEGED_DB) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["NETRICS_ALLOW_PRIVILEGED_DB"],
+        message:
+          "NETRICS_ALLOW_PRIVILEGED_DB is not allowed when NODE_ENV=production",
+      });
+    }
     if (
       env.NODE_ENV === "production" &&
       env.NETRICS_ROLE === "api" &&
@@ -112,6 +126,7 @@ const envSchema = z
     webOrigin: env.WEB_ORIGIN,
     logLevel: env.LOG_LEVEL,
     role: env.NETRICS_ROLE,
+    allowPrivilegedDb: env.NETRICS_ALLOW_PRIVILEGED_DB,
     version: env.APP_VERSION,
     commit: env.GIT_SHA,
   }));
@@ -125,19 +140,92 @@ export class ConfigError extends Error {
   }
 }
 
+function formatIssues(error: z.ZodError): string {
+  const details = error.issues
+    .map((issue) => `  - ${issue.path.join(".") || "(root)"}: ${issue.message}`)
+    .join("\n");
+  return `Invalid environment configuration. Fix the following variables:\n${details}`;
+}
+
+// Role passwords are secrets for long-lived login roles; require real length
+// in production.
+const rolePasswordSchema = z.string().min(1);
+
+/**
+ * Configuration for `migrate` only. It needs the owner connection and the
+ * role passwords to provision — not the runtime secrets of api/worker.
+ */
+const migrationEnvSchema = z
+  .object({
+    NODE_ENV: z
+      .enum(["development", "test", "production"])
+      .default("development"),
+    DATABASE_MIGRATION_URL: z.url().optional(),
+    DATABASE_URL: z.url().optional(),
+    NETRICS_APP_DB_PASSWORD: rolePasswordSchema.optional(),
+    NETRICS_SCHEDULER_DB_PASSWORD: rolePasswordSchema.optional(),
+    APP_VERSION: z.string().min(1).default("0.0.0-dev"),
+    GIT_SHA: z.string().min(1).default("dev"),
+  })
+  .superRefine((env, ctx) => {
+    if (env.NODE_ENV !== "production") {
+      return;
+    }
+    for (const key of [
+      "NETRICS_APP_DB_PASSWORD",
+      "NETRICS_SCHEDULER_DB_PASSWORD",
+    ] as const) {
+      const value = env[key];
+      if (value !== undefined && value.length < 24) {
+        ctx.addIssue({
+          code: "custom",
+          path: [key],
+          message: `${key} must be at least 24 characters when NODE_ENV=production`,
+        });
+      }
+    }
+  })
+  .transform((env) => {
+    const production = env.NODE_ENV === "production";
+    return {
+      nodeEnv: env.NODE_ENV,
+      databaseMigrationUrl:
+        env.DATABASE_MIGRATION_URL ??
+        env.DATABASE_URL ??
+        "postgres://netrics:netrics@localhost:5433/netrics",
+      // Outside production, provision the well-known dev passwords so local
+      // setups work with zero configuration.
+      rolePasswords: {
+        netrics_app:
+          env.NETRICS_APP_DB_PASSWORD ??
+          (production ? undefined : "netrics_app"),
+        netrics_scheduler:
+          env.NETRICS_SCHEDULER_DB_PASSWORD ??
+          (production ? undefined : "netrics_scheduler"),
+      },
+      version: env.APP_VERSION,
+      commit: env.GIT_SHA,
+    };
+  });
+
+export type MigrationConfig = z.infer<typeof migrationEnvSchema>;
+
+export function loadMigrationConfig(
+  env: Record<string, string | undefined> = process.env,
+): MigrationConfig {
+  const result = migrationEnvSchema.safeParse(env);
+  if (!result.success) {
+    throw new ConfigError(formatIssues(result.error));
+  }
+  return result.data;
+}
+
 export function loadConfig(
   env: Record<string, string | undefined> = process.env,
 ): Config {
   const result = envSchema.safeParse(env);
   if (!result.success) {
-    const details = result.error.issues
-      .map(
-        (issue) => `  - ${issue.path.join(".") || "(root)"}: ${issue.message}`,
-      )
-      .join("\n");
-    throw new ConfigError(
-      `Invalid environment configuration. Fix the following variables:\n${details}`,
-    );
+    throw new ConfigError(formatIssues(result.error));
   }
   return result.data;
 }

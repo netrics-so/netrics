@@ -177,14 +177,25 @@ function toConnectionDetail(
   };
 }
 
+// Every query in this module names the workspace explicitly in addition to
+// the RLS context (defense in depth): isolation must not depend on the
+// database role being unprivileged.
+function connectionScope(workspaceId: string, connectionId: string) {
+  return and(
+    eq(schema.connections.workspaceId, workspaceId),
+    eq(schema.connections.id, connectionId),
+  );
+}
+
 async function loadConnection(
   tx: Transaction,
+  workspaceId: string,
   connectionId: string,
 ): Promise<{ row: ConnectionRow; state: ConnectionStateRow | null } | null> {
   const [row] = await tx
     .select()
     .from(schema.connections)
-    .where(eq(schema.connections.id, connectionId))
+    .where(connectionScope(workspaceId, connectionId))
     .limit(1);
   if (!row) {
     return null;
@@ -192,7 +203,12 @@ async function loadConnection(
   const [state] = await tx
     .select()
     .from(schema.connectionState)
-    .where(eq(schema.connectionState.connectionId, connectionId))
+    .where(
+      and(
+        eq(schema.connectionState.workspaceId, workspaceId),
+        eq(schema.connectionState.connectionId, connectionId),
+      ),
+    )
     .limit(1);
   return { row, state: state ?? null };
 }
@@ -481,6 +497,9 @@ export function registerConnectionRoutes(
           if (!access) {
             return;
           }
+          if (!can(access.role, "connections:view")) {
+            return sendError(reply, 403, "forbidden");
+          }
           const rows = await withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
@@ -493,11 +512,15 @@ export function registerConnectionRoutes(
                 .from(schema.connections)
                 .leftJoin(
                   schema.connectionState,
-                  eq(
-                    schema.connectionState.connectionId,
-                    schema.connections.id,
+                  and(
+                    eq(
+                      schema.connectionState.connectionId,
+                      schema.connections.id,
+                    ),
+                    eq(schema.connectionState.workspaceId, access.workspaceId),
                   ),
                 )
+                .where(eq(schema.connections.workspaceId, access.workspaceId))
                 .orderBy(schema.connections.createdAt),
           );
           return connectionListResponseSchema.parse({
@@ -515,6 +538,9 @@ export function registerConnectionRoutes(
           if (!access) {
             return;
           }
+          if (!can(access.role, "connections:view")) {
+            return sendError(reply, 403, "forbidden");
+          }
           const params = connectionParamsSchema.safeParse(request.params);
           if (!params.success) {
             return sendError(reply, 404, "connection_not_found");
@@ -523,7 +549,11 @@ export function registerConnectionRoutes(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
             async (tx) => {
-              const loaded = await loadConnection(tx, params.data.connectionId);
+              const loaded = await loadConnection(
+                tx,
+                access.workspaceId,
+                params.data.connectionId,
+              );
               if (!loaded) {
                 return null;
               }
@@ -531,7 +561,10 @@ export function registerConnectionRoutes(
                 .select()
                 .from(schema.syncRuns)
                 .where(
-                  eq(schema.syncRuns.connectionId, params.data.connectionId),
+                  and(
+                    eq(schema.syncRuns.workspaceId, access.workspaceId),
+                    eq(schema.syncRuns.connectionId, params.data.connectionId),
+                  ),
                 )
                 .orderBy(desc(schema.syncRuns.startedAt))
                 .limit(20);
@@ -587,7 +620,8 @@ export function registerConnectionRoutes(
           const existing = await withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            (tx) => loadConnection(tx, params.data.connectionId),
+            (tx) =>
+              loadConnection(tx, access.workspaceId, params.data.connectionId),
           );
           if (!existing) {
             return sendError(reply, 404, "connection_not_found");
@@ -684,7 +718,9 @@ export function registerConnectionRoutes(
                     : {}),
                   updatedAt: new Date(),
                 })
-                .where(eq(schema.connections.id, params.data.connectionId))
+                .where(
+                  connectionScope(access.workspaceId, params.data.connectionId),
+                )
                 .returning();
               if (!row) {
                 sendError(reply, 404, "connection_not_found");
@@ -702,9 +738,15 @@ export function registerConnectionRoutes(
                     nextDueAt: new Date(),
                   })
                   .where(
-                    eq(
-                      schema.connectionState.connectionId,
-                      params.data.connectionId,
+                    and(
+                      eq(
+                        schema.connectionState.workspaceId,
+                        access.workspaceId,
+                      ),
+                      eq(
+                        schema.connectionState.connectionId,
+                        params.data.connectionId,
+                      ),
                     ),
                   )
                   .returning();
@@ -771,7 +813,11 @@ export function registerConnectionRoutes(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
             async (tx) => {
-              const loaded = await loadConnection(tx, params.data.connectionId);
+              const loaded = await loadConnection(
+                tx,
+                access.workspaceId,
+                params.data.connectionId,
+              );
               if (!loaded) {
                 sendError(reply, 404, "connection_not_found");
                 return false;
@@ -785,13 +831,16 @@ export function registerConnectionRoutes(
                 .set({ status: "failed", lastError: "connection deleted" })
                 .where(
                   and(
+                    eq(schema.jobs.workspaceId, access.workspaceId),
                     eq(schema.jobs.connectionId, params.data.connectionId),
                     eq(schema.jobs.status, "pending"),
                   ),
                 );
               await tx
                 .delete(schema.connections)
-                .where(eq(schema.connections.id, params.data.connectionId));
+                .where(
+                  connectionScope(access.workspaceId, params.data.connectionId),
+                );
               await insertAuditEvent(tx, {
                 workspaceId: access.workspaceId,
                 actorUserId: access.callerId,
@@ -830,7 +879,11 @@ export function registerConnectionRoutes(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
             async (tx) => {
-              const loaded = await loadConnection(tx, params.data.connectionId);
+              const loaded = await loadConnection(
+                tx,
+                access.workspaceId,
+                params.data.connectionId,
+              );
               if (!loaded) {
                 sendError(reply, 404, "connection_not_found");
                 return null;
@@ -872,6 +925,9 @@ export function registerConnectionRoutes(
           if (!access) {
             return;
           }
+          if (!can(access.role, "connections:view")) {
+            return sendError(reply, 403, "forbidden");
+          }
           const params = connectionParamsSchema.safeParse(request.params);
           if (!params.success) {
             return sendError(reply, 404, "connection_not_found");
@@ -884,7 +940,11 @@ export function registerConnectionRoutes(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
             async (tx) => {
-              const loaded = await loadConnection(tx, params.data.connectionId);
+              const loaded = await loadConnection(
+                tx,
+                access.workspaceId,
+                params.data.connectionId,
+              );
               if (!loaded) {
                 return null;
               }
@@ -907,6 +967,7 @@ export function registerConnectionRoutes(
                 )
                 .where(
                   and(
+                    eq(schema.observations.workspaceId, access.workspaceId),
                     eq(
                       schema.observations.connectionId,
                       params.data.connectionId,

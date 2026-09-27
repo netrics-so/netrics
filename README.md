@@ -71,12 +71,23 @@ tenant-owned tables. The migration itself creates two login roles:
   material. Job claiming runs through the SECURITY DEFINER `claim_jobs()`
   function (ADR 0006), which deliberately bypasses tenant context.
 - `netrics` — the owner/migration role (`DATABASE_MIGRATION_URL`, used by
-  `pnpm db:migrate` and `apps/server` migrations). In production, provision
-  it (and the app role's password) with real secrets before migrating.
+  `pnpm db:migrate` and `apps/server` migrations).
 
-Because the roles are created by the migration, first-run order matters:
-`pnpm db:up` → `pnpm db:migrate` → `pnpm dev` (`pnpm setup` does this for
-you).
+Migrations create `netrics_app` and `netrics_scheduler` without credentials.
+`migrate` then enables login and sets their passwords from
+`NETRICS_APP_DB_PASSWORD` and `NETRICS_SCHEDULER_DB_PASSWORD`. Outside
+production these default to the role names. In production they must be real
+secrets, and `migrate` exits with an error while a role still accepts its
+public development password.
+
+The api, worker and scheduler check their database role at startup and exit
+if it is a superuser or has `BYPASSRLS`, because PostgreSQL skips row-level
+security for such roles. `NETRICS_ALLOW_PRIVILEGED_DB=true` disables the check
+for local debugging only and is rejected in production. Connection queries
+also filter by workspace explicitly, so isolation does not rely on RLS alone.
+
+First-run order matters: `pnpm db:up` → `pnpm db:migrate` → `pnpm dev`
+(`pnpm setup` does this for you).
 
 ### Worker and scheduler processes
 
