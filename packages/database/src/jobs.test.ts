@@ -602,6 +602,21 @@ describe("enqueue_sync_job (scheduler role)", () => {
   });
 });
 
+describe("enqueue_sync_job workspace check", () => {
+  it("refuses to pair a connection with a foreign workspace", async () => {
+    await expectDbError(
+      enqueueSyncJob(schedulerDb, {
+        connectionId: connectionA,
+        workspaceId: workspaceB,
+        kind: "connection.sync",
+        runAt: new Date(),
+        idempotencyKey: `sync:${connectionA}:mismatch`,
+      }),
+      /connection_workspace_mismatch/,
+    );
+  });
+});
+
 describe("enqueueJob (app role, transactional)", () => {
   it("forces workspace/connection identity into the payload", async () => {
     const id = await withWorkspace(db, { workspaceId: workspaceA }, (tx) =>
