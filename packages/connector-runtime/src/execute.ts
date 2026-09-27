@@ -1,14 +1,17 @@
 import {
   checkResultSchema,
+  resourceSchema,
   syncRequestSchema,
   syncResultSchema,
   type CheckResult,
   type ConnectionContext,
   type Connector,
   type ConnectorManifest,
+  type Resource,
   type SyncRequest,
   type SyncResult,
 } from "@netrics/connector-sdk";
+import { z } from "zod";
 
 import { redactConnectorError, redactCredentialValues } from "./redact.js";
 
@@ -156,4 +159,29 @@ export async function executeCheck(
     };
   }
   return result;
+}
+
+/**
+ * Runs the connector's resource discovery inside the same boundary (used by
+ * the connection wizard's preview step). Thrown errors are redacted provider
+ * failures; a malformed resource list is a contract violation.
+ */
+export async function executeDiscover(
+  connector: Connector,
+  context: ConnectionContext,
+): Promise<Resource[]> {
+  assertContextIsPlain(context);
+  let raw: unknown;
+  try {
+    raw = await connector.discover(context);
+  } catch (error) {
+    throw redactConnectorError(error, context.credentials);
+  }
+  const parsed = z.array(resourceSchema).safeParse(raw);
+  if (!parsed.success) {
+    throw new ContractViolationError(
+      `connector "${connector.manifest.id}" returned invalid resources: ${formatIssues(parsed.error.issues)}`,
+    );
+  }
+  return parsed.data;
 }

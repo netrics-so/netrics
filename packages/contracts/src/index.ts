@@ -189,3 +189,195 @@ export const auditEventListResponseSchema = z.object({
 export type AuditEventListResponse = z.infer<
   typeof auditEventListResponseSchema
 >;
+
+// ---------------------------------------------------------------------------
+// Connectors (installation-level catalog) and connections (workspace-scoped)
+// ---------------------------------------------------------------------------
+
+export const connectorAuthStrategySchema = z.object({
+  strategy: z.enum(["token", "none"]),
+});
+export type ConnectorAuthStrategy = z.infer<typeof connectorAuthStrategySchema>;
+
+/** The JSON-Schema subset manifests use travels as an opaque record. */
+const jsonSchemaObjectSchema = z.record(z.string(), z.unknown());
+
+export const connectorCatalogEntrySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  version: z.string().min(1),
+  description: z.string().min(1),
+  metricsCount: z.number().int().nonnegative(),
+  minRefreshIntervalSeconds: z.number().int().positive(),
+  supportsBackfill: z.boolean(),
+  configSchema: jsonSchemaObjectSchema,
+  authStrategies: z.array(connectorAuthStrategySchema),
+});
+export type ConnectorCatalogEntry = z.infer<typeof connectorCatalogEntrySchema>;
+
+export const connectorListResponseSchema = z.object({
+  connectors: z.array(connectorCatalogEntrySchema),
+});
+export type ConnectorListResponse = z.infer<typeof connectorListResponseSchema>;
+
+const connectionConfigSchema = z.record(z.string(), z.unknown());
+// Input-only: credentials must never appear on any response schema.
+const connectionCredentialsSchema = z.record(z.string(), z.unknown());
+
+export const createConnectionRequestSchema = z.object({
+  connectorId: z.string().min(1),
+  name: nameSchema,
+  config: connectionConfigSchema.default({}),
+  credentials: connectionCredentialsSchema.optional(),
+  projectId: z.uuid().optional(),
+  resources: z.array(z.string().min(1)).optional(),
+});
+export type CreateConnectionRequest = z.infer<
+  typeof createConnectionRequestSchema
+>;
+
+export const previewConnectionRequestSchema = z.object({
+  connectorId: z.string().min(1),
+  config: connectionConfigSchema.default({}),
+  credentials: connectionCredentialsSchema.optional(),
+});
+export type PreviewConnectionRequest = z.infer<
+  typeof previewConnectionRequestSchema
+>;
+
+export const connectionCheckResultSchema = z.object({
+  ok: z.boolean(),
+  message: z.string().min(1).optional(),
+});
+export type ConnectionCheckResult = z.infer<typeof connectionCheckResultSchema>;
+
+export const discoveredResourceSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  kind: z.string().min(1),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+export type DiscoveredResource = z.infer<typeof discoveredResourceSchema>;
+
+export const connectionPreviewResponseSchema = z.object({
+  check: connectionCheckResultSchema,
+  resources: z.array(discoveredResourceSchema),
+});
+export type ConnectionPreviewResponse = z.infer<
+  typeof connectionPreviewResponseSchema
+>;
+
+// "pending" = never synced successfully yet; the other states mirror
+// connection_state.auth_state.
+export const connectionHealthSchema = z.enum([
+  "ok",
+  "auth_failed",
+  "outage",
+  "pending",
+]);
+export type ConnectionHealth = z.infer<typeof connectionHealthSchema>;
+
+export const connectionAuthStateSchema = z.enum([
+  "ok",
+  "auth_failed",
+  "outage",
+]);
+export type ConnectionAuthState = z.infer<typeof connectionAuthStateSchema>;
+
+export const connectionStateViewSchema = z.object({
+  health: connectionHealthSchema,
+  authState: connectionAuthStateSchema,
+  lastSuccessAt: z.iso.datetime().nullable(),
+  nextDueAt: z.iso.datetime().nullable(),
+  consecutiveFailures: z.number().int().nonnegative(),
+  pollIntervalSeconds: z.number().int().positive(),
+});
+export type ConnectionStateView = z.infer<typeof connectionStateViewSchema>;
+
+export const connectionSchema = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  connectorId: z.string().min(1),
+  connectorName: z.string().min(1),
+  connectorVersion: z.string().min(1),
+  projectId: z.uuid().nullable(),
+  hasCredentials: z.boolean(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  state: connectionStateViewSchema,
+});
+export type Connection = z.infer<typeof connectionSchema>;
+
+export const connectionListResponseSchema = z.object({
+  connections: z.array(connectionSchema),
+});
+export type ConnectionListResponse = z.infer<
+  typeof connectionListResponseSchema
+>;
+
+export const connectionDetailSchema = connectionSchema.extend({
+  config: connectionConfigSchema,
+});
+export type ConnectionDetail = z.infer<typeof connectionDetailSchema>;
+
+export const connectionResponseSchema = z.object({
+  connection: connectionDetailSchema,
+});
+export type ConnectionResponse = z.infer<typeof connectionResponseSchema>;
+
+export const syncRunSchema = z.object({
+  id: z.uuid(),
+  mode: z.enum(["backfill", "incremental"]),
+  status: z.enum(["running", "succeeded", "failed"]),
+  requestedFrom: z.iso.datetime(),
+  requestedTo: z.iso.datetime(),
+  cursorBefore: z.string().nullable(),
+  cursorAfter: z.string().nullable(),
+  attempt: z.number().int().positive(),
+  startedAt: z.iso.datetime(),
+  finishedAt: z.iso.datetime().nullable(),
+  errorClass: z.enum(["auth", "transient", "contract", "budget"]).nullable(),
+  errorMessage: z.string().nullable(),
+  observationsWritten: z.number().int().nonnegative(),
+});
+export type SyncRun = z.infer<typeof syncRunSchema>;
+
+export const connectionDetailResponseSchema = z.object({
+  connection: connectionDetailSchema,
+  syncRuns: z.array(syncRunSchema),
+});
+export type ConnectionDetailResponse = z.infer<
+  typeof connectionDetailResponseSchema
+>;
+
+export const updateConnectionRequestSchema = z.object({
+  name: nameSchema.optional(),
+  config: connectionConfigSchema.optional(),
+  credentials: connectionCredentialsSchema.optional(),
+  projectId: z.uuid().nullable().optional(),
+});
+export type UpdateConnectionRequest = z.infer<
+  typeof updateConnectionRequestSchema
+>;
+
+export const enqueueSyncResponseSchema = z.object({
+  jobId: z.uuid(),
+});
+export type EnqueueSyncResponse = z.infer<typeof enqueueSyncResponseSchema>;
+
+export const observationSchema = z.object({
+  id: z.uuid(),
+  metricKey: z.string().min(1),
+  sourceTimestamp: z.iso.datetime(),
+  value: z.number(),
+  dimensions: z.record(z.string(), z.string()),
+  ingestedAt: z.iso.datetime(),
+});
+export type Observation = z.infer<typeof observationSchema>;
+
+export const observationListResponseSchema = z.object({
+  observations: z.array(observationSchema),
+});
+export type ObservationListResponse = z.infer<
+  typeof observationListResponseSchema
+>;

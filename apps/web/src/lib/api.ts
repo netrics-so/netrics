@@ -2,27 +2,47 @@ import { ZodError, type ZodType } from "zod";
 
 import {
   addMemberRequestSchema,
+  connectionDetailResponseSchema,
+  connectionListResponseSchema,
+  connectionPreviewResponseSchema,
+  connectionResponseSchema,
+  connectorListResponseSchema,
+  createConnectionRequestSchema,
   createProjectRequestSchema,
   createWorkspaceRequestSchema,
+  enqueueSyncResponseSchema,
   errorResponseSchema,
   healthLiveResponseSchema,
   healthReadyResponseSchema,
   meResponseSchema,
   memberListResponseSchema,
   memberResponseSchema,
+  observationListResponseSchema,
+  previewConnectionRequestSchema,
   projectListResponseSchema,
   projectResponseSchema,
   renameWorkspaceRequestSchema,
+  updateConnectionRequestSchema,
   updateMemberRoleRequestSchema,
   workspaceListResponseSchema,
   workspaceResponseSchema,
+  type ConnectionDetailResponse,
+  type ConnectionListResponse,
+  type ConnectionPreviewResponse,
+  type ConnectionResponse,
+  type ConnectorListResponse,
+  type CreateConnectionRequest,
+  type EnqueueSyncResponse,
   type HealthLiveResponse,
   type HealthReadyResponse,
   type MemberListResponse,
   type MemberResponse,
   type MeResponse,
+  type ObservationListResponse,
+  type PreviewConnectionRequest,
   type ProjectListResponse,
   type ProjectResponse,
+  type UpdateConnectionRequest,
   type WorkspaceListResponse,
   type WorkspaceResponse,
   type WorkspaceRole,
@@ -65,11 +85,16 @@ export function apiErrorMessage(error: unknown): string {
       case "workspace_not_found":
       case "member_not_found":
       case "project_not_found":
+      case "connection_not_found":
         return "That record no longer exists.";
       case "invalid_request":
         return "The request was invalid — check your input.";
       default:
-        return `Request failed (${error.code}).`;
+        // Connector check/preview failures arrive as human-readable,
+        // already-redacted messages rather than snake_case codes.
+        return /^[a-z_]+$/.test(error.code)
+          ? `Request failed (${error.code}).`
+          : error.code;
     }
   }
   if (error instanceof ZodError) {
@@ -166,6 +191,60 @@ export function listProjects(
     projectListResponseSchema,
     cookieHeader,
     `/v1/workspaces/${workspaceId}/projects`,
+  );
+}
+
+export function listConnectors(
+  cookieHeader: string,
+): Promise<ConnectorListResponse> {
+  return serverGet(connectorListResponseSchema, cookieHeader, "/v1/connectors");
+}
+
+export function listConnections(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<ConnectionListResponse> {
+  return serverGet(
+    connectionListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/connections`,
+  );
+}
+
+/** Returns null on 404 (gone or from another workspace). */
+export async function getConnection(
+  cookieHeader: string,
+  workspaceId: string,
+  connectionId: string,
+): Promise<ConnectionDetailResponse | null> {
+  const response = await fetch(
+    `${apiBaseUrl()}/v1/workspaces/${workspaceId}/connections/${connectionId}`,
+    { headers: { cookie: cookieHeader }, cache: "no-store" },
+  );
+  if (response.status === 404) {
+    return null;
+  }
+  return parseResponse(connectionDetailResponseSchema, response);
+}
+
+export function listObservations(
+  cookieHeader: string,
+  workspaceId: string,
+  connectionId: string,
+  query: { metricKey?: string; limit?: number } = {},
+): Promise<ObservationListResponse> {
+  const params = new URLSearchParams();
+  if (query.metricKey) {
+    params.set("metricKey", query.metricKey);
+  }
+  if (query.limit !== undefined) {
+    params.set("limit", String(query.limit));
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  return serverGet(
+    observationListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/observations${suffix}`,
   );
 }
 
@@ -286,5 +365,66 @@ export function createProject(
     "POST",
     `/v1/workspaces/${workspaceId}/projects`,
     createProjectRequestSchema.parse({ name }),
+  );
+}
+
+export function previewConnection(
+  workspaceId: string,
+  input: PreviewConnectionRequest,
+): Promise<ConnectionPreviewResponse> {
+  return browserSend(
+    connectionPreviewResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/preview`,
+    previewConnectionRequestSchema.parse(input),
+  );
+}
+
+export function createConnection(
+  workspaceId: string,
+  input: CreateConnectionRequest,
+): Promise<ConnectionResponse> {
+  return browserSend(
+    connectionResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections`,
+    createConnectionRequestSchema.parse(input),
+  );
+}
+
+export function updateConnection(
+  workspaceId: string,
+  connectionId: string,
+  input: UpdateConnectionRequest,
+): Promise<ConnectionResponse> {
+  return browserSend(
+    connectionResponseSchema,
+    "PATCH",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}`,
+    updateConnectionRequestSchema.parse(input),
+  );
+}
+
+export async function deleteConnection(
+  workspaceId: string,
+  connectionId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw new ApiError(response.status, await readErrorCode(response));
+  }
+}
+
+export function triggerConnectionSync(
+  workspaceId: string,
+  connectionId: string,
+): Promise<EnqueueSyncResponse> {
+  return browserSend(
+    enqueueSyncResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/sync`,
   );
 }

@@ -12,9 +12,14 @@ import {
   createDatabase,
   type Database,
 } from "@netrics/database";
+import {
+  createDefaultRegistry,
+  type ConnectorRegistry,
+} from "@netrics/connector-runtime";
 
 import { createAuthService, type AuthService } from "./auth/index.js";
 import type { Config } from "./env.js";
+import { registerConnectionRoutes } from "./routes/connections.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerWorkspaceRoutes } from "./routes/workspaces.js";
 
@@ -22,6 +27,7 @@ export interface AppDeps {
   checkDb?: () => Promise<boolean>;
   db?: Database;
   authService?: AuthService;
+  registry?: ConnectorRegistry;
 }
 
 export async function buildApp(
@@ -60,6 +66,12 @@ export async function buildApp(
 
   registerSessionRoutes(app, { authService, db });
   registerWorkspaceRoutes(app, { authService, db });
+  registerConnectionRoutes(app, {
+    authService,
+    db,
+    registry: deps.registry ?? createDefaultRegistry(),
+    appEncryptionKey: config.appEncryptionKey,
+  });
 
   app.get("/health/live", async () =>
     healthLiveResponseSchema.parse({
