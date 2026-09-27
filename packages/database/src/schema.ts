@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   customType,
   doublePrecision,
@@ -37,10 +38,49 @@ export const users = pgTable("users", {
   authUserId: text("auth_user_id").unique(),
   email: text("email").notNull().unique(),
   displayName: text("display_name").notNull(),
+  // May use the installation admin API (/v1/admin/*). The first-run setup
+  // account is one; installation-level, never granted by a workspace role.
+  isInstanceAdmin: boolean("is_instance_admin").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });
+
+// Bearer tokens for non-session principals (ADR 0009): installation service
+// accounts ("service") and, later, paired screens ("device"). Only the
+// SHA-256 of the token is stored. Installation-level; the application role
+// has no grant on this table and resolves tokens only through
+// resolve_principal_token().
+export const principalTokens = pgTable(
+  "principal_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").notNull(),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    scopes: text("scopes").array().notNull(),
+    // Devices belong to one workspace; service accounts to none.
+    workspaceId: uuid("workspace_id").references(() => workspaces.id, {
+      onDelete: "cascade",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      "principal_tokens_kind_valid",
+      sql`${table.kind} in ('service', 'device')`,
+    ),
+    check(
+      "principal_tokens_device_workspace",
+      sql`(${table.kind} = 'device') = (${table.workspaceId} is not null)`,
+    ),
+  ],
+);
 
 // Installation-level, single row: the one-time token that authorizes creating
 // the first account while public sign-up is closed (see apps/server/src/setup.ts).

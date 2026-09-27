@@ -62,6 +62,19 @@ export type {
   InvitationStatus,
 } from "./invitations.js";
 export {
+  adminListWorkspaces,
+  createServiceToken,
+  isInstanceAdmin,
+  listPrincipalTokens,
+  resolvePrincipalToken,
+  revokePrincipalToken,
+} from "./principals.js";
+export type {
+  AdminWorkspace,
+  PrincipalKind,
+  TokenPrincipal,
+} from "./principals.js";
+export {
   consumeSetupToken,
   countUsers,
   findInstallationSetup,

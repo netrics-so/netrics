@@ -99,6 +99,13 @@
       "when": 1790542369722,
       "tag": "0013_catalog_read_only",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790543968486,
+      "tag": "0014_principals",
+      "breakpoints": true
     }
   ]
 }

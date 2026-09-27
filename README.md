@@ -185,6 +185,23 @@ when the committed file is stale (`pnpm openapi:check`). Routes validate
 bodies and query strings against the same schemas. Path ids are checked in
 the handlers, so a malformed id answers 404 like an unknown one.
 
+#### Service accounts and the admin API
+
+`/v1/admin/*` (for example `GET /v1/admin/workspaces`) serves instance
+administrators, starting with the account created during first-run setup, and
+service accounts holding a matching scope (ADR 0009). The operator CLI in the
+server image manages service tokens with the owner connection:
+
+```sh
+node dist/admin-cli.js create-service-token --name ops-console \
+  --scope installation:workspaces:read --expires-days 90   # prints the token once
+node dist/admin-cli.js list-tokens
+node dist/admin-cli.js revoke-token --id <token id>
+```
+
+Clients send `Authorization: Bearer nt_…`. Tenant routes accept sessions
+only.
+
 Session-protected API routes live under `/v1`:
 
 - `GET /v1/me` — current user and workspace memberships.
