@@ -9,6 +9,7 @@ import {
   consumeSetupToken,
   countUsers,
   findUserByAuthUserId,
+  previewInvitation,
   insertInstallationAuditEvent,
   provisionDomainUser,
   recordSetupOwner,
@@ -17,29 +18,11 @@ import {
 
 import type { Config } from "../env.js";
 import { SETUP_TOKEN_HEADER, hashSetupToken } from "../setup.js";
-import {
-  createLoggingMailer,
-  createSmtpMailer,
-  createUnavailableMailer,
-  type AuthMailer,
-} from "./mailer.js";
+import { hashToken } from "../tokens.js";
 
-export type { AuthEmail, AuthMailer } from "./mailer.js";
-export { EmailNotConfiguredError } from "./mailer.js";
-
-/** SMTP when configured; the log mailer only in local development. */
-function defaultMailer(config: Config, logger: FastifyBaseLogger): AuthMailer {
-  if (config.smtp) {
-    return createSmtpMailer({
-      from: config.smtp.from,
-      transport: config.smtp.url,
-      logger,
-    });
-  }
-  return config.nodeEnv === "development"
-    ? createLoggingMailer(logger)
-    : createUnavailableMailer(logger);
-}
+/** Header carrying an invitation token on sign-up (see routes/invitations.ts). */
+export const INVITATION_TOKEN_HEADER = "x-netrics-invitation-token";
+import { createMailer, type Mailer } from "../mail/mailer.js";
 
 export interface SessionIdentity {
   authUserId: string;
@@ -61,7 +44,7 @@ export interface AuthService {
 
 export interface AuthServiceDeps {
   logger: FastifyBaseLogger;
-  mailer?: AuthMailer;
+  mailer?: Mailer;
 }
 
 export function createAuthService(
@@ -70,7 +53,7 @@ export function createAuthService(
   deps: AuthServiceDeps,
 ): AuthService {
   const logger = deps.logger.child({ module: "auth" });
-  const mailer = deps.mailer ?? defaultMailer(config, logger);
+  const mailer = deps.mailer ?? createMailer(config, logger);
 
   const auth = betterAuth({
     baseURL: config.betterAuthUrl,
@@ -104,7 +87,28 @@ export function createAuthService(
           // SSO later) passes here. With closed sign-up, only the first
           // account may be created, and only with the one-time setup token;
           // consuming it is atomic, so concurrent attempts cannot both win.
-          before: async (_user, context) => {
+          before: async (user, context) => {
+            // An open invitation for exactly this address authorizes the
+            // account even while sign-up is closed. When the link was
+            // emailed, holding it proves the mailbox: the address counts as
+            // verified.
+            const invitationToken = context?.headers?.get(
+              INVITATION_TOKEN_HEADER,
+            );
+            if (invitationToken) {
+              const invitation = await previewInvitation(
+                db,
+                hashToken(invitationToken),
+              );
+              if (
+                invitation?.status === "pending" &&
+                invitation.email === user.email.toLowerCase()
+              ) {
+                return invitation.delivery === "email"
+                  ? { data: { ...user, emailVerified: true } }
+                  : undefined;
+              }
+            }
             if (config.signup === "open") {
               return;
             }
@@ -120,6 +124,9 @@ export function createAuthService(
                 code: "SIGNUP_DISABLED",
               });
             }
+            // The operator who holds the setup token is trusted with the
+            // address they chose for the owner account.
+            return { data: { ...user, emailVerified: true } };
           },
           // Mirror every auth user into the installation-level domain users
           // table (the row tenants reference via memberships).

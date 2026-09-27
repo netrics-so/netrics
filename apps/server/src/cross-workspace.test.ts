@@ -9,13 +9,9 @@
  * (owner C), plus OUTSIDER with no memberships and D with a third workspace
  * W3 used only for member-add probes.
  *
- * Known accepted trade-off (recorded in ADR 0005 and the milestone 02 doc):
- * POST /members resolves the invitee by email against the installation-level
- * users table, so a workspace admin can distinguish "no such account" (404
- * user_not_found) from "account exists" (200). User accounts are not
- * workspace-owned, and invitations are out of scope until milestone 14, so
- * this existence oracle is deliberate for now and must be revisited when
- * invitation flows land.
+ * The former member-add account-existence oracle (ADR 0005) is closed:
+ * members join through invitations, which answer identically whether or not
+ * an account exists for the invited address.
  */
 import { randomUUID } from "node:crypto";
 
@@ -40,6 +36,7 @@ import {
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
+import { addMemberViaInvitation } from "./test-helpers.js";
 import { createTestDatabase } from "./test-db.js";
 
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
@@ -150,12 +147,14 @@ async function addMember(
   email: string,
   role: WorkspaceRole,
 ) {
-  return call(world.app, {
-    method: "POST",
-    url: `/v1/workspaces/${workspaceId}/members`,
+  return addMemberViaInvitation(
+    world.app,
+    world.db,
     cookie,
-    payload: { email, role },
-  });
+    workspaceId,
+    email,
+    role,
+  );
 }
 
 beforeAll(async () => {
@@ -256,7 +255,7 @@ describe("identifier probing: no workspace existence oracle", () => {
     { method: "GET", path: (w) => `/v1/workspaces/${w}/members` },
     {
       method: "POST",
-      path: (w) => `/v1/workspaces/${w}/members`,
+      path: (w) => `/v1/workspaces/${w}/invitations`,
       payload: { email: "outsider@example.com", role: "viewer" },
     },
     {
@@ -462,18 +461,30 @@ describe("count and list oracles", () => {
   });
 });
 
-describe("member-add user existence oracle (accepted trade-off)", () => {
-  // See the file header and ADR 0005: users are installation-level, so a
-  // workspace admin can probe account existence by email until invitation
-  // flows land in milestone 14. These tests pin the behavior as-is.
-  it("unknown email → 404 user_not_found, existing email → 200", async () => {
-    expectError(
-      await addMember(cookies.d, w3Id, "ghost@example.com", "viewer"),
-      404,
-      "user_not_found",
+describe("member invitations reveal no account existence", () => {
+  // Formerly an accepted trade-off (direct add answered 404 user_not_found):
+  // invitations answer identically whether or not an account exists.
+  it("inviting an unknown and an existing address look the same", async () => {
+    const shape = async (email: string) => {
+      const response = await call(world.app, {
+        method: "POST",
+        url: `/v1/workspaces/${w3Id}/invitations`,
+        cookie: cookies.d,
+        payload: { email, role: "viewer" },
+      });
+      const body = response.json<{
+        invitation: Record<string, unknown>;
+        inviteUrl: string | null;
+      }>();
+      return {
+        status: response.statusCode,
+        keys: Object.keys(body.invitation).sort(),
+        hasUrl: body.inviteUrl !== null,
+      };
+    };
+    expect(await shape("ghost@example.com")).toEqual(
+      await shape("b@example.com"),
     );
-    const added = await addMember(cookies.d, w3Id, "b@example.com", "viewer");
-    expect(added.statusCode).toBe(200);
   });
 });
 
@@ -487,7 +498,7 @@ describe("role escalation attempts", () => {
       },
       {
         method: "POST",
-        url: `/v1/workspaces/${w1Id}/members`,
+        url: `/v1/workspaces/${w1Id}/invitations`,
         payload: { email: "outsider@example.com", role: "viewer" },
       },
       {
@@ -525,7 +536,7 @@ describe("role escalation attempts", () => {
     const forbidden: Array<Omit<Call, "cookie">> = [
       {
         method: "POST",
-        url: `/v1/workspaces/${w1Id}/members`,
+        url: `/v1/workspaces/${w1Id}/invitations`,
         payload: { email: "outsider@example.com", role: "owner" },
       },
       {

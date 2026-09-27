@@ -1,13 +1,11 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import {
   activeProjectResponseSchema,
-  addMemberRequestSchema,
   auditEventListResponseSchema,
   createProjectRequestSchema,
   createWorkspaceRequestSchema,
-  errorResponseSchema,
   memberListResponseSchema,
   memberResponseSchema,
   projectListResponseSchema,
@@ -19,20 +17,16 @@ import {
   workspaceListResponseSchema,
   workspaceResponseSchema,
   workspaceRoleSchema,
-  type WorkspaceRole,
 } from "@netrics/contracts";
 import {
-  addMembership,
   createProject,
   createWorkspaceWithOwner,
   deleteMembership,
   deleteProject,
   findMembership,
   findProject,
-  findUserByEmail,
   findWorkspace,
   insertAuditEvent,
-  isDuplicateMembershipError,
   isLastOwnerError,
   listAuditEvents,
   listMembers,
@@ -42,7 +36,6 @@ import {
   renameWorkspace,
   setActiveProject,
   updateMembershipRole,
-  withUserContext,
   withWorkspace,
   type Database,
   type MemberDetails,
@@ -52,6 +45,7 @@ import {
 import { can, canManageMember } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
+import { parseBody, resolveAccess, sendError } from "./access.js";
 import { createRequireSession } from "./session.js";
 
 export interface WorkspaceRouteDeps {
@@ -59,63 +53,8 @@ export interface WorkspaceRouteDeps {
   db: Database;
 }
 
-function sendError(reply: FastifyReply, code: number, error: string) {
-  return reply.code(code).send(errorResponseSchema.parse({ error }));
-}
-
-function parseBody<T>(
-  schema: z.ZodType<T>,
-  request: FastifyRequest,
-  reply: FastifyReply,
-): T | null {
-  const parsed = schema.safeParse(request.body);
-  if (!parsed.success) {
-    sendError(reply, 400, "invalid_request");
-    return null;
-  }
-  return parsed.data;
-}
-
-interface WorkspaceAccess {
-  workspaceId: string;
-  callerId: string;
-  role: WorkspaceRole;
-}
-
-const workspaceParamsSchema = z.object({ workspaceId: z.uuid() });
 const memberParamsSchema = z.object({ userId: z.uuid() });
 const projectParamsSchema = z.object({ projectId: z.uuid() });
-
-/**
- * Resolves the caller's membership for the :workspaceId route param. The
- * workspace id comes from the URL but is never trusted: the membership lookup
- * runs under the caller's user context, and a missing membership yields 404
- * (not 403) so workspace existence is not leaked to non-members.
- */
-async function resolveAccess(
-  db: Database,
-  request: FastifyRequest,
-  reply: FastifyReply,
-): Promise<WorkspaceAccess | null> {
-  const params = workspaceParamsSchema.safeParse(request.params);
-  if (!params.success) {
-    sendError(reply, 404, "workspace_not_found");
-    return null;
-  }
-  const callerId = request.sessionIdentity!.domainUserId;
-  const membership = await withUserContext(db, { userId: callerId }, (tx) =>
-    findMembership(tx, params.data.workspaceId, callerId),
-  );
-  if (!membership) {
-    sendError(reply, 404, "workspace_not_found");
-    return null;
-  }
-  return {
-    workspaceId: params.data.workspaceId,
-    callerId,
-    role: workspaceRoleSchema.parse(membership.role),
-  };
-}
 
 function toWorkspace(workspace: Workspace) {
   return {
@@ -257,64 +196,9 @@ export function registerWorkspaceRoutes(
         });
       });
 
-      scope.post("/workspaces/:workspaceId/members", async (request, reply) => {
-        const access = await resolveAccess(deps.db, request, reply);
-        if (!access) {
-          return;
-        }
-        if (!can(access.role, "members:add")) {
-          return sendError(reply, 403, "forbidden");
-        }
-        const body = parseBody(addMemberRequestSchema, request, reply);
-        if (!body) {
-          return;
-        }
-        if (!canManageMember(access.role, body.role, "add")) {
-          return sendError(reply, 403, "forbidden");
-        }
-        // Members are added directly by email (invitations land in milestone
-        // 14); users is installation-level, so no tenant context here.
-        const user = await findUserByEmail(deps.db, body.email);
-        if (!user) {
-          return sendError(reply, 404, "user_not_found");
-        }
-        try {
-          const membership = await withWorkspace(
-            deps.db,
-            { workspaceId: access.workspaceId, userId: access.callerId },
-            async (tx) => {
-              const created = await addMembership(tx, {
-                workspaceId: access.workspaceId,
-                userId: user.id,
-                role: body.role,
-              });
-              await insertAuditEvent(tx, {
-                workspaceId: access.workspaceId,
-                actorUserId: access.callerId,
-                action: "membership.added",
-                target: user.id,
-                metadata: { role: body.role, email: user.email },
-              });
-              return created;
-            },
-          );
-          return memberResponseSchema.parse({
-            member: toMember({
-              id: membership.id,
-              userId: user.id,
-              email: user.email,
-              displayName: user.displayName,
-              role: membership.role,
-              createdAt: membership.createdAt,
-            }),
-          });
-        } catch (error) {
-          if (isDuplicateMembershipError(error)) {
-            return sendError(reply, 409, "membership_exists");
-          }
-          throw error;
-        }
-      });
+      // Members join through invitations (routes/invitations.ts): adding an
+      // existing account directly by email would grant access without any
+      // proof that the invitee controls that address.
 
       scope.patch(
         "/workspaces/:workspaceId/members/:userId",

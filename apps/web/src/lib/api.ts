@@ -1,19 +1,23 @@
 import { ZodError, type ZodType } from "zod";
 
 import {
-  addMemberRequestSchema,
+  acceptInvitationResponseSchema,
   connectionDetailResponseSchema,
   connectionListResponseSchema,
   connectionPreviewResponseSchema,
   connectionResponseSchema,
   connectorListResponseSchema,
   createConnectionRequestSchema,
+  createInvitationRequestSchema,
   createProjectRequestSchema,
   createWorkspaceRequestSchema,
   enqueueSyncResponseSchema,
   errorResponseSchema,
   healthLiveResponseSchema,
   healthReadyResponseSchema,
+  invitationListResponseSchema,
+  invitationPreviewResponseSchema,
+  invitationResponseSchema,
   meResponseSchema,
   memberListResponseSchema,
   memberResponseSchema,
@@ -36,6 +40,9 @@ import {
   type EnqueueSyncResponse,
   type HealthLiveResponse,
   type HealthReadyResponse,
+  type InvitationListResponse,
+  type InvitationPreviewResponse,
+  type InvitationResponse,
   type MemberListResponse,
   type MemberResponse,
   type MeResponse,
@@ -74,10 +81,20 @@ export function apiErrorMessage(error: unknown): string {
     switch (error.code) {
       case "last_owner":
         return "The last owner of a workspace cannot be demoted or removed.";
-      case "user_not_found":
-        return "No account exists with that email address.";
       case "membership_exists":
-        return "That user is already a member of this workspace.";
+        return "That person is already a member of this workspace.";
+      case "email_delivery_failed":
+        return "The invitation email could not be sent. Try again later.";
+      case "invitation_not_found":
+        return "This invitation link is not valid.";
+      case "invitation_revoked":
+        return "This invitation was withdrawn. Ask for a new one.";
+      case "invitation_used":
+        return "This invitation has already been used.";
+      case "invitation_expired":
+        return "This invitation has expired. Ask for a new one.";
+      case "invitation_email_mismatch":
+        return "This invitation is for a different email address.";
       case "workspace_already_exists":
         return "A workspace already exists for this installation.";
       case "forbidden":
@@ -139,6 +156,31 @@ function serverGet<T>(
     headers: { cookie: cookieHeader },
     cache: "no-store",
   }).then((response) => parseResponse(schema, response));
+}
+
+export function listInvitations(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<InvitationListResponse> {
+  return serverGet(
+    invitationListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/invitations`,
+  );
+}
+
+/** Public (token holder): invitation details, or null for unknown tokens. */
+export async function getInvitationPreview(
+  token: string,
+): Promise<InvitationPreviewResponse | null> {
+  const response = await fetch(
+    `${apiBaseUrl()}/v1/invitations/${encodeURIComponent(token)}`,
+    { cache: "no-store" },
+  );
+  if (response.status === 404) {
+    return null;
+  }
+  return parseResponse(invitationPreviewResponseSchema, response);
 }
 
 /** Public: whether first-run setup is pending and whether sign-up is open. */
@@ -327,16 +369,39 @@ export function renameWorkspace(
   );
 }
 
-export function addMember(
+export function createInvitation(
   workspaceId: string,
   email: string,
   role: WorkspaceRole,
-): Promise<MemberResponse> {
+): Promise<InvitationResponse> {
   return browserSend(
-    memberResponseSchema,
+    invitationResponseSchema,
     "POST",
-    `/v1/workspaces/${workspaceId}/members`,
-    addMemberRequestSchema.parse({ email, role }),
+    `/v1/workspaces/${workspaceId}/invitations`,
+    createInvitationRequestSchema.parse({ email, role }),
+  );
+}
+
+export async function revokeInvitation(
+  workspaceId: string,
+  invitationId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/v1/workspaces/${workspaceId}/invitations/${invitationId}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw new ApiError(response.status, await readErrorCode(response));
+  }
+}
+
+export function acceptInvitation(
+  token: string,
+): Promise<{ workspaceId: string }> {
+  return browserSend(
+    acceptInvitationResponseSchema,
+    "POST",
+    `/v1/invitations/${encodeURIComponent(token)}/accept`,
   );
 }
 

@@ -134,11 +134,65 @@ export const memberListResponseSchema = z.object({
 });
 export type MemberListResponse = z.infer<typeof memberListResponseSchema>;
 
-export const addMemberRequestSchema = z.object({
+// Invitations: membership is granted only when the invitee accepts with the
+// token, which proves access to the invited mailbox.
+export const createInvitationRequestSchema = z.object({
   email: z.email(),
   role: workspaceRoleSchema,
 });
-export type AddMemberRequest = z.infer<typeof addMemberRequestSchema>;
+export type CreateInvitationRequest = z.infer<
+  typeof createInvitationRequestSchema
+>;
+
+export const invitationDeliverySchema = z.enum(["email", "manual"]);
+export type InvitationDelivery = z.infer<typeof invitationDeliverySchema>;
+
+export const invitationSchema = z.object({
+  id: z.uuid(),
+  email: z.string().min(1),
+  role: workspaceRoleSchema,
+  delivery: invitationDeliverySchema,
+  invitedByName: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  expiresAt: z.iso.datetime(),
+});
+export type Invitation = z.infer<typeof invitationSchema>;
+
+/**
+ * `inviteUrl` is returned only for delivery "manual" (no email transport):
+ * the admin hands the link over. With email delivery it is never exposed.
+ */
+export const invitationResponseSchema = z.object({
+  invitation: invitationSchema,
+  inviteUrl: z.url().nullable(),
+});
+export type InvitationResponse = z.infer<typeof invitationResponseSchema>;
+
+export const invitationListResponseSchema = z.object({
+  invitations: z.array(invitationSchema),
+});
+export type InvitationListResponse = z.infer<
+  typeof invitationListResponseSchema
+>;
+
+/** Public (token holder): what the invite page shows before sign-in. */
+export const invitationPreviewResponseSchema = z.object({
+  workspaceName: z.string().min(1),
+  email: z.string().min(1),
+  role: workspaceRoleSchema,
+  status: z.enum(["pending", "accepted", "revoked", "expired"]),
+  expiresAt: z.iso.datetime(),
+});
+export type InvitationPreviewResponse = z.infer<
+  typeof invitationPreviewResponseSchema
+>;
+
+export const acceptInvitationResponseSchema = z.object({
+  workspaceId: z.uuid(),
+});
+export type AcceptInvitationResponse = z.infer<
+  typeof acceptInvitationResponseSchema
+>;
 
 export const updateMemberRoleRequestSchema = z.object({
   role: workspaceRoleSchema,

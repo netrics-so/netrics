@@ -64,6 +64,13 @@
       "when": 1790522347869,
       "tag": "0008_sql_function_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790530281316,
+      "tag": "0009_invitations",
+      "breakpoints": true
     }
   ]
 }

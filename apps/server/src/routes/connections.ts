@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 
@@ -12,15 +12,12 @@ import {
   connectorListResponseSchema,
   createConnectionRequestSchema,
   enqueueSyncResponseSchema,
-  errorResponseSchema,
   observationListResponseSchema,
   previewConnectionRequestSchema,
   updateConnectionRequestSchema,
-  workspaceRoleSchema,
   type ConnectionAuthState,
   type ConnectionHealth,
   type ConnectionStateView,
-  type WorkspaceRole,
 } from "@netrics/contracts";
 import {
   executeCheck,
@@ -30,11 +27,9 @@ import {
 import type { ConnectorManifest } from "@netrics/connector-sdk";
 import {
   enqueueJob,
-  findMembership,
   findProject,
   insertAuditEvent,
   schema,
-  withUserContext,
   withWorkspace,
   type Database,
   type Transaction,
@@ -50,6 +45,7 @@ import {
   type CredentialKeyring,
 } from "../credentials.js";
 import { upsertConnectorCatalog } from "../sync/catalog.js";
+import { parseBody, resolveAccess, sendError } from "./access.js";
 import { createRequireSession } from "./session.js";
 
 export interface ConnectionRouteDeps {
@@ -59,58 +55,7 @@ export interface ConnectionRouteDeps {
   credentialKeyring: CredentialKeyring;
 }
 
-function sendError(reply: FastifyReply, code: number, error: string) {
-  return reply.code(code).send(errorResponseSchema.parse({ error }));
-}
-
-function parseBody<T>(
-  schema_: z.ZodType<T>,
-  request: FastifyRequest,
-  reply: FastifyReply,
-): T | null {
-  const parsed = schema_.safeParse(request.body);
-  if (!parsed.success) {
-    sendError(reply, 400, "invalid_request");
-    return null;
-  }
-  return parsed.data;
-}
-
-interface WorkspaceAccess {
-  workspaceId: string;
-  callerId: string;
-  role: WorkspaceRole;
-}
-
-const workspaceParamsSchema = z.object({ workspaceId: z.uuid() });
 const connectionParamsSchema = z.object({ connectionId: z.uuid() });
-
-// Same membership resolution as the workspace routes: a missing membership
-// yields 404 so workspace existence is not leaked.
-async function resolveAccess(
-  db: Database,
-  request: FastifyRequest,
-  reply: FastifyReply,
-): Promise<WorkspaceAccess | null> {
-  const params = workspaceParamsSchema.safeParse(request.params);
-  if (!params.success) {
-    sendError(reply, 404, "workspace_not_found");
-    return null;
-  }
-  const callerId = request.sessionIdentity!.domainUserId;
-  const membership = await withUserContext(db, { userId: callerId }, (tx) =>
-    findMembership(tx, params.data.workspaceId, callerId),
-  );
-  if (!membership) {
-    sendError(reply, 404, "workspace_not_found");
-    return null;
-  }
-  return {
-    workspaceId: params.data.workspaceId,
-    callerId,
-    role: workspaceRoleSchema.parse(membership.role),
-  };
-}
 
 type ConnectionRow = typeof schema.connections.$inferSelect;
 type ConnectionStateRow = typeof schema.connectionState.$inferSelect;

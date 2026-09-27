@@ -11,7 +11,8 @@ import {
 } from "@netrics/database";
 
 import { buildApp } from "./app.js";
-import { createAuthService, type AuthMailer } from "./auth/index.js";
+import { createAuthService } from "./auth/index.js";
+import type { Mailer } from "./mail/mailer.js";
 import { loadConfig, type Config } from "./env.js";
 import { createTestDatabase, type TestDatabase } from "./test-db.js";
 
@@ -25,13 +26,15 @@ const sentEmails: CapturedEmail[] = [];
 
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
 
-const capturingMailer: AuthMailer = {
+const capturingMailer: Mailer = {
+  delivers: true,
   async sendVerificationEmail({ to, url }) {
     sentEmails.push({ kind: "verification", to, url });
   },
   async sendPasswordResetEmail({ to, url }) {
     sentEmails.push({ kind: "password-reset", to, url });
   },
+  async sendInvitationEmail() {},
 };
 
 let testDb: TestDatabase;

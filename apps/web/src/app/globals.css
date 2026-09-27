@@ -356,3 +356,10 @@ button.danger:hover:not(:disabled) {
   font-size: 13px;
   color: #8a919c;
 }
+
+/* Copyable one-time links (invitations): show the whole URL. */
+.copy-link {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
