@@ -1,0 +1,6 @@
+# Automatic HTTPS for NETRICS_DOMAIN on NETRICS_HTTPS_PORT (Let's Encrypt; for "localhost", Caddy's
+# local CA). Everything goes to the web app, which proxies the API.
+{$NETRICS_SITE_ADDRESS} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}

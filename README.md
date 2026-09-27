@@ -297,7 +297,7 @@ packages/
   contracts/  Shared zod schemas for HTTP contracts
   ui/         Shared product UI (placeholder)
 docs/         Architecture, milestones, decision records
-deploy/       (reserved for the supported self-hosted compose deployment)
+deploy/       compose/: the supported self-hosted install (Docker Compose + Caddy)
 ```
 
 ## Health checks and failure recovery
@@ -316,6 +316,12 @@ curl -i http://localhost:3001/health/ready    # 503, database down
 pnpm db:up                                    # start PostgreSQL again
 curl -i http://localhost:3001/health/ready    # 200, ready
 ```
+
+## Self-hosting
+
+Install netrics on your own server with Docker Compose: see
+[deploy/compose/README.md](deploy/compose/README.md) (`install.sh`, automatic
+HTTPS, backups, upgrades).
 
 ## Docker
 

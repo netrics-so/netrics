@@ -296,3 +296,21 @@ describe("production hardening", () => {
     });
   });
 });
+
+describe("empty values", () => {
+  it("treat empty optional settings as unset (Compose ${VAR:-})", () => {
+    const config = loadConfig({
+      SMTP_URL: "",
+      MAIL_FROM: "",
+      NETRICS_SETUP_TOKEN: "",
+      APP_ENCRYPTION_KEYS_PREVIOUS: "",
+    });
+    expect(config.smtp).toBeNull();
+    expect(config.setupToken).toBeNull();
+    expect(config.appEncryptionKeysPrevious).toEqual([]);
+    expect(
+      loadMigrationConfig({ NETRICS_APP_DB_PASSWORD: "" }).rolePasswords
+        .netrics_app,
+    ).toBe("netrics_app");
+  });
+});
