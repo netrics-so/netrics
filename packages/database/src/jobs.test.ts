@@ -12,6 +12,7 @@ import {
   enqueueSyncJob,
   failJob,
   heartbeat,
+  renewJobLease,
 } from "./jobs.js";
 import * as schema from "./schema.js";
 import { createTestDatabase, type TestDatabase } from "./test-db.js";
@@ -432,11 +433,11 @@ describe("claim_jobs", () => {
     expect(await claimJobs(schedulerDb, "w-serial", 10, 3600)).toEqual([]);
 
     // Completing the running job unblocks the pending one.
-    await completeJob(schedulerDb, claimedC[0]!);
+    await completeJob(schedulerDb, claimedC[0]!, "w-serial");
     const second = await claimJobs(schedulerDb, "w-serial", 10, 3600);
     const remainingC = [jobC1, jobC2].find((id) => id !== claimedC[0]);
     expect(second.map((job) => job.id)).toEqual([remainingC]);
-    await completeJob(schedulerDb, remainingC!);
+    await completeJob(schedulerDb, remainingC!, "w-serial");
   });
 
   it("requeues stale running jobs and dead-letters exhausted ones", async () => {
@@ -458,37 +459,43 @@ describe("claim_jobs", () => {
       where id = ${exhaustedId}
     `;
 
-    const claimed = await claimJobs(schedulerDb, "w-stale", 10, 1800);
-    // The requeued job becomes claimable; the exhausted one went dead.
-    expect(claimed.map((job) => job.id)).toEqual([staleId]);
+    // The stale job is requeued with backoff (not immediately claimable, so a
+    // job that crashes its worker cannot crash-loop); the exhausted one dies.
+    expect(await claimJobs(schedulerDb, "w-stale", 10, 1800)).toEqual([]);
 
     const rows = await schedulerClient`
-      select id, status, attempts, locked_by, last_error
+      select id, status, attempts, locked_by, last_error,
+             run_at > now() + interval '20 seconds' as backed_off
       from jobs where id in (${staleId}, ${exhaustedId})
       order by id
     `;
     const byId = new Map(rows.map((row) => [row.id as string, row]));
     const stale = byId.get(staleId)!;
-    expect(stale.status).toBe("running"); // requeued, then claimed above
+    expect(stale.status).toBe("pending");
     expect(stale.attempts).toBe(1); // requeue counted the crashed attempt
-    expect(stale.locked_by).toBe("w-stale");
+    expect(stale.locked_by).toBeNull();
+    expect(stale.backed_off).toBe(true);
     expect(stale.last_error).toBe("stale lock requeued");
     const exhausted = byId.get(exhaustedId)!;
     expect(exhausted.status).toBe("dead");
     expect(exhausted.attempts).toBe(3);
     expect(exhausted.locked_by).toBeNull();
 
-    await completeJob(schedulerDb, staleId);
+    await schedulerClient`update jobs set status = 'succeeded' where id = ${staleId}`;
   });
 });
+
+const WORKER = "w-jobs";
 
 describe("completeJob / failJob", () => {
   it("completes a running job exactly once", async () => {
     const id = await seedJob({ workspaceId: workspaceA });
     await claimJobs(schedulerDb, "w-complete", 5, 3600);
-    expect(await completeJob(schedulerDb, id)).toBe(true);
+    // Only the lease holder may complete it.
+    expect(await completeJob(schedulerDb, id, "someone-else")).toBe(false);
+    expect(await completeJob(schedulerDb, id, "w-complete")).toBe(true);
     // No longer running: a second completion is a no-op.
-    expect(await completeJob(schedulerDb, id)).toBe(false);
+    expect(await completeJob(schedulerDb, id, "w-complete")).toBe(false);
     const rows = await schedulerClient`
       select status, locked_by, locked_at from jobs where id = ${id}
     `;
@@ -501,9 +508,9 @@ describe("completeJob / failJob", () => {
 
   it("retries with exponential backoff (monotonic run_at)", async () => {
     const id = await seedJob({ workspaceId: workspaceA });
-    await claimJobs(schedulerDb, "w-backoff", 5, 3600);
+    await claimJobs(schedulerDb, WORKER, 5, 3600);
 
-    const first = await failJob(schedulerDb, id, "transient: boom", {
+    const first = await failJob(schedulerDb, id, WORKER, "transient: boom", {
       retryable: true,
     });
     expect(first).toMatchObject({ status: "pending", attempts: 1 });
@@ -513,11 +520,17 @@ describe("completeJob / failJob", () => {
     expect(delay1).toBeLessThan(40_000);
 
     await schedulerClient`
-      update jobs set status = 'running' where id = ${id}
+      update jobs set status = 'running', locked_by = ${WORKER} where id = ${id}
     `;
-    const second = await failJob(schedulerDb, id, "transient: boom again", {
-      retryable: true,
-    });
+    const second = await failJob(
+      schedulerDb,
+      id,
+      WORKER,
+      "transient: boom again",
+      {
+        retryable: true,
+      },
+    );
     expect(second).toMatchObject({ status: "pending", attempts: 2 });
     // 2^2 * 15s = 60s — strictly further out than the first retry.
     expect(second!.runAt.getTime()).toBeGreaterThan(first!.runAt.getTime());
@@ -531,15 +544,15 @@ describe("completeJob / failJob", () => {
 
   it("sends retryable failures to dead once max_attempts is reached", async () => {
     const id = await seedJob({ workspaceId: workspaceA, maxAttempts: 2 });
-    await claimJobs(schedulerDb, "w-dead", 5, 3600);
-    const first = await failJob(schedulerDb, id, "transient: one", {
+    await claimJobs(schedulerDb, WORKER, 5, 3600);
+    const first = await failJob(schedulerDb, id, WORKER, "transient: one", {
       retryable: true,
     });
     expect(first).toMatchObject({ status: "pending", attempts: 1 });
     await schedulerClient`
-      update jobs set status = 'running' where id = ${id}
+      update jobs set status = 'running', locked_by = ${WORKER} where id = ${id}
     `;
-    const second = await failJob(schedulerDb, id, "transient: two", {
+    const second = await failJob(schedulerDb, id, WORKER, "transient: two", {
       retryable: true,
     });
     expect(second).toMatchObject({ status: "dead", attempts: 2 });
@@ -547,10 +560,16 @@ describe("completeJob / failJob", () => {
 
   it("sends non-retryable failures straight to dead", async () => {
     const id = await seedJob({ workspaceId: workspaceA });
-    await claimJobs(schedulerDb, "w-dead", 5, 3600);
-    const result = await failJob(schedulerDb, id, "contract: bad payload", {
-      retryable: false,
-    });
+    await claimJobs(schedulerDb, WORKER, 5, 3600);
+    const result = await failJob(
+      schedulerDb,
+      id,
+      WORKER,
+      "contract: bad payload",
+      {
+        retryable: false,
+      },
+    );
     expect(result).toMatchObject({ status: "dead", attempts: 1 });
     const rows = await schedulerClient`
       select last_error from jobs where id = ${id}
@@ -725,5 +744,78 @@ describe("scheduler connection_state grants (migration 0006)", () => {
     await expect(schedulerClient`delete from connection_state`).rejects.toThrow(
       /permission denied/,
     );
+  });
+});
+
+describe("leases", () => {
+  it("renewal keeps a long job from being reclaimed; loss fences the old owner", async () => {
+    const id = await seedJob({ workspaceId: workspaceA });
+    const [job] = await claimJobs(schedulerDb, "w-lease", 5, 3600);
+    expect(job!.id).toBe(id);
+
+    // The job has run "long": its lease is 10 minutes old.
+    await schedulerClient`
+      update jobs set locked_at = now() - interval '10 minutes' where id = ${id}
+    `;
+    // Renewing makes it current again, so a 5-minute stale scan leaves it.
+    expect(await renewJobLease(schedulerDb, id, "w-lease")).toBe(true);
+    expect(await claimJobs(schedulerDb, "w-other", 5, 300)).toEqual([]);
+
+    // Without renewal the lease goes stale and the job is taken over.
+    await schedulerClient`
+      update jobs set locked_at = now() - interval '10 minutes', run_at = now()
+      where id = ${id}
+    `;
+    await claimJobs(schedulerDb, "w-other", 5, 300); // requeues (backoff)
+    await schedulerClient`update jobs set run_at = now() where id = ${id}`;
+    const [takenOver] = await claimJobs(schedulerDb, "w-other", 5, 300);
+    expect(takenOver!.id).toBe(id);
+
+    // The original worker can neither renew, complete nor fail it now.
+    expect(await renewJobLease(schedulerDb, id, "w-lease")).toBe(false);
+    expect(await completeJob(schedulerDb, id, "w-lease")).toBe(false);
+    expect(
+      await failJob(schedulerDb, id, "w-lease", "late", { retryable: true }),
+    ).toBeNull();
+    expect(await completeJob(schedulerDb, id, "w-other")).toBe(true);
+  });
+});
+
+describe("concurrent claims", () => {
+  it("never start two jobs of one connection, even when racing", async () => {
+    const [connection] = await withWorkspace(
+      db,
+      { workspaceId: workspaceA },
+      (tx) =>
+        tx
+          .insert(schema.connections)
+          .values({
+            workspaceId: workspaceA,
+            connectorId: "demo",
+            name: "race",
+          })
+          .returning({ id: schema.connections.id }),
+    );
+    const connectionId = connection!.id;
+    await seedJob({
+      workspaceId: workspaceA,
+      kind: "connection.sync",
+      connectionId,
+    });
+    await seedJob({
+      workspaceId: workspaceA,
+      kind: "connection.backfill",
+      connectionId,
+    });
+    const claimers = Array.from({ length: 8 }, (_, i) =>
+      claimJobs(schedulerDb, `w-race-${i}`, 5, 3600),
+    );
+    const claimed = (await Promise.all(claimers)).flat();
+    expect(
+      claimed.filter((job) => job.connectionId === connectionId),
+    ).toHaveLength(1);
+    await schedulerClient`
+      update jobs set status = 'succeeded' where connection_id = ${connectionId}
+    `;
   });
 });

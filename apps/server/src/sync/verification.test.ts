@@ -306,6 +306,11 @@ describe("crash-retry idempotency at the job level", () => {
     const worker = await startWorker({ staleAfterSeconds: 60 });
     try {
       await waitFor(async () => {
+        // Skip the stale-requeue backoff (asserted in jobs.test.ts).
+        await schedulerRaw`
+          update jobs set run_at = now()
+          where id = ${crashedJob} and status = 'pending'
+        `;
         const statuses = await Promise.all([crashedJob, cleanJob].map(jobRow));
         return statuses.every((row) => row?.status === "succeeded");
       });

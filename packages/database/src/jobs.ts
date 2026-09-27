@@ -120,14 +120,40 @@ export async function claimJobs(
  * was not running (e.g. already completed by another path) — callers should
  * treat that as worth logging, not as an error.
  */
+/**
+ * Marks a job succeeded. Fenced on the lease: only the worker that holds the
+ * job (locked_by) can complete it, so a slow worker whose lease was reclaimed
+ * cannot complete the run its replacement owns. Returns false when fenced.
+ */
 export async function completeJob(
   schedulerDb: Db | Transaction,
   jobId: string,
+  workerId: string,
 ): Promise<boolean> {
   const rows = await schedulerDb.execute(
     sql`update jobs
         set status = 'succeeded', locked_by = null, locked_at = null
         where id = ${jobId}::uuid and status = 'running'
+          and locked_by = ${workerId}
+        returning id`,
+  );
+  return rows.length === 1;
+}
+
+/**
+ * Extends the lease of a running job held by `workerId`. Workers call this
+ * periodically while a handler runs so long jobs are not reclaimed as stale.
+ * Returns false when the lease is no longer held (the job was reclaimed).
+ */
+export async function renewJobLease(
+  schedulerDb: Db | Transaction,
+  jobId: string,
+  workerId: string,
+): Promise<boolean> {
+  const rows = await schedulerDb.execute(
+    sql`update jobs set locked_at = now()
+        where id = ${jobId}::uuid and status = 'running'
+          and locked_by = ${workerId}
         returning id`,
   );
   return rows.length === 1;
@@ -148,12 +174,13 @@ export interface FailJobResult {
  * terminal `failed` status: an expected domain failure (e.g. rejected
  * credentials) that must not page the dead-letter queue. `error` lands in
  * last_error verbatim: callers MUST pass an already-redacted message (see
- * redactSecrets in @netrics/connector-runtime). Returns null when the job was
- * not running.
+ * redactSecrets in @netrics/connector-runtime). Returns null when the job is
+ * not running under `workerId`'s lease (fenced, like completeJob).
  */
 export async function failJob(
   schedulerDb: Db | Transaction,
   jobId: string,
+  workerId: string,
   error: string,
   options: { retryable: boolean; deadLetter?: boolean },
 ): Promise<FailJobResult | null> {
@@ -180,6 +207,7 @@ export async function failJob(
             locked_by = null,
             locked_at = null
         where id = ${jobId}::uuid and status = 'running'
+          and locked_by = ${workerId}
         returning status, attempts, run_at`,
   );
   const row = rows[0];
