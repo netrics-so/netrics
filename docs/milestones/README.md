@@ -52,6 +52,7 @@ distribution uses the same images.
 | [01 — Delivery foundation](./01-delivery-foundation.md)                   | A merge to main deploys exact images to Railway    |
 | [02 — Identity and tenancy](./02-identity-and-tenancy.md)                 | Secure workspace login and isolation               |
 | [03 — Connector and metrics spine](./03-connector-and-metrics-spine.md)   | Demo connector syncs durable observations          |
+| [03.1–03.3 — Post-audit hardening](./03x-post-audit-hardening.md)         | Secure roles, correct sync, portable self-host     |
 | [04 — Dashboard MVP](./04-dashboard-mvp.md)                               | A browser dashboard displays collected data        |
 | [05 — Vercel Web Analytics](./05-vercel-connector.md)                     | First real marketplace connection                  |
 | [06 — Screens and Apple TV](./06-screens-and-apple-tv.md)                 | Paired Apple TV displays a managed playlist        |
@@ -73,7 +74,10 @@ distribution uses the same images.
 └── 01 delivery
     └── 02 identity and tenancy
         └── 03 connector and metrics spine
-            └── 04 dashboard MVP
+            └── 03.1 security hardening
+                ├── 03.2 sync and data-layer correctness
+                └── 03.3 portable images and self-hosting
+                    └── 04 dashboard MVP (after 03.2 and 03.3)
                 └── 05 Vercel
                     └── 06 screens and Apple TV
                         └── 07 Google Search Console
@@ -90,6 +94,17 @@ distribution uses the same images.
 
 The ordering is intentionally strict for a solo implementation. Later, a larger
 team could parallelize independent connectors after milestone 07.
+
+## Current status
+
+- Done: 00, 01, 02, 03
+- Next: 03.1 → 03.2 and 03.3 in parallel → 04 (lean) → 05 → 06
+- Tracking: GitHub milestones and issues in this repository; hosted-service
+  steps in the private cloud repository
+
+The MVP target is an Apple TV showing demo and Vercel metrics. See
+[ADR 0007](../decisions/0007-native-tvos-tiles.md) for the native-tiles
+decision.
 
 ## Milestone completion record
 

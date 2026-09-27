@@ -67,3 +67,22 @@ remotely, and reliably display server-rendered dashboards.
 Pair a physical or simulator Apple TV, assign two dashboards, observe rotation
 and a remote assignment change, interrupt the network, confirm cached playback,
 restore the network, and revoke the device.
+
+## Scope change (2026-09)
+
+Per [ADR 0007](../decisions/0007-native-tvos-tiles.md), the MVP renders tiles
+natively in SwiftUI from `GET /v1/device/dashboard` (JSON with ETag). It does
+not use server-rendered snapshots. The browser kiosk uses the same endpoint.
+
+The following items are deferred until arbitrary device layouts are needed:
+
+- snapshot storage
+- the Playwright renderer
+- render sessions
+- snapshot versioning
+
+The pairing and credential security invariants above apply unchanged. So does
+the exit gate; "cached playback" means the cached JSON payload.
+
+Issues: #55 devices and pairing, #56 device credentials, #57 device dashboard
+endpoint, #58 tvOS app, #59 browser kiosk.

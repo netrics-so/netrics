@@ -396,6 +396,11 @@ authorization out of the core.
 
 ## Apple TV and rendering
 
+> Update (2026-09): the MVP renders native SwiftUI tiles from a JSON device
+> endpoint instead of snapshots; see
+> [ADR 0007](./decisions/0007-native-tvos-tiles.md). The snapshot design below
+> is deferred, not removed.
+
 The initial tvOS application is a thin native client:
 
 1. Generate a short-lived pairing code and device nonce.
@@ -583,7 +588,7 @@ and community decision.
 | Metrics store          | PostgreSQL                           | Volume or query cost exceeds practical partitioning     |
 | Connector distribution | Reviewed bundle                      | Release cadence or connector count becomes limiting     |
 | Community execution    | Reviewed code only in SaaS           | Arbitrary tenant code becomes a validated market need   |
-| TV rendering           | Native client + server snapshots     | Customers need smooth live native charts                |
+| TV rendering           | Native tiles from JSON (ADR 0007)    | Customers need arbitrary layouts on devices             |
 | Self-host deployment   | Docker Compose                       | Sustained customer demand justifies Helm/Kubernetes     |
 | Authentication         | Embedded                             | External identity operation becomes simpler overall     |
 

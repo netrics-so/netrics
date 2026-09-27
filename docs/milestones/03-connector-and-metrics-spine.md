@@ -78,7 +78,7 @@ replaying every job.
   [#18](https://github.com/netrics-so/netrics/pull/18),
   [#19](https://github.com/netrics-so/netrics/pull/19),
   [#20](https://github.com/netrics-so/netrics/pull/20) (adversarial
-  verification + exit gate; number expected — fix here if it differs)
+  verification + exit gate)
 - Exit gate: run locally against the built server (api + worker + scheduler
   processes) and web app with real PostgreSQL — demo connection created through
   the web origin (cookie jar), backfill completed with 364 observations,
@@ -96,3 +96,8 @@ replaying every job.
   `auth_failed` connections until credentials are updated through the API
   (credential repair resets the state and makes the connection due
   immediately).
+- Post-completion review (2026-09): the handover audit found scheduler,
+  job-lease and observation-schema defects that the exit gate did not exercise.
+  It also found that the release had not reached production (invalid
+  encryption key format in the hosted environment). The follow-up work lives in
+  [03.1–03.3](./03x-post-audit-hardening.md).

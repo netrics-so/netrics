@@ -11,3 +11,4 @@ product is built.
 | [0004](./0004-formatting-and-linting.md)     | Formatting and linting: Prettier + ESLint flat config       |
 | [0005](./0005-authentication-integration.md) | Authentication integration: Better Auth behind adapters     |
 | [0006](./0006-postgresql-job-queue.md)       | Job queue: hand-rolled PostgreSQL table, SKIP LOCKED        |
+| [0007](./0007-native-tvos-tiles.md)          | Apple TV MVP: native SwiftUI tiles from a JSON endpoint     |
