@@ -1,9 +1,12 @@
+import { createDefaultRegistry } from "@netrics/connector-runtime";
 import {
+  createDatabase,
   findRolesWithDefaultPasswords,
   runMigrations,
 } from "@netrics/database";
 
 import { ConfigError, loadMigrationConfig } from "./env.js";
+import { syncCatalog } from "./sync/catalog.js";
 
 function loadConfigOrExit() {
   try {
@@ -23,6 +26,14 @@ try {
   await runMigrations(config.databaseMigrationUrl, {
     rolePasswords: config.rolePasswords,
   });
+  // The connector catalog mirrors the bundle shipped in this image; it is
+  // installation-level and read-only for the application roles (#36).
+  const ownerDb = createDatabase(config.databaseMigrationUrl, { max: 1 });
+  try {
+    await syncCatalog(ownerDb, createDefaultRegistry());
+  } finally {
+    await ownerDb.$client.end({ timeout: 5 }).catch(() => undefined);
+  }
   console.log(
     `Migrations applied (version ${config.version}, commit ${config.commit})`,
   );

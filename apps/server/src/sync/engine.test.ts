@@ -327,8 +327,11 @@ beforeAll(async () => {
   activityProbe = createRawSqlClient(testDb.adminUrl, { max: 1 });
 
   // Explicit catalog sync (production does this at process startup).
-  await syncCatalog(appDb, registry);
-  await syncCatalog(appDb, registry); // idempotent
+  // Test-only connectors join the catalog as `migrate` would install them.
+  const ownerDb = createDatabase(testDb.adminUrl, { max: 1 });
+  await syncCatalog(ownerDb, registry);
+  await syncCatalog(ownerDb, registry); // idempotent
+  await ownerDb.$client.end({ timeout: 5 });
 
   const [userA, userB] = await appDb
     .insert(schema.users)

@@ -2,11 +2,15 @@ import { randomBytes } from "node:crypto";
 
 import { afterAll } from "vitest";
 
+import { createDefaultRegistry } from "@netrics/connector-runtime";
 import {
   DEV_ROLE_PASSWORDS,
+  createDatabase,
   createRawSqlClient,
   runMigrations,
 } from "@netrics/database";
+
+import { syncCatalog } from "./sync/catalog.js";
 
 // Copy of packages/database/src/test-db.ts (kept local to avoid widening the
 // package's export map for test-only code). Hooks must be registered at
@@ -67,6 +71,13 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   const appUrl = app.toString();
 
   await runMigrations(adminUrl, { rolePasswords: DEV_ROLE_PASSWORDS });
+  // Like `migrate`: the default connector catalog, written as the owner.
+  const owner = createDatabase(adminUrl, { max: 1 });
+  try {
+    await syncCatalog(owner, createDefaultRegistry());
+  } finally {
+    await owner.$client.end({ timeout: 5 }).catch(() => undefined);
+  }
 
   const database: TestDatabase = {
     name,

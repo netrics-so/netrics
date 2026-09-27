@@ -62,11 +62,8 @@ beforeAll(async () => {
     name: "Scheduler WS",
     ownerUserId: user!.id,
   });
-  await appDb.insert(schema.connectors).values({
-    id: "demo",
-    version: "1.0.0",
-    manifest: { id: "demo", minRefreshIntervalSeconds: 120 },
-  });
+  // The demo connector's catalog row exists already (test-db runs the
+  // catalog sync like `migrate`).
 
   [connDue, connAuthFailed, connFuture] = await withWorkspace(
     appDb,

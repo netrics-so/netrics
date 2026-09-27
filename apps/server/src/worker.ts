@@ -16,7 +16,6 @@ import {
 
 import { createCredentialKeyring, redactSecrets } from "./credentials.js";
 import type { Config } from "./env.js";
-import { syncCatalog } from "./sync/catalog.js";
 import {
   createJobHandlers,
   NonRetryableJobError,
@@ -288,11 +287,7 @@ export async function startWorker(config: Config): Promise<void> {
   const appDb = createDatabase(config.databaseUrl, {
     max: config.workerConcurrency + 2,
   });
-  // Installation-level catalog (connectors + metric definitions) is synced
-  // from the reviewed bundle at startup; the sync engine also upserts
-  // first-use definitions inline.
   const registry = createDefaultRegistry();
-  await syncCatalog(appDb, registry);
   const worker = createWorker({
     schedulerDb,
     appDb,
