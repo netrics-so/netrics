@@ -7,13 +7,81 @@ import {
   type ConnectionContext,
   type Connector,
   type ConnectorManifest,
+  type ConnectorRuntime,
   type Resource,
   type SyncRequest,
   type SyncResult,
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
+import { EgressDeniedError, createEgressFetch } from "./egress.js";
 import { redactConnectorError, redactCredentialValues } from "./redact.js";
+
+/** Time budget per connector call (one check, discover, or sync page). */
+export interface ExecuteOptions {
+  timeoutMs?: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 60_000;
+
+/** The connector call exceeded its time budget (a retryable failure). */
+export class ConnectorTimeoutError extends Error {
+  constructor(connectorId: string, timeoutMs: number) {
+    super(`connector "${connectorId}" did not answer within ${timeoutMs} ms`);
+    this.name = "ConnectorTimeoutError";
+  }
+}
+
+/**
+ * An egress violation means the connector reached for a host it did not
+ * declare (or a private address): a broken connector, never retried.
+ * Everything else is a redacted, retryable provider failure.
+ */
+function classifyConnectorError(
+  connector: Connector,
+  error: unknown,
+  context: ConnectionContext,
+): Error {
+  if (error instanceof EgressDeniedError) {
+    return new ContractViolationError(
+      `connector "${connector.manifest.id}": ${error.message}`,
+    );
+  }
+  return redactConnectorError(error, context.credentials);
+}
+
+/**
+ * Runs one connector call with its runtime capabilities (egress-controlled
+ * fetch, abort signal) and a time budget. The budget is enforced even when
+ * connector code ignores the signal.
+ */
+async function withRuntime<T>(
+  connector: Connector,
+  options: ExecuteOptions,
+  call: (runtime: ConnectorRuntime) => Promise<T>,
+): Promise<T> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const runtime: ConnectorRuntime = {
+    fetch: createEgressFetch({
+      allowedDomains: connector.manifest.outboundDomains,
+      signal: controller.signal,
+    }),
+    signal: controller.signal,
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new ConnectorTimeoutError(connector.manifest.id, timeoutMs));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([call(runtime), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * The connector broke the SDK contract (invalid transport objects, undeclared
@@ -111,6 +179,7 @@ export async function executeSync(
   connector: Connector,
   context: ConnectionContext,
   request: SyncRequest,
+  options: ExecuteOptions = {},
 ): Promise<SyncResult> {
   const parsedRequest = syncRequestSchema.safeParse(request);
   if (!parsedRequest.success) {
@@ -121,9 +190,11 @@ export async function executeSync(
   assertContextIsPlain(context);
   let raw: unknown;
   try {
-    raw = await connector.sync(context, parsedRequest.data);
+    raw = await withRuntime(connector, options, (runtime) =>
+      connector.sync(context, parsedRequest.data, runtime),
+    );
   } catch (error) {
-    throw redactConnectorError(error, context.credentials);
+    throw classifyConnectorError(connector, error, context);
   }
   return validateSyncResult(connector.manifest, raw);
 }
@@ -137,13 +208,18 @@ export async function executeSync(
 export async function executeCheck(
   connector: Connector,
   context: ConnectionContext,
+  options: ExecuteOptions = {},
 ): Promise<CheckResult> {
   assertContextIsPlain(context);
   let raw: unknown;
   try {
-    raw = await connector.check(context);
+    raw = await withRuntime(
+      connector,
+      { timeoutMs: 15_000, ...options },
+      (runtime) => connector.check(context, runtime),
+    );
   } catch (error) {
-    throw redactConnectorError(error, context.credentials);
+    throw classifyConnectorError(connector, error, context);
   }
   const parsed = checkResultSchema.safeParse(raw);
   if (!parsed.success) {
@@ -169,13 +245,18 @@ export async function executeCheck(
 export async function executeDiscover(
   connector: Connector,
   context: ConnectionContext,
+  options: ExecuteOptions = {},
 ): Promise<Resource[]> {
   assertContextIsPlain(context);
   let raw: unknown;
   try {
-    raw = await connector.discover(context);
+    raw = await withRuntime(
+      connector,
+      { timeoutMs: 15_000, ...options },
+      (runtime) => connector.discover(context, runtime),
+    );
   } catch (error) {
-    throw redactConnectorError(error, context.credentials);
+    throw classifyConnectorError(connector, error, context);
   }
   const parsed = z.array(resourceSchema).safeParse(raw);
   if (!parsed.success) {

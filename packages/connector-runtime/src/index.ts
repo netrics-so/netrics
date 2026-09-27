@@ -1,9 +1,17 @@
 export {
+  EgressDeniedError,
+  createEgressFetch,
+  hostAllowed,
+  isBlockedAddress,
+} from "./egress.js";
+export {
   assertContextIsPlain,
+  ConnectorTimeoutError,
   ContractViolationError,
   executeCheck,
   executeDiscover,
   executeSync,
+  type ExecuteOptions,
 } from "./execute.js";
 export {
   redactConnectorError,
