@@ -43,11 +43,23 @@ const envSchema = z
         message: "APP_ENCRYPTION_KEY must decode to exactly 32 bytes",
       })
       .optional(),
-    // Base URL of this API server as reachable by browsers.
-    BETTER_AUTH_URL: z.url().default("http://localhost:3001"),
+    // Public base URL of the auth endpoints as browsers reach them. Required
+    // (https) for the api role in production; localhost default otherwise.
+    BETTER_AUTH_URL: z.url().optional(),
     // Browser origin allowed to call the API with credentials (CORS +
-    // better-auth trustedOrigins).
-    WEB_ORIGIN: z.url().default("http://localhost:3000"),
+    // better-auth trustedOrigins). Same production rule as BETTER_AUTH_URL.
+    WEB_ORIGIN: z.url().optional(),
+    // Outbound email for verification and password reset, e.g.
+    // smtps://user:pass@smtp.example.com:465. Without it, production refuses
+    // to send auth emails instead of logging their secret links.
+    SMTP_URL: z
+      .url()
+      .refine((value) => /^smtps?:\/\//.test(value), {
+        message: "SMTP_URL must start with smtp:// or smtps://",
+      })
+      .optional(),
+    // Sender address for auth emails; required with SMTP_URL.
+    MAIL_FROM: z.string().min(3).optional(),
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
       .default("info"),
@@ -62,7 +74,41 @@ const envSchema = z
     GIT_SHA: z.string().min(1).default("dev"),
   })
   .superRefine((env, ctx) => {
-    if (env.NODE_ENV === "production" && env.NETRICS_ALLOW_PRIVILEGED_DB) {
+    const production = env.NODE_ENV === "production";
+    if (production && env.NETRICS_ROLE === "api") {
+      for (const key of ["BETTER_AUTH_URL", "WEB_ORIGIN"] as const) {
+        const value = env[key];
+        if (!value || new URL(value).protocol !== "https:") {
+          ctx.addIssue({
+            code: "custom",
+            path: [key],
+            message: `${key} must be set to an https:// URL when NODE_ENV=production`,
+          });
+        }
+      }
+    }
+    if (production && env.BETTER_AUTH_SECRET === DEV_BETTER_AUTH_SECRET) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["BETTER_AUTH_SECRET"],
+        message: "BETTER_AUTH_SECRET is the public development value",
+      });
+    }
+    if (production && env.APP_ENCRYPTION_KEY === DEV_APP_ENCRYPTION_KEY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["APP_ENCRYPTION_KEY"],
+        message: "APP_ENCRYPTION_KEY is the public development value",
+      });
+    }
+    if (env.SMTP_URL && !env.MAIL_FROM) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["MAIL_FROM"],
+        message: "MAIL_FROM is required when SMTP_URL is set",
+      });
+    }
+    if (production && env.NETRICS_ALLOW_PRIVILEGED_DB) {
       ctx.addIssue({
         code: "custom",
         path: ["NETRICS_ALLOW_PRIVILEGED_DB"],
@@ -122,8 +168,12 @@ const envSchema = z
     workerConcurrency: env.WORKER_CONCURRENCY,
     betterAuthSecret: env.BETTER_AUTH_SECRET ?? DEV_BETTER_AUTH_SECRET,
     appEncryptionKey: env.APP_ENCRYPTION_KEY ?? DEV_APP_ENCRYPTION_KEY,
-    betterAuthUrl: env.BETTER_AUTH_URL,
-    webOrigin: env.WEB_ORIGIN,
+    betterAuthUrl: env.BETTER_AUTH_URL ?? "http://localhost:3001",
+    webOrigin: env.WEB_ORIGIN ?? "http://localhost:3000",
+    smtp:
+      env.SMTP_URL && env.MAIL_FROM
+        ? { url: env.SMTP_URL, from: env.MAIL_FROM }
+        : null,
     logLevel: env.LOG_LEVEL,
     role: env.NETRICS_ROLE,
     allowPrivilegedDb: env.NETRICS_ALLOW_PRIVILEGED_DB,
