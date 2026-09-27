@@ -13,3 +13,4 @@ product is built.
 | [0006](./0006-postgresql-job-queue.md)            | Job queue: hand-rolled PostgreSQL table, SKIP LOCKED        |
 | [0007](./0007-native-tvos-tiles.md)               | Apple TV MVP: native SwiftUI tiles from a JSON endpoint     |
 | [0008](./0008-observation-identity-and-values.md) | Observation identity, revisions, and value representation   |
+| [0009](./0009-api-principals.md)                  | API principals: users, service accounts, devices            |

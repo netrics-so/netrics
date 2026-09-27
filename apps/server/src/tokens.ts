@@ -11,3 +11,11 @@ export function generateToken(): string {
 export function hashToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
+
+/**
+ * Bearer token for a service account or device. The "nt_" prefix makes
+ * leaked tokens recognizable to secret scanners.
+ */
+export function generatePrincipalToken(): string {
+  return `nt_${generateToken()}`;
+}

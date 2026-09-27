@@ -33,6 +33,12 @@ export interface RouteDoc {
   errors?: ErrorStatus[];
   /** Public route (no session): no 401 documented. */
   public?: boolean;
+  /** Admin API: instance-admin session or a scoped service bearer token. */
+  admin?: boolean;
+}
+
+function securityFor(doc: RouteDoc): Array<Record<string, string[]>> {
+  return doc.admin ? [{ session: [] }, { bearer: [] }] : [{ session: [] }];
 }
 
 /**
@@ -61,7 +67,7 @@ export function routeSchema(doc: RouteDoc) {
     ...(doc.body ? { body: doc.body } : {}),
     ...(doc.querystring ? { querystring: doc.querystring } : {}),
     response,
-    ...(doc.public ? {} : { security: [{ session: [] }] }),
+    ...(doc.public ? {} : { security: securityFor(doc) }),
   };
 }
 
@@ -89,6 +95,13 @@ export async function registerOpenApi(
             type: "apiKey",
             in: "cookie",
             name: "better-auth.session_token",
+          },
+          bearer: {
+            type: "http",
+            scheme: "bearer",
+            description:
+              "Service-account or device token (nt_…), created by the " +
+              "operator CLI or device pairing.",
           },
         },
       },

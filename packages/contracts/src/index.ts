@@ -451,3 +451,19 @@ export const observationListResponseSchema = z.object({
 export type ObservationListResponse = z.infer<
   typeof observationListResponseSchema
 >;
+
+// Installation admin API (/v1/admin, ADR 0009).
+export const adminWorkspaceSchema = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  createdAt: z.iso.datetime(),
+  memberCount: z.number().int().min(0),
+});
+export type AdminWorkspace = z.infer<typeof adminWorkspaceSchema>;
+
+export const adminWorkspaceListResponseSchema = z.object({
+  workspaces: z.array(adminWorkspaceSchema),
+});
+export type AdminWorkspaceListResponse = z.infer<
+  typeof adminWorkspaceListResponseSchema
+>;

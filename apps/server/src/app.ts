@@ -25,6 +25,7 @@ import {
   requestIdFromHeader,
 } from "./http-hardening.js";
 import { createMailer, type Mailer } from "./mail/mailer.js";
+import { registerAdminRoutes } from "./routes/admin.js";
 import { registerConnectionRoutes } from "./routes/connections.js";
 import { registerInvitationRoutes } from "./routes/invitations.js";
 import { registerOpenApi, routeSchema } from "./routes/openapi.js";
@@ -96,6 +97,7 @@ export async function buildApp(
 
   registerSessionRoutes(app, { authService, db });
   registerWorkspaceRoutes(app, { authService, db });
+  registerAdminRoutes(app, { authService, db });
   registerInvitationRoutes(app, {
     authService,
     db,
