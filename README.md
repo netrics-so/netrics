@@ -264,8 +264,9 @@ People join a workspace through invitations: `/workspaces/:id/settings`
 invites by email and lists pending invitations, and `/invite/:token` lets the
 invitee sign in or create their account and accept.
 
-The browser never talks to the API directly. Next.js rewrites
-(`apps/web/next.config.ts`) proxy `/api/auth/*` and `/v1/*` to the API, so
+The browser never talks to the API directly. Route handlers in the web app
+(`apps/web/src/lib/api-proxy.ts`) proxy `/api/auth/*` and `/v1/*` to the API
+at request time, so
 the session cookie is a plain first-party cookie on the web origin — no CORS
 or cross-site cookie configuration is needed. Client-side code calls
 same-origin relative URLs; server components call the API at
@@ -276,9 +277,9 @@ exactly one place, `apps/web/src/lib/auth.ts`.
 Web environment variables:
 
 - `NETRICS_API_URL` — where the web server reaches the API (default
-  `http://localhost:3001`). Used for server-side fetches **and** baked into
-  the rewrite destinations at build time, so when it differs from the default
-  it must be set for both `next build` and `next start`.
+  `http://localhost:3001`), read at request time by the proxy and by
+  server-side fetches. Nothing about the API location is baked into the
+  image, so one published web image works against any API.
 - No `NEXT_PUBLIC_` API URL exists on purpose: the browser only ever uses
   same-origin relative URLs, so nothing API-related is inlined into the
   client bundle.

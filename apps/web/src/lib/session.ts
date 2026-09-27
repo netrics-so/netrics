@@ -2,9 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-function apiBaseUrl(): string {
-  return process.env.NETRICS_API_URL ?? "http://localhost:3001";
-}
+import { apiBaseUrl } from "./api-proxy";
 
 const getSessionResponseSchema = z
   .object({
