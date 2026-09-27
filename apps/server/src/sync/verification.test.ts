@@ -188,7 +188,9 @@ describe("concurrent scheduling", () => {
   it("two workers racing one connection serialize runs; final state equals a single run", async () => {
     // Control: the same connection kind run exactly once.
     const controlId = await seedConnection(workspaceA, "demo");
-    // Raced: three pending sync jobs for one connection, two workers.
+    // Raced: three sync jobs for one connection, two workers. At most one sync
+    // may wait per connection (jobs_one_pending_sync), so each next sync is
+    // queued while its predecessor is claimed: the realistic race.
     const racedId = await seedConnection(workspaceA, "demo");
 
     // Instrument per-connection in-flight handler invocations across both
@@ -225,23 +227,21 @@ describe("concurrent scheduling", () => {
         controlId,
         "connection.sync",
       );
-      const racedJobs = await Promise.all([
-        enqueue(workspaceA, racedId, "connection.sync"),
-        enqueue(workspaceA, racedId, "connection.sync"),
-        enqueue(workspaceA, racedId, "connection.sync"),
-      ]);
-
-      // Deterministic race: the second worker joins only after worker A has
-      // claimed (committed) the first raced job, so every claim sees the
-      // running sibling and must skip the rest of the connection's queue.
-      await waitFor(async () => {
-        const statuses = await Promise.all(racedJobs.map(jobRow));
-        return statuses.some((row) => row?.status === "running");
-      });
+      const racedJobs: string[] = [];
+      const notPending = async (id: string) =>
+        (await jobRow(id))?.status !== "pending";
+      racedJobs.push(await enqueue(workspaceA, racedId, "connection.sync"));
+      await waitFor(() => notPending(racedJobs[0]!));
+      // Worker B joins once A has claimed the first job; from here on both
+      // workers compete for every raced job.
       workerB = await startWorker({
         handlers: instrumented,
         workerId: "race-b",
       });
+      for (let index = 1; index < 3; index += 1) {
+        racedJobs.push(await enqueue(workspaceA, racedId, "connection.sync"));
+        await waitFor(() => notPending(racedJobs[index]!));
+      }
 
       await waitFor(async () => {
         const statuses = await Promise.all(
@@ -468,11 +468,12 @@ describe("cross-workspace job payload tampering", () => {
       workspaceId: string,
       connectionId: string,
       payload: Record<string, string>,
+      kind = "connection.sync",
     ): Promise<string> {
       const rows = await adminRaw`
         insert into jobs (kind, workspace_id, connection_id, payload)
         values (
-          'connection.sync',
+          ${kind},
           ${workspaceId}::uuid,
           ${connectionId}::uuid,
           ${adminRaw.json(payload)}
@@ -488,10 +489,13 @@ describe("cross-workspace job payload tampering", () => {
       connection_id: connectionA,
     });
     // 2. Payload connection_id points at another workspace's connection.
-    const forgedPayloadConnection = await forge(workspaceA, connectionA, {
-      workspace_id: workspaceA,
-      connection_id: connectionB,
-    });
+    //    (A backfill: at most one sync may wait per connection.)
+    const forgedPayloadConnection = await forge(
+      workspaceA,
+      connectionA,
+      { workspace_id: workspaceA, connection_id: connectionB },
+      "connection.backfill",
+    );
     // 3. Row and payload agree, but the connection belongs to workspace B:
     //    passes the executor identity check and must die on RLS instead.
     const forgedRowConnection = await forge(workspaceA, connectionB, {
@@ -573,10 +577,11 @@ describe("replay-every-job stability", () => {
       await waitFor(
         async () => (await jobRow(backfill))?.status === "succeeded",
       );
+      // Sequential incremental runs (at most one sync waits per connection).
       for (let index = 0; index < 3; index += 1) {
-        incrementals.push(
-          await enqueue(workspaceA, connectionId, "connection.sync"),
-        );
+        const id = await enqueue(workspaceA, connectionId, "connection.sync");
+        incrementals.push(id);
+        await waitFor(async () => (await jobRow(id))?.status === "succeeded");
       }
       await waitFor(async () => {
         const statuses = await Promise.all(incrementals.map(jobRow));

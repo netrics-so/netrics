@@ -413,5 +413,12 @@ export const jobs = pgTable(
     index("jobs_claim_idx")
       .on(table.status, table.runAt)
       .where(sql`${table.status} = 'pending'`),
+    // At most one waiting sync per connection: scheduler ticks and manual
+    // "sync now" requests coalesce instead of piling up behind an outage.
+    uniqueIndex("jobs_one_pending_sync")
+      .on(table.connectionId)
+      .where(
+        sql`${table.kind} = 'connection.sync' and ${table.status} = 'pending'`,
+      ),
   ],
 );
