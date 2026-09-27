@@ -71,6 +71,13 @@
       "when": 1790530281316,
       "tag": "0009_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790531378605,
+      "tag": "0010_one_pending_sync",
+      "breakpoints": true
     }
   ]
 }

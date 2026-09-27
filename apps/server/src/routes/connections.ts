@@ -27,6 +27,7 @@ import {
 import type { ConnectorManifest } from "@netrics/connector-sdk";
 import {
   enqueueJob,
+  requestConnectionSync,
   findProject,
   insertAuditEvent,
   schema,
@@ -843,11 +844,11 @@ export function registerConnectionRoutes(
                 sendError(reply, 404, "connection_not_found");
                 return null;
               }
-              const id = await enqueueJob(tx, {
-                kind: "connection.sync",
+              // Reuses a sync that is already waiting instead of queueing
+              // another one behind it.
+              const id = await requestConnectionSync(tx, {
                 workspaceId: access.workspaceId,
                 connectionId: params.data.connectionId,
-                idempotencyKey: `manual:${params.data.connectionId}:${randomUUID()}`,
               });
               await insertAuditEvent(tx, {
                 workspaceId: access.workspaceId,

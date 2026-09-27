@@ -401,9 +401,10 @@ describe("claim_jobs", () => {
       kind: "connection.sync",
       connectionId: connectionC,
     });
+    // A backfill: at most one sync may wait per connection.
     const jobC2 = await seedJob({
       workspaceId: workspaceA,
-      kind: "connection.sync",
+      kind: "connection.backfill",
       connectionId: connectionC,
     });
     const jobD = await seedJob({
@@ -588,7 +589,16 @@ describe("enqueue_sync_job (scheduler role)", () => {
       connection_id: connectionA,
     });
 
-    // A different key enqueues a new job.
+    // While a sync waits, a new due slot coalesces into it (NULL)…
+    expect(
+      await enqueueSyncJob(schedulerDb, {
+        ...input,
+        idempotencyKey: `${key}:next`,
+      }),
+    ).toBeNull();
+
+    // …and once it has run, the next slot enqueues a new job.
+    await schedulerClient`update jobs set status = 'succeeded' where id = ${id1}`;
     const id3 = await enqueueSyncJob(schedulerDb, {
       ...input,
       idempotencyKey: `${key}:next`,

@@ -36,6 +36,7 @@ export {
   failJob,
   heartbeat,
   listDueConnections,
+  requestConnectionSync,
   setConnectionNextDue,
 } from "./jobs.js";
 export type {

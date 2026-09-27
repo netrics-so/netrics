@@ -100,7 +100,7 @@ function mapJobRow(row: Record<string, unknown>): Job {
  * handle.
  */
 export async function claimJobs(
-  schedulerDb: Db,
+  schedulerDb: Db | Transaction,
   workerId: string,
   limit: number,
   staleAfterSeconds: number,
@@ -121,7 +121,7 @@ export async function claimJobs(
  * treat that as worth logging, not as an error.
  */
 export async function completeJob(
-  schedulerDb: Db,
+  schedulerDb: Db | Transaction,
   jobId: string,
 ): Promise<boolean> {
   const rows = await schedulerDb.execute(
@@ -152,7 +152,7 @@ export interface FailJobResult {
  * not running.
  */
 export async function failJob(
-  schedulerDb: Db,
+  schedulerDb: Db | Transaction,
   jobId: string,
   error: string,
   options: { retryable: boolean; deadLetter?: boolean },
@@ -199,7 +199,7 @@ export async function failJob(
  * Returns the new job id, or null when a job with the key already exists.
  */
 export async function enqueueSyncJob(
-  schedulerDb: Db,
+  schedulerDb: Db | Transaction,
   job: {
     connectionId: string;
     workspaceId: string;
@@ -220,6 +220,50 @@ export async function enqueueSyncJob(
   return (rows[0]?.id as string | null) ?? null;
 }
 
+/**
+ * Requests a sync for a connection on the app role (inside withWorkspace()).
+ * If a sync is already waiting, that job is reused instead of queueing
+ * another one (jobs_one_pending_sync). Returns the id of the waiting job.
+ */
+export async function requestConnectionSync(
+  tx: Transaction,
+  input: { workspaceId: string; connectionId: string },
+): Promise<string> {
+  const payload = {
+    workspace_id: input.workspaceId,
+    connection_id: input.connectionId,
+  };
+  const inserted = await tx
+    .insert(schema.jobs)
+    .values({
+      kind: "connection.sync",
+      workspaceId: input.workspaceId,
+      connectionId: input.connectionId,
+      payload,
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.jobs.id });
+  if (inserted[0]) {
+    return inserted[0].id;
+  }
+  const [waiting] = await tx
+    .select({ id: schema.jobs.id })
+    .from(schema.jobs)
+    .where(
+      and(
+        eq(schema.jobs.workspaceId, input.workspaceId),
+        eq(schema.jobs.connectionId, input.connectionId),
+        eq(schema.jobs.kind, "connection.sync"),
+        eq(schema.jobs.status, "pending"),
+      ),
+    )
+    .limit(1);
+  if (!waiting) {
+    throw new Error("requestConnectionSync: no job inserted and none waiting");
+  }
+  return waiting.id;
+}
+
 export type DueConnection = Pick<
   typeof schema.connectionState.$inferSelect,
   | "connectionId"
@@ -235,7 +279,7 @@ export type DueConnection = Pick<
  * has no access to connections or the credential-bearing columns.
  */
 export async function listDueConnections(
-  schedulerDb: Db,
+  schedulerDb: Db | Transaction,
   now: Date,
 ): Promise<DueConnection[]> {
   return schedulerDb
@@ -260,7 +304,7 @@ export async function listDueConnections(
  * update on connection_state).
  */
 export async function setConnectionNextDue(
-  schedulerDb: Db,
+  schedulerDb: Db | Transaction,
   connectionId: string,
   nextDueAt: Date,
 ): Promise<void> {
@@ -276,7 +320,7 @@ export async function setConnectionNextDue(
  * the worker_id; metadata replaces the previous value.
  */
 export async function heartbeat(
-  schedulerDb: Db,
+  schedulerDb: Db | Transaction,
   workerId: string,
   role: "worker" | "scheduler",
   metadata: Record<string, unknown> = {},

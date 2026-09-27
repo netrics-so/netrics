@@ -578,11 +578,17 @@ describe("engine run and observations", () => {
     expect(response.statusCode).toBe(200);
     const { jobId } = enqueueSyncResponseSchema.parse(response.json());
     const jobs = await world.admin`
-      select kind, idempotency_key from jobs where id = ${jobId}::uuid
+      select kind, status from jobs where id = ${jobId}::uuid
     `;
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0]!.kind).toBe("connection.sync");
-    expect(jobs[0]!.idempotency_key).toMatch(`manual:${connectionId}:`);
+    expect(jobs).toEqual([{ kind: "connection.sync", status: "pending" }]);
+
+    // Asking again while that sync still waits reuses it.
+    const again = await call(world.app, {
+      method: "POST",
+      url: `/v1/workspaces/${w1Id}/connections/${connectionId}/sync`,
+      cookie: cookies.editor,
+    });
+    expect(enqueueSyncResponseSchema.parse(again.json()).jobId).toBe(jobId);
   });
 });
 
