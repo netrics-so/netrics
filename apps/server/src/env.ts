@@ -58,6 +58,13 @@ const envSchema = z
         message: "SMTP_URL must start with smtp:// or smtps://",
       })
       .optional(),
+    // Who may create accounts. "closed": only the first account, created with
+    // the one-time setup token (see src/setup.ts). "open": anyone (hosted
+    // service, local development). Default: closed in production.
+    NETRICS_SIGNUP: z.enum(["open", "closed"]).optional(),
+    // Optional fixed setup token (>= 24 chars) instead of a generated one
+    // that is printed to the log, e.g. set by an install script.
+    NETRICS_SETUP_TOKEN: z.string().min(24).optional(),
     // Sender address for auth emails; required with SMTP_URL.
     MAIL_FROM: z.string().min(3).optional(),
     LOG_LEVEL: z
@@ -168,6 +175,9 @@ const envSchema = z
     workerConcurrency: env.WORKER_CONCURRENCY,
     betterAuthSecret: env.BETTER_AUTH_SECRET ?? DEV_BETTER_AUTH_SECRET,
     appEncryptionKey: env.APP_ENCRYPTION_KEY ?? DEV_APP_ENCRYPTION_KEY,
+    signup:
+      env.NETRICS_SIGNUP ?? (env.NODE_ENV === "production" ? "closed" : "open"),
+    setupToken: env.NETRICS_SETUP_TOKEN ?? null,
     betterAuthUrl: env.BETTER_AUTH_URL ?? "http://localhost:3001",
     webOrigin: env.WEB_ORIGIN ?? "http://localhost:3000",
     smtp:

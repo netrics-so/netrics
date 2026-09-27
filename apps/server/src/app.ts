@@ -6,9 +6,11 @@ import Fastify, { type FastifyInstance } from "fastify";
 import {
   healthLiveResponseSchema,
   healthReadyResponseSchema,
+  setupStatusResponseSchema,
 } from "@netrics/contracts";
 import {
   checkDatabaseConnection,
+  countUsers,
   createDatabase,
   type Database,
 } from "@netrics/database";
@@ -63,6 +65,15 @@ export async function buildApp(
     url: "/api/auth/*",
     handler: (request, reply) => authService.handle(request, reply),
   });
+
+  // Public (no session): lets the web app route first visitors to /setup
+  // and hide sign-up when it is closed. Reveals no account data.
+  app.get("/v1/setup-status", async () =>
+    setupStatusResponseSchema.parse({
+      setupRequired: config.signup === "closed" && (await countUsers(db)) === 0,
+      signup: config.signup,
+    }),
+  );
 
   registerSessionRoutes(app, { authService, db });
   registerWorkspaceRoutes(app, { authService, db });

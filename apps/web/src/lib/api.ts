@@ -22,6 +22,7 @@ import {
   projectListResponseSchema,
   projectResponseSchema,
   renameWorkspaceRequestSchema,
+  setupStatusResponseSchema,
   updateConnectionRequestSchema,
   updateMemberRoleRequestSchema,
   workspaceListResponseSchema,
@@ -42,6 +43,7 @@ import {
   type PreviewConnectionRequest,
   type ProjectListResponse,
   type ProjectResponse,
+  type SetupStatusResponse,
   type UpdateConnectionRequest,
   type WorkspaceListResponse,
   type WorkspaceResponse,
@@ -137,6 +139,14 @@ function serverGet<T>(
     headers: { cookie: cookieHeader },
     cache: "no-store",
   }).then((response) => parseResponse(schema, response));
+}
+
+/** Public: whether first-run setup is pending and whether sign-up is open. */
+export async function getSetupStatus(): Promise<SetupStatusResponse> {
+  const response = await fetch(`${apiBaseUrl()}/v1/setup-status`, {
+    cache: "no-store",
+  });
+  return parseResponse(setupStatusResponseSchema, response);
 }
 
 /** Returns null on 401 so pages can redirect to /login themselves. */

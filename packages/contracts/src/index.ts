@@ -57,6 +57,13 @@ export const bootstrapResponseSchema = z.object({
 });
 export type BootstrapResponse = z.infer<typeof bootstrapResponseSchema>;
 
+/** Public: whether first-run setup is pending and who may sign up. */
+export const setupStatusResponseSchema = z.object({
+  setupRequired: z.boolean(),
+  signup: z.enum(["open", "closed"]),
+});
+export type SetupStatusResponse = z.infer<typeof setupStatusResponseSchema>;
+
 export const meResponseSchema = z.object({
   user: z.object({
     id: z.uuid(),
