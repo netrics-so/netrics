@@ -1,4 +1,7 @@
-import { runConnectorContractTests } from "@netrics/connector-sdk/testing";
+import {
+  offlineRuntime,
+  runConnectorContractTests,
+} from "@netrics/connector-sdk/testing";
 import type { ConnectionContext, SyncRequest } from "@netrics/connector-sdk";
 import { describe, expect, it } from "vitest";
 
@@ -22,8 +25,16 @@ describe("demo connector", () => {
       "2024-01-01T00:00:00.000Z",
       "2024-01-11T00:00:00.000Z",
     );
-    const first = await createDemoConnector().sync(baseContext, request);
-    const second = await createDemoConnector().sync(baseContext, request);
+    const first = await createDemoConnector().sync(
+      baseContext,
+      request,
+      offlineRuntime,
+    );
+    const second = await createDemoConnector().sync(
+      baseContext,
+      request,
+      offlineRuntime,
+    );
     expect(second).toEqual(first);
     expect(first.observations.length).toBeGreaterThan(0);
   });
@@ -36,6 +47,7 @@ describe("demo connector", () => {
     const result = await createDemoConnector().sync(
       context,
       window("2024-03-01T00:00:00.000Z", "2024-03-04T00:00:00.000Z"),
+      offlineRuntime,
     );
     expect(result.observations).toHaveLength(3 * 2 * 2);
     for (const observation of result.observations) {
@@ -52,9 +64,9 @@ describe("demo connector", () => {
     );
     const seedA: ConnectionContext = { ...baseContext, config: { seed: 1 } };
     const seedB: ConnectionContext = { ...baseContext, config: { seed: 2 } };
-    const a1 = await createDemoConnector().sync(seedA, request);
-    const a2 = await createDemoConnector().sync(seedA, request);
-    const b = await createDemoConnector().sync(seedB, request);
+    const a1 = await createDemoConnector().sync(seedA, request, offlineRuntime);
+    const a2 = await createDemoConnector().sync(seedA, request, offlineRuntime);
+    const b = await createDemoConnector().sync(seedB, request, offlineRuntime);
     expect(a2).toEqual(a1);
     expect(b.observations.map((o) => o.value)).not.toEqual(
       a1.observations.map((o) => o.value),
@@ -62,20 +74,27 @@ describe("demo connector", () => {
   });
 
   it("honours the resources subset in the sync request", async () => {
-    const result = await createDemoConnector().sync(baseContext, {
-      ...window("2024-01-01T00:00:00.000Z", "2024-01-03T00:00:00.000Z"),
-      resources: ["demo-site-2"],
-    });
+    const result = await createDemoConnector().sync(
+      baseContext,
+      {
+        ...window("2024-01-01T00:00:00.000Z", "2024-01-03T00:00:00.000Z"),
+        resources: ["demo-site-2"],
+      },
+      offlineRuntime,
+    );
     expect(
       new Set(result.observations.map((o) => o.dimensions.resource)),
     ).toEqual(new Set(["demo-site-2"]));
   });
 
   it("fails check with an actionable message on simulated bad credentials", async () => {
-    const result = await createDemoConnector().check({
-      ...baseContext,
-      config: { simulate: "bad-credentials" },
-    });
+    const result = await createDemoConnector().check(
+      {
+        ...baseContext,
+        config: { simulate: "bad-credentials" },
+      },
+      offlineRuntime,
+    );
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/credentials/i);
   });
@@ -86,8 +105,12 @@ describe("demo connector", () => {
       ...baseContext,
       config: { simulate: "outage" },
     };
-    await expect(connector.discover(context)).rejects.toThrow(/outage/);
-    await expect(connector.check(context)).resolves.toEqual({ ok: true });
+    await expect(connector.discover(context, offlineRuntime)).rejects.toThrow(
+      /outage/,
+    );
+    await expect(connector.check(context, offlineRuntime)).resolves.toEqual({
+      ok: true,
+    });
   });
 
   it("exposes a manifest wired to the demo metrics", () => {

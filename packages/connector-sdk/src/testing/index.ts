@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Connector } from "../connector.js";
+import type { Connector, ConnectorRuntime } from "../connector.js";
 import { connectorManifestSchema } from "../manifest.js";
 import type {
   ConnectionContext,
@@ -46,6 +46,17 @@ function makeRequest(
   };
 }
 
+/**
+ * Runtime for offline contract tests: any network access fails the test.
+ * Connectors under contract test must work from fixtures alone.
+ */
+export const offlineRuntime: ConnectorRuntime = {
+  fetch: async (url) => {
+    throw new Error(`contract tests run offline; connector fetched ${url}`);
+  },
+  signal: new AbortController().signal,
+};
+
 function indexByIdentity(observations: Observation[]) {
   return new Map(
     observations.map((observation) => [
@@ -83,12 +94,12 @@ export function runConnectorContractTests(
     });
 
     it("check returns a valid CheckResult", async () => {
-      const result = await connector.check(context);
+      const result = await connector.check(context, offlineRuntime);
       expect(checkResultSchema.safeParse(result).success).toBe(true);
     });
 
     it("discover returns valid resources with unique ids", async () => {
-      const resources = await connector.discover(context);
+      const resources = await connector.discover(context, offlineRuntime);
       for (const resource of resources) {
         expect(resourceSchema.safeParse(resource).success).toBe(true);
       }
@@ -98,7 +109,11 @@ export function runConnectorContractTests(
 
     it("sync returns observations consistent with the manifest", async () => {
       const result = syncResultSchema.parse(
-        await connector.sync(context, makeRequest("backfill", fromMs, toMs)),
+        await connector.sync(
+          context,
+          makeRequest("backfill", fromMs, toMs),
+          offlineRuntime,
+        ),
       );
       expect(result.observations.length).toBeGreaterThan(0);
       const metricsByKey = new Map(
@@ -125,8 +140,8 @@ export function runConnectorContractTests(
 
     it("sync is deterministic across identical calls", async () => {
       const request = makeRequest("backfill", fromMs, toMs);
-      const first = await connector.sync(context, request);
-      const second = await connector.sync(context, request);
+      const first = await connector.sync(context, request, offlineRuntime);
+      const second = await connector.sync(context, request, offlineRuntime);
       expect(second).toEqual(first);
     });
 
@@ -134,10 +149,12 @@ export function runConnectorContractTests(
       const full = await connector.sync(
         context,
         makeRequest("backfill", fromMs, toMs),
+        offlineRuntime,
       );
       const tail = await connector.sync(
         context,
         makeRequest("backfill", midMs, toMs),
+        offlineRuntime,
       );
       const byIdentity = indexByIdentity(full.observations);
       expect(tail.observations.length).toBeGreaterThan(0);
@@ -156,7 +173,11 @@ export function runConnectorContractTests(
     it("advances the cursor and terminates with done", async () => {
       let cursor: string | undefined;
       let result = syncResultSchema.parse(
-        await connector.sync(context, makeRequest("backfill", fromMs, toMs)),
+        await connector.sync(
+          context,
+          makeRequest("backfill", fromMs, toMs),
+          offlineRuntime,
+        ),
       );
       let pages = 1;
       while (!result.done) {
@@ -173,6 +194,7 @@ export function runConnectorContractTests(
           await connector.sync(
             context,
             makeRequest("backfill", fromMs, toMs, cursor),
+            offlineRuntime,
           ),
         );
         pages += 1;
@@ -188,10 +210,12 @@ export function runConnectorContractTests(
       const backfill = await connector.sync(
         context,
         makeRequest("backfill", fromMs, toMs),
+        offlineRuntime,
       );
       const incremental = await connector.sync(
         context,
         makeRequest("incremental", midMs, toMs),
+        offlineRuntime,
       );
       const byIdentity = indexByIdentity(backfill.observations);
       expect(incremental.observations.length).toBeGreaterThan(0);

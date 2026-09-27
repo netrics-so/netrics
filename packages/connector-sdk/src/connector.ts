@@ -17,7 +17,48 @@ import type {
  */
 export interface Connector {
   manifest: ConnectorManifest;
-  check(context: ConnectionContext): Promise<CheckResult>;
-  discover(context: ConnectionContext): Promise<Resource[]>;
-  sync(context: ConnectionContext, request: SyncRequest): Promise<SyncResult>;
+  check(
+    context: ConnectionContext,
+    runtime: ConnectorRuntime,
+  ): Promise<CheckResult>;
+  discover(
+    context: ConnectionContext,
+    runtime: ConnectorRuntime,
+  ): Promise<Resource[]>;
+  sync(
+    context: ConnectionContext,
+    request: SyncRequest,
+    runtime: ConnectorRuntime,
+  ): Promise<SyncResult>;
+}
+
+/**
+ * Capabilities the host hands to connector code for one call. Kept separate
+ * from ConnectionContext, which must stay plain JSON data.
+ */
+export interface ConnectorRuntime {
+  /**
+   * The sanctioned HTTP client. It only reaches https hosts listed in the
+   * manifest's outboundDomains ("api.example.com" or "*.example.com"),
+   * refuses private, loopback, link-local and metadata addresses (checked
+   * at connect time), follows at most a few redirects (each re-checked), and
+   * bounds response size and duration. Violations throw EgressDeniedError.
+   */
+  fetch(url: string, init?: ConnectorFetchInit): Promise<ConnectorResponse>;
+  /** Aborted when the host's time budget for this call runs out. */
+  signal: AbortSignal;
+}
+
+export interface ConnectorFetchInit {
+  method?: "GET" | "POST";
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+/** A fully buffered response (the body is read within the size limit). */
+export interface ConnectorResponse {
+  status: number;
+  headers: Record<string, string>;
+  text(): string;
+  json(): unknown;
 }
