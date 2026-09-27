@@ -426,6 +426,14 @@ export const enqueueSyncResponseSchema = z.object({
 });
 export type EnqueueSyncResponse = z.infer<typeof enqueueSyncResponseSchema>;
 
+export const observationListQuerySchema = z.object({
+  metricKey: z.string().min(1).optional(),
+  from: z.iso.datetime().optional(),
+  to: z.iso.datetime().optional(),
+  limit: z.coerce.number().int().min(1).max(1000).default(200),
+});
+export type ObservationListQuery = z.infer<typeof observationListQuerySchema>;
+
 // Identity: (metricKey, seriesKey, sourceTimestamp) within a connection.
 export const observationSchema = z.object({
   metricKey: z.string().min(1),

@@ -39,6 +39,9 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      # The committed OpenAPI document must match the code (clients such as
+      # the tvOS app are generated from it). Fix with `pnpm openapi`.
+      - run: pnpm openapi:check
 
   migrations:
     runs-on: ubuntu-latest

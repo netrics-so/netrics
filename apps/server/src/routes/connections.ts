@@ -12,6 +12,7 @@ import {
   connectorListResponseSchema,
   createConnectionRequestSchema,
   enqueueSyncResponseSchema,
+  observationListQuerySchema,
   observationListResponseSchema,
   previewConnectionRequestSchema,
   updateConnectionRequestSchema,
@@ -46,6 +47,7 @@ import {
   type CredentialKeyring,
 } from "../credentials.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
+import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
 
 export interface ConnectionRouteDeps {
@@ -224,31 +226,50 @@ export function registerConnectionRoutes(
 
   void app.register(
     (scope, _opts, done) => {
-      scope.addHook("preHandler", requireSession);
+      // onRequest: authentication precedes body validation.
+      scope.addHook("onRequest", requireSession);
 
       // Installation-level catalog, served from the deployed bundle (the
       // registry is the source of truth; the connectors table is its
       // persistence mirror).
-      scope.get("/connectors", async () =>
-        connectorListResponseSchema.parse({
-          connectors: deps.registry.list().map(({ manifest }) => ({
-            id: manifest.id,
-            name: manifest.name,
-            version: manifest.version,
-            description: manifest.description,
-            metricsCount: manifest.metrics.length,
-            minRefreshIntervalSeconds: manifest.minRefreshIntervalSeconds,
-            supportsBackfill: manifest.supportsBackfill,
-            configSchema: { ...manifest.configSchema },
-            authStrategies: manifest.authStrategies.map((strategy) => ({
-              strategy: strategy.strategy,
+      scope.get(
+        "/connectors",
+        {
+          schema: routeSchema({
+            summary: "Connector catalog of this installation",
+            tags: ["connections"],
+            response: connectorListResponseSchema,
+          }),
+        },
+        async () =>
+          connectorListResponseSchema.parse({
+            connectors: deps.registry.list().map(({ manifest }) => ({
+              id: manifest.id,
+              name: manifest.name,
+              version: manifest.version,
+              description: manifest.description,
+              metricsCount: manifest.metrics.length,
+              minRefreshIntervalSeconds: manifest.minRefreshIntervalSeconds,
+              supportsBackfill: manifest.supportsBackfill,
+              configSchema: { ...manifest.configSchema },
+              authStrategies: manifest.authStrategies.map((strategy) => ({
+                strategy: strategy.strategy,
+              })),
             })),
-          })),
-        }),
+          }),
       );
 
       scope.post(
         "/workspaces/:workspaceId/connections",
+        {
+          schema: routeSchema({
+            summary: "Create a connection",
+            tags: ["connections"],
+            body: createConnectionRequestSchema,
+            response: connectionResponseSchema,
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -376,6 +397,15 @@ export function registerConnectionRoutes(
 
       scope.post(
         "/workspaces/:workspaceId/connections/preview",
+        {
+          schema: routeSchema({
+            summary: "Check credentials and discover resources without saving",
+            tags: ["connections"],
+            body: previewConnectionRequestSchema,
+            response: connectionPreviewResponseSchema,
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -436,6 +466,14 @@ export function registerConnectionRoutes(
 
       scope.get(
         "/workspaces/:workspaceId/connections",
+        {
+          schema: routeSchema({
+            summary: "List connections",
+            tags: ["connections"],
+            response: connectionListResponseSchema,
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -477,6 +515,14 @@ export function registerConnectionRoutes(
 
       scope.get(
         "/workspaces/:workspaceId/connections/:connectionId",
+        {
+          schema: routeSchema({
+            summary: "Get a connection with sync history",
+            tags: ["connections"],
+            response: connectionDetailResponseSchema,
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -545,6 +591,15 @@ export function registerConnectionRoutes(
 
       scope.patch(
         "/workspaces/:workspaceId/connections/:connectionId",
+        {
+          schema: routeSchema({
+            summary: "Update a connection",
+            tags: ["connections"],
+            body: updateConnectionRequestSchema,
+            response: connectionResponseSchema,
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -749,6 +804,13 @@ export function registerConnectionRoutes(
 
       scope.delete(
         "/workspaces/:workspaceId/connections/:connectionId",
+        {
+          schema: routeSchema({
+            summary: "Delete a connection",
+            tags: ["connections"],
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -815,6 +877,14 @@ export function registerConnectionRoutes(
 
       scope.post(
         "/workspaces/:workspaceId/connections/:connectionId/sync",
+        {
+          schema: routeSchema({
+            summary: "Request a sync",
+            tags: ["connections"],
+            response: enqueueSyncResponseSchema,
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -863,15 +933,17 @@ export function registerConnectionRoutes(
         },
       );
 
-      const observationsQuerySchema = z.object({
-        metricKey: z.string().min(1).optional(),
-        from: z.iso.datetime().optional(),
-        to: z.iso.datetime().optional(),
-        limit: z.coerce.number().int().min(1).max(1000).default(200),
-      });
-
       scope.get(
         "/workspaces/:workspaceId/connections/:connectionId/observations",
+        {
+          schema: routeSchema({
+            summary: "List collected observations",
+            tags: ["connections"],
+            querystring: observationListQuerySchema,
+            response: observationListResponseSchema,
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -884,7 +956,7 @@ export function registerConnectionRoutes(
           if (!params.success) {
             return sendError(reply, 404, "connection_not_found");
           }
-          const query = observationsQuerySchema.safeParse(request.query);
+          const query = observationListQuerySchema.safeParse(request.query);
           if (!query.success) {
             return sendError(reply, 400, "invalid_request");
           }

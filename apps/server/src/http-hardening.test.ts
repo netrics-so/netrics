@@ -31,6 +31,7 @@ beforeAll(async () => {
     );
   });
   app.get("/test/request-id", async (request) => ({ id: request.id }));
+  app.post("/test/echo", async (request) => request.body);
   await app.ready();
 });
 
@@ -49,7 +50,7 @@ describe("error responses", () => {
   it("map client errors to stable codes", async () => {
     const malformed = await app.inject({
       method: "POST",
-      url: "/v1/workspaces",
+      url: "/test/echo",
       headers: { "content-type": "application/json" },
       payload: "{not json",
     });
@@ -91,6 +92,16 @@ describe("cross-origin mutations", () => {
       expect(response.statusCode).toBe(403);
       expect(response.json()).toEqual({ error: "forbidden_origin" });
     }
+  });
+
+  it("authenticates before parsing or validating the body", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/workspaces",
+      headers: { "content-type": "application/json" },
+      payload: "{not json",
+    });
+    expect(response.statusCode).toBe(401);
   });
 
   it("lets the web origin and non-browser clients through to auth", async () => {
