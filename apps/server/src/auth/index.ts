@@ -1,17 +1,22 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { fromNodeHeaders } from "better-auth/node";
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   authSchema,
+  consumeSetupToken,
+  countUsers,
   findUserByAuthUserId,
   insertInstallationAuditEvent,
   provisionDomainUser,
+  recordSetupOwner,
   type Database,
 } from "@netrics/database";
 
 import type { Config } from "../env.js";
+import { SETUP_TOKEN_HEADER, hashSetupToken } from "../setup.js";
 import {
   createLoggingMailer,
   createSmtpMailer,
@@ -95,14 +100,38 @@ export function createAuthService(
     databaseHooks: {
       user: {
         create: {
+          // Every account creation path (email sign-up today, social and
+          // SSO later) passes here. With closed sign-up, only the first
+          // account may be created, and only with the one-time setup token;
+          // consuming it is atomic, so concurrent attempts cannot both win.
+          before: async (_user, context) => {
+            if (config.signup === "open") {
+              return;
+            }
+            const token = context?.headers?.get(SETUP_TOKEN_HEADER);
+            const allowed =
+              typeof token === "string" &&
+              token.length > 0 &&
+              (await countUsers(db)) === 0 &&
+              (await consumeSetupToken(db, hashSetupToken(token)));
+            if (!allowed) {
+              throw new APIError("FORBIDDEN", {
+                message: "Sign-up is disabled on this installation.",
+                code: "SIGNUP_DISABLED",
+              });
+            }
+          },
           // Mirror every auth user into the installation-level domain users
           // table (the row tenants reference via memberships).
           after: async (user) => {
-            await provisionDomainUser(db, {
+            const domainUser = await provisionDomainUser(db, {
               authUserId: user.id,
               email: user.email,
               name: user.name,
             });
+            if (config.signup === "closed") {
+              await recordSetupOwner(db, domainUser.id);
+            }
           },
         },
       },

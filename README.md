@@ -151,6 +151,14 @@ Relevant environment variables (see `.env.example`):
   the links are logged. Anywhere else, without SMTP, the server refuses to
   send them and never logs them.
 
+- `NETRICS_SIGNUP` — `closed` (default in production) or `open` (default
+  otherwise; the hosted service sets it explicitly). With closed sign-up and no
+  account yet, the api logs a one-time setup URL (`<WEB_ORIGIN>/setup?token=…`)
+  on startup. Only that token can create the first account, and it is consumed
+  atomically. Every later account needs an invitation (#27).
+  `NETRICS_SETUP_TOKEN` fixes the token instead of logging a generated one.
+  `GET /v1/setup-status` (public) tells the web app whether setup is pending.
+
 In production, the api also rejects the public development values of
 `BETTER_AUTH_SECRET` and `APP_ENCRYPTION_KEY`. Session cookies have a 7-day
 expiry and are validated against the database on every request, so sign-out

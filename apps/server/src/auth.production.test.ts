@@ -11,8 +11,8 @@ import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
 import { createTestDatabase } from "./test-db.js";
 
-// The API as configured for production: https public URLs, real secrets and
-// no SMTP transport.
+// The API as configured for the hosted service: production mode, https
+// public URLs, real secrets, open sign-up and no SMTP transport.
 
 let app: FastifyInstance;
 let db: Database;
@@ -22,6 +22,7 @@ beforeAll(async () => {
   const testDb = await createTestDatabase();
   const config = loadConfig({
     NODE_ENV: "production",
+    NETRICS_SIGNUP: "open",
     DATABASE_URL: testDb.appUrl,
     BETTER_AUTH_URL: "https://netrics.example.com",
     WEB_ORIGIN: "https://netrics.example.com",

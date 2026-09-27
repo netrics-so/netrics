@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  smallint,
   text,
   timestamp,
   unique,
@@ -38,6 +39,25 @@ export const users = pgTable("users", {
     .notNull()
     .defaultNow(),
 });
+
+// Installation-level, single row: the one-time token that authorizes creating
+// the first account while public sign-up is closed (see apps/server/src/setup.ts).
+// Only the SHA-256 of the token is stored.
+export const installationSetup = pgTable(
+  "installation_setup",
+  {
+    id: smallint("id").primaryKey().default(1),
+    tokenHash: text("token_hash").notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+  },
+  (table) => [check("installation_setup_singleton", sql`${table.id} = 1`)],
+);
 
 export const workspaces = pgTable("workspaces", {
   id: uuid("id").primaryKey().defaultRandom(),

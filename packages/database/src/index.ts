@@ -45,6 +45,13 @@ export type {
   Job,
 } from "./jobs.js";
 export {
+  consumeSetupToken,
+  countUsers,
+  findInstallationSetup,
+  issueSetupToken,
+  recordSetupOwner,
+} from "./installation.js";
+export {
   APPLICATION_ROLES,
   DEV_ROLE_PASSWORDS,
   PrivilegedDatabaseRoleError,

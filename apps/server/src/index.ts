@@ -8,6 +8,7 @@ import {
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig } from "./env.js";
 import { startScheduler } from "./scheduler.js";
+import { prepareInstallationSetup } from "./setup.js";
 import { syncCatalog } from "./sync/catalog.js";
 import { startWorker } from "./worker.js";
 
@@ -66,6 +67,7 @@ if (config.role === "worker") {
   // Installation-level connector catalog, synced from the reviewed bundle.
   await syncCatalog(db, createDefaultRegistry());
   const app = await buildApp(config, { db });
+  await prepareInstallationSetup(config, db, app.log);
 
   try {
     await app.listen({ port: config.port, host: config.host });

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { LoginForm } from "./login-form";
+import { getSetupStatus } from "@/lib/api";
 import { getSessionUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,10 @@ export default async function LoginPage() {
   if (await getSessionUser(cookieHeader)) {
     redirect("/");
   }
+  const setup = await getSetupStatus();
+  if (setup.setupRequired) {
+    redirect("/setup");
+  }
 
   return (
     <>
@@ -20,9 +25,11 @@ export default async function LoginPage() {
       <div className="card">
         <LoginForm />
       </div>
-      <p className="muted">
-        No account yet? <Link href="/signup">Create one</Link>
-      </p>
+      {setup.signup === "open" ? (
+        <p className="muted">
+          No account yet? <Link href="/signup">Create one</Link>
+        </p>
+      ) : null}
     </>
   );
 }

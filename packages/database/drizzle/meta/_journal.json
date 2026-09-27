@@ -50,6 +50,13 @@
       "when": 1790427829533,
       "tag": "0006_scheduler_queue_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790521460881,
+      "tag": "0007_installation_setup",
+      "breakpoints": true
     }
   ]
 }
