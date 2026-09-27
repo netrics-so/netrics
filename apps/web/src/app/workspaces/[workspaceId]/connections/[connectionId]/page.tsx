@@ -175,7 +175,9 @@ export default async function ConnectionDetailPage({
             </thead>
             <tbody>
               {observations.map((observation) => (
-                <tr key={observation.id}>
+                <tr
+                  key={`${observation.metricKey}/${observation.seriesKey}/${observation.sourceTimestamp}`}
+                >
                   <td>{observation.metricKey}</td>
                   <td className="muted">
                     {observation.dimensions.resource ?? "—"}

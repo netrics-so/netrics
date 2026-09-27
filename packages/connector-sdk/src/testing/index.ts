@@ -13,6 +13,7 @@ import {
   resourceSchema,
   syncResultSchema,
 } from "../transport.js";
+import { observationKey } from "../transport.js";
 import { assertManifestCompatible } from "../version.js";
 
 export interface ContractTestOptions {
@@ -48,7 +49,7 @@ function makeRequest(
 function indexByIdentity(observations: Observation[]) {
   return new Map(
     observations.map((observation) => [
-      observation.sourceIdentity,
+      observationKey(observation),
       observation,
     ]),
   );
@@ -113,11 +114,12 @@ export function runConnectorContractTests(
         for (const dimension of Object.keys(observation.dimensions)) {
           expect(metric?.dimensions).toContain(dimension);
         }
+        const key = observationKey(observation);
         expect(
-          identities.has(observation.sourceIdentity),
-          `duplicate sourceIdentity "${observation.sourceIdentity}" in one result`,
+          identities.has(key),
+          `duplicate observation ${key} in one result`,
         ).toBe(false);
-        identities.add(observation.sourceIdentity);
+        identities.add(key);
       }
     });
 
@@ -140,10 +142,10 @@ export function runConnectorContractTests(
       const byIdentity = indexByIdentity(full.observations);
       expect(tail.observations.length).toBeGreaterThan(0);
       for (const observation of tail.observations) {
-        const earlier = byIdentity.get(observation.sourceIdentity);
+        const earlier = byIdentity.get(observationKey(observation));
         expect(
           earlier,
-          `overlapping window changed identity "${observation.sourceIdentity}"`,
+          `overlapping window changed identity ${observationKey(observation)}`,
         ).toBeDefined();
         expect(observation.value).toBe(earlier?.value);
         expect(observation.sourceTimestamp).toBe(earlier?.sourceTimestamp);
@@ -194,7 +196,7 @@ export function runConnectorContractTests(
       const byIdentity = indexByIdentity(backfill.observations);
       expect(incremental.observations.length).toBeGreaterThan(0);
       for (const observation of incremental.observations) {
-        const earlier = byIdentity.get(observation.sourceIdentity);
+        const earlier = byIdentity.get(observationKey(observation));
         expect(earlier).toBeDefined();
         expect(observation.value).toBe(earlier?.value);
       }

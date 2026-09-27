@@ -426,9 +426,10 @@ export const enqueueSyncResponseSchema = z.object({
 });
 export type EnqueueSyncResponse = z.infer<typeof enqueueSyncResponseSchema>;
 
+// Identity: (metricKey, seriesKey, sourceTimestamp) within a connection.
 export const observationSchema = z.object({
-  id: z.uuid(),
   metricKey: z.string().min(1),
+  seriesKey: z.string().min(1),
   sourceTimestamp: z.iso.datetime(),
   value: z.number(),
   dimensions: z.record(z.string(), z.string()),

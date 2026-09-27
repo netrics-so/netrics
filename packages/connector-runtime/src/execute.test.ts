@@ -36,7 +36,6 @@ function observation(overrides: Partial<Observation> = {}): Observation {
     sourceTimestamp: "2024-01-01T00:00:00.000Z",
     value: 42,
     dimensions: { resource: "demo-site-1" },
-    sourceIdentity: "demo.visitors:demo-site-1:2024-01-01",
     ...overrides,
   };
 }

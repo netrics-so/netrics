@@ -40,9 +40,6 @@ describe("demo connector", () => {
     expect(result.observations).toHaveLength(3 * 2 * 2);
     for (const observation of result.observations) {
       expect(observation.sourceTimestamp.endsWith("T00:00:00.000Z")).toBe(true);
-      expect(observation.sourceIdentity).toBe(
-        `${observation.metricKey}:${observation.dimensions.resource}:${observation.sourceTimestamp.slice(0, 10)}`,
-      );
     }
     expect(result.nextCursor).toBe("2024-03-03T00:00:00.000Z");
     expect(result.done).toBe(true);

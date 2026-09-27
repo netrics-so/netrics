@@ -38,7 +38,7 @@ function testManifest(id: string, metricKey: string): ConnectorManifest {
   return {
     id,
     version: "0.1.0",
-    sdkVersion: "^0.1.0",
+    sdkVersion: "^0.2.0",
     name: id,
     description: `Test connector ${id}.`,
     authStrategies: [{ strategy: "token" }],
@@ -50,23 +50,25 @@ function testManifest(id: string, metricKey: string): ConnectorManifest {
         description: `Test metric ${metricKey}.`,
         kind: "delta",
         unit: "count",
+        granularity: "day",
         dimensions: ["resource"],
         aggregations: ["sum"],
       },
     ],
     minRefreshIntervalSeconds: 300,
     supportsBackfill: true,
+    backfillDays: 90,
     outboundDomains: [],
   };
 }
 
+/** One series per identity: observations are keyed by metric+dimensions+time. */
 function flakyObservation(identity: string) {
   return {
     metricKey: "flaky.hits",
     sourceTimestamp: "2026-09-20T00:00:00.000Z",
     value: 1,
-    dimensions: { resource: "r1" },
-    sourceIdentity: identity,
+    dimensions: { resource: identity },
   };
 }
 
@@ -132,6 +134,31 @@ const probeConnector: Connector = {
   },
 };
 
+/** Reports one daily value that the "provider" may later correct. */
+let revisingValue = 10;
+const revisingConnector: Connector = {
+  manifest: testManifest("revising", "revising.orders"),
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    return [];
+  },
+  async sync() {
+    return {
+      observations: [
+        {
+          metricKey: "revising.orders",
+          sourceTimestamp: "2026-09-26T00:00:00.000Z",
+          value: revisingValue,
+          dimensions: { resource: "shop" },
+        },
+      ],
+      done: true,
+    };
+  },
+};
+
 /** Emits an observation with a metric key its manifest never declared. */
 const brokenConnector: Connector = {
   manifest: testManifest("broken", "broken.ok"),
@@ -149,7 +176,6 @@ const brokenConnector: Connector = {
           sourceTimestamp: "2026-09-20T00:00:00.000Z",
           value: 1,
           dimensions: { resource: "r1" },
-          sourceIdentity: "broken:1",
         },
       ],
       done: true,
@@ -297,6 +323,7 @@ beforeAll(async () => {
   registry.register(brokenConnector);
   registry.register(leakyConnector);
   registry.register(probeConnector);
+  registry.register(revisingConnector);
   activityProbe = createRawSqlClient(testDb.adminUrl, { max: 1 });
 
   // Explicit catalog sync (production does this at process startup).
@@ -344,6 +371,7 @@ describe("catalog sync", () => {
       "flaky-pages",
       "leaky",
       "probe",
+      "revising",
     ]);
     const metrics = await appDb.select().from(schema.metricDefinitions);
     const keys = metrics.map((row) => `${row.connectorId}/${row.key}`).sort();
@@ -356,6 +384,41 @@ describe("catalog sync", () => {
 });
 
 describe("sync engine", () => {
+  it("stores provider revisions of past values; identical replays write nothing", async () => {
+    const connectionId = await seedConnection(workspaceA, "revising");
+    const run = async () => {
+      const jobId = await enqueue(
+        workspaceA,
+        connectionId,
+        "connection.backfill",
+      );
+      await waitFor(async () => (await jobRow(jobId))?.status === "succeeded");
+    };
+    const storedValues = () =>
+      withWorkspace(appDb, { workspaceId: workspaceA }, async (tx) =>
+        (
+          await tx
+            .select({ value: schema.observations.value })
+            .from(schema.observations)
+            .where(eq(schema.observations.connectionId, connectionId))
+        ).map((row) => row.value),
+      );
+
+    revisingValue = 10;
+    await run();
+    expect(await storedValues()).toEqual([10]);
+
+    // The provider corrects the day (late orders arrived).
+    revisingValue = 14;
+    await run();
+    expect(await storedValues()).toEqual([14]);
+
+    // Replaying the same data is a no-op.
+    await run();
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs.map((r) => r.observations_written)).toEqual([1, 1, 0]);
+  });
+
   it("calls the provider with no database transaction held open", async () => {
     const connectionId = await seedConnection(workspaceA, "probe");
     const jobId = await enqueue(

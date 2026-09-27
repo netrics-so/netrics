@@ -7,7 +7,13 @@ import {
   redactSecrets,
   type ConnectorRegistry,
 } from "@netrics/connector-runtime";
-import type { SyncMode, SyncRequest, SyncResult } from "@netrics/connector-sdk";
+import {
+  observationKey,
+  type Observation,
+  type SyncMode,
+  type SyncRequest,
+  type SyncResult,
+} from "@netrics/connector-sdk";
 import { schema, withWorkspace, type Transaction } from "@netrics/database";
 
 import { decryptCredentials, type CredentialKeyring } from "../credentials.js";
@@ -19,8 +25,6 @@ import {
 } from "../jobs/handlers.js";
 import { upsertConnectorCatalog } from "./catalog.js";
 
-/** Backfills always request the window [now - 90 days, now). */
-const BACKFILL_WINDOW_DAYS = 90;
 /** First-ever incremental sync with no cursor and no last success. */
 const INITIAL_INCREMENTAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Pagination bound: a connector paging forever is a contract violation. */
@@ -54,12 +58,11 @@ function computeWindow(
   mode: SyncMode,
   state: StateRow | null,
   now: Date,
+  backfillDays: number,
 ): { from: Date; to: Date } {
   if (mode === "backfill") {
     return {
-      from: new Date(
-        now.getTime() - BACKFILL_WINDOW_DAYS * 24 * 60 * 60 * 1000,
-      ),
+      from: new Date(now.getTime() - backfillDays * 24 * 60 * 60 * 1000),
       to: now,
     };
   }
@@ -75,25 +78,32 @@ function computeWindow(
  * Inserts observations with (connection_id, source_identity) idempotency and
  * returns how many rows were actually written (duplicates are skipped).
  */
+/**
+ * Upserts a run's observations. Identity is (connection, metric, series,
+ * timestamp) with the series derived by the database from the dimensions
+ * (ADR 0008): a changed value for an existing key is a provider revision and
+ * replaces the stored one; an unchanged value is a no-op. Returns the number
+ * of rows inserted or revised.
+ */
 async function ingestObservations(
   tx: Transaction,
   input: {
     workspaceId: string;
     connectionId: string;
     metricDefinitionIds: Map<string, string>;
-    observations: Array<{
-      metricKey: string;
-      sourceTimestamp: string;
-      value: number;
-      dimensions: Record<string, string>;
-      sourceIdentity: string;
-    }>;
+    observations: Observation[];
   },
 ): Promise<number> {
-  if (input.observations.length === 0) {
+  // One statement may not touch a key twice (ON CONFLICT DO UPDATE); when a
+  // run repeats a key across pages, the later value wins.
+  const latest = new Map<string, Observation>();
+  for (const observation of input.observations) {
+    latest.set(observationKey(observation), observation);
+  }
+  if (latest.size === 0) {
     return 0;
   }
-  const rows = input.observations.map((observation) => {
+  const rows = [...latest.values()].map((observation) => {
     const metricDefinitionId = input.metricDefinitionIds.get(
       observation.metricKey,
     );
@@ -111,20 +121,23 @@ async function ingestObservations(
       sourceTimestamp: new Date(observation.sourceTimestamp),
       value: observation.value,
       dimensions: observation.dimensions,
-      sourceIdentity: observation.sourceIdentity,
     };
   });
-  const inserted = await tx
+  const written = await tx
     .insert(schema.observations)
     .values(rows)
-    .onConflictDoNothing({
+    .onConflictDoUpdate({
       target: [
         schema.observations.connectionId,
-        schema.observations.sourceIdentity,
+        schema.observations.metricDefinitionId,
+        schema.observations.seriesKey,
+        schema.observations.sourceTimestamp,
       ],
+      set: { value: sql`excluded.value`, ingestedAt: sql`now()` },
+      setWhere: sql`${schema.observations.value} is distinct from excluded.value`,
     })
-    .returning({ id: schema.observations.id });
-  return inserted.length;
+    .returning({ connectionId: schema.observations.connectionId });
+  return written.length;
 }
 
 /**
@@ -210,7 +223,12 @@ async function runSync(
       ? (rawSelection as string[])
       : undefined;
 
-  const window = computeWindow(mode, state, now);
+  const window = computeWindow(
+    mode,
+    state,
+    now,
+    deps.registry.get(connection.connectorId)?.manifest.backfillDays ?? 0,
+  );
   const pollIntervalSeconds =
     state?.pollIntervalSeconds ??
     deps.registry.get(connection.connectorId)?.manifest

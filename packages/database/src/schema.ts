@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   smallint,
   text,
   timestamp,
@@ -201,6 +202,9 @@ export const metricDefinitions = pgTable(
     description: text("description").notNull(),
     kind: text("kind").notNull(),
     unit: text("unit").notNull(),
+    // Time resolution (see the connector SDK): "day"/"hour" values are
+    // stamped at the UTC bucket start, "instant" values are point readings.
+    granularity: text("granularity").notNull(),
     dimensions: jsonb("dimensions").notNull(),
     aggregations: jsonb("aggregations").notNull(),
   },
@@ -209,6 +213,10 @@ export const metricDefinitions = pgTable(
     check(
       "metric_definitions_kind_valid",
       sql`${table.kind} in ('gauge', 'delta', 'counter')`,
+    ),
+    check(
+      "metric_definitions_granularity_valid",
+      sql`${table.granularity} in ('day', 'hour', 'instant')`,
     ),
   ],
 );
@@ -229,9 +237,6 @@ export const connections = pgTable("connections", {
   // AES-256-GCM envelope (apps/server/src/credentials.ts). Only code paths
   // that decrypt may read this; never select it into API responses.
   credentialsEncrypted: bytea("credentials_encrypted"),
-  credentialsKeyVersion: integer("credentials_key_version")
-    .notNull()
-    .default(1),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -273,10 +278,15 @@ export const connectionState = pgTable(
 
 // (connection_id, source_identity) is the idempotency key: re-ingesting the
 // same source observation is a no-op (ON CONFLICT DO NOTHING).
+// One value of one series at one time (ADR 0008). The key (connection,
+// metric, series, timestamp) includes the timestamp so the table can be
+// range-partitioned by time; series_key is derived by the database from the
+// canonical jsonb text of the dimensions, so no code path can compute it
+// differently. Re-ingesting a key with a different value is a revision and
+// updates the row; an identical value is a no-op.
 export const observations = pgTable(
   "observations",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
@@ -286,25 +296,31 @@ export const observations = pgTable(
     metricDefinitionId: uuid("metric_definition_id")
       .notNull()
       .references(() => metricDefinitions.id),
+    dimensions: jsonb("dimensions").notNull().default({}),
+    seriesKey: text("series_key")
+      .notNull()
+      .generatedAlwaysAs(sql`md5(dimensions::text)`),
     sourceTimestamp: timestamp("source_timestamp", {
       withTimezone: true,
     }).notNull(),
     value: doublePrecision("value").notNull(),
-    dimensions: jsonb("dimensions").notNull().default({}),
-    sourceIdentity: text("source_identity").notNull(),
     ingestedAt: timestamp("ingested_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
-    unique().on(table.connectionId, table.sourceIdentity),
+    primaryKey({
+      name: "observations_pkey",
+      columns: [
+        table.connectionId,
+        table.metricDefinitionId,
+        table.seriesKey,
+        table.sourceTimestamp,
+      ],
+    }),
     index("observations_workspace_metric_time_idx").on(
       table.workspaceId,
       table.metricDefinitionId,
-      table.sourceTimestamp,
-    ),
-    index("observations_connection_time_idx").on(
-      table.connectionId,
       table.sourceTimestamp,
     ),
   ],
