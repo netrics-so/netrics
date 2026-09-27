@@ -218,6 +218,20 @@ export class ConfigError extends Error {
   }
 }
 
+/**
+ * Empty values count as unset: deployment tools (Compose `${VAR:-}`, env
+ * templates) pass optional settings as empty strings.
+ */
+function withoutEmptyValues(
+  env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(env).filter(
+      ([, value]) => value !== undefined && value !== "",
+    ),
+  );
+}
+
 function formatIssues(error: z.ZodError): string {
   const details = error.issues
     .map((issue) => `  - ${issue.path.join(".") || "(root)"}: ${issue.message}`)
@@ -297,7 +311,7 @@ const keyringEnvSchema = z.object({
 export function loadKeyringConfig(
   env: Record<string, string | undefined> = process.env,
 ): { appEncryptionKey: string; appEncryptionKeysPrevious: string[] } {
-  const result = keyringEnvSchema.safeParse(env);
+  const result = keyringEnvSchema.safeParse(withoutEmptyValues(env));
   if (!result.success) {
     throw new ConfigError(formatIssues(result.error));
   }
@@ -310,7 +324,7 @@ export function loadKeyringConfig(
 export function loadMigrationConfig(
   env: Record<string, string | undefined> = process.env,
 ): MigrationConfig {
-  const result = migrationEnvSchema.safeParse(env);
+  const result = migrationEnvSchema.safeParse(withoutEmptyValues(env));
   if (!result.success) {
     throw new ConfigError(formatIssues(result.error));
   }
@@ -320,7 +334,7 @@ export function loadMigrationConfig(
 export function loadConfig(
   env: Record<string, string | undefined> = process.env,
 ): Config {
-  const result = envSchema.safeParse(env);
+  const result = envSchema.safeParse(withoutEmptyValues(env));
   if (!result.success) {
     throw new ConfigError(formatIssues(result.error));
   }

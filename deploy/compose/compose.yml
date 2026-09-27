@@ -1,0 +1,132 @@
+# netrics self-hosted: the same published images as the hosted service.
+# Configure with .env (created by ./install.sh; see README.md), then:
+#   docker compose up -d
+#
+# Only Caddy publishes ports (80/443, automatic HTTPS). PostgreSQL, the API
+# and the web app are reachable only on the internal network.
+
+x-server: &server
+  image: ghcr.io/netrics-so/server:${NETRICS_VERSION:?set NETRICS_VERSION in .env}
+  restart: unless-stopped
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: netrics
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: netrics
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netrics -d netrics"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Runs on every `up`: applies migrations, assigns the application roles'
+  # passwords, and syncs the connector catalog. Then exits.
+  migrate:
+    image: ghcr.io/netrics-so/server:${NETRICS_VERSION}
+    command: ["node", "dist/migrate.js"]
+    restart: "no"
+    environment:
+      DATABASE_MIGRATION_URL: postgres://netrics:${POSTGRES_PASSWORD}@postgres:5432/netrics
+      NETRICS_APP_DB_PASSWORD: ${NETRICS_APP_DB_PASSWORD:?set NETRICS_APP_DB_PASSWORD in .env}
+      NETRICS_SCHEDULER_DB_PASSWORD: ${NETRICS_SCHEDULER_DB_PASSWORD:?set NETRICS_SCHEDULER_DB_PASSWORD in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *server
+    environment:
+      NETRICS_ROLE: api
+      HOST: 0.0.0.0
+      PORT: "3001"
+      DATABASE_URL: postgres://netrics_app:${NETRICS_APP_DB_PASSWORD}@postgres:5432/netrics
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY in .env}
+      APP_ENCRYPTION_KEYS_PREVIOUS: ${APP_ENCRYPTION_KEYS_PREVIOUS:-}
+      BETTER_AUTH_URL: ${NETRICS_PUBLIC_URL:?set NETRICS_PUBLIC_URL in .env}
+      WEB_ORIGIN: ${NETRICS_PUBLIC_URL}
+      NETRICS_SIGNUP: ${NETRICS_SIGNUP:-closed}
+      NETRICS_SETUP_TOKEN: ${NETRICS_SETUP_TOKEN:-}
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  worker:
+    <<: *server
+    environment:
+      NETRICS_ROLE: worker
+      DATABASE_URL: postgres://netrics_app:${NETRICS_APP_DB_PASSWORD}@postgres:5432/netrics
+      DATABASE_SCHEDULER_URL: postgres://netrics_scheduler:${NETRICS_SCHEDULER_DB_PASSWORD}@postgres:5432/netrics
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
+      APP_ENCRYPTION_KEYS_PREVIOUS: ${APP_ENCRYPTION_KEYS_PREVIOUS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  scheduler:
+    <<: *server
+    environment:
+      NETRICS_ROLE: scheduler
+      DATABASE_SCHEDULER_URL: postgres://netrics_scheduler:${NETRICS_SCHEDULER_DB_PASSWORD}@postgres:5432/netrics
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  web:
+    image: ghcr.io/netrics-so/web:${NETRICS_VERSION}
+    restart: unless-stopped
+    environment:
+      NETRICS_API_URL: http://api:3001
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
+    restart: unless-stopped
+    ports:
+      # Same port inside and out, so the public URL is the site address.
+      # Change NETRICS_HTTPS_PORT (and NETRICS_PUBLIC_URL) only when the host
+      # already serves 443.
+      - "${NETRICS_HTTP_PORT:-80}:80"
+      - "${NETRICS_HTTPS_PORT:-443}:${NETRICS_HTTPS_PORT:-443}"
+    environment:
+      NETRICS_SITE_ADDRESS: ${NETRICS_DOMAIN:?set NETRICS_DOMAIN in .env}:${NETRICS_HTTPS_PORT:-443}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+  # Optional nightly database dump into ./backups (14 days kept):
+  #   docker compose --profile backup up -d
+  backup:
+    profiles: ["backup"]
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          file=/backups/netrics-$$(date -u +%Y%m%dT%H%M%SZ).dump
+          pg_dump -h postgres -U netrics -d netrics -Fc -f "$$file" && echo "backup: $$file"
+          find /backups -name 'netrics-*.dump' -mtime +14 -delete
+          sleep 86400
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
