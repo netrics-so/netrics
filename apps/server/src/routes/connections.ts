@@ -47,6 +47,7 @@ import {
   decryptCredentials,
   encryptCredentials,
   redactSecrets,
+  type CredentialKeyring,
 } from "../credentials.js";
 import { upsertConnectorCatalog } from "../sync/catalog.js";
 import { createRequireSession } from "./session.js";
@@ -55,7 +56,7 @@ export interface ConnectionRouteDeps {
   authService: AuthService;
   db: Database;
   registry: ConnectorRegistry;
-  appEncryptionKey: string;
+  credentialKeyring: CredentialKeyring;
 }
 
 function sendError(reply: FastifyReply, code: number, error: string) {
@@ -378,7 +379,8 @@ export function registerConnectionRoutes(
                     ? Buffer.from(
                         encryptCredentials(
                           JSON.stringify(body.credentials),
-                          deps.appEncryptionKey,
+                          deps.credentialKeyring,
+                          { workspaceId: access.workspaceId, connectionId },
                         ),
                         "utf8",
                       )
@@ -671,7 +673,11 @@ export function registerConnectionRoutes(
                 credentials = JSON.parse(
                   decryptCredentials(
                     existing.row.credentialsEncrypted.toString("utf8"),
-                    deps.appEncryptionKey,
+                    deps.credentialKeyring,
+                    {
+                      workspaceId: access.workspaceId,
+                      connectionId: existing.row.id,
+                    },
                   ),
                 ) as Record<string, unknown>;
               } catch (error) {
@@ -707,7 +713,11 @@ export function registerConnectionRoutes(
                         credentialsEncrypted: Buffer.from(
                           encryptCredentials(
                             JSON.stringify(body.credentials),
-                            deps.appEncryptionKey,
+                            deps.credentialKeyring,
+                            {
+                              workspaceId: access.workspaceId,
+                              connectionId: params.data.connectionId,
+                            },
                           ),
                           "utf8",
                         ),

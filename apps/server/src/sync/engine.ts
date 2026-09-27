@@ -10,7 +10,7 @@ import {
 import type { SyncMode, SyncRequest } from "@netrics/connector-sdk";
 import { schema, withWorkspace, type Transaction } from "@netrics/database";
 
-import { decryptCredentials } from "../credentials.js";
+import { decryptCredentials, type CredentialKeyring } from "../credentials.js";
 import {
   NonRetryableJobError,
   TerminalJobError,
@@ -28,7 +28,7 @@ const MAX_PAGES = 100;
 
 export interface SyncEngineDeps {
   registry: ConnectorRegistry;
-  appEncryptionKey: string;
+  credentialKeyring: CredentialKeyring;
 }
 
 type ErrorClass = "auth" | "transient" | "contract";
@@ -299,7 +299,8 @@ async function runSync(
       ? (JSON.parse(
           decryptCredentials(
             connection.credentialsEncrypted.toString("utf8"),
-            deps.appEncryptionKey,
+            deps.credentialKeyring,
+            { workspaceId: connection.workspaceId, connectionId },
           ),
         ) as Record<string, unknown>)
       : {};

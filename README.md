@@ -134,13 +134,17 @@ Relevant environment variables (see `.env.example`):
 - `BETTER_AUTH_SECRET` — session signing secret, >= 32 chars. Required when
   `NODE_ENV=production`; an obviously insecure fixed default is used in
   development.
-- `APP_ENCRYPTION_KEY` — instance master key for encrypting connection
-  credentials (AES-256-GCM envelopes stored in
-  `connections.credentials_encrypted`); base64 of exactly 32 bytes. Required
-  when `NODE_ENV=production`; an obviously insecure fixed default is used in
-  development. Only code paths that decrypt credentials may read the
-  ciphertext column; log and error paths run values through `redactSecrets()`
-  (`apps/server/src/credentials.ts`).
+- `APP_ENCRYPTION_KEY` — instance master key for connection credentials, as
+  base64 of exactly 32 bytes (`openssl rand -base64 32`). Required when
+  `NODE_ENV=production`; development uses an obviously insecure fixed default.
+  Credentials are stored as AES-256-GCM envelopes in
+  `connections.credentials_encrypted`. Each envelope names its key by
+  fingerprint and is authenticated together with its workspace and connection
+  ids, so an envelope copied to another row does not decrypt. Log and error
+  paths run values through `redactSecrets()` (`apps/server/src/credentials.ts`).
+  **Back up this key.** Without it, stored credentials cannot be recovered.
+- `APP_ENCRYPTION_KEYS_PREVIOUS` — retired keys (comma-separated) that can
+  still decrypt existing envelopes during a rotation.
 - `BETTER_AUTH_URL` — public base URL of the auth endpoints as browsers reach
   them (default `http://localhost:3001`). The api requires an `https://` value
   when `NODE_ENV=production`; better-auth then issues `Secure` cookies.
@@ -163,6 +167,16 @@ In production, the api also rejects the public development values of
 `BETTER_AUTH_SECRET` and `APP_ENCRYPTION_KEY`. Session cookies have a 7-day
 expiry and are validated against the database on every request, so sign-out
 revokes immediately.
+
+#### Rotating the encryption key
+
+1. Generate a new key and set it as `APP_ENCRYPTION_KEY` on api and worker.
+   Move the old key into `APP_ENCRYPTION_KEYS_PREVIOUS`.
+2. Deploy. New and updated credentials use the new key, and existing ones
+   still decrypt with the old key.
+3. Keep the old key in `APP_ENCRYPTION_KEYS_PREVIOUS` until every connection's
+   credentials have been saved again. A bulk re-encryption command is not
+   available yet.
 
 Session-protected API routes live under `/v1`:
 

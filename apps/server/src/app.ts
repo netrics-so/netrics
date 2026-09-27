@@ -20,6 +20,7 @@ import {
 } from "@netrics/connector-runtime";
 
 import { createAuthService, type AuthService } from "./auth/index.js";
+import { createCredentialKeyring } from "./credentials.js";
 import type { Config } from "./env.js";
 import { registerConnectionRoutes } from "./routes/connections.js";
 import { registerSessionRoutes } from "./routes/session.js";
@@ -81,7 +82,10 @@ export async function buildApp(
     authService,
     db,
     registry: deps.registry ?? createDefaultRegistry(),
-    appEncryptionKey: config.appEncryptionKey,
+    credentialKeyring: createCredentialKeyring(
+      config.appEncryptionKey,
+      config.appEncryptionKeysPrevious,
+    ),
   });
 
   app.get("/health/live", async () =>
