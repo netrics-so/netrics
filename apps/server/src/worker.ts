@@ -10,7 +10,6 @@ import {
   failJob,
   heartbeat,
   renewJobLease,
-  withWorkspace,
   type Database,
   type Job,
 } from "@netrics/database";
@@ -156,15 +155,10 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
       }
       const ctx = { job, appDb, schedulerDb, logger: jobLogger };
       stopRenewing = renewLeaseWhileRunning(job, jobLogger);
-      // Tenant work runs as netrics_app inside the job's workspace context;
-      // installation-level jobs (workspace_id NULL) run without one.
-      if (job.workspaceId) {
-        await withWorkspace(appDb, { workspaceId: job.workspaceId }, (tx) =>
-          handler({ ...ctx, tx }),
-        );
-      } else {
-        await handler(ctx);
-      }
+      // No transaction wraps the handler: it opens short workspace-scoped
+      // transactions itself, so a long job never pins a pooled connection
+      // idle-in-transaction (and handlers can call providers outside any).
+      await handler(ctx);
       stopRenewing();
       if (await completeJob(schedulerDb, job.id, workerId)) {
         jobLogger.info({ attempts: job.attempts }, "job succeeded");
@@ -285,8 +279,15 @@ export async function startWorker(config: Config): Promise<void> {
   // Two pools on purpose: the scheduler role claims/advances jobs; the app
   // role executes tenant work inside withWorkspace() (RLS-enforced). The
   // worker never reads credentials through the scheduler pool.
-  const schedulerDb = createDatabase(config.databaseSchedulerUrl);
-  const appDb = createDatabase(config.databaseUrl);
+  // Pools sized from concurrency: every in-flight job may hold one app
+  // connection (short tenant transactions) and renew its lease on the
+  // scheduler pool, next to claims and heartbeats.
+  const schedulerDb = createDatabase(config.databaseSchedulerUrl, {
+    max: config.workerConcurrency + 2,
+  });
+  const appDb = createDatabase(config.databaseUrl, {
+    max: config.workerConcurrency + 2,
+  });
   // Installation-level catalog (connectors + metric definitions) is synced
   // from the reviewed bundle at startup; the sync engine also upserts
   // first-use definitions inline.

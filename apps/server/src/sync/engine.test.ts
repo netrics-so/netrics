@@ -104,6 +104,34 @@ const flakyConnector: Connector = {
   },
 };
 
+/**
+ * Records, from inside each provider call, how many netrics_app sessions sit
+ * idle in a transaction. The engine must not hold one open across connector
+ * I/O (#34).
+ */
+const idleInTransactionDuringSync: number[] = [];
+let activityProbe: Sql | null = null;
+const probeConnector: Connector = {
+  manifest: testManifest("probe", "probe.hits"),
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    return [];
+  },
+  async sync(_context: ConnectionContext, request: SyncRequest) {
+    const [row] = await activityProbe!<{ count: number }[]>`
+      select count(*)::int as count from pg_stat_activity
+      where usename = 'netrics_app' and state like 'idle in transaction%'
+        and datname = current_database()
+    `;
+    idleInTransactionDuringSync.push(row!.count);
+    return request.cursor
+      ? { observations: [], done: true }
+      : { observations: [], nextCursor: "page-2", done: false };
+  },
+};
+
 /** Emits an observation with a metric key its manifest never declared. */
 const brokenConnector: Connector = {
   manifest: testManifest("broken", "broken.ok"),
@@ -268,6 +296,8 @@ beforeAll(async () => {
   registry.register(flakyConnector);
   registry.register(brokenConnector);
   registry.register(leakyConnector);
+  registry.register(probeConnector);
+  activityProbe = createRawSqlClient(testDb.adminUrl, { max: 1 });
 
   // Explicit catalog sync (production does this at process startup).
   await syncCatalog(appDb, registry);
@@ -302,6 +332,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await worker.stop().catch(() => undefined);
   await schedulerRaw.end({ timeout: 5 }).catch(() => undefined);
+  await activityProbe?.end({ timeout: 5 }).catch(() => undefined);
 });
 
 describe("catalog sync", () => {
@@ -312,6 +343,7 @@ describe("catalog sync", () => {
       "demo",
       "flaky-pages",
       "leaky",
+      "probe",
     ]);
     const metrics = await appDb.select().from(schema.metricDefinitions);
     const keys = metrics.map((row) => `${row.connectorId}/${row.key}`).sort();
@@ -324,6 +356,18 @@ describe("catalog sync", () => {
 });
 
 describe("sync engine", () => {
+  it("calls the provider with no database transaction held open", async () => {
+    const connectionId = await seedConnection(workspaceA, "probe");
+    const jobId = await enqueue(
+      workspaceA,
+      connectionId,
+      "connection.backfill",
+    );
+    await waitFor(async () => (await jobRow(jobId))?.status === "succeeded");
+    // Two pages were fetched; during neither was a transaction held open.
+    expect(idleInTransactionDuringSync).toEqual([0, 0]);
+  });
+
   it("backfills a demo connection: observations, cursor, state, sync_run", async () => {
     const connectionId = await seedConnection(workspaceA, "demo");
     const jobId = await enqueue(

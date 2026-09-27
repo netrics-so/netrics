@@ -162,8 +162,19 @@ export async function runMigrations(
   }
 }
 
-export function createDatabase(databaseUrl: string) {
-  const client = postgres(databaseUrl);
+export interface DatabaseOptions {
+  /** Pool size (postgres.js default: 10). */
+  max?: number;
+}
+
+export function createDatabase(
+  databaseUrl: string,
+  options: DatabaseOptions = {},
+) {
+  const client = postgres(
+    databaseUrl,
+    options.max === undefined ? {} : { max: options.max },
+  );
   // The drizzle instance carries the domain tables and the generated
   // better-auth tables (schema "auth") so the server auth adapter can share
   // one connection.

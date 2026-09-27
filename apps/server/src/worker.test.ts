@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -96,21 +97,21 @@ afterAll(async () => {
 });
 
 describe("worker", () => {
-  it("executes a netrics.noop job to completion inside the tenant context", async () => {
+  it("executes a netrics.noop job to completion", async () => {
     const jobId = await withWorkspace(
       appDb,
       { workspaceId: workspaceA },
       (tx) => enqueueJob(tx, { kind: "netrics.noop", workspaceId: workspaceA }),
     );
-    const ran: Array<{ jobId: string; hadTx: boolean }> = [];
+    const ran: string[] = [];
     const worker = await startWorker({
       "netrics.noop": async (ctx) => {
-        ran.push({ jobId: ctx.job.id, hadTx: ctx.tx !== undefined });
+        ran.push(ctx.job.id);
       },
     });
     try {
       await waitFor(async () => (await jobRow(jobId))?.status === "succeeded");
-      expect(ran).toEqual([{ jobId, hadTx: true }]);
+      expect(ran).toEqual([jobId]);
     } finally {
       await worker.stop();
     }
@@ -279,6 +280,42 @@ describe("worker", () => {
       expect((await jobRow(jobId))?.attempts).toBe(1);
     } finally {
       await worker.stop();
+    }
+  });
+
+  it("runs more concurrent jobs than the app pool has connections", async () => {
+    // Before #34 every job pinned a pooled connection in an outer
+    // transaction while its handler opened another: concurrency >= pool size
+    // deadlocked. Handlers now only hold short transactions of their own.
+    const smallPool = createDatabase(testDb.appUrl, { max: 2 });
+    const jobIds: string[] = [];
+    for (let index = 0; index < 6; index += 1) {
+      jobIds.push(
+        await withWorkspace(appDb, { workspaceId: workspaceA }, (tx) =>
+          enqueueJob(tx, { kind: "test.tenant", workspaceId: workspaceA }),
+        ),
+      );
+    }
+    const worker = await startWorker(
+      {
+        "test.tenant": async (ctx) => {
+          await withWorkspace(
+            ctx.appDb,
+            { workspaceId: ctx.job.workspaceId! },
+            (tx) => tx.execute(sql`select pg_sleep(0.05)`),
+          );
+        },
+      },
+      { appDb: smallPool, concurrency: 6 },
+    );
+    try {
+      await waitFor(async () => {
+        const rows = await Promise.all(jobIds.map(jobRow));
+        return rows.every((row) => row?.status === "succeeded");
+      });
+    } finally {
+      await worker.stop();
+      await smallPool.$client.end({ timeout: 5 }).catch(() => undefined);
     }
   });
 

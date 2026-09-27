@@ -1,4 +1,4 @@
-import type { Database, Job, Transaction } from "@netrics/database";
+import type { Database, Job } from "@netrics/database";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import type { Logger } from "pino";
 
@@ -9,17 +9,15 @@ import { createSyncJobHandlers } from "../sync/engine.js";
 export interface JobHandlerContext {
   /** The claimed job (status running, locked to this worker). */
   job: Job;
-  /** App-role handle — only ever used inside a tenant context. */
+  /**
+   * App-role handle. Tenant work opens its own short transactions with
+   * withWorkspace(appDb, { workspaceId: job.workspaceId }) so RLS applies;
+   * no transaction may span external I/O (connector calls).
+   */
   appDb: Database;
   /** Scheduler-role handle (claim/complete/fail/heartbeat). */
   schedulerDb: Database;
   logger: Logger;
-  /**
-   * RLS-scoped tenant transaction for the job's workspace; present iff the
-   * job carries a workspace_id. Handlers doing tenant work must use this
-   * handle so RLS applies.
-   */
-  tx?: Transaction;
 }
 
 /**
