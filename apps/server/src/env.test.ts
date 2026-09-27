@@ -8,6 +8,11 @@ const validEnv = {
   DATABASE_URL: "postgres://netrics:netrics@localhost:5432/netrics",
 };
 
+const productionUrls = {
+  BETTER_AUTH_URL: "https://app.example.com",
+  WEB_ORIGIN: "https://app.example.com",
+};
+
 describe("loadConfig", () => {
   it("applies defaults", () => {
     const config = loadConfig({});
@@ -78,6 +83,7 @@ describe("loadConfig", () => {
   it("accepts a production BETTER_AUTH_SECRET of at least 32 chars", () => {
     const config = loadConfig({
       ...validEnv,
+      ...productionUrls,
       NODE_ENV: "production",
       BETTER_AUTH_SECRET: "a".repeat(32),
       APP_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
@@ -142,6 +148,7 @@ describe("loadConfig", () => {
   it("requires DATABASE_SCHEDULER_URL in production for worker/scheduler roles", () => {
     const prod = {
       ...validEnv,
+      ...productionUrls,
       NODE_ENV: "production",
       BETTER_AUTH_SECRET: "a".repeat(32),
       APP_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
@@ -220,5 +227,72 @@ describe("loadMigrationConfig", () => {
         NETRICS_APP_DB_PASSWORD: "short",
       }),
     ).toThrow(ConfigError);
+  });
+});
+
+describe("production hardening", () => {
+  const prod = {
+    ...validEnv,
+    NODE_ENV: "production",
+    BETTER_AUTH_SECRET: randomBytes(32).toString("hex"),
+    APP_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+  };
+
+  it("requires https BETTER_AUTH_URL and WEB_ORIGIN for the api", () => {
+    expect(() => loadConfig(prod)).toThrowError(/BETTER_AUTH_URL/);
+    expect(() =>
+      loadConfig({
+        ...prod,
+        BETTER_AUTH_URL: "http://app.example.com",
+        WEB_ORIGIN: "https://app.example.com",
+      }),
+    ).toThrowError(/BETTER_AUTH_URL must be set to an https/);
+    const config = loadConfig({ ...prod, ...productionUrls });
+    expect(config.betterAuthUrl).toBe("https://app.example.com");
+    // Background roles serve no browser traffic.
+    expect(() =>
+      loadConfig({
+        ...prod,
+        NETRICS_ROLE: "scheduler",
+        DATABASE_SCHEDULER_URL: "postgres://s:s@db.example.com/netrics",
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects the public development secrets", () => {
+    const dev = loadConfig({});
+    expect(() =>
+      loadConfig({
+        ...prod,
+        ...productionUrls,
+        BETTER_AUTH_SECRET: dev.betterAuthSecret,
+      }),
+    ).toThrowError(/BETTER_AUTH_SECRET is the public development value/);
+    expect(() =>
+      loadConfig({
+        ...prod,
+        ...productionUrls,
+        APP_ENCRYPTION_KEY: dev.appEncryptionKey,
+      }),
+    ).toThrowError(/APP_ENCRYPTION_KEY is the public development value/);
+  });
+
+  it("configures SMTP only together with MAIL_FROM", () => {
+    expect(loadConfig({}).smtp).toBeNull();
+    expect(() =>
+      loadConfig({ SMTP_URL: "smtps://u:p@smtp.example.com:465" }),
+    ).toThrowError(/MAIL_FROM/);
+    expect(() =>
+      loadConfig({ SMTP_URL: "https://smtp.example.com", MAIL_FROM: "a@b.c" }),
+    ).toThrowError(/SMTP_URL/);
+    expect(
+      loadConfig({
+        SMTP_URL: "smtps://u:p@smtp.example.com:465",
+        MAIL_FROM: "netrics <no-reply@example.com>",
+      }).smtp,
+    ).toEqual({
+      url: "smtps://u:p@smtp.example.com:465",
+      from: "netrics <no-reply@example.com>",
+    });
   });
 });

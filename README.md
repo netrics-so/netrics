@@ -141,15 +141,20 @@ Relevant environment variables (see `.env.example`):
   development. Only code paths that decrypt credentials may read the
   ciphertext column; log and error paths run values through `redactSecrets()`
   (`apps/server/src/credentials.ts`).
-- `BETTER_AUTH_URL` — public base URL of the API (default
-  `http://localhost:3001`).
+- `BETTER_AUTH_URL` — public base URL of the auth endpoints as browsers reach
+  them (default `http://localhost:3001`). The api requires an `https://` value
+  when `NODE_ENV=production`; better-auth then issues `Secure` cookies.
 - `WEB_ORIGIN` — web app origin allowed for credentialed CORS requests
-  (default `http://localhost:3000`).
+  (default `http://localhost:3000`); same production rule.
+- `SMTP_URL` and `MAIL_FROM` — outbound email for verification and password
+  reset (`smtps://user:pass@host:465`). In local development, without SMTP,
+  the links are logged. Anywhere else, without SMTP, the server refuses to
+  send them and never logs them.
 
-Email verification and password-reset emails are only logged by the server in
-this milestone (no SMTP yet); session cookies are `better-auth.session_token`
-with a 7-day expiry, validated against the database on every request so
-sign-out revokes immediately.
+In production, the api also rejects the public development values of
+`BETTER_AUTH_SECRET` and `APP_ENCRYPTION_KEY`. Session cookies have a 7-day
+expiry and are validated against the database on every request, so sign-out
+revokes immediately.
 
 Session-protected API routes live under `/v1`:
 

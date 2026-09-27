@@ -1,4 +1,7 @@
-# Optional: run the production app images together with PostgreSQL.
+# Local smoke test of the app images together with the dev PostgreSQL. This
+# is NOT a deployment: the images run with NODE_ENV=development so the public
+# development secrets and plain-http localhost URLs apply. Production
+# refuses both. The supported self-hosted install lives in deploy/compose (#43).
 # Use together with the base file:
 #   docker compose -f docker-compose.yml -f docker-compose.app.yml up --build
 # Apply migrations (and dev role passwords) from the host before starting:
@@ -13,16 +16,7 @@ services:
       PORT: "3001"
       HOST: 0.0.0.0
       NETRICS_ROLE: api
-      # Dev-only auth secret (the image runs with NODE_ENV=production, which
-      # requires it to be set); replace with a real secret in any real
-      # deployment, e.g. `openssl rand -base64 32`.
-      BETTER_AUTH_SECRET: netrics-dev-only-insecure-secret-000000
-      # Dev-only credential encryption key (the image runs with
-      # NODE_ENV=production, which requires it); replace with a real key in any
-      # real deployment, e.g. `openssl rand -base64 32`.
-      APP_ENCRYPTION_KEY: bmV0cmljcy1kZXYtb25seS1pbnNlY3VyZS1rZXkhITE=
-      BETTER_AUTH_URL: http://localhost:3001
-      WEB_ORIGIN: http://localhost:3000
+      NODE_ENV: development
     ports:
       - "3001:3001"
     depends_on:
@@ -40,9 +34,7 @@ services:
       DATABASE_SCHEDULER_URL: postgres://netrics_scheduler:netrics_scheduler@postgres:5432/netrics
       NETRICS_ROLE: worker
       WORKER_CONCURRENCY: "4"
-      # Dev-only credential encryption key (see api above); replace in any
-      # real deployment.
-      APP_ENCRYPTION_KEY: bmV0cmljcy1kZXYtb25seS1pbnNlY3VyZS1rZXkhITE=
+      NODE_ENV: development
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,6 +49,7 @@ services:
       DATABASE_URL: postgres://netrics_app:netrics_app@postgres:5432/netrics
       DATABASE_SCHEDULER_URL: postgres://netrics_scheduler:netrics_scheduler@postgres:5432/netrics
       NETRICS_ROLE: scheduler
+      NODE_ENV: development
       SCHEDULER_POLL_MS: "5000"
     depends_on:
       postgres:

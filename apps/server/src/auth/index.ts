@@ -12,9 +12,29 @@ import {
 } from "@netrics/database";
 
 import type { Config } from "../env.js";
-import { createLoggingMailer, type AuthMailer } from "./mailer.js";
+import {
+  createLoggingMailer,
+  createSmtpMailer,
+  createUnavailableMailer,
+  type AuthMailer,
+} from "./mailer.js";
 
 export type { AuthEmail, AuthMailer } from "./mailer.js";
+export { EmailNotConfiguredError } from "./mailer.js";
+
+/** SMTP when configured; the log mailer only in local development. */
+function defaultMailer(config: Config, logger: FastifyBaseLogger): AuthMailer {
+  if (config.smtp) {
+    return createSmtpMailer({
+      from: config.smtp.from,
+      transport: config.smtp.url,
+      logger,
+    });
+  }
+  return config.nodeEnv === "development"
+    ? createLoggingMailer(logger)
+    : createUnavailableMailer(logger);
+}
 
 export interface SessionIdentity {
   authUserId: string;
@@ -45,7 +65,7 @@ export function createAuthService(
   deps: AuthServiceDeps,
 ): AuthService {
   const logger = deps.logger.child({ module: "auth" });
-  const mailer = deps.mailer ?? createLoggingMailer(logger);
+  const mailer = deps.mailer ?? defaultMailer(config, logger);
 
   const auth = betterAuth({
     baseURL: config.betterAuthUrl,
@@ -59,7 +79,8 @@ export function createAuthService(
     }),
     emailAndPassword: {
       enabled: true,
-      // No SMTP yet (milestone 13), so verification cannot gate sign-in.
+      // Verification cannot gate sign-in until invitations require verified
+      // addresses (#27); verification emails are still sent when SMTP exists.
       requireEmailVerification: false,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => {
@@ -128,7 +149,8 @@ export function createAuthService(
   return {
     // Fetch-style bridge between Fastify and the better-auth handler.
     async handle(request, reply) {
-      const url = new URL(request.url, `http://${request.headers.host}`);
+      // Never derive the URL from the client-controlled Host header.
+      const url = new URL(request.url, config.betterAuthUrl);
       const req = new Request(url.toString(), {
         method: request.method,
         headers: fromNodeHeaders(request.headers),
