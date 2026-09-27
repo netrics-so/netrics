@@ -178,6 +178,13 @@ revokes immediately.
    credentials have been saved again. A bulk re-encryption command is not
    available yet.
 
+The API is described by an OpenAPI 3.1 document generated from the zod
+contracts: served at `GET /v1/openapi.json` and committed as
+`packages/contracts/openapi.json`. `pnpm openapi` regenerates it, and CI fails
+when the committed file is stale (`pnpm openapi:check`). Routes validate
+bodies and query strings against the same schemas. Path ids are checked in
+the handlers, so a malformed id answers 404 like an unknown one.
+
 Session-protected API routes live under `/v1`:
 
 - `GET /v1/me` — current user and workspace memberships.

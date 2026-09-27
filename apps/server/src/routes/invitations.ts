@@ -30,6 +30,7 @@ import type { AuthService } from "../auth/index.js";
 import type { Mailer } from "../mail/mailer.js";
 import { generateToken, hashToken } from "../tokens.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
+import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
 
 export interface InvitationRouteDeps {
@@ -83,22 +84,34 @@ export function registerInvitationRoutes(
     (scope, _opts, done) => {
       // Public: the token is the credential. Reveals only what the invite
       // page shows (workspace name, invited address, role, status).
-      scope.get("/invitations/:token", async (request, reply) => {
-        const params = tokenParamsSchema.safeParse(request.params);
-        const preview = params.success
-          ? await previewInvitation(deps.db, hashToken(params.data.token))
-          : null;
-        if (!preview) {
-          return sendError(reply, 404, "invitation_not_found");
-        }
-        return invitationPreviewResponseSchema.parse({
-          workspaceName: preview.workspaceName,
-          email: preview.email,
-          role: preview.role,
-          status: preview.status,
-          expiresAt: preview.expiresAt.toISOString(),
-        });
-      });
+      scope.get(
+        "/invitations/:token",
+        {
+          schema: routeSchema({
+            summary: "Preview an invitation (token holder)",
+            tags: ["invitations"],
+            response: invitationPreviewResponseSchema,
+            errors: [404],
+            public: true,
+          }),
+        },
+        async (request, reply) => {
+          const params = tokenParamsSchema.safeParse(request.params);
+          const preview = params.success
+            ? await previewInvitation(deps.db, hashToken(params.data.token))
+            : null;
+          if (!preview) {
+            return sendError(reply, 404, "invitation_not_found");
+          }
+          return invitationPreviewResponseSchema.parse({
+            workspaceName: preview.workspaceName,
+            email: preview.email,
+            role: preview.role,
+            status: preview.status,
+            expiresAt: preview.expiresAt.toISOString(),
+          });
+        },
+      );
 
       done();
     },
@@ -107,10 +120,20 @@ export function registerInvitationRoutes(
 
   void app.register(
     (scope, _opts, done) => {
-      scope.addHook("preHandler", requireSession);
+      // onRequest: authentication precedes body validation.
+      scope.addHook("onRequest", requireSession);
 
       scope.post(
         "/workspaces/:workspaceId/invitations",
+        {
+          schema: routeSchema({
+            summary: "Invite someone by email",
+            tags: ["invitations"],
+            body: createInvitationRequestSchema,
+            response: invitationResponseSchema,
+            errors: [403, 404, 409, 502],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -191,6 +214,14 @@ export function registerInvitationRoutes(
 
       scope.get(
         "/workspaces/:workspaceId/invitations",
+        {
+          schema: routeSchema({
+            summary: "List open invitations",
+            tags: ["invitations"],
+            response: invitationListResponseSchema,
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -212,6 +243,13 @@ export function registerInvitationRoutes(
 
       scope.delete(
         "/workspaces/:workspaceId/invitations/:invitationId",
+        {
+          schema: routeSchema({
+            summary: "Revoke an invitation",
+            tags: ["invitations"],
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -261,29 +299,40 @@ export function registerInvitationRoutes(
         },
       );
 
-      scope.post("/invitations/:token/accept", async (request, reply) => {
-        const params = tokenParamsSchema.safeParse(request.params);
-        if (!params.success) {
-          return sendError(reply, 404, "invitation_not_found");
-        }
-        try {
-          const workspaceId = await acceptInvitation(
-            deps.db,
-            hashToken(params.data.token),
-            request.sessionIdentity!.domainUserId,
-          );
-          return acceptInvitationResponseSchema.parse({ workspaceId });
-        } catch (error) {
-          if (error instanceof AcceptInvitationFailure) {
-            return sendError(
-              reply,
-              ACCEPT_FAILURE_STATUS[error.reason],
-              error.reason,
-            );
+      scope.post(
+        "/invitations/:token/accept",
+        {
+          schema: routeSchema({
+            summary: "Accept an invitation",
+            tags: ["invitations"],
+            response: acceptInvitationResponseSchema,
+            errors: [403, 404, 410],
+          }),
+        },
+        async (request, reply) => {
+          const params = tokenParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "invitation_not_found");
           }
-          throw error;
-        }
-      });
+          try {
+            const workspaceId = await acceptInvitation(
+              deps.db,
+              hashToken(params.data.token),
+              request.sessionIdentity!.domainUserId,
+            );
+            return acceptInvitationResponseSchema.parse({ workspaceId });
+          } catch (error) {
+            if (error instanceof AcceptInvitationFailure) {
+              return sendError(
+                reply,
+                ACCEPT_FAILURE_STATUS[error.reason],
+                error.reason,
+              );
+            }
+            throw error;
+          }
+        },
+      );
 
       done();
     },

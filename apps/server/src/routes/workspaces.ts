@@ -46,6 +46,7 @@ import { can, canManageMember } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
+import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
 
 export interface WorkspaceRouteDeps {
@@ -91,110 +92,166 @@ export function registerWorkspaceRoutes(
 
   void app.register(
     (scope, _opts, done) => {
-      scope.addHook("preHandler", requireSession);
+      // onRequest: authentication precedes body validation.
+      scope.addHook("onRequest", requireSession);
 
-      scope.post("/workspaces", async (request, reply) => {
-        const body = parseBody(createWorkspaceRequestSchema, request, reply);
-        if (!body) {
-          return;
-        }
-        const workspace = await createWorkspaceWithOwner(deps.db, {
-          name: body.name,
-          ownerUserId: request.sessionIdentity!.domainUserId,
-        });
-        return workspaceResponseSchema.parse({
-          workspace: toWorkspace(workspace),
-        });
-      });
+      scope.post(
+        "/workspaces",
+        {
+          schema: routeSchema({
+            summary: "Create a workspace",
+            tags: ["workspaces"],
+            body: createWorkspaceRequestSchema,
+            response: workspaceResponseSchema,
+          }),
+        },
+        async (request, reply) => {
+          const body = parseBody(createWorkspaceRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const workspace = await createWorkspaceWithOwner(deps.db, {
+            name: body.name,
+            ownerUserId: request.sessionIdentity!.domainUserId,
+          });
+          return workspaceResponseSchema.parse({
+            workspace: toWorkspace(workspace),
+          });
+        },
+      );
 
-      scope.get("/workspaces", async (request) => {
-        const callerId = request.sessionIdentity!.domainUserId;
-        const memberships = await listMembershipsForUser(deps.db, callerId);
-        return workspaceListResponseSchema.parse({
-          workspaces: memberships.map((membership) => ({
-            id: membership.workspaceId,
-            name: membership.workspaceName,
-            role: membership.role,
-            activeProjectId: membership.activeProjectId,
-          })),
-        });
-      });
+      scope.get(
+        "/workspaces",
+        {
+          schema: routeSchema({
+            summary: "List the caller's workspaces",
+            tags: ["workspaces"],
+            response: workspaceListResponseSchema,
+          }),
+        },
+        async (request) => {
+          const callerId = request.sessionIdentity!.domainUserId;
+          const memberships = await listMembershipsForUser(deps.db, callerId);
+          return workspaceListResponseSchema.parse({
+            workspaces: memberships.map((membership) => ({
+              id: membership.workspaceId,
+              name: membership.workspaceName,
+              role: membership.role,
+              activeProjectId: membership.activeProjectId,
+            })),
+          });
+        },
+      );
 
-      scope.get("/workspaces/:workspaceId", async (request, reply) => {
-        const access = await resolveAccess(deps.db, request, reply);
-        if (!access) {
-          return;
-        }
-        const workspace = await withWorkspace(
-          deps.db,
-          { workspaceId: access.workspaceId, userId: access.callerId },
-          (tx) => findWorkspace(tx, access.workspaceId),
-        );
-        if (!workspace) {
-          return sendError(reply, 404, "workspace_not_found");
-        }
-        return workspaceResponseSchema.parse({
-          workspace: toWorkspace(workspace),
-        });
-      });
+      scope.get(
+        "/workspaces/:workspaceId",
+        {
+          schema: routeSchema({
+            summary: "Get a workspace",
+            tags: ["workspaces"],
+            response: workspaceResponseSchema,
+            errors: [404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          const workspace = await withWorkspace(
+            deps.db,
+            { workspaceId: access.workspaceId, userId: access.callerId },
+            (tx) => findWorkspace(tx, access.workspaceId),
+          );
+          if (!workspace) {
+            return sendError(reply, 404, "workspace_not_found");
+          }
+          return workspaceResponseSchema.parse({
+            workspace: toWorkspace(workspace),
+          });
+        },
+      );
 
-      scope.patch("/workspaces/:workspaceId", async (request, reply) => {
-        const access = await resolveAccess(deps.db, request, reply);
-        if (!access) {
-          return;
-        }
-        if (!can(access.role, "workspace:rename")) {
-          return sendError(reply, 403, "forbidden");
-        }
-        const body = parseBody(renameWorkspaceRequestSchema, request, reply);
-        if (!body) {
-          return;
-        }
-        const workspace = await withWorkspace(
-          deps.db,
-          { workspaceId: access.workspaceId, userId: access.callerId },
-          async (tx) => {
-            const current = await findWorkspace(tx, access.workspaceId);
-            if (!current) {
-              return null;
-            }
-            const renamed = await renameWorkspace(
-              tx,
-              access.workspaceId,
-              body.name,
-            );
-            await insertAuditEvent(tx, {
-              workspaceId: access.workspaceId,
-              actorUserId: access.callerId,
-              action: "workspace.renamed",
-              target: access.workspaceId,
-              metadata: { oldName: current.name, newName: body.name },
-            });
-            return renamed;
-          },
-        );
-        if (!workspace) {
-          return sendError(reply, 404, "workspace_not_found");
-        }
-        return workspaceResponseSchema.parse({
-          workspace: toWorkspace(workspace),
-        });
-      });
+      scope.patch(
+        "/workspaces/:workspaceId",
+        {
+          schema: routeSchema({
+            summary: "Rename a workspace",
+            tags: ["workspaces"],
+            body: renameWorkspaceRequestSchema,
+            response: workspaceResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "workspace:rename")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const body = parseBody(renameWorkspaceRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const workspace = await withWorkspace(
+            deps.db,
+            { workspaceId: access.workspaceId, userId: access.callerId },
+            async (tx) => {
+              const current = await findWorkspace(tx, access.workspaceId);
+              if (!current) {
+                return null;
+              }
+              const renamed = await renameWorkspace(
+                tx,
+                access.workspaceId,
+                body.name,
+              );
+              await insertAuditEvent(tx, {
+                workspaceId: access.workspaceId,
+                actorUserId: access.callerId,
+                action: "workspace.renamed",
+                target: access.workspaceId,
+                metadata: { oldName: current.name, newName: body.name },
+              });
+              return renamed;
+            },
+          );
+          if (!workspace) {
+            return sendError(reply, 404, "workspace_not_found");
+          }
+          return workspaceResponseSchema.parse({
+            workspace: toWorkspace(workspace),
+          });
+        },
+      );
 
-      scope.get("/workspaces/:workspaceId/members", async (request, reply) => {
-        const access = await resolveAccess(deps.db, request, reply);
-        if (!access) {
-          return;
-        }
-        const members = await withWorkspace(
-          deps.db,
-          { workspaceId: access.workspaceId, userId: access.callerId },
-          (tx) => listMembers(tx, access.workspaceId),
-        );
-        return memberListResponseSchema.parse({
-          members: members.map(toMember),
-        });
-      });
+      scope.get(
+        "/workspaces/:workspaceId/members",
+        {
+          schema: routeSchema({
+            summary: "List members",
+            tags: ["members"],
+            response: memberListResponseSchema,
+            errors: [404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          const members = await withWorkspace(
+            deps.db,
+            { workspaceId: access.workspaceId, userId: access.callerId },
+            (tx) => listMembers(tx, access.workspaceId),
+          );
+          return memberListResponseSchema.parse({
+            members: members.map(toMember),
+          });
+        },
+      );
 
       // Members join through invitations (routes/invitations.ts): adding an
       // existing account directly by email would grant access without any
@@ -202,6 +259,15 @@ export function registerWorkspaceRoutes(
 
       scope.patch(
         "/workspaces/:workspaceId/members/:userId",
+        {
+          schema: routeSchema({
+            summary: "Change a member's role",
+            tags: ["members"],
+            body: updateMemberRoleRequestSchema,
+            response: memberResponseSchema,
+            errors: [403, 404, 409],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -284,6 +350,13 @@ export function registerWorkspaceRoutes(
 
       scope.delete(
         "/workspaces/:workspaceId/members/:userId",
+        {
+          schema: routeSchema({
+            summary: "Remove a member (or leave)",
+            tags: ["members"],
+            errors: [403, 404, 409],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -348,6 +421,15 @@ export function registerWorkspaceRoutes(
 
       scope.patch(
         "/workspaces/:workspaceId/active-project",
+        {
+          schema: routeSchema({
+            summary: "Set the caller's active project",
+            tags: ["projects"],
+            body: setActiveProjectRequestSchema,
+            response: activeProjectResponseSchema,
+            errors: [404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -393,6 +475,15 @@ export function registerWorkspaceRoutes(
 
       scope.post(
         "/workspaces/:workspaceId/projects",
+        {
+          schema: routeSchema({
+            summary: "Create a project",
+            tags: ["projects"],
+            body: createProjectRequestSchema,
+            response: projectResponseSchema,
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -427,23 +518,43 @@ export function registerWorkspaceRoutes(
         },
       );
 
-      scope.get("/workspaces/:workspaceId/projects", async (request, reply) => {
-        const access = await resolveAccess(deps.db, request, reply);
-        if (!access) {
-          return;
-        }
-        const projects = await withWorkspace(
-          deps.db,
-          { workspaceId: access.workspaceId, userId: access.callerId },
-          (tx) => listProjects(tx, access.workspaceId),
-        );
-        return projectListResponseSchema.parse({
-          projects: projects.map(toProject),
-        });
-      });
+      scope.get(
+        "/workspaces/:workspaceId/projects",
+        {
+          schema: routeSchema({
+            summary: "List projects",
+            tags: ["projects"],
+            response: projectListResponseSchema,
+            errors: [404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          const projects = await withWorkspace(
+            deps.db,
+            { workspaceId: access.workspaceId, userId: access.callerId },
+            (tx) => listProjects(tx, access.workspaceId),
+          );
+          return projectListResponseSchema.parse({
+            projects: projects.map(toProject),
+          });
+        },
+      );
 
       scope.patch(
         "/workspaces/:workspaceId/projects/:projectId",
+        {
+          schema: routeSchema({
+            summary: "Rename a project",
+            tags: ["projects"],
+            body: renameProjectRequestSchema,
+            response: projectResponseSchema,
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -497,6 +608,13 @@ export function registerWorkspaceRoutes(
 
       scope.delete(
         "/workspaces/:workspaceId/projects/:projectId",
+        {
+          schema: routeSchema({
+            summary: "Delete a project",
+            tags: ["projects"],
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {
@@ -545,6 +663,14 @@ export function registerWorkspaceRoutes(
 
       scope.get(
         "/workspaces/:workspaceId/audit-events",
+        {
+          schema: routeSchema({
+            summary: "Workspace audit log",
+            tags: ["workspaces"],
+            response: auditEventListResponseSchema,
+            errors: [403, 404],
+          }),
+        },
         async (request, reply) => {
           const access = await resolveAccess(deps.db, request, reply);
           if (!access) {

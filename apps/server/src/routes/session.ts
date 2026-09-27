@@ -16,6 +16,7 @@ import {
 } from "@netrics/database";
 
 import type { AuthService, SessionIdentity } from "../auth/index.js";
+import { routeSchema } from "./openapi.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -61,52 +62,75 @@ export function registerSessionRoutes(
 
   void app.register(
     (scope, _opts, done) => {
-      scope.addHook("preHandler", requireSession);
+      // onRequest: authentication precedes body validation.
+      scope.addHook("onRequest", requireSession);
 
-      scope.get("/me", async (request, reply) => {
-        const identity = request.sessionIdentity!;
-        const user = await findUserById(deps.db, identity.domainUserId);
-        if (!user) {
-          return unauthorized(reply);
-        }
-        const memberships = await listMembershipsForUser(deps.db, user.id);
-        return meResponseSchema.parse({
-          user: {
-            id: user.id,
-            email: user.email,
-            displayName: user.displayName,
-          },
-          memberships,
-        });
-      });
-
-      scope.post("/bootstrap", async (request, reply) => {
-        const identity = request.sessionIdentity!;
-        const parsed = bootstrapRequestSchema.safeParse(request.body);
-        if (!parsed.success) {
-          return reply
-            .code(400)
-            .send(errorResponseSchema.parse({ error: "invalid_request" }));
-        }
-        try {
-          const workspaceId = await bootstrapWorkspace(deps.db, {
-            name: parsed.data.workspaceName,
-            ownerUserId: identity.domainUserId,
-          });
-          return bootstrapResponseSchema.parse({
-            workspace: { id: workspaceId, name: parsed.data.workspaceName },
-          });
-        } catch (error) {
-          if (hasSqlstate(error, BOOTSTRAP_CONFLICT_SQLSTATE)) {
-            return reply.code(409).send(
-              errorResponseSchema.parse({
-                error: "workspace_already_exists",
-              }),
-            );
+      scope.get(
+        "/me",
+        {
+          schema: routeSchema({
+            summary: "Current user and memberships",
+            tags: ["session"],
+            response: meResponseSchema,
+          }),
+        },
+        async (request, reply) => {
+          const identity = request.sessionIdentity!;
+          const user = await findUserById(deps.db, identity.domainUserId);
+          if (!user) {
+            return unauthorized(reply);
           }
-          throw error;
-        }
-      });
+          const memberships = await listMembershipsForUser(deps.db, user.id);
+          return meResponseSchema.parse({
+            user: {
+              id: user.id,
+              email: user.email,
+              displayName: user.displayName,
+            },
+            memberships,
+          });
+        },
+      );
+
+      scope.post(
+        "/bootstrap",
+        {
+          schema: routeSchema({
+            summary: "Create the installation's first workspace",
+            tags: ["session"],
+            body: bootstrapRequestSchema,
+            response: bootstrapResponseSchema,
+            errors: [409],
+          }),
+        },
+        async (request, reply) => {
+          const identity = request.sessionIdentity!;
+          const parsed = bootstrapRequestSchema.safeParse(request.body);
+          if (!parsed.success) {
+            return reply
+              .code(400)
+              .send(errorResponseSchema.parse({ error: "invalid_request" }));
+          }
+          try {
+            const workspaceId = await bootstrapWorkspace(deps.db, {
+              name: parsed.data.workspaceName,
+              ownerUserId: identity.domainUserId,
+            });
+            return bootstrapResponseSchema.parse({
+              workspace: { id: workspaceId, name: parsed.data.workspaceName },
+            });
+          } catch (error) {
+            if (hasSqlstate(error, BOOTSTRAP_CONFLICT_SQLSTATE)) {
+              return reply.code(409).send(
+                errorResponseSchema.parse({
+                  error: "workspace_already_exists",
+                }),
+              );
+            }
+            throw error;
+          }
+        },
+      );
 
       done();
     },

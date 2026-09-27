@@ -20,7 +20,9 @@
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter '@netrics/server^...' build && pnpm --filter @netrics/server migrate",
     "db:generate": "pnpm --filter @netrics/database generate",
-    "setup": "pnpm install && pnpm db:up && pnpm build && pnpm db:migrate"
+    "setup": "pnpm install && pnpm db:up && pnpm build && pnpm db:migrate",
+    "openapi": "pnpm --filter @netrics/server openapi",
+    "openapi:check": "pnpm --filter @netrics/server openapi:check"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
