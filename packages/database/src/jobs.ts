@@ -144,22 +144,28 @@ export interface FailJobResult {
  * and reschedule with exponential backoff (2^attempts * 15s, capped at 15
  * minutes); once attempts reach max_attempts — or immediately for
  * non-retryable failures — the job moves to dead for dead-letter visibility.
- * `error` lands in last_error verbatim: callers MUST pass an already-redacted
- * message (see redactSecrets in apps/server). Returns null when the job was
+ * With `deadLetter: false` a non-retryable failure instead lands in the
+ * terminal `failed` status: an expected domain failure (e.g. rejected
+ * credentials) that must not page the dead-letter queue. `error` lands in
+ * last_error verbatim: callers MUST pass an already-redacted message (see
+ * redactSecrets in @netrics/connector-runtime). Returns null when the job was
  * not running.
  */
 export async function failJob(
   schedulerDb: Db,
   jobId: string,
   error: string,
-  options: { retryable: boolean },
+  options: { retryable: boolean; deadLetter?: boolean },
 ): Promise<FailJobResult | null> {
+  const deadLetter = options.deadLetter ?? true;
   const rows = await schedulerDb.execute(
     sql`update jobs
         set attempts = attempts + 1,
             status = case
               when ${options.retryable} and attempts + 1 < max_attempts
                 then 'pending'
+              when not ${deadLetter}
+                then 'failed'
               else 'dead'
             end,
             run_at = case

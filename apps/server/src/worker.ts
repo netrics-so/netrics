@@ -2,6 +2,7 @@ import { hostname } from "node:os";
 
 import pino, { type Logger } from "pino";
 
+import { createDefaultRegistry } from "@netrics/connector-runtime";
 import {
   claimJobs,
   completeJob,
@@ -15,9 +16,11 @@ import {
 
 import { redactSecrets } from "./credentials.js";
 import type { Config } from "./env.js";
+import { syncCatalog } from "./sync/catalog.js";
 import {
   createJobHandlers,
   NonRetryableJobError,
+  TerminalJobError,
   type JobHandler,
 } from "./jobs/handlers.js";
 
@@ -135,13 +138,16 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
       await completeJob(schedulerDb, job.id);
       jobLogger.info({ attempts: job.attempts }, "job succeeded");
     } catch (error) {
-      const retryable = !(error instanceof NonRetryableJobError);
+      // NonRetryable → dead-letter; Terminal → 'failed' (no retries, no
+      // dead-letter, e.g. rejected credentials); anything else retries.
+      const terminal = error instanceof TerminalJobError;
+      const retryable = !terminal && !(error instanceof NonRetryableJobError);
       try {
         const result = await failJob(
           schedulerDb,
           job.id,
           safeErrorMessage(error),
-          { retryable },
+          { retryable, deadLetter: !terminal },
         );
         jobLogger.warn({ retryable, status: result?.status }, "job failed");
       } catch (failError) {
@@ -242,9 +248,18 @@ export async function startWorker(config: Config): Promise<void> {
   // worker never reads credentials through the scheduler pool.
   const schedulerDb = createDatabase(config.databaseSchedulerUrl);
   const appDb = createDatabase(config.databaseUrl);
+  // Installation-level catalog (connectors + metric definitions) is synced
+  // from the reviewed bundle at startup; the sync engine also upserts
+  // first-use definitions inline.
+  const registry = createDefaultRegistry();
+  await syncCatalog(appDb, registry);
   const worker = createWorker({
     schedulerDb,
     appDb,
+    handlers: createJobHandlers({
+      registry,
+      appEncryptionKey: config.appEncryptionKey,
+    }),
     concurrency: config.workerConcurrency,
     pollMs: config.workerPollMs,
     logger,
