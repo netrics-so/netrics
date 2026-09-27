@@ -265,3 +265,11 @@ docker compose -f docker-compose.yml -f docker-compose.app.yml up --build
 `.github/workflows/ci.yml` runs format check, lint, type check, unit tests,
 build, a migration apply + idempotency check against a PostgreSQL service
 container, and Docker image builds for server, web, and renderer.
+
+## License
+
+netrics is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+The connector SDK (`packages/connector-sdk`) is licensed under the
+[Apache License 2.0](packages/connector-sdk/LICENSE). See
+[CONTRIBUTING.md](CONTRIBUTING.md) for contribution status and
+[SECURITY.md](SECURITY.md) for reporting vulnerabilities.

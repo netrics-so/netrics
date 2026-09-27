@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/netrics-so/netrics/security/advisories/new
+    about: Please report security problems privately, never in a public issue.
+  - name: Questions and ideas
+    url: https://github.com/netrics-so/netrics/discussions
+    about: Ask questions, share ideas and request connectors in Discussions.
