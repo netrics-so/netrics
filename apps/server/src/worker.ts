@@ -9,6 +9,7 @@ import {
   createDatabase,
   failJob,
   heartbeat,
+  renewJobLease,
   withWorkspace,
   type Database,
   type Job,
@@ -97,17 +98,44 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
   let loopPromise: Promise<void> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
+  /**
+   * Keeps the job's lease fresh while its handler runs, so a long job is not
+   * reclaimed as stale (staleAfterSeconds covers crashed workers only).
+   * Returns a function that stops renewing.
+   */
+  function renewLeaseWhileRunning(job: Job, jobLogger: Logger): () => void {
+    const intervalMs = Math.max(250, (staleAfterSeconds * 1000) / 3);
+    const timer = setInterval(() => {
+      renewJobLease(schedulerDb, job.id, workerId)
+        .then((held) => {
+          if (!held) {
+            jobLogger.warn("job lease lost while running");
+            clearInterval(timer);
+          }
+        })
+        .catch((error: unknown) =>
+          jobLogger.warn(
+            { err: safeErrorMessage(error) },
+            "lease renewal failed",
+          ),
+        );
+    }, intervalMs);
+    return () => clearInterval(timer);
+  }
+
   async function executeJob(job: Job): Promise<void> {
     const jobLogger = logger.child({
       jobId: job.id,
       kind: job.kind,
       workspaceId: job.workspaceId,
     });
+    let stopRenewing: () => void = () => {};
     try {
       if (!payloadIdentityMatches(job)) {
         await failJob(
           schedulerDb,
           job.id,
+          workerId,
           "contract: payload workspace_id/connection_id mismatch",
           { retryable: false },
         );
@@ -119,6 +147,7 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
         await failJob(
           schedulerDb,
           job.id,
+          workerId,
           `contract: unknown job kind ${JSON.stringify(job.kind)}`,
           { retryable: false },
         );
@@ -126,6 +155,7 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
         return;
       }
       const ctx = { job, appDb, schedulerDb, logger: jobLogger };
+      stopRenewing = renewLeaseWhileRunning(job, jobLogger);
       // Tenant work runs as netrics_app inside the job's workspace context;
       // installation-level jobs (workspace_id NULL) run without one.
       if (job.workspaceId) {
@@ -135,17 +165,26 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
       } else {
         await handler(ctx);
       }
-      await completeJob(schedulerDb, job.id);
-      jobLogger.info({ attempts: job.attempts }, "job succeeded");
+      stopRenewing();
+      if (await completeJob(schedulerDb, job.id, workerId)) {
+        jobLogger.info({ attempts: job.attempts }, "job succeeded");
+      } else {
+        // The lease was reclaimed while the handler ran; the job now belongs
+        // to another worker. Handlers are idempotent, so the extra run is
+        // harmless, but this worker must not overwrite the job's state.
+        jobLogger.warn("job finished after its lease was lost; not completed");
+      }
     } catch (error) {
       // NonRetryable → dead-letter; Terminal → 'failed' (no retries, no
       // dead-letter, e.g. rejected credentials); anything else retries.
       const terminal = error instanceof TerminalJobError;
       const retryable = !terminal && !(error instanceof NonRetryableJobError);
       try {
+        stopRenewing();
         const result = await failJob(
           schedulerDb,
           job.id,
+          workerId,
           safeErrorMessage(error),
           { retryable, deadLetter: !terminal },
         );

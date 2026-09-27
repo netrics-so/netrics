@@ -47,7 +47,7 @@ let workspaceB: string;
 
 async function jobRow(id: string) {
   const rows = await schedulerRaw`
-    select status, attempts, last_error from jobs where id = ${id}
+    select status, attempts, last_error, run_at from jobs where id = ${id}
   `;
   return rows[0];
 }
@@ -255,7 +255,25 @@ describe("worker", () => {
       { staleAfterSeconds: 1800 },
     );
     try {
-      await waitFor(async () => (await jobRow(jobId))?.status === "succeeded");
+      // The requeue backs off (a crashing job must not crash-loop): assert
+      // the backoff once, then skip the wait by moving the retry to now.
+      let fastForwarded = false;
+      await waitFor(async () => {
+        const row = await jobRow(jobId);
+        if (
+          !fastForwarded &&
+          row?.status === "pending" &&
+          row.last_error === "stale lock requeued"
+        ) {
+          expect(new Date(row.run_at as string).getTime()).toBeGreaterThan(
+            Date.now() + 20_000,
+          );
+          await schedulerRaw`update jobs set run_at = now() where id = ${jobId}`;
+          fastForwarded = true;
+        }
+        return row?.status === "succeeded";
+      });
+      expect(fastForwarded).toBe(true);
       expect(calls).toBe(1);
       // The stale lock counted as one failed attempt.
       expect((await jobRow(jobId))?.attempts).toBe(1);
