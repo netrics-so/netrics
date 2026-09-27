@@ -66,3 +66,33 @@ a worker, and inspected as normalized observations with visible sync health.
 Create a demo connection in the UI, observe its backfill and incremental sync,
 inspect health and retry information, and verify stable observation counts after
 replaying every job.
+
+## Completion
+
+- Completed: 2026-09-27
+- Release: none (pre-0.2.0; shipped via squash merges)
+- Pull requests:
+  [#15](https://github.com/netrics-so/netrics/pull/15),
+  [#16](https://github.com/netrics-so/netrics/pull/16),
+  [#17](https://github.com/netrics-so/netrics/pull/17),
+  [#18](https://github.com/netrics-so/netrics/pull/18),
+  [#19](https://github.com/netrics-so/netrics/pull/19),
+  [#20](https://github.com/netrics-so/netrics/pull/20) (adversarial
+  verification + exit gate; number expected — fix here if it differs)
+- Exit gate: run locally against the built server (api + worker + scheduler
+  processes) and web app with real PostgreSQL — demo connection created through
+  the web origin (cookie jar), backfill completed with 364 observations,
+  scheduler-driven incremental sync observed (0 new, idempotent), health and
+  sync-run history inspected via the connections/observations endpoints, then
+  every succeeded job replayed through the real worker with observation counts
+  unchanged (364 before and after). Test suite: 243 tests green, including the
+  adversarial verification suite
+  (`apps/server/src/sync/verification.test.ts`).
+- Material deviations: pending jobs are cancelled (`status=failed`,
+  `last_error='connection deleted'`) rather than deleted on connection delete —
+  the app role has no DELETE grant on `jobs`; the resource selection chosen at
+  creation time is stored under the reserved `resourceSelection` config key
+  (stripped from API responses; PATCH carries it over); the scheduler skips
+  `auth_failed` connections until credentials are updated through the API
+  (credential repair resets the state and makes the connection due
+  immediately).

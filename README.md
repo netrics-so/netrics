@@ -23,9 +23,17 @@ and applies database migrations. Then:
 pnpm dev
 ```
 
-- Web: http://localhost:3000 — sign up / sign in, workspaces, projects
-  (live API/database health moved to `/status`)
+- Web: http://localhost:3000 — sign up / sign in, workspaces, projects,
+  connections (live API/database health moved to `/status`)
 - API: http://localhost:3001 — `GET /health/live`, `GET /health/ready`
+
+`pnpm dev` runs only web + API. To see connector syncs execute locally, also
+run the worker and scheduler roles in two more terminals:
+
+```sh
+NETRICS_ROLE=worker pnpm --filter @netrics/server dev
+NETRICS_ROLE=scheduler pnpm --filter @netrics/server dev
+```
 
 ## Common commands
 
@@ -148,6 +156,18 @@ Session-protected API routes live under `/v1`:
   (create/rename: owner/admin/editor; delete: owner/admin).
 - `GET /v1/workspaces/:id/audit-events` — workspace audit log (owner/admin,
   newest first, limit 100).
+- `GET /v1/connectors` — the deployed connector catalog.
+- `POST/GET /v1/workspaces/:id/connections`,
+  `GET/PATCH/DELETE /v1/workspaces/:id/connections/:connectionId` —
+  connection CRUD (create/update re-check credentials against the connector;
+  create enqueues the initial backfill transactionally; delete cancels pending
+  jobs).
+- `POST /v1/workspaces/:id/connections/preview` — credential check + resource
+  discovery without persisting.
+- `POST /v1/workspaces/:id/connections/:connectionId/sync` — enqueue a manual
+  sync.
+- `GET /v1/workspaces/:id/connections/:connectionId/observations` — collected
+  observations (any member; filterable by metric and time range).
 
 Non-members always get 404 for workspace routes (existence is never leaked),
 and every mutation writes an audit event in the same transaction. Sign-ins
@@ -159,7 +179,12 @@ additionally write an installation-level `auth.login` audit row
 The web app has email+password UI for the flows above: `/signup` and `/login`
 (better-auth, auto sign-in on sign-up since verification is not enforced),
 `/` (redirects to your first workspace, or creates one when you have none),
-`/workspaces/:id` (projects + workspace switcher), `/workspaces/:id/settings`
+`/workspaces/:id` (projects, connections, workspace switcher),
+`/workspaces/:id/connections/new` (connection creation wizard with credential
+check and resource selection),
+`/workspaces/:id/connections/:connectionId` (sync health, run history, latest
+observations),
+`/workspaces/:id/settings`
 (rename, members, roles — owner/admin manage; editors/viewers read-only), and
 `/settings/account` (profile, memberships, change password, sign out).
 Members are added directly by email — the person must already have an
