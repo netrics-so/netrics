@@ -174,9 +174,10 @@ revokes immediately.
    Move the old key into `APP_ENCRYPTION_KEYS_PREVIOUS`.
 2. Deploy. New and updated credentials use the new key, and existing ones
    still decrypt with the old key.
-3. Keep the old key in `APP_ENCRYPTION_KEYS_PREVIOUS` until every connection's
-   credentials have been saved again. A bulk re-encryption command is not
-   available yet.
+3. Run `node dist/admin-cli.js reencrypt-credentials` with the same key
+   variables and the owner connection (`DATABASE_MIGRATION_URL`). It moves
+   every envelope to the new key, is safe to re-run, and prints counts only.
+4. When it reports 0 failed, remove `APP_ENCRYPTION_KEYS_PREVIOUS`.
 
 The API is described by an OpenAPI 3.1 document generated from the zod
 contracts: served at `GET /v1/openapi.json` and committed as
