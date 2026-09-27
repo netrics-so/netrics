@@ -36,6 +36,13 @@
       "when": 1790373381906,
       "tag": "0004_heavy_chamber",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790426081283,
+      "tag": "0005_connector_metrics_jobs",
+      "breakpoints": true
     }
   ]
 }

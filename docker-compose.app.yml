@@ -17,6 +17,10 @@ services:
       # requires it to be set); replace with a real secret in any real
       # deployment, e.g. `openssl rand -base64 32`.
       BETTER_AUTH_SECRET: netrics-dev-only-insecure-secret-000000
+      # Dev-only credential encryption key (the image runs with
+      # NODE_ENV=production, which requires it); replace with a real key in any
+      # real deployment, e.g. `openssl rand -base64 32`.
+      APP_ENCRYPTION_KEY: bmV0cmljcy1kZXYtb25seS1pbnNlY3VyZS1rZXkhITE=
       BETTER_AUTH_URL: http://localhost:3001
       WEB_ORIGIN: http://localhost:3000
     ports:

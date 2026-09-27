@@ -50,11 +50,15 @@ startup errors; see `.env.example` for the variables and their defaults
 ### Database roles and tenancy
 
 PostgreSQL enforces tenant isolation with row-level security (RLS) on all
-tenant-owned tables. Two roles are created by the migration itself:
+tenant-owned tables. The migration itself creates two login roles:
 
 - `netrics_app` — the application role (`DATABASE_URL`). It is not a
   superuser and cannot bypass RLS; queries only see rows for the workspace
   set via `withWorkspace()` / `withUserContext()` from `@netrics/database`.
+- `netrics_scheduler` — the scheduler/worker role. It can claim and advance
+  jobs across all workspaces and read the scheduling columns of
+  `connection_state`, but has no grant on `connections` at all, so it cannot
+  read credential material.
 - `netrics` — the owner/migration role (`DATABASE_MIGRATION_URL`, used by
   `pnpm db:migrate` and `apps/server` migrations). In production, provision
   it (and the app role's password) with real secrets before migrating.
@@ -78,6 +82,13 @@ Relevant environment variables (see `.env.example`):
 - `BETTER_AUTH_SECRET` — session signing secret, >= 32 chars. Required when
   `NODE_ENV=production`; an obviously insecure fixed default is used in
   development.
+- `APP_ENCRYPTION_KEY` — instance master key for encrypting connection
+  credentials (AES-256-GCM envelopes stored in
+  `connections.credentials_encrypted`); base64 of exactly 32 bytes. Required
+  when `NODE_ENV=production`; an obviously insecure fixed default is used in
+  development. Only code paths that decrypt credentials may read the
+  ciphertext column; log and error paths run values through `redactSecrets()`
+  (`apps/server/src/credentials.ts`).
 - `BETTER_AUTH_URL` — public base URL of the API (default
   `http://localhost:3001`).
 - `WEB_ORIGIN` — web app origin allowed for credentialed CORS requests
