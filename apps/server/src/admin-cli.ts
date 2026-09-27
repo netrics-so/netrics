@@ -8,7 +8,9 @@ import {
 } from "@netrics/database";
 import { INSTALLATION_SCOPES, isInstallationScope } from "@netrics/domain";
 
-import { ConfigError, loadMigrationConfig } from "./env.js";
+import { createCredentialKeyring } from "./credentials.js";
+import { ConfigError, loadKeyringConfig, loadMigrationConfig } from "./env.js";
+import { reencryptCredentials } from "./reencrypt.js";
 import { generatePrincipalToken, hashToken } from "./tokens.js";
 
 /**
@@ -19,6 +21,7 @@ import { generatePrincipalToken, hashToken } from "./tokens.js";
  *     --scope installation:workspaces:read [--expires-days 90]
  *   node dist/admin-cli.js list-tokens
  *   node dist/admin-cli.js revoke-token --id <uuid>
+ *   node dist/admin-cli.js reencrypt-credentials   # after a key rotation
  *
  * A created token is printed once and cannot be shown again.
  */
@@ -26,6 +29,7 @@ const USAGE = `usage:
   admin-cli create-service-token --name <name> --scope <scope> [--scope …] [--expires-days <n>]
   admin-cli list-tokens
   admin-cli revoke-token --id <token id>
+  admin-cli reencrypt-credentials   (needs APP_ENCRYPTION_KEY[, _KEYS_PREVIOUS])
 
 scopes: ${INSTALLATION_SCOPES.join(", ")}`;
 
@@ -126,6 +130,27 @@ try {
     );
     if (!revoked) {
       process.exitCode = 1;
+    }
+  } else if (command === "reencrypt-credentials") {
+    const keys = loadKeyringConfig();
+    const keyring = createCredentialKeyring(
+      keys.appEncryptionKey,
+      keys.appEncryptionKeysPrevious,
+    );
+    const result = await reencryptCredentials(db, keyring);
+    console.log(
+      `credentials: ${result.total} total, ${result.alreadyCurrent} already on key ${keyring.currentKeyId}, ` +
+        `${result.reencrypted} re-encrypted, ${result.failed} failed`,
+    );
+    if (result.failed > 0) {
+      console.error(
+        "Some envelopes could not be decrypted: keep their key in APP_ENCRYPTION_KEYS_PREVIOUS.",
+      );
+      process.exitCode = 1;
+    } else if (keys.appEncryptionKeysPrevious.length > 0) {
+      console.log(
+        "All credentials use the current key; APP_ENCRYPTION_KEYS_PREVIOUS can be removed.",
+      );
     }
   } else {
     fail(command ? `unknown command: ${command}` : "missing command");

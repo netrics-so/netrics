@@ -12,6 +12,27 @@ const DEV_BETTER_AUTH_SECRET = "netrics-dev-only-insecure-secret-000000";
 // `openssl rand -base64 32`.
 const DEV_APP_ENCRYPTION_KEY = "bmV0cmljcy1kZXYtb25seS1pbnNlY3VyZS1rZXkhITE=";
 
+function base64Key(name: string) {
+  return z
+    .base64()
+    .refine((value) => Buffer.from(value, "base64").length === 32, {
+      message: `${name} must decode to exactly 32 bytes`,
+    });
+}
+
+// Retired keys (comma-separated, same format) that may still protect stored
+// credentials during a rotation; see README "Rotating the encryption key".
+const previousKeys = z
+  .string()
+  .optional()
+  .transform((value) =>
+    (value ?? "")
+      .split(",")
+      .map((key) => key.trim())
+      .filter((key) => key.length > 0),
+  )
+  .pipe(z.array(base64Key("APP_ENCRYPTION_KEYS_PREVIOUS entries")));
+
 const envSchema = z
   .object({
     NODE_ENV: z
@@ -37,32 +58,8 @@ const envSchema = z
     // better-auth session signing secret (>= 32 chars).
     BETTER_AUTH_SECRET: z.string().min(32).optional(),
     // Instance master key for credential envelopes (base64, 32 bytes decoded).
-    APP_ENCRYPTION_KEY: z
-      .base64()
-      .refine((value) => Buffer.from(value, "base64").length === 32, {
-        message: "APP_ENCRYPTION_KEY must decode to exactly 32 bytes",
-      })
-      .optional(),
-    // Retired keys (comma-separated, same format) that may still protect
-    // stored credentials during a rotation; see README "Rotating the
-    // encryption key".
-    APP_ENCRYPTION_KEYS_PREVIOUS: z
-      .string()
-      .optional()
-      .transform((value) =>
-        (value ?? "")
-          .split(",")
-          .map((key) => key.trim())
-          .filter((key) => key.length > 0),
-      )
-      .pipe(
-        z.array(
-          z.base64().refine((key) => Buffer.from(key, "base64").length === 32, {
-            message:
-              "APP_ENCRYPTION_KEYS_PREVIOUS entries must decode to exactly 32 bytes",
-          }),
-        ),
-      ),
+    APP_ENCRYPTION_KEY: base64Key("APP_ENCRYPTION_KEY").optional(),
+    APP_ENCRYPTION_KEYS_PREVIOUS: previousKeys,
     // Public base URL of the auth endpoints as browsers reach them. Required
     // (https) for the api role in production; localhost default otherwise.
     BETTER_AUTH_URL: z.url().optional(),
@@ -290,6 +287,25 @@ const migrationEnvSchema = z
   });
 
 export type MigrationConfig = z.infer<typeof migrationEnvSchema>;
+
+/** The credential keyring settings alone (operator CLI re-encryption). */
+const keyringEnvSchema = z.object({
+  APP_ENCRYPTION_KEY: base64Key("APP_ENCRYPTION_KEY"),
+  APP_ENCRYPTION_KEYS_PREVIOUS: previousKeys,
+});
+
+export function loadKeyringConfig(
+  env: Record<string, string | undefined> = process.env,
+): { appEncryptionKey: string; appEncryptionKeysPrevious: string[] } {
+  const result = keyringEnvSchema.safeParse(env);
+  if (!result.success) {
+    throw new ConfigError(formatIssues(result.error));
+  }
+  return {
+    appEncryptionKey: result.data.APP_ENCRYPTION_KEY,
+    appEncryptionKeysPrevious: result.data.APP_ENCRYPTION_KEYS_PREVIOUS,
+  };
+}
 
 export function loadMigrationConfig(
   env: Record<string, string | undefined> = process.env,
