@@ -7,7 +7,7 @@ import {
   redactSecrets,
   type ConnectorRegistry,
 } from "@netrics/connector-runtime";
-import type { SyncMode, SyncRequest } from "@netrics/connector-sdk";
+import type { SyncMode, SyncRequest, SyncResult } from "@netrics/connector-sdk";
 import { schema, withWorkspace, type Transaction } from "@netrics/database";
 
 import { decryptCredentials, type CredentialKeyring } from "../credentials.js";
@@ -332,9 +332,47 @@ async function runSync(
     throw new TerminalJobError(safeMessage(error));
   }
 
-  // Step 3: sync + ingest + cursor advance + success, atomically. Contract
-  // violations and provider failures roll the whole attempt back.
+  // Step 3: fetch every page from the provider OUTSIDE any transaction (no
+  // database connection waits on external I/O), bounded by MAX_PAGES. Then
+  // step 4 commits ingest + cursor advance + success in ONE short tenant
+  // transaction: all or nothing, as before.
   try {
+    const pages: SyncResult[] = [];
+    let finalCursor = state?.cursor ?? null;
+    if (window.from < window.to) {
+      let cursor = state?.cursor ?? undefined;
+      let done = false;
+      for (let page = 1; !done; page += 1) {
+        if (page > MAX_PAGES) {
+          throw new ContractViolationError(
+            `connector "${manifest.id}" paged more than ${MAX_PAGES} times without finishing`,
+          );
+        }
+        const request: SyncRequest = {
+          mode,
+          from: iso(window.from),
+          to: iso(window.to),
+          ...(cursor ? { cursor } : {}),
+          ...(selectedResources ? { resources: selectedResources } : {}),
+        };
+        const result = await executeSync(connector, context, request);
+        if (!result.done && !result.nextCursor) {
+          throw new ContractViolationError(
+            `connector "${manifest.id}" returned done=false without a nextCursor`,
+          );
+        }
+        if (!result.done && result.nextCursor === cursor) {
+          throw new ContractViolationError(
+            `connector "${manifest.id}" returned a non-advancing cursor`,
+          );
+        }
+        pages.push(result);
+        cursor = result.nextCursor;
+        done = result.done;
+      }
+      finalCursor = cursor ?? iso(window.to);
+    }
+
     await withWorkspace(appDb, { workspaceId }, async (tx) => {
       // First-use safety net: catalog sync runs at startup, but upserting
       // here keeps the run self-healing (idempotent).
@@ -350,63 +388,14 @@ async function runSync(
         definitions.map((row) => [row.key, row.id]),
       );
 
-      const [syncRun] = await tx
-        .insert(schema.syncRuns)
-        .values({
+      let observationsWritten = 0;
+      for (const result of pages) {
+        observationsWritten += await ingestObservations(tx, {
           workspaceId,
           connectionId,
-          mode,
-          requestedFrom: window.from,
-          requestedTo: window.to,
-          cursorBefore: state?.cursor ?? null,
-          attempt,
-          status: "running",
-          startedAt: now,
-        })
-        .returning({ id: schema.syncRuns.id });
-      if (!syncRun) {
-        throw new Error("sync_run insert returned no row");
-      }
-
-      let observationsWritten = 0;
-      let finalCursor = state?.cursor ?? null;
-      if (window.from < window.to) {
-        let cursor = state?.cursor ?? undefined;
-        let done = false;
-        for (let page = 1; !done; page += 1) {
-          if (page > MAX_PAGES) {
-            throw new ContractViolationError(
-              `connector "${manifest.id}" paged more than ${MAX_PAGES} times without finishing`,
-            );
-          }
-          const request: SyncRequest = {
-            mode,
-            from: iso(window.from),
-            to: iso(window.to),
-            ...(cursor ? { cursor } : {}),
-            ...(selectedResources ? { resources: selectedResources } : {}),
-          };
-          const result = await executeSync(connector, context, request);
-          if (!result.done && !result.nextCursor) {
-            throw new ContractViolationError(
-              `connector "${manifest.id}" returned done=false without a nextCursor`,
-            );
-          }
-          if (!result.done && result.nextCursor === cursor) {
-            throw new ContractViolationError(
-              `connector "${manifest.id}" returned a non-advancing cursor`,
-            );
-          }
-          observationsWritten += await ingestObservations(tx, {
-            workspaceId,
-            connectionId,
-            metricDefinitionIds,
-            observations: result.observations,
-          });
-          cursor = result.nextCursor;
-          done = result.done;
-        }
-        finalCursor = cursor ?? iso(window.to);
+          metricDefinitionIds,
+          observations: result.observations,
+        });
       }
 
       // Cursor advancement commits in this same transaction as the
@@ -433,15 +422,20 @@ async function runSync(
             consecutiveFailures: 0,
           },
         });
-      await tx
-        .update(schema.syncRuns)
-        .set({
-          status: "succeeded",
-          finishedAt: new Date(),
-          cursorAfter: finalCursor,
-          observationsWritten,
-        })
-        .where(eq(schema.syncRuns.id, syncRun.id));
+      await tx.insert(schema.syncRuns).values({
+        workspaceId,
+        connectionId,
+        mode,
+        requestedFrom: window.from,
+        requestedTo: window.to,
+        cursorBefore: state?.cursor ?? null,
+        cursorAfter: finalCursor,
+        attempt,
+        status: "succeeded",
+        startedAt: now,
+        finishedAt: new Date(),
+        observationsWritten,
+      });
     });
   } catch (error) {
     const errorClass: ErrorClass =
