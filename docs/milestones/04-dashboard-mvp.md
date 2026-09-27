@@ -63,3 +63,13 @@ editing code.
 Starting with a new workspace, enable demo data, create and edit a dashboard,
 display it full-screen at TV resolution, and demonstrate refresh plus a
 connection-failure state.
+
+## Scope change (2026-09)
+
+The MVP builds ordered tile dashboards first: big number, change indicator and
+sparkline. They share one read model with the Apple TV endpoint
+([ADR 0007](../decisions/0007-native-tvos-tiles.md)). The free-form grid editor
+and line-chart widget follow after milestone 06.
+
+Issues: #48 metric query service, #49 dashboards and tiles API, #50 web tile
+dashboard, #51 onboarding dashboard, #52 TV full-screen layout.
