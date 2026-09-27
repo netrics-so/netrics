@@ -4,6 +4,14 @@
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
+  "files": [
+    "dist",
+    "LICENSE",
+    "!dist/**/*.test.*",
+    "!dist/**/test-db.*",
+    "!dist/**/test-helpers.*",
+    "!dist/**/*.tsbuildinfo"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

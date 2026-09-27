@@ -4,6 +4,13 @@
   "license": "AGPL-3.0-only",
   "private": true,
   "type": "module",
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/test-db.*",
+    "!dist/**/test-helpers.*",
+    "!dist/**/*.tsbuildinfo"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
