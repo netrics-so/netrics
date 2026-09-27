@@ -124,16 +124,6 @@ jobs:
           cache-from: type=gha,scope=server
           cache-to: type=gha,mode=max,scope=server
 
-      - name: Resolve web rewrite API URL
-        id: web-api-url
-        run: |
-          if [ -z "${{ vars.NETRICS_WEB_API_URL }}" ]; then
-            echo "::warning::NETRICS_WEB_API_URL repo variable is not set; the web image will proxy to http://localhost:3001, which is wrong for any deployed environment. Set it to the API's private-networking URL (see docs/release.md)."
-            echo "url=http://localhost:3001" >> "$GITHUB_OUTPUT"
-          else
-            echo "url=${{ vars.NETRICS_WEB_API_URL }}" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Build and push web image
         id: build-web
         uses: docker/build-push-action@v6
@@ -145,7 +135,6 @@ jobs:
           build-args: |
             NEXT_PUBLIC_APP_VERSION=${{ steps.meta.outputs.version }}
             NEXT_PUBLIC_GIT_SHA=${{ github.sha }}
-            NETRICS_API_URL=${{ steps.web-api-url.outputs.url }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 

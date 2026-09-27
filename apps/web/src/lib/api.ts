@@ -57,9 +57,7 @@ import {
   type WorkspaceRole,
 } from "@netrics/contracts";
 
-function apiBaseUrl(): string {
-  return process.env.NETRICS_API_URL ?? "http://localhost:3001";
-}
+import { apiBaseUrl } from "./api-proxy";
 
 /**
  * API failures carry a machine-readable code in the response body
