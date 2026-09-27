@@ -4,7 +4,14 @@ import { notFound } from "next/navigation";
 import { can } from "@netrics/domain";
 
 import { CreateProjectForm } from "./create-project-form";
-import { getWorkspace, listProjects, listWorkspaces } from "@/lib/api";
+import { HealthBadge } from "./health-badge";
+import {
+  getWorkspace,
+  listConnections,
+  listProjects,
+  listWorkspaces,
+} from "@/lib/api";
+import { relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +34,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
   }
 
   const { projects } = await listProjects(cookieHeader, workspaceId);
+  const { connections } = await listConnections(cookieHeader, workspaceId);
   const role = membership.role;
 
   return (
@@ -58,6 +66,63 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
             Workspace settings
           </Link>
         </p>
+      </div>
+
+      <div className="card">
+        <h2>Connections</h2>
+        {connections.length === 0 ? (
+          <p className="muted">No connections yet.</p>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Connector</th>
+                <th>Health</th>
+                <th>Last success</th>
+                <th>Next sync</th>
+              </tr>
+            </thead>
+            <tbody>
+              {connections.map((connection) => (
+                <tr key={connection.id}>
+                  <td>
+                    <Link
+                      href={`/workspaces/${workspaceId}/connections/${connection.id}`}
+                    >
+                      {connection.name}
+                    </Link>
+                  </td>
+                  <td className="muted">
+                    {connection.connectorName} {connection.connectorVersion}
+                  </td>
+                  <td>
+                    <HealthBadge health={connection.state.health} />
+                  </td>
+                  <td className="muted">
+                    {relativeTime(connection.state.lastSuccessAt)}
+                  </td>
+                  <td className="muted">
+                    {relativeTime(connection.state.nextDueAt)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {can(role, "connections:create") ? (
+          <p>
+            <Link href={`/workspaces/${workspaceId}/connections/new`}>
+              <button type="button" className="primary">
+                Add connection
+              </button>
+            </Link>
+          </p>
+        ) : (
+          <p className="muted">
+            Your role cannot create connections in this workspace.
+          </p>
+        )}
       </div>
 
       <div className="card">
