@@ -14,6 +14,7 @@ import { demoManifest } from "@netrics/connectors";
 import {
   ContractViolationError,
   executeCheck,
+  executeDiscover,
   executeSync,
 } from "./execute.js";
 
@@ -186,6 +187,51 @@ describe("executeCheck", () => {
     );
     await expect(executeCheck(connector, baseContext)).rejects.toBeInstanceOf(
       ContractViolationError,
+    );
+  });
+});
+
+describe("executeDiscover", () => {
+  it("passes valid resource lists through", async () => {
+    const connector: Connector = {
+      ...connectorWith(demoManifest),
+      async discover() {
+        return [{ id: "r1", name: "Resource 1", kind: "site" }];
+      },
+    };
+    await expect(executeDiscover(connector, baseContext)).resolves.toEqual([
+      { id: "r1", name: "Resource 1", kind: "site" },
+    ]);
+  });
+
+  it("rejects malformed resources as contract violations", async () => {
+    const connector: Connector = {
+      ...connectorWith(demoManifest),
+      async discover() {
+        return [{ id: "" }] as unknown as [];
+      },
+    };
+    await expect(
+      executeDiscover(connector, baseContext),
+    ).rejects.toBeInstanceOf(ContractViolationError);
+  });
+
+  it("redacts credential values from thrown discover errors", async () => {
+    const context: ConnectionContext = {
+      ...baseContext,
+      credentials: { token: "sk-live-9f8e7d6c" },
+    };
+    const connector: Connector = {
+      ...connectorWith(demoManifest),
+      async discover() {
+        throw new Error("provider rejected token sk-live-9f8e7d6c");
+      },
+    };
+    await expect(executeDiscover(connector, context)).rejects.toThrow(
+      /rejected token/,
+    );
+    await expect(executeDiscover(connector, context)).rejects.not.toThrow(
+      /sk-live-9f8e7d6c/,
     );
   });
 });

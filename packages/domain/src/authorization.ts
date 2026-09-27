@@ -13,6 +13,10 @@ export type WorkspaceAction =
   | "projects:create"
   | "projects:rename"
   | "projects:delete"
+  | "connections:view"
+  | "connections:create"
+  | "connections:update"
+  | "connections:delete"
   | "audit:view";
 
 const ALL_ACTIONS: readonly WorkspaceAction[] = [
@@ -26,6 +30,10 @@ const ALL_ACTIONS: readonly WorkspaceAction[] = [
   "projects:create",
   "projects:rename",
   "projects:delete",
+  "connections:view",
+  "connections:create",
+  "connections:update",
+  "connections:delete",
   "audit:view",
 ];
 
@@ -38,8 +46,16 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<WorkspaceAction>> = {
     "projects:view",
     "projects:create",
     "projects:rename",
+    "connections:view",
+    "connections:create",
+    "connections:update",
   ]),
-  viewer: new Set(["workspace:view", "members:view", "projects:view"]),
+  viewer: new Set([
+    "workspace:view",
+    "members:view",
+    "projects:view",
+    "connections:view",
+  ]),
 };
 
 export function can(role: WorkspaceRole, action: WorkspaceAction): boolean {

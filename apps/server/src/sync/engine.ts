@@ -199,6 +199,17 @@ async function runSync(
   };
   const state = loaded.state;
 
+  // Optional resource subset chosen at creation time (stored in config under
+  // a reserved key so it cannot clash with manifest config properties, whose
+  // validation rejects additionalProperties before this merge happens).
+  const rawSelection = connection.config.resourceSelection;
+  const selectedResources =
+    Array.isArray(rawSelection) &&
+    rawSelection.length > 0 &&
+    rawSelection.every((entry) => typeof entry === "string" && entry !== "")
+      ? (rawSelection as string[])
+      : undefined;
+
   const window = computeWindow(mode, state, now);
   const pollIntervalSeconds =
     state?.pollIntervalSeconds ??
@@ -372,6 +383,7 @@ async function runSync(
             from: iso(window.from),
             to: iso(window.to),
             ...(cursor ? { cursor } : {}),
+            ...(selectedResources ? { resources: selectedResources } : {}),
           };
           const result = await executeSync(connector, context, request);
           if (!result.done && !result.nextCursor) {

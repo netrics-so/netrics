@@ -2,6 +2,7 @@ export {
   assertContextIsPlain,
   ContractViolationError,
   executeCheck,
+  executeDiscover,
   executeSync,
 } from "./execute.js";
 export {
