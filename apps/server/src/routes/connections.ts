@@ -45,7 +45,6 @@ import {
   redactSecrets,
   type CredentialKeyring,
 } from "../credentials.js";
-import { upsertConnectorCatalog } from "../sync/catalog.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { createRequireSession } from "./session.js";
 
@@ -299,9 +298,6 @@ export function registerConnectionRoutes(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
             async (tx) => {
-              // First-use safety net: the catalog sync runs at startup, but the
-              // connections row has an FK into connectors.
-              await upsertConnectorCatalog(tx, registered.manifest);
               if (body.projectId) {
                 const project = await findProject(
                   tx,

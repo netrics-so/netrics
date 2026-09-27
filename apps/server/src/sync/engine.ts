@@ -23,7 +23,6 @@ import {
   type JobHandler,
   type JobHandlerContext,
 } from "../jobs/handlers.js";
-import { upsertConnectorCatalog } from "./catalog.js";
 
 /** First-ever incremental sync with no cursor and no last success. */
 const INITIAL_INCREMENTAL_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -392,9 +391,8 @@ async function runSync(
     }
 
     await withWorkspace(appDb, { workspaceId }, async (tx) => {
-      // First-use safety net: catalog sync runs at startup, but upserting
-      // here keeps the run self-healing (idempotent).
-      await upsertConnectorCatalog(tx, manifest);
+      // Catalog rows come from the deploy-time migrate step (read-only for
+      // the app role); no row lock on the shared connector row here.
       const definitions = await tx
         .select({
           id: schema.metricDefinitions.id,

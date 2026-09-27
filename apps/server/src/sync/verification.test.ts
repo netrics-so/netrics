@@ -160,7 +160,9 @@ beforeAll(async () => {
   schedulerRaw = createRawSqlClient(schedulerUrlOf(testDb), { max: 2 });
   adminRaw = createRawSqlClient(testDb.adminUrl, { max: 2 });
 
-  await syncCatalog(appDb, registry);
+  const ownerDb = createDatabase(testDb.adminUrl, { max: 1 });
+  await syncCatalog(ownerDb, registry);
+  await ownerDb.$client.end({ timeout: 5 });
 
   const [userA, userB] = await appDb
     .insert(schema.users)

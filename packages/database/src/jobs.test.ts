@@ -90,11 +90,13 @@ beforeAll(async () => {
     ownerUserId: userB!.id,
   });
 
-  await db.insert(schema.connectors).values({
-    id: "demo",
-    version: "1.0.0",
-    manifest: { id: "demo" },
-  });
+  // Catalog rows are owner-written (read-only for netrics_app, #36).
+  const owner = postgres(testDb.adminUrl, { max: 1 });
+  await owner`
+    insert into connectors (id, version, manifest)
+    values ('demo', '1.0.0', '{"id":"demo"}'::jsonb)
+  `;
+  await owner.end({ timeout: 5 });
   connectionA = await withWorkspace(db, { workspaceId: workspaceA }, (tx) =>
     tx
       .insert(schema.connections)

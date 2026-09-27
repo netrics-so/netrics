@@ -93,13 +93,16 @@ beforeAll(async () => {
     ownerUserId: ownerB,
   });
 
-  // Installation-level catalog rows (no RLS).
-  await db.insert(schema.connectors).values({
+  // Installation-level catalog rows: owner-written, read-only for the app
+  // role (#36).
+  const ownerClient = postgres(testDb.adminUrl, { max: 1 });
+  const owner = drizzle(ownerClient, { schema: { ...schema, ...authSchema } });
+  await owner.insert(schema.connectors).values({
     id: "demo",
     version: "1.0.0",
     manifest: { id: "demo" },
   });
-  const [metric] = await db
+  const [metric] = await owner
     .insert(schema.metricDefinitions)
     .values({
       connectorId: "demo",
@@ -113,6 +116,7 @@ beforeAll(async () => {
       aggregations: ["sum"],
     })
     .returning({ id: schema.metricDefinitions.id });
+  await ownerClient.end({ timeout: 5 });
   metricId = metric!.id;
 
   connectionA = await withWorkspace(db, { workspaceId: workspaceA }, (tx) =>
@@ -242,6 +246,17 @@ describe("tenant RLS on the connector/metrics tables", () => {
     expect(connectors.map((c) => c.id)).toEqual(["demo"]);
     const metrics = await db.select().from(schema.metricDefinitions);
     expect(metrics.map((m) => m.key)).toEqual(["requests"]);
+  });
+
+  it("gives the app role no write access to the catalog", async () => {
+    for (const statement of [
+      sql`insert into connectors (id, version, manifest) values ('x', '1.0.0', '{}')`,
+      sql`update connectors set version = '9.9.9'`,
+      sql`delete from metric_definitions`,
+      sql`update metric_definitions set unit = 'forged'`,
+    ]) {
+      await expectDbError(db.execute(statement), /permission denied/);
+    }
   });
 
   it("defaults auth_state and consecutive_failures on connection_state", async () => {

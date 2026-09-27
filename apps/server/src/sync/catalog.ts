@@ -5,13 +5,9 @@ import { schema } from "@netrics/database";
 
 /**
  * Upserts one connector's catalog rows (connectors + metric_definitions) from
- * its manifest. These tables are installation-level (no RLS), so the app role
- * writes them directly — outside any tenant context. Idempotent: conflicts
- * refresh version/manifest/definition columns.
- *
- * Accepts a plain database handle or a tenant transaction (the sync engine
- * calls it inside its ingest transaction so first-use definitions commit
- * atomically with the observations that reference them).
+ * its manifest. Installation-level tables: written only by `migrate` (owner
+ * role) when a deployment starts; the app role may only read them (#36).
+ * Idempotent: conflicts refresh version/manifest/definition columns.
  */
 export async function upsertConnectorCatalog(
   db: Pick<Database, "insert">,
@@ -65,8 +61,8 @@ export async function upsertConnectorCatalog(
 }
 
 /**
- * Syncs the installation-level connector catalog from the registry's
- * manifests. Called at worker (and api) startup and explicitly in tests.
+ * Syncs the installation-level connector catalog from the deployed bundle's
+ * manifests. Runs in `migrate` (every deploy/upgrade) and in test setup.
  */
 export async function syncCatalog(
   db: Database,
