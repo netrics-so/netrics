@@ -1,7 +1,7 @@
 import { connectorManifestSchema, type ConnectorManifest } from "./manifest.js";
 import { satisfiesRange } from "./semver.js";
 
-export const SDK_VERSION = "0.1.0";
+export const SDK_VERSION = "0.2.0";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

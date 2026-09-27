@@ -18,12 +18,14 @@ function validManifest() {
         description: "Daily visitors.",
         kind: "gauge",
         unit: "visitors",
+        granularity: "day",
         dimensions: ["resource"],
         aggregations: ["sum", "avg", "min", "max", "last"],
       },
     ],
     minRefreshIntervalSeconds: 300,
     supportsBackfill: true,
+    backfillDays: 90,
     outboundDomains: ["api.acme.test"],
   };
 }
@@ -47,11 +49,27 @@ describe("assertManifestCompatible", () => {
 
   it("rejects a manifest whose range excludes SDK_VERSION", () => {
     expect(() =>
-      assertManifestCompatible({ ...validManifest(), sdkVersion: "^0.2.0" }),
+      assertManifestCompatible({ ...validManifest(), sdkVersion: "^0.1.0" }),
     ).toThrow(/requires SDK version/);
     expect(() =>
       assertManifestCompatible({ ...validManifest(), sdkVersion: ">=9.0.0" }),
     ).toThrow(/requires SDK version/);
+  });
+
+  it("requires backfillDays when backfill is supported, and a granularity", () => {
+    const { backfillDays: _backfillDays, ...withoutDays } = validManifest();
+    expect(() => assertManifestCompatible(withoutDays)).toThrow(/backfillDays/);
+    expect(
+      assertManifestCompatible({ ...withoutDays, supportsBackfill: false }).id,
+    ).toBe("acme-analytics");
+    const { granularity: _granularity, ...metricWithout } =
+      validManifest().metrics[0]!;
+    expect(() =>
+      assertManifestCompatible({
+        ...validManifest(),
+        metrics: [metricWithout],
+      }),
+    ).toThrow();
   });
 
   it("rejects malformed manifests", () => {

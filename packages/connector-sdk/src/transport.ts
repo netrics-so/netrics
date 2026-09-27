@@ -39,14 +39,35 @@ export const syncRequestSchema = z
   });
 export type SyncRequest = z.infer<typeof syncRequestSchema>;
 
+/**
+ * One value of one series at one time. Identity is (metricKey, dimensions,
+ * sourceTimestamp): re-sending the same identity with a different value is a
+ * revision (the provider corrected a recent day) and replaces the stored
+ * value; re-sending an identical value is a no-op.
+ */
 export const observationSchema = z.object({
   metricKey: z.string().min(1),
   sourceTimestamp: z.iso.datetime({ offset: false }),
   value: z.number().finite(),
   dimensions: z.record(z.string(), z.string()),
-  sourceIdentity: z.string().min(1),
 });
 export type Observation = z.infer<typeof observationSchema>;
+
+/**
+ * Stable identity string of an observation: metric, dimensions with keys in
+ * sorted order, and timestamp. Two observations with equal keys are the same
+ * data point.
+ */
+export function observationKey(observation: Observation): string {
+  const dimensions = Object.keys(observation.dimensions)
+    .sort()
+    .map((key) => [key, observation.dimensions[key]]);
+  return JSON.stringify([
+    observation.metricKey,
+    dimensions,
+    new Date(observation.sourceTimestamp).toISOString(),
+  ]);
+}
 
 export const syncResultSchema = z.object({
   observations: z.array(observationSchema),

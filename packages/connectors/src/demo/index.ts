@@ -17,7 +17,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const demoManifest: ConnectorManifest = {
   id: "demo",
   version: "0.1.0",
-  sdkVersion: "^0.1.0",
+  sdkVersion: "^0.2.0",
   name: "Demo Connector",
   description:
     "Deterministic demo connector for onboarding and tests. Generates plausible daily metrics locally without network access.",
@@ -43,6 +43,7 @@ export const demoManifest: ConnectorManifest = {
       description: "Daily unique visitors per demo site.",
       kind: "gauge",
       unit: "visitors",
+      granularity: "day",
       dimensions: ["resource"],
       aggregations: ["sum", "avg", "min", "max", "last"],
     },
@@ -52,12 +53,14 @@ export const demoManifest: ConnectorManifest = {
       description: "New signups per day per demo site.",
       kind: "delta",
       unit: "signups",
+      granularity: "day",
       dimensions: ["resource"],
       aggregations: ["sum"],
     },
   ],
   minRefreshIntervalSeconds: 300,
   supportsBackfill: true,
+  backfillDays: 90,
   outboundDomains: [],
 };
 
@@ -205,7 +208,6 @@ export function createDemoConnector(): Connector {
               sourceTimestamp: dayIso,
               value: metricValue(config, metric.key, resourceId, day),
               dimensions: { resource: resourceId },
-              sourceIdentity: `${metric.key}:${resourceId}:${dayIso.slice(0, 10)}`,
             });
           }
         }

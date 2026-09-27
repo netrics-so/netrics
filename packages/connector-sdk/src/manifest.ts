@@ -19,6 +19,14 @@ export const metricKindSchema = z.enum(["gauge", "delta", "counter"]);
 export type MetricKind = z.infer<typeof metricKindSchema>;
 
 export const aggregationSchema = z.enum(["sum", "avg", "min", "max", "last"]);
+/**
+ * Time resolution of a metric's observations. "day" and "hour" values cover
+ * a bucket and are stamped at the bucket start in UTC (a daily value for the
+ * provider's reporting date D is stamped D T00:00:00Z); "instant" values are
+ * point-in-time readings.
+ */
+export const granularitySchema = z.enum(["day", "hour", "instant"]);
+export type Granularity = z.infer<typeof granularitySchema>;
 export type Aggregation = z.infer<typeof aggregationSchema>;
 
 export const metricDefinitionSchema = z.object({
@@ -26,7 +34,13 @@ export const metricDefinitionSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
   kind: metricKindSchema,
+  /**
+   * Unit of the value. Currency amounts are integer minor units named by
+   * ISO 4217 code plus "_minor" (e.g. "EUR_minor" for cents), so values stay
+   * exact in double precision.
+   */
   unit: z.string().min(1),
+  granularity: granularitySchema,
   dimensions: z.array(z.string().min(1)),
   aggregations: z.array(aggregationSchema).min(1),
 });
@@ -39,33 +53,44 @@ export const rateLimitHintSchema = z.object({
 });
 export type RateLimitHint = z.infer<typeof rateLimitHintSchema>;
 
-export const connectorManifestSchema = z.object({
-  id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-  version: z.string().regex(/^\d+\.\d+\.\d+$/),
-  sdkVersion: z
-    .string()
-    .min(1)
-    .refine((value) => parseRange(value) !== null, {
-      message: "sdkVersion must be a supported semver range",
-    }),
-  name: z.string().min(1),
-  description: z.string().min(1),
-  icon: z.string().min(1).optional(),
-  url: z.url().optional(),
-  docsUrl: z.url().optional(),
-  authStrategies: z.array(authStrategySchema).min(1),
-  configSchema: jsonSchemaSchema,
-  metrics: z
-    .array(metricDefinitionSchema)
-    .min(1)
-    .refine(
-      (metrics) =>
-        new Set(metrics.map((metric) => metric.key)).size === metrics.length,
-      { message: "metric keys must be unique" },
-    ),
-  minRefreshIntervalSeconds: z.number().int().positive(),
-  supportsBackfill: z.boolean(),
-  outboundDomains: z.array(z.string().min(1)),
-  rateLimit: rateLimitHintSchema.optional(),
-});
+export const connectorManifestSchema = z
+  .object({
+    id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    version: z.string().regex(/^\d+\.\d+\.\d+$/),
+    sdkVersion: z
+      .string()
+      .min(1)
+      .refine((value) => parseRange(value) !== null, {
+        message: "sdkVersion must be a supported semver range",
+      }),
+    name: z.string().min(1),
+    description: z.string().min(1),
+    icon: z.string().min(1).optional(),
+    url: z.url().optional(),
+    docsUrl: z.url().optional(),
+    authStrategies: z.array(authStrategySchema).min(1),
+    configSchema: jsonSchemaSchema,
+    metrics: z
+      .array(metricDefinitionSchema)
+      .min(1)
+      .refine(
+        (metrics) =>
+          new Set(metrics.map((metric) => metric.key)).size === metrics.length,
+        { message: "metric keys must be unique" },
+      ),
+    minRefreshIntervalSeconds: z.number().int().positive(),
+    supportsBackfill: z.boolean(),
+    /** How far back a backfill reaches; required when supportsBackfill. */
+    backfillDays: z.number().int().positive().max(3650).optional(),
+    outboundDomains: z.array(z.string().min(1)),
+    rateLimit: rateLimitHintSchema.optional(),
+  })
+  .refine(
+    (manifest) =>
+      !manifest.supportsBackfill || manifest.backfillDays !== undefined,
+    {
+      message: "backfillDays is required when supportsBackfill is true",
+      path: ["backfillDays"],
+    },
+  );
 export type ConnectorManifest = z.infer<typeof connectorManifestSchema>;

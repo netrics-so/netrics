@@ -56,7 +56,7 @@ function observationRows(connectionId: string, workspaceId: string) {
       metricDefinitionId: metricId,
       sourceTimestamp: sourceTime,
       value: 1,
-      sourceIdentity: "series-1:2026-01-01",
+      dimensions: { route: "/", method: "GET" },
     },
     {
       workspaceId,
@@ -64,7 +64,7 @@ function observationRows(connectionId: string, workspaceId: string) {
       metricDefinitionId: metricId,
       sourceTimestamp: new Date("2026-01-01T01:00:00Z"),
       value: 2,
-      sourceIdentity: "series-1:2026-01-01T01",
+      dimensions: { route: "/", method: "GET" },
     },
   ];
 }
@@ -108,7 +108,8 @@ beforeAll(async () => {
       description: "Request count",
       kind: "counter",
       unit: "count",
-      dimensions: ["route"],
+      granularity: "hour",
+      dimensions: ["route", "method"],
       aggregations: ["sum"],
     })
     .returning({ id: schema.metricDefinitions.id });
@@ -230,7 +231,6 @@ describe("tenant RLS on the connector/metrics tables", () => {
           metricDefinitionId: metricId,
           sourceTimestamp: sourceTime,
           value: 9,
-          sourceIdentity: "smuggled",
         }),
       ),
       /row-level security/,
@@ -253,42 +253,65 @@ describe("tenant RLS on the connector/metrics tables", () => {
   });
 });
 
-describe("observation idempotent ingestion", () => {
-  it("ON CONFLICT (connection_id, source_identity) DO NOTHING dedupes re-ingestion", async () => {
-    const rows = observationRows(connectionA, workspaceA).map((row, index) => ({
+describe("observation identity and revisions", () => {
+  it("keys on connection, metric, series and time; a revision replaces the value", async () => {
+    // Same data points as the seeded ones, dimensions in another key order.
+    const reordered = observationRows(connectionA, workspaceA).map((row) => ({
       ...row,
-      sourceIdentity: `replay:${index}`,
-      value: 100 + index,
+      dimensions: { method: "GET", route: "/" },
+      value: row.value + 100,
     }));
-
     await withWorkspace(db, { workspaceId: workspaceA }, async (tx) => {
-      await tx.insert(schema.observations).values(rows);
-      const [beforeRow] = await tx.execute<{ count: string }>(
-        sql`select count(*)::text as count from observations where connection_id = ${connectionA}`,
-      );
-      expect(Number(beforeRow!.count)).toBe(4);
+      const count = async () => {
+        const [row] = await tx.execute<{ count: string }>(
+          sql`select count(*)::text as count from observations where connection_id = ${connectionA}`,
+        );
+        return Number(row!.count);
+      };
+      const before = await count();
 
-      // Re-ingest the exact same source identities with different values:
-      // the unique key makes every row a no-op.
-      await tx
+      // The database derives one series_key regardless of key order, so the
+      // primary key rejects a plain insert…
+      await expect(
+        tx.transaction((nested) =>
+          nested.insert(schema.observations).values(reordered),
+        ),
+      ).rejects.toThrow();
+
+      // …and an upsert revises the existing rows instead of adding new ones.
+      const revised = await tx
         .insert(schema.observations)
-        .values(rows.map((row) => ({ ...row, value: -1 })))
-        .onConflictDoNothing({
+        .values(reordered)
+        .onConflictDoUpdate({
           target: [
             schema.observations.connectionId,
-            schema.observations.sourceIdentity,
+            schema.observations.metricDefinitionId,
+            schema.observations.seriesKey,
+            schema.observations.sourceTimestamp,
           ],
-        });
-      const [afterRow] = await tx.execute<{ count: string }>(
-        sql`select count(*)::text as count from observations where connection_id = ${connectionA}`,
-      );
-      expect(Number(afterRow!.count)).toBe(4);
+          set: { value: sql`excluded.value` },
+          setWhere: sql`${schema.observations.value} is distinct from excluded.value`,
+        })
+        .returning({ value: schema.observations.value });
+      expect(revised.map((row) => row.value).sort()).toEqual([101, 102]);
+      expect(await count()).toBe(before);
 
-      const replayed = await tx
-        .select()
-        .from(schema.observations)
-        .where(sql`source_identity like 'replay:%'`);
-      expect(replayed.map((row) => row.value).sort()).toEqual([100, 101]);
+      // Re-sending identical values touches nothing.
+      const unchanged = await tx
+        .insert(schema.observations)
+        .values(reordered)
+        .onConflictDoUpdate({
+          target: [
+            schema.observations.connectionId,
+            schema.observations.metricDefinitionId,
+            schema.observations.seriesKey,
+            schema.observations.sourceTimestamp,
+          ],
+          set: { value: sql`excluded.value` },
+          setWhere: sql`${schema.observations.value} is distinct from excluded.value`,
+        })
+        .returning({ value: schema.observations.value });
+      expect(unchanged).toEqual([]);
     });
   });
 });

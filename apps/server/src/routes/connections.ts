@@ -906,8 +906,8 @@ export function registerConnectionRoutes(
               }
               const rows = await tx
                 .select({
-                  id: schema.observations.id,
                   metricKey: schema.metricDefinitions.key,
+                  seriesKey: schema.observations.seriesKey,
                   sourceTimestamp: schema.observations.sourceTimestamp,
                   value: schema.observations.value,
                   dimensions: schema.observations.dimensions,
@@ -955,8 +955,8 @@ export function registerConnectionRoutes(
           }
           return observationListResponseSchema.parse({
             observations: result.map((row) => ({
-              id: row.id,
               metricKey: row.metricKey,
+              seriesKey: row.seriesKey,
               sourceTimestamp: row.sourceTimestamp.toISOString(),
               value: row.value,
               dimensions: row.dimensions as Record<string, string>,

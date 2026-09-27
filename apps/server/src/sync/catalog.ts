@@ -42,6 +42,7 @@ export async function upsertConnectorCatalog(
         description: metric.description,
         kind: metric.kind,
         unit: metric.unit,
+        granularity: metric.granularity,
         dimensions: [...metric.dimensions],
         aggregations: [...metric.aggregations],
       })
@@ -55,6 +56,7 @@ export async function upsertConnectorCatalog(
           description: metric.description,
           kind: metric.kind,
           unit: metric.unit,
+          granularity: metric.granularity,
           dimensions: [...metric.dimensions],
           aggregations: [...metric.aggregations],
         },
