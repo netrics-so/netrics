@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import cors from "@fastify/cors";
 import Fastify, { type FastifyInstance } from "fastify";
 
@@ -22,6 +20,10 @@ import {
 import { createAuthService, type AuthService } from "./auth/index.js";
 import { createCredentialKeyring } from "./credentials.js";
 import type { Config } from "./env.js";
+import {
+  registerHttpHardening,
+  requestIdFromHeader,
+} from "./http-hardening.js";
 import { registerConnectionRoutes } from "./routes/connections.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerWorkspaceRoutes } from "./routes/workspaces.js";
@@ -45,13 +47,9 @@ export async function buildApp(
       level: config.logLevel,
       base: { service: "netrics-server", role: config.role },
     },
-    genReqId: (request) => {
-      const header = request.headers["x-request-id"];
-      return typeof header === "string" && header.length > 0
-        ? header
-        : randomUUID();
-    },
+    genReqId: requestIdFromHeader,
   });
+  registerHttpHardening(app, config);
 
   const db = deps.db ?? createDatabase(config.databaseUrl);
   const authService =

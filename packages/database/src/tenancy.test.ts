@@ -287,6 +287,15 @@ describe("audit_events", () => {
       },
     );
 
+    // Writes are limited to the context workspace or installation level.
+    await expect(
+      withWorkspace(db, { workspaceId: workspaceA, userId: u1 }, (tx) =>
+        tx
+          .insert(schema.auditEvents)
+          .values({ workspaceId: workspaceB, action: "forged" }),
+      ),
+    ).rejects.toThrow();
+
     const raw = postgres(testDb.appUrl, { max: 1 });
     try {
       await expect(
