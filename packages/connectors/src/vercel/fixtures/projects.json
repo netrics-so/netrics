@@ -1,0 +1,22 @@
+{
+  "projects": [
+    {
+      "accountId": "team_fixture000000000000000",
+      "createdAt": 1745615223926,
+      "framework": "nextjs",
+      "id": "prj_fixture00000000000000000000",
+      "name": "fixture-site",
+      "updatedAt": 1790529319114,
+      "webAnalytics": {
+        "id": "wa_fixture",
+        "enabledAt": 1746092487152,
+        "hasData": true
+      }
+    }
+  ],
+  "pagination": {
+    "count": 1,
+    "next": null,
+    "prev": 1790529319114
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "query": {
+    "since": "2026-09-14T00:00:00.000Z",
+    "until": "2026-09-29T00:00:00.000Z",
+    "limit": 10
+  },
+  "data": [
+    {
+      "timestamp": "2026-09-14T00:00:00.000Z",
+      "visitors": 97,
+      "pageviews": 171
+    },
+    {
+      "timestamp": "2026-09-15T00:00:00.000Z",
+      "visitors": 114,
+      "pageviews": 155
+    },
+    {
+      "timestamp": "2026-09-16T00:00:00.000Z",
+      "visitors": 114,
+      "pageviews": 188
+    },
+    {
+      "timestamp": "2026-09-17T00:00:00.000Z",
+      "visitors": 101,
+      "pageviews": 182
+    },
+    {
+      "timestamp": "2026-09-18T00:00:00.000Z",
+      "visitors": 76,
+      "pageviews": 110
+    },
+    {
+      "timestamp": "2026-09-19T00:00:00.000Z",
+      "visitors": 119,
+      "pageviews": 152
+    },
+    {
+      "timestamp": "2026-09-20T00:00:00.000Z",
+      "visitors": 40,
+      "pageviews": 40
+    },
+    {
+      "timestamp": "2026-09-21T00:00:00.000Z",
+      "visitors": 59,
+      "pageviews": 86
+    },
+    {
+      "timestamp": "2026-09-22T00:00:00.000Z",
+      "visitors": 171,
+      "pageviews": 187
+    },
+    {
+      "timestamp": "2026-09-23T00:00:00.000Z",
+      "visitors": 84,
+      "pageviews": 95
+    },
+    {
+      "timestamp": "2026-09-24T00:00:00.000Z",
+      "visitors": 99,
+      "pageviews": 186
+    },
+    {
+      "timestamp": "2026-09-25T00:00:00.000Z",
+      "visitors": 160,
+      "pageviews": 180
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00.000Z",
+      "visitors": 56,
+      "pageviews": 95
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00.000Z",
+      "visitors": 99,
+      "pageviews": 159
+    },
+    {
+      "timestamp": "2026-09-28T00:00:00.000Z",
+      "visitors": 182,
+      "pageviews": 221
+    }
+  ]
+}

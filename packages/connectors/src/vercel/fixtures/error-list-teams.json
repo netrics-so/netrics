@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "forbidden",
+    "message": "You don't have permission to list the team.",
+    "action": "list",
+    "resource": "team"
+  }
+}
