@@ -16,6 +16,7 @@ import type { ConnectorRegistry } from "@netrics/connector-runtime";
 
 import { createAuthService, type AuthService } from "./auth/index.js";
 import { createDefaultRegistry } from "./connectors.js";
+import { createOnboarding } from "./onboarding.js";
 import { createCredentialKeyring } from "./credentials.js";
 import type { Config } from "./env.js";
 import {
@@ -99,8 +100,23 @@ export async function buildApp(
       }),
   );
 
+  const registry = deps.registry ?? createDefaultRegistry();
+  const credentialKeyring = createCredentialKeyring(
+    config.appEncryptionKey,
+    config.appEncryptionKeysPrevious,
+  );
+
   registerSessionRoutes(app, { authService, db });
-  registerWorkspaceRoutes(app, { authService, db });
+  registerWorkspaceRoutes(app, {
+    authService,
+    db,
+    addDemoContent: createOnboarding({
+      db,
+      registry,
+      credentialKeyring,
+      logger: app.log,
+    }),
+  });
   registerAdminRoutes(app, { authService, db });
   registerInvitationRoutes(app, {
     authService,
@@ -113,11 +129,8 @@ export async function buildApp(
   registerConnectionRoutes(app, {
     authService,
     db,
-    registry: deps.registry ?? createDefaultRegistry(),
-    credentialKeyring: createCredentialKeyring(
-      config.appEncryptionKey,
-      config.appEncryptionKeysPrevious,
-    ),
+    registry,
+    credentialKeyring,
   });
 
   app.get(

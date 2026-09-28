@@ -6,6 +6,7 @@ import {
   auditEventListResponseSchema,
   createProjectRequestSchema,
   createWorkspaceRequestSchema,
+  createWorkspaceResponseSchema,
   memberListResponseSchema,
   memberResponseSchema,
   projectListResponseSchema,
@@ -45,6 +46,7 @@ import {
 import { can, canManageMember } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
+import type { AddDemoContent } from "../onboarding.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
@@ -52,6 +54,8 @@ import { createRequireSession } from "./session.js";
 export interface WorkspaceRouteDeps {
   authService: AuthService;
   db: Database;
+  /** Demo connection and dashboard for new workspaces (#51). */
+  addDemoContent?: AddDemoContent;
 }
 
 const memberParamsSchema = z.object({ userId: z.uuid() });
@@ -103,7 +107,7 @@ export function registerWorkspaceRoutes(
             summary: "Create a workspace",
             tags: ["workspaces"],
             body: createWorkspaceRequestSchema,
-            response: workspaceResponseSchema,
+            response: createWorkspaceResponseSchema,
           }),
         },
         async (request, reply) => {
@@ -111,13 +115,31 @@ export function registerWorkspaceRoutes(
           if (!body) {
             return;
           }
+          const callerId = request.sessionIdentity!.domainUserId;
           const workspace = await createWorkspaceWithOwner(deps.db, {
             name: body.name,
-            ownerUserId: request.sessionIdentity!.domainUserId,
+            ownerUserId: callerId,
             ...(body.timeZone ? { timeZone: body.timeZone } : {}),
           });
-          return workspaceResponseSchema.parse({
+          // The workspace exists either way; demo content is a bonus that
+          // must not fail its creation.
+          let demoDashboardId: string | null = null;
+          if (body.withDemo && deps.addDemoContent) {
+            try {
+              demoDashboardId = await deps.addDemoContent({
+                workspaceId: workspace.id,
+                callerId,
+              });
+            } catch (error) {
+              request.log.error(
+                { err: error, workspaceId: workspace.id },
+                "demo content failed",
+              );
+            }
+          }
+          return createWorkspaceResponseSchema.parse({
             workspace: toWorkspace(workspace),
+            demoDashboardId,
           });
         },
       );
