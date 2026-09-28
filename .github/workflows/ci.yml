@@ -103,6 +103,17 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build server image
         run: docker build -f apps/server/Dockerfile -t netrics-server:ci .
+      # better-auth's optional peers once pulled Next.js into the server
+      # image (~590 MB, #81); .pnpmfile.cjs drops them. Keep it that way.
+      - name: Check server image size
+        run: |
+          size=$(docker image inspect netrics-server:ci --format '{{.Size}}')
+          echo "server image: $((size / 1000000)) MB"
+          test "$size" -lt 250000000 || { echo "::error::server image is over 250 MB"; exit 1; }
+          if docker run --rm --entrypoint sh netrics-server:ci -c 'ls node_modules/.pnpm | grep -E "^(next|drizzle-kit|vitest)@"'; then
+            echo "::error::server image contains web or build tooling"
+            exit 1
+          fi
       - name: Build web image
         run: docker build -f apps/web/Dockerfile -t netrics-web:ci .
 
