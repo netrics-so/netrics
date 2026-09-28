@@ -1,6 +1,13 @@
 import { z } from "zod";
 
-import { WORKSPACE_ROLES } from "@netrics/domain";
+import {
+  AGGREGATIONS,
+  GRANULARITIES,
+  METRIC_KINDS,
+  PERIODS,
+  WORKSPACE_ROLES,
+  isValidTimeZone,
+} from "@netrics/domain";
 
 export const processRoleSchema = z.enum(["api", "worker", "scheduler"]);
 export type ProcessRole = z.infer<typeof processRoleSchema>;
@@ -80,19 +87,36 @@ export type MeResponse = z.infer<typeof meResponseSchema>;
 
 const nameSchema = z.string().trim().min(1).max(100);
 
+/** An IANA time zone name, e.g. Europe/Berlin. */
+export const timeZoneSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(isValidTimeZone, { message: "unknown time zone" });
+
 export const workspaceSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
+  /** "today" and daily buckets follow this zone. */
+  timeZone: z.string().min(1),
   createdAt: z.iso.datetime(),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 
-export const createWorkspaceRequestSchema = z.object({ name: nameSchema });
+export const createWorkspaceRequestSchema = z.object({
+  name: nameSchema,
+  /** Defaults to UTC; the web app sends the creator's browser zone. */
+  timeZone: timeZoneSchema.optional(),
+});
 export type CreateWorkspaceRequest = z.infer<
   typeof createWorkspaceRequestSchema
 >;
 
-export const renameWorkspaceRequestSchema = z.object({ name: nameSchema });
+export const renameWorkspaceRequestSchema = z
+  .object({ name: nameSchema.optional(), timeZone: timeZoneSchema.optional() })
+  .refine((body) => body.name !== undefined || body.timeZone !== undefined, {
+    message: "nothing to update",
+  });
 export type RenameWorkspaceRequest = z.infer<
   typeof renameWorkspaceRequestSchema
 >;
@@ -472,3 +496,62 @@ export {
   type ConfigField,
   type ConfigValidation,
 } from "./config-schema.js";
+
+// ─── Metrics (#48) ──────────────────────────────────────────────────────────
+
+export const metricPeriodSchema = z.enum(PERIODS);
+export const metricAggregationSchema = z.enum(AGGREGATIONS);
+
+export const workspaceMetricSchema = z.object({
+  connectionId: z.uuid(),
+  connectionName: z.string(),
+  key: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  kind: z.enum(METRIC_KINDS),
+  unit: z.string().min(1),
+  granularity: z.enum(GRANULARITIES),
+  dimensions: z.array(z.string()),
+  /** Aggregations a tile may use, default first. Empty: not displayable. */
+  aggregations: z.array(metricAggregationSchema),
+});
+export type WorkspaceMetric = z.infer<typeof workspaceMetricSchema>;
+
+export const workspaceMetricListResponseSchema = z.object({
+  metrics: z.array(workspaceMetricSchema),
+});
+export type WorkspaceMetricListResponse = z.infer<
+  typeof workspaceMetricListResponseSchema
+>;
+
+export const metricQueryRequestSchema = z.object({
+  connectionId: z.uuid(),
+  metricKey: z.string().min(1).max(200),
+  period: metricPeriodSchema,
+  /** Defaults to the metric's first compatible aggregation. */
+  aggregation: metricAggregationSchema.optional(),
+  /** Only series with these dimension values (at most 10). */
+  dimensions: z
+    .record(z.string().min(1).max(100), z.string().max(200))
+    .optional(),
+});
+export type MetricQueryRequest = z.infer<typeof metricQueryRequestSchema>;
+
+export const metricQueryResponseSchema = z.object({
+  metric: workspaceMetricSchema,
+  period: metricPeriodSchema,
+  timeZone: z.string().min(1),
+  aggregation: metricAggregationSchema,
+  /** Null when the window has no data. */
+  value: z.number().nullable(),
+  previousValue: z.number().nullable(),
+  /** value − previousValue. */
+  delta: z.number().nullable(),
+  /** delta ÷ |previousValue|; null against zero or missing data. */
+  ratio: z.number().nullable(),
+  /** One point per bucket of the current window; null where empty. */
+  series: z.array(
+    z.object({ bucket: z.iso.datetime(), value: z.number().nullable() }),
+  ),
+});
+export type MetricQueryResponse = z.infer<typeof metricQueryResponseSchema>;

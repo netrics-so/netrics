@@ -33,7 +33,7 @@ import {
   listMembershipsForUser,
   listProjects,
   renameProject,
-  renameWorkspace,
+  updateWorkspace,
   setActiveProject,
   updateMembershipRole,
   withWorkspace,
@@ -61,6 +61,7 @@ function toWorkspace(workspace: Workspace) {
   return {
     id: workspace.id,
     name: workspace.name,
+    timeZone: workspace.timeZone,
     createdAt: workspace.createdAt.toISOString(),
   };
 }
@@ -113,6 +114,7 @@ export function registerWorkspaceRoutes(
           const workspace = await createWorkspaceWithOwner(deps.db, {
             name: body.name,
             ownerUserId: request.sessionIdentity!.domainUserId,
+            ...(body.timeZone ? { timeZone: body.timeZone } : {}),
           });
           return workspaceResponseSchema.parse({
             workspace: toWorkspace(workspace),
@@ -176,7 +178,7 @@ export function registerWorkspaceRoutes(
         "/workspaces/:workspaceId",
         {
           schema: routeSchema({
-            summary: "Rename a workspace",
+            summary: "Rename a workspace or change its time zone",
             tags: ["workspaces"],
             body: renameWorkspaceRequestSchema,
             response: workspaceResponseSchema,
@@ -203,19 +205,34 @@ export function registerWorkspaceRoutes(
               if (!current) {
                 return null;
               }
-              const renamed = await renameWorkspace(
-                tx,
-                access.workspaceId,
-                body.name,
-              );
-              await insertAuditEvent(tx, {
-                workspaceId: access.workspaceId,
-                actorUserId: access.callerId,
-                action: "workspace.renamed",
-                target: access.workspaceId,
-                metadata: { oldName: current.name, newName: body.name },
+              const updated = await updateWorkspace(tx, access.workspaceId, {
+                ...(body.name !== undefined ? { name: body.name } : {}),
+                ...(body.timeZone !== undefined
+                  ? { timeZone: body.timeZone }
+                  : {}),
               });
-              return renamed;
+              if (body.name !== undefined) {
+                await insertAuditEvent(tx, {
+                  workspaceId: access.workspaceId,
+                  actorUserId: access.callerId,
+                  action: "workspace.renamed",
+                  target: access.workspaceId,
+                  metadata: { oldName: current.name, newName: body.name },
+                });
+              }
+              if (body.timeZone !== undefined) {
+                await insertAuditEvent(tx, {
+                  workspaceId: access.workspaceId,
+                  actorUserId: access.callerId,
+                  action: "workspace.time_zone_changed",
+                  target: access.workspaceId,
+                  metadata: {
+                    oldTimeZone: current.timeZone,
+                    newTimeZone: body.timeZone,
+                  },
+                });
+              }
+              return updated;
             },
           );
           if (!workspace) {

@@ -100,6 +100,16 @@ export type {
   RolePrivileges,
 } from "./roles.js";
 export {
+  findConnectionMetric,
+  listWorkspaceMetrics,
+  queryMetricBuckets,
+} from "./metrics.js";
+export type {
+  ConnectionMetric,
+  MetricBucket,
+  MetricBucketQuery,
+} from "./metrics.js";
+export {
   deleteConnection,
   findConnection,
   insertConnection,
@@ -142,7 +152,7 @@ export {
   listMembers,
   listProjects,
   renameProject,
-  renameWorkspace,
+  updateWorkspace,
   setActiveProject,
   updateMembershipRole,
 } from "./workspaces.js";

@@ -27,6 +27,7 @@ import {
   projectResponseSchema,
   renameWorkspaceRequestSchema,
   setupStatusResponseSchema,
+  timeZoneSchema,
   updateConnectionRequestSchema,
   updateMemberRoleRequestSchema,
   workspaceListResponseSchema,
@@ -346,12 +347,35 @@ async function browserSend<T>(
   return parseResponse(schema, response);
 }
 
+/** The browser's IANA time zone, if the API accepts it. */
+function browserTimeZone(): string | undefined {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return timeZoneSchema.safeParse(timeZone).success ? timeZone : undefined;
+}
+
+/** New workspaces count "today" in the creator's time zone. */
 export function createWorkspace(name: string): Promise<WorkspaceResponse> {
+  const timeZone = browserTimeZone();
   return browserSend(
     workspaceResponseSchema,
     "POST",
     "/v1/workspaces",
-    createWorkspaceRequestSchema.parse({ name }),
+    createWorkspaceRequestSchema.parse({
+      name,
+      ...(timeZone ? { timeZone } : {}),
+    }),
+  );
+}
+
+export function setWorkspaceTimeZone(
+  workspaceId: string,
+  timeZone: string,
+): Promise<WorkspaceResponse> {
+  return browserSend(
+    workspaceResponseSchema,
+    "PATCH",
+    `/v1/workspaces/${workspaceId}`,
+    renameWorkspaceRequestSchema.parse({ timeZone }),
   );
 }
 

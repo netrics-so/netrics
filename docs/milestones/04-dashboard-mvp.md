@@ -73,3 +73,21 @@ and line-chart widget follow after milestone 06.
 
 Issues: #48 metric query service, #49 dashboards and tiles API, #50 web tile
 dashboard, #51 onboarding dashboard, #52 TV full-screen layout.
+
+## Decisions (2026-09-28)
+
+- **Time zone.** Each workspace has one IANA time zone (`workspaces.time_zone`,
+  set from the creator's browser, changeable in workspace settings). "Today"
+  and daily buckets follow it, so every viewer and TV sees the same numbers.
+  Daily metrics are selected by reporting date (they are stamped at UTC
+  midnight of that date, ADR 0008); hourly and instant metrics by instant.
+- **Periods.** Tiles offer fixed presets: Today, Last 7 days, Last 30 days,
+  This month. Each compares with the previous window of equal length:
+  yesterday up to the same time of day, the 7 or 30 days before, or the same
+  first days of the previous month.
+- **Aggregation by kind** (`packages/domain/src/metrics.ts`): deltas add up
+  (sum, or avg/min/max over buckets); gauges and counters use each series'
+  latest reading (last, or avg/min/max over buckets). A tile may use only
+  aggregations that fit the kind and that the connector declares.
+- **Onboarding.** Workspace creation offers "Add demo data and a sample
+  dashboard", checked by default (#51).
