@@ -1,5 +1,13 @@
 import { relations } from "drizzle-orm";
-import { pgSchema, text, timestamp, boolean, index } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  boolean,
+  index,
+  integer,
+  pgSchema,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 
 export const authSchema = pgSchema("auth");
 
@@ -73,6 +81,20 @@ export const verification = authSchema.table(
       .notNull(),
   },
   (table) => [index("verification_identifier_idx").on(table.identifier)],
+);
+
+// better-auth's rate-limit counters (model "rateLimit"). Stored in the
+// database so limits hold across API replicas; `key` is client IP + path.
+export const rateLimit = authSchema.table(
+  "rate_limit",
+  {
+    id: text("id").primaryKey(),
+    key: text("key").notNull().unique(),
+    count: integer("count").notNull(),
+    lastRequest: bigint("last_request", { mode: "number" }).notNull(),
+  },
+  // better-auth prunes expired rows by last_request.
+  (table) => [index("rate_limit_last_request_idx").on(table.lastRequest)],
 );
 
 export const userRelations = relations(user, ({ many }) => ({

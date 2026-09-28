@@ -162,6 +162,21 @@ Relevant environment variables (see `.env.example`):
   atomically. Every later account needs an invitation (#27).
   `NETRICS_SETUP_TOKEN` fixes the token instead of logging a generated one.
   `GET /v1/setup-status` (public) tells the web app whether setup is pending.
+- `NETRICS_AUTH_RATE_LIMIT` — `on` (default in production) or `off`.
+  Sign-in, sign-up, password reset and verification mail are limited per
+  client IP (`apps/server/src/auth/rate-limit.ts`). The counters live in
+  `auth.rate_limit`, so they hold across api replicas.
+- `NETRICS_TRUSTED_PROXIES` — proxy hops whose `X-Forwarded-For` the api
+  believes when it resolves the client IP: IPs, CIDR ranges, or `loopback`,
+  `linklocal`, `uniquelocal` (default: those three, the private networks the
+  web app and platform proxies connect from). `none` trusts no hop. Narrow it
+  when untrusted clients share a private network with the api.
+- On the web app, `NETRICS_TRUSTED_PROXY_HOPS` (default `1`) is the number of
+  proxies in front of it (Caddy, a platform edge). The web forwards only the
+  client address that many entries from the right of `X-Forwarded-For` and
+  drops every client-supplied forwarding header. Alternatively,
+  `NETRICS_CLIENT_IP_HEADER` (for example `x-real-ip`) names one header in
+  which the edge states the client address.
 
 In production, the api also rejects the public development values of
 `BETTER_AUTH_SECRET` and `APP_ENCRYPTION_KEY`. Session cookies have a 7-day

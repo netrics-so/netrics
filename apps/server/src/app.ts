@@ -53,6 +53,10 @@ export async function buildApp(
       base: { service: "netrics-server", role: config.role },
     },
     genReqId: requestIdFromHeader,
+    // Which X-Forwarded-For hops request.ip may believe; see
+    // NETRICS_TRUSTED_PROXIES in env.ts and auth/rate-limit.ts.
+    trustProxy:
+      config.trustedProxies.length > 0 ? config.trustedProxies : false,
   });
   registerHttpHardening(app, config);
   await registerOpenApi(app, config.version);

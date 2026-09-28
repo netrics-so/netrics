@@ -19,6 +19,11 @@ import {
 import type { Config } from "../env.js";
 import { SETUP_TOKEN_HEADER, hashSetupToken } from "../setup.js";
 import { hashToken } from "../tokens.js";
+import {
+  AUTH_RATE_LIMIT_RULES,
+  CLIENT_IP_HEADER,
+  DEFAULT_AUTH_RATE_LIMIT,
+} from "./rate-limit.js";
 
 /** Header carrying an invitation token on sign-up (see routes/invitations.ts). */
 export const INVITATION_TOKEN_HEADER = "x-netrics-invitation-token";
@@ -60,6 +65,17 @@ export function createAuthService(
     secret: config.betterAuthSecret,
     trustedOrigins: [config.webOrigin],
     logger: { disabled: config.logLevel === "silent" },
+    rateLimit: {
+      enabled: config.authRateLimit,
+      storage: "database",
+      ...DEFAULT_AUTH_RATE_LIMIT,
+      customRules: AUTH_RATE_LIMIT_RULES,
+    },
+    advanced: {
+      // Only the IP the bridge below resolved (see ./rate-limit.ts); also
+      // what session.ipAddress and the auth.login audit event record.
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
+    },
     database: drizzleAdapter(db, {
       provider: "pg",
       schemaName: "auth",
@@ -187,9 +203,13 @@ export function createAuthService(
     async handle(request, reply) {
       // Never derive the URL from the client-controlled Host header.
       const url = new URL(request.url, config.betterAuthUrl);
+      const headers = fromNodeHeaders(request.headers);
+      // request.ip honours only trusted proxy hops; a client-sent value of
+      // this header is replaced.
+      headers.set(CLIENT_IP_HEADER, request.ip);
       const req = new Request(url.toString(), {
         method: request.method,
-        headers: fromNodeHeaders(request.headers),
+        headers,
         ...(request.body ? { body: JSON.stringify(request.body) } : {}),
       });
       const response = await auth.handler(req);

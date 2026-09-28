@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 import { z } from "zod";
 
 import { processRoleSchema } from "@netrics/contracts";
@@ -19,6 +21,51 @@ function base64Key(name: string) {
       message: `${name} must decode to exactly 32 bytes`,
     });
 }
+
+// Proxy hops whose X-Forwarded-For the API believes (Fastify trustProxy /
+// proxy-addr): IPs, CIDR ranges, or the proxy-addr names loopback, linklocal
+// and uniquelocal. The default trusts private networks, where the web app
+// and platform proxies (Docker Compose, Railway) reach the API from. "none"
+// trusts no hop: the socket address is the client.
+const PROXY_ADDR_NAMES = new Set(["loopback", "linklocal", "uniquelocal"]);
+const DEFAULT_TRUSTED_PROXIES = "loopback,linklocal,uniquelocal";
+
+function isTrustedProxyEntry(entry: string): boolean {
+  if (PROXY_ADDR_NAMES.has(entry)) {
+    return true;
+  }
+  const [address = "", prefix, ...rest] = entry.split("/");
+  const family = isIP(address);
+  if (family === 0 || rest.length > 0) {
+    return false;
+  }
+  if (prefix === undefined) {
+    return true;
+  }
+  const bits = Number(prefix);
+  return /^\d+$/.test(prefix) && bits <= (family === 4 ? 32 : 128);
+}
+
+const trustedProxies = z
+  .string()
+  .default(DEFAULT_TRUSTED_PROXIES)
+  .transform((value) =>
+    value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  )
+  .transform((entries) =>
+    entries.length === 1 && entries[0] === "none" ? [] : entries,
+  )
+  .pipe(
+    z.array(
+      z.string().refine(isTrustedProxyEntry, {
+        message:
+          "NETRICS_TRUSTED_PROXIES entries must be IPs, CIDR ranges, loopback, linklocal or uniquelocal (or the single value none)",
+      }),
+    ),
+  );
 
 // Retired keys (comma-separated, same format) that may still protect stored
 // credentials during a rotation; see README "Rotating the encryption key".
@@ -87,6 +134,11 @@ const envSchema = z
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
       .default("info"),
+    NETRICS_TRUSTED_PROXIES: trustedProxies,
+    // Per-client-IP limits on sign-in, sign-up and password reset (see
+    // src/auth/rate-limit.ts). Default: on in production, off otherwise so
+    // local development and tests are not throttled.
+    NETRICS_AUTH_RATE_LIMIT: z.enum(["on", "off"]).optional(),
     NETRICS_ROLE: processRoleSchema.default("api"),
     // Local-debugging escape hatch for the privileged-role startup guard.
     // Refused in production.
@@ -203,6 +255,10 @@ const envSchema = z
         ? { url: env.SMTP_URL, from: env.MAIL_FROM }
         : null,
     logLevel: env.LOG_LEVEL,
+    trustedProxies: env.NETRICS_TRUSTED_PROXIES,
+    authRateLimit:
+      (env.NETRICS_AUTH_RATE_LIMIT ??
+        (env.NODE_ENV === "production" ? "on" : "off")) === "on",
     role: env.NETRICS_ROLE,
     allowPrivilegedDb: env.NETRICS_ALLOW_PRIVILEGED_DB,
     version: env.APP_VERSION,
