@@ -5,9 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+permissions: {}
+
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:17-alpine
@@ -27,9 +31,11 @@ jobs:
       # databases on this server.
       NETRICS_TEST_ADMIN_URL: postgres://netrics:netrics@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
@@ -44,7 +50,9 @@ jobs:
       - run: pnpm openapi:check
 
   migrations:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:17-alpine
@@ -62,9 +70,11 @@ jobs:
     env:
       DATABASE_MIGRATION_URL: postgres://netrics:netrics@localhost:5432/netrics
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
@@ -74,11 +84,23 @@ jobs:
       - name: Re-apply migrations (idempotency check)
         run: pnpm db:migrate
 
+  # Release images are published for both platforms (release.yml); build each
+  # natively so an arm64-only breakage shows up on the pull request.
   docker:
-    runs-on: ubuntu-latest
+    name: docker (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Build server image
         run: docker build -f apps/server/Dockerfile -t netrics-server:ci .
       - name: Build web image
@@ -90,10 +112,14 @@ jobs:
   # images from this commit, run install.sh, start deploy/compose, and complete
   # first-run setup over HTTPS through Caddy.
   selfhost:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Build images
         run: |
           docker build -q -f apps/server/Dockerfile -t ghcr.io/netrics-so/server:ci .

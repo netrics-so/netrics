@@ -321,7 +321,9 @@ curl -i http://localhost:3001/health/ready    # 200, ready
 
 Install netrics on your own server with Docker Compose: see
 [deploy/compose/README.md](deploy/compose/README.md) (`install.sh`, automatic
-HTTPS, backups, upgrades).
+HTTPS, backups, upgrades). Releases are published as signed multi-arch
+images (`linux/amd64`, `linux/arm64`) at `ghcr.io/netrics-so/{server,web}`,
+tagged `X.Y.Z` and `X.Y`; see [docs/release.md](docs/release.md).
 
 ## Docker
 

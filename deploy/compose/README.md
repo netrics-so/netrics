@@ -6,23 +6,29 @@ license key is needed.
 
 ## Requirements
 
-- A Linux host with Docker Engine and the Compose plugin. Images are published
-  for `linux/amd64`; `linux/arm64` follows with multi-arch releases (#45).
+- A Linux host with Docker Engine and the Compose plugin, on `linux/amd64`
+  or `linux/arm64` (for example Hetzner CAX or a Raspberry Pi 4/5 with a
+  64-bit OS).
 - A DNS name pointing at the host, with ports 80 and 443 reachable. Caddy
   obtains a Let's Encrypt certificate automatically.
 - `openssl` (used by the installer to generate secrets).
 
 ## Install
 
+Pick a release from the
+[releases page](https://github.com/netrics-so/netrics/releases) and check out
+its tag:
+
 ```sh
-git clone https://github.com/netrics-so/netrics.git
+git clone --branch v0.1.0 https://github.com/netrics-so/netrics.git
 cd netrics/deploy/compose
 ./install.sh --domain netrics.example.com
 docker compose up -d
 ```
 
 `install.sh` writes `.env` with mode 600. It pins the image version to the
-checked-out release and generates every secret:
+checked-out release (tag `v0.1.0` gives `NETRICS_VERSION=0.1.0`) and
+generates every secret:
 
 - database password
 - the two application role passwords
@@ -72,9 +78,16 @@ Caddy's DNS challenge or your own proxy in front.
 
 ## Upgrade
 
-1. Back up (see below).
-2. Set `NETRICS_VERSION` in `.env` to the new release.
-3. Run `docker compose pull && docker compose up -d`.
+1. Read the release notes of every release in between.
+2. Back up (see below).
+3. Check out the new release so `compose.yml` matches it:
+   `git fetch --tags && git checkout v0.2.0`.
+4. Set `NETRICS_VERSION` in `.env` to the new release (`0.2.0`).
+5. Run `docker compose pull && docker compose up -d`.
+
+Versions are image tags: `0.2.0` never changes, and `0.2` follows the newest
+`0.2.x` patch. Pin the full version and upgrade deliberately. Only the newest
+minor release gets fixes while netrics is pre-1.0.
 
 `migrate` runs first and the app services start only after it succeeds. If
 a migration fails, the old containers keep running. Migrations only move
@@ -101,6 +114,19 @@ docker compose up -d
 
 A dump without its `.env` restores everything except stored connection
 credentials, which need `APP_ENCRYPTION_KEY`.
+
+## Verifying images
+
+The images are signed and carry an SPDX SBOM attestation, made by the
+release workflow on `main`. Check an image with
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/):
+
+```sh
+cosign verify-attestation --type spdxjson \
+  --certificate-identity https://github.com/netrics-so/netrics/.github/workflows/release.yml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/netrics-so/server:0.1.0 > /dev/null && echo verified
+```
 
 ## Operations
 
