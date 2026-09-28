@@ -21,6 +21,11 @@ export interface ContractTestOptions {
   name?: string;
   /** Overrides for the connection context sent to every connector call. */
   context?: Partial<ConnectionContext>;
+  /**
+   * Runtime for every call. Defaults to offlineRuntime; connectors that talk
+   * to a provider pass a fixture-backed runtime (still no network).
+   */
+  runtime?: ConnectorRuntime;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -81,6 +86,7 @@ export function runConnectorContractTests(
     credentials: {},
     ...options.context,
   };
+  const runtime = options.runtime ?? offlineRuntime;
   const fromMs = WINDOW_FROM;
   const toMs = WINDOW_FROM + WINDOW_DAYS * DAY_MS;
   const midMs = WINDOW_FROM + (WINDOW_DAYS / 2) * DAY_MS;
@@ -94,12 +100,12 @@ export function runConnectorContractTests(
     });
 
     it("check returns a valid CheckResult", async () => {
-      const result = await connector.check(context, offlineRuntime);
+      const result = await connector.check(context, runtime);
       expect(checkResultSchema.safeParse(result).success).toBe(true);
     });
 
     it("discover returns valid resources with unique ids", async () => {
-      const resources = await connector.discover(context, offlineRuntime);
+      const resources = await connector.discover(context, runtime);
       for (const resource of resources) {
         expect(resourceSchema.safeParse(resource).success).toBe(true);
       }
@@ -112,7 +118,7 @@ export function runConnectorContractTests(
         await connector.sync(
           context,
           makeRequest("backfill", fromMs, toMs),
-          offlineRuntime,
+          runtime,
         ),
       );
       expect(result.observations.length).toBeGreaterThan(0);
@@ -140,8 +146,8 @@ export function runConnectorContractTests(
 
     it("sync is deterministic across identical calls", async () => {
       const request = makeRequest("backfill", fromMs, toMs);
-      const first = await connector.sync(context, request, offlineRuntime);
-      const second = await connector.sync(context, request, offlineRuntime);
+      const first = await connector.sync(context, request, runtime);
+      const second = await connector.sync(context, request, runtime);
       expect(second).toEqual(first);
     });
 
@@ -149,12 +155,12 @@ export function runConnectorContractTests(
       const full = await connector.sync(
         context,
         makeRequest("backfill", fromMs, toMs),
-        offlineRuntime,
+        runtime,
       );
       const tail = await connector.sync(
         context,
         makeRequest("backfill", midMs, toMs),
-        offlineRuntime,
+        runtime,
       );
       const byIdentity = indexByIdentity(full.observations);
       expect(tail.observations.length).toBeGreaterThan(0);
@@ -176,7 +182,7 @@ export function runConnectorContractTests(
         await connector.sync(
           context,
           makeRequest("backfill", fromMs, toMs),
-          offlineRuntime,
+          runtime,
         ),
       );
       let pages = 1;
@@ -194,7 +200,7 @@ export function runConnectorContractTests(
           await connector.sync(
             context,
             makeRequest("backfill", fromMs, toMs, cursor),
-            offlineRuntime,
+            runtime,
           ),
         );
         pages += 1;
@@ -210,12 +216,12 @@ export function runConnectorContractTests(
       const backfill = await connector.sync(
         context,
         makeRequest("backfill", fromMs, toMs),
-        offlineRuntime,
+        runtime,
       );
       const incremental = await connector.sync(
         context,
         makeRequest("incremental", midMs, toMs),
-        offlineRuntime,
+        runtime,
       );
       const byIdentity = indexByIdentity(backfill.observations);
       expect(incremental.observations.length).toBeGreaterThan(0);

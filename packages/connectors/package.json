@@ -19,13 +19,18 @@
     "./demo": {
       "types": "./dist/demo/index.d.ts",
       "default": "./dist/demo/index.js"
+    },
+    "./vercel": {
+      "types": "./dist/vercel/index.d.ts",
+      "default": "./dist/vercel/index.js"
     }
   },
   "scripts": {
     "build": "tsc -b"
   },
   "dependencies": {
-    "@netrics/connector-sdk": "workspace:*"
+    "@netrics/connector-sdk": "workspace:*",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "typescript": "5.9.3"

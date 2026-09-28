@@ -375,12 +375,14 @@ describe("catalog sync", () => {
       "leaky",
       "probe",
       "revising",
+      "vercel",
     ]);
     const metrics = await appDb.select().from(schema.metricDefinitions);
     const keys = metrics.map((row) => `${row.connectorId}/${row.key}`).sort();
     expect(keys).toContain("demo/demo.visitors");
     expect(keys).toContain("demo/demo.signups");
     expect(keys).toContain("flaky-pages/flaky.hits");
+    expect(keys).toContain("vercel/vercel.pageviews");
     // Idempotent re-sync: exactly one row per (connector, key).
     expect(new Set(keys).size).toBe(keys.length);
   });
