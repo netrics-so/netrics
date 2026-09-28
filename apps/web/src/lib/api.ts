@@ -1,6 +1,21 @@
 import { ZodError, type ZodType } from "zod";
 
 import {
+  createDashboardRequestSchema,
+  dashboardListResponseSchema,
+  dashboardResponseSchema,
+  duplicateDashboardRequestSchema,
+  metricQueryRequestSchema,
+  metricQueryResponseSchema,
+  replaceDashboardRequestSchema,
+  workspaceMetricListResponseSchema,
+  type CreateDashboardRequest,
+  type DashboardListResponse,
+  type DashboardResponse,
+  type MetricQueryRequest,
+  type MetricQueryResponse,
+  type ReplaceDashboardRequest,
+  type WorkspaceMetricListResponse,
   acceptInvitationResponseSchema,
   connectionDetailResponseSchema,
   connectionListResponseSchema,
@@ -107,6 +122,17 @@ export function apiErrorMessage(error: unknown): string {
         return "That record no longer exists.";
       case "invalid_request":
         return "The request was invalid — check your input.";
+      case "version_conflict":
+        return "Someone else saved this dashboard in the meantime. Reload to see their changes, then edit again.";
+      case "dashboard_not_found":
+        return "This dashboard no longer exists.";
+      case "tile_metric_not_found":
+      case "metric_not_found":
+        return "A tile's metric is no longer available from its connection.";
+      case "aggregation_not_supported":
+        return "That aggregation does not fit the metric.";
+      case "unknown_dimension":
+        return "A tile filters on a dimension the metric does not have.";
       default:
         // Connector check/preview failures arrive as human-readable,
         // already-redacted messages rather than snake_case codes.
@@ -523,5 +549,111 @@ export function triggerConnectionSync(
     enqueueSyncResponseSchema,
     "POST",
     `/v1/workspaces/${workspaceId}/connections/${connectionId}/sync`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dashboards and metrics (#48, #49)
+// ---------------------------------------------------------------------------
+
+export function listDashboards(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<DashboardListResponse> {
+  return serverGet(
+    dashboardListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/dashboards`,
+  );
+}
+
+/** Returns null on 404. */
+export async function getDashboard(
+  cookieHeader: string,
+  workspaceId: string,
+  dashboardId: string,
+): Promise<DashboardResponse | null> {
+  const response = await fetch(
+    `${apiBaseUrl()}/v1/workspaces/${workspaceId}/dashboards/${dashboardId}`,
+    { headers: { cookie: cookieHeader }, cache: "no-store" },
+  );
+  if (response.status === 404) {
+    return null;
+  }
+  return parseResponse(dashboardResponseSchema, response);
+}
+
+export function listWorkspaceMetrics(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<WorkspaceMetricListResponse> {
+  return serverGet(
+    workspaceMetricListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/metrics`,
+  );
+}
+
+export function createDashboard(
+  workspaceId: string,
+  body: CreateDashboardRequest,
+): Promise<DashboardResponse> {
+  return browserSend(
+    dashboardResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/dashboards`,
+    createDashboardRequestSchema.parse(body),
+  );
+}
+
+/** Throws ApiError "version_conflict" (409) when someone saved first. */
+export function saveDashboard(
+  workspaceId: string,
+  dashboardId: string,
+  body: ReplaceDashboardRequest,
+): Promise<DashboardResponse> {
+  return browserSend(
+    dashboardResponseSchema,
+    "PUT",
+    `/v1/workspaces/${workspaceId}/dashboards/${dashboardId}`,
+    replaceDashboardRequestSchema.parse(body),
+  );
+}
+
+export function duplicateDashboard(
+  workspaceId: string,
+  dashboardId: string,
+): Promise<DashboardResponse> {
+  return browserSend(
+    dashboardResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/dashboards/${dashboardId}/duplicate`,
+    duplicateDashboardRequestSchema.parse({}),
+  );
+}
+
+export async function deleteDashboard(
+  workspaceId: string,
+  dashboardId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/v1/workspaces/${workspaceId}/dashboards/${dashboardId}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw new ApiError(response.status, await readErrorCode(response));
+  }
+}
+
+/** One tile's numbers (browser; tiles refresh themselves). */
+export function queryMetric(
+  workspaceId: string,
+  body: MetricQueryRequest,
+): Promise<MetricQueryResponse> {
+  return browserSend(
+    metricQueryResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/metrics/query`,
+    metricQueryRequestSchema.parse(body),
   );
 }

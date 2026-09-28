@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 
 import { can } from "@netrics/domain";
 
+import { CreateDashboardForm } from "./create-dashboard-form";
 import { CreateProjectForm } from "./create-project-form";
 import { HealthBadge } from "./health-badge";
 import {
   getWorkspace,
   listConnections,
+  listDashboards,
   listProjects,
   listWorkspaces,
 } from "@/lib/api";
@@ -35,6 +37,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
 
   const { projects } = await listProjects(cookieHeader, workspaceId);
   const { connections } = await listConnections(cookieHeader, workspaceId);
+  const { dashboards } = await listDashboards(cookieHeader, workspaceId);
   const role = membership.role;
 
   return (
@@ -66,6 +69,33 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
             Workspace settings
           </Link>
         </p>
+      </div>
+
+      <div className="card">
+        <h2>Dashboards</h2>
+        {dashboards.length === 0 ? (
+          <p className="muted">No dashboards yet.</p>
+        ) : (
+          <ul className="workspace-list">
+            {dashboards.map((dashboard) => (
+              <li key={dashboard.id}>
+                <Link
+                  href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}`}
+                >
+                  {dashboard.name}
+                </Link>{" "}
+                <span className="muted">
+                  {dashboard.tileCount} tile
+                  {dashboard.tileCount === 1 ? "" : "s"} · updated{" "}
+                  {relativeTime(dashboard.updatedAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {can(role, "dashboards:create") ? (
+          <CreateDashboardForm workspaceId={workspaceId} />
+        ) : null}
       </div>
 
       <div className="card">
