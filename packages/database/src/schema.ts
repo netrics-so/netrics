@@ -446,7 +446,11 @@ export const jobs = pgTable(
     workspaceId: uuid("workspace_id").references(() => workspaces.id, {
       onDelete: "cascade",
     }),
-    connectionId: uuid("connection_id"),
+    // Deleting a connection keeps its (cancelled) jobs as history, detached;
+    // retention prunes them later (migration 0016).
+    connectionId: uuid("connection_id").references(() => connections.id, {
+      onDelete: "set null",
+    }),
     payload: jsonb("payload").notNull().default({}),
     runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
     attempts: integer("attempts").notNull().default(0),
@@ -476,5 +480,14 @@ export const jobs = pgTable(
       .where(
         sql`${table.kind} = 'connection.sync' and ${table.status} = 'pending'`,
       ),
+    // claim_jobs skips a connection that already has a running job
+    // (migration 0011).
+    index("jobs_running_connection")
+      .on(table.connectionId)
+      .where(sql`${table.status} = 'running'`),
+    // prune_history deletes finished jobs by age (migration 0016).
+    index("jobs_finished_created_idx")
+      .on(table.createdAt)
+      .where(sql`${table.status} in ('succeeded', 'failed', 'dead')`),
   ],
 );

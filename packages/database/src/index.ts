@@ -35,7 +35,9 @@ export {
   enqueueSyncJob,
   failJob,
   heartbeat,
+  DEFAULT_RETENTION,
   listDueConnections,
+  pruneHistory,
   renewJobLease,
   requestConnectionSync,
   setConnectionNextDue,
@@ -45,6 +47,7 @@ export type {
   EnqueueJobInput,
   FailJobResult,
   Job,
+  RetentionPolicy,
 } from "./jobs.js";
 export {
   AcceptInvitationFailure,

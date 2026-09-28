@@ -9,8 +9,10 @@ import {
   enqueueSyncJob,
   heartbeat,
   listDueConnections,
+  pruneHistory,
   setConnectionNextDue,
   type Database,
+  type RetentionPolicy,
 } from "@netrics/database";
 
 import type { Config } from "./env.js";
@@ -94,6 +96,9 @@ export async function runSchedulerTick(
 export interface SchedulerDeps {
   schedulerDb: Database;
   pollMs?: number;
+  /** How often to prune finished jobs and sync runs (default: hourly). */
+  maintenanceEveryMs?: number;
+  retention?: RetentionPolicy;
   schedulerId?: string;
   logger?: Logger;
 }
@@ -111,8 +116,25 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
     deps.schedulerId ?? `scheduler:${hostname()}:${process.pid}`;
   const { schedulerDb } = deps;
 
+  const maintenanceEveryMs = deps.maintenanceEveryMs ?? 60 * 60 * 1000;
+
   let running = false;
   let loopPromise: Promise<void> | null = null;
+  let lastMaintenance = 0;
+
+  // History retention (DEFAULT_RETENTION in @netrics/database). Deletes are
+  // bounded per call and idempotent, so a second scheduler doing the same is
+  // harmless.
+  async function maintain(): Promise<void> {
+    if (Date.now() - lastMaintenance < maintenanceEveryMs) {
+      return;
+    }
+    lastMaintenance = Date.now();
+    const result = await pruneHistory(schedulerDb, deps.retention);
+    if (result.jobsDeleted > 0 || result.syncRunsDeleted > 0) {
+      logger.info(result, "pruned finished history");
+    }
+  }
 
   async function loop(): Promise<void> {
     while (running) {
@@ -122,6 +144,7 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
         if (result.enqueued > 0) {
           logger.info(result, "scheduler tick");
         }
+        await maintain();
       } catch (error) {
         logger.error(
           { err: error instanceof Error ? error.message : String(error) },

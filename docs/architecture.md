@@ -341,6 +341,21 @@ Partition observations by time when necessary. Index workspace, metric, series,
 and timestamp query paths. Retention and rollups run as ordinary maintenance
 jobs until TimescaleDB or another analytical store becomes justified.
 
+Retention defaults (`DEFAULT_RETENTION` in `packages/database/src/jobs.ts`,
+applied hourly by the scheduler through the owner-role `prune_history`
+function):
+
+| Data                             | Kept                                                      |
+| -------------------------------- | --------------------------------------------------------- |
+| Succeeded jobs                   | 7 days after creation                                     |
+| Failed and dead jobs             | 30 days (dead-letter inspection)                          |
+| Sync runs (with redacted errors) | 90 days after finishing; each connection's latest is kept |
+| Observations                     | Until the connection or workspace is deleted              |
+
+Observations stay unpruned until rollups exist: dashboards read raw values, and
+deleting them would change historical charts. Their retention is decided
+together with rollups.
+
 ### Derived metrics
 
 Derived metrics use a restricted expression and query model rather than user
@@ -599,7 +614,6 @@ and community decision.
 - Select database query and migration tooling with first-class SQL and RLS
   support.
 - Choose the initial SaaS S3-compatible storage provider.
-- Define initial observation retention and diagnostic payload retention.
 - Define the first connector SDK compatibility and deprecation policy.
 - Validate the pinned Railway Terraform provider against a disposable project.
 - Decide whether production deploys immediately after every green main merge or

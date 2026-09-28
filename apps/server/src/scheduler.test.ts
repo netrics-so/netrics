@@ -272,4 +272,30 @@ describe("createScheduler loop", () => {
       await scheduler.stop();
     }
   });
+
+  it("prunes finished history", async () => {
+    const admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+    try {
+      const [old] = await admin`
+        insert into jobs (kind, status, created_at)
+        values ('maintenance.test', 'succeeded', now() - interval '30 days')
+        returning id`;
+      const scheduler = createScheduler({
+        schedulerDb,
+        pollMs: 50,
+        schedulerId: "scheduler-prune-test",
+      });
+      scheduler.start();
+      try {
+        await waitFor(async () => {
+          const rows = await admin`select 1 from jobs where id = ${old!.id}`;
+          return rows.length === 0;
+        });
+      } finally {
+        await scheduler.stop();
+      }
+    } finally {
+      await admin.end({ timeout: 5 }).catch(() => undefined);
+    }
+  });
 });

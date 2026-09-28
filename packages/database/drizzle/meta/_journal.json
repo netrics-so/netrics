@@ -113,6 +113,13 @@
       "when": 1790573738465,
       "tag": "0015_auth_rate_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790588542080,
+      "tag": "0016_jobs_retention",
+      "breakpoints": true
     }
   ]
 }
