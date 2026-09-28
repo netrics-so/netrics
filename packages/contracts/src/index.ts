@@ -501,6 +501,8 @@ export {
 
 export const metricPeriodSchema = z.enum(PERIODS);
 export const metricAggregationSchema = z.enum(AGGREGATIONS);
+export type MetricPeriod = z.infer<typeof metricPeriodSchema>;
+export type MetricAggregation = z.infer<typeof metricAggregationSchema>;
 
 export const workspaceMetricSchema = z.object({
   connectionId: z.uuid(),
