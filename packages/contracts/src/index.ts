@@ -669,3 +669,90 @@ export const duplicateDashboardRequestSchema = z.object({
 export type DuplicateDashboardRequest = z.infer<
   typeof duplicateDashboardRequestSchema
 >;
+
+// ---------------------------------------------------------------------------
+// Devices and pairing (ADR 0010, ADR 0011)
+// ---------------------------------------------------------------------------
+
+/**
+ * Version of the device API (pairing, credentials, device dashboard). The
+ * tvOS app refuses servers whose version it does not support.
+ */
+export const DEVICE_API_VERSION = 1;
+
+/** Public server identification for the tvOS app's server check. */
+export const serverInfoResponseSchema = z.object({
+  product: z.literal("netrics"),
+  deviceApiVersion: z.number().int().positive(),
+  version: z.string().min(1),
+  /** Where a signed-in user approves a pairing code. */
+  pairingUrl: z.url(),
+});
+export type ServerInfoResponse = z.infer<typeof serverInfoResponseSchema>;
+
+export const createPairingResponseSchema = z.object({
+  pairingId: z.uuid(),
+  /** Shown on the TV as XXXX-XXXX. */
+  code: z.string().regex(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/),
+  /** Kept by the device; proves it is the one polling. */
+  pollSecret: z.string().min(32),
+  expiresAt: z.iso.datetime(),
+  pollIntervalSeconds: z.number().int().positive(),
+  pairingUrl: z.url(),
+  /** pairingUrl with the code filled in, for a QR code. */
+  approveUrl: z.url(),
+});
+export type CreatePairingResponse = z.infer<typeof createPairingResponseSchema>;
+
+export const pollPairingRequestSchema = z.object({
+  pairingId: z.uuid(),
+  pollSecret: z.string().min(32).max(128),
+});
+export type PollPairingRequest = z.infer<typeof pollPairingRequestSchema>;
+
+export const deviceCredentialsSchema = z.object({
+  accessToken: z.string().min(1),
+  accessTokenExpiresAt: z.iso.datetime(),
+  refreshToken: z.string().min(1),
+  refreshTokenExpiresAt: z.iso.datetime(),
+});
+export type DeviceCredentials = z.infer<typeof deviceCredentialsSchema>;
+
+export const pollPairingResponseSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("pending"),
+    expiresAt: z.iso.datetime(),
+  }),
+  z.object({
+    status: z.literal("approved"),
+    device: z.object({ id: z.uuid(), name: z.string().min(1) }),
+    credentials: deviceCredentialsSchema,
+  }),
+]);
+export type PollPairingResponse = z.infer<typeof pollPairingResponseSchema>;
+
+export const approveDeviceRequestSchema = z.object({
+  /** As shown on the TV; case, spaces and dashes are ignored. */
+  code: z.string().trim().min(8).max(20),
+  name: nameSchema,
+  dashboardId: z.uuid().nullable(),
+});
+export type ApproveDeviceRequest = z.infer<typeof approveDeviceRequestSchema>;
+
+export const deviceSchema = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  dashboardId: z.uuid().nullable(),
+  createdAt: z.iso.datetime(),
+  lastSeenAt: z.iso.datetime().nullable(),
+  revokedAt: z.iso.datetime().nullable(),
+});
+export type Device = z.infer<typeof deviceSchema>;
+
+export const deviceResponseSchema = z.object({ device: deviceSchema });
+export type DeviceResponse = z.infer<typeof deviceResponseSchema>;
+
+export const deviceListResponseSchema = z.object({
+  devices: z.array(deviceSchema),
+});
+export type DeviceListResponse = z.infer<typeof deviceListResponseSchema>;

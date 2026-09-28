@@ -113,6 +113,9 @@ const envSchema = z
     // Browser origin allowed to call the API with credentials (CORS +
     // better-auth trustedOrigins). Same production rule as BETTER_AUTH_URL.
     WEB_ORIGIN: z.url().optional(),
+    // Where TVs send people to approve a pairing code (ADR 0010). The hosted
+    // service uses a short address; default <WEB_ORIGIN>/devices/approve.
+    NETRICS_PAIRING_URL: z.url().optional(),
     // Outbound email for verification and password reset, e.g.
     // smtps://user:pass@smtp.example.com:465. Without it, production refuses
     // to send auth emails instead of logging their secret links.
@@ -250,6 +253,12 @@ const envSchema = z
     setupToken: env.NETRICS_SETUP_TOKEN ?? null,
     betterAuthUrl: env.BETTER_AUTH_URL ?? "http://localhost:3001",
     webOrigin: env.WEB_ORIGIN ?? "http://localhost:3000",
+    pairingUrl:
+      env.NETRICS_PAIRING_URL ??
+      new URL(
+        "/devices/approve",
+        env.WEB_ORIGIN ?? "http://localhost:3000",
+      ).toString(),
     smtp:
       env.SMTP_URL && env.MAIL_FROM
         ? { url: env.SMTP_URL, from: env.MAIL_FROM }

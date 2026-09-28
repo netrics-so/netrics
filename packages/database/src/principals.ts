@@ -13,6 +13,8 @@ export interface TokenPrincipal {
   name: string;
   scopes: string[];
   workspaceId: string | null;
+  /** Set for device tokens (ADR 0011). */
+  deviceId: string | null;
 }
 
 /**
@@ -30,6 +32,7 @@ export async function resolvePrincipalToken(
     name: string;
     scopes: string[];
     workspace_id: string | null;
+    device_id: string | null;
   }>(sql`select * from resolve_principal_token(${tokenHash})`);
   const row = rows[0];
   return row
@@ -39,6 +42,7 @@ export async function resolvePrincipalToken(
         name: row.name,
         scopes: row.scopes,
         workspaceId: row.workspace_id,
+        deviceId: row.device_id,
       }
     : null;
 }
