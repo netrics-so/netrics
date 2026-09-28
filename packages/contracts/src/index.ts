@@ -465,3 +465,10 @@ export const adminWorkspaceListResponseSchema = z.object({
 export type AdminWorkspaceListResponse = z.infer<
   typeof adminWorkspaceListResponseSchema
 >;
+
+export {
+  parseConfigSchema,
+  validateConnectionConfig,
+  type ConfigField,
+  type ConfigValidation,
+} from "./config-schema.js";

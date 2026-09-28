@@ -16,6 +16,7 @@ export default defineConfig({
         "./packages/connector-runtime/src/index.ts",
       ),
       "@netrics/connectors": r("./packages/connectors/src/index.ts"),
+      "@netrics/database/testing": r("./packages/database/src/test-db.ts"),
       "@netrics/database": r("./packages/database/src/index.ts"),
       "@netrics/domain": r("./packages/domain/src/index.ts"),
     },

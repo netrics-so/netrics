@@ -1,0 +1,533 @@
+import { randomUUID } from "node:crypto";
+
+import type {
+  CreateConnectionRequest,
+  ObservationListQuery,
+  PreviewConnectionRequest,
+  UpdateConnectionRequest,
+} from "@netrics/contracts";
+import { validateConnectionConfig } from "@netrics/contracts";
+import {
+  executeCheck,
+  executeDiscover,
+  type ConnectorRegistry,
+} from "@netrics/connector-runtime";
+import type { ConnectorManifest } from "@netrics/connector-sdk";
+import {
+  deleteConnection as deleteConnectionRow,
+  enqueueJob,
+  findConnection,
+  findProject,
+  insertAuditEvent,
+  insertConnection,
+  listConnections as listConnectionRows,
+  listObservations as listObservationRows,
+  listRecentSyncRuns,
+  requestConnectionSync,
+  resetConnectionAuth,
+  updateConnection as updateConnectionRow,
+  withWorkspace,
+  type ConnectionChanges,
+  type Database,
+  type Transaction,
+} from "@netrics/database";
+
+import {
+  decryptCredentials,
+  encryptCredentials,
+  redactSecrets,
+  type CredentialKeyring,
+} from "../credentials.js";
+import {
+  presentConnection,
+  presentConnectionDetail,
+  presentSyncRun,
+} from "./present.js";
+
+/**
+ * Connection use cases for the API: validation against the connector
+ * manifest, credential checks, encryption, persistence, job enqueueing and
+ * audit. Callers have already authenticated and authorized the request; the
+ * service reports failures as HTTP-shaped results instead of replying.
+ */
+
+export interface ConnectionServiceDeps {
+  db: Database;
+  registry: ConnectorRegistry;
+  credentialKeyring: CredentialKeyring;
+}
+
+/** Who acts on which workspace (see routes/access.ts). */
+export interface Actor {
+  workspaceId: string;
+  callerId: string;
+}
+
+export type Result<T> =
+  { ok: true; value: T } | { ok: false; status: 400 | 404; error: string };
+
+function ok<T>(value: T): Result<T> {
+  return { ok: true, value };
+}
+
+function fail<T>(status: 400 | 404, error: string): Result<T> {
+  return { ok: false, status, error };
+}
+
+const NOT_FOUND = "connection_not_found";
+
+/** Redacted, bounded message for connector-facing errors. */
+function safeMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return String(redactSecrets(message)).slice(0, 500);
+}
+
+function validateConfig(
+  manifest: ConnectorManifest,
+  config: Record<string, unknown>,
+): Result<Record<string, unknown>> {
+  const validated = validateConnectionConfig(manifest.configSchema, config);
+  return validated.ok ? ok(validated.config) : fail(400, validated.message);
+}
+
+/**
+ * Runs the connector check for a candidate config/credentials pair. A failed
+ * or thrown check is a 400 with the connector's actionable, already-redacted
+ * message; callers persist nothing in that case.
+ */
+async function checkCredentials(
+  registry: ConnectorRegistry,
+  connectorId: string,
+  connectionId: string,
+  config: Record<string, unknown>,
+  credentials: Record<string, unknown>,
+): Promise<Result<true>> {
+  const registered = registry.get(connectorId);
+  if (!registered) {
+    return fail(400, "invalid_request");
+  }
+  try {
+    const check = await executeCheck(registered.connector, {
+      connectionId,
+      config,
+      credentials,
+    });
+    return check.ok
+      ? ok(true)
+      : fail(400, check.message ?? "credential check failed");
+  } catch (error) {
+    // Thrown checks signal a provider-side failure (outage, rate limit); the
+    // message is redacted at the runtime boundary already.
+    return fail(400, safeMessage(error));
+  }
+}
+
+function encrypt(
+  keyring: CredentialKeyring,
+  credentials: Record<string, unknown>,
+  scope: { workspaceId: string; connectionId: string },
+): Buffer {
+  return Buffer.from(
+    encryptCredentials(JSON.stringify(credentials), keyring, scope),
+    "utf8",
+  );
+}
+
+export function createConnectionService(deps: ConnectionServiceDeps) {
+  const { db, registry, credentialKeyring } = deps;
+  const inWorkspace = <T>(actor: Actor, run: (tx: Transaction) => Promise<T>) =>
+    withWorkspace(
+      db,
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      run,
+    );
+
+  return {
+    /** The installation's catalog, from the deployed bundle. */
+    listConnectors() {
+      return registry.list().map(({ manifest }) => ({
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description,
+        metricsCount: manifest.metrics.length,
+        minRefreshIntervalSeconds: manifest.minRefreshIntervalSeconds,
+        supportsBackfill: manifest.supportsBackfill,
+        configSchema: { ...manifest.configSchema },
+        authStrategies: manifest.authStrategies.map((strategy) => ({
+          strategy: strategy.strategy,
+        })),
+      }));
+    },
+
+    async create(actor: Actor, body: CreateConnectionRequest) {
+      const registered = registry.get(body.connectorId);
+      if (!registered) {
+        return fail(400, "invalid_request");
+      }
+      const validated = validateConfig(registered.manifest, body.config);
+      if (!validated.ok) {
+        return validated;
+      }
+      const config = { ...validated.value };
+      if (body.resources && body.resources.length > 0) {
+        config.resourceSelection = body.resources;
+      }
+
+      // Check BEFORE anything is persisted: bad credentials are a 400 with
+      // the connector's actionable message and leave no rows behind.
+      const connectionId = randomUUID();
+      const check = await checkCredentials(
+        registry,
+        body.connectorId,
+        connectionId,
+        config,
+        body.credentials ?? {},
+      );
+      if (!check.ok) {
+        return check;
+      }
+
+      return inWorkspace(actor, async (tx) => {
+        if (body.projectId) {
+          const project = await findProject(
+            tx,
+            actor.workspaceId,
+            body.projectId,
+          );
+          if (!project) {
+            return fail(404, "project_not_found");
+          }
+        }
+        const created = await insertConnection(tx, {
+          id: connectionId,
+          workspaceId: actor.workspaceId,
+          connectorId: body.connectorId,
+          name: body.name,
+          config,
+          credentialsEncrypted: body.credentials
+            ? encrypt(credentialKeyring, body.credentials, {
+                workspaceId: actor.workspaceId,
+                connectionId,
+              })
+            : null,
+          projectId: body.projectId ?? null,
+          pollIntervalSeconds: registered.manifest.minRefreshIntervalSeconds,
+        });
+        // Transactional enqueue invariant: the connection, its state, and the
+        // initial backfill job commit atomically.
+        await enqueueJob(tx, {
+          kind: "connection.backfill",
+          workspaceId: actor.workspaceId,
+          connectionId,
+          idempotencyKey: `backfill:${connectionId}`,
+        });
+        await insertAuditEvent(tx, {
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.callerId,
+          action: "connection.created",
+          target: connectionId,
+          metadata: { name: body.name, connectorId: body.connectorId },
+        });
+        return ok(
+          presentConnectionDetail(registry, created.row, created.state),
+        );
+      });
+    },
+
+    /** Checks credentials and discovers resources; persists nothing. */
+    async preview(body: PreviewConnectionRequest) {
+      const registered = registry.get(body.connectorId);
+      if (!registered) {
+        return fail(400, "invalid_request");
+      }
+      const validated = validateConfig(registered.manifest, body.config);
+      if (!validated.ok) {
+        return validated;
+      }
+      const context = {
+        connectionId: "preview",
+        config: validated.value,
+        credentials: body.credentials ?? {},
+      };
+      let check;
+      try {
+        check = await executeCheck(registered.connector, context);
+      } catch (error) {
+        return fail(400, safeMessage(error));
+      }
+      if (!check.ok) {
+        return ok({ check, resources: [] });
+      }
+      try {
+        const resources = await executeDiscover(registered.connector, context);
+        return ok({ check, resources });
+      } catch (error) {
+        return fail(400, safeMessage(error));
+      }
+    },
+
+    async list(actor: Actor) {
+      const rows = await inWorkspace(actor, (tx) =>
+        listConnectionRows(tx, actor.workspaceId),
+      );
+      return rows.map(({ row, state }) =>
+        presentConnection(registry, row, state),
+      );
+    },
+
+    /** The connection with its 20 most recent sync runs. */
+    async get(actor: Actor, connectionId: string) {
+      const found = await inWorkspace(actor, async (tx) => {
+        const loaded = await findConnection(
+          tx,
+          actor.workspaceId,
+          connectionId,
+        );
+        if (!loaded) {
+          return null;
+        }
+        const syncRuns = await listRecentSyncRuns(
+          tx,
+          actor.workspaceId,
+          connectionId,
+          20,
+        );
+        return { ...loaded, syncRuns };
+      });
+      if (!found) {
+        return fail(404, NOT_FOUND);
+      }
+      return ok({
+        connection: presentConnectionDetail(registry, found.row, found.state),
+        syncRuns: found.syncRuns.map(presentSyncRun),
+      });
+    },
+
+    async update(
+      actor: Actor,
+      connectionId: string,
+      body: UpdateConnectionRequest,
+    ) {
+      const existing = await inWorkspace(actor, (tx) =>
+        findConnection(tx, actor.workspaceId, connectionId),
+      );
+      if (!existing) {
+        return fail(404, NOT_FOUND);
+      }
+      const registered = registry.get(existing.row.connectorId);
+      if (!registered) {
+        return fail(400, "invalid_request");
+      }
+
+      const existingConfig = existing.row.config as Record<string, unknown>;
+      let nextConfig: Record<string, unknown> | undefined;
+      if (body.config !== undefined) {
+        const validated = validateConfig(registered.manifest, body.config);
+        if (!validated.ok) {
+          return validated;
+        }
+        nextConfig = { ...validated.value };
+        // PATCH cannot change the resource selection; carry it over.
+        if (existingConfig.resourceSelection !== undefined) {
+          nextConfig.resourceSelection = existingConfig.resourceSelection;
+        }
+      }
+
+      if (body.projectId) {
+        const projectId = body.projectId;
+        const project = await inWorkspace(actor, (tx) =>
+          findProject(tx, actor.workspaceId, projectId),
+        );
+        if (!project) {
+          return fail(404, "project_not_found");
+        }
+      }
+
+      // Config or credential changes are re-checked against the connector
+      // before they persist (same rule as creation).
+      if (body.config !== undefined || body.credentials !== undefined) {
+        let credentials: Record<string, unknown>;
+        if (body.credentials !== undefined) {
+          credentials = body.credentials;
+        } else if (existing.row.credentialsEncrypted) {
+          try {
+            credentials = JSON.parse(
+              decryptCredentials(
+                existing.row.credentialsEncrypted.toString("utf8"),
+                credentialKeyring,
+                { workspaceId: actor.workspaceId, connectionId },
+              ),
+            ) as Record<string, unknown>;
+          } catch (error) {
+            return fail(400, safeMessage(error));
+          }
+        } else {
+          credentials = {};
+        }
+        const check = await checkCredentials(
+          registry,
+          existing.row.connectorId,
+          connectionId,
+          nextConfig ?? existingConfig,
+          credentials,
+        );
+        if (!check.ok) {
+          return check;
+        }
+      }
+
+      const changes: ConnectionChanges = {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(nextConfig !== undefined ? { config: nextConfig } : {}),
+        ...(body.credentials !== undefined
+          ? {
+              credentialsEncrypted: encrypt(
+                credentialKeyring,
+                body.credentials,
+                { workspaceId: actor.workspaceId, connectionId },
+              ),
+            }
+          : {}),
+        ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
+      };
+
+      return inWorkspace(actor, async (tx) => {
+        const row = await updateConnectionRow(
+          tx,
+          actor.workspaceId,
+          connectionId,
+          changes,
+        );
+        if (!row) {
+          return fail(404, NOT_FOUND);
+        }
+        let state = existing.state;
+        if (body.credentials !== undefined) {
+          // Recovery path for auth_failed/outage: fresh credentials make the
+          // connection due immediately and reset the failure streak.
+          state =
+            (await resetConnectionAuth(tx, actor.workspaceId, connectionId)) ??
+            state;
+          await insertAuditEvent(tx, {
+            workspaceId: actor.workspaceId,
+            actorUserId: actor.callerId,
+            action: "connection.credentials_updated",
+            target: connectionId,
+            metadata: { connectorId: row.connectorId },
+          });
+        }
+        if (
+          body.name !== undefined ||
+          nextConfig !== undefined ||
+          body.projectId !== undefined
+        ) {
+          await insertAuditEvent(tx, {
+            workspaceId: actor.workspaceId,
+            actorUserId: actor.callerId,
+            action: "connection.updated",
+            target: connectionId,
+            metadata: {
+              connectorId: row.connectorId,
+              changed: [
+                ...(body.name !== undefined ? ["name"] : []),
+                ...(nextConfig !== undefined ? ["config"] : []),
+                ...(body.projectId !== undefined ? ["projectId"] : []),
+              ],
+            },
+          });
+        }
+        return ok(presentConnectionDetail(registry, row, state));
+      });
+    },
+
+    async remove(actor: Actor, connectionId: string) {
+      return inWorkspace(actor, async (tx) => {
+        const loaded = await findConnection(
+          tx,
+          actor.workspaceId,
+          connectionId,
+        );
+        if (!loaded) {
+          return fail<null>(404, NOT_FOUND);
+        }
+        await deleteConnectionRow(tx, actor.workspaceId, connectionId);
+        await insertAuditEvent(tx, {
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.callerId,
+          action: "connection.deleted",
+          target: connectionId,
+          metadata: {
+            name: loaded.row.name,
+            connectorId: loaded.row.connectorId,
+          },
+        });
+        return ok(null);
+      });
+    },
+
+    /** Reuses a sync that is already waiting instead of queueing another. */
+    async requestSync(actor: Actor, connectionId: string) {
+      return inWorkspace(actor, async (tx) => {
+        const loaded = await findConnection(
+          tx,
+          actor.workspaceId,
+          connectionId,
+        );
+        if (!loaded) {
+          return fail<string>(404, NOT_FOUND);
+        }
+        const jobId = await requestConnectionSync(tx, {
+          workspaceId: actor.workspaceId,
+          connectionId,
+        });
+        await insertAuditEvent(tx, {
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.callerId,
+          action: "connection.sync_requested",
+          target: connectionId,
+          metadata: { jobId },
+        });
+        return ok(jobId);
+      });
+    },
+
+    async listObservations(
+      actor: Actor,
+      connectionId: string,
+      query: ObservationListQuery,
+    ) {
+      const rows = await inWorkspace(actor, async (tx) => {
+        const loaded = await findConnection(
+          tx,
+          actor.workspaceId,
+          connectionId,
+        );
+        if (!loaded) {
+          return null;
+        }
+        return listObservationRows(tx, actor.workspaceId, connectionId, {
+          ...(query.metricKey ? { metricKey: query.metricKey } : {}),
+          ...(query.from ? { from: new Date(query.from) } : {}),
+          ...(query.to ? { to: new Date(query.to) } : {}),
+          limit: query.limit,
+        });
+      });
+      if (!rows) {
+        return fail(404, NOT_FOUND);
+      }
+      return ok(
+        rows.map((row) => ({
+          metricKey: row.metricKey,
+          seriesKey: row.seriesKey,
+          sourceTimestamp: row.sourceTimestamp.toISOString(),
+          value: row.value,
+          dimensions: row.dimensions as Record<string, string>,
+          ingestedAt: row.ingestedAt.toISOString(),
+        })),
+      );
+    },
+  };
+}
+
+export type ConnectionService = ReturnType<typeof createConnectionService>;

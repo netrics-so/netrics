@@ -46,6 +46,38 @@ const layering = [
     files: [`packages/${name}/**/*.{ts,tsx}`],
     rules: layerRule(name, allowed),
   })),
+  // Route files stay thin: queries live in @netrics/database, use cases in
+  // apps/server/src/connections etc. (#38).
+  {
+    files: ["apps/server/src/routes/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "drizzle-orm",
+              message:
+                "Route files contain no queries; add a function to @netrics/database.",
+            },
+            {
+              name: "@netrics/database",
+              importNames: ["schema"],
+              message:
+                "Route files contain no queries; add a function to @netrics/database.",
+            },
+          ],
+          patterns: [
+            {
+              group: ["drizzle-orm/*"],
+              message:
+                "Route files contain no queries; add a function to @netrics/database.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Runtime tests exercise the real demo connector as a fixture.
   {
     files: ["packages/connector-runtime/**/*.test.ts"],

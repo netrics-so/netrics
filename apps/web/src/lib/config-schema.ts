@@ -1,55 +1,12 @@
 /**
- * Client-side rendering support for the JSON Schema subset connector
- * manifests use (mirrors the server's validator): object properties with
- * type/enum/default/minimum/maximum and a required list. Only used to render
- * and coerce form inputs — the server remains the enforcing validator.
+ * Form helpers for a connector's config fields. Reading the manifest's JSON
+ * Schema subset is shared with the API's validator (@netrics/contracts); the
+ * server remains the enforcing side.
  */
 
-export interface ConfigField {
-  key: string;
-  type: "string" | "integer" | "number" | "boolean";
-  enumValues?: string[];
-  required: boolean;
-  defaultValue?: unknown;
-  minimum?: number;
-  maximum?: number;
-}
+import type { ConfigField } from "@netrics/contracts";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-export function parseConfigSchema(
-  schema: Record<string, unknown>,
-): ConfigField[] {
-  const properties = isRecord(schema.properties) ? schema.properties : {};
-  const required = Array.isArray(schema.required)
-    ? schema.required.filter((key): key is string => typeof key === "string")
-    : [];
-  const fields: ConfigField[] = [];
-  for (const [key, raw] of Object.entries(properties)) {
-    if (!isRecord(raw)) {
-      continue;
-    }
-    const type =
-      raw.type === "integer" ||
-      raw.type === "number" ||
-      raw.type === "boolean" ||
-      raw.type === "string"
-        ? raw.type
-        : "string";
-    fields.push({
-      key,
-      type,
-      ...(Array.isArray(raw.enum) ? { enumValues: raw.enum.map(String) } : {}),
-      required: required.includes(key),
-      ...(raw.default !== undefined ? { defaultValue: raw.default } : {}),
-      ...(typeof raw.minimum === "number" ? { minimum: raw.minimum } : {}),
-      ...(typeof raw.maximum === "number" ? { maximum: raw.maximum } : {}),
-    });
-  }
-  return fields;
-}
+export { parseConfigSchema, type ConfigField } from "@netrics/contracts";
 
 /** Form state is stringly-typed; defaults and existing config prefill it. */
 export function initialConfigValues(

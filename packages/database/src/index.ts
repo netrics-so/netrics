@@ -100,6 +100,26 @@ export type {
   RolePrivileges,
 } from "./roles.js";
 export {
+  deleteConnection,
+  findConnection,
+  insertConnection,
+  listConnections,
+  listObservations,
+  listRecentSyncRuns,
+  resetConnectionAuth,
+  updateConnection,
+} from "./connections.js";
+export type {
+  ConnectionChanges,
+  ConnectionRow,
+  ConnectionStateRow,
+  ConnectionWithState,
+  NewConnection,
+  ObservationFilter,
+  ObservationRow,
+  SyncRunRow,
+} from "./connections.js";
+export {
   findUserByAuthUserId,
   findUserByEmail,
   findUserById,
