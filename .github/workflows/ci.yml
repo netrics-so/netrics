@@ -153,6 +153,16 @@ jobs:
             -d '{"name":"CI"}' $url/v1/workspaces)" 200 workspace
           check "$(curl -sk -b jar -o /dev/null -w '%{http_code}' $url/v1/admin/workspaces)" 200 admin-api
           docker compose run --rm migrate node dist/admin-cli.js list-tokens
+          # Auth is rate-limited per client IP through Caddy, web and api:
+          # forged X-Forwarded-For values must not buy more attempts.
+          for i in $(seq 1 10); do
+            check "$(curl -sk -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -H "origin: $url" \
+              -H "x-forwarded-for: 198.51.100.$i" -H "x-real-ip: 198.51.100.$i" \
+              -d '{"email":"owner@example.com","password":"wrong-password-1"}' $url/api/auth/sign-in/email)" 401 "sign-in $i"
+          done
+          check "$(curl -sk -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -H "origin: $url" \
+            -H 'x-forwarded-for: 198.51.100.99' \
+            -d '{"email":"owner@example.com","password":"wrong-password-1"}' $url/api/auth/sign-in/email)" 429 rate-limit
       - name: Logs on failure
         if: failure()
         working-directory: deploy/compose

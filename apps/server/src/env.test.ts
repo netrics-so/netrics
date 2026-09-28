@@ -30,6 +30,53 @@ describe("loadConfig", () => {
     expect(config.commit).toBe("dev");
   });
 
+  it("trusts private proxy hops by default", () => {
+    expect(loadConfig({}).trustedProxies).toEqual([
+      "loopback",
+      "linklocal",
+      "uniquelocal",
+    ]);
+  });
+
+  it("reads trusted proxies as IPs and CIDR ranges, or none", () => {
+    expect(
+      loadConfig({
+        NETRICS_TRUSTED_PROXIES: " 10.1.0.0/16, 192.0.2.4 ,fd12::/16",
+      }).trustedProxies,
+    ).toEqual(["10.1.0.0/16", "192.0.2.4", "fd12::/16"]);
+    expect(
+      loadConfig({ NETRICS_TRUSTED_PROXIES: "none" }).trustedProxies,
+    ).toEqual([]);
+  });
+
+  it.each(["10.0.0.0/33", "example.com", "10.0.0.1/8/1", "any", "::1/129"])(
+    "rejects the trusted proxy entry %s",
+    (entry) => {
+      expect(() => loadConfig({ NETRICS_TRUSTED_PROXIES: entry })).toThrow(
+        /NETRICS_TRUSTED_PROXIES/,
+      );
+    },
+  );
+
+  it("rate-limits auth in production unless switched off", () => {
+    expect(loadConfig({}).authRateLimit).toBe(false);
+    expect(loadConfig({ NETRICS_AUTH_RATE_LIMIT: "on" }).authRateLimit).toBe(
+      true,
+    );
+    const production = {
+      ...validEnv,
+      ...productionUrls,
+      NODE_ENV: "production",
+      BETTER_AUTH_SECRET: randomBytes(32).toString("hex"),
+      APP_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+    };
+    expect(loadConfig(production).authRateLimit).toBe(true);
+    expect(
+      loadConfig({ ...production, NETRICS_AUTH_RATE_LIMIT: "off" })
+        .authRateLimit,
+    ).toBe(false);
+  });
+
   it("reads version and commit from the environment", () => {
     const config = loadConfig({
       ...validEnv,
