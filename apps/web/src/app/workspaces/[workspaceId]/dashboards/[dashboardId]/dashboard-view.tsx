@@ -183,6 +183,11 @@ export function DashboardView({
             </>
           ) : (
             <>
+              <Link
+                href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}/tv`}
+              >
+                <button type="button">TV mode</button>
+              </Link>
               {canEdit ? (
                 <button type="button" onClick={startEditing}>
                   Edit
