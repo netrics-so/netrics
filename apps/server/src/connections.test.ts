@@ -865,7 +865,7 @@ describe("delete", () => {
         (select count(*)::int from observations where connection_id = ${editorConnectionId}::uuid) as observations,
         (select count(*)::int from sync_runs where connection_id = ${editorConnectionId}::uuid) as sync_runs,
         (select count(*)::int from jobs where connection_id = ${editorConnectionId}::uuid and status in ('pending', 'running')) as live_jobs,
-        (select count(*)::int from jobs where connection_id = ${editorConnectionId}::uuid and status = 'failed' and last_error = 'connection deleted') as cancelled_jobs
+        (select count(*)::int from jobs where workspace_id = ${w1Id}::uuid and connection_id is null and status = 'failed' and last_error = 'connection deleted') as cancelled_jobs
     `;
     expect(after[0]).toMatchObject({
       connection: 0,

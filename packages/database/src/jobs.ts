@@ -361,3 +361,48 @@ export async function heartbeat(
       set: { role, lastHeartbeatAt: new Date(), metadata },
     });
 }
+
+/** How long finished history is kept. Defaults: see DEFAULT_RETENTION. */
+export interface RetentionPolicy {
+  /** Succeeded jobs, by creation time. */
+  succeededJobsDays: number;
+  /** Failed and dead jobs (dead-letter inspection), by creation time. */
+  failedJobsDays: number;
+  /** Finished sync runs, by finish time; each connection's latest is kept. */
+  syncRunsDays: number;
+  /** Maximum rows deleted per table per call. */
+  batch: number;
+}
+
+export const DEFAULT_RETENTION: RetentionPolicy = {
+  succeededJobsDays: 7,
+  failedJobsDays: 30,
+  syncRunsDays: 90,
+  batch: 10_000,
+};
+
+/**
+ * Deletes finished jobs and sync runs past their retention (scheduler role;
+ * prune_history is SECURITY DEFINER, migration 0016). Returns the number of
+ * rows deleted per table; a result equal to `batch` means more remain.
+ */
+export async function pruneHistory(
+  schedulerDb: Db | Transaction,
+  policy: RetentionPolicy = DEFAULT_RETENTION,
+): Promise<{ jobsDeleted: number; syncRunsDeleted: number }> {
+  const [row] = await schedulerDb.execute<{
+    jobs_deleted: number;
+    sync_runs_deleted: number;
+  }>(
+    sql`select * from prune_history(
+          make_interval(days => ${policy.succeededJobsDays}),
+          make_interval(days => ${policy.failedJobsDays}),
+          make_interval(days => ${policy.syncRunsDays}),
+          ${policy.batch}
+        )`,
+  );
+  return {
+    jobsDeleted: row?.jobs_deleted ?? 0,
+    syncRunsDeleted: row?.sync_runs_deleted ?? 0,
+  };
+}

@@ -97,9 +97,9 @@ team could parallelize independent connectors after milestone 07.
 
 ## Current status
 
-- Done: 00, 01, 02, 03, 03.1 (security hardening)
-- In progress: 03.2 (sync and data layer; remaining #38, #39, #40) and 03.3
-  (portable images and self-hosting; remaining #45, #47, #64, #81)
+- Done: 00, 01, 02, 03, 03.1 (security hardening), 03.3 (portable images and
+  self-hosting; release `v0.1.0`)
+- In progress: 03.2 (sync and data layer; remaining #38, #39)
 - Next: 04 (lean) → 05 → 06
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
