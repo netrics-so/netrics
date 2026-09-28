@@ -16,6 +16,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/test-db.d.ts",
+      "default": "./dist/test-db.js"
     }
   },
   "scripts": {

@@ -6,8 +6,10 @@ import { afterAll } from "vitest";
 import { runMigrations } from "./index.js";
 import { DEV_ROLE_PASSWORDS } from "./roles.js";
 
-// Hooks must be registered at collection time, so cleanup lives at module
-// scope (this file is only ever imported by *.test.ts files).
+// Test-only helper, also exported as @netrics/database/testing (kept out of
+// the production image by package.json "files"). Hooks must be registered at
+// collection time, so cleanup lives at module scope (this file is only ever
+// imported by *.test.ts files).
 const pendingDrops: Array<() => Promise<void>> = [];
 afterAll(async () => {
   for (const drop of pendingDrops.splice(0)) {
@@ -25,12 +27,19 @@ export interface TestDatabase {
   drop: () => Promise<void>;
 }
 
+export interface TestDatabaseOptions {
+  /** Runs after migrations as the owner role, e.g. to write the catalog. */
+  seed?: (adminUrl: string) => Promise<void>;
+}
+
 /**
  * Creates a fresh, fully migrated database on the local PostgreSQL server.
  * The server URL comes from NETRICS_TEST_ADMIN_URL (default matches
  * `pnpm db:up`). Registers an afterAll hook that drops the database.
  */
-export async function createTestDatabase(): Promise<TestDatabase> {
+export async function createTestDatabase(
+  options: TestDatabaseOptions = {},
+): Promise<TestDatabase> {
   const serverUrl =
     process.env.NETRICS_TEST_ADMIN_URL ??
     "postgres://netrics:netrics@localhost:5433/postgres";
@@ -63,6 +72,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   const appUrl = app.toString();
 
   await runMigrations(adminUrl, { rolePasswords: DEV_ROLE_PASSWORDS });
+  await options.seed?.(adminUrl);
 
   const database: TestDatabase = {
     name,
