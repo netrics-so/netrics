@@ -99,8 +99,9 @@ team could parallelize independent connectors after milestone 07.
 
 - Done: 00, 01, 02, 03, 03.1 (security hardening), 03.2 (sync and data
   layer), 03.3 (portable images and self-hosting; release `v0.1.0`), 04
-  (tile dashboards, TV layout, demo onboarding)
-- Next: 05 (Vercel connector) → 06 (Apple TV)
+  (tile dashboards, TV layout, demo onboarding), 05 (Vercel Web Analytics
+  connector)
+- Next: 06 (Apple TV)
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
 
