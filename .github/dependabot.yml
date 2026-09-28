@@ -34,7 +34,6 @@ updates:
     directories:
       - /apps/server
       - /apps/web
-      - /apps/renderer
     schedule:
       interval: weekly
     cooldown:

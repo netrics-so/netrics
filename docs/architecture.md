@@ -69,7 +69,7 @@ netrics/
   apps/
     web/                    Next.js product application
     server/                 API, worker, scheduler entry points
-    renderer/               Playwright snapshot worker
+    renderer/               Playwright snapshot worker (not yet; see ADR 0007)
     tvos/                   Native SwiftUI Apple TV application
   packages/
     domain/                 Domain rules independent of transport/storage
@@ -178,7 +178,9 @@ toolchain versions.
   notification delivery; horizontally scalable
 - **scheduler** — claims due connections and scheduled rules; exactly one
   active replica initially
-- **renderer** — Playwright screenshot jobs; optional in self-hosted Compose
+- **renderer** — Playwright screenshot jobs; optional in self-hosted Compose.
+  Parked until snapshots are scheduled (ADR 0007): no app, image or service
+  exists today.
 
 The API, worker, and scheduler may use one server image with different commands.
 This reduces build and release coordination while preserving independent
@@ -513,12 +515,12 @@ existence and stable identifiers.
 On a successful merge to the public `netrics` main branch:
 
 1. Run unit, integration, migration, connector-contract, and image smoke tests.
-2. Build server, web, and renderer images once.
+2. Build server and web images once (linux/amd64 and linux/arm64).
 3. Push immutable commit tags to `ghcr.io/netrics-so/*` and record digests.
 4. Sign images and generate software bills of materials.
 5. Trigger the private cloud release workflow with the candidate digests.
 6. Run database migrations with the exact candidate server image.
-7. Deploy API and web, then worker, scheduler, and renderer.
+7. Deploy API and web, then worker and scheduler.
 8. Require health checks and a small end-to-end smoke test.
 9. Record the deployed digests in `release/production.yaml`.
 
@@ -530,7 +532,6 @@ commit: abc1234
 images:
   server: ghcr.io/netrics-so/server@sha256:...
   web: ghcr.io/netrics-so/web@sha256:...
-  renderer: ghcr.io/netrics-so/renderer@sha256:...
 ```
 
 Terraform does not run for an ordinary application commit. The release workflow
