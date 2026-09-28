@@ -13,12 +13,12 @@ does (see `docs/architecture.md`, "Application release").
    format, lint, typecheck, unit/integration tests, build, and database
    migrations against a throwaway PostgreSQL (including a re-apply idempotency
    check).
-3. **Build once, per platform.** The server, web, and renderer images are
+3. **Build once, per platform.** The server and web images are
    each built exactly once per platform, natively (`linux/amd64` on
    `ubuntu-24.04`, `linux/arm64` on `ubuntu-24.04-arm`, no QEMU), with
    `docker/build-push-action` and the GHA layer cache, and pushed by digest.
    The publish job joins each pair into a multi-arch index tagged with the
-   immutable commit SHA: `ghcr.io/netrics-so/{server,web,renderer}:<sha>`. The
+   immutable commit SHA: `ghcr.io/netrics-so/{server,web}:<sha>`. The
    release version (root `package.json` `version`) and commit SHA are baked in
    as build args (`APP_VERSION` / `GIT_SHA`; `NEXT_PUBLIC_*` for web), so the
    running API reports them on `/health/live` and `/health/ready` and the web
@@ -43,14 +43,13 @@ does (see `docs/architecture.md`, "Application release").
      "commit": "<sha>",
      "images": {
        "server": "ghcr.io/netrics-so/server@sha256:…",
-       "web": "ghcr.io/netrics-so/web@sha256:…",
-       "renderer": "ghcr.io/netrics-so/renderer@sha256:…"
+       "web": "ghcr.io/netrics-so/web@sha256:…"
      }
    }
    ```
 
    The private workflow then runs migrations with the exact candidate server
-   image, deploys in order (API/web, then worker/scheduler/renderer),
+   image, deploys in order (API/web, then worker/scheduler),
    health-gates the rollout, runs a smoke test, and records the digests in
    `release/production.yaml`.
 
@@ -135,7 +134,7 @@ usable during normal rollback windows.
 
 ## Required GitHub setup
 
-- **GHCR packages.** On first push, set the `server`, `web`, and `renderer`
+- **GHCR packages.** On first push, set the `server` and `web`
   packages to public under the `netrics-so` GHCR namespace and connect them to
   this repository so `GITHUB_TOKEN` (`packages: write`) can push.
 - **netrics Release Bot GitHub App.** The dispatch into `netrics-cloud`

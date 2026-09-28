@@ -1,7 +1,7 @@
 # netrics
 
 Metrics on every screen — a self-hosted dashboard platform. This repository is
-the public monorepo: product app, API, renderer, and shared packages.
+the public monorepo: product app, API, and shared packages.
 
 ## Prerequisites
 
@@ -305,7 +305,6 @@ Web environment variables:
 apps/
   web/        Next.js product application
   server/     Fastify API + job worker + scheduler (NETRICS_ROLE)
-  renderer/   Playwright snapshot worker (placeholder)
 packages/
   domain/     Domain rules (role/permission matrix, pure functions)
   database/   Drizzle schema, migrations, PostgreSQL access
@@ -347,7 +346,6 @@ Production images (multi-stage, `node:24-alpine`, no dev dependencies):
 ```sh
 docker build -f apps/server/Dockerfile -t netrics-server .
 docker build -f apps/web/Dockerfile -t netrics-web .
-docker build -f apps/renderer/Dockerfile -t netrics-renderer .
 ```
 
 To run the app images together with PostgreSQL:
@@ -362,7 +360,7 @@ docker compose -f docker-compose.yml -f docker-compose.app.yml up --build
 
 `.github/workflows/ci.yml` runs format check, lint, type check, unit tests,
 build, a migration apply + idempotency check against a PostgreSQL service
-container, and Docker image builds for server, web, and renderer.
+container, and Docker image builds for server and web (amd64 and arm64).
 
 ## License
 

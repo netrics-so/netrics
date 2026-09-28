@@ -105,7 +105,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        image: [server, web, renderer]
+        image: [server, web]
         platform:
           - { arch: amd64, runner: ubuntu-24.04 }
           - { arch: arm64, runner: ubuntu-24.04-arm }
@@ -135,7 +135,7 @@ jobs:
           file: apps/${{ matrix.image }}/Dockerfile
           platforms: linux/${{ matrix.platform.arch }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
-          # Server and renderer read APP_VERSION/GIT_SHA, web reads the
+          # The server reads APP_VERSION/GIT_SHA, web reads the
           # NEXT_PUBLIC_ pair; each Dockerfile ignores the other.
           build-args: |
             APP_VERSION=${{ steps.meta.outputs.version }}
@@ -177,7 +177,6 @@ jobs:
       version: ${{ steps.publish.outputs.version }}
       server: ${{ steps.publish.outputs.server }}
       web: ${{ steps.publish.outputs.web }}
-      renderer: ${{ steps.publish.outputs.renderer }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -223,7 +222,7 @@ jobs:
             echo "- commit: $GITHUB_SHA"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          for image in server web renderer; do
+          for image in server web; do
             repo="$IMAGE_PREFIX/$image"
             docker buildx imagetools create \
               --annotation "index:org.opencontainers.image.source=$SOURCE" \
@@ -301,7 +300,6 @@ jobs:
           COMMIT: ${{ github.sha }}
           SERVER_DIGEST_REF: ${{ needs.publish.outputs.server }}
           WEB_DIGEST_REF: ${{ needs.publish.outputs.web }}
-          RENDERER_DIGEST_REF: ${{ needs.publish.outputs.renderer }}
         run: |
           if [ -z "$CLOUD_DISPATCH_TOKEN" ]; then
             echo "::error::Release Bot token is empty. Check the OP_SERVICE_ACCOUNT_TOKEN secret and the 1Password 'GitHub Release Bot' item (see docs/release.md), then retry with workflow_dispatch."
@@ -312,7 +310,6 @@ jobs:
             --arg commit "$COMMIT" \
             --arg server "$SERVER_DIGEST_REF" \
             --arg web "$WEB_DIGEST_REF" \
-            --arg renderer "$RENDERER_DIGEST_REF" \
             '{
               event_type: "release-candidate",
               client_payload: {
@@ -320,8 +317,7 @@ jobs:
                 commit: $commit,
                 images: {
                   server: $server,
-                  web: $web,
-                  renderer: $renderer
+                  web: $web
                 }
               }
             }')

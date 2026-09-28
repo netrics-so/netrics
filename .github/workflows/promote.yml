@@ -113,7 +113,7 @@ jobs:
             echo "Multi-arch (linux/amd64, linux/arm64), signed with cosign, SPDX SBOM attested."
             echo
           } > notes.md
-          for image in server web renderer; do
+          for image in server web; do
             repo="$IMAGE_PREFIX/$image"
             digest=$(digest_of "$repo:$GITHUB_SHA")
             cosign verify --certificate-identity "$SIGNER" --certificate-oidc-issuer "$OIDC_ISSUER" \

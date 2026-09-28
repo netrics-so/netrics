@@ -8,7 +8,6 @@
     { "path": "packages/database" },
     { "path": "packages/domain" },
     { "path": "packages/ui" },
-    { "path": "apps/server" },
-    { "path": "apps/renderer" }
+    { "path": "apps/server" }
   ]
 }
