@@ -28,21 +28,38 @@ const MAX_PROJECT_PAGES = 10;
 
 export const vercelManifest: ConnectorManifest = {
   id: "vercel",
-  version: "0.1.0",
+  version: "0.1.1",
   sdkVersion: "^0.2.0",
   name: "Vercel Web Analytics",
   description:
     "Visitors, page views and custom events from Vercel Web Analytics, per project.",
   url: "https://vercel.com/docs/analytics",
-  docsUrl: "https://vercel.com/docs/analytics/web-analytics-api",
+  docsUrl:
+    "https://github.com/netrics-so/netrics/blob/main/docs/connectors/vercel.md",
   authStrategies: [
     {
       strategy: "token",
       credentialsSchema: {
         type: "object",
-        properties: { token: { type: "string" } },
+        properties: {
+          token: {
+            type: "string",
+            title: "Vercel access token",
+            description:
+              "netrics only reads project details and Web Analytics with it. It is stored encrypted and never shown again.",
+          },
+        },
         required: ["token"],
         additionalProperties: false,
+      },
+      setup: {
+        steps: [
+          "In Vercel, open Account Settings → Tokens.",
+          "Name the token (for example “netrics”) and set its scope to the project you want to see, or to the team that owns it if you want to choose among several projects.",
+          "Choose an expiration. When the token expires, this connection asks for a new one.",
+          "Click Create, then copy the token and paste it below. Vercel shows it only once.",
+        ],
+        url: "https://vercel.com/account/settings/tokens",
       },
     },
   ],
@@ -51,8 +68,9 @@ export const vercelManifest: ConnectorManifest = {
     properties: {
       teamId: {
         type: "string",
+        title: "Team ID",
         description:
-          "Only for tokens with access to several teams: the team whose projects to read (team_…).",
+          "Leave empty unless the token can see several Vercel teams. Then enter the ID of the team to read: Team Settings → General, it starts with team_.",
       },
     },
     additionalProperties: false,

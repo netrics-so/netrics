@@ -60,15 +60,48 @@ describe("parseConfigSchema", () => {
     expect(parseConfigSchema(schema)).toEqual([
       {
         key: "region",
+        label: "region",
         type: "string",
         enumValues: ["eu", "us"],
         required: false,
         defaultValue: "eu",
       },
-      { key: "days", type: "integer", required: true, minimum: 1, maximum: 90 },
-      { key: "ratio", type: "number", required: false },
-      { key: "verbose", type: "boolean", required: false },
-      { key: "note", type: "string", required: false },
+      {
+        key: "days",
+        label: "days",
+        type: "integer",
+        required: true,
+        minimum: 1,
+        maximum: 90,
+      },
+      { key: "ratio", label: "ratio", type: "number", required: false },
+      { key: "verbose", label: "verbose", type: "boolean", required: false },
+      { key: "note", label: "note", type: "string", required: false },
+    ]);
+  });
+
+  it("labels fields with their title and description", () => {
+    expect(
+      parseConfigSchema({
+        type: "object",
+        properties: {
+          teamId: {
+            type: "string",
+            title: "Team ID",
+            description: "Only for tokens that see several teams.",
+          },
+          empty: { type: "string", title: "", description: "" },
+        },
+      }),
+    ).toEqual([
+      {
+        key: "teamId",
+        label: "Team ID",
+        description: "Only for tokens that see several teams.",
+        type: "string",
+        required: false,
+      },
+      { key: "empty", label: "empty", type: "string", required: false },
     ]);
   });
 });

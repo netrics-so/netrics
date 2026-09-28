@@ -289,6 +289,16 @@ export type AuditEventListResponse = z.infer<
 
 export const connectorAuthStrategySchema = z.object({
   strategy: z.enum(["token", "none"]),
+  /** Label and help text for the token field. */
+  tokenLabel: z.string().min(1).optional(),
+  tokenDescription: z.string().min(1).optional(),
+  /** Steps to create the credential, and the provider page for it. */
+  setup: z
+    .object({
+      steps: z.array(z.string().min(1)),
+      url: z.url().optional(),
+    })
+    .optional(),
 });
 export type ConnectorAuthStrategy = z.infer<typeof connectorAuthStrategySchema>;
 

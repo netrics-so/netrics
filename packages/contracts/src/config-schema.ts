@@ -1,7 +1,8 @@
 /**
  * The JSON Schema subset connector manifests may use for their configSchema:
  * a top-level object with `properties` (each supporting
- * type/enum/default/minimum/maximum), `required`, and `additionalProperties`.
+ * type/enum/default/minimum/maximum, plus title/description for forms),
+ * `required`, and `additionalProperties`.
  * Deliberately NOT a full JSON Schema implementation — anything outside this
  * subset is a manifest authoring error, and keeping it small keeps it
  * auditable (no new dependency).
@@ -47,6 +48,9 @@ function readSchema(schema: ConfigSchema): {
 
 export interface ConfigField {
   key: string;
+  /** The property's title, or its key. */
+  label: string;
+  description?: string;
   type: "string" | "integer" | "number" | "boolean";
   enumValues?: string[];
   required: boolean;
@@ -72,6 +76,11 @@ export function parseConfigSchema(schema: ConfigSchema): ConfigField[] {
         : "string";
     const field: ConfigField = {
       key,
+      label:
+        typeof raw.title === "string" && raw.title !== "" ? raw.title : key,
+      ...(typeof raw.description === "string" && raw.description !== ""
+        ? { description: raw.description }
+        : {}),
       type,
       ...(Array.isArray(raw.enum) ? { enumValues: raw.enum.map(String) } : {}),
       required: required.includes(key),
