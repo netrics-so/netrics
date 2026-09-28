@@ -25,6 +25,7 @@
     "@fastify/swagger": "9.9.0",
     "@netrics/connector-runtime": "workspace:*",
     "@netrics/connector-sdk": "workspace:*",
+    "@netrics/connectors": "workspace:*",
     "@netrics/contracts": "workspace:*",
     "@netrics/database": "workspace:*",
     "@netrics/domain": "workspace:*",

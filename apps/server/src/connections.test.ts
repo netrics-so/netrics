@@ -18,7 +18,7 @@ import {
   workspaceListResponseSchema,
   type WorkspaceRole,
 } from "@netrics/contracts";
-import { createDefaultRegistry } from "@netrics/connector-runtime";
+import { createDefaultRegistry } from "./connectors.js";
 import {
   createDatabase,
   createRawSqlClient,

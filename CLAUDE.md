@@ -58,4 +58,6 @@ Tests need a PostgreSQL server they can create databases on:
   (allowlisted egress). Contract tests run offline.
 - One image for SaaS and self-hosting: nothing environment-specific at build
   time.
+- Packages depend inward only (`PACKAGE_LAYERS` in `eslint.config.mjs`, enforced
+  by lint): `domain` imports nothing, and apps compose the concrete connectors.
 - Pin dependencies exactly, and avoid releases younger than a few days.

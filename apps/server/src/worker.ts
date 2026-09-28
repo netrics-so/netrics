@@ -2,7 +2,7 @@ import { hostname } from "node:os";
 
 import pino, { type Logger } from "pino";
 
-import { createDefaultRegistry } from "@netrics/connector-runtime";
+import { createDefaultRegistry } from "./connectors.js";
 import {
   claimJobs,
   completeJob,
