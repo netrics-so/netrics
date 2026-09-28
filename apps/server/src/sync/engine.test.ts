@@ -12,7 +12,7 @@ import type {
   ConnectorManifest,
   SyncRequest,
 } from "@netrics/connector-sdk";
-import { createDefaultRegistry } from "@netrics/connector-runtime";
+import { createDefaultRegistry } from "../connectors.js";
 import {
   createDatabase,
   createRawSqlClient,

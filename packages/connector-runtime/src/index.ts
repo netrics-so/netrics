@@ -18,8 +18,4 @@ export {
   redactCredentialValues,
   redactSecrets,
 } from "./redact.js";
-export {
-  ConnectorRegistry,
-  createDefaultRegistry,
-  type RegisteredConnector,
-} from "./registry.js";
+export { ConnectorRegistry, type RegisteredConnector } from "./registry.js";

@@ -22,11 +22,11 @@
   },
   "dependencies": {
     "@netrics/connector-sdk": "workspace:*",
-    "@netrics/connectors": "workspace:*",
     "undici": "7.29.1",
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@netrics/connectors": "workspace:*",
     "typescript": "5.9.3"
   }
 }

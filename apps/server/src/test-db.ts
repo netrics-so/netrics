@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { afterAll } from "vitest";
 
-import { createDefaultRegistry } from "@netrics/connector-runtime";
+import { createDefaultRegistry } from "./connectors.js";
 import {
   DEV_ROLE_PASSWORDS,
   createDatabase,

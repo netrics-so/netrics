@@ -12,12 +12,10 @@ import {
   createDatabase,
   type Database,
 } from "@netrics/database";
-import {
-  createDefaultRegistry,
-  type ConnectorRegistry,
-} from "@netrics/connector-runtime";
+import type { ConnectorRegistry } from "@netrics/connector-runtime";
 
 import { createAuthService, type AuthService } from "./auth/index.js";
+import { createDefaultRegistry } from "./connectors.js";
 import { createCredentialKeyring } from "./credentials.js";
 import type { Config } from "./env.js";
 import {

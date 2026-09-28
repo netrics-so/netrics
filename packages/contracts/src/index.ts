@@ -1,15 +1,13 @@
 import { z } from "zod";
 
+import { WORKSPACE_ROLES } from "@netrics/domain";
+
 export const processRoleSchema = z.enum(["api", "worker", "scheduler"]);
 export type ProcessRole = z.infer<typeof processRoleSchema>;
 
-export const workspaceRoleSchema = z.enum([
-  "owner",
-  "admin",
-  "editor",
-  "viewer",
-]);
-export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
+// The role list belongs to the domain; the contract validates it.
+export const workspaceRoleSchema = z.enum(WORKSPACE_ROLES);
+export type { WorkspaceRole } from "@netrics/domain";
 
 export const versionInfoSchema = z.object({
   version: z.string().min(1),

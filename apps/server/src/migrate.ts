@@ -1,4 +1,4 @@
-import { createDefaultRegistry } from "@netrics/connector-runtime";
+import { createDefaultRegistry } from "./connectors.js";
 import {
   createDatabase,
   findRolesWithDefaultPasswords,

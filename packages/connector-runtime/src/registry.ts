@@ -1,4 +1,3 @@
-import { createDemoConnector } from "@netrics/connectors";
 import {
   assertManifestCompatible,
   type Connector,
@@ -34,15 +33,4 @@ export class ConnectorRegistry {
   list(): RegisteredConnector[] {
     return [...this.connectors.values()];
   }
-}
-
-/**
- * The default bundle compiled into the server image — for now just the demo
- * connector. Reviewed community connectors join here per the architecture's
- * distribution workflow.
- */
-export function createDefaultRegistry(): ConnectorRegistry {
-  const registry = new ConnectorRegistry();
-  registry.register(createDemoConnector());
-  return registry;
 }

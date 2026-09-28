@@ -1,6 +1,7 @@
-import type { WorkspaceRole } from "@netrics/contracts";
+/** Workspace roles, strongest first. `@netrics/contracts` validates these. */
+export const WORKSPACE_ROLES = ["owner", "admin", "editor", "viewer"] as const;
 
-export type { WorkspaceRole } from "@netrics/contracts";
+export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 
 export type WorkspaceAction =
   | "workspace:view"
