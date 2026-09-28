@@ -74,12 +74,16 @@ export async function withUserContext<T>(
  */
 export async function createWorkspaceInTransaction(
   tx: Transaction,
-  input: { name: string; ownerUserId: string },
+  input: { name: string; ownerUserId: string; timeZone?: string },
 ): Promise<string> {
   const name = z.string().min(1).parse(input.name);
   const ownerUserId = uuidSchema.parse(input.ownerUserId);
+  const timeZone = z
+    .string()
+    .min(1)
+    .parse(input.timeZone ?? "UTC");
   const rows = await tx.execute<{ id: string }>(
-    sql`select create_workspace(${name}, ${ownerUserId}::uuid) as id`,
+    sql`select create_workspace(${name}, ${ownerUserId}::uuid, ${timeZone}) as id`,
   );
   const row = rows[0];
   if (!row) {

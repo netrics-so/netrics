@@ -104,6 +104,8 @@ export const installationSetup = pgTable(
 export const workspaces = pgTable("workspaces", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
+  // IANA zone for "today" and daily buckets (#48); validated by the API.
+  timeZone: text("time_zone").notNull().default("UTC"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

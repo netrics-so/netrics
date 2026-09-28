@@ -5,6 +5,7 @@ import { can } from "@netrics/domain";
 
 import { MembersManager } from "./members-manager";
 import { RenameWorkspaceForm } from "./rename-workspace-form";
+import { TimeZoneForm } from "./time-zone-form";
 import {
   getMe,
   getWorkspace,
@@ -63,6 +64,14 @@ export default async function WorkspaceSettingsPage({
             workspaceId={workspaceId}
             currentName={workspaceResult.workspace.name}
           />
+          <TimeZoneForm
+            workspaceId={workspaceId}
+            currentTimeZone={workspaceResult.workspace.timeZone}
+          />
+          <p className="muted">
+            Dashboards count &ldquo;today&rdquo; and daily numbers in this time
+            zone.
+          </p>
         </div>
       ) : null}
 

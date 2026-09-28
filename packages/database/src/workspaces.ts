@@ -59,7 +59,7 @@ export async function insertInstallationAuditEvent(
  */
 export async function createWorkspaceWithOwner(
   db: Db,
-  input: { name: string; ownerUserId: string },
+  input: { name: string; ownerUserId: string; timeZone?: string },
 ): Promise<Workspace> {
   return db.transaction(async (tx) => {
     const workspaceId = await createWorkspaceInTransaction(tx, input);
@@ -90,14 +90,14 @@ export async function findWorkspace(
   return rows[0] ?? null;
 }
 
-export async function renameWorkspace(
+export async function updateWorkspace(
   tx: Transaction,
   workspaceId: string,
-  name: string,
+  changes: { name?: string; timeZone?: string },
 ): Promise<Workspace | null> {
   const rows = await tx
     .update(schema.workspaces)
-    .set({ name })
+    .set(changes)
     .where(eq(schema.workspaces.id, workspaceId))
     .returning();
   return rows[0] ?? null;

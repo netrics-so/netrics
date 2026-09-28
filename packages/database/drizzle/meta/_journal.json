@@ -120,6 +120,13 @@
       "when": 1790588542080,
       "tag": "0016_jobs_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790599507894,
+      "tag": "0017_workspace_time_zone",
+      "breakpoints": true
     }
   ]
 }
