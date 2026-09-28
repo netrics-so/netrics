@@ -73,3 +73,16 @@ Exit gate: on a fresh VM, `install.sh` produces a working https instance from
 published images, and the CI smoke test guards that path.
 
 03.2 and 03.3 may run in parallel once 03.1 is merged.
+
+## Completion: 03.1
+
+- Completed: 2026-09-27
+- Pull requests: #63, #65, #66, #68, #69, #70
+- Exit gate: the hosted service runs api and worker as `netrics_app` with
+  rotated role passwords and the privileged-role guard active. Releases for
+  current `main` deploy and pass the smoke test. The cross-workspace suite
+  passes with and without RLS (`connections.privileged.test.ts`).
+- Material deviations: rate limiting behind the web proxy moved to #64
+  (03.3). "Unverified accounts cannot accept invitations" is implemented as
+  "acceptance requires the invitation token plus a matching email" (#70),
+  because installations without SMTP have no verification mail.

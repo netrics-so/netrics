@@ -97,10 +97,12 @@ team could parallelize independent connectors after milestone 07.
 
 ## Current status
 
-- Done: 00, 01, 02, 03
-- Next: 03.1 → 03.2 and 03.3 in parallel → 04 (lean) → 05 → 06
-- Tracking: GitHub milestones and issues in this repository; hosted-service
-  steps in the private cloud repository
+- Done: 00, 01, 02, 03, 03.1 (security hardening)
+- In progress: 03.2 (sync and data layer; remaining #38, #39, #40) and 03.3
+  (portable images and self-hosting; remaining #45, #47, #64, #81)
+- Next: 04 (lean) → 05 → 06
+- Tracking: GitHub milestones, issues and the "netrics roadmap" project
+  board; hosted-service steps are tracked in the private cloud repository
 
 The MVP target is an Apple TV showing demo and Vercel metrics. See
 [ADR 0007](../decisions/0007-native-tvos-tiles.md) for the native-tiles
