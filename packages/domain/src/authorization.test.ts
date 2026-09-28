@@ -22,6 +22,10 @@ const ALL_ACTIONS: WorkspaceAction[] = [
   "connections:create",
   "connections:update",
   "connections:delete",
+  "dashboards:view",
+  "dashboards:create",
+  "dashboards:update",
+  "dashboards:delete",
   "audit:view",
 ];
 
@@ -41,6 +45,10 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
     "connections:create": true,
     "connections:update": true,
     "connections:delete": true,
+    "dashboards:view": true,
+    "dashboards:create": true,
+    "dashboards:update": true,
+    "dashboards:delete": true,
     "audit:view": true,
   },
   admin: {
@@ -58,6 +66,10 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
     "connections:create": true,
     "connections:update": true,
     "connections:delete": true,
+    "dashboards:view": true,
+    "dashboards:create": true,
+    "dashboards:update": true,
+    "dashboards:delete": true,
     "audit:view": true,
   },
   editor: {
@@ -75,6 +87,10 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
     "connections:create": true,
     "connections:update": true,
     "connections:delete": false,
+    "dashboards:view": true,
+    "dashboards:create": true,
+    "dashboards:update": true,
+    "dashboards:delete": false,
     "audit:view": false,
   },
   viewer: {
@@ -92,6 +108,10 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
     "connections:create": false,
     "connections:update": false,
     "connections:delete": false,
+    "dashboards:view": true,
+    "dashboards:create": false,
+    "dashboards:update": false,
+    "dashboards:delete": false,
     "audit:view": false,
   },
 };

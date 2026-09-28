@@ -100,6 +100,22 @@ export type {
   RolePrivileges,
 } from "./roles.js";
 export {
+  deleteDashboard,
+  findDashboard,
+  insertDashboard,
+  listDashboards,
+  replaceDashboard,
+} from "./dashboards.js";
+export type {
+  Dashboard,
+  DashboardInput,
+  DashboardRow,
+  DashboardSummary,
+  DashboardTileRow,
+  ReplaceResult,
+  TileInput,
+} from "./dashboards.js";
+export {
   findConnectionMetric,
   listWorkspaceMetrics,
   queryMetricBuckets,

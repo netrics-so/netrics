@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   customType,
+  foreignKey,
   doublePrecision,
   index,
   integer,
@@ -263,29 +264,37 @@ export const metricDefinitions = pgTable(
   ],
 );
 
-export const connections = pgTable("connections", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  workspaceId: uuid("workspace_id")
-    .notNull()
-    .references(() => workspaces.id, { onDelete: "cascade" }),
-  projectId: uuid("project_id").references(() => projects.id, {
-    onDelete: "set null",
-  }),
-  connectorId: text("connector_id")
-    .notNull()
-    .references(() => connectors.id),
-  name: text("name").notNull(),
-  config: jsonb("config").notNull().default({}),
-  // AES-256-GCM envelope (apps/server/src/credentials.ts). Only code paths
-  // that decrypt may read this; never select it into API responses.
-  credentialsEncrypted: bytea("credentials_encrypted"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const connections = pgTable(
+  "connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    connectorId: text("connector_id")
+      .notNull()
+      .references(() => connectors.id),
+    name: text("name").notNull(),
+    config: jsonb("config").notNull().default({}),
+    // AES-256-GCM envelope (apps/server/src/credentials.ts). Only code paths
+    // that decrypt may read this; never select it into API responses.
+    credentialsEncrypted: bytea("credentials_encrypted"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  // Target of composite foreign keys that pin rows to the connection's
+  // workspace (dashboard_tiles).
+  (table) => [
+    unique("connections_id_workspace_unique").on(table.id, table.workspaceId),
+  ],
+);
 
 export const connectionState = pgTable(
   "connection_state",
@@ -491,5 +500,79 @@ export const jobs = pgTable(
     index("jobs_finished_created_idx")
       .on(table.createdAt)
       .where(sql`${table.status} in ('succeeded', 'failed', 'dead')`),
+  ],
+);
+
+// Tile dashboards (#49). A dashboard is saved as a whole: its name and
+// ordered tiles change together, guarded by `version` (optimistic
+// concurrency). Composite foreign keys keep every tile in the workspace of
+// its dashboard and of its connection, independent of application code.
+export const dashboards = pgTable(
+  "dashboards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    name: text("name").notNull(),
+    version: integer("version").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("dashboards_id_workspace_unique").on(table.id, table.workspaceId),
+    index("dashboards_workspace_idx").on(table.workspaceId),
+    check("dashboards_version_positive", sql`${table.version} >= 1`),
+  ],
+);
+
+export const dashboardTiles = pgTable(
+  "dashboard_tiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    dashboardId: uuid("dashboard_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    // A tile goes with its connection: without it there is nothing to show.
+    connectionId: uuid("connection_id").notNull(),
+    metricKey: text("metric_key").notNull(),
+    aggregation: text("aggregation").notNull(),
+    period: text("period").notNull(),
+    dimensions: jsonb("dimensions").notNull().default({}),
+    /** Overrides the metric name when set. */
+    title: text("title"),
+    position: integer("position").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: "dashboard_tiles_dashboard_fk",
+      columns: [table.dashboardId, table.workspaceId],
+      foreignColumns: [dashboards.id, dashboards.workspaceId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "dashboard_tiles_connection_fk",
+      columns: [table.connectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("cascade"),
+    index("dashboard_tiles_dashboard_idx").on(
+      table.dashboardId,
+      table.position,
+    ),
+    index("dashboard_tiles_connection_idx").on(table.connectionId),
+    check(
+      "dashboard_tiles_aggregation_valid",
+      sql`${table.aggregation} in ('sum', 'avg', 'min', 'max', 'last')`,
+    ),
+    check(
+      "dashboard_tiles_period_valid",
+      sql`${table.period} in ('today', 'last_7_days', 'last_30_days', 'this_month')`,
+    ),
+    check("dashboard_tiles_position_valid", sql`${table.position} >= 0`),
   ],
 );

@@ -127,6 +127,13 @@
       "when": 1790599507894,
       "tag": "0017_workspace_time_zone",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790602303663,
+      "tag": "0018_dashboards",
+      "breakpoints": true
     }
   ]
 }

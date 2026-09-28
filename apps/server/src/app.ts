@@ -25,6 +25,7 @@ import {
 import { createMailer, type Mailer } from "./mail/mailer.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerConnectionRoutes } from "./routes/connections.js";
+import { registerDashboardRoutes } from "./routes/dashboards.js";
 import { registerInvitationRoutes } from "./routes/invitations.js";
 import { registerMetricRoutes } from "./routes/metrics.js";
 import { registerOpenApi, routeSchema } from "./routes/openapi.js";
@@ -108,6 +109,7 @@ export async function buildApp(
     webOrigin: config.webOrigin,
   });
   registerMetricRoutes(app, { authService, db });
+  registerDashboardRoutes(app, { authService, db });
   registerConnectionRoutes(app, {
     authService,
     db,
