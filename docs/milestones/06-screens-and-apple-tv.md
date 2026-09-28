@@ -86,3 +86,18 @@ the exit gate; "cached playback" means the cached JSON payload.
 
 Issues: #55 devices and pairing, #56 device credentials, #57 device dashboard
 endpoint, #58 tvOS app, #59 browser kiosk.
+
+## Server choice and pairing address (2026-09)
+
+Per [ADR 0010](../decisions/0010-apple-tv-server-and-pairing.md), one App
+Store app serves the hosted service and self-hosted servers:
+
+- netrics cloud by default; "your own server" by entering its URL once,
+  verified against a public server-identification endpoint;
+- the hosted service shows `netrics.tv/link` for approval, a self-hosted
+  server its own approval URL (reported by the API);
+- HTTPS required by default; a setting, off by default, allows plain HTTP on
+  local-network addresses and self-signed certificates pinned on first use.
+
+The exit gate adds: pair one Apple TV against the hosted service and one
+against a self-hosted server.
