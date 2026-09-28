@@ -13,6 +13,9 @@ in `docs/`; this file is how to work in the repository.
 - API contract: `packages/contracts` (zod) and the generated
   `packages/contracts/openapi.json`.
 - Self-hosting: `deploy/compose/` (install, upgrade, backup).
+- Releases: `docs/release.md`. Every `main` commit is built, signed and
+  deployed; a `vX.Y.Z` tag on a `main` commit promotes those images to a
+  version for self-hosters (no rebuild). Actions are pinned by SHA.
 - Hosted-service infrastructure lives in private repositories (release and env
   as code, DNS as code). Never put production details in this public repo.
 

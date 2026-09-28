@@ -2,7 +2,9 @@ name: release
 
 # Publishes immutable, signed, commit-addressed images to GHCR and hands the
 # digests to the private netrics-cloud release workflow. Terraform never owns
-# the image-version field; this workflow does. See docs/release.md.
+# the image-version field; this workflow does. Version tags (vX.Y.Z) do not
+# rebuild: promote.yml tags the images this workflow built for that commit.
+# See docs/release.md.
 
 on:
   push:
@@ -13,18 +15,17 @@ concurrency:
   group: release-production
   cancel-in-progress: false
 
-permissions:
-  contents: read
+permissions: {}
 
 env:
   REGISTRY: ghcr.io
-  SERVER_IMAGE: ghcr.io/netrics-so/server
-  WEB_IMAGE: ghcr.io/netrics-so/web
-  RENDERER_IMAGE: ghcr.io/netrics-so/renderer
+  IMAGE_PREFIX: ghcr.io/netrics-so
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:17-alpine
@@ -43,9 +44,11 @@ jobs:
       # Integration tests create and migrate scratch databases on this server.
       NETRICS_TEST_ADMIN_URL: postgres://netrics:netrics@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
@@ -57,7 +60,9 @@ jobs:
       - run: pnpm build
 
   migrations:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:17-alpine
@@ -75,9 +80,11 @@ jobs:
     env:
       DATABASE_MIGRATION_URL: postgres://netrics:netrics@localhost:5432/netrics
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
@@ -87,114 +94,186 @@ jobs:
       - name: Re-apply migrations (idempotency check)
         run: pnpm db:migrate
 
-  release:
+  # One native build per image and platform (no QEMU), pushed by digest only.
+  # The publish job assembles the multi-arch index and tags it.
+  build:
     needs: [verify, migrations]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
       packages: write
-      id-token: write # cosign keyless signing via sigstore GitHub OIDC
+    strategy:
+      fail-fast: true
+      matrix:
+        image: [server, web, renderer]
+        platform:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Determine release version
         id: meta
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push server image
-        id: build-server
-        uses: docker/build-push-action@v6
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
-          file: apps/server/Dockerfile
-          push: true
-          tags: ${{ env.SERVER_IMAGE }}:${{ github.sha }}
+          file: apps/${{ matrix.image }}/Dockerfile
+          platforms: linux/${{ matrix.platform.arch }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          # Server and renderer read APP_VERSION/GIT_SHA, web reads the
+          # NEXT_PUBLIC_ pair; each Dockerfile ignores the other.
           build-args: |
             APP_VERSION=${{ steps.meta.outputs.version }}
             GIT_SHA=${{ github.sha }}
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,mode=max,scope=server
-
-      - name: Build and push web image
-        id: build-web
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/web/Dockerfile
-          push: true
-          tags: ${{ env.WEB_IMAGE }}:${{ github.sha }}
-          build-args: |
             NEXT_PUBLIC_APP_VERSION=${{ steps.meta.outputs.version }}
             NEXT_PUBLIC_GIT_SHA=${{ github.sha }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,mode=max,scope=web
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.platform.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.platform.arch }}
 
-      - name: Build and push renderer image
-        id: build-renderer
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/renderer/Dockerfile
-          push: true
-          tags: ${{ env.RENDERER_IMAGE }}:${{ github.sha }}
-          build-args: |
-            APP_VERSION=${{ steps.meta.outputs.version }}
-            GIT_SHA=${{ github.sha }}
-          cache-from: type=gha,scope=renderer
-          cache-to: type=gha,mode=max,scope=renderer
-
-      - name: Record image digests
+      - name: Record digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          {
-            echo "SERVER_DIGEST_REF=${SERVER_IMAGE}@${{ steps.build-server.outputs.digest }}"
-            echo "WEB_DIGEST_REF=${WEB_IMAGE}@${{ steps.build-web.outputs.digest }}"
-            echo "RENDERER_DIGEST_REF=${RENDERER_IMAGE}@${{ steps.build-renderer.outputs.digest }}"
-          } >> "$GITHUB_ENV"
+          mkdir -p digests
+          echo "$DIGEST" > "digests/${{ matrix.image }}-${{ matrix.platform.arch }}"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.platform.arch }}
+          path: digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Assembles each multi-arch index, tags it with the commit SHA, signs it
+  # (index and platform manifests) and attests an SPDX SBOM per platform.
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # cosign keyless signing via sigstore GitHub OIDC
+    outputs:
+      version: ${{ steps.publish.outputs.version }}
+      server: ${{ steps.publish.outputs.server }}
+      web: ${{ steps.publish.outputs.web }}
+      renderer: ${{ steps.publish.outputs.renderer }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+
+      - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        id: syft
+
+      - name: Create, sign and attest multi-arch images
+        id: publish
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
+          # Package-to-file ownership edges multiply the SBOM size without
+          # adding packages; Rekor rejects entries above ~23 MiB.
+          SYFT_RELATIONSHIPS_PACKAGE_FILE_OWNERSHIP: "false"
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          mkdir -p sbom
           {
             echo "## Release candidate"
             echo
-            echo "- release: ${{ steps.meta.outputs.version }}"
-            echo "- commit: ${{ github.sha }}"
-            echo "- server: \`${SERVER_IMAGE}@${{ steps.build-server.outputs.digest }}\`"
-            echo "- web: \`${WEB_IMAGE}@${{ steps.build-web.outputs.digest }}\`"
-            echo "- renderer: \`${RENDERER_IMAGE}@${{ steps.build-renderer.outputs.digest }}\`"
+            echo "- release: $version"
+            echo "- commit: $GITHUB_SHA"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+          for image in server web renderer; do
+            repo="$IMAGE_PREFIX/$image"
+            docker buildx imagetools create \
+              --annotation "index:org.opencontainers.image.source=$SOURCE" \
+              --annotation "index:org.opencontainers.image.revision=$GITHUB_SHA" \
+              --annotation "index:org.opencontainers.image.version=$version" \
+              --tag "$repo:$GITHUB_SHA" \
+              "$repo@$(cat "digests/$image-amd64")" \
+              "$repo@$(cat "digests/$image-arm64")"
+            index=$(docker buildx imagetools inspect "$repo:$GITHUB_SHA" --format '{{json .Manifest}}' | jq -r .digest)
 
-      - name: Sign images (keyless)
-        run: |
-          cosign sign --yes "$SERVER_DIGEST_REF"
-          cosign sign --yes "$WEB_DIGEST_REF"
-          cosign sign --yes "$RENDERER_DIGEST_REF"
+            # --recursive signs the index and each platform manifest, so both
+            # a tag (resolves to the index) and a platform digest verify.
+            cosign sign --yes --recursive "$repo@$index"
 
-      - name: Generate server SBOM
-        uses: anchore/sbom-action@v0
+            # Platform manifests as listed in the index. (The digests the build
+            # jobs pushed are per-platform indexes carrying BuildKit
+            # provenance; imagetools flattens them, so they are not what
+            # clients pull.)
+            docker buildx imagetools inspect --raw "$repo@$index" |
+              jq -r '.manifests[] | select(.platform.os == "linux") | "\(.platform.architecture) \(.digest)"' \
+              > "platforms-$image"
+            test "$(cut -d' ' -f1 "platforms-$image" | sort | tr '\n' ' ')" = "amd64 arm64 "
+
+            while read -r arch platform_digest <&3; do
+              sbom="sbom/$image-linux-$arch.spdx.json"
+              "$SYFT" scan "registry:$repo@$platform_digest" -o "spdx-json=$sbom"
+              ls -l "$sbom"
+              cosign attest --yes --type spdxjson --predicate "$sbom" "$repo@$platform_digest"
+              cosign attest --yes --type spdxjson --predicate "$sbom" "$repo@$index"
+            done 3< "platforms-$image"
+
+            echo "$image=$repo@$index" >> "$GITHUB_OUTPUT"
+            echo "- $image: \`$repo@$index\` (linux/amd64, linux/arm64)" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          image: ${{ env.SERVER_DIGEST_REF }}
-          artifact-name: sbom-server
+          name: sbom
+          path: sbom/*.spdx.json
+          if-no-files-found: error
 
-      - name: Generate web SBOM
-        uses: anchore/sbom-action@v0
+  dispatch:
+    needs: publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          image: ${{ env.WEB_DIGEST_REF }}
-          artifact-name: sbom-web
-
-      - name: Generate renderer SBOM
-        uses: anchore/sbom-action@v0
-        with:
-          image: ${{ env.RENDERER_DIGEST_REF }}
-          artifact-name: sbom-renderer
+          persist-credentials: false
 
       - name: Resolve secrets from 1Password
         id: secrets
@@ -208,7 +287,7 @@ jobs:
       # hour and is never stored. No personal access token is involved.
       - name: Mint Release Bot installation token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ steps.secrets.outputs.release-bot-app-id }}
           private-key: ${{ steps.secrets.outputs.release-bot-private-key }}
@@ -218,8 +297,11 @@ jobs:
       - name: Trigger netrics-cloud release workflow
         env:
           CLOUD_DISPATCH_TOKEN: ${{ steps.app-token.outputs.token }}
-          RELEASE: ${{ steps.meta.outputs.version }}
+          RELEASE: ${{ needs.publish.outputs.version }}
           COMMIT: ${{ github.sha }}
+          SERVER_DIGEST_REF: ${{ needs.publish.outputs.server }}
+          WEB_DIGEST_REF: ${{ needs.publish.outputs.web }}
+          RENDERER_DIGEST_REF: ${{ needs.publish.outputs.renderer }}
         run: |
           if [ -z "$CLOUD_DISPATCH_TOKEN" ]; then
             echo "::error::Release Bot token is empty. Check the OP_SERVICE_ACCOUNT_TOKEN secret and the 1Password 'GitHub Release Bot' item (see docs/release.md), then retry with workflow_dispatch."

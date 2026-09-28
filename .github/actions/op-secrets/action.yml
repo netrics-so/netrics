@@ -31,7 +31,7 @@ runs:
     # Outputs rather than `export-env`, which is what 1Password recommends: the
     # values reach only the steps that name them. Loaded values are masked in
     # the log either way.
-    - uses: 1password/load-secrets-action@24a7d5bdc04e9e8699efdaee16fa227e14d597eb # v5.0.1
+    - uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
       id: load
       env:
         OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.service-account-token }}

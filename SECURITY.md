@@ -28,5 +28,8 @@ through the same channel.
 
 ## Supported versions
 
-netrics is pre-1.0. Security fixes land on `main` and in the next release.
-Self-hosted installations should run the latest release.
+netrics is pre-1.0. Only the newest minor release (`0.Y`) is supported:
+security fixes land on `main` and ship as a patch release of that minor
+(`0.Y.Z`). Self-hosted installations should run the newest patch of the
+newest minor. Published images are signed and carry an SBOM attestation; see
+`docs/release.md` to verify them.

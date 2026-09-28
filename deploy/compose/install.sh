@@ -39,8 +39,16 @@ fi
 [ -n "$domain" ] || { echo "a domain is required" >&2; exit 1; }
 
 if [ -z "$version" ]; then
-  # Default to the release this checkout belongs to.
-  version="$(git rev-parse HEAD 2>/dev/null || true)"
+  # Default to the release this checkout is: a release tag vX.Y.Z gives the
+  # image tag X.Y.Z. Any other checkout of main falls back to its commit,
+  # which has images too but is not a release.
+  tag="$(git describe --tags --exact-match --match 'v[0-9]*.[0-9]*.[0-9]*' HEAD 2>/dev/null || true)"
+  if [ -n "$tag" ]; then
+    version="${tag#v}"
+  else
+    version="$(git rev-parse HEAD 2>/dev/null || true)"
+    [ -z "$version" ] || echo "note: not a release checkout; using images for commit ${version}. Prefer a release: git checkout vX.Y.Z" >&2
+  fi
 fi
 [ -n "$version" ] || { echo "pass --version <image tag>" >&2; exit 1; }
 

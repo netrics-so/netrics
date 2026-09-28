@@ -1,0 +1,157 @@
+name: promote
+
+# A version tag (vX.Y.Z) promotes the images release.yml already built,
+# signed and attested for that commit: it adds the tags X.Y.Z and X.Y to the
+# same index digests. Nothing is rebuilt, so the digest a self-hoster pulls
+# for 0.2.1 is the digest that passed CI and ran in production. Signatures
+# and SBOM attestations are stored by digest and apply to the new tags as is.
+# See docs/release.md.
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+concurrency:
+  group: promote-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/netrics-so
+  # Only images signed by the main-branch release workflow are promoted.
+  SIGNER: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/release.yml@refs/heads/main
+  OIDC_ISSUER: https://token.actions.githubusercontent.com
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: write # the GitHub release
+      packages: write # the new image tags
+      actions: read # waiting for the commit's release run
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the tag
+        id: tag
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || { echo "::error::$tag is not vX.Y.Z"; exit 1; }
+          version="${tag#v}"
+          minor="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$pkg" != "$version" ]; then
+            echo "::error::$tag does not match package.json version $pkg. Bump the version on main first, then tag that commit."
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$tag points at $GITHUB_SHA, which is not on main. Only main commits have release images."
+            exit 1
+          fi
+          # X.Y follows the newest patch of its minor, never an older one.
+          newest=$(git tag --list "v$minor.*" | grep -E "^v$minor\.[0-9]+$" | sort -V | tail -n 1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minor=$minor" >> "$GITHUB_OUTPUT"
+          if [ "$newest" = "$tag" ]; then echo "move_minor=true" >> "$GITHUB_OUTPUT"; else echo "move_minor=false" >> "$GITHUB_OUTPUT"; fi
+
+      # A tag pushed right after a merge may arrive while that commit's release
+      # run is still building. Wait for its publish job rather than failing.
+      - name: Wait for the commit's release images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 150); do
+            state=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs?head_sha=$GITHUB_SHA&per_page=20" \
+              --jq '.workflow_runs[].id' | while read -r run; do
+                gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs" \
+                  --jq '.jobs[] | select(.name == "publish") | .conclusion // "pending"'
+              done | sort -u | tr '\n' ' ')
+            case "$state" in
+              *success*) echo "release images for $GITHUB_SHA are published"; exit 0 ;;
+            esac
+            if [ -n "$state" ] && ! printf '%s' "$state" | grep -q pending; then
+              echo "::error::The release run for $GITHUB_SHA did not publish ($state). Re-run release.yml for this commit, then re-run this workflow."
+              exit 1
+            fi
+            echo "waiting for the release run of $GITHUB_SHA (${state:-not started})"
+            sleep 30
+          done
+          echo "::error::Timed out waiting for the release run of $GITHUB_SHA."
+          exit 1
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+
+      - name: Verify and tag images
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          MINOR: ${{ steps.tag.outputs.minor }}
+          MOVE_MINOR: ${{ steps.tag.outputs.move_minor }}
+        run: |
+          set -euo pipefail
+          digest_of() { docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r .digest; }
+          {
+            echo "## Images"
+            echo
+            echo "Multi-arch (linux/amd64, linux/arm64), signed with cosign, SPDX SBOM attested."
+            echo
+          } > notes.md
+          for image in server web renderer; do
+            repo="$IMAGE_PREFIX/$image"
+            digest=$(digest_of "$repo:$GITHUB_SHA")
+            cosign verify --certificate-identity "$SIGNER" --certificate-oidc-issuer "$OIDC_ISSUER" \
+              "$repo@$digest" > /dev/null
+            cosign verify-attestation --type spdxjson --certificate-identity "$SIGNER" \
+              --certificate-oidc-issuer "$OIDC_ISSUER" "$repo@$digest" > /dev/null
+
+            tags=(--tag "$repo:$VERSION")
+            if [ "$MOVE_MINOR" = true ]; then tags+=(--tag "$repo:$MINOR"); fi
+            # With a single source, imagetools copies the index unchanged.
+            docker buildx imagetools create "${tags[@]}" "$repo@$digest"
+            promoted=$(digest_of "$repo:$VERSION")
+            if [ "$promoted" != "$digest" ]; then
+              echo "::error::$repo:$VERSION resolved to $promoted, expected $digest"
+              exit 1
+            fi
+            echo "- \`$repo:$VERSION\` = \`$repo@$digest\`" >> notes.md
+          done
+          {
+            echo
+            echo "Verify an image:"
+            echo
+            echo '```sh'
+            echo "cosign verify-attestation --type spdxjson \\"
+            echo "  --certificate-identity $SIGNER \\"
+            echo "  --certificate-oidc-issuer $OIDC_ISSUER \\"
+            echo "  $IMAGE_PREFIX/server:$VERSION"
+            echo '```'
+          } >> notes.md
+          cat notes.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+              --generate-notes --notes-file notes.md
+          fi
