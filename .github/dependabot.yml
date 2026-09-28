@@ -39,6 +39,11 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    # Node follows the LTS line (ADR 0003): digest and patch updates within
+    # 24-alpine arrive here; moving to the next LTS is a deliberate change.
+    ignore:
+      - dependency-name: node
+        update-types: [version-update:semver-major]
     groups:
       base-images:
         patterns: ["*"]
@@ -49,6 +54,14 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    # A PostgreSQL major version cannot open the previous major's data
+    # directory, so bumping it would break every self-hosted upgrade. That
+    # needs a documented dump/restore path, not a tag change.
+    ignore:
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]
+      - dependency-name: caddy
+        update-types: [version-update:semver-major]
     groups:
       compose-images:
         patterns: ["*"]
