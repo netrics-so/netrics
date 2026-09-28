@@ -18,6 +18,10 @@ export type WorkspaceAction =
   | "connections:create"
   | "connections:update"
   | "connections:delete"
+  | "dashboards:view"
+  | "dashboards:create"
+  | "dashboards:update"
+  | "dashboards:delete"
   | "audit:view";
 
 const ALL_ACTIONS: readonly WorkspaceAction[] = [
@@ -35,6 +39,10 @@ const ALL_ACTIONS: readonly WorkspaceAction[] = [
   "connections:create",
   "connections:update",
   "connections:delete",
+  "dashboards:view",
+  "dashboards:create",
+  "dashboards:update",
+  "dashboards:delete",
   "audit:view",
 ];
 
@@ -50,12 +58,16 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<WorkspaceAction>> = {
     "connections:view",
     "connections:create",
     "connections:update",
+    "dashboards:view",
+    "dashboards:create",
+    "dashboards:update",
   ]),
   viewer: new Set([
     "workspace:view",
     "members:view",
     "projects:view",
     "connections:view",
+    "dashboards:view",
   ]),
 };
 

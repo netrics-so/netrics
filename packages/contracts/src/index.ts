@@ -555,3 +555,95 @@ export const metricQueryResponseSchema = z.object({
   ),
 });
 export type MetricQueryResponse = z.infer<typeof metricQueryResponseSchema>;
+
+// ─── Dashboards (#49) ───────────────────────────────────────────────────────
+
+/** Most tiles one dashboard may hold. */
+export const MAX_DASHBOARD_TILES = 24;
+
+const dimensionFilterSchema = z
+  .record(z.string().min(1).max(100), z.string().max(200))
+  .refine((dimensions) => Object.keys(dimensions).length <= 10, {
+    message: "at most 10 dimension filters",
+  });
+
+export const dashboardTileInputSchema = z.object({
+  connectionId: z.uuid(),
+  metricKey: z.string().min(1).max(200),
+  /** Defaults to the metric's first compatible aggregation. */
+  aggregation: metricAggregationSchema.optional(),
+  period: metricPeriodSchema,
+  dimensions: dimensionFilterSchema.optional(),
+  /** Shown instead of the metric name. */
+  title: z.string().trim().min(1).max(100).nullable().optional(),
+});
+export type DashboardTileInput = z.infer<typeof dashboardTileInputSchema>;
+
+export const dashboardTileSchema = z.object({
+  id: z.uuid(),
+  position: z.number().int().min(0),
+  connectionId: z.uuid(),
+  metricKey: z.string().min(1),
+  aggregation: metricAggregationSchema,
+  period: metricPeriodSchema,
+  dimensions: z.record(z.string(), z.string()),
+  title: z.string().nullable(),
+});
+export type DashboardTile = z.infer<typeof dashboardTileSchema>;
+
+export const dashboardSchema = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  projectId: z.uuid().nullable(),
+  /** Send it back with PUT; a newer version on the server answers 409. */
+  version: z.number().int().min(1),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  tiles: z.array(dashboardTileSchema),
+});
+export type Dashboard = z.infer<typeof dashboardSchema>;
+
+export const dashboardResponseSchema = z.object({ dashboard: dashboardSchema });
+export type DashboardResponse = z.infer<typeof dashboardResponseSchema>;
+
+export const dashboardListResponseSchema = z.object({
+  dashboards: z.array(
+    z.object({
+      id: z.uuid(),
+      name: z.string().min(1),
+      projectId: z.uuid().nullable(),
+      version: z.number().int().min(1),
+      tileCount: z.number().int().min(0),
+      updatedAt: z.iso.datetime(),
+    }),
+  ),
+});
+export type DashboardListResponse = z.infer<typeof dashboardListResponseSchema>;
+
+export const createDashboardRequestSchema = z.object({
+  name: nameSchema,
+  projectId: z.uuid().nullable().optional(),
+  tiles: z.array(dashboardTileInputSchema).max(MAX_DASHBOARD_TILES).optional(),
+});
+export type CreateDashboardRequest = z.infer<
+  typeof createDashboardRequestSchema
+>;
+
+/** Replaces name, project and the ordered tiles in one step. */
+export const replaceDashboardRequestSchema = z.object({
+  version: z.number().int().min(1),
+  name: nameSchema,
+  projectId: z.uuid().nullable(),
+  tiles: z.array(dashboardTileInputSchema).max(MAX_DASHBOARD_TILES),
+});
+export type ReplaceDashboardRequest = z.infer<
+  typeof replaceDashboardRequestSchema
+>;
+
+export const duplicateDashboardRequestSchema = z.object({
+  /** Defaults to "<name> (copy)". */
+  name: nameSchema.optional(),
+});
+export type DuplicateDashboardRequest = z.infer<
+  typeof duplicateDashboardRequestSchema
+>;
