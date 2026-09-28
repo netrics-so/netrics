@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import {
   MAX_DASHBOARD_TILES,
@@ -22,6 +22,7 @@ import {
 import { AGGREGATION_LABELS, PERIOD_LABELS } from "@/lib/format-metric";
 
 import { MetricTile, type TileConnection } from "./metric-tile";
+import { useServerRefresh } from "./use-server-refresh";
 
 interface DraftTile {
   /** Client-side identity for React keys while editing. */
@@ -67,6 +68,7 @@ export function DashboardView({
   canDelete: boolean;
 }) {
   const router = useRouter();
+  useServerRefresh();
   const [dashboard, setDashboard] = useState(initial);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(initial.name);
@@ -74,6 +76,16 @@ export function DashboardView({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
+
+  // Follow the server's copy when it changes (refreshed every minute), so
+  // changes saved elsewhere show up, but never under an open editor.
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+  useEffect(() => {
+    if (!editingRef.current) {
+      setDashboard(initial);
+    }
+  }, [initial]);
 
   const metricsById = useMemo(
     () => new Map(metrics.map((metric) => [metricId(metric), metric])),

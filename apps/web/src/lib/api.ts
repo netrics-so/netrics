@@ -1,6 +1,8 @@
 import { ZodError, type ZodType } from "zod";
 
 import {
+  createWorkspaceResponseSchema,
+  type CreateWorkspaceResponse,
   createDashboardRequestSchema,
   dashboardListResponseSchema,
   dashboardResponseSchema,
@@ -379,15 +381,22 @@ function browserTimeZone(): string | undefined {
   return timeZoneSchema.safeParse(timeZone).success ? timeZone : undefined;
 }
 
-/** New workspaces count "today" in the creator's time zone. */
-export function createWorkspace(name: string): Promise<WorkspaceResponse> {
+/**
+ * New workspaces count "today" in the creator's time zone. With `withDemo`,
+ * the API also adds the demo connection and a sample dashboard (#51).
+ */
+export function createWorkspace(
+  name: string,
+  withDemo = false,
+): Promise<CreateWorkspaceResponse> {
   const timeZone = browserTimeZone();
   return browserSend(
-    workspaceResponseSchema,
+    createWorkspaceResponseSchema,
     "POST",
     "/v1/workspaces",
     createWorkspaceRequestSchema.parse({
       name,
+      withDemo,
       ...(timeZone ? { timeZone } : {}),
     }),
   );

@@ -8,6 +8,7 @@ import type { Dashboard, WorkspaceMetric } from "@netrics/contracts";
 import { tvGrid } from "@/lib/tv-grid";
 
 import { MetricTile, type TileConnection } from "../metric-tile";
+import { useServerRefresh } from "../use-server-refresh";
 
 const IDLE_MS = 3000;
 
@@ -67,6 +68,8 @@ export function TvDashboard({
   metrics: WorkspaceMetric[];
   connections: Record<string, TileConnection>;
 }) {
+  // A wall screen runs for days: pick up tile edits and sync health.
+  useServerRefresh();
   const clock = useClock(timeZone);
   const idle = useIdle();
   const { columns, rows } = tvGrid(dashboard.tiles.length);

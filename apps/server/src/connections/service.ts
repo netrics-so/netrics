@@ -76,6 +76,8 @@ function fail<T>(status: 400 | 404, error: string): Result<T> {
 
 const NOT_FOUND = "connection_not_found";
 
+type ConnectionDetail = ReturnType<typeof presentConnectionDetail>;
+
 /** Redacted, bounded message for connector-facing errors. */
 function safeMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -160,7 +162,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       }));
     },
 
-    async create(actor: Actor, body: CreateConnectionRequest) {
+    async create(
+      actor: Actor,
+      body: CreateConnectionRequest,
+    ): Promise<Result<ConnectionDetail>> {
       const registered = registry.get(body.connectorId);
       if (!registered) {
         return fail(400, "invalid_request");
@@ -308,7 +313,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       actor: Actor,
       connectionId: string,
       body: UpdateConnectionRequest,
-    ) {
+    ): Promise<Result<ConnectionDetail>> {
       const existing = await inWorkspace(actor, (tx) =>
         findConnection(tx, actor.workspaceId, connectionId),
       );

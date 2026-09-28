@@ -107,6 +107,8 @@ export const createWorkspaceRequestSchema = z.object({
   name: nameSchema,
   /** Defaults to UTC; the web app sends the creator's browser zone. */
   timeZone: timeZoneSchema.optional(),
+  /** Also add the demo connection and a sample dashboard (#51). */
+  withDemo: z.boolean().optional(),
 });
 export type CreateWorkspaceRequest = z.infer<
   typeof createWorkspaceRequestSchema
@@ -125,6 +127,14 @@ export const workspaceResponseSchema = z.object({
   workspace: workspaceSchema,
 });
 export type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;
+
+export const createWorkspaceResponseSchema = workspaceResponseSchema.extend({
+  /** The sample dashboard when `withDemo` was set and it could be added. */
+  demoDashboardId: z.uuid().nullable(),
+});
+export type CreateWorkspaceResponse = z.infer<
+  typeof createWorkspaceResponseSchema
+>;
 
 export const workspaceListResponseSchema = z.object({
   workspaces: z.array(

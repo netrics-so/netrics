@@ -16,10 +16,16 @@ export function CreateWorkspaceForm() {
     setPending(true);
     const form = new FormData(event.currentTarget);
     try {
-      const { workspace } = await createWorkspace(
+      const { workspace, demoDashboardId } = await createWorkspace(
         String(form.get("name") ?? ""),
+        form.get("withDemo") === "on",
       );
-      router.push(`/workspaces/${workspace.id}`);
+      // Straight to something useful when the demo was added.
+      router.push(
+        demoDashboardId
+          ? `/workspaces/${workspace.id}/dashboards/${demoDashboardId}`
+          : `/workspaces/${workspace.id}`,
+      );
       router.refresh();
     } catch (cause) {
       setError(apiErrorMessage(cause));
@@ -40,6 +46,21 @@ export function CreateWorkspaceForm() {
           disabled={pending}
         />
       </div>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          name="withDemo"
+          defaultChecked
+          disabled={pending}
+        />
+        <span>
+          Add demo data and a sample dashboard
+          <span className="muted">
+            {" "}
+            — generated numbers to explore with; delete them any time.
+          </span>
+        </span>
+      </label>
       {error ? <div className="error">{error}</div> : null}
       <button type="submit" className="primary" disabled={pending}>
         {pending ? "Creating…" : "Create workspace"}

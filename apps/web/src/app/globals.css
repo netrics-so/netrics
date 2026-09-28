@@ -698,3 +698,16 @@ button.danger:hover:not(:disabled) {
 .tile--tv .tile-error {
   font-size: min(7cqh, 4.6cqw);
 }
+
+/* Inline checkbox with its label text (e.g. workspace creation). */
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.checkbox input {
+  margin-top: 3px;
+}
