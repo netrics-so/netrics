@@ -15,3 +15,4 @@ product is built.
 | [0008](./0008-observation-identity-and-values.md) | Observation identity, revisions, and value representation   |
 | [0009](./0009-api-principals.md)                  | API principals: users, service accounts, devices            |
 | [0010](./0010-apple-tv-server-and-pairing.md)     | Apple TV: one app for hosted and self-hosted servers        |
+| [0011](./0011-device-pairing-and-credentials.md)  | Device pairing and credentials                              |

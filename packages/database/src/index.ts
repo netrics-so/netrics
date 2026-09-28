@@ -78,6 +78,23 @@ export type {
   TokenPrincipal,
 } from "./principals.js";
 export {
+  approvePairing,
+  claimPairing,
+  countPairingFailures,
+  countRecentPairings,
+  findDevice,
+  findPendingPairing,
+  insertDevice,
+  insertPairing,
+  issueDeviceTokens,
+  listDevices,
+  pruneStalePairings,
+  readPairing,
+  recordPairingFailure,
+  revokeDevice,
+} from "./devices.js";
+export type { DeviceRow, PairingState } from "./devices.js";
+export {
   consumeSetupToken,
   countUsers,
   findInstallationSetup,

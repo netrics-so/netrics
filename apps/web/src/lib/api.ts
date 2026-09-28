@@ -5,7 +5,9 @@ import {
   type CreateWorkspaceResponse,
   createDashboardRequestSchema,
   dashboardListResponseSchema,
+  approveDeviceRequestSchema,
   dashboardResponseSchema,
+  deviceResponseSchema,
   duplicateDashboardRequestSchema,
   metricQueryRequestSchema,
   metricQueryResponseSchema,
@@ -13,7 +15,9 @@ import {
   workspaceMetricListResponseSchema,
   type CreateDashboardRequest,
   type DashboardListResponse,
+  type ApproveDeviceRequest,
   type DashboardResponse,
+  type DeviceResponse,
   type MetricQueryRequest,
   type MetricQueryResponse,
   type ReplaceDashboardRequest,
@@ -128,6 +132,10 @@ export function apiErrorMessage(error: unknown): string {
         return "Someone else saved this dashboard in the meantime. Reload to see their changes, then edit again.";
       case "dashboard_not_found":
         return "This dashboard no longer exists.";
+      case "pairing_not_found":
+        return "That code is not valid. Check the code on the TV; codes expire after 10 minutes, so the TV may show a new one.";
+      case "too_many_attempts":
+        return "Too many wrong codes. Wait 15 minutes, then try again.";
       case "tile_metric_not_found":
       case "metric_not_found":
         return "A tile's metric is no longer available from its connection.";
@@ -664,5 +672,22 @@ export function queryMetric(
     "POST",
     `/v1/workspaces/${workspaceId}/metrics/query`,
     metricQueryRequestSchema.parse(body),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Devices (ADR 0011)
+// ---------------------------------------------------------------------------
+
+/** Throws ApiError "pairing_not_found" or "too_many_attempts". */
+export function approveDevice(
+  workspaceId: string,
+  body: ApproveDeviceRequest,
+): Promise<DeviceResponse> {
+  return browserSend(
+    deviceResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/devices/approve`,
+    approveDeviceRequestSchema.parse(body),
   );
 }

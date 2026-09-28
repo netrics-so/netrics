@@ -22,6 +22,8 @@ export type WorkspaceAction =
   | "dashboards:create"
   | "dashboards:update"
   | "dashboards:delete"
+  | "devices:view"
+  | "devices:manage"
   | "audit:view";
 
 const ALL_ACTIONS: readonly WorkspaceAction[] = [
@@ -43,6 +45,8 @@ const ALL_ACTIONS: readonly WorkspaceAction[] = [
   "dashboards:create",
   "dashboards:update",
   "dashboards:delete",
+  "devices:view",
+  "devices:manage",
   "audit:view",
 ];
 
@@ -61,6 +65,7 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<WorkspaceAction>> = {
     "dashboards:view",
     "dashboards:create",
     "dashboards:update",
+    "devices:view",
   ]),
   viewer: new Set([
     "workspace:view",

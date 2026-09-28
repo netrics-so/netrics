@@ -64,6 +64,10 @@ export const principalTokens = pgTable(
     workspaceId: uuid("workspace_id").references(() => workspaces.id, {
       onDelete: "cascade",
     }),
+    // The device a "device" token belongs to (ADR 0011).
+    deviceId: uuid("device_id").references(() => devices.id, {
+      onDelete: "cascade",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -80,6 +84,11 @@ export const principalTokens = pgTable(
       "principal_tokens_device_workspace",
       sql`(${table.kind} = 'device') = (${table.workspaceId} is not null)`,
     ),
+    check(
+      "principal_tokens_device_id",
+      sql`(${table.kind} = 'device') = (${table.deviceId} is not null)`,
+    ),
+    index("principal_tokens_device_idx").on(table.deviceId),
   ],
 );
 
@@ -574,5 +583,85 @@ export const dashboardTiles = pgTable(
       sql`${table.period} in ('today', 'last_7_days', 'last_30_days', 'this_month')`,
     ),
     check("dashboard_tiles_position_valid", sql`${table.position} >= 0`),
+  ],
+);
+
+// A paired screen (ADR 0011). Workspace table under RLS; its credentials are
+// principal_tokens rows of kind "device".
+export const devices = pgTable(
+  "devices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // What the screen shows. The foreign key (dashboard_id, workspace_id) →
+    // dashboards, ON DELETE SET NULL (dashboard_id), is written by hand in
+    // migration 0019: drizzle cannot express a column-list SET NULL.
+    dashboardId: uuid("dashboard_id"),
+    approvedByUserId: uuid("approved_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("devices_id_workspace_unique").on(table.id, table.workspaceId),
+    index("devices_workspace_idx").on(table.workspaceId),
+  ],
+);
+
+// A pairing in progress (ADR 0011). Installation-level: until approved it
+// belongs to no workspace. Only hashes of the code and poll secret are kept.
+export const devicePairings = pgTable(
+  "device_pairings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    codeHash: text("code_hash").notNull().unique(),
+    pollSecretHash: text("poll_secret_hash").notNull(),
+    // Hash of the requesting client's IP, for the creation rate limit.
+    clientKey: text("client_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    workspaceId: uuid("workspace_id").references(() => workspaces.id, {
+      onDelete: "cascade",
+    }),
+    deviceId: uuid("device_id").references(() => devices.id, {
+      onDelete: "cascade",
+    }),
+    // When the device received its credentials; a pairing is spent after.
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("device_pairings_client_idx").on(table.clientKey, table.createdAt),
+    index("device_pairings_expires_idx").on(table.expiresAt),
+    check(
+      "device_pairings_approval_complete",
+      sql`(${table.approvedAt} is null) = (${table.deviceId} is null)`,
+    ),
+  ],
+);
+
+// Failed approval attempts per user, for the brute-force limit (ADR 0011).
+export const devicePairingFailures = pgTable(
+  "device_pairing_failures",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("device_pairing_failures_user_idx").on(table.userId, table.createdAt),
   ],
 );

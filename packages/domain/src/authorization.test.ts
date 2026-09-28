@@ -26,6 +26,8 @@ const ALL_ACTIONS: WorkspaceAction[] = [
   "dashboards:create",
   "dashboards:update",
   "dashboards:delete",
+  "devices:view",
+  "devices:manage",
   "audit:view",
 ];
 
@@ -49,6 +51,8 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
     "dashboards:create": true,
     "dashboards:update": true,
     "dashboards:delete": true,
+    "devices:view": true,
+    "devices:manage": true,
     "audit:view": true,
   },
   admin: {
@@ -70,6 +74,8 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
     "dashboards:create": true,
     "dashboards:update": true,
     "dashboards:delete": true,
+    "devices:view": true,
+    "devices:manage": true,
     "audit:view": true,
   },
   editor: {
@@ -91,6 +97,8 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
     "dashboards:create": true,
     "dashboards:update": true,
     "dashboards:delete": false,
+    "devices:view": true,
+    "devices:manage": false,
     "audit:view": false,
   },
   viewer: {
@@ -112,6 +120,8 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
     "dashboards:create": false,
     "dashboards:update": false,
     "dashboards:delete": false,
+    "devices:view": false,
+    "devices:manage": false,
     "audit:view": false,
   },
 };
