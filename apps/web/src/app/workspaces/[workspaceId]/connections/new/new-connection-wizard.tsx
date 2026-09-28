@@ -9,6 +9,7 @@ import type {
 } from "@netrics/contracts";
 
 import { ConfigFields } from "../config-fields";
+import { TokenField } from "../token-field";
 import {
   apiErrorMessage,
   createConnection,
@@ -48,9 +49,10 @@ export function NewConnectionWizard({
     () => (connector ? parseConfigSchema(connector.configSchema) : []),
     [connector],
   );
-  const wantsToken = connector?.authStrategies.some(
+  const tokenStrategy = connector?.authStrategies.find(
     (strategy) => strategy.strategy === "token",
   );
+  const wantsToken = tokenStrategy !== undefined;
 
   function selectConnector(entry: ConnectorCatalogEntry) {
     setConnector(entry);
@@ -184,6 +186,19 @@ export function NewConnectionWizard({
                 }}
               />
             </div>
+            {wantsToken ? (
+              <TokenField
+                id="connection-token"
+                strategy={tokenStrategy}
+                value={token}
+                disabled={pending !== null}
+                guideOpen
+                onChange={(value) => {
+                  setToken(value);
+                  invalidatePreview();
+                }}
+              />
+            ) : null}
             <ConfigFields
               fields={fields}
               values={configValues}
@@ -193,22 +208,6 @@ export function NewConnectionWizard({
                 invalidatePreview();
               }}
             />
-            {wantsToken ? (
-              <div className="field">
-                <label htmlFor="connection-token">Access token</label>
-                <input
-                  id="connection-token"
-                  type="password"
-                  value={token}
-                  autoComplete="off"
-                  disabled={pending !== null}
-                  onChange={(event) => {
-                    setToken(event.target.value);
-                    invalidatePreview();
-                  }}
-                />
-              </div>
-            ) : null}
             <div className="actions">
               <button
                 type="button"

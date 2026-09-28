@@ -276,6 +276,31 @@ describe("GET /v1/connectors", () => {
     expect(demo!.configSchema).toMatchObject({ type: "object" });
   });
 
+  it("carries the token field's label, help and setup steps", async () => {
+    const response = await call(world.app, {
+      method: "GET",
+      url: "/v1/connectors",
+      cookie: cookies.viewer,
+    });
+    const { connectors } = connectorListResponseSchema.parse(response.json());
+    const vercel = connectors.find((c) => c.id === "vercel");
+    expect(vercel?.authStrategies).toEqual([
+      {
+        strategy: "token",
+        tokenLabel: "Vercel access token",
+        tokenDescription: expect.stringContaining("stored encrypted"),
+        setup: {
+          steps: expect.arrayContaining([
+            expect.stringContaining("Account Settings → Tokens"),
+          ]),
+          url: "https://vercel.com/account/settings/tokens",
+        },
+      },
+    ]);
+    // The credentials schema itself stays server-side.
+    expect(JSON.stringify(vercel)).not.toContain("credentialsSchema");
+  });
+
   it("requires a session", async () => {
     expectError(
       await call(world.app, { method: "GET", url: "/v1/connectors" }),
@@ -593,6 +618,28 @@ describe("engine run and observations", () => {
 });
 
 describe("credential recovery", () => {
+  it("shows a token rejected before the first successful sync as auth_failed", async () => {
+    await withWorkspace(world.db, { workspaceId: w1Id }, async (tx) => {
+      await tx
+        .update(schema.connectionState)
+        .set({ authState: "auth_failed", lastSuccessAt: null })
+        .where(eq(schema.connectionState.connectionId, connectionId));
+    });
+    const { connection } = connectionDetailResponseSchema.parse(
+      (
+        await call(world.app, {
+          method: "GET",
+          url: `/v1/workspaces/${w1Id}/connections/${connectionId}`,
+          cookie: cookies.owner,
+        })
+      ).json(),
+    );
+    expect(connection.state).toMatchObject({
+      health: "auth_failed",
+      lastSuccessAt: null,
+    });
+  });
+
   it("resets auth_failed state when new credentials are saved", async () => {
     // Seed an auth_failed state (as a failed engine run would).
     await withWorkspace(world.db, { workspaceId: w1Id }, async (tx) => {

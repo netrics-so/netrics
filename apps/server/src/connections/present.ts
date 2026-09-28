@@ -19,11 +19,10 @@ function toStateView(state: ConnectionStateRow | null): ConnectionStateView {
   const authState: ConnectionAuthState = state
     ? (state.authState as ConnectionAuthState)
     : "ok";
-  const health: ConnectionHealth = !state?.lastSuccessAt
-    ? "pending"
-    : authState === "ok"
-      ? "ok"
-      : authState;
+  // A failure wins over "pending": a token rejected before the first
+  // successful sync must still show that it needs attention.
+  const health: ConnectionHealth =
+    authState !== "ok" ? authState : state?.lastSuccessAt ? "ok" : "pending";
   return {
     health,
     authState,

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type {
+  ConnectorAuthStrategy,
   CreateConnectionRequest,
   ObservationListQuery,
   PreviewConnectionRequest,
@@ -135,6 +136,39 @@ function encrypt(
   );
 }
 
+/** The wizard's view of an auth strategy: token field labels and setup steps. */
+function presentAuthStrategy(
+  strategy: ConnectorManifest["authStrategies"][number],
+): ConnectorAuthStrategy {
+  const properties = strategy.credentialsSchema?.properties;
+  const token =
+    properties && typeof properties === "object" && "token" in properties
+      ? (properties as { token: unknown }).token
+      : undefined;
+  const text = (key: "title" | "description") => {
+    const value =
+      token && typeof token === "object"
+        ? (token as Record<string, unknown>)[key]
+        : undefined;
+    return typeof value === "string" && value !== "" ? value : undefined;
+  };
+  const tokenLabel = text("title");
+  const tokenDescription = text("description");
+  return {
+    strategy: strategy.strategy,
+    ...(tokenLabel ? { tokenLabel } : {}),
+    ...(tokenDescription ? { tokenDescription } : {}),
+    ...(strategy.setup
+      ? {
+          setup: {
+            steps: [...strategy.setup.steps],
+            ...(strategy.setup.url ? { url: strategy.setup.url } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db, registry, credentialKeyring } = deps;
   const inWorkspace = <T>(actor: Actor, run: (tx: Transaction) => Promise<T>) =>
@@ -156,9 +190,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         minRefreshIntervalSeconds: manifest.minRefreshIntervalSeconds,
         supportsBackfill: manifest.supportsBackfill,
         configSchema: { ...manifest.configSchema },
-        authStrategies: manifest.authStrategies.map((strategy) => ({
-          strategy: strategy.strategy,
-        })),
+        authStrategies: manifest.authStrategies.map(presentAuthStrategy),
       }));
     },
 

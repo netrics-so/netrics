@@ -5271,6 +5271,34 @@
                                     "token",
                                     "none"
                                   ]
+                                },
+                                "tokenLabel": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "tokenDescription": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "setup": {
+                                  "type": "object",
+                                  "properties": {
+                                    "steps": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "url": {
+                                      "type": "string",
+                                      "format": "uri"
+                                    }
+                                  },
+                                  "required": [
+                                    "steps"
+                                  ],
+                                  "additionalProperties": false
                                 }
                               },
                               "required": [

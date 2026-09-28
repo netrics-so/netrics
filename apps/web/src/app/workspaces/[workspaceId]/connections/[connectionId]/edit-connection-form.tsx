@@ -9,6 +9,7 @@ import type {
 } from "@netrics/contracts";
 
 import { ConfigFields } from "../config-fields";
+import { TokenField } from "../token-field";
 import { apiErrorMessage, updateConnection } from "@/lib/api";
 import {
   coerceConfigValues,
@@ -41,10 +42,11 @@ export function EditConnectionForm({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const wantsToken =
-    connector?.authStrategies.some(
-      (strategy) => strategy.strategy === "token",
-    ) || connection.hasCredentials;
+  const tokenStrategy = connector?.authStrategies.find(
+    (strategy) => strategy.strategy === "token",
+  );
+  const wantsToken = tokenStrategy !== undefined || connection.hasCredentials;
+  const needsToken = connection.state.authState === "auth_failed";
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -81,6 +83,17 @@ export function EditConnectionForm({
           onChange={(event) => setName(event.target.value)}
         />
       </div>
+      {wantsToken ? (
+        <TokenField
+          id="edit-token"
+          strategy={tokenStrategy}
+          value={token}
+          disabled={pending}
+          replacing
+          guideOpen={needsToken}
+          onChange={setToken}
+        />
+      ) : null}
       {connector ? (
         <ConfigFields
           fields={fields}
@@ -96,21 +109,6 @@ export function EditConnectionForm({
           config editing is unavailable.
         </p>
       )}
-      {wantsToken ? (
-        <div className="field">
-          <label htmlFor="edit-token">
-            Access token (leave empty to keep the current one)
-          </label>
-          <input
-            id="edit-token"
-            type="password"
-            value={token}
-            autoComplete="new-password"
-            disabled={pending}
-            onChange={(event) => setToken(event.target.value)}
-          />
-        </div>
-      ) : null}
       <div className="actions">
         <button type="submit" className="primary" disabled={pending}>
           {pending ? "Saving…" : "Save changes"}

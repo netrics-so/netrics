@@ -49,6 +49,11 @@ export default async function ConnectionDetailPage({
     listObservations(cookieHeader, workspaceId, connectionId, { limit: 100 }),
   ]);
   const connector = connectors.find((c) => c.id === connection.connectorId);
+  const canUpdate = can(role, "connections:update");
+  const authFailed = connection.state.authState === "auth_failed";
+  const authMessage = syncRuns.find(
+    (run) => run.errorClass === "auth",
+  )?.errorMessage;
 
   return (
     <>
@@ -60,6 +65,28 @@ export default async function ConnectionDetailPage({
       <p className="muted">
         <Link href={`/workspaces/${workspaceId}`}>Back to workspace</Link>
       </p>
+
+      {authFailed ? (
+        <div className="error page-alert" role="alert">
+          <p>
+            <strong>
+              Syncing is paused: this connection needs new credentials.
+            </strong>{" "}
+            {authMessage ?? ""}
+          </p>
+          <p>
+            {canUpdate ? (
+              <>
+                <a href="#edit-connection">Enter a new token below</a>. Saving
+                it restarts syncing right away; the data collected so far is
+                kept.
+              </>
+            ) : (
+              "Ask a workspace owner or admin to update the credentials."
+            )}
+          </p>
+        </div>
+      ) : null}
 
       <div className="card">
         <h2>Health</h2>
@@ -104,8 +131,8 @@ export default async function ConnectionDetailPage({
         />
       </div>
 
-      {can(role, "connections:update") ? (
-        <div className="card">
+      {canUpdate ? (
+        <div className="card" id="edit-connection">
           <h2>Edit connection</h2>
           <EditConnectionForm
             workspaceId={workspaceId}

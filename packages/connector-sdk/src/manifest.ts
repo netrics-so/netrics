@@ -9,9 +9,24 @@ import { parseRange } from "./semver.js";
 export const jsonSchemaSchema = z.record(z.string(), z.unknown());
 export type JsonSchema = z.infer<typeof jsonSchemaSchema>;
 
+/**
+ * How a user obtains the credential, shown in the connection wizard: a few
+ * short steps and, optionally, the provider page where it is created.
+ */
+export const credentialSetupSchema = z.object({
+  steps: z.array(z.string().min(1)).min(1).max(8),
+  url: z.url().optional(),
+});
+export type CredentialSetup = z.infer<typeof credentialSetupSchema>;
+
 export const authStrategySchema = z.object({
   strategy: z.enum(["token", "none"]),
+  /**
+   * For "token": `{ properties: { token: { title?, description? } } }`; the
+   * title and description label the token field.
+   */
   credentialsSchema: jsonSchemaSchema.optional(),
+  setup: credentialSetupSchema.optional(),
 });
 export type AuthStrategy = z.infer<typeof authStrategySchema>;
 

@@ -12,6 +12,19 @@ const BASE_BACKOFF_MS = 500;
  * message are kept; the request never carries the token in its URL, so the
  * message cannot leak it.
  */
+function describe(
+  status: number,
+  body: { code?: string; message?: string },
+): string {
+  if (status === 429) {
+    return "Vercel's API rate limit is used up for now (429). netrics tries again later.";
+  }
+  if (status >= 500) {
+    return `Vercel is not answering right now (${status}). netrics tries again later.`;
+  }
+  return `Vercel API answered ${status}${body.code ? ` ${body.code}` : ""}: ${body.message ?? "no message"}`;
+}
+
 export class VercelApiError extends Error {
   readonly status: number;
   readonly code: string | undefined;
@@ -21,9 +34,7 @@ export class VercelApiError extends Error {
     status: number,
     body: { code?: string; message?: string; invalidToken?: boolean },
   ) {
-    super(
-      `Vercel API answered ${status}${body.code ? ` ${body.code}` : ""}: ${body.message ?? "no message"}`,
-    );
+    super(describe(status, body));
     this.name = "VercelApiError";
     this.status = status;
     this.code = body.code;

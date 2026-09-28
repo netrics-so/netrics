@@ -23,7 +23,17 @@ export function ConfigFields({
     <>
       {fields.map((field) => {
         const id = `config-${field.key}`;
-        const label = field.required ? field.key : `${field.key} (optional)`;
+        const label = field.required
+          ? field.label
+          : `${field.label} (optional)`;
+        const help = field.description ? (
+          <p className="help" id={`${id}-help`}>
+            {field.description}
+          </p>
+        ) : null;
+        const described = field.description
+          ? { "aria-describedby": `${id}-help` }
+          : {};
         const value = values[field.key] ?? "";
         if (field.enumValues) {
           return (
@@ -31,6 +41,7 @@ export function ConfigFields({
               <label htmlFor={id}>{label}</label>
               <select
                 id={id}
+                {...described}
                 value={value}
                 disabled={disabled}
                 onChange={(event) => onChange(field.key, event.target.value)}
@@ -42,6 +53,7 @@ export function ConfigFields({
                   </option>
                 ))}
               </select>
+              {help}
             </div>
           );
         }
@@ -51,6 +63,7 @@ export function ConfigFields({
               <label htmlFor={id}>{label}</label>
               <select
                 id={id}
+                {...described}
                 value={value}
                 disabled={disabled}
                 onChange={(event) => onChange(field.key, event.target.value)}
@@ -59,6 +72,7 @@ export function ConfigFields({
                 <option value="true">true</option>
                 <option value="false">false</option>
               </select>
+              {help}
             </div>
           );
         }
@@ -68,6 +82,7 @@ export function ConfigFields({
               <label htmlFor={id}>{label}</label>
               <input
                 id={id}
+                {...described}
                 type="number"
                 value={value}
                 disabled={disabled}
@@ -76,6 +91,7 @@ export function ConfigFields({
                 {...(field.maximum !== undefined ? { max: field.maximum } : {})}
                 onChange={(event) => onChange(field.key, event.target.value)}
               />
+              {help}
             </div>
           );
         }
@@ -84,11 +100,13 @@ export function ConfigFields({
             <label htmlFor={id}>{label}</label>
             <input
               id={id}
+              {...described}
               type="text"
               value={value}
               disabled={disabled}
               onChange={(event) => onChange(field.key, event.target.value)}
             />
+            {help}
           </div>
         );
       })}

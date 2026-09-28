@@ -36,6 +36,25 @@ describe("assertManifestCompatible", () => {
     expect(manifest.id).toBe("acme-analytics");
   });
 
+  it("accepts credential setup steps and rejects empty or unlinked ones", () => {
+    const withSetup = (setup: unknown) => ({
+      ...validManifest(),
+      authStrategies: [{ strategy: "token", setup }],
+    });
+    expect(
+      assertManifestCompatible(
+        withSetup({
+          steps: ["Open Settings → Tokens.", "Create a read-only token."],
+          url: "https://acme.test/settings/tokens",
+        }),
+      ).authStrategies[0]?.setup?.steps,
+    ).toHaveLength(2);
+    expect(() => assertManifestCompatible(withSetup({ steps: [] }))).toThrow();
+    expect(() =>
+      assertManifestCompatible(withSetup({ steps: ["x"], url: "not a url" })),
+    ).toThrow();
+  });
+
   it("accepts exact and comparator-set ranges that include SDK_VERSION", () => {
     assertManifestCompatible({
       ...validManifest(),

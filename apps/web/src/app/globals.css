@@ -155,6 +155,41 @@ form.inline {
   color: #8a919c;
 }
 
+.field .help {
+  margin: 0;
+  font-size: 12px;
+  color: #8a919c;
+}
+
+.field .help:empty {
+  display: none;
+}
+
+.setup-guide {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid #2a2f37;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.setup-guide summary {
+  cursor: pointer;
+}
+
+.setup-guide ol {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.setup-guide li + li {
+  margin-top: 4px;
+}
+
+.setup-guide p {
+  margin: 8px 0 0;
+}
+
 input,
 select {
   background: #0b0d10;
@@ -215,6 +250,23 @@ button.danger:hover:not(:disabled) {
   border-radius: 8px;
   color: #f0a3a3;
   font-size: 13px;
+}
+
+.error p {
+  margin: 0;
+}
+
+.page-alert {
+  margin-bottom: 16px;
+}
+
+.error p + p {
+  margin-top: 6px;
+}
+
+.error a {
+  color: inherit;
+  text-decoration: underline;
 }
 
 .notice {
@@ -474,8 +526,9 @@ button.danger:hover:not(:disabled) {
 
 .tile-footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 8px;
+  gap: 2px 8px;
   margin-top: auto;
   padding-top: 6px;
   font-size: 12px;
@@ -483,7 +536,10 @@ button.danger:hover:not(:disabled) {
 
 .tile-stale {
   color: #e3b341;
-  white-space: nowrap;
+}
+
+a.tile-stale:hover {
+  text-decoration: underline;
 }
 
 .sparkline {

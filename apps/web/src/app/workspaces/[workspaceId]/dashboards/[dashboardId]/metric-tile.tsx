@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import type {
@@ -170,9 +171,20 @@ export function MetricTile({
       <footer className="tile-footer">
         <span className="muted">{connection?.name ?? "—"}</span>
         {stale ? (
-          <span className="tile-stale" title="The numbers may be out of date">
-            <span aria-hidden="true">⚠</span> {stale}
-          </span>
+          connection && variant === "default" ? (
+            // Leads to the connection page, where the problem can be fixed.
+            <Link
+              className="tile-stale"
+              title="The numbers may be out of date"
+              href={`/workspaces/${workspaceId}/connections/${tile.connectionId}`}
+            >
+              <span aria-hidden="true">⚠</span> {stale}
+            </Link>
+          ) : (
+            <span className="tile-stale" title="The numbers may be out of date">
+              <span aria-hidden="true">⚠</span> {stale}
+            </span>
+          )
         ) : null}
         {data && error ? (
           <span className="tile-stale" title={error}>
