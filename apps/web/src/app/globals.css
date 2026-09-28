@@ -556,3 +556,145 @@ button.danger:hover:not(:disabled) {
 .add-tile {
   padding-top: 8px;
 }
+
+/* ─── TV layout (#52) ────────────────────────────────────────────────── */
+
+/* Covers the page (nav included): nothing but the dashboard on screen. */
+.tv {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 1.6vh;
+  padding: 2.4vh 2vw;
+  background: #07090c;
+  overflow: hidden;
+}
+
+.tv--idle,
+.tv--idle * {
+  cursor: none;
+}
+
+.tv-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2vw;
+}
+
+.tv-title {
+  margin: 0;
+  font-size: 3vh;
+  font-weight: 600;
+}
+
+.tv-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 2vw;
+  font-size: 2.2vh;
+  color: #8a919c;
+  font-variant-numeric: tabular-nums;
+}
+
+.tv-exit {
+  font-size: 1.8vh;
+  color: #8a919c;
+  transition: opacity 0.3s;
+}
+
+.tv--idle .tv-exit {
+  opacity: 0;
+}
+
+.tv-empty {
+  font-size: 3vh;
+  color: #8a919c;
+}
+
+.tv-grid {
+  flex: 1;
+  display: grid;
+  gap: 1.6vh;
+  min-height: 0;
+}
+
+/* Everything inside scales with the tile's own size (container units), so
+   the same layout reads the same at 1080p and 4K. */
+.tile--tv {
+  container-type: size;
+  min-height: 0;
+  /* The tile's own box is measured against the viewport: container units
+     here would refer to an ancestor container, and there is none. */
+  gap: 1vh;
+  padding: 2.4vh 1.6vw 1.8vh;
+  border-radius: 1.2vh;
+}
+
+/* One line, so every tile's number sits at the same height. */
+.tile--tv .tile-label {
+  font-size: min(9cqh, 6cqw);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tile--tv .tile-period {
+  font-size: min(6.5cqh, 4.2cqw);
+}
+
+.tile--tv .tile-value {
+  font-size: min(30cqh, 17cqw);
+  line-height: 1.05;
+}
+
+.tile--tv .tile-change {
+  font-size: min(8cqh, 5.4cqw);
+}
+
+/* The trend takes the rest of the tile. */
+.tile--tv .sparkline {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 2cqh;
+}
+
+.tile--tv .sparkline-plot {
+  flex: 1;
+  height: auto;
+  min-height: 12cqh;
+}
+
+/* Non-scaling stroke is in CSS pixels: grow it with the screen. */
+.tile--tv .sparkline-line {
+  stroke-width: max(3px, 0.28vh);
+}
+
+.tile--tv .sparkline-last {
+  width: min(3cqh, 2cqw);
+  height: min(3cqh, 2cqw);
+  transform: translate(-50%, -50%);
+  margin: 0;
+}
+
+/* Nobody hovers a TV: no readout line. */
+.tile--tv .sparkline-readout {
+  display: none;
+}
+
+.tile--tv .tile-footer {
+  font-size: min(6cqh, 4cqw);
+}
+
+.tile--tv .tile-footer .muted {
+  font-size: inherit;
+}
+
+.tile--tv .tile-error {
+  font-size: min(7cqh, 4.6cqw);
+}

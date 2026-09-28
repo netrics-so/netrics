@@ -63,12 +63,15 @@ export function MetricTile({
   metric,
   connection,
   refreshMs = 60_000,
+  variant = "default",
 }: {
   workspaceId: string;
   tile: DashboardTile;
   metric: WorkspaceMetric | undefined;
   connection: TileConnection | undefined;
   refreshMs?: number;
+  /** "tv": sized by its grid cell for reading at a distance (#52). */
+  variant?: "default" | "tv";
 }) {
   const [data, setData] = useState<MetricQueryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,7 +115,10 @@ export function MetricTile({
   const change = data ? formatChange(data.delta, data.ratio, unit) : null;
 
   return (
-    <article className="tile" aria-busy={loading}>
+    <article
+      className={variant === "tv" ? "tile tile--tv" : "tile"}
+      aria-busy={loading}
+    >
       <header className="tile-header">
         <h3 className="tile-label">{label}</h3>
         <span className="tile-period">
