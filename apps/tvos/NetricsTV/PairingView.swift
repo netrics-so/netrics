@@ -25,7 +25,7 @@ struct PairingView: View {
                             .foregroundStyle(Theme.text)
                             .accessibilityLabel("Pairing code \(pairing.code)")
                         Text(
-                            "Open \(Text(pairing.pairingUrl).foregroundStyle(Theme.text).fontWeight(.medium)) and enter the code."
+                            "Go to \(Text(PairingAddress.display(pairing.pairingUrl)).foregroundStyle(Theme.text).fontWeight(.medium)) and enter the code."
                         )
                         .foregroundStyle(Theme.muted)
                         .font(.system(size: 34))

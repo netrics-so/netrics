@@ -7,6 +7,7 @@ import type { DeviceDashboardResponse } from "@netrics/contracts";
 import { TileNotice, TileView } from "@/components/tile-view";
 import { TvFrame, useClock } from "@/components/tv-frame";
 import { createKioskClient, type KioskState } from "@/lib/kiosk-client";
+import { pairingAddress } from "@/lib/pairing-address";
 import { deviceTileNotice } from "@/lib/tile-status";
 
 const INITIAL: KioskState = {
@@ -87,8 +88,11 @@ function PairingScreen({ state }: { state: KioskState }) {
             {pairing.code}
           </p>
           <p className="kiosk-text">
-            Open <strong className="kiosk-url">{pairing.pairingUrl}</strong> and
-            enter the code.
+            Go to{" "}
+            <strong className="kiosk-url">
+              {pairingAddress(pairing.pairingUrl)}
+            </strong>{" "}
+            and enter the code.
           </p>
         </>
       ) : (
