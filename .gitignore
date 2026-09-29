@@ -15,3 +15,10 @@ coverage/
 
 # OS / editor
 .DS_Store
+
+# tvOS app (apps/tvos): SwiftPM and Xcode build output, per-user Xcode state
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate

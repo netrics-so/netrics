@@ -7,3 +7,8 @@ drizzle/
 pnpm-lock.yaml
 *.tsbuildinfo
 packages/contracts/openapi.json
+# Xcode-managed files (apps/tvos)
+.build/
+.swiftpm/
+apps/tvos/NetricsTV.xcodeproj/
+apps/tvos/NetricsTV/Assets.xcassets/
