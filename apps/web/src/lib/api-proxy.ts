@@ -5,6 +5,11 @@
  * one published image works against any API address (SaaS and self-hosted).
  */
 
+import type { ErrorResponse } from "@netrics/contracts";
+
+// Same as the API's Fastify default bodyLimit, so the proxy rejects no less.
+export const MAX_PROXY_BODY_BYTES = 1_048_576;
+
 // Hop-by-hop headers (RFC 9110 §7.6.1) never cross a proxy, and fetch
 // decompresses bodies, so the upstream length/encoding no longer apply.
 const DROPPED_REQUEST_HEADERS = new Set([
@@ -109,21 +114,73 @@ export function proxyResponseHeaders(upstream: Headers): Headers {
   return headers;
 }
 
+function errorResponse(error: string, status: number): Response {
+  return Response.json({ error } satisfies ErrorResponse, { status });
+}
+
+/**
+ * The request body as one buffer, or null once it exceeds `limit` bytes; the
+ * rest of the stream is then cancelled, never read.
+ */
+export async function readBodyWithin(
+  request: Request,
+  limit: number,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  const declared = request.headers.get("content-length");
+  if (declared !== null && Number(declared) > limit) {
+    return null;
+  }
+  if (!request.body) {
+    return new Uint8Array(0);
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
 export async function proxyToApi(request: Request): Promise<Response> {
   const incoming = new URL(request.url);
   const target = new URL(incoming.pathname + incoming.search, apiBaseUrl());
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   let upstream: Response;
   try {
+    // Buffered, not streamed: Node's fetch cannot replay a stream body and
+    // fails outright when the API answers 401 to a streamed request (#118).
+    // Buffering is capped so no client can make this process hold more.
+    let body: Uint8Array<ArrayBuffer> | undefined;
+    if (hasBody) {
+      const read = await readBodyWithin(request, MAX_PROXY_BODY_BYTES);
+      if (read === null) {
+        return errorResponse("payload_too_large", 413);
+      }
+      body = read;
+    }
     upstream = await fetch(target, {
       method: request.method,
       headers: proxyRequestHeaders(request.headers),
-      ...(hasBody ? { body: request.body, duplex: "half" } : {}),
+      body,
       redirect: "manual",
       cache: "no-store",
-    } as RequestInit);
+    });
   } catch {
-    return Response.json({ error: "api_unreachable" }, { status: 502 });
+    return errorResponse("api_unreachable", 502);
   }
   return new Response(upstream.body, {
     status: upstream.status,
