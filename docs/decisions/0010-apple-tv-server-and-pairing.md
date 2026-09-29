@@ -31,11 +31,15 @@ shows a short single-use code and a QR code. The code is approved by a
 signed-in owner or admin in the web app of _that_ server, and the TV then
 receives device-scoped, rotating credentials.
 
-- The hosted service shows the short address **netrics.tv/link**. It is part
-  of the hosted deployment, not of the code, and forwards to the web app's
-  approval page with the code prefilled.
-- A self-hosted server shows its own URL (`<server>/devices/approve`). The
-  API reports the pairing URL to show, so the app never builds it.
+- The hosted service shows the short address **netrics.tv**, and its QR code
+  opens `netrics.tv/<CODE>`. The web app itself lives at app.netrics.so.
+  netrics.tv points at the same web service, which redirects every request
+  on that host to the approval page on the app origin, with the code
+  prefilled when the path or `?code=` holds one.
+- A self-hosted server shows its own URL (`<server>/devices/approve`), and
+  its QR code adds `?code=<CODE>`. The API reports both the pairing URL and
+  the QR code's URL, so the app never builds them.
+- The TV shows the pairing URL without scheme or trailing slash.
 
 **Transport security.** HTTPS with a valid certificate is required by
 default. A setting, off by default, labelled as not recommended and shown on
@@ -57,8 +61,13 @@ credentials in the clear.
   reported pairing URL and the transport setting.
 - The server needs a public identification endpoint (name, API version,
   pairing URL) for the app's check. It reveals no workspace data.
-- The hosted service needs the netrics.tv domain and a redirect from
-  `/link` to the web app's approval page. This is configured in the private
-  infrastructure repositories.
+- The hosted service is configured, not coded: the API sets
+  `NETRICS_PAIRING_URL=https://netrics.tv` (a URL without a path puts the
+  code in the path), and the web service sets
+  `NETRICS_PAIRING_HOST=netrics.tv` and
+  `NETRICS_APP_ORIGIN=https://app.netrics.so`. Without these, the web app
+  redirects nothing, so self-hosted servers are unaffected.
+- The redirect is temporary (302) and passes on only a well-formed code,
+  normalized to `XXXX-XXXX`; anything else lands on the empty form.
 - Self-hosters on a local network without a certificate can use a TV only
   after deliberately enabling the setting on that TV.

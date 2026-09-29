@@ -196,3 +196,17 @@ import Testing
         #expect(QRCode.image(for: "https://netrics.tv/link?code=ABCD-EFGH") != nil)
     }
 }
+
+// Parity with apps/web/src/lib/pairing-address.test.ts.
+@Suite struct PairingAddressTests {
+    @Test(arguments: [
+        ("https://netrics.tv", "netrics.tv"),
+        ("https://netrics.tv/", "netrics.tv"),
+        ("https://app.example.com/devices/approve", "app.example.com/devices/approve"),
+        ("http://nas.local:8080/devices/approve/", "nas.local:8080/devices/approve"),
+        ("netrics.tv", "netrics.tv"),
+    ])
+    func showsHostAndPath(_ url: String, _ expected: String) {
+        #expect(PairingAddress.display(url) == expected)
+    }
+}

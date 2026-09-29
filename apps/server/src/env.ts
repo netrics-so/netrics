@@ -114,7 +114,9 @@ const envSchema = z
     // better-auth trustedOrigins). Same production rule as BETTER_AUTH_URL.
     WEB_ORIGIN: z.url().optional(),
     // Where TVs send people to approve a pairing code (ADR 0010). The hosted
-    // service uses a short address; default <WEB_ORIGIN>/devices/approve.
+    // service uses its short domain (https://netrics.tv; the QR code then
+    // opens netrics.tv/<CODE>); default <WEB_ORIGIN>/devices/approve.
+    // Reported to TVs exactly as configured.
     NETRICS_PAIRING_URL: z.url().optional(),
     // Outbound email for verification and password reset, e.g.
     // smtps://user:pass@smtp.example.com:465. Without it, production refuses

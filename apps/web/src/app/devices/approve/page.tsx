@@ -16,7 +16,8 @@ interface ApproveDevicePageProps {
 
 /**
  * Where a TV sends people to approve its pairing code (ADR 0010). The TV's
- * QR code and the hosted netrics.tv/link address land here with ?code=.
+ * QR code lands here with ?code=; on the hosted service via netrics.tv/<CODE>
+ * (see src/proxy.ts).
  */
 export default async function ApproveDevicePage({
   searchParams,

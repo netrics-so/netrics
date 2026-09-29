@@ -88,6 +88,20 @@ export function normalizePairingCode(input: string): string {
   return input.toUpperCase().replace(/[\s-]/g, "");
 }
 
+/**
+ * Where the TV's QR code points. A pairing URL that is just an origin (the
+ * hosted https://netrics.tv) takes the code as its path, netrics.tv/ABCD-EFGH;
+ * any other URL (a self-hosted <WEB_ORIGIN>/devices/approve) gets ?code=.
+ */
+export function approveUrlFor(pairingUrl: string, code: string): string {
+  const url = new URL(pairingUrl);
+  if (url.pathname === "/" && url.search === "" && url.hash === "") {
+    return `${url.origin}/${encodeURIComponent(code)}`;
+  }
+  url.searchParams.set("code", code);
+  return url.toString();
+}
+
 export function presentDevice(row: DeviceRow): Device {
   return {
     id: row.id,
@@ -120,12 +134,6 @@ export interface DeviceServiceDeps {
 export function createDeviceService(deps: DeviceServiceDeps) {
   const { db } = deps;
   const now = deps.now ?? (() => new Date());
-
-  function approveUrl(code: string): string {
-    const url = new URL(deps.pairingUrl);
-    url.searchParams.set("code", code);
-    return url.toString();
-  }
 
   return {
     /** A new pairing for an unauthenticated device, rate-limited per IP. */
@@ -163,7 +171,7 @@ export function createDeviceService(deps: DeviceServiceDeps) {
             expiresAt: pairing.expiresAt.toISOString(),
             pollIntervalSeconds: PAIRING_POLL_INTERVAL_SECONDS,
             pairingUrl: deps.pairingUrl,
-            approveUrl: approveUrl(code),
+            approveUrl: approveUrlFor(deps.pairingUrl, code),
           });
         } catch (error) {
           if (attempt >= 2) throw error;

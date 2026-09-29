@@ -94,7 +94,7 @@ Store app serves the hosted service and self-hosted servers:
 
 - netrics cloud by default; "your own server" by entering its URL once,
   verified against a public server-identification endpoint;
-- the hosted service shows `netrics.tv/link` for approval, a self-hosted
+- the hosted service shows `netrics.tv` for approval, a self-hosted
   server its own approval URL (reported by the API);
 - HTTPS required by default; a setting, off by default, allows plain HTTP on
   local-network addresses and self-signed certificates pinned on first use.

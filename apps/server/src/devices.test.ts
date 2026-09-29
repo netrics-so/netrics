@@ -26,7 +26,11 @@ import { addDays, civilDate } from "@netrics/domain";
 
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
-import { CODE_ALPHABET } from "./devices/service.js";
+import {
+  approveUrlFor,
+  CODE_ALPHABET,
+  createDeviceService,
+} from "./devices/service.js";
 import { loadConfig } from "./env.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
 import { createTestDatabase } from "./test-db.js";
@@ -225,6 +229,57 @@ describe("server identification", () => {
       loadConfig({ ...base, NETRICS_PAIRING_URL: "https://netrics.tv/link" })
         .pairingUrl,
     ).toBe("https://netrics.tv/link");
+    // Reported exactly as configured; clients drop scheme and trailing slash.
+    expect(
+      loadConfig({ ...base, NETRICS_PAIRING_URL: "https://netrics.tv" })
+        .pairingUrl,
+    ).toBe("https://netrics.tv");
+    expect(
+      loadConfig({ ...base, NETRICS_PAIRING_URL: "https://netrics.tv/" })
+        .pairingUrl,
+    ).toBe("https://netrics.tv/");
+  });
+});
+
+describe("approve URL", () => {
+  it("puts the code in the path of a bare origin", () => {
+    expect(approveUrlFor("https://netrics.tv", "ABCD-EFGH")).toBe(
+      "https://netrics.tv/ABCD-EFGH",
+    );
+    expect(approveUrlFor("https://netrics.tv/", "ABCD-EFGH")).toBe(
+      "https://netrics.tv/ABCD-EFGH",
+    );
+    expect(approveUrlFor("http://nas.local:8080", "ABCD-EFGH")).toBe(
+      "http://nas.local:8080/ABCD-EFGH",
+    );
+  });
+
+  it("adds ?code= to any other URL", () => {
+    expect(
+      approveUrlFor("https://app.example.com/devices/approve", "ABCD-EFGH"),
+    ).toBe("https://app.example.com/devices/approve?code=ABCD-EFGH");
+    expect(approveUrlFor("https://netrics.tv/link", "ABCD-EFGH")).toBe(
+      "https://netrics.tv/link?code=ABCD-EFGH",
+    );
+    expect(approveUrlFor("https://netrics.tv/?via=tv", "ABCD-EFGH")).toBe(
+      "https://netrics.tv/?via=tv&code=ABCD-EFGH",
+    );
+  });
+
+  it("is what a pairing on a hosted-style server reports", async () => {
+    const service = createDeviceService({
+      db,
+      pairingUrl: "https://netrics.tv",
+    });
+    const result = await service.createPairing(freshIp());
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.pairingUrl).toBe("https://netrics.tv");
+    expect(result.value.approveUrl).toBe(
+      `https://netrics.tv/${result.value.code}`,
+    );
+    expect(createPairingResponseSchema.parse(result.value).approveUrl).toMatch(
+      /^https:\/\/netrics\.tv\/[A-Z0-9]{4}-[A-Z0-9]{4}$/,
+    );
   });
 });
 

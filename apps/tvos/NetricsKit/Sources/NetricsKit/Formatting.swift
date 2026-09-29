@@ -258,3 +258,21 @@ public enum TVTime {
         return "Offline — last update \(hourMinute(updatedAt, timeZone: timeZone))"
     }
 }
+
+/**
+ * The pairing URL as the TV shows it: host and path, without scheme or
+ * trailing slash ("netrics.tv", "app.example.com/devices/approve"). Same as
+ * apps/web/src/lib/pairing-address.ts.
+ */
+public enum PairingAddress {
+    public static func display(_ pairingUrl: String) -> String {
+        guard let parts = URLComponents(string: pairingUrl), let host = parts.host, !host.isEmpty else {
+            return pairingUrl
+        }
+        var text = host
+        if let port = parts.port { text += ":\(port)" }
+        text += parts.percentEncodedPath
+        while text.hasSuffix("/") { text.removeLast() }
+        return text
+    }
+}

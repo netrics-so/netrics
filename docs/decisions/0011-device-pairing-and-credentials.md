@@ -70,7 +70,7 @@ revocation are audited.
 
 **Server identification.** `GET /v1/server` (public) returns the product
 name, the API version and the pairing URL. The pairing URL is configuration:
-`NETRICS_PAIRING_URL` for the hosted service (`https://netrics.tv/link`),
+`NETRICS_PAIRING_URL` for the hosted service (`https://netrics.tv`),
 otherwise `<WEB_ORIGIN>/devices/approve`. The approval page accepts
 `?code=`.
 
@@ -79,5 +79,5 @@ otherwise `<WEB_ORIGIN>/devices/approve`. The approval page accepts
 - A device holds no user identity. Its tokens reach nothing outside its
   workspace, and only the routes that accept the `device` kind.
 - A lost TV is cut off from the web app, with no account changes.
-- The hosted `netrics.tv/link` redirect and a self-hosted server's own URL
+- The hosted `netrics.tv` redirect and a self-hosted server's own URL
   behave the same for the app, which only shows what the API reports.
