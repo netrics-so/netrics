@@ -1,7 +1,19 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { createServer, type IncomingMessage, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import {
   clientIp,
+  MAX_PROXY_BODY_BYTES,
   proxyRequestHeaders,
   proxyResponseHeaders,
   proxyToApi,
@@ -138,5 +150,166 @@ describe("api proxy requests", () => {
     );
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: "api_unreachable" });
+  });
+});
+
+// A real HTTP upstream and the real global fetch: Node's fetch treats a 401
+// specially, which a stubbed fetch cannot show (#118).
+describe("api proxy against a real upstream", () => {
+  let server: Server;
+  let received: { method: string; url: string; body: Buffer }[] = [];
+
+  function readBody(req: IncomingMessage): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => resolve(Buffer.concat(chunks)));
+      req.on("error", reject);
+    });
+  }
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      void readBody(req).then((body) => {
+        received.push({ method: req.method!, url: req.url!, body });
+        if (req.url === "/v1/device/token") {
+          res.writeHead(401, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "unauthorized" }));
+          return;
+        }
+        res.writeHead(200, {
+          "content-type": req.headers["content-type"] ?? "",
+        });
+        res.end(body);
+      });
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  afterEach(() => {
+    received = [];
+    vi.unstubAllEnvs();
+  });
+
+  function useUpstream() {
+    const { port } = server.address() as AddressInfo;
+    vi.stubEnv("NETRICS_API_URL", `http://127.0.0.1:${port}`);
+  }
+
+  it("passes a 401 answer to a POST with a body through (#118)", async () => {
+    useUpstream();
+    const response = await proxyToApi(
+      new Request("https://netrics.example.com/v1/device/token", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refreshToken: "x" }),
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "unauthorized" });
+    expect(received).toHaveLength(1);
+    expect(received[0]!.body.toString()).toBe('{"refreshToken":"x"}');
+  });
+
+  it("forwards a POST body byte for byte", async () => {
+    useUpstream();
+    const payload = new Uint8Array(70_000);
+    for (let i = 0; i < payload.length; i++) payload[i] = (i * 31) % 256;
+    const response = await proxyToApi(
+      new Request("https://netrics.example.com/v1/echo?x=1", {
+        method: "POST",
+        headers: { "content-type": "application/octet-stream" },
+        body: payload,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(received[0]!.method).toBe("POST");
+    expect(received[0]!.url).toBe("/v1/echo?x=1");
+    expect(Buffer.compare(received[0]!.body, Buffer.from(payload))).toBe(0);
+    const echoed = new Uint8Array(await response.arrayBuffer());
+    expect(Buffer.compare(Buffer.from(echoed), Buffer.from(payload))).toBe(0);
+  });
+
+  // A body source that counts what the proxy pulls from it and whether the
+  // proxy cancelled it, delivering `total` bytes in 64 KiB chunks.
+  function countedStream(total: number) {
+    const state = { pulled: 0, cancelled: false };
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const size = Math.min(65_536, total - state.pulled);
+        if (size <= 0) {
+          controller.close();
+          return;
+        }
+        state.pulled += size;
+        controller.enqueue(new Uint8Array(size).fill(7));
+      },
+      cancel() {
+        state.cancelled = true;
+      },
+    });
+    return { stream, state };
+  }
+
+  function streamedPost(body: ReadableStream<Uint8Array>, headers = {}) {
+    return new Request("https://netrics.example.com/v1/echo", {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream", ...headers },
+      body,
+      duplex: "half",
+    } as RequestInit);
+  }
+
+  it("answers 413 to a declared oversize body without reading it", async () => {
+    useUpstream();
+    const { stream, state } = countedStream(4 * MAX_PROXY_BODY_BYTES);
+    const response = await proxyToApi(
+      streamedPost(stream, {
+        "content-length": String(MAX_PROXY_BODY_BYTES + 1),
+      }),
+    );
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ error: "payload_too_large" });
+    expect(received).toHaveLength(0);
+    // Only what the stream buffers ahead on its own, never the body.
+    expect(state.pulled).toBeLessThanOrEqual(65_536);
+  });
+
+  it("answers 413 once an undeclared body passes the limit", async () => {
+    useUpstream();
+    const { stream, state } = countedStream(4 * MAX_PROXY_BODY_BYTES);
+    const response = await proxyToApi(streamedPost(stream));
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ error: "payload_too_large" });
+    expect(received).toHaveLength(0);
+    expect(state.cancelled).toBe(true);
+    expect(state.pulled).toBeLessThan(2 * MAX_PROXY_BODY_BYTES);
+  });
+
+  it("forwards a body of exactly the limit", async () => {
+    useUpstream();
+    const { stream } = countedStream(MAX_PROXY_BODY_BYTES);
+    const response = await proxyToApi(streamedPost(stream));
+    expect(response.status).toBe(200);
+    expect(received[0]!.body.length).toBe(MAX_PROXY_BODY_BYTES);
+    expect((await response.arrayBuffer()).byteLength).toBe(
+      MAX_PROXY_BODY_BYTES,
+    );
+  });
+
+  it("sends GET without a body", async () => {
+    useUpstream();
+    const response = await proxyToApi(
+      new Request("https://netrics.example.com/v1/echo"),
+    );
+    expect(response.status).toBe(200);
+    expect(received[0]!.method).toBe("GET");
+    expect(received[0]!.body.length).toBe(0);
   });
 });

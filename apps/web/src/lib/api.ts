@@ -132,6 +132,8 @@ export function apiErrorMessage(error: unknown): string {
         return "That record no longer exists.";
       case "invalid_request":
         return "The request was invalid — check your input.";
+      case "payload_too_large":
+        return "The request was too large to send.";
       case "version_conflict":
         return "Someone else saved this dashboard in the meantime. Reload to see their changes, then edit again.";
       case "dashboard_not_found":
