@@ -127,7 +127,9 @@ export function createSmtpMailer(options: SmtpMailerOptions): Mailer {
         to,
         "Reset your password",
         `Reset your netrics password:\n\n${url}\n\n` +
-          "If you did not request a reset, you can ignore this email.",
+          "The link expires in 1 hour and works once. If you did not " +
+          "request a reset, you can ignore this email; your password " +
+          "stays the same.",
       ),
     sendInvitationEmail: ({ to, url, workspaceName, inviterName }) =>
       send(

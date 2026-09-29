@@ -656,10 +656,11 @@ describe("session attacks", () => {
         .statusCode,
     ).toBe(200);
 
-    const signOut = await call(world.app, {
+    // A browser sends its origin; better-auth checks it on cookie requests.
+    const signOut = await world.app.inject({
       method: "POST",
       url: "/api/auth/sign-out",
-      cookie,
+      headers: { cookie, origin: "http://localhost:3000" },
     });
     expect(signOut.statusCode).toBe(200);
 

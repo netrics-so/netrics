@@ -31,6 +31,9 @@ export default async function LoginPage({
       <div className="card">
         <LoginForm next={next} />
       </div>
+      <p className="muted">
+        <Link href="/forgot-password">Forgot password?</Link>
+      </p>
       {setup.signup === "open" ? (
         <p className="muted">
           No account yet? <Link href="/signup">Create one</Link>
