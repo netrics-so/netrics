@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	Plain HTTP only to local-network hosts (ADR 0010). Never
+	NSAllowsArbitraryLoads: the app refuses plain HTTP to public hosts in
+	code too (TransportPolicy), and only when the user turned on
+	"Allow insecure connections".
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>
