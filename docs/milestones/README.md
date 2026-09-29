@@ -101,7 +101,11 @@ team could parallelize independent connectors after milestone 07.
   layer), 03.3 (portable images and self-hosting; release `v0.1.0`), 04
   (tile dashboards, TV layout, demo onboarding), 05 (Vercel Web Analytics
   connector)
-- Next: 06 (Apple TV)
+- In progress: 06 (Apple TV). Server side, browser kiosk and the tvOS app
+  are done; the hosted service pairs TVs through netrics.tv. Open: signing,
+  a physical Apple TV and the exit gate (#58), device heartbeat in the TV
+  list (#125).
+- Later: the web frontend on Vercel (#123).
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
 
