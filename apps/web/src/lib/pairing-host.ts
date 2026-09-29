@@ -27,21 +27,24 @@ export function normalizeHost(value: string): string {
   return host.endsWith(".") ? host.slice(0, -1) : host;
 }
 
-/**
- * The redirect configuration, or null (no redirect) when either variable is
- * missing or invalid, or when the app origin is itself a pairing host.
- */
-export function pairingHostConfig(
+/** The pairing host names from NETRICS_PAIRING_HOST, normalized. */
+export function pairingHosts(
   env: Record<string, string | undefined>,
-): PairingHostConfig | null {
-  const hosts = new Set(
+): Set<string> {
+  return new Set(
     (env.NETRICS_PAIRING_HOST ?? "")
       .split(",")
       .map(normalizeHost)
       .filter((host) => host.length > 0),
   );
+}
+
+/** NETRICS_APP_ORIGIN as an http(s) URL, or null when unset or invalid. */
+export function appOriginUrl(
+  env: Record<string, string | undefined>,
+): URL | null {
   const rawOrigin = env.NETRICS_APP_ORIGIN?.trim();
-  if (hosts.size === 0 || !rawOrigin) return null;
+  if (!rawOrigin) return null;
   let origin: URL;
   try {
     origin = new URL(rawOrigin);
@@ -49,6 +52,19 @@ export function pairingHostConfig(
     return null;
   }
   if (origin.protocol !== "https:" && origin.protocol !== "http:") return null;
+  return origin;
+}
+
+/**
+ * The redirect configuration, or null (no redirect) when either variable is
+ * missing or invalid, or when the app origin is itself a pairing host.
+ */
+export function pairingHostConfig(
+  env: Record<string, string | undefined>,
+): PairingHostConfig | null {
+  const hosts = pairingHosts(env);
+  const origin = appOriginUrl(env);
+  if (hosts.size === 0 || !origin) return null;
   if (hosts.has(normalizeHost(origin.host))) return null;
   return { hosts, appOrigin: origin.origin };
 }

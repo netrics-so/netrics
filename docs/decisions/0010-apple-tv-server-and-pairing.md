@@ -65,8 +65,11 @@ credentials in the clear.
   `NETRICS_PAIRING_URL=https://netrics.tv` (a URL without a path puts the
   code in the path), and the web service sets
   `NETRICS_PAIRING_HOST=netrics.tv` and
-  `NETRICS_APP_ORIGIN=https://app.netrics.so`. Without these, the web app
-  redirects nothing, so self-hosted servers are unaffected.
+  `NETRICS_APP_ORIGIN=https://app.netrics.so`. Requests on any other host
+  are redirected (308) to the same path on the app origin, except health
+  checks and the device API (with the browser kiosk and its assets). Without
+  these, the web app redirects nothing, so self-hosted servers are
+  unaffected.
 - The redirect is temporary (302) and passes on only a well-formed code,
   normalized to `XXXX-XXXX`; anything else lands on the empty form.
 - Self-hosters on a local network without a certificate can use a TV only
