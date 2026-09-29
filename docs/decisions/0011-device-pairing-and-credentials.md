@@ -32,8 +32,9 @@ signed-in owner or admin approves it in the web app of that server.
    Approval normalizes case, spaces and dashes.
 3. An owner or admin approves the code with
    `POST /v1/workspaces/:id/devices/approve`, naming the device and choosing
-   its dashboard. This creates the device. Unknown, expired and already approved codes get the same 404,
-   and failed attempts count against the user: 10 per 15 minutes, then 429.
+   its dashboard. This creates the device. Unknown, expired and already
+   approved codes get the same 404, and failed attempts count against the
+   user: 10 per 15 minutes, then 429.
 4. The TV polls `POST /v1/device/pairings/poll {pairingId, pollSecret}`. Once
    approved, the first poll receives the credentials; the pairing is then
    spent and later polls get 410, as do expired pairings.
@@ -45,9 +46,19 @@ them.
 **Credentials.** Device tokens are `principal_tokens` rows of kind `device`
 (ADR 0009), now linked to their device:
 
-- an **access token** (scope `device:read`, 1 hour) for the device API;
-- a **refresh token** (scope `device:refresh`, 90 days) that only the refresh
-  endpoint accepts. Rotation and reuse detection follow in #56.
+- an **access token** (scope `device:read`, 1 hour) for the device API, whose
+  routes accept nothing else: no session, no service token, no refresh token;
+- a **refresh token** (scope `device:refresh`, 90 days) that only
+  `POST /v1/device/token` accepts.
+
+**Rotation.** Each refresh returns a new pair and retires the refresh token
+it was given. TVs lose responses on bad networks, so a retired token may come
+back once more as a retry: within 5 minutes, while none of its successors has
+been used. The retry revokes the unused successors and issues a new pair.
+Any other return of a retired token means someone else holds a copy: every
+token of the device is revoked, the device is marked revoked, and the event
+is audited. The token row is locked during the exchange, so concurrent
+refreshes of one token serialize.
 
 The application role still cannot touch `principal_tokens`. It issues and
 revokes device tokens through SECURITY DEFINER functions that check the

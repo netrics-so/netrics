@@ -7,8 +7,10 @@ import {
   dashboardResponseSchema,
   deviceListResponseSchema,
   deviceResponseSchema,
+  deviceSelfResponseSchema,
   errorResponseSchema,
   pollPairingResponseSchema,
+  refreshDeviceTokenResponseSchema,
   serverInfoResponseSchema,
   workspaceResponseSchema,
   type CreatePairingResponse,
@@ -42,7 +44,7 @@ let foreignDashboardId: string;
 let clientCounter = 0;
 
 function call(
-  method: "GET" | "POST" | "DELETE",
+  method: "GET" | "POST" | "PATCH" | "DELETE",
   url: string,
   options: {
     cookie?: string;
@@ -502,5 +504,203 @@ describe("devices", () => {
     const [row] = await admin`
       select dashboard_id, workspace_id from devices where id = ${device.id}`;
     expect(row).toEqual({ dashboard_id: null, workspace_id: workspaceId });
+  });
+});
+
+describe("device credentials", () => {
+  async function pair(
+    name = "Credential TV",
+    dashboard: string | null = dashboardId,
+  ) {
+    const pairing = await startPairing();
+    const approved = await approve(owner, {
+      code: pairing.code,
+      name,
+      dashboardId: dashboard,
+    });
+    const { device } = deviceResponseSchema.parse(approved.json());
+    const result = pollPairingResponseSchema.parse(
+      (await poll(pairing)).json(),
+    );
+    if (result.status !== "approved") throw new Error("not approved");
+    return { device, ...result.credentials };
+  }
+
+  function me(token: string | null, cookie?: string) {
+    return call("GET", "/v1/device/me", {
+      ...(cookie ? { cookie } : {}),
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    });
+  }
+
+  async function refresh(refreshToken: string) {
+    const response = await call("POST", "/v1/device/token", {
+      payload: { refreshToken },
+    });
+    return {
+      response,
+      credentials:
+        response.statusCode === 200
+          ? refreshDeviceTokenResponseSchema.parse(response.json()).credentials
+          : null,
+    };
+  }
+
+  async function deviceRevoked(deviceId: string): Promise<boolean> {
+    const [row] =
+      await admin`select revoked_at from devices where id = ${deviceId}`;
+    return row!.revoked_at !== null;
+  }
+
+  it("lets only the device's access token into the device API", async () => {
+    const { device, accessToken, refreshToken } = await pair();
+    const response = await me(accessToken);
+    expect(response.statusCode).toBe(200);
+    expect(deviceSelfResponseSchema.parse(response.json()).device).toEqual({
+      id: device.id,
+      name: "Credential TV",
+      dashboardId,
+    });
+    const [row] =
+      await admin`select last_seen_at from devices where id = ${device.id}`;
+    expect(row!.last_seen_at).not.toBeNull();
+
+    expectError(await me(refreshToken), 401, "unauthorized");
+    expectError(await me(null, owner), 401, "unauthorized");
+    expectError(await me(null), 401, "unauthorized");
+    expectError(await me("nt_not-a-real-token-at-all"), 401, "unauthorized");
+    // The access token is no refresh token.
+    expect((await refresh(accessToken)).response.statusCode).toBe(401);
+  });
+
+  it("rotates the refresh token", async () => {
+    const first = await pair();
+    const { response, credentials } = await refresh(first.refreshToken);
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(credentials!.refreshToken).not.toBe(first.refreshToken);
+    expect((await me(credentials!.accessToken)).statusCode).toBe(200);
+    // The earlier access token stays valid until it expires.
+    expect((await me(first.accessToken)).statusCode).toBe(200);
+    // The new refresh token works in turn.
+    expect((await refresh(credentials!.refreshToken)).response.statusCode).toBe(
+      200,
+    );
+  });
+
+  it("treats a quick repeat of a rotated token as a retry", async () => {
+    const first = await pair();
+    const lost = (await refresh(first.refreshToken)).credentials!;
+    const retried = await refresh(first.refreshToken);
+    expect(retried.response.statusCode).toBe(200);
+    // The lost pair is replaced; the device keeps working.
+    expect(await resolves(lost.accessToken)).toBe(false);
+    expect(await resolves(lost.refreshToken)).toBe(false);
+    expect((await me(retried.credentials!.accessToken)).statusCode).toBe(200);
+    expect(await deviceRevoked(first.device.id)).toBe(false);
+  });
+
+  it("revokes the device when a replaced refresh token comes back", async () => {
+    const first = await pair("Stolen TV");
+    const second = (await refresh(first.refreshToken)).credentials!;
+    const third = (await refresh(second.refreshToken)).credentials!;
+    // The first token again, after its successor was used: a copy exists.
+    expectError(
+      (await refresh(first.refreshToken)).response,
+      401,
+      "unauthorized",
+    );
+    expect(await deviceRevoked(first.device.id)).toBe(true);
+    for (const token of [
+      third.accessToken,
+      third.refreshToken,
+      second.accessToken,
+    ]) {
+      expect(await resolves(token)).toBe(false);
+    }
+    expectError(await me(third.accessToken), 401, "unauthorized");
+    const events = await admin`
+      select action, actor_user_id, metadata from audit_events
+      where target = ${first.device.id} order by created_at`;
+    expect(events.map((row) => row.action)).toEqual([
+      "device.approved",
+      "device.revoked",
+    ]);
+    expect(events[1]).toMatchObject({
+      actor_user_id: null,
+      metadata: { reason: "refresh_token_reuse" },
+    });
+  });
+
+  it("treats a late repeat as reuse", async () => {
+    const first = await pair();
+    await refresh(first.refreshToken);
+    await admin`
+      update principal_tokens set rotated_at = now() - interval '6 minutes'
+      where token_hash = ${hashToken(first.refreshToken)}`;
+    expect((await refresh(first.refreshToken)).response.statusCode).toBe(401);
+    expect(await deviceRevoked(first.device.id)).toBe(true);
+  });
+
+  it("gives simultaneous refreshes one working pair", async () => {
+    const first = await pair();
+    const results = await Promise.all([
+      refresh(first.refreshToken),
+      refresh(first.refreshToken),
+    ]);
+    expect(results.map((r) => r.response.statusCode)).toEqual([200, 200]);
+    const live = await Promise.all(
+      results.map((r) => resolves(r.credentials!.refreshToken)),
+    );
+    expect(live.filter(Boolean)).toHaveLength(1);
+    expect(await deviceRevoked(first.device.id)).toBe(false);
+  });
+
+  it("answers 401 on the next request after revocation", async () => {
+    const { device, accessToken, refreshToken } = await pair();
+    expect((await me(accessToken)).statusCode).toBe(200);
+    await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/devices/${device.id}/revoke`,
+      { cookie: owner },
+    );
+    expectError(await me(accessToken), 401, "unauthorized");
+    expect((await refresh(refreshToken)).response.statusCode).toBe(401);
+  });
+
+  it("renames and reassigns a device", async () => {
+    const { device, accessToken } = await pair("Old name", null);
+    const url = `/v1/workspaces/${workspaceId}/devices/${device.id}`;
+    expectError(
+      await call("PATCH", url, { cookie: editor, payload: { name: "X" } }),
+      403,
+      "forbidden",
+    );
+    expectError(
+      await call("PATCH", url, {
+        cookie: owner,
+        payload: { dashboardId: foreignDashboardId },
+      }),
+      404,
+      "dashboard_not_found",
+    );
+    expect(
+      (await call("PATCH", url, { cookie: owner, payload: {} })).statusCode,
+    ).toBe(400);
+    const updated = await call("PATCH", url, {
+      cookie: owner,
+      payload: { name: "Reception", dashboardId },
+    });
+    expect(deviceResponseSchema.parse(updated.json()).device).toMatchObject({
+      name: "Reception",
+      dashboardId,
+    });
+    expect(
+      deviceSelfResponseSchema.parse((await me(accessToken)).json()).device,
+    ).toMatchObject({ name: "Reception", dashboardId });
+    const [event] = await admin`
+      select metadata from audit_events
+      where target = ${device.id} and action = 'device.updated'`;
+    expect(event!.metadata).toEqual({ name: "Reception", dashboardId });
   });
 });

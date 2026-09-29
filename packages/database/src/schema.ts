@@ -68,6 +68,10 @@ export const principalTokens = pgTable(
     deviceId: uuid("device_id").references(() => devices.id, {
       onDelete: "cascade",
     }),
+    // Device refresh rotation (ADR 0011): the refresh token a token pair was
+    // issued for, and when a refresh token was exchanged for a new pair.
+    parentId: uuid("parent_id"),
+    rotatedAt: timestamp("rotated_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -89,6 +93,7 @@ export const principalTokens = pgTable(
       sql`(${table.kind} = 'device') = (${table.deviceId} is not null)`,
     ),
     index("principal_tokens_device_idx").on(table.deviceId),
+    index("principal_tokens_parent_idx").on(table.parentId),
   ],
 );
 

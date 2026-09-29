@@ -92,8 +92,11 @@ export {
   readPairing,
   recordPairingFailure,
   revokeDevice,
+  rotateDeviceRefreshToken,
+  touchDevice,
+  updateDevice,
 } from "./devices.js";
-export type { DeviceRow, PairingState } from "./devices.js";
+export type { DeviceRow, PairingState, RefreshOutcome } from "./devices.js";
 export {
   consumeSetupToken,
   countUsers,

@@ -756,3 +756,37 @@ export const deviceListResponseSchema = z.object({
   devices: z.array(deviceSchema),
 });
 export type DeviceListResponse = z.infer<typeof deviceListResponseSchema>;
+
+export const refreshDeviceTokenRequestSchema = z.object({
+  refreshToken: z.string().min(1).max(200),
+});
+export type RefreshDeviceTokenRequest = z.infer<
+  typeof refreshDeviceTokenRequestSchema
+>;
+
+export const refreshDeviceTokenResponseSchema = z.object({
+  credentials: deviceCredentialsSchema,
+});
+export type RefreshDeviceTokenResponse = z.infer<
+  typeof refreshDeviceTokenResponseSchema
+>;
+
+/** The calling device, as it sees itself. */
+export const deviceSelfResponseSchema = z.object({
+  device: z.object({
+    id: z.uuid(),
+    name: z.string().min(1),
+    dashboardId: z.uuid().nullable(),
+  }),
+});
+export type DeviceSelfResponse = z.infer<typeof deviceSelfResponseSchema>;
+
+export const updateDeviceRequestSchema = z
+  .object({
+    name: nameSchema.optional(),
+    dashboardId: z.uuid().nullable().optional(),
+  })
+  .refine((body) => body.name !== undefined || body.dashboardId !== undefined, {
+    message: "nothing to change",
+  });
+export type UpdateDeviceRequest = z.infer<typeof updateDeviceRequestSchema>;
