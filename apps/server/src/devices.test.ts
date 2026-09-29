@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createPairingResponseSchema,
   dashboardResponseSchema,
+  deviceDashboardResponseSchema,
   deviceListResponseSchema,
   deviceResponseSchema,
   deviceSelfResponseSchema,
@@ -21,6 +22,7 @@ import {
   type Database,
   type Sql,
 } from "@netrics/database";
+import { addDays, civilDate } from "@netrics/domain";
 
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
@@ -129,6 +131,23 @@ function approve(
     cookie,
     payload: { name: "Lobby TV", dashboardId, ...body },
   });
+}
+
+/** Pairs a new device and returns it with its credentials. */
+async function pair(
+  name = "Credential TV",
+  dashboard: string | null = dashboardId,
+) {
+  const pairing = await startPairing();
+  const approved = await approve(owner, {
+    code: pairing.code,
+    name,
+    dashboardId: dashboard,
+  });
+  const { device } = deviceResponseSchema.parse(approved.json());
+  const result = pollPairingResponseSchema.parse((await poll(pairing)).json());
+  if (result.status !== "approved") throw new Error("not approved");
+  return { device, ...result.credentials };
 }
 
 function expectError(response: InjectResponse, status: number, error: string) {
@@ -508,24 +527,6 @@ describe("devices", () => {
 });
 
 describe("device credentials", () => {
-  async function pair(
-    name = "Credential TV",
-    dashboard: string | null = dashboardId,
-  ) {
-    const pairing = await startPairing();
-    const approved = await approve(owner, {
-      code: pairing.code,
-      name,
-      dashboardId: dashboard,
-    });
-    const { device } = deviceResponseSchema.parse(approved.json());
-    const result = pollPairingResponseSchema.parse(
-      (await poll(pairing)).json(),
-    );
-    if (result.status !== "approved") throw new Error("not approved");
-    return { device, ...result.credentials };
-  }
-
   function me(token: string | null, cookie?: string) {
     return call("GET", "/v1/device/me", {
       ...(cookie ? { cookie } : {}),
@@ -702,5 +703,342 @@ describe("device credentials", () => {
       select metadata from audit_events
       where target = ${device.id} and action = 'device.updated'`;
     expect(event!.metadata).toEqual({ name: "Reception", dashboardId });
+  });
+});
+
+describe("device dashboard", () => {
+  let connectionId: string;
+  let brokenConnectionId: string;
+  let salesId: string;
+  let brokenId: string;
+
+  async function newConnection(authState = "ok"): Promise<string> {
+    const [row] = await admin`
+      insert into connections (workspace_id, connector_id, name)
+      values (${workspaceId}, 'demo', 'Demo') returning id`;
+    const id = row!.id as string;
+    await admin`
+      insert into connection_state (connection_id, workspace_id,
+        last_success_at, auth_state)
+      values (${id}, ${workspaceId}, now(), ${authState})`;
+    return id;
+  }
+
+  async function observe(connection: string, date: string, value: number) {
+    await admin`
+      insert into observations (workspace_id, connection_id,
+        metric_definition_id, dimensions, source_timestamp, value)
+      select ${workspaceId}, ${connection}, m.id,
+             ${admin.json({ resource: "site-1" })},
+             ${`${date}T00:00:00Z`}::timestamptz, ${value}
+      from metric_definitions m
+      where m.connector_id = 'demo' and m.key = 'demo.signups'`;
+  }
+
+  async function tileDashboard(name: string, tiles: unknown[]) {
+    const response = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/dashboards`,
+      { cookie: owner, payload: { name, tiles } },
+    );
+    expect(response.statusCode).toBe(200);
+    return dashboardResponseSchema.parse(response.json()).dashboard.id;
+  }
+
+  function getDashboard(
+    token: string | null,
+    options: { cookie?: string; etag?: string } = {},
+  ) {
+    return call("GET", "/v1/device/dashboard", {
+      ...(options.cookie ? { cookie: options.cookie } : {}),
+      headers: {
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(options.etag ? { "if-none-match": options.etag } : {}),
+      },
+    });
+  }
+
+  function heartbeat(token: string | null, payload: unknown, cookie?: string) {
+    return call("POST", "/v1/device/heartbeat", {
+      payload,
+      ...(cookie ? { cookie } : {}),
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    });
+  }
+
+  function reassign(deviceId: string, dashboard: string | null) {
+    return call("PATCH", `/v1/workspaces/${workspaceId}/devices/${deviceId}`, {
+      cookie: owner,
+      payload: { dashboardId: dashboard },
+    });
+  }
+
+  async function read(token: string) {
+    const response = await getDashboard(token);
+    expect(response.statusCode).toBe(200);
+    return {
+      response,
+      body: deviceDashboardResponseSchema.parse(response.json()),
+    };
+  }
+
+  beforeAll(async () => {
+    connectionId = await newConnection();
+    brokenConnectionId = await newConnection("auth_failed");
+    // Daily signups 1..14 for the last 14 days (UTC), today = 14.
+    const today = civilDate(new Date(), "UTC");
+    for (let i = 0; i < 14; i++) {
+      await observe(connectionId, addDays(today, -i), 14 - i);
+    }
+    await observe(brokenConnectionId, today, 5);
+    const signups = { metricKey: "demo.signups", period: "last_7_days" };
+    salesId = await tileDashboard("Sales wall", [
+      { ...signups, connectionId, title: "Sign-ups" },
+      { ...signups, connectionId, dimensions: { resource: "nowhere" } },
+    ]);
+    brokenId = await tileDashboard("Broken", [
+      { ...signups, connectionId: brokenConnectionId },
+    ]);
+  });
+
+  it("serves the assigned dashboard as tiles", async () => {
+    const { device, accessToken } = await pair("Sales TV", salesId);
+    const { response, body } = await read(accessToken);
+    expect(response.headers.etag).toBe(`"${body.version}"`);
+    expect(response.headers["cache-control"]).toBe("no-cache");
+    expect(body).toMatchObject({
+      refreshAfterSec: 60,
+      timeZone: "UTC",
+      dashboard: { id: salesId, name: "Sales wall" },
+    });
+    expect(body.tiles).toHaveLength(2);
+    // Last 7 days: 8..14 → 77. The 7 days before: 1..7 → 28.
+    expect(body.tiles[0]).toMatchObject({
+      label: "Sign-ups",
+      period: "last_7_days",
+      aggregation: "sum",
+      value: 77,
+      unit: "signups",
+      change: { previousValue: 28, delta: 49, ratio: 1.75 },
+      spark: [8, 9, 10, 11, 12, 13, 14],
+      status: "ok",
+    });
+    expect(body.tiles[0]!.updatedAt).not.toBeNull();
+    // No title: the metric name. A filter that matches nothing: no data.
+    expect(body.tiles[1]).toMatchObject({
+      label: "Signups",
+      value: null,
+      unit: "signups",
+      change: { previousValue: null, delta: null, ratio: null },
+      status: "no_data",
+    });
+    expect(body.tiles[1]!.spark).toEqual(Array(7).fill(null));
+    const [row] =
+      await admin`select last_seen_at from devices where id = ${device.id}`;
+    expect(row!.last_seen_at).not.toBeNull();
+  });
+
+  it("answers an empty dashboard when none is assigned", async () => {
+    const { accessToken } = await pair("Blank TV", null);
+    const { response, body } = await read(accessToken);
+    expect(body).toMatchObject({ dashboard: null, tiles: [] });
+    expect(response.headers.etag).toBe(`"${body.version}"`);
+  });
+
+  it("answers 304 while the ETag is current", async () => {
+    const { accessToken } = await pair("Cached TV", salesId);
+    const first = await read(accessToken);
+    const etag = first.response.headers.etag as string;
+    // Same content, same version.
+    expect((await read(accessToken)).body.version).toBe(first.body.version);
+
+    for (const header of [etag, `W/${etag}`, `"other", ${etag}`]) {
+      const cached = await getDashboard(accessToken, { etag: header });
+      expect(cached.statusCode).toBe(304);
+      expect(cached.body).toBe("");
+      expect(cached.headers.etag).toBe(etag);
+    }
+    expect(
+      (await getDashboard(accessToken, { etag: '"other"' })).statusCode,
+    ).toBe(200);
+
+    // New data changes the version.
+    const today = `${civilDate(new Date(), "UTC")}T00:00:00Z`;
+    const setToday = (value: number) => admin`
+      update observations set value = ${value}
+      where connection_id = ${connectionId}
+        and source_timestamp = ${today}::timestamptz`;
+    await setToday(114);
+    try {
+      const changed = await getDashboard(accessToken, { etag });
+      expect(changed.statusCode).toBe(200);
+      const body = deviceDashboardResponseSchema.parse(changed.json());
+      expect(changed.headers.etag).not.toBe(etag);
+      expect(body.tiles[0]!.value).toBe(177);
+    } finally {
+      await setToday(14);
+    }
+  });
+
+  it("follows a reassignment made in the web app", async () => {
+    const { device, accessToken } = await pair("Moving TV", salesId);
+    const before = await read(accessToken);
+    const etag = before.response.headers.etag as string;
+
+    expect((await reassign(device.id, brokenId)).statusCode).toBe(200);
+    const moved = await getDashboard(accessToken, { etag });
+    expect(moved.statusCode).toBe(200);
+    const body = deviceDashboardResponseSchema.parse(moved.json());
+    expect(body.dashboard).toEqual({ id: brokenId, name: "Broken" });
+    expect(moved.headers.etag).not.toBe(etag);
+
+    expect((await reassign(device.id, null)).statusCode).toBe(200);
+    expect((await read(accessToken)).body).toMatchObject({
+      dashboard: null,
+      tiles: [],
+    });
+  });
+
+  it("reports the connection's health per tile", async () => {
+    const { accessToken } = await pair("Health TV", brokenId);
+    // The data is there, but the connection needs new credentials.
+    expect((await read(accessToken)).body.tiles[0]).toMatchObject({
+      value: 5,
+      status: "auth_failed",
+    });
+
+    await admin`
+      update connection_state set auth_state = 'outage'
+      where connection_id = ${brokenConnectionId}`;
+    expect((await read(accessToken)).body.tiles[0]!.status).toBe("outage");
+
+    // Healthy again, but the last sync was long ago.
+    await admin`
+      update connection_state
+      set auth_state = 'ok', last_success_at = now() - interval '2 hours'
+      where connection_id = ${brokenConnectionId}`;
+    try {
+      expect((await read(accessToken)).body.tiles[0]!.status).toBe("stale");
+    } finally {
+      await admin`
+        update connection_state
+        set auth_state = 'auth_failed', last_success_at = now()
+        where connection_id = ${brokenConnectionId}`;
+    }
+  });
+
+  it("keeps serving the other tiles when one fails", async () => {
+    const id = await tileDashboard("Partly broken", [
+      { connectionId, metricKey: "demo.signups", period: "today" },
+      { connectionId, metricKey: "demo.signups", period: "last_7_days" },
+    ]);
+    // An aggregation the metric does not support makes the query fail.
+    await admin`
+      update dashboard_tiles set aggregation = 'avg'
+      where dashboard_id = ${id} and period = 'today'`;
+    const { accessToken } = await pair("Partial TV", id);
+    const { body } = await read(accessToken);
+    expect(body.tiles[0]).toMatchObject({
+      label: "demo.signups",
+      aggregation: "avg",
+      value: null,
+      unit: null,
+      spark: [],
+      status: "no_data",
+    });
+    expect(body.tiles[1]).toMatchObject({ value: 77, status: "ok" });
+  });
+
+  it("accepts only the device's access token", async () => {
+    const { refreshToken } = await pair("Locked TV", salesId);
+    const beat = { appVersion: "1.0.0", uptimeSeconds: 1 };
+    for (const response of [
+      await getDashboard(refreshToken),
+      await getDashboard(null, { cookie: owner }),
+      await getDashboard(null),
+      await heartbeat(refreshToken, beat),
+      await heartbeat(null, beat, owner),
+      await heartbeat(null, beat),
+    ]) {
+      expectError(response, 401, "unauthorized");
+    }
+  });
+
+  it("stores heartbeats and shows them in the device list", async () => {
+    const { device, accessToken } = await pair("Beating TV", salesId);
+    const listed = async () =>
+      deviceListResponseSchema
+        .parse(
+          (
+            await call("GET", `/v1/workspaces/${workspaceId}/devices`, {
+              cookie: owner,
+            })
+          ).json(),
+        )
+        .devices.find((entry) => entry.id === device.id)!;
+    expect((await listed()).heartbeat).toBeNull();
+
+    const response = await heartbeat(accessToken, {
+      appVersion: "1.2.3 (45)",
+      uptimeSeconds: 3600,
+      lastError: "  network timeout  ",
+    });
+    expect(response.statusCode).toBe(204);
+    expect(response.body).toBe("");
+    const [row] = await admin`
+      select app_version, uptime_seconds, last_error, last_heartbeat_at,
+             last_seen_at
+      from devices where id = ${device.id}`;
+    expect(row).toMatchObject({
+      app_version: "1.2.3 (45)",
+      uptime_seconds: 3600,
+      last_error: "network timeout",
+    });
+    expect(row!.last_heartbeat_at).not.toBeNull();
+    expect(row!.last_seen_at).not.toBeNull();
+    expect((await listed()).heartbeat).toMatchObject({
+      appVersion: "1.2.3 (45)",
+      uptimeSeconds: 3600,
+      lastError: "network timeout",
+    });
+
+    // A later heartbeat without an error clears it.
+    await heartbeat(accessToken, { appVersion: "1.2.4", uptimeSeconds: 5 });
+    expect((await listed()).heartbeat).toMatchObject({
+      appVersion: "1.2.4",
+      uptimeSeconds: 5,
+      lastError: null,
+    });
+  });
+
+  it("rejects malformed heartbeats", async () => {
+    const { accessToken } = await pair("Sloppy TV", null);
+    for (const payload of [
+      {},
+      { uptimeSeconds: 1 },
+      { appVersion: "", uptimeSeconds: 1 },
+      { appVersion: "x".repeat(51), uptimeSeconds: 1 },
+      { appVersion: "1.0", uptimeSeconds: -1 },
+      { appVersion: "1.0", uptimeSeconds: 1.5 },
+      { appVersion: "1.0", uptimeSeconds: "1" },
+      { appVersion: "1.0", uptimeSeconds: 1, lastError: "x".repeat(501) },
+    ]) {
+      expect((await heartbeat(accessToken, payload)).statusCode).toBe(400);
+    }
+  });
+
+  it("shuts out a revoked device", async () => {
+    const { device, accessToken } = await pair("Retired TV", salesId);
+    await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/devices/${device.id}/revoke`,
+      { cookie: owner },
+    );
+    expectError(
+      await heartbeat(accessToken, { appVersion: "1.0", uptimeSeconds: 1 }),
+      401,
+      "unauthorized",
+    );
+    expectError(await getDashboard(accessToken), 401, "unauthorized");
   });
 });

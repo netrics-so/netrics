@@ -38,6 +38,8 @@ export interface RouteDoc {
   admin?: boolean;
   /** Device API: a device access token (ADR 0011), no session. */
   device?: boolean;
+  /** Conditional GET: answers 304 when If-None-Match holds the ETag. */
+  notModified?: boolean;
 }
 
 function securityFor(doc: RouteDoc): Array<Record<string, string[]>> {
@@ -64,6 +66,11 @@ export function routeSchema(doc: RouteDoc) {
   const response: Record<number, z.ZodType> = doc.response
     ? { 200: doc.response }
     : { 204: z.null().describe("No content") };
+  if (doc.notModified) {
+    response[304] = z
+      .null()
+      .describe("Not modified: If-None-Match holds the current ETag");
+  }
   for (const status of errors) {
     response[status] = errorResponseSchema.describe(ERROR_DESCRIPTIONS[status]);
   }

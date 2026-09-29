@@ -90,6 +90,7 @@ export {
   listDevices,
   pruneStalePairings,
   readPairing,
+  recordDeviceHeartbeat,
   recordPairingFailure,
   revokeDevice,
   rotateDeviceRefreshToken,

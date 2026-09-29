@@ -395,3 +395,35 @@ export async function updateDevice(
     .returning();
   return row ?? null;
 }
+
+/**
+ * Stores a device's heartbeat and records the contact. False when the device
+ * does not exist or is revoked.
+ */
+export async function recordDeviceHeartbeat(
+  tx: Transaction,
+  workspaceId: string,
+  deviceId: string,
+  heartbeat: {
+    appVersion: string;
+    uptimeSeconds: number;
+    lastError: string | null;
+  },
+): Promise<boolean> {
+  const rows = await tx
+    .update(schema.devices)
+    .set({
+      ...heartbeat,
+      lastHeartbeatAt: sql`now()`,
+      lastSeenAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(schema.devices.workspaceId, workspaceId),
+        eq(schema.devices.id, deviceId),
+        isNull(schema.devices.revokedAt),
+      ),
+    )
+    .returning({ id: schema.devices.id });
+  return rows.length === 1;
+}
