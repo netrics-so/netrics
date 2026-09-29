@@ -387,6 +387,103 @@
         }
       }
     },
+    "/v1/device/token": {
+      "post": {
+        "summary": "Exchange a device refresh token for new credentials",
+        "tags": [
+          "devices"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "refreshToken"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "credentials": {
+                      "type": "object",
+                      "properties": {
+                        "accessToken": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "accessTokenExpiresAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "refreshToken": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "refreshTokenExpiresAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        }
+                      },
+                      "required": [
+                        "accessToken",
+                        "accessTokenExpiresAt",
+                        "refreshToken",
+                        "refreshTokenExpiresAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "credentials"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "summary": "Liveness (process up; no dependencies)",
@@ -651,7 +748,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -666,7 +763,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -763,7 +860,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -778,7 +875,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -928,7 +1025,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -943,7 +1040,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -1023,7 +1120,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -1038,7 +1135,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -1115,7 +1212,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -1130,7 +1227,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -1269,7 +1366,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -1284,7 +1381,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -1422,7 +1519,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -1437,7 +1534,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -1604,7 +1701,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -1619,7 +1716,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -1722,7 +1819,7 @@
             "description": "No content"
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -1737,7 +1834,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -1907,7 +2004,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -1922,7 +2019,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -2056,7 +2153,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -2071,7 +2168,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -2186,7 +2283,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -2201,7 +2298,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -2343,7 +2440,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -2358,7 +2455,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -2440,7 +2537,7 @@
             "description": "No content"
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -2455,7 +2552,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -2597,7 +2694,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -2612,7 +2709,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -2728,7 +2825,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -2743,7 +2840,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -3022,7 +3119,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -3037,7 +3134,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -3225,7 +3322,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -3240,7 +3337,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -3324,7 +3421,7 @@
             "description": "No content"
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -3339,7 +3436,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -3433,7 +3530,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -3448,7 +3545,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -3637,7 +3734,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -3652,7 +3749,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -3975,7 +4072,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -3990,7 +4087,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -4132,7 +4229,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -4147,7 +4244,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -4477,7 +4574,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -4492,7 +4589,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -4712,7 +4809,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -4727,7 +4824,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -5073,7 +5170,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -5088,7 +5185,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -5191,7 +5288,7 @@
             "description": "No content"
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -5206,7 +5303,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -5464,7 +5561,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -5479,7 +5576,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -5522,6 +5619,90 @@
                   ],
                   "additionalProperties": false,
                   "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/device/me": {
+      "get": {
+        "summary": "The calling device",
+        "tags": [
+          "devices"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "device": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "dashboardId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "dashboardId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "device"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -5635,7 +5816,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -5650,7 +5831,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -5863,7 +6044,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -5878,7 +6059,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -5942,6 +6123,232 @@
                   ],
                   "additionalProperties": false,
                   "description": "Too many requests; try again later"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/devices/{deviceId}": {
+      "patch": {
+        "summary": "Rename a device or change its dashboard",
+        "tags": [
+          "devices"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "dashboardId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "deviceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "device": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "dashboardId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "lastSeenAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "revokedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "dashboardId",
+                        "createdAt",
+                        "lastSeenAt",
+                        "revokedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "device"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
                 }
               }
             }
@@ -6060,7 +6467,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -6075,7 +6482,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -6257,7 +6664,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -6272,7 +6679,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -6529,7 +6936,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -6544,7 +6951,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -6763,7 +7170,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -6778,7 +7185,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -6972,7 +7379,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -6987,7 +7394,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -7337,7 +7744,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -7352,7 +7759,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -7648,7 +8055,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -7663,7 +8070,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -7745,7 +8152,7 @@
             "description": "No content"
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -7760,7 +8167,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -7862,7 +8269,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -7877,7 +8284,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }
@@ -8082,7 +8489,7 @@
             }
           },
           "401": {
-            "description": "No valid session",
+            "description": "No valid session or token",
             "content": {
               "application/json": {
                 "schema": {
@@ -8097,7 +8504,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "No valid session"
+                  "description": "No valid session or token"
                 }
               }
             }

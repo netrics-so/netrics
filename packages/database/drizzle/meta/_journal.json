@@ -141,6 +141,13 @@
       "when": 1790627990767,
       "tag": "0019_devices",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790629585399,
+      "tag": "0020_device_refresh_rotation",
+      "breakpoints": true
     }
   ]
 }

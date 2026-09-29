@@ -7,20 +7,24 @@ import {
   dashboardListResponseSchema,
   approveDeviceRequestSchema,
   dashboardResponseSchema,
+  deviceListResponseSchema,
   deviceResponseSchema,
   duplicateDashboardRequestSchema,
   metricQueryRequestSchema,
   metricQueryResponseSchema,
   replaceDashboardRequestSchema,
+  updateDeviceRequestSchema,
   workspaceMetricListResponseSchema,
   type CreateDashboardRequest,
   type DashboardListResponse,
   type ApproveDeviceRequest,
   type DashboardResponse,
+  type DeviceListResponse,
   type DeviceResponse,
   type MetricQueryRequest,
   type MetricQueryResponse,
   type ReplaceDashboardRequest,
+  type UpdateDeviceRequest,
   type WorkspaceMetricListResponse,
   acceptInvitationResponseSchema,
   connectionDetailResponseSchema,
@@ -132,6 +136,8 @@ export function apiErrorMessage(error: unknown): string {
         return "Someone else saved this dashboard in the meantime. Reload to see their changes, then edit again.";
       case "dashboard_not_found":
         return "This dashboard no longer exists.";
+      case "device_not_found":
+        return "That TV no longer exists.";
       case "pairing_not_found":
         return "That code is not valid. Check the code on the TV; codes expire after 10 minutes, so the TV may show a new one.";
       case "too_many_attempts":
@@ -689,5 +695,42 @@ export function approveDevice(
     "POST",
     `/v1/workspaces/${workspaceId}/devices/approve`,
     approveDeviceRequestSchema.parse(body),
+  );
+}
+
+export function listDevices(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<DeviceListResponse> {
+  return serverGet(
+    deviceListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/devices`,
+  );
+}
+
+/** Rename a TV or change the dashboard it shows. */
+export function updateDevice(
+  workspaceId: string,
+  deviceId: string,
+  body: UpdateDeviceRequest,
+): Promise<DeviceResponse> {
+  return browserSend(
+    deviceResponseSchema,
+    "PATCH",
+    `/v1/workspaces/${workspaceId}/devices/${deviceId}`,
+    updateDeviceRequestSchema.parse(body),
+  );
+}
+
+/** The TV loses access at once; revoking cannot be undone. */
+export function revokeDevice(
+  workspaceId: string,
+  deviceId: string,
+): Promise<DeviceResponse> {
+  return browserSend(
+    deviceResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/devices/${deviceId}/revoke`,
   );
 }

@@ -15,7 +15,7 @@ type ErrorStatus = 400 | 403 | 404 | 409 | 410 | 429 | 502;
 
 const ERROR_DESCRIPTIONS: Record<ErrorStatus | 401, string> = {
   400: "Invalid request",
-  401: "No valid session",
+  401: "No valid session or token",
   403: "Role does not allow this action",
   404: "Not found (also for workspaces the caller is not a member of)",
   409: "Conflict",
@@ -36,9 +36,14 @@ export interface RouteDoc {
   public?: boolean;
   /** Admin API: instance-admin session or a scoped service bearer token. */
   admin?: boolean;
+  /** Device API: a device access token (ADR 0011), no session. */
+  device?: boolean;
 }
 
 function securityFor(doc: RouteDoc): Array<Record<string, string[]>> {
+  if (doc.device) {
+    return [{ bearer: [] }];
+  }
   return doc.admin ? [{ session: [] }, { bearer: [] }] : [{ session: [] }];
 }
 

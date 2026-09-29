@@ -7,9 +7,13 @@ import {
   createPairingResponseSchema,
   deviceListResponseSchema,
   deviceResponseSchema,
+  deviceSelfResponseSchema,
   pollPairingRequestSchema,
   pollPairingResponseSchema,
+  refreshDeviceTokenRequestSchema,
+  refreshDeviceTokenResponseSchema,
   serverInfoResponseSchema,
+  updateDeviceRequestSchema,
 } from "@netrics/contracts";
 import type { Database } from "@netrics/database";
 import { can, type WorkspaceAction } from "@netrics/domain";
@@ -23,6 +27,7 @@ import {
   type WorkspaceAccess,
 } from "./access.js";
 import { routeSchema } from "./openapi.js";
+import { createRequireDevice } from "./principal.js";
 import { createRequireSession } from "./session.js";
 
 // HTTP layer for devices and pairing (ADR 0010, ADR 0011).
@@ -49,6 +54,7 @@ export function registerDeviceRoutes(
   deps: DeviceRouteDeps,
 ): void {
   const requireSession = createRequireSession(deps.authService);
+  const requireDevice = createRequireDevice({ db: deps.db });
   const devices = createDeviceService(deps);
 
   async function authorize(
@@ -136,6 +142,64 @@ export function registerDeviceRoutes(
     },
   );
 
+  // Public: the refresh token in the body is the credential.
+  app.post(
+    "/v1/device/token",
+    {
+      schema: routeSchema({
+        summary: "Exchange a device refresh token for new credentials",
+        tags: ["devices"],
+        body: refreshDeviceTokenRequestSchema,
+        response: refreshDeviceTokenResponseSchema,
+        public: true,
+      }),
+    },
+    async (request, reply) => {
+      const body = parseBody(refreshDeviceTokenRequestSchema, request, reply);
+      if (!body) {
+        return;
+      }
+      const credentials = unwrap(
+        await devices.refresh(body.refreshToken),
+        reply,
+      );
+      if (!credentials) {
+        return;
+      }
+      void reply.header("cache-control", "no-store");
+      return refreshDeviceTokenResponseSchema.parse({ credentials });
+    },
+  );
+
+  // Device API: device access tokens only (ADR 0011).
+  void app.register(
+    (scope, _opts, done) => {
+      scope.addHook("onRequest", requireDevice);
+
+      scope.get(
+        "/me",
+        {
+          schema: routeSchema({
+            summary: "The calling device",
+            tags: ["devices"],
+            response: deviceSelfResponseSchema,
+            device: true,
+          }),
+        },
+        async (request, reply) => {
+          const device = unwrap(await devices.self(request.device!), reply);
+          if (!device) {
+            return;
+          }
+          return deviceSelfResponseSchema.parse({ device });
+        },
+      );
+
+      done();
+    },
+    { prefix: "/v1/device" },
+  );
+
   void app.register(
     (scope, _opts, done) => {
       scope.addHook("onRequest", requireSession);
@@ -184,6 +248,45 @@ export function registerDeviceRoutes(
           const device = unwrap(
             await devices.approve(
               { workspaceId: access.workspaceId, userId: access.callerId },
+              body,
+            ),
+            reply,
+          );
+          if (!device) {
+            return;
+          }
+          return deviceResponseSchema.parse({ device });
+        },
+      );
+
+      scope.patch(
+        "/workspaces/:workspaceId/devices/:deviceId",
+        {
+          schema: routeSchema({
+            summary: "Rename a device or change its dashboard",
+            tags: ["devices"],
+            body: updateDeviceRequestSchema,
+            response: deviceResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "devices:manage");
+          if (!access) {
+            return;
+          }
+          const params = deviceParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "device_not_found");
+          }
+          const body = parseBody(updateDeviceRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const device = unwrap(
+            await devices.update(
+              { workspaceId: access.workspaceId, userId: access.callerId },
+              params.data.deviceId,
               body,
             ),
             reply,

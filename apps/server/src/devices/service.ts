@@ -4,7 +4,10 @@ import type {
   ApproveDeviceRequest,
   CreatePairingResponse,
   Device,
+  DeviceCredentials,
+  DeviceSelfResponse,
   PollPairingResponse,
+  UpdateDeviceRequest,
 } from "@netrics/contracts";
 import {
   approvePairing,
@@ -23,6 +26,8 @@ import {
   readPairing,
   recordPairingFailure,
   revokeDevice,
+  rotateDeviceRefreshToken,
+  updateDevice,
   withWorkspace,
   type Database,
   type DeviceRow,
@@ -41,6 +46,11 @@ export const PAIRING_RATE_LIMIT = { max: 10, windowMs: 10 * 60 * 1000 };
 export const APPROVAL_FAILURE_LIMIT = { max: 10, windowMs: 15 * 60 * 1000 };
 export const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000;
 export const REFRESH_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+/**
+ * How long a rotated refresh token may come back as a retry (the device
+ * lost the response) before it counts as reuse.
+ */
+export const REFRESH_RETRY_WINDOW_SECONDS = 5 * 60;
 /** Expired pairings and failed approvals are deleted after a day. */
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
@@ -48,15 +58,16 @@ const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 export const CODE_ALPHABET = "ACDEFGHJKMNPQRTUVWXY34679";
 const CODE_LENGTH = 8;
 
+type ErrorStatus = 400 | 401 | 404 | 410 | 429;
+
 export type Result<T> =
-  | { ok: true; value: T }
-  | { ok: false; status: 400 | 404 | 410 | 429; error: string };
+  { ok: true; value: T } | { ok: false; status: ErrorStatus; error: string };
 
 function ok<T>(value: T): Result<T> {
   return { ok: true, value };
 }
 
-function fail<T>(status: 400 | 404 | 410 | 429, error: string): Result<T> {
+function fail<T>(status: ErrorStatus, error: string): Result<T> {
   return { ok: false, status, error };
 }
 
@@ -312,6 +323,115 @@ export function createDeviceService(deps: DeviceServiceDeps) {
               metadata: { name: device.name },
             });
           }
+          return ok(presentDevice(device));
+        },
+      );
+    },
+    /**
+     * Exchanges a refresh token for a new pair. A refresh token that comes
+     * back after it was replaced revokes the device (ADR 0011).
+     */
+    async refresh(refreshToken: string): Promise<Result<DeviceCredentials>> {
+      const at = now();
+      const accessToken = generatePrincipalToken();
+      const nextRefreshToken = generatePrincipalToken();
+      const accessExpiresAt = new Date(at.getTime() + ACCESS_TOKEN_TTL_MS);
+      const refreshExpiresAt = new Date(at.getTime() + REFRESH_TOKEN_TTL_MS);
+      const outcome = await rotateDeviceRefreshToken(db, {
+        refreshHash: hashToken(refreshToken),
+        accessHash: hashToken(accessToken),
+        accessExpiresAt,
+        newRefreshHash: hashToken(nextRefreshToken),
+        refreshExpiresAt,
+        retryWindowSeconds: REFRESH_RETRY_WINDOW_SECONDS,
+      });
+      if (outcome.status === "reused") {
+        // Its tokens are already revoked; mark the device so it shows up.
+        await withWorkspace(
+          db,
+          { workspaceId: outcome.workspaceId },
+          async (tx) => {
+            if (await revokeDevice(tx, outcome.workspaceId, outcome.deviceId)) {
+              await insertAuditEvent(tx, {
+                workspaceId: outcome.workspaceId,
+                actorUserId: null,
+                action: "device.revoked",
+                target: outcome.deviceId,
+                metadata: { reason: "refresh_token_reuse" },
+              });
+            }
+          },
+        );
+        return fail(401, "unauthorized");
+      }
+      if (outcome.status === "invalid") {
+        return fail(401, "unauthorized");
+      }
+      return ok({
+        accessToken,
+        accessTokenExpiresAt: accessExpiresAt.toISOString(),
+        refreshToken: nextRefreshToken,
+        refreshTokenExpiresAt: refreshExpiresAt.toISOString(),
+      });
+    },
+
+    /** The calling device (after the device guard). */
+    async self(principal: {
+      workspaceId: string;
+      deviceId: string;
+    }): Promise<Result<DeviceSelfResponse["device"]>> {
+      const device = await withWorkspace(
+        db,
+        { workspaceId: principal.workspaceId },
+        (tx) => findDevice(tx, principal.workspaceId, principal.deviceId),
+      );
+      if (!device || device.revokedAt) {
+        return fail(401, "unauthorized");
+      }
+      return ok({
+        id: device.id,
+        name: device.name,
+        dashboardId: device.dashboardId,
+      });
+    },
+
+    /** Renames a device or assigns another dashboard. */
+    async update(
+      actor: { workspaceId: string; userId: string },
+      deviceId: string,
+      body: UpdateDeviceRequest,
+    ): Promise<Result<Device>> {
+      return withWorkspace(
+        db,
+        { workspaceId: actor.workspaceId, userId: actor.userId },
+        async (tx) => {
+          if (
+            body.dashboardId &&
+            !(await findDashboard(tx, actor.workspaceId, body.dashboardId))
+          ) {
+            return fail<Device>(404, "dashboard_not_found");
+          }
+          const device = await updateDevice(tx, actor.workspaceId, deviceId, {
+            ...(body.name !== undefined ? { name: body.name } : {}),
+            ...(body.dashboardId !== undefined
+              ? { dashboardId: body.dashboardId }
+              : {}),
+          });
+          if (!device) {
+            return fail<Device>(404, "device_not_found");
+          }
+          await insertAuditEvent(tx, {
+            workspaceId: actor.workspaceId,
+            actorUserId: actor.userId,
+            action: "device.updated",
+            target: deviceId,
+            metadata: {
+              ...(body.name !== undefined ? { name: body.name } : {}),
+              ...(body.dashboardId !== undefined
+                ? { dashboardId: body.dashboardId }
+                : {}),
+            },
+          });
           return ok(presentDevice(device));
         },
       );

@@ -767,3 +767,23 @@ a.tile-stale:hover {
 .checkbox input {
   margin-top: 3px;
 }
+
+/* ─── TVs on the workspace page (#56) ────────────────────────────────── */
+
+.device-list li {
+  padding: 12px 0;
+  border-bottom: 1px solid #1b1f26;
+}
+
+.device-list li:last-child {
+  border-bottom: none;
+}
+
+.device-list form.inline {
+  margin-top: 8px;
+}
+
+.device-list .actions {
+  align-items: center;
+  margin: 8px 0 0;
+}

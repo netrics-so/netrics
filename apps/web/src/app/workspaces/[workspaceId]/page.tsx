@@ -5,11 +5,13 @@ import { can } from "@netrics/domain";
 
 import { CreateDashboardForm } from "./create-dashboard-form";
 import { CreateProjectForm } from "./create-project-form";
+import { DeviceControls } from "./device-controls";
 import { HealthBadge } from "./health-badge";
 import {
   getWorkspace,
   listConnections,
   listDashboards,
+  listDevices,
   listProjects,
   listWorkspaces,
 } from "@/lib/api";
@@ -39,6 +41,18 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
   const { connections } = await listConnections(cookieHeader, workspaceId);
   const { dashboards } = await listDashboards(cookieHeader, workspaceId);
   const role = membership.role;
+  // Active TVs first, revoked ones after (the sort is stable).
+  const devices = can(role, "devices:view")
+    ? (await listDevices(cookieHeader, workspaceId)).devices.toSorted(
+        (a, b) => Number(a.revokedAt !== null) - Number(b.revokedAt !== null),
+      )
+    : null;
+  const dashboardNames = new Map(dashboards.map((d) => [d.id, d.name]));
+  const connectTv = can(role, "devices:manage") ? (
+    <p>
+      <Link href="/devices/approve">Connect a TV</Link>
+    </p>
+  ) : null;
 
   return (
     <>
@@ -97,6 +111,40 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
           <CreateDashboardForm workspaceId={workspaceId} />
         ) : null}
       </div>
+
+      {devices ? (
+        <div className="card">
+          <h2>TVs</h2>
+          {devices.length === 0 ? (
+            <p className="muted">No TVs yet.</p>
+          ) : (
+            <ul className="workspace-list device-list">
+              {devices.map((device) => (
+                <li key={device.id}>
+                  <strong>{device.name}</strong>{" "}
+                  {device.revokedAt ? (
+                    <span className="role-badge">Revoked</span>
+                  ) : null}{" "}
+                  <span className="muted">
+                    {(device.dashboardId &&
+                      dashboardNames.get(device.dashboardId)) ??
+                      "No dashboard"}{" "}
+                    · last seen {relativeTime(device.lastSeenAt)}
+                  </span>
+                  {can(role, "devices:manage") && !device.revokedAt ? (
+                    <DeviceControls
+                      workspaceId={workspaceId}
+                      device={device}
+                      dashboards={dashboards}
+                    />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+          {connectTv}
+        </div>
+      ) : null}
 
       <div className="card">
         <h2>Connections</h2>

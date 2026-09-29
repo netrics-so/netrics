@@ -300,3 +300,98 @@ export async function pruneStalePairings(
       where created_at < ${cutoff}::timestamptz
       limit ${batch})`);
 }
+
+export type RefreshOutcome =
+  | {
+      status: "rotated";
+      deviceId: string;
+      workspaceId: string;
+      deviceName: string;
+    }
+  | { status: "reused"; deviceId: string; workspaceId: string }
+  | { status: "invalid" };
+
+/**
+ * Exchanges a refresh token for a new pair (hashes only) through
+ * rotate_device_refresh_token(); see migration 0020 for the rules.
+ */
+export async function rotateDeviceRefreshToken(
+  db: Executor,
+  input: {
+    refreshHash: string;
+    accessHash: string;
+    accessExpiresAt: Date;
+    newRefreshHash: string;
+    refreshExpiresAt: Date;
+    retryWindowSeconds: number;
+  },
+): Promise<RefreshOutcome> {
+  const rows = await db.execute<{
+    status: "rotated" | "reused" | "invalid";
+    device_id: string | null;
+    workspace_id: string | null;
+    device_name: string | null;
+  }>(sql`select * from rotate_device_refresh_token(
+    ${input.refreshHash},
+    ${input.accessHash},
+    ${input.accessExpiresAt.toISOString()}::timestamptz,
+    ${input.newRefreshHash},
+    ${input.refreshExpiresAt.toISOString()}::timestamptz,
+    make_interval(secs => ${input.retryWindowSeconds})
+  )`);
+  const row = rows[0];
+  if (row?.status === "rotated") {
+    return {
+      status: "rotated",
+      deviceId: row.device_id!,
+      workspaceId: row.workspace_id!,
+      deviceName: row.device_name!,
+    };
+  }
+  if (row?.status === "reused") {
+    return {
+      status: "reused",
+      deviceId: row.device_id!,
+      workspaceId: row.workspace_id!,
+    };
+  }
+  return { status: "invalid" };
+}
+
+/** Records that the device called in, at most once a minute. */
+export async function touchDevice(
+  tx: Transaction,
+  workspaceId: string,
+  deviceId: string,
+): Promise<void> {
+  await tx
+    .update(schema.devices)
+    .set({ lastSeenAt: sql`now()` })
+    .where(
+      and(
+        eq(schema.devices.workspaceId, workspaceId),
+        eq(schema.devices.id, deviceId),
+        sql`(${schema.devices.lastSeenAt} is null or ${schema.devices.lastSeenAt} < now() - interval '1 minute')`,
+      ),
+    );
+}
+
+/** Renames a device or changes its dashboard; null when it does not exist. */
+export async function updateDevice(
+  tx: Transaction,
+  workspaceId: string,
+  deviceId: string,
+  changes: { name?: string; dashboardId?: string | null },
+): Promise<DeviceRow | null> {
+  const [row] = await tx
+    .update(schema.devices)
+    .set(changes)
+    .where(
+      and(
+        eq(schema.devices.workspaceId, workspaceId),
+        eq(schema.devices.id, deviceId),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
