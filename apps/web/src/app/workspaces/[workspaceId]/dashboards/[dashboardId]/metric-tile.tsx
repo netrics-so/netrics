@@ -10,17 +10,9 @@ import type {
   WorkspaceMetric,
 } from "@netrics/contracts";
 
+import { TileNotice, TileView } from "@/components/tile-view";
 import { apiErrorMessage, queryMetric } from "@/lib/api";
-import {
-  AGGREGATION_LABELS,
-  COMPARISON_LABELS,
-  PERIOD_LABELS,
-  formatChange,
-  formatValue,
-} from "@/lib/format-metric";
-import { relativeTime } from "@/lib/relative-time";
-
-import { Sparkline } from "./sparkline";
+import { TILE_NOTICES, lastSyncNotice } from "@/lib/tile-status";
 
 export interface TileConnection {
   name: string;
@@ -36,27 +28,25 @@ const MIN_STALE_MS = 15 * 60 * 1000;
 
 function staleness(connection: TileConnection | undefined): string | null {
   if (!connection) {
-    return "Connection removed";
+    return TILE_NOTICES.removed;
   }
   const { state } = connection;
   if (state.health === "auth_failed") {
-    return "Connection needs new credentials";
+    return TILE_NOTICES.authFailed;
   }
   if (state.health === "outage") {
-    return "Source unreachable";
+    return TILE_NOTICES.outage;
   }
   if (!state.lastSuccessAt) {
-    return "Waiting for the first sync";
+    return TILE_NOTICES.firstSync;
   }
   const age = Date.now() - new Date(state.lastSuccessAt).getTime();
   const limit = Math.max(
     STALE_AFTER_INTERVALS * state.pollIntervalSeconds * 1000,
     MIN_STALE_MS,
   );
-  return age > limit ? `Last sync ${relativeTime(state.lastSuccessAt)}` : null;
+  return age > limit ? lastSyncNotice(state.lastSuccessAt) : null;
 }
-
-const ARROWS = { up: "▲", down: "▼", flat: "■" } as const;
 
 export function MetricTile({
   workspaceId,
@@ -113,85 +103,63 @@ export function MetricTile({
   const label = tile.title ?? metric?.name ?? tile.metricKey;
   const unit = data?.metric.unit ?? metric?.unit ?? "";
   const stale = staleness(connection);
-  const change = data ? formatChange(data.delta, data.ratio, unit) : null;
 
   return (
-    <article
-      className={variant === "tv" ? "tile tile--tv" : "tile"}
-      aria-busy={loading}
-    >
-      <header className="tile-header">
-        <h3 className="tile-label">{label}</h3>
-        <span className="tile-period">
-          {PERIOD_LABELS[tile.period]} · {AGGREGATION_LABELS[tile.aggregation]}
-        </span>
-      </header>
-
-      {data ? (
+    <TileView
+      variant={variant}
+      label={label}
+      period={tile.period}
+      aggregation={tile.aggregation}
+      busy={loading}
+      reading={
+        data
+          ? {
+              value: data.value,
+              unit,
+              delta: data.delta,
+              ratio: data.ratio,
+              series: data.series,
+              timeZone: data.timeZone,
+            }
+          : null
+      }
+      fallback={
+        loading ? (
+          <div className="tile-value tile-placeholder" aria-hidden="true">
+            …
+          </div>
+        ) : (
+          <div className="tile-error" role="alert">
+            <p>This tile could not load.</p>
+            {error ? <p className="muted">{error}</p> : null}
+            <button type="button" onClick={() => void load()}>
+              Retry
+            </button>
+          </div>
+        )
+      }
+      footer={
         <>
-          <div className="tile-value">{formatValue(data.value, unit)}</div>
-          {change ? (
-            <div className={`tile-change ${change.direction}`}>
-              <span aria-hidden="true">{ARROWS[change.direction]}</span>{" "}
-              {change.text}{" "}
-              <span className="tile-comparison">
-                {COMPARISON_LABELS[tile.period]}
-              </span>
-            </div>
-          ) : (
-            <div className="tile-change flat">
-              <span className="tile-comparison">
-                {data.value === null
-                  ? "No data for this period yet"
-                  : `No data to compare ${COMPARISON_LABELS[tile.period]}`}
-              </span>
-            </div>
-          )}
-          <Sparkline
-            series={data.series}
-            unit={unit}
-            hourly={tile.period === "today"}
-            timeZone={data.timeZone}
-          />
+          <span className="muted">{connection?.name ?? "—"}</span>
+          {stale ? (
+            connection && variant === "default" ? (
+              // Leads to the connection page, where the problem can be fixed.
+              <Link
+                className="tile-stale"
+                title="The numbers may be out of date"
+                href={`/workspaces/${workspaceId}/connections/${tile.connectionId}`}
+              >
+                <span aria-hidden="true">⚠</span> {stale}
+              </Link>
+            ) : (
+              <TileNotice>{stale}</TileNotice>
+            )
+          ) : null}
+          {data && error ? (
+            <TileNotice title={error}>Refresh failed</TileNotice>
+          ) : null}
         </>
-      ) : loading ? (
-        <div className="tile-value tile-placeholder" aria-hidden="true">
-          …
-        </div>
-      ) : (
-        <div className="tile-error" role="alert">
-          <p>This tile could not load.</p>
-          {error ? <p className="muted">{error}</p> : null}
-          <button type="button" onClick={() => void load()}>
-            Retry
-          </button>
-        </div>
-      )}
-
-      <footer className="tile-footer">
-        <span className="muted">{connection?.name ?? "—"}</span>
-        {stale ? (
-          connection && variant === "default" ? (
-            // Leads to the connection page, where the problem can be fixed.
-            <Link
-              className="tile-stale"
-              title="The numbers may be out of date"
-              href={`/workspaces/${workspaceId}/connections/${tile.connectionId}`}
-            >
-              <span aria-hidden="true">⚠</span> {stale}
-            </Link>
-          ) : (
-            <span className="tile-stale" title="The numbers may be out of date">
-              <span aria-hidden="true">⚠</span> {stale}
-            </span>
-          )
-        ) : null}
-        {data && error ? (
-          <span className="tile-stale" title={error}>
-            <span aria-hidden="true">⚠</span> Refresh failed
-          </span>
-        ) : null}
-      </footer>
-    </article>
+      }
+    />
   );
 }

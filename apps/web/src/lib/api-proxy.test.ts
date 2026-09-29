@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   clientIp,
   proxyRequestHeaders,
   proxyResponseHeaders,
+  proxyToApi,
 } from "./api-proxy";
 
 describe("api proxy headers", () => {
@@ -86,5 +87,56 @@ describe("api proxy headers", () => {
     expect(clientIp(incoming, 1, "x-real-ip")).toBe("198.51.100.7");
     const headers = proxyRequestHeaders(incoming, 1, "x-real-ip");
     expect(headers.get("x-forwarded-for")).toBe("198.51.100.7");
+  });
+});
+
+describe("api proxy requests", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("passes device credentials and ETags through, and 304 back (#59)", async () => {
+    vi.stubEnv("NETRICS_API_URL", "http://api.internal:3001");
+    const upstream = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(null, {
+          status: 304,
+          headers: { etag: '"v1"', "cache-control": "no-cache" },
+        }),
+    );
+    vi.stubGlobal("fetch", upstream);
+
+    const response = await proxyToApi(
+      new Request("https://netrics.example.com/v1/device/dashboard", {
+        headers: {
+          authorization: "Bearer device-token",
+          "if-none-match": '"v1"',
+        },
+      }),
+    );
+
+    const [target, init] = upstream.mock.calls[0]!;
+    expect(String(target)).toBe("http://api.internal:3001/v1/device/dashboard");
+    const sent = new Headers(init!.headers);
+    expect(sent.get("authorization")).toBe("Bearer device-token");
+    expect(sent.get("if-none-match")).toBe('"v1"');
+    expect(response.status).toBe(304);
+    expect(response.body).toBeNull();
+    expect(response.headers.get("etag")).toBe('"v1"');
+  });
+
+  it("answers 502 when the API cannot be reached", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("fetch failed");
+      }),
+    );
+    const response = await proxyToApi(
+      new Request("https://netrics.example.com/v1/device/dashboard"),
+    );
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "api_unreachable" });
   });
 });

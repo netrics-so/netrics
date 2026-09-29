@@ -5,7 +5,8 @@ import { useState, type PointerEvent } from "react";
 import { formatValue } from "@/lib/format-metric";
 
 export interface SparkPoint {
-  bucket: string;
+  /** The bucket's start; absent when only the values are known (devices). */
+  bucket?: string;
   value: number | null;
 }
 
@@ -18,7 +19,14 @@ const PAD = 3;
  * days. Daily metrics' buckets are reporting dates stamped at UTC midnight
  * (ADR 0008), so those are read in UTC.
  */
-function bucketLabel(bucket: string, hourly: boolean, timeZone: string) {
+function bucketLabel(
+  bucket: string | undefined,
+  hourly: boolean,
+  timeZone: string,
+): string | null {
+  if (bucket === undefined) {
+    return null;
+  }
   const reportingDate = !hourly && bucket.endsWith("T00:00:00.000Z");
   return new Intl.DateTimeFormat("en-US", {
     timeZone: reportingDate ? "UTC" : timeZone,
@@ -95,9 +103,13 @@ export function Sparkline({
   }
 
   const hovered = hover === null ? null : series[hover]!;
+  const lastLabel = bucketLabel(last.bucket, hourly, timeZone);
   const summary =
     `Trend from ${formatValue(min, unit)} to ${formatValue(max, unit)}, ` +
-    `latest ${formatValue(last.value, unit)} (${bucketLabel(last.bucket, hourly, timeZone)}).`;
+    `latest ${formatValue(last.value, unit)}${lastLabel ? ` (${lastLabel})` : ""}.`;
+  const hoveredLabel = hovered
+    ? bucketLabel(hovered.bucket, hourly, timeZone)
+    : null;
 
   return (
     <div className="sparkline">
@@ -142,7 +154,7 @@ export function Sparkline({
       </div>
       <div className="sparkline-readout" aria-hidden="true">
         {hovered
-          ? `${bucketLabel(hovered.bucket, hourly, timeZone)}: ${formatValue(hovered.value, unit)}`
+          ? `${hoveredLabel ? `${hoveredLabel}: ` : ""}${formatValue(hovered.value, unit)}`
           : " "}
       </div>
     </div>

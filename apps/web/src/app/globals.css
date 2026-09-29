@@ -755,6 +755,63 @@ a.tile-stale:hover {
   font-size: min(7cqh, 4.6cqw);
 }
 
+/* ─── Browser kiosk (#59) ───────────────────────────────────────────── */
+
+/* Pairing and waiting screens: one calm message in the middle. */
+.kiosk-message {
+  align-items: center;
+  justify-content: center;
+  gap: 3vh;
+  text-align: center;
+}
+
+.kiosk-title {
+  margin: 0;
+  font-size: 5vh;
+  font-weight: 600;
+}
+
+.kiosk-text {
+  margin: 0;
+  max-width: 70vw;
+  font-size: 3vh;
+  color: #8a919c;
+}
+
+.kiosk-text strong {
+  color: #e6e9ed;
+  font-weight: 500;
+}
+
+.kiosk-url {
+  overflow-wrap: anywhere;
+}
+
+/* Read from across the room: large, monospaced, easy to type. */
+.kiosk-code {
+  margin: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 14vh;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #e6e9ed;
+}
+
+.kiosk-code--pending {
+  color: #3a404a;
+}
+
+/* Unobtrusive: the last numbers stay the focus while the API is away. */
+.kiosk-offline {
+  font-size: 1.8vh;
+  color: #e3b341;
+}
+
+.kiosk-message .kiosk-offline {
+  display: block;
+  margin-top: 1.6vh;
+}
+
 /* Inline checkbox with its label text (e.g. workspace creation). */
 .checkbox {
   display: flex;
