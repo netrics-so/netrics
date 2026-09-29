@@ -1,12 +1,11 @@
 import Foundation
 
 /**
- * The hosted service ("netrics cloud"). This is the web app's Railway
- * address for now; it becomes the hosted domain once that is live. The
+ * The hosted service ("netrics cloud"): the web app's public address. The
  * device API is served under /v1 of the same origin.
  */
 public enum NetricsCloud {
-    public static let baseURL = URL(string: "https://netrics-web.up.railway.app")!
+    public static let baseURL = URL(string: "https://app.netrics.so")!
 }
 
 public enum ServerKind: String, Codable, Sendable, Equatable {
