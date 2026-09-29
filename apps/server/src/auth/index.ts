@@ -72,6 +72,10 @@ export function createAuthService(
       customRules: AUTH_RATE_LIMIT_RULES,
     },
     advanced: {
+      // better-auth skips its origin and callback URL checks when NODE_ENV
+      // is "test"; keep them on so the test suite exercises what production
+      // runs (a reset link may only lead back to WEB_ORIGIN, for instance).
+      disableOriginCheck: false,
       // Only the IP the bridge below resolved (see ./rate-limit.ts); also
       // what session.ipAddress and the auth.login audit event record.
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
@@ -86,6 +90,10 @@ export function createAuthService(
       // Verification cannot gate sign-in until invitations require verified
       // addresses (#27); verification emails are still sent when SMTP exists.
       requireEmailVerification: false,
+      // Stated as "1 hour" in the reset email and on the web pages, and the
+      // same minimum the web forms enforce; keep them in step.
+      minPasswordLength: 8,
+      resetPasswordTokenExpiresIn: 60 * 60,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => {
         await mailer.sendPasswordResetEmail({ to: user.email, url });
