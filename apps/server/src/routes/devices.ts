@@ -5,6 +5,8 @@ import {
   DEVICE_API_VERSION,
   approveDeviceRequestSchema,
   createPairingResponseSchema,
+  deviceDashboardResponseSchema,
+  deviceHeartbeatRequestSchema,
   deviceListResponseSchema,
   deviceResponseSchema,
   deviceSelfResponseSchema,
@@ -40,6 +42,17 @@ export interface DeviceRouteDeps {
 }
 
 const deviceParamsSchema = z.object({ deviceId: z.uuid() });
+
+/** Whether an If-None-Match header names this entity tag. */
+export function matchesEtag(header: string | undefined, etag: string): boolean {
+  if (!header) {
+    return false;
+  }
+  return header
+    .split(",")
+    .map((tag) => tag.trim().replace(/^W\//, ""))
+    .some((tag) => tag === "*" || tag === etag);
+}
 
 function unwrap<T>(result: Result<T>, reply: FastifyReply): T | null {
   if (!result.ok) {
@@ -192,6 +205,60 @@ export function registerDeviceRoutes(
             return;
           }
           return deviceSelfResponseSchema.parse({ device });
+        },
+      );
+
+      scope.get(
+        "/dashboard",
+        {
+          schema: routeSchema({
+            summary:
+              "The device's dashboard as tiles; send If-None-Match with the " +
+              "last ETag to get 304 when nothing changed",
+            tags: ["devices"],
+            response: deviceDashboardResponseSchema,
+            device: true,
+            notModified: true,
+          }),
+        },
+        async (request, reply) => {
+          const dashboard = unwrap(
+            await devices.dashboard(request.device!, request.log),
+            reply,
+          );
+          if (!dashboard) {
+            return;
+          }
+          const etag = `"${dashboard.version}"`;
+          // Private data: caches must ask again every time.
+          void reply.header("etag", etag).header("cache-control", "no-cache");
+          if (matchesEtag(request.headers["if-none-match"], etag)) {
+            return reply.code(304).send();
+          }
+          return deviceDashboardResponseSchema.parse(dashboard);
+        },
+      );
+
+      scope.post(
+        "/heartbeat",
+        {
+          schema: routeSchema({
+            summary: "Report the device's app version, uptime and last error",
+            tags: ["devices"],
+            body: deviceHeartbeatRequestSchema,
+            device: true,
+          }),
+        },
+        async (request, reply) => {
+          const body = parseBody(deviceHeartbeatRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const result = await devices.heartbeat(request.device!, body);
+          if (!result.ok) {
+            return sendError(reply, result.status, result.error);
+          }
+          return reply.code(204).send();
         },
       );
 

@@ -5,6 +5,8 @@ import type {
   CreatePairingResponse,
   Device,
   DeviceCredentials,
+  DeviceDashboardResponse,
+  DeviceHeartbeatRequest,
   DeviceSelfResponse,
   PollPairingResponse,
   UpdateDeviceRequest,
@@ -24,6 +26,7 @@ import {
   listDevices,
   pruneStalePairings,
   readPairing,
+  recordDeviceHeartbeat,
   recordPairingFailure,
   revokeDevice,
   rotateDeviceRefreshToken,
@@ -34,6 +37,7 @@ import {
 } from "@netrics/database";
 
 import { generatePrincipalToken, generateToken, hashToken } from "../tokens.js";
+import { buildDeviceDashboard, type TileErrorLogger } from "./dashboard.js";
 
 // Device pairing and credentials (ADR 0011).
 
@@ -92,8 +96,20 @@ export function presentDevice(row: DeviceRow): Device {
     createdAt: row.createdAt.toISOString(),
     lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
     revokedAt: row.revokedAt?.toISOString() ?? null,
+    heartbeat:
+      row.lastHeartbeatAt && row.appVersion !== null
+        ? {
+            at: row.lastHeartbeatAt.toISOString(),
+            appVersion: row.appVersion,
+            uptimeSeconds: row.uptimeSeconds ?? 0,
+            lastError: row.lastError,
+          }
+        : null,
   };
 }
+
+/** Longest device-reported error kept. */
+export const MAX_DEVICE_ERROR_LENGTH = 500;
 
 export interface DeviceServiceDeps {
   db: Database;
@@ -393,6 +409,55 @@ export function createDeviceService(deps: DeviceServiceDeps) {
         name: device.name,
         dashboardId: device.dashboardId,
       });
+    },
+
+    /** The read model of the calling device's dashboard (ADR 0007). */
+    async dashboard(
+      principal: { workspaceId: string; deviceId: string },
+      log?: TileErrorLogger,
+    ): Promise<Result<DeviceDashboardResponse>> {
+      return withWorkspace(
+        db,
+        { workspaceId: principal.workspaceId },
+        async (tx) => {
+          const device = await findDevice(
+            tx,
+            principal.workspaceId,
+            principal.deviceId,
+          );
+          if (!device || device.revokedAt) {
+            return fail<DeviceDashboardResponse>(401, "unauthorized");
+          }
+          return ok(
+            await buildDeviceDashboard(
+              tx,
+              principal.workspaceId,
+              device.dashboardId,
+              { now: now(), ...(log ? { log } : {}) },
+            ),
+          );
+        },
+      );
+    },
+
+    /** Stores the device's heartbeat. The error text is kept short. */
+    async heartbeat(
+      principal: { workspaceId: string; deviceId: string },
+      body: DeviceHeartbeatRequest,
+    ): Promise<Result<null>> {
+      const lastError =
+        body.lastError?.trim().slice(0, MAX_DEVICE_ERROR_LENGTH) || null;
+      const stored = await withWorkspace(
+        db,
+        { workspaceId: principal.workspaceId },
+        (tx) =>
+          recordDeviceHeartbeat(tx, principal.workspaceId, principal.deviceId, {
+            appVersion: body.appVersion,
+            uptimeSeconds: body.uptimeSeconds,
+            lastError,
+          }),
+      );
+      return stored ? ok(null) : fail(401, "unauthorized");
     },
 
     /** Renames a device or assigns another dashboard. */

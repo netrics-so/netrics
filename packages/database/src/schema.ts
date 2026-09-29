@@ -613,6 +613,11 @@ export const devices = pgTable(
       .defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    // The latest heartbeat (#57), as the device reported it.
+    appVersion: text("app_version"),
+    uptimeSeconds: integer("uptime_seconds"),
+    lastError: text("last_error"),
+    lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
   },
   (table) => [
     unique("devices_id_workspace_unique").on(table.id, table.workspaceId),

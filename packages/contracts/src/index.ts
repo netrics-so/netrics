@@ -746,6 +746,16 @@ export const deviceSchema = z.object({
   createdAt: z.iso.datetime(),
   lastSeenAt: z.iso.datetime().nullable(),
   revokedAt: z.iso.datetime().nullable(),
+  /** The latest heartbeat; null until the device sends one. */
+  heartbeat: z
+    .object({
+      at: z.iso.datetime(),
+      appVersion: z.string(),
+      uptimeSeconds: z.number().int().nonnegative(),
+      /** As the device reported it; untrusted text. */
+      lastError: z.string().nullable(),
+    })
+    .nullable(),
 });
 export type Device = z.infer<typeof deviceSchema>;
 
@@ -790,3 +800,74 @@ export const updateDeviceRequestSchema = z
     message: "nothing to change",
   });
 export type UpdateDeviceRequest = z.infer<typeof updateDeviceRequestSchema>;
+
+// The device dashboard read model and heartbeat (ADR 0007, #57).
+
+/** How often a device should ask again (ADR 0007: 60 s refresh target). */
+export const DEVICE_REFRESH_AFTER_SECONDS = 60;
+
+/**
+ * How a tile's numbers can be trusted:
+ * ok (fresh), stale (last sync too long ago, or none yet), auth_failed and
+ * outage (the connection is failing), no_data (nothing to show).
+ */
+export const deviceTileStatusSchema = z.enum([
+  "ok",
+  "stale",
+  "auth_failed",
+  "outage",
+  "no_data",
+]);
+export type DeviceTileStatus = z.infer<typeof deviceTileStatusSchema>;
+
+export const deviceTileSchema = z.object({
+  id: z.uuid(),
+  /** The tile title, else the metric name. */
+  label: z.string().min(1),
+  period: metricPeriodSchema,
+  aggregation: metricAggregationSchema,
+  /** Raw number; the client formats it with `unit`. Null without data. */
+  value: z.number().nullable(),
+  /**
+   * E.g. "count", "percent", or "<ISO 4217>_minor" for currency amounts in
+   * integer minor units (ADR 0008). Null when the tile could not load.
+   */
+  unit: z.string().nullable(),
+  /** Against the previous period of the same length. */
+  change: z.object({
+    previousValue: z.number().nullable(),
+    /** value − previousValue; null when there is nothing to compare. */
+    delta: z.number().nullable(),
+    /** delta ÷ |previousValue|; null against zero or missing data. */
+    ratio: z.number().nullable(),
+  }),
+  /** One point per bucket of the current period, oldest first; null = gap. */
+  spark: z.array(z.number().nullable()),
+  status: deviceTileStatusSchema,
+  /** The connection's last successful sync. */
+  updatedAt: z.iso.datetime().nullable(),
+});
+export type DeviceTile = z.infer<typeof deviceTileSchema>;
+
+export const deviceDashboardResponseSchema = z.object({
+  /** Hash of the content below; also the ETag. */
+  version: z.string().min(1),
+  refreshAfterSec: z.number().int().positive(),
+  /** The workspace's time zone, which the buckets follow. */
+  timeZone: z.string().min(1),
+  /** Null when no dashboard is assigned; tiles is then empty. */
+  dashboard: z.object({ id: z.uuid(), name: z.string().min(1) }).nullable(),
+  tiles: z.array(deviceTileSchema),
+});
+export type DeviceDashboardResponse = z.infer<
+  typeof deviceDashboardResponseSchema
+>;
+
+export const deviceHeartbeatRequestSchema = z.object({
+  appVersion: z.string().trim().min(1).max(50),
+  uptimeSeconds: z.number().int().min(0).max(2_147_483_647),
+  lastError: z.string().max(500).nullable().optional(),
+});
+export type DeviceHeartbeatRequest = z.infer<
+  typeof deviceHeartbeatRequestSchema
+>;

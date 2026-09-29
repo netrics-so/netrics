@@ -148,6 +148,13 @@
       "when": 1790629585399,
       "tag": "0020_device_refresh_rotation",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790658939765,
+      "tag": "0021_device_heartbeat",
+      "breakpoints": true
     }
   ]
 }

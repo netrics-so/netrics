@@ -15,7 +15,9 @@ import type {
 
 const DEFAULT_POLL_INTERVAL_SECONDS = 300;
 
-function toStateView(state: ConnectionStateRow | null): ConnectionStateView {
+export function toStateView(
+  state: ConnectionStateRow | null,
+): ConnectionStateView {
   const authState: ConnectionAuthState = state
     ? (state.authState as ConnectionAuthState)
     : "ok";
