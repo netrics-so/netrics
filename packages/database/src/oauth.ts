@@ -300,4 +300,33 @@ export async function releaseOAuthGrant(
     sql`select oauth_release_grant(${input.provider}, ${input.accountSub}, ${input.connectionId}::uuid) as shared`,
   );
   return rows[0]?.shared === true;
+ * Whether any connection on the instance holds a grant of this provider
+ * account (SECURITY DEFINER, migration 0024; a boolean only). The callback
+ * revokes a refused grant only when this is false, so it never stops
+ * another connection's access.
+ */
+export async function oauthAccountHasGrant(
+  db: Db | Transaction,
+  provider: string,
+  accountSub: string,
+): Promise<boolean> {
+  const [row] = await db.execute<{ has_grant: boolean }>(
+    sql`select oauth_account_has_grant(${provider}, ${accountSub}) as has_grant`,
+  );
+  return row?.has_grant === true;
+}
+
+/**
+ * Deletes consumed and expired authorization rows, at most `batch` per call
+ * (scheduler role; prune_oauth_authorizations is SECURITY DEFINER, migration
+ * 0024). Returns the number deleted.
+ */
+export async function pruneOAuthAuthorizations(
+  schedulerDb: Db | Transaction,
+  batch: number,
+): Promise<number> {
+  const [row] = await schedulerDb.execute<{ deleted: number }>(
+    sql`select prune_oauth_authorizations(${batch}) as deleted`,
+  );
+  return row?.deleted ?? 0;
 }

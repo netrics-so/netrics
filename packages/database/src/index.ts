@@ -164,6 +164,8 @@ export {
   markNeedsReauthorization,
   releaseOAuthGrant,
   updateConnectionOAuthTokens,
+  oauthAccountHasGrant,
+  pruneOAuthAuthorizations,
   upsertConnectionOAuth,
 } from "./oauth.js";
 export type {

@@ -36,7 +36,19 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // OAuth callbacks carry single-use codes in the URL (ADR 0012): no
+      // Referer may repeat them and no cache may keep them. Later entries
+      // override earlier ones for the same header.
+      {
+        source: "/oauth/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "no-store" },
+        ],
+      },
+    ];
   },
   outputFileTracingRoot: path.join(appDir, "../.."),
 };

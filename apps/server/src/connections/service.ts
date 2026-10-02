@@ -465,6 +465,19 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       if (!registered) {
         return fail(400, "invalid_request");
       }
+      if (existing.oauth) {
+        // An OAuth connection's credentials are its grant: they change only
+        // through reauthorization (ADR 0012), never by pasting a token.
+        if (body.credentials !== undefined) {
+          return fail(400, "oauth_credentials_not_editable");
+        }
+        // Config changes are checked against the connector, which must get
+        // an access token from the token service (#133), never the stored
+        // refresh token. Until that is wired here they are refused.
+        if (body.config !== undefined) {
+          return fail(400, "oauth_config_change_unsupported");
+        }
+      }
 
       const existingConfig = existing.row.config as Record<string, unknown>;
       let nextConfig: Record<string, unknown> | undefined;
@@ -724,6 +737,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         );
         if (!loaded) {
           return fail<string>(404, NOT_FOUND);
+        }
+        // Not syncable before its setup is finished (ADR 0012).
+        if (loaded.row.setupPending) {
+          return fail<string>(400, "connection_setup_pending");
         }
         const jobId = await requestConnectionSync(tx, {
           workspaceId: actor.workspaceId,
