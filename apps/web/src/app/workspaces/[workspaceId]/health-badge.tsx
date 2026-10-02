@@ -3,6 +3,7 @@ import type { ConnectionHealth } from "@netrics/contracts";
 const LABELS: Record<ConnectionHealth, string> = {
   ok: "Healthy",
   auth_failed: "Auth failed",
+  needs_reauthorization: "Needs reconnect",
   outage: "Outage",
   pending: "Pending",
 };

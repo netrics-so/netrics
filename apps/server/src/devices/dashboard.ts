@@ -41,6 +41,11 @@ function tileStatus(
   if (state?.health === "auth_failed" || state?.health === "outage") {
     return state.health;
   }
+  // Screens know auth_failed; a grant that needs reauthorization is the same
+  // story for a viewer (the tvOS status set stays unchanged, ADR 0007).
+  if (state?.health === "needs_reauthorization") {
+    return "auth_failed";
+  }
   if (!state || value === null) {
     return "no_data";
   }

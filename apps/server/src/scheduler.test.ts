@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -112,6 +113,7 @@ describe("runSchedulerTick", () => {
       scanned: 2,
       enqueued: 1,
       skippedAuthFailed: 1,
+      skippedNeedsReauthorization: 0,
     });
 
     const jobs = await schedulerRaw`
@@ -165,6 +167,7 @@ describe("runSchedulerTick", () => {
       scanned: 1,
       enqueued: 0,
       skippedAuthFailed: 1,
+      skippedNeedsReauthorization: 0,
     });
 
     // Crash-window replay: the same due slot is planned again and dedupes.
@@ -178,10 +181,60 @@ describe("runSchedulerTick", () => {
       scanned: 2,
       enqueued: 0,
       skippedAuthFailed: 1,
+      skippedNeedsReauthorization: 0,
     });
 
     const jobs = await schedulerRaw`select id from jobs`;
     expect(jobs).toHaveLength(1);
+  });
+});
+
+describe("needs_reauthorization (ADR 0012)", () => {
+  it("skips a connection whose OAuth grant needs reauthorization", async () => {
+    const [conn] = await withWorkspace(appDb, { workspaceId }, (tx) =>
+      tx
+        .insert(schema.connections)
+        .values({ workspaceId, connectorId: "demo", name: "revoked grant" })
+        .returning({ id: schema.connections.id }),
+    );
+    await withWorkspace(appDb, { workspaceId }, (tx) =>
+      tx.insert(schema.connectionState).values({
+        connectionId: conn!.id,
+        workspaceId,
+        nextDueAt: PAST,
+        authState: "needs_reauthorization",
+        authReason: "invalid_grant",
+      }),
+    );
+
+    const result = await runSchedulerTick(
+      schedulerDb,
+      new Date("2026-09-26T12:40:00Z"),
+    );
+    expect(result.skippedNeedsReauthorization).toBe(1);
+    expect(
+      await schedulerRaw`select id from jobs where connection_id = ${conn!.id}`,
+    ).toHaveLength(0);
+    const [state] = await schedulerRaw`
+      select next_due_at from connection_state where connection_id = ${conn!.id}
+    `;
+    expect(Date.parse(state!.next_due_at as string)).toBe(PAST.getTime());
+
+    // Reauthorized: the connection is planned again.
+    await withWorkspace(appDb, { workspaceId }, (tx) =>
+      tx
+        .update(schema.connectionState)
+        .set({ authState: "ok", authReason: null })
+        .where(eq(schema.connectionState.connectionId, conn!.id)),
+    );
+    const after = await runSchedulerTick(
+      schedulerDb,
+      new Date("2026-09-26T12:41:00Z"),
+    );
+    expect(after.skippedNeedsReauthorization).toBe(0);
+    expect(
+      await schedulerRaw`select id from jobs where connection_id = ${conn!.id}`,
+    ).toHaveLength(1);
   });
 });
 
@@ -243,6 +296,7 @@ describe("scheduler mutual exclusion", () => {
           scanned: 0,
           enqueued: 0,
           skippedAuthFailed: 0,
+          skippedNeedsReauthorization: 0,
         });
       });
       // The lock ends with the other transaction; no process has to die.

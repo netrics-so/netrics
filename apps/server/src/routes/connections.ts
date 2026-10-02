@@ -24,6 +24,7 @@ import {
   type Result,
 } from "../connections/service.js";
 import type { CredentialKeyring } from "../credentials.js";
+import type { OAuthProviders } from "../oauth/config.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
@@ -36,6 +37,7 @@ export interface ConnectionRouteDeps {
   db: Database;
   registry: ConnectorRegistry;
   credentialKeyring: CredentialKeyring;
+  oauthProviders: OAuthProviders;
 }
 
 const connectionParamsSchema = z.object({ connectionId: z.uuid() });

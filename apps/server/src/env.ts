@@ -4,6 +4,8 @@ import { z } from "zod";
 
 import { processRoleSchema } from "@netrics/contracts";
 
+import { Secret } from "./secret.js";
+
 // Obviously insecure fixed fallback so local development and tests work with
 // zero configuration; production MUST set BETTER_AUTH_SECRET (enforced below).
 const DEV_BETTER_AUTH_SECRET = "netrics-dev-only-insecure-secret-000000";
@@ -80,6 +82,17 @@ const previousKeys = z
   )
   .pipe(z.array(base64Key("APP_ENCRYPTION_KEYS_PREVIOUS entries")));
 
+/** An instance's OAuth app at one provider (ADR 0012). */
+export interface OAuthClientConfig {
+  clientId: string;
+  clientSecret: Secret;
+}
+
+// Client id and secret variables per provider, set both or neither.
+const OAUTH_CLIENT_ENV = [
+  ["NETRICS_OAUTH_GOOGLE_CLIENT_ID", "NETRICS_OAUTH_GOOGLE_CLIENT_SECRET"],
+] as const;
+
 const envSchema = z
   .object({
     NODE_ENV: z
@@ -151,11 +164,31 @@ const envSchema = z
       .enum(["true", "false"])
       .default("false")
       .transform((value) => value === "true"),
+    // The instance's Google OAuth app (ADR 0012), both or neither. Without
+    // them Google connectors are listed as unavailable. The redirect URI to
+    // register is <WEB_ORIGIN>/oauth/google/callback.
+    NETRICS_OAUTH_GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+    NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
     APP_VERSION: z.string().min(1).default("0.0.0-dev"),
     GIT_SHA: z.string().min(1).default("dev"),
   })
   .superRefine((env, ctx) => {
     const production = env.NODE_ENV === "production";
+    for (const [idKey, secretKey] of OAUTH_CLIENT_ENV) {
+      const hasId = env[idKey] !== undefined;
+      const hasSecret = env[secretKey] !== undefined;
+      if (hasId !== hasSecret) {
+        // Names the missing variable only; never echoes a value.
+        const [missing, present] = hasId
+          ? [secretKey, idKey]
+          : [idKey, secretKey];
+        ctx.addIssue({
+          code: "custom",
+          path: [missing],
+          message: `${missing} is required when ${present} is set (set both or neither)`,
+        });
+      }
+    }
     if (production && env.NETRICS_ROLE === "api") {
       for (const key of ["BETTER_AUTH_URL", "WEB_ORIGIN"] as const) {
         const value = env[key];
@@ -272,6 +305,17 @@ const envSchema = z
         (env.NODE_ENV === "production" ? "on" : "off")) === "on",
     role: env.NETRICS_ROLE,
     allowPrivilegedDb: env.NETRICS_ALLOW_PRIVILEGED_DB,
+    // OAuth clients by provider id; null when the provider is unconfigured.
+    oauthClients: {
+      google:
+        env.NETRICS_OAUTH_GOOGLE_CLIENT_ID &&
+        env.NETRICS_OAUTH_GOOGLE_CLIENT_SECRET
+          ? {
+              clientId: env.NETRICS_OAUTH_GOOGLE_CLIENT_ID,
+              clientSecret: new Secret(env.NETRICS_OAUTH_GOOGLE_CLIENT_SECRET),
+            }
+          : null,
+    } satisfies Record<string, OAuthClientConfig | null>,
     version: env.APP_VERSION,
     commit: env.GIT_SHA,
   }));

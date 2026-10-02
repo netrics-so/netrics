@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { inspect } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -359,5 +360,62 @@ describe("empty values", () => {
       loadMigrationConfig({ NETRICS_APP_DB_PASSWORD: "" }).rolePasswords
         .netrics_app,
     ).toBe("netrics_app");
+  });
+});
+
+describe("OAuth client configuration (ADR 0012)", () => {
+  const clientId = "1234-abc.apps.googleusercontent.com";
+  const clientSecret = "GOCSPX-super-secret-value";
+
+  it("leaves Google unconfigured when neither variable is set", () => {
+    expect(loadConfig({}).oauthClients.google).toBeNull();
+    // Empty values count as unset (Compose `${VAR:-}`).
+    expect(
+      loadConfig({
+        NETRICS_OAUTH_GOOGLE_CLIENT_ID: "",
+        NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: "",
+      }).oauthClients.google,
+    ).toBeNull();
+  });
+
+  it("configures Google when both variables are set", () => {
+    const google = loadConfig({
+      NETRICS_OAUTH_GOOGLE_CLIENT_ID: clientId,
+      NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: clientSecret,
+    }).oauthClients.google;
+    expect(google?.clientId).toBe(clientId);
+    expect(google?.clientSecret.reveal()).toBe(clientSecret);
+  });
+
+  it.each([
+    [
+      { NETRICS_OAUTH_GOOGLE_CLIENT_ID: clientId },
+      "NETRICS_OAUTH_GOOGLE_CLIENT_SECRET",
+    ],
+    [
+      { NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: clientSecret },
+      "NETRICS_OAUTH_GOOGLE_CLIENT_ID",
+    ],
+  ])("refuses half a client and names the missing variable", (env, missing) => {
+    let message = "";
+    try {
+      loadConfig(env);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigError);
+      message = (error as Error).message;
+    }
+    expect(message).toContain(`${missing}: ${missing} is required`);
+    expect(message).not.toContain(clientId);
+    expect(message).not.toContain(clientSecret);
+  });
+
+  it("never prints the client secret", () => {
+    const config = loadConfig({
+      NETRICS_OAUTH_GOOGLE_CLIENT_ID: clientId,
+      NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: clientSecret,
+    });
+    expect(JSON.stringify(config)).not.toContain(clientSecret);
+    expect(String(config.oauthClients.google?.clientSecret)).toBe("[redacted]");
+    expect(inspect(config, { depth: 10 })).not.toContain(clientSecret);
   });
 });

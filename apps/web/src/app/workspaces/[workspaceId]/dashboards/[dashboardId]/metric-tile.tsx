@@ -31,7 +31,10 @@ function staleness(connection: TileConnection | undefined): string | null {
     return TILE_NOTICES.removed;
   }
   const { state } = connection;
-  if (state.health === "auth_failed") {
+  if (
+    state.health === "auth_failed" ||
+    state.health === "needs_reauthorization"
+  ) {
     return TILE_NOTICES.authFailed;
   }
   if (state.health === "outage") {

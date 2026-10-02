@@ -12,10 +12,28 @@ export type ConnectionRow = typeof schema.connections.$inferSelect;
 export type ConnectionStateRow = typeof schema.connectionState.$inferSelect;
 export type SyncRunRow = typeof schema.syncRuns.$inferSelect;
 
+/**
+ * The OAuth account a connection is linked to (ADR 0012), without token
+ * material: what the API may show.
+ */
+export interface ConnectionOAuthAccount {
+  provider: string;
+  accountEmail: string | null;
+  grantedScopes: string[];
+}
+
 export interface ConnectionWithState {
   row: ConnectionRow;
   state: ConnectionStateRow | null;
+  /** Null for connections that are not authorized through OAuth. */
+  oauth: ConnectionOAuthAccount | null;
 }
+
+const oauthAccountColumns = {
+  provider: schema.connectionOAuth.provider,
+  accountEmail: schema.connectionOAuth.accountEmail,
+  grantedScopes: schema.connectionOAuth.grantedScopes,
+};
 
 function connectionScope(workspaceId: string, connectionId: string) {
   return and(
@@ -49,7 +67,17 @@ export async function findConnection(
     .from(schema.connectionState)
     .where(stateScope(workspaceId, connectionId))
     .limit(1);
-  return { row, state: state ?? null };
+  const [oauth] = await tx
+    .select(oauthAccountColumns)
+    .from(schema.connectionOAuth)
+    .where(
+      and(
+        eq(schema.connectionOAuth.workspaceId, workspaceId),
+        eq(schema.connectionOAuth.connectionId, connectionId),
+      ),
+    )
+    .limit(1);
+  return { row, state: state ?? null, oauth: oauth ?? null };
 }
 
 export async function listConnections(
@@ -57,13 +85,24 @@ export async function listConnections(
   workspaceId: string,
 ): Promise<ConnectionWithState[]> {
   const rows = await tx
-    .select({ row: schema.connections, state: schema.connectionState })
+    .select({
+      row: schema.connections,
+      state: schema.connectionState,
+      oauth: oauthAccountColumns,
+    })
     .from(schema.connections)
     .leftJoin(
       schema.connectionState,
       and(
         eq(schema.connectionState.connectionId, schema.connections.id),
         eq(schema.connectionState.workspaceId, workspaceId),
+      ),
+    )
+    .leftJoin(
+      schema.connectionOAuth,
+      and(
+        eq(schema.connectionOAuth.connectionId, schema.connections.id),
+        eq(schema.connectionOAuth.workspaceId, workspaceId),
       ),
     )
     .where(eq(schema.connections.workspaceId, workspaceId))
@@ -112,7 +151,7 @@ export async function insertConnection(
       pollIntervalSeconds: input.pollIntervalSeconds,
     })
     .returning();
-  return { row, state: state ?? null };
+  return { row, state: state ?? null, oauth: null };
 }
 
 export interface ConnectionChanges {
@@ -148,7 +187,12 @@ export async function resetConnectionAuth(
 ): Promise<ConnectionStateRow | null> {
   const [state] = await tx
     .update(schema.connectionState)
-    .set({ authState: "ok", consecutiveFailures: 0, nextDueAt: new Date() })
+    .set({
+      authState: "ok",
+      authReason: null,
+      consecutiveFailures: 0,
+      nextDueAt: new Date(),
+    })
     .where(stateScope(workspaceId, connectionId))
     .returning();
   return state ?? null;

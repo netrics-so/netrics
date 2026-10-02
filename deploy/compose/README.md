@@ -56,6 +56,21 @@ SMTP_URL=smtps://user:password@smtp.example.com:465
 MAIL_FROM=netrics <no-reply@netrics.example.com>
 ```
 
+### Google connectors
+
+Connectors that sign in with Google (Search Console) need a Google OAuth app
+registered for this instance. Without one they are listed as unavailable.
+Register the redirect URI `<NETRICS_PUBLIC_URL>/oauth/google/callback`, then
+add both values to `.env` and run `docker compose up -d`:
+
+```sh
+NETRICS_OAUTH_GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
+NETRICS_OAUTH_GOOGLE_CLIENT_SECRET=...
+```
+
+Set both or neither; the API refuses to start with only one. Its startup log
+names the configured providers and their redirect URIs.
+
 ### Another port
 
 If the host already serves 443, install with `--https-port 8443`. This sets

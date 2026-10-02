@@ -331,12 +331,23 @@ export const connectionState = pgTable(
       .default(300),
     cursor: text("cursor"),
     authState: text("auth_state").notNull().default("ok"),
+    // Why the connection needs reauthorization (ADR 0012); set only with
+    // auth_state needs_reauthorization.
+    authReason: text("auth_reason"),
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),
   },
   (table) => [
     check(
       "connection_state_auth_state_valid",
-      sql`${table.authState} in ('ok', 'auth_failed', 'outage')`,
+      sql`${table.authState} in ('ok', 'auth_failed', 'needs_reauthorization', 'outage')`,
+    ),
+    check(
+      "connection_state_auth_reason_valid",
+      sql`${table.authReason} in ('invalid_grant', 'scope_missing')`,
+    ),
+    check(
+      "connection_state_auth_reason_state",
+      sql`${table.authReason} is null or ${table.authState} = 'needs_reauthorization'`,
     ),
   ],
 );
@@ -673,5 +684,122 @@ export const devicePairingFailures = pgTable(
   },
   (table) => [
     index("device_pairing_failures_user_idx").on(table.userId, table.createdAt),
+  ],
+);
+
+// An OAuth authorization in progress (ADR 0012). Workspace table under RLS;
+// the callback, which does not know the workspace yet, finds and consumes a
+// row only through consume_oauth_authorization(state_hash). Only the SHA-256
+// of the state is stored; the PKCE verifier is sealed in an envelope bound
+// to this row (apps/server/src/credentials.ts).
+export const oauthAuthorizations = pgTable(
+  "oauth_authorizations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    // Who started it; only this user may complete it.
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    connectorId: text("connector_id")
+      .notNull()
+      .references(() => connectors.id),
+    // The connection to reauthorize; null for a new connection. The foreign
+    // key (connection_id, workspace_id) → connections pins it to this
+    // workspace and goes with the connection.
+    connectionId: uuid("connection_id"),
+    purpose: text("purpose").notNull(),
+    // Whether the grant may come from a different provider account than the
+    // one linked to the connection (reauthorization only).
+    allowAccountChange: boolean("allow_account_change")
+      .notNull()
+      .default(false),
+    // Relative path inside the web app to return to (allowlisted by the API).
+    returnPath: text("return_path").notNull(),
+    stateHash: text("state_hash").notNull().unique(),
+    nonce: text("nonce").notNull(),
+    codeVerifierEncrypted: bytea("code_verifier_encrypted").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (table) => [
+    foreignKey({
+      name: "oauth_authorizations_connection_fk",
+      columns: [table.connectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("cascade"),
+    check(
+      "oauth_authorizations_purpose_valid",
+      sql`${table.purpose} in ('connect', 'reauthorize')`,
+    ),
+    check(
+      "oauth_authorizations_purpose_connection",
+      sql`(${table.purpose} = 'reauthorize') = (${table.connectionId} is not null)`,
+    ),
+    check(
+      "oauth_authorizations_account_change",
+      sql`not ${table.allowAccountChange} or ${table.purpose} = 'reauthorize'`,
+    ),
+    check(
+      "oauth_authorizations_return_path",
+      sql`${table.returnPath} like '/%' and ${table.returnPath} not like '//%'`,
+    ),
+    index("oauth_authorizations_workspace_idx").on(table.workspaceId),
+    index("oauth_authorizations_connection_idx").on(table.connectionId),
+    index("oauth_authorizations_expires_idx").on(table.expiresAt),
+  ],
+);
+
+// The OAuth grant of a connection (ADR 0012), 1:1. The refresh token stays
+// in connections.credentials_encrypted; this row holds the linked account,
+// the granted scopes and the cached access token in its own envelope (its
+// associated data names it an access token, so it cannot be swapped with the
+// credentials envelope). Workspace table under RLS.
+export const connectionOAuth = pgTable(
+  "connection_oauth",
+  {
+    connectionId: uuid("connection_id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    // The provider's stable account id (OpenID `sub`).
+    accountSub: text("account_sub").notNull(),
+    // Shown as "Connected as …"; not a secret, but never logged.
+    accountEmail: text("account_email"),
+    grantedScopes: text("granted_scopes").array().notNull(),
+    accessTokenEncrypted: bytea("access_token_encrypted"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", {
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "connection_oauth_connection_fk",
+      columns: [table.connectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("cascade"),
+    check(
+      "connection_oauth_access_token_expiry",
+      sql`(${table.accessTokenEncrypted} is null) = (${table.accessTokenExpiresAt} is null)`,
+    ),
+    // The shared-grant check on disconnect (oauth_release_grant, #133).
+    index("connection_oauth_provider_sub_idx").on(
+      table.provider,
+      table.accountSub,
+    ),
+    index("connection_oauth_workspace_idx").on(table.workspaceId),
   ],
 );

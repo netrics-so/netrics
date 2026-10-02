@@ -360,6 +360,7 @@ button.danger:hover:not(:disabled) {
 }
 
 .health-badge.auth_failed,
+.health-badge.needs_reauthorization,
 .health-badge.outage {
   color: #f0a3a3;
   border-color: #5a2c2c;

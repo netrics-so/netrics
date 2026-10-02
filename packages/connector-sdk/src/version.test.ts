@@ -41,18 +41,61 @@ describe("assertManifestCompatible", () => {
       ...validManifest(),
       authStrategies: [{ strategy: "token", setup }],
     });
+    const [strategy] = assertManifestCompatible(
+      withSetup({
+        steps: ["Open Settings → Tokens.", "Create a read-only token."],
+        url: "https://acme.test/settings/tokens",
+      }),
+    ).authStrategies;
     expect(
-      assertManifestCompatible(
-        withSetup({
-          steps: ["Open Settings → Tokens.", "Create a read-only token."],
-          url: "https://acme.test/settings/tokens",
-        }),
-      ).authStrategies[0]?.setup?.steps,
+      strategy?.strategy === "token" ? strategy.setup?.steps : undefined,
     ).toHaveLength(2);
     expect(() => assertManifestCompatible(withSetup({ steps: [] }))).toThrow();
     expect(() =>
       assertManifestCompatible(withSetup({ steps: ["x"], url: "not a url" })),
     ).toThrow();
+  });
+
+  it("keeps loading connectors written for SDK ^0.2.0", () => {
+    expect(SDK_VERSION).toBe("0.2.1");
+    expect(
+      assertManifestCompatible({ ...validManifest(), sdkVersion: "^0.2.0" }).id,
+    ).toBe("acme-analytics");
+  });
+
+  it("accepts an oauth2 strategy naming a provider and its scopes", () => {
+    const manifest = assertManifestCompatible({
+      ...validManifest(),
+      sdkVersion: "^0.2.1",
+      authStrategies: [
+        {
+          strategy: "oauth2",
+          provider: "google",
+          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
+        },
+      ],
+    });
+    expect(manifest.authStrategies[0]).toEqual({
+      strategy: "oauth2",
+      provider: "google",
+      scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
+    });
+  });
+
+  it("rejects oauth2 strategies without a provider or scopes", () => {
+    const withStrategy = (strategy: unknown) => ({
+      ...validManifest(),
+      authStrategies: [strategy],
+    });
+    for (const strategy of [
+      { strategy: "oauth2", scopes: ["a"] },
+      { strategy: "oauth2", provider: "google", scopes: [] },
+      { strategy: "oauth2", provider: "google" },
+      { strategy: "oauth2", provider: "Not A Slug", scopes: ["a"] },
+      { strategy: "oauth2", provider: "google", scopes: ["a", "a"] },
+    ]) {
+      expect(() => assertManifestCompatible(withStrategy(strategy))).toThrow();
+    }
   });
 
   it("accepts exact and comparator-set ranges that include SDK_VERSION", () => {

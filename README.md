@@ -154,6 +154,12 @@ Relevant environment variables (see `.env.example`):
   reset (`smtps://user:pass@host:465`). In local development, without SMTP,
   the links are logged. Anywhere else, without SMTP, the server refuses to
   send them and never logs them.
+- `NETRICS_OAUTH_GOOGLE_CLIENT_ID` and `NETRICS_OAUTH_GOOGLE_CLIENT_SECRET` —
+  the instance's Google OAuth app (ADR 0012), both or neither (startup fails
+  naming the missing one). Without them Google connectors are listed as
+  unavailable and cannot be connected. The redirect URI to register is
+  `<WEB_ORIGIN>/oauth/google/callback`; the api logs it at startup, never the
+  secret. The api and the worker read them.
 
 - `NETRICS_SIGNUP` — `closed` (default in production) or `open` (default
   otherwise; the hosted service sets it explicitly). With closed sign-up and no

@@ -24,6 +24,7 @@ import {
   requestIdFromHeader,
 } from "./http-hardening.js";
 import { createMailer, type Mailer } from "./mail/mailer.js";
+import { createOAuthProviders, type OAuthProviders } from "./oauth/config.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerConnectionRoutes } from "./routes/connections.js";
 import { registerDashboardRoutes } from "./routes/dashboards.js";
@@ -42,6 +43,8 @@ export interface AppDeps {
   registry?: ConnectorRegistry;
   /** Clock for metric queries ("today" etc.); tests pin it. */
   now?: () => Date;
+  /** Default: the providers configured in the environment (ADR 0012). */
+  oauthProviders?: OAuthProviders;
 }
 
 export async function buildApp(
@@ -108,6 +111,7 @@ export async function buildApp(
     config.appEncryptionKey,
     config.appEncryptionKeysPrevious,
   );
+  const oauthProviders = deps.oauthProviders ?? createOAuthProviders(config);
 
   registerSessionRoutes(app, { authService, db });
   registerWorkspaceRoutes(app, {
@@ -117,6 +121,7 @@ export async function buildApp(
       db,
       registry,
       credentialKeyring,
+      oauthProviders,
       logger: app.log,
     }),
   });
@@ -144,6 +149,7 @@ export async function buildApp(
     db,
     registry,
     credentialKeyring,
+    oauthProviders,
   });
 
   app.get(
