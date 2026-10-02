@@ -160,6 +160,10 @@ export {
   consumeOAuthAuthorization,
   findConnectionOAuth,
   insertOAuthAuthorization,
+  lockConnectionOAuth,
+  markNeedsReauthorization,
+  releaseOAuthGrant,
+  updateConnectionOAuthTokens,
   upsertConnectionOAuth,
 } from "./oauth.js";
 export type {
@@ -167,7 +171,9 @@ export type {
   ConnectionOAuthRow,
   ConsumedOAuthAuthorization,
   NewOAuthAuthorization,
+  OAuthAuthReason,
   OAuthAuthorizationPurpose,
+  OAuthTokenUpdate,
   OAuthAuthorizationRow,
 } from "./oauth.js";
 export type {

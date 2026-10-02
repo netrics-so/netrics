@@ -3,6 +3,7 @@ export {
   createEgressFetch,
   hostAllowed,
   isBlockedAddress,
+  type EgressOptions,
 } from "./egress.js";
 export {
   assertContextIsPlain,

@@ -9,6 +9,7 @@
     "!dist/**/*.test.*",
     "!dist/**/test-db.*",
     "!dist/**/test-helpers.*",
+    "!dist/**/test-provider.*",
     "!dist/**/*.tsbuildinfo"
   ],
   "scripts": {

@@ -8,6 +8,7 @@ import {
   connectionResponseSchema,
   connectorListResponseSchema,
   createConnectionRequestSchema,
+  deleteConnectionResponseSchema,
   enqueueSyncResponseSchema,
   observationListQuerySchema,
   observationListResponseSchema,
@@ -25,6 +26,7 @@ import {
 } from "../connections/service.js";
 import type { CredentialKeyring } from "../credentials.js";
 import type { OAuthProviders } from "../oauth/config.js";
+import type { OAuthTokenService } from "../oauth/tokens.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
@@ -38,6 +40,7 @@ export interface ConnectionRouteDeps {
   registry: ConnectorRegistry;
   credentialKeyring: CredentialKeyring;
   oauthProviders: OAuthProviders;
+  oauthTokens?: OAuthTokenService;
 }
 
 const connectionParamsSchema = z.object({ connectionId: z.uuid() });
@@ -251,6 +254,7 @@ export function registerConnectionRoutes(
           schema: routeSchema({
             summary: "Delete a connection",
             tags: ["connections"],
+            response: deleteConnectionResponseSchema,
             errors: [403, 404],
           }),
         },
@@ -273,7 +277,7 @@ export function registerConnectionRoutes(
           if (!result.ok) {
             return sendError(reply, result.status, result.error);
           }
-          return reply.code(204).send();
+          return deleteConnectionResponseSchema.parse(result.value);
         },
       );
 

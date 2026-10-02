@@ -16,6 +16,8 @@ import {
 
 import { createCredentialKeyring, redactSecrets } from "./credentials.js";
 import type { Config } from "./env.js";
+import { createOAuthProviders } from "./oauth/config.js";
+import { createOAuthTokenService } from "./oauth/tokens.js";
 import {
   createJobHandlers,
   NonRetryableJobError,
@@ -288,15 +290,22 @@ export async function startWorker(config: Config): Promise<void> {
     max: config.workerConcurrency + 2,
   });
   const registry = createDefaultRegistry();
+  const credentialKeyring = createCredentialKeyring(
+    config.appEncryptionKey,
+    config.appEncryptionKeysPrevious,
+  );
   const worker = createWorker({
     schedulerDb,
     appDb,
     handlers: createJobHandlers({
       registry,
-      credentialKeyring: createCredentialKeyring(
-        config.appEncryptionKey,
-        config.appEncryptionKeysPrevious,
-      ),
+      credentialKeyring,
+      oauthTokens: createOAuthTokenService({
+        db: appDb,
+        credentialKeyring,
+        providers: createOAuthProviders(config),
+        logger,
+      }),
     }),
     concurrency: config.workerConcurrency,
     pollMs: config.workerPollMs,

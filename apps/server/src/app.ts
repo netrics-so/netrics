@@ -25,6 +25,7 @@ import {
 } from "./http-hardening.js";
 import { createMailer, type Mailer } from "./mail/mailer.js";
 import { createOAuthProviders, type OAuthProviders } from "./oauth/config.js";
+import type { OAuthTokenService } from "./oauth/tokens.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerConnectionRoutes } from "./routes/connections.js";
 import { registerDashboardRoutes } from "./routes/dashboards.js";
@@ -45,6 +46,8 @@ export interface AppDeps {
   now?: () => Date;
   /** Default: the providers configured in the environment (ADR 0012). */
   oauthProviders?: OAuthProviders;
+  /** Default: a token service over the app's db and providers. */
+  oauthTokens?: OAuthTokenService;
 }
 
 export async function buildApp(
@@ -150,6 +153,7 @@ export async function buildApp(
     registry,
     credentialKeyring,
     oauthProviders,
+    ...(deps.oauthTokens ? { oauthTokens: deps.oauthTokens } : {}),
   });
 
   app.get(

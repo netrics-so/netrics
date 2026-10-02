@@ -158,8 +158,8 @@ grant lacks, the connection moves to `needs_reauthorization`
 (`scope_missing`); reauthorization asks for the union with
 `include_granted_scopes`.
 
-**Disconnect.** Google is believed to revoke the whole grant of one Google
-account for our client, not only the token sent, so revoking for one
+**Disconnect.** Google revokes the whole grant of one Google account, not
+only the token sent (verified in #133, see below), so revoking for one
 connection would also stop every other connection that account authorized on
 this instance, in any workspace. Deleting an OAuth connection therefore
 revokes at the provider only when it held the last grant for that provider
@@ -179,11 +179,28 @@ and account `sub`:
    are gone.
 
 If the revocation fails, the deletion stands and the UI links to the
-provider's account permissions page. #133 verifies Google's revocation
-scope. If it turns out to be per token, the check is kept anyway: it never
-revokes a grant another connection still uses, and the disconnect message
-only notes that access stays listed in the Google account while other
-netrics connections use it.
+provider's account permissions page. The API reports the outcome in the
+`DELETE` response (`revocation.status`: `revoked`, `kept` or `failed`).
+
+_Google's revocation scope (verified 2026-10-03, #133)._ Google's
+documentation of `https://oauth2.googleapis.com/revoke` says: "Revocation
+removes all OAuth 2.0 scopes previously granted to a project, invalidating
+any issued access or refresh tokens for all clients registered under that
+project", and "If the token is an access token and it has a corresponding
+refresh token, the refresh token will also be revoked"
+([Using OAuth 2.0 for Web Server Applications, Revoking a token](https://developers.google.com/identity/protocols/oauth2/web-server#tokenrevoke)).
+Revocation is therefore per Google account and per Google Cloud _project_,
+which is wider than per client: an instance must not share its Google
+Cloud project's OAuth clients with another netrics instance, or a
+disconnect on one revokes the other's connections for that account (the
+self-hosting guide of #135 states this). Two further documented limits matter here
+([Refresh token expiration](https://developers.google.com/identity/protocols/oauth2#expiration)):
+an app in testing gets refresh tokens that expire after 7 days, and there
+is a limit of 100 refresh tokens per Google account per client, beyond
+which the oldest is invalidated without warning. Every connection holds its
+own refresh token (`prompt=consent`), so an account with more than 100
+connections on one instance loses the oldest; that surfaces as
+`invalid_grant` and needs reauthorization like any other expiry.
 
 **Egress.** Host-side token calls use the same guarded fetch as connectors,
 limited to the provider's domains (`oauth2.googleapis.com`; the browser, not

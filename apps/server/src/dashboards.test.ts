@@ -348,7 +348,7 @@ describe("dashboards API", () => {
       `/v1/workspaces/${workspaceId}/connections/${extra}`,
       owner,
     );
-    expect(deleted.statusCode).toBe(204);
+    expect(deleted.statusCode).toBe(200);
     const after = await call("GET", `${base()}/${dashboard.id}`, owner);
     expect(
       dashboardResponseSchema
