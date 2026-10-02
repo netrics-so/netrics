@@ -235,7 +235,8 @@ so the browser flow can be exercised end to end without Google.
 - Hosted operation needs a verified, published Google app. Until it is
   published, connections need reauthorization every 7 days.
 - Self-hosters register a Google OAuth app, set two variables and register
-  the derived redirect URI. The setup guide documents this, including the
-  testing-mode limit.
+  the derived redirect URI. The
+  [setup guide](../../deploy/compose/google-oauth.md) documents this,
+  including the testing-mode limit.
 - The next OAuth connector adds a provider module and a manifest entry, no
   new tables or flows.

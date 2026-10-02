@@ -172,6 +172,28 @@ jobs:
           check "$(curl -sk -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -H "origin: $url" \
             -H 'x-forwarded-for: 198.51.100.99' \
             -d '{"email":"owner@example.com","password":"wrong-password-1"}' $url/api/auth/sign-in/email)" 429 rate-limit
+      - name: Google OAuth app configuration
+        working-directory: deploy/compose
+        run: |
+          set -euo pipefail
+          announced() { docker compose logs --no-color api | grep 'oauth providers configured' || true; }
+          # Unconfigured (the default): the api starts and lists no provider.
+          case "$(announced)" in *'"oauthProviders":[]'*) ;; *) echo "expected no oauth provider"; exit 1 ;; esac
+          # Configured as deploy/compose/google-oauth.md describes: api and
+          # worker start, and the api logs the redirect URI to register.
+          printf '%s\n' NETRICS_OAUTH_GOOGLE_CLIENT_ID=ci.apps.googleusercontent.com \
+            NETRICS_OAUTH_GOOGLE_CLIENT_SECRET=ci-oauth-secret >> .env
+          docker compose up -d
+          expected='"redirectUri":"https://localhost/oauth/google/callback"'
+          for i in $(seq 1 60); do
+            case "$(announced)" in *"$expected"*) break ;; esac
+            sleep 2
+          done
+          case "$(announced)" in *"$expected"*) ;; *) echo "expected $expected"; exit 1 ;; esac
+          if docker compose logs --no-color api worker | grep ci-oauth-secret >/dev/null; then
+            echo "client secret in logs"; exit 1
+          fi
+          test "$(docker compose ps --format '{{.Service}}={{.State}}' worker)" = worker=running
       - name: Logs on failure
         if: failure()
         working-directory: deploy/compose

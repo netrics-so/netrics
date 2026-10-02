@@ -159,7 +159,8 @@ Relevant environment variables (see `.env.example`):
   naming the missing one). Without them Google connectors are listed as
   unavailable and cannot be connected. The redirect URI to register is
   `<WEB_ORIGIN>/oauth/google/callback`; the api logs it at startup, never the
-  secret. The api and the worker read them.
+  secret. The api and the worker read them. Registering the app:
+  [deploy/compose/google-oauth.md](deploy/compose/google-oauth.md).
 
 - `NETRICS_SIGNUP` — `closed` (default in production) or `open` (default
   otherwise; the hosted service sets it explicitly). With closed sign-up and no
