@@ -129,7 +129,10 @@ one could leave these rules.
 
 - Final app icon and Top Shelf artwork (the current ones are a draft).
 - App Store Connect record and TestFlight.
-- A run on a physical Apple TV, and the exit gate of milestone 06.
+- A run on a physical Apple TV, and the exit gate of milestone 06. Xcode
+  pairs with an Apple TV on another subnet but drops the connection, because
+  `remotepairingd` requires the TV to be on the Mac's own link (ARP); put the
+  Mac on the TV's subnet first (#129).
 - Check on a device that App Transport Security lets a pinned self-signed
   certificate through on a host outside the local network. Local hosts are
   exempt from ATS, so they work.
