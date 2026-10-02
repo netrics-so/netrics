@@ -24,12 +24,15 @@ describe("describeAppVersion", () => {
     expect(describeAppVersion("web")).toBe("web");
   });
 
-  it("labels the Apple TV app's bare version", () => {
-    expect(describeAppVersion("0.1.0")).toBe("tvOS 0.1.0");
+  it("shows the Apple TV app's tvos prefix as tvOS", () => {
+    expect(describeAppVersion("tvos 0.1.0")).toBe("tvOS 0.1.0");
+    expect(describeAppVersion("TVOS 0.1.0")).toBe("tvOS 0.1.0");
     expect(describeAppVersion("tvos")).toBe("tvOS");
   });
 
   it("shows anything else unchanged", () => {
+    expect(describeAppVersion("0.1.0")).toBe("0.1.0");
+    expect(describeAppVersion("tvosx 1")).toBe("tvosx 1");
     expect(describeAppVersion("  custom-build ")).toBe("custom-build");
   });
 });
@@ -79,7 +82,7 @@ describe("summarizeHeartbeat", () => {
     const error = `TypeError: fetch failed <script>alert(1)</script> ${"y".repeat(300)}`;
     const summary = summarizeHeartbeat({
       at: new Date(NOW - 3 * 3600 * 1000).toISOString(),
-      appVersion: "0.1.0",
+      appVersion: "tvos 0.1.0",
       uptimeSeconds: 10,
       lastError: error,
     });

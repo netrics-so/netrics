@@ -107,8 +107,8 @@ const MAX_APP_VERSION_LENGTH = 50;
 
 /**
  * What a browser kiosk reports as its app version: "web <version>" (#125),
- * so the TV list can tell kiosks from the Apple TV app, which reports its
- * bare marketing version. "web" alone when the build carries no version.
+ * so the TV list can tell kiosks from the Apple TV app, which reports
+ * "tvos <version>". "web" alone when the build carries no version.
  */
 export function kioskAppVersion(webVersion: string): string {
   const version = webVersion.trim();

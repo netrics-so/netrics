@@ -14,6 +14,21 @@ import Testing
     }
 }
 
+@Suite struct AppVersionTests {
+    @Test func reportsTvosAndTheVersion() {
+        #expect(DeviceClient.reportedAppVersion("0.1.0") == "tvos 0.1.0")
+        #expect(DeviceClient.reportedAppVersion(" 1.2.3 ") == "tvos 1.2.3")
+    }
+
+    @Test func fallsBackToTvosAndStaysWithin50Characters() {
+        #expect(DeviceClient.reportedAppVersion("") == "tvos")
+        #expect(DeviceClient.reportedAppVersion("  ") == "tvos")
+        let long = DeviceClient.reportedAppVersion(String(repeating: "9", count: 80))
+        #expect(long.count == 50)
+        #expect(long.hasPrefix("tvos 999"))
+    }
+}
+
 @Suite struct PairingTests {
     @Test func showsCodePollsUntilApprovedAndStoresCredentials() async throws {
         let approved = Mutex(false)
@@ -350,7 +365,7 @@ import Testing
         let first = try #require(h.api.callsTo("POST /v1/device/heartbeat").first)
         #expect(first.header("authorization") == "Bearer access-a")
         let body = try #require(first.json())
-        #expect(body["appVersion"] as? String == "1.2.3")
+        #expect(body["appVersion"] as? String == "tvos 1.2.3")
         #expect(body["uptimeSeconds"] as? Int == 10)
         #expect(body["lastError"] as? String == "HTTP 500")
         // A rename in the web app reaches the settings screen.

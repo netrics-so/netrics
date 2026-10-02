@@ -18,17 +18,14 @@ export interface HeartbeatSummary {
 
 /**
  * The app version as the TV list shows it (#125). Browser kiosks report
- * "web <version>"; the Apple TV app reports its bare marketing version
- * ("0.1.0", or "tvos" without one), labelled here so the two can be told
- * apart. Anything else is shown as reported.
+ * "web <version>" and the Apple TV app "tvos <version>"; the latter is shown
+ * as "tvOS <version>". Anything else is shown as reported.
  */
 export function describeAppVersion(appVersion: string): string {
   const version = appVersion.trim();
-  if (/^tvos$/i.test(version)) {
-    return "tvOS";
-  }
-  if (/^\d/.test(version)) {
-    return `tvOS ${version}`;
+  const tvos = /^tvos(?=\s|$)/i.exec(version);
+  if (tvos) {
+    return `tvOS${version.slice(tvos[0].length)}`;
   }
   return version;
 }

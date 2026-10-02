@@ -71,6 +71,8 @@ public actor DeviceClient {
     public static let heartbeatInterval: Duration = .seconds(5 * 60)
     /** The first heartbeat, once the TV has settled after pairing or launch. */
     public static let firstHeartbeat: Duration = .seconds(10)
+    /** The heartbeat's appVersion field accepts at most this many characters. */
+    public static let maxAppVersionLength = 50
     public static let backoffMin: Duration = .seconds(5)
     public static let backoffMax: Duration = .seconds(60)
     static let defaultRefreshAfterSeconds = 60
@@ -532,6 +534,17 @@ public actor DeviceClient {
     }
 
     /**
+     * What the TV reports as its app version: "tvos <version>" (#125), the
+     * counterpart of the browser kiosk's "web <version>", so the TV list can
+     * tell the two apart. "tvos" alone when the bundle carries no version.
+     */
+    public static func reportedAppVersion(_ version: String) -> String {
+        let trimmed = version.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reported = trimmed.isEmpty ? "tvos" : "tvos \(trimmed)"
+        return String(reported.prefix(maxAppVersionLength))
+    }
+
+    /**
      * Reports version, uptime and the last error (best effort; the dashboard
      * loop reports outages), and picks up a renamed device. Returns whether
      * the TV was paired.
@@ -541,9 +554,8 @@ public actor DeviceClient {
         guard running, state.phase == .paired, let credentials else { return false }
         let at = epoch
         let uptime = max(Int(now().timeIntervalSince(startedAt)), 0)
-        let version = String(appVersion.prefix(50))
         let body = DeviceHeartbeatRequest(
-            appVersion: version.isEmpty ? "tvos" : version,
+            appVersion: Self.reportedAppVersion(appVersion),
             uptimeSeconds: uptime,
             lastError: state.lastError
         )
