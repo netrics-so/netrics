@@ -1,0 +1,13 @@
+{
+  "error": {
+    "code": 400,
+    "message": "Invalid value at 'dimensions[0]' (type.googleapis.com/google.webmasters.v3.Dimension), \"pages\"",
+    "errors": [
+      {
+        "message": "Invalid value at 'dimensions[0]' (type.googleapis.com/google.webmasters.v3.Dimension), \"pages\"",
+        "reason": "invalid"
+      }
+    ],
+    "status": "INVALID_ARGUMENT"
+  }
+}

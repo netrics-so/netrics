@@ -1,0 +1,54 @@
+{
+  "rows": [
+    {
+      "keys": ["2026-09-14"],
+      "clicks": 412,
+      "impressions": 15873,
+      "ctr": 0.025956025956025957,
+      "position": 8.432914
+    },
+    {
+      "keys": ["2026-09-15"],
+      "clicks": 455,
+      "impressions": 16620,
+      "ctr": 0.02737665463297232,
+      "position": 8.21005
+    },
+    {
+      "keys": ["2026-09-16"],
+      "clicks": 471,
+      "impressions": 17104,
+      "ctr": 0.027537418147801684,
+      "position": 8.103251
+    },
+    {
+      "keys": ["2026-09-17"],
+      "clicks": 438,
+      "impressions": 16388,
+      "ctr": 0.026726873322000244,
+      "position": 8.300466
+    },
+    {
+      "keys": ["2026-09-18"],
+      "clicks": 390,
+      "impressions": 14951,
+      "ctr": 0.02608521169152565,
+      "position": 8.512006
+    },
+    {
+      "keys": ["2026-09-19"],
+      "clicks": 251,
+      "impressions": 10037,
+      "ctr": 0.025007472352296503,
+      "position": 9.03776
+    },
+    {
+      "keys": ["2026-09-20"],
+      "clicks": 268,
+      "impressions": 10412,
+      "ctr": 0.025739531309950058,
+      "position": 8.977046
+    }
+  ],
+  "responseAggregationType": "byProperty"
+}

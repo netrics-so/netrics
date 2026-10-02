@@ -372,6 +372,7 @@ describe("catalog sync", () => {
       "broken",
       "demo",
       "flaky-pages",
+      "google-search-console",
       "leaky",
       "probe",
       "revising",
@@ -383,6 +384,9 @@ describe("catalog sync", () => {
     expect(keys).toContain("demo/demo.signups");
     expect(keys).toContain("flaky-pages/flaky.hits");
     expect(keys).toContain("vercel/vercel.pageviews");
+    expect(keys).toContain(
+      "google-search-console/google-search-console.clicks",
+    );
     // Idempotent re-sync: exactly one row per (connector, key).
     expect(new Set(keys).size).toBe(keys.length);
   });
