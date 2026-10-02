@@ -158,15 +158,32 @@ grant lacks, the connection moves to `needs_reauthorization`
 (`scope_missing`); reauthorization asks for the union with
 `include_granted_scopes`.
 
-**Disconnect.** Deleting an OAuth connection revokes its refresh token at the
-provider first (best effort, short timeout), then deletes the row. If the
-revocation fails, the deletion still happens and the UI links to the
-provider's account permissions page. Google may revoke the whole grant of
-one Google account for our client, which would also stop other connections
-authorized by that account; those then show `needs_reauthorization`. The
-milestone verifies Google's behaviour and, if it is per grant, the delete
-dialog warns when the workspace has other connections linked to the same
-account.
+**Disconnect.** Google is believed to revoke the whole grant of one Google
+account for our client, not only the token sent, so revoking for one
+connection would also stop every other connection that account authorized on
+this instance, in any workspace. Deleting an OAuth connection therefore
+revokes at the provider only when it held the last grant for that provider
+and account `sub`:
+
+1. In the deleting transaction, the API decrypts the refresh token, then
+   calls `oauth_release_grant(provider, sub, connection_id)`, a SECURITY
+   DEFINER function (the pattern of ADR 0009). It takes a transaction
+   advisory lock on (provider, sub), so two deletions for one account
+   serialize, and returns only a boolean: whether any other
+   `connection_oauth` row on the instance has the same provider and `sub`.
+   It returns no ids, workspaces or counts. An index on (provider, sub)
+   backs it.
+2. The connection is deleted and the transaction commits.
+3. If no other connection holds a grant, the refresh token is revoked at the
+   provider (best effort, short timeout). Otherwise only the stored tokens
+   are gone.
+
+If the revocation fails, the deletion stands and the UI links to the
+provider's account permissions page. #133 verifies Google's revocation
+scope. If it turns out to be per token, the check is kept anyway: it never
+revokes a grant another connection still uses, and the disconnect message
+only notes that access stays listed in the Google account while other
+netrics connections use it.
 
 **Egress.** Host-side token calls use the same guarded fetch as connectors,
 limited to the provider's domains (`oauth2.googleapis.com`; the browser, not
@@ -213,7 +230,8 @@ so the browser flow can be exercised end to end without Google.
 ## Consequences
 
 - New tables `oauth_authorizations` and `connection_oauth`, a new
-  `auth_state` value, and a SECURITY DEFINER function for consuming states.
+  `auth_state` value, and SECURITY DEFINER functions for consuming states and
+  for the shared-grant check on disconnect.
 - Hosted operation needs a verified, published Google app. Until it is
   published, connections need reauthorization every 7 days.
 - Self-hosters register a Google OAuth app, set two variables and register
