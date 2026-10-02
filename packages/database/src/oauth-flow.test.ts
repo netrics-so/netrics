@@ -8,6 +8,7 @@ import * as authSchema from "./auth-schema.js";
 import { createWorkspace, withWorkspace } from "./context.js";
 import {
   insertOAuthAuthorization,
+  lockOAuthGrant,
   oauthAccountHasGrant,
   pruneOAuthAuthorizations,
   upsertConnectionOAuth,
@@ -160,5 +161,42 @@ describe("oauthAccountHasGrant", () => {
     await expect(
       schedulerClient`select oauth_account_has_grant('google', 'x')`,
     ).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe("lockOAuthGrant", () => {
+  it("waits for a holder of the same account key as oauth_release_grant", async () => {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const holding = new Promise<void>((resolve) => (locked = resolve));
+    // The key oauth_release_grant (#133) locks for (google, sub-lock).
+    const holder = admin.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(
+        hashtext('netrics.oauth_grant'), hashtext('google' || chr(31) || 'sub-lock'))`;
+      locked();
+      await released;
+    });
+    await holding;
+
+    let acquired = false;
+    const waiter = withWorkspace(
+      db,
+      { workspaceId: workspaceA },
+      async (tx) => {
+        await lockOAuthGrant(tx, "google", "sub-lock");
+        acquired = true;
+      },
+    );
+    // Another account is not blocked.
+    await withWorkspace(db, { workspaceId: workspaceA }, (tx) =>
+      lockOAuthGrant(tx, "google", "sub-other"),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(acquired).toBe(false);
+    release();
+    await holder;
+    await waiter;
+    expect(acquired).toBe(true);
   });
 });

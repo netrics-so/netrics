@@ -164,6 +164,7 @@ export {
   markNeedsReauthorization,
   releaseOAuthGrant,
   updateConnectionOAuthTokens,
+  lockOAuthGrant,
   oauthAccountHasGrant,
   pruneOAuthAuthorizations,
   upsertConnectionOAuth,

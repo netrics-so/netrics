@@ -330,3 +330,23 @@ export async function pruneOAuthAuthorizations(
   );
   return row?.deleted ?? 0;
 }
+
+/**
+ * Serializes grant changes of one provider account across the instance
+ * (transaction advisory lock, released at commit). Same key as
+ * oauth_release_grant (#133): a callback storing a grant for (provider, sub)
+ * waits for a concurrent disconnect's shared-grant check of that account,
+ * and the check sees the new grant once this transaction commits.
+ */
+export async function lockOAuthGrant(
+  tx: Transaction,
+  provider: string,
+  accountSub: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(
+          hashtext('netrics.oauth_grant'),
+          hashtext(${provider} || chr(31) || ${accountSub})
+        )`,
+  );
+}

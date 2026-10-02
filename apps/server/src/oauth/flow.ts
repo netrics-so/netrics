@@ -23,6 +23,7 @@ import {
   insertAuditEvent,
   insertConnection,
   insertOAuthAuthorization,
+  lockOAuthGrant,
   oauthAccountHasGrant,
   resetConnectionAuth,
   updateConnection,
@@ -395,6 +396,8 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
             ) {
               throw new FlowStop("forbidden", "role_missing");
             }
+            // Serialize with disconnects of the same account (#133).
+            await lockOAuthGrant(tx, providerId, account.sub);
             return authorization.purpose === "connect"
               ? connect(tx, authorization, registered.manifest, {
                   tokens,
