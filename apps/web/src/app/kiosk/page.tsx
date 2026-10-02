@@ -15,7 +15,5 @@ export const metadata: Metadata = {
  * device credentials live in this browser's localStorage.
  */
 export default function KioskPage() {
-  return (
-    <KioskView appVersion={process.env.NEXT_PUBLIC_APP_VERSION || "web"} />
-  );
+  return <KioskView appVersion={process.env.NEXT_PUBLIC_APP_VERSION ?? ""} />;
 }

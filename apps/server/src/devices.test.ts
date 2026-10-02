@@ -1057,10 +1057,11 @@ describe("device dashboard", () => {
       lastError: "network timeout",
     });
 
-    // A later heartbeat without an error clears it.
-    await heartbeat(accessToken, { appVersion: "1.2.4", uptimeSeconds: 5 });
+    // A later heartbeat without an error clears it. Browser kiosks report
+    // "web <version>" (#125).
+    await heartbeat(accessToken, { appVersion: "web 1.2.4", uptimeSeconds: 5 });
     expect((await listed()).heartbeat).toMatchObject({
-      appVersion: "1.2.4",
+      appVersion: "web 1.2.4",
       uptimeSeconds: 5,
       lastError: null,
     });
