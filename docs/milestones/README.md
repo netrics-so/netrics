@@ -101,10 +101,13 @@ team could parallelize independent connectors after milestone 07.
   layer), 03.3 (portable images and self-hosting; release `v0.1.0`), 04
   (tile dashboards, TV layout, demo onboarding), 05 (Vercel Web Analytics
   connector)
-- In progress: 06 (Apple TV). Server side, browser kiosk and the tvOS app
-  are done; the hosted service pairs TVs through netrics.tv. Open: signing,
-  a physical Apple TV and the exit gate (#58), device heartbeat in the TV
-  list (#125).
+- In progress: 06 (Apple TV). Server side, browser kiosk, the tvOS app and
+  the device heartbeat in the TV list are done; the hosted service pairs TVs
+  through netrics.tv. Open: signing, a physical Apple TV and the exit gate
+  (#58), blocked by the Apple TV development connection (#129).
+- Planned: 07 (Google Search Console). OAuth platform decided in
+  [ADR 0012](../decisions/0012-oauth-authorization-code-platform.md); issues
+  #131–#138.
 - Later: the web frontend on Vercel (#123).
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
