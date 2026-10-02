@@ -22,3 +22,6 @@ coverage/
 DerivedData/
 xcuserdata/
 *.xcuserstate
+
+# tvOS signing team, per developer (see apps/tvos/Config/Signing.xcconfig)
+Signing.local.xcconfig

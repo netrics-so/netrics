@@ -1,0 +1,14 @@
+// Signing for the NetricsTV app target.
+//
+// The repository is public, so no Apple team ID is committed. Copy
+// Signing.local.xcconfig.example to Signing.local.xcconfig (git-ignored) and
+// set your own team there. Without it, DEVELOPMENT_TEAM stays empty:
+// simulator builds and CODE_SIGNING_ALLOWED=NO builds still work.
+
+DEVELOPMENT_TEAM =
+
+// Bundle identifiers are unique across all Apple teams, so a fork signing
+// with its own team overrides this in Signing.local.xcconfig.
+PRODUCT_BUNDLE_IDENTIFIER = tv.netrics
+
+#include? "Signing.local.xcconfig"

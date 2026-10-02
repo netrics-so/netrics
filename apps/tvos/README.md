@@ -10,6 +10,10 @@ netrics server by code and shows one workspace dashboard full screen.
 - `NetricsTV/` is the SwiftUI app. It only renders what NetricsKit reports.
 - `NetricsTV.xcodeproj` builds the app. Its sources are a synchronized
   folder, so adding a file to `NetricsTV/` needs no project change.
+- `Config/Signing.xcconfig` is the base configuration of the app target
+  (see Signing below).
+- `Design/icon/` holds the SVG sources of the app icon and Top Shelf images
+  and `render.sh`, which writes them into the asset catalog.
 
 Apple frameworks only: SwiftUI, Swift Charts, Security, CryptoKit,
 CoreImage and URLSession.
@@ -38,6 +42,41 @@ xcrun simctl launch <udid> tv.netrics -NetricsDebugServer http://localhost:3000 
 ```
 
 `-NetricsDebugSettings YES` opens the settings screen after launch.
+
+## Signing
+
+The repository is public, so it holds no Apple team ID. The app target's
+base configuration, `Config/Signing.xcconfig`, leaves `DEVELOPMENT_TEAM`
+empty and includes `Config/Signing.local.xcconfig` if it exists. That file
+is git-ignored. To sign for a device:
+
+```sh
+cp apps/tvos/Config/Signing.local.xcconfig.example \
+  apps/tvos/Config/Signing.local.xcconfig
+# set DEVELOPMENT_TEAM to your team ID
+xcodebuild -project apps/tvos/NetricsTV.xcodeproj -scheme NetricsTV \
+  -destination 'generic/platform=tvOS' -allowProvisioningUpdates build
+```
+
+Signing is automatic. Xcode creates the development profile once the team
+has at least one registered Apple TV: pair it in Xcode > Devices and
+Simulators first. A fork signs with its own team and, because bundle
+identifiers are unique across teams, also sets its own
+`PRODUCT_BUNDLE_IDENTIFIER` in the local file (`tv.netrics` belongs to the
+netrics team). Never set the team in `project.pbxproj`: Xcode's Signing &
+Capabilities tab writes it there, so pick the team in the local file instead.
+
+## App icon and Top Shelf
+
+The icon is two layers for the tvOS parallax effect: an opaque back layer
+(dark background and chart grid) and a front layer with a rising sparkline
+on transparency. The Top Shelf images carry the wordmark. The artwork is a
+draft until netrics has a logo.
+
+Edit the SVGs in `Design/icon/`, then run `apps/tvos/Design/icon/render.sh`.
+It needs Google Chrome (headless, also for the system font of the wordmark)
+and ImageMagick, renders every slot of the asset catalog at its exact size,
+drops the alpha channel of opaque images and checks the sizes.
 
 ## How it works
 
@@ -88,9 +127,12 @@ one could leave these rules.
 
 ## Not done yet
 
-- Real app icon and Top Shelf artwork (the asset catalog has placeholders).
-- Signing team, App Store Connect record and TestFlight.
-- A run on a physical Apple TV, and the exit gate of milestone 06.
+- Final app icon and Top Shelf artwork (the current ones are a draft).
+- App Store Connect record and TestFlight.
+- A run on a physical Apple TV, and the exit gate of milestone 06. Xcode
+  pairs with an Apple TV on another subnet but drops the connection, because
+  `remotepairingd` requires the TV to be on the Mac's own link (ARP); put the
+  Mac on the TV's subnet first (#129).
 - Check on a device that App Transport Security lets a pinned self-signed
   certificate through on a host outside the local network. Local hosts are
   exempt from ATS, so they work.
