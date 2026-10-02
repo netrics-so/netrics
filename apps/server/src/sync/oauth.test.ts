@@ -56,6 +56,8 @@ const KEYRING = createCredentialKeyring(randomBytes(32).toString("base64"));
 const SCOPE = "https://example.test/auth/readonly";
 
 let provider: TestOAuthProvider;
+/** How many sync calls of oauth-named-rejection throw before working. */
+let rejectByName = 0;
 /** Credentials every connector call received, in order. */
 const received: Array<Record<string, unknown>> = [];
 
@@ -252,6 +254,25 @@ beforeAll(async () => {
       );
     },
   });
+  // Signals a refused token by name only, without a 401 on runtime.fetch
+  // (the Search Console connector's convention, #134).
+  registry.register({
+    ...oauthConnector("oauth-named-rejection", [SCOPE]),
+    async sync(context, request, runtime) {
+      received.push({ ...context.credentials });
+      if (rejectByName > 0) {
+        rejectByName -= 1;
+        const error = new Error("Search Console answered 401");
+        error.name = "AccessTokenRejectedError";
+        throw error;
+      }
+      return oauthConnector("oauth-named-rejection", [SCOPE]).sync(
+        context,
+        request,
+        runtime,
+      );
+    },
+  });
   registry.register(
     oauthConnector("oauth-upgraded", [SCOPE, "https://example.test/auth/more"]),
   );
@@ -327,6 +348,21 @@ describe("oauth2 connectors in the sync engine", () => {
     expect(provider.refreshRequests - before).toBe(1);
     const [first, second] = received;
     expect(first!.accessToken).not.toBe(second!.accessToken);
+  });
+
+  it("refreshes once more when the connector throws AccessTokenRejectedError", async () => {
+    const { connectionId } = await seed("oauth-named-rejection");
+    expect((await runJob(connectionId)).status).toBe("succeeded");
+    const before = provider.refreshRequests;
+    rejectByName = 1;
+    received.length = 0;
+    expect((await runJob(connectionId)).status).toBe("succeeded");
+    expect(provider.refreshRequests - before).toBe(1);
+    // check, rejected sync page, retried sync page
+    const tokens = received.map((credentials) => credentials.accessToken);
+    expect(tokens).toHaveLength(4);
+    expect(tokens[1]).toBe(tokens[0]);
+    expect(tokens.at(-1)).not.toBe(tokens[1]);
   });
 
   it("ends in needs_reauthorization on invalid_grant; the scheduler skips it until reauthorization", async () => {

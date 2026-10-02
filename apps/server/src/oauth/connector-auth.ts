@@ -13,7 +13,8 @@ import { OAuthTokenError, type OAuthTokenService } from "./tokens.js";
 // Every connector call (check, discover, each sync page) asks the token
 // service for a token; when the provider API answered 401 during a call
 // that then failed, the cached token is dropped and the call runs once more
-// with a refreshed token.
+// with a refreshed token. A connector can also signal a refused token by
+// throwing an error named AccessTokenRejectedError.
 
 /** The credentials an oauth2 connector receives. */
 export interface OAuthConnectorCredentials {
@@ -29,6 +30,18 @@ export class NeedsReauthorizationError extends Error {
     this.name = "NeedsReauthorizationError";
     this.reason = reason;
   }
+}
+
+/**
+ * Connectors signal a refused access token by throwing an error named
+ * "AccessTokenRejectedError" (the name survives the runtime's error
+ * redaction), e.g. when a provider API answers 401. The host also notices a
+ * 401 on runtime.fetch by itself; either one triggers the refresh-and-retry.
+ */
+export const ACCESS_TOKEN_REJECTED_ERROR = "AccessTokenRejectedError";
+
+function isAccessTokenRejected(error: unknown): boolean {
+  return error instanceof Error && error.name === ACCESS_TOKEN_REJECTED_ERROR;
 }
 
 /** The manifest's oauth2 strategy for a provider, if it has one. */
@@ -98,7 +111,7 @@ export async function callWithAccessToken<T>(
     try {
       value = await input.call({ accessToken: token.accessToken }, options);
     } catch (error) {
-      if (unauthorized && retry) {
+      if ((unauthorized || isAccessTokenRejected(error)) && retry) {
         await tokens.invalidateAccessToken(binding, token.accessToken);
         continue;
       }
