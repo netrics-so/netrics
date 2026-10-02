@@ -32,6 +32,8 @@ const MAX_PAGES = 100;
 export interface SyncEngineDeps {
   registry: ConnectorRegistry;
   credentialKeyring: CredentialKeyring;
+  /** Clock for sync windows and state timestamps; defaults to the wall clock. */
+  now?: () => Date;
 }
 
 type ErrorClass = "auth" | "transient" | "contract";
@@ -167,7 +169,7 @@ async function runSync(
     );
   }
   const attempt = job.attempts + 1;
-  const now = new Date();
+  const now = deps.now?.() ?? new Date();
   const log = logger.child({ connectionId, mode, attempt });
 
   // Step 1: load connection + state under the job's tenant context.

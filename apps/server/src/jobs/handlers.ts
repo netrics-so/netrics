@@ -61,6 +61,8 @@ export interface JobHandlerDeps {
   registry: ConnectorRegistry;
   /** Instance keyring for decrypting connection credentials. */
   credentialKeyring: CredentialKeyring;
+  /** Clock for sync windows; tests pin it. */
+  now?: () => Date;
 }
 
 /**

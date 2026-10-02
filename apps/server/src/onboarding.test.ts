@@ -35,7 +35,7 @@ let admin: Sql;
 let app: FastifyInstance;
 let cookie: string;
 
-async function buildWith(registry?: ConnectorRegistry) {
+async function buildWith(registry?: ConnectorRegistry, now?: () => Date) {
   const authService = createAuthService(config, db, {
     logger: pino({ level: "silent" }),
   });
@@ -44,6 +44,7 @@ async function buildWith(registry?: ConnectorRegistry) {
     authService,
     checkDb: async () => true,
     ...(registry ? { registry } : {}),
+    ...(now ? { now } : {}),
   });
 }
 
@@ -99,8 +100,32 @@ afterAll(async () => {
 });
 
 describe("workspace onboarding", () => {
-  it("reaches a populated dashboard without manual steps", async () => {
-    const created = await createWorkspace(app, cookie, {
+  // Fixed clocks (#144), so the result does not depend on the time of day.
+  // The demo connector reports by UTC date, so a Berlin workspace's "today"
+  // has no data yet between local and UTC midnight; both instants here are
+  // on the same date in Berlin and UTC.
+  it.each([
+    ["at midday", "2025-07-15T12:00:00Z"],
+    ["just after UTC midnight", "2025-07-15T00:30:00Z"],
+  ])(
+    "reaches a populated dashboard without manual steps %s",
+    async (_label, at) => {
+      const now = () => new Date(at);
+      const pinned = await buildWith(undefined, now);
+      try {
+        await reachPopulatedDashboard(pinned, now);
+      } finally {
+        await pinned.close();
+      }
+    },
+    60_000,
+  );
+
+  async function reachPopulatedDashboard(
+    target: FastifyInstance,
+    now: () => Date,
+  ) {
+    const created = await createWorkspace(target, cookie, {
       withDemo: true,
       timeZone: "Europe/Berlin",
     });
@@ -110,7 +135,7 @@ describe("workspace onboarding", () => {
     );
     expect(demoDashboardId).not.toBeNull();
 
-    const read = await app.inject({
+    const read = await target.inject({
       method: "GET",
       url: `/v1/workspaces/${workspace.id}/dashboards/${demoDashboardId}`,
       headers: { cookie },
@@ -131,6 +156,7 @@ describe("workspace onboarding", () => {
           config.appEncryptionKey,
           config.appEncryptionKeysPrevious,
         ),
+        now,
       }),
       pollMs: 25,
       heartbeatMs: 50,
@@ -153,7 +179,7 @@ describe("workspace onboarding", () => {
     await worker.stop();
 
     for (const tile of dashboard.tiles) {
-      const response = await app.inject({
+      const response = await target.inject({
         method: "POST",
         url: `/v1/workspaces/${workspace.id}/metrics/query`,
         headers: { cookie },
@@ -177,7 +203,7 @@ describe("workspace onboarding", () => {
       "connection.created",
       "dashboard.created",
     ]);
-  }, 60_000);
+  }
 
   it("adds nothing without the option", async () => {
     const created = await createWorkspace(app, cookie, {});

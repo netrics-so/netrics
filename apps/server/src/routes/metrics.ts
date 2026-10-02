@@ -17,6 +17,7 @@ import { createRequireSession } from "./session.js";
 export interface MetricRouteDeps {
   authService: AuthService;
   db: Database;
+  now?: () => Date;
 }
 
 export function registerMetricRoutes(
@@ -24,6 +25,7 @@ export function registerMetricRoutes(
   deps: MetricRouteDeps,
 ): void {
   const requireSession = createRequireSession(deps.authService);
+  const now = deps.now ?? (() => new Date());
 
   void app.register(
     (scope, _opts, done) => {
@@ -84,7 +86,7 @@ export function registerMetricRoutes(
           const result = await withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            (tx) => queryMetric(tx, access.workspaceId, body),
+            (tx) => queryMetric(tx, access.workspaceId, body, now()),
           );
           if (!result.ok) {
             return sendError(reply, result.status, result.error);

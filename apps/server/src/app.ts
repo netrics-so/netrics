@@ -40,6 +40,8 @@ export interface AppDeps {
   authService?: AuthService;
   mailer?: Mailer;
   registry?: ConnectorRegistry;
+  /** Clock for metric queries ("today" etc.); tests pin it. */
+  now?: () => Date;
 }
 
 export async function buildApp(
@@ -125,7 +127,11 @@ export async function buildApp(
     mailer,
     webOrigin: config.webOrigin,
   });
-  registerMetricRoutes(app, { authService, db });
+  registerMetricRoutes(app, {
+    authService,
+    db,
+    ...(deps.now ? { now: deps.now } : {}),
+  });
   registerDashboardRoutes(app, { authService, db });
   registerDeviceRoutes(app, {
     authService,
