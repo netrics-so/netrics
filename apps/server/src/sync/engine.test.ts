@@ -451,12 +451,19 @@ describe("sync engine", () => {
     expect(run.status).toBe("succeeded");
     expect(run.mode).toBe("backfill");
     expect(run.error_class).toBeNull();
-    expect(run.cursor_after).toBeTypeOf("string");
+    // The cursor stops at the UTC day containing `to`, never ahead of it.
+    expect(run.cursor_after).toBe(
+      new Date(
+        dayStartUtc(new Date(run.requested_to as string).getTime()),
+      ).toISOString(),
+    );
 
-    // Expected observations: days in [dayStart(from), dayStart(to)] × 3
+    // Expected observations: days in [dayStart(from), dayStart(to + 14h)]
+    // (the demo reports up to the latest date anywhere, UTC+14) × 3
     // resources × 2 metrics (demo connector determinism).
+    const requestedTo = new Date(run.requested_to as string).getTime();
     const from = dayStartUtc(new Date(run.requested_from as string).getTime());
-    const to = dayStartUtc(new Date(run.requested_to as string).getTime());
+    const to = dayStartUtc(requestedTo + 14 * 60 * 60 * 1000);
     const expectedDays = (to - from) / DAY_MS + 1;
     expect(expectedDays).toBeGreaterThanOrEqual(90);
     const count = await connectionObservationCount(workspaceA, connectionId);
