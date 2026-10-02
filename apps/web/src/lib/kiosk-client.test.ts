@@ -10,6 +10,7 @@ import {
   DASHBOARD_KEY,
   backoffMs,
   createKioskClient,
+  kioskAppVersion,
   type KioskClient,
   type KioskStorage,
 } from "./kiosk-client";
@@ -164,6 +165,21 @@ describe("backoffMs", () => {
     expect([1, 2, 3, 4, 5, 9].map(backoffMs)).toEqual([
       5000, 10_000, 20_000, 40_000, 60_000, 60_000,
     ]);
+  });
+});
+
+describe("kioskAppVersion", () => {
+  it("reports the web version as web <version>", () => {
+    expect(kioskAppVersion("0.1.0")).toBe("web 0.1.0");
+    expect(kioskAppVersion(" 0.2.0-rc.1 ")).toBe("web 0.2.0-rc.1");
+  });
+
+  it("falls back to web without a version and stays within 50 characters", () => {
+    expect(kioskAppVersion("")).toBe("web");
+    expect(kioskAppVersion("   ")).toBe("web");
+    const long = kioskAppVersion("9".repeat(80));
+    expect(long).toHaveLength(50);
+    expect(long.startsWith("web 999")).toBe(true);
   });
 });
 
@@ -464,7 +480,7 @@ describe("kiosk dashboard loop", () => {
     const [first] = api.callsTo("POST /v1/device/heartbeat");
     expect(first!.headers.get("authorization")).toBe("Bearer access-a");
     expect(first!.body).toEqual({
-      appVersion: "1.2.3",
+      appVersion: "web 1.2.3",
       uptimeSeconds: 10,
       lastError: "HttpError: HTTP 500",
     });

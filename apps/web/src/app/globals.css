@@ -836,6 +836,15 @@ a.tile-stale:hover {
   border-bottom: none;
 }
 
+/* A device-reported error: one line, cut with an ellipsis if it still
+   overflows (the text is shortened before rendering). */
+.device-list .device-error {
+  margin: 4px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .device-list form.inline {
   margin-top: 8px;
 }

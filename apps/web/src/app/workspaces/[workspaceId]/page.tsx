@@ -15,6 +15,7 @@ import {
   listProjects,
   listWorkspaces,
 } from "@/lib/api";
+import { summarizeHeartbeat } from "@/lib/device-heartbeat";
 import { relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
 
@@ -119,27 +120,41 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
             <p className="muted">No TVs yet.</p>
           ) : (
             <ul className="workspace-list device-list">
-              {devices.map((device) => (
-                <li key={device.id}>
-                  <strong>{device.name}</strong>{" "}
-                  {device.revokedAt ? (
-                    <span className="role-badge">Revoked</span>
-                  ) : null}{" "}
-                  <span className="muted">
-                    {(device.dashboardId &&
-                      dashboardNames.get(device.dashboardId)) ??
-                      "No dashboard"}{" "}
-                    · last seen {relativeTime(device.lastSeenAt)}
-                  </span>
-                  {can(role, "devices:manage") && !device.revokedAt ? (
-                    <DeviceControls
-                      workspaceId={workspaceId}
-                      device={device}
-                      dashboards={dashboards}
-                    />
-                  ) : null}
-                </li>
-              ))}
+              {devices.map((device) => {
+                const heartbeat = summarizeHeartbeat(device.heartbeat);
+                return (
+                  <li key={device.id}>
+                    <strong>{device.name}</strong>{" "}
+                    {device.revokedAt ? (
+                      <span className="role-badge">Revoked</span>
+                    ) : null}{" "}
+                    <span className="muted">
+                      {(device.dashboardId &&
+                        dashboardNames.get(device.dashboardId)) ??
+                        "No dashboard"}{" "}
+                      · last seen {relativeTime(device.lastSeenAt)}
+                      {heartbeat
+                        ? ` · ${heartbeat.version}, heartbeat ${heartbeat.at}`
+                        : null}
+                    </span>
+                    {heartbeat?.lastError ? (
+                      <p
+                        className="muted device-error"
+                        title={heartbeat.lastErrorFull ?? undefined}
+                      >
+                        Last error: {heartbeat.lastError}
+                      </p>
+                    ) : null}
+                    {can(role, "devices:manage") && !device.revokedAt ? (
+                      <DeviceControls
+                        workspaceId={workspaceId}
+                        device={device}
+                        dashboards={dashboards}
+                      />
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           )}
           {connectTv}

@@ -70,6 +70,7 @@ export interface KioskClientOptions {
   clock?: KioskClock;
   /** Prefix for API paths; "" for the same-origin /v1 proxy. */
   baseUrl?: string;
+  /** The web app's version; reported as "web <version>". */
   appVersion: string;
   onChange?: (state: KioskState) => void;
 }
@@ -99,6 +100,19 @@ const systemClock: KioskClock = {
 export function backoffMs(failures: number): number {
   const exponent = Math.max(failures - 1, 0);
   return Math.min(BACKOFF_MIN_MS * 2 ** exponent, BACKOFF_MAX_MS);
+}
+
+/** The heartbeat's appVersion field accepts at most this many characters. */
+const MAX_APP_VERSION_LENGTH = 50;
+
+/**
+ * What a browser kiosk reports as its app version: "web <version>" (#125),
+ * so the TV list can tell kiosks from the Apple TV app, which reports its
+ * bare marketing version. "web" alone when the build carries no version.
+ */
+export function kioskAppVersion(webVersion: string): string {
+  const version = webVersion.trim();
+  return (version ? `web ${version}` : "web").slice(0, MAX_APP_VERSION_LENGTH);
 }
 
 function isString(value: unknown): value is string {
@@ -590,7 +604,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
         method: "POST",
         headers: { authorization: `Bearer ${credentials.accessToken}` },
         body: {
-          appVersion: options.appVersion.slice(0, 50) || "web",
+          appVersion: kioskAppVersion(options.appVersion),
           uptimeSeconds: Math.max(
             Math.floor((clock.now() - startedAt) / 1000),
             0,
