@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   AGGREGATIONS,
+  BUILTIN_THEME_KEYS,
   GRANULARITIES,
   METRIC_KINDS,
   PERIODS,
@@ -9,9 +10,12 @@ import {
   SLIDE_TRANSITIONS,
   STUDIO_GRID,
   STUDIO_LIMITS,
+  THEME_COLOR_TOKENS,
+  THEME_FONT_SCALES,
   WIDGET_TYPES,
   WORKSPACE_ROLES,
   isValidTimeZone,
+  type ThemeColorToken,
 } from "@netrics/domain";
 
 export const processRoleSchema = z.enum(["api", "worker", "scheduler"]);
@@ -1210,6 +1214,98 @@ export type MetricResourcesResponse = z.infer<
   typeof metricResourcesResponseSchema
 >;
 
+// ─── Dashboard themes (ADR 0015, section 6; #216) ────────────────────────────
+
+/** A colour as `#rrggbb`; accepted in any case, stored and returned lowercase. */
+export const hexColorSchema = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, { message: "expected a colour like #7aa2f7" })
+  .toLowerCase();
+
+export const builtinThemeKeySchema = z.enum(BUILTIN_THEME_KEYS);
+
+export const themeColorTokenSchema = z.enum(THEME_COLOR_TOKENS);
+
+/**
+ * The tokens every renderer (web, kiosk, tvOS) draws with. All of them are
+ * required; unknown keys are refused, so a typo cannot pass silently.
+ */
+export const themeTokensSchema = z.strictObject({
+  ...(Object.fromEntries(
+    THEME_COLOR_TOKENS.map((token) => [token, hexColorSchema]),
+  ) as Record<ThemeColorToken, typeof hexColorSchema>),
+  /** Multiplies text sizes; never lowers a minimum (ADR 0015, section 8). */
+  fontScale: z.union(THEME_FONT_SCALES.map((scale) => z.literal(scale))),
+});
+export type ThemeTokensInput = z.input<typeof themeTokensSchema>;
+
+/** One text pair of a theme with its WCAG contrast ratio. */
+export const themeContrastSchema = z.object({
+  foreground: themeColorTokenSchema,
+  background: themeColorTokenSchema,
+  /** Rounded down to two decimals. */
+  ratio: z.number(),
+  /** fail: below 3:1 (refused); warn: below 4.5:1; pass otherwise. */
+  level: z.enum(["pass", "warn", "fail"]),
+});
+export type ThemeContrast = z.infer<typeof themeContrastSchema>;
+
+export const builtinThemeSchema = z.object({
+  key: builtinThemeKeySchema,
+  name: z.string().min(1),
+  tokens: themeTokensSchema,
+});
+export type BuiltinThemeView = z.infer<typeof builtinThemeSchema>;
+
+export const workspaceThemeSchema = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  /** The built-in it was copied from. */
+  base: builtinThemeKeySchema,
+  tokens: themeTokensSchema,
+  /** Send it back with PUT; a newer version on the server answers 409. */
+  version: z.number().int().min(1),
+  /** Pairs below 4.5:1 (saved themes never go below 3:1). */
+  warnings: z.array(themeContrastSchema),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type WorkspaceTheme = z.infer<typeof workspaceThemeSchema>;
+
+export const themeListResponseSchema = z.object({
+  builtins: z.array(builtinThemeSchema),
+  themes: z.array(workspaceThemeSchema),
+});
+export type ThemeListResponse = z.infer<typeof themeListResponseSchema>;
+
+export const themeResponseSchema = z.object({ theme: workspaceThemeSchema });
+export type ThemeResponse = z.infer<typeof themeResponseSchema>;
+
+/** A copy of a built-in; without tokens, the built-in's own. */
+export const createThemeRequestSchema = z.object({
+  name: nameSchema,
+  base: builtinThemeKeySchema,
+  tokens: themeTokensSchema.optional(),
+});
+export type CreateThemeRequest = z.input<typeof createThemeRequestSchema>;
+
+export const updateThemeRequestSchema = z.object({
+  version: z.number().int().min(1),
+  name: nameSchema,
+  tokens: themeTokensSchema,
+});
+export type UpdateThemeRequest = z.input<typeof updateThemeRequestSchema>;
+
+/**
+ * 400 contrast_too_low: the pairs below 3:1. 409 theme_in_use: the
+ * dashboards that still show the theme.
+ */
+export const themeErrorResponseSchema = errorResponseSchema.extend({
+  contrast: z.array(themeContrastSchema).optional(),
+  dashboards: z.array(z.object({ id: z.uuid(), name: z.string() })).optional(),
+});
+export type ThemeErrorResponse = z.infer<typeof themeErrorResponseSchema>;
+
 // ─── Dashboards (#49) ───────────────────────────────────────────────────────
 
 /** Most tiles one dashboard may hold. */
@@ -1301,11 +1397,41 @@ export const dashboardSettingsSchema = z.object({
   /** How long a slide without its own duration stays on screen. */
   defaultSlideSeconds: slideSecondsSchema,
   transition: slideTransitionSchema,
+  /** A built-in theme key, or null when `themeId` names a custom theme. */
+  themeBuiltin: z.string().nullable(),
+  /** A custom theme of the workspace, or null for a built-in. */
+  themeId: z.uuid().nullable(),
+  /** Overrides the theme accent (a brand colour), else null. */
+  accentColor: z.string().nullable(),
 });
 export type DashboardSettings = z.infer<typeof dashboardSettingsSchema>;
 
-/** Settings sent with a dashboard; a missing field keeps its value. */
-export const dashboardSettingsInputSchema = dashboardSettingsSchema.partial();
+/**
+ * Settings sent with a dashboard; a missing field keeps its value (on
+ * create: its default). The theme is a built-in key or a custom theme id,
+ * exactly one (the other null or omitted); both omitted keep the theme
+ * (netrics Dark on create), and a custom theme must be the workspace's (404
+ * theme_not_found). The accent is checked against the theme's surface (400
+ * contrast_too_low below 3:1); null clears it.
+ */
+export const dashboardSettingsInputSchema = dashboardSettingsSchema
+  .omit({ themeBuiltin: true, themeId: true, accentColor: true })
+  .partial()
+  .extend({
+    themeBuiltin: builtinThemeKeySchema.nullable().optional(),
+    themeId: z.uuid().nullable().optional(),
+    accentColor: hexColorSchema.nullable().optional(),
+  })
+  .refine(
+    (body) =>
+      (body.themeBuiltin === undefined && body.themeId === undefined) ||
+      ((body.themeBuiltin ?? null) === null) !==
+        ((body.themeId ?? null) === null),
+    { message: "set exactly one of themeBuiltin and themeId" },
+  );
+export type DashboardSettingsInput = z.input<
+  typeof dashboardSettingsInputSchema
+>;
 
 const widgetPlacementShape = {
   /** Column of the top left cell, 0–11. */

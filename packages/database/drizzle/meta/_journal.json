@@ -239,6 +239,13 @@
       "when": 1791068100186,
       "tag": "0033_dashboard_studio",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791070562884,
+      "tag": "0034_studio_themes",
+      "breakpoints": true
     }
   ]
 }

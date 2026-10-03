@@ -623,6 +623,45 @@ export const jobs = pgTable(
   ],
 );
 
+// Custom dashboard themes (ADR 0015, section 6): a copy of a built-in
+// (`base`) with edited tokens, validated by the contracts. Workspace table
+// under RLS; names are unique per workspace regardless of case.
+export const workspaceThemes = pgTable(
+  "workspace_themes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** The built-in theme key it was copied from. */
+    base: text("base").notNull(),
+    tokens: jsonb("tokens").notNull(),
+    version: integer("version").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("workspace_themes_id_workspace_unique").on(
+      table.id,
+      table.workspaceId,
+    ),
+    uniqueIndex("workspace_themes_name_unique").on(
+      table.workspaceId,
+      sql`lower(${table.name})`,
+    ),
+    check("workspace_themes_version_positive", sql`${table.version} >= 1`),
+    check(
+      "workspace_themes_tokens_object",
+      sql`jsonb_typeof(${table.tokens}) = 'object'`,
+    ),
+  ],
+);
+
 // Tile dashboards (#49). A dashboard is saved as a whole: its name and
 // ordered tiles change together, guarded by `version` (optimistic
 // concurrency). Composite foreign keys keep every tile in the workspace of
@@ -646,6 +685,12 @@ export const dashboards = pgTable(
     autoAdvance: boolean("auto_advance").notNull().default(true),
     defaultSlideSeconds: integer("default_slide_seconds").notNull().default(20),
     transition: text("transition").notNull().default("fade"),
+    // The theme (ADR 0015, section 6): a built-in key or a custom theme,
+    // exactly one of the two.
+    themeBuiltin: text("theme_builtin").default("netrics_dark"),
+    themeId: uuid("theme_id"),
+    /** `#rrggbb`; overrides the theme accent (a brand dashboard). */
+    accentColor: text("accent_color"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -664,6 +709,29 @@ export const dashboards = pgTable(
     check(
       "dashboards_transition_valid",
       sql`${table.transition} in ('none', 'fade')`,
+    ),
+    // NO ACTION, not RESTRICT: deleting a theme in use still fails, but a
+    // workspace deletion that cascades to both dashboards and themes is
+    // checked at the end of the statement and succeeds.
+    foreignKey({
+      name: "dashboards_theme_fk",
+      columns: [table.themeId, table.workspaceId],
+      foreignColumns: [workspaceThemes.id, workspaceThemes.workspaceId],
+    }),
+    index("dashboards_theme_idx")
+      .on(table.themeId)
+      .where(sql`${table.themeId} is not null`),
+    check(
+      "dashboards_one_theme",
+      sql`(${table.themeBuiltin} is null) <> (${table.themeId} is null)`,
+    ),
+    check(
+      "dashboards_theme_builtin_format",
+      sql`${table.themeBuiltin} ~ '^[a-z][a-z0-9_]{0,39}$'`,
+    ),
+    check(
+      "dashboards_accent_color_format",
+      sql`${table.accentColor} ~ '^#[0-9a-f]{6}$'`,
     ),
   ],
 );

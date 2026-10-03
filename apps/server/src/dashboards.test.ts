@@ -454,6 +454,9 @@ describe("dashboard studio API", () => {
       autoAdvance: false,
       defaultSlideSeconds: 45,
       transition: "fade",
+      themeBuiltin: "netrics_dark",
+      themeId: null,
+      accentColor: null,
     });
     const [sales, notes] = dashboard.slides;
     expect(sales).toMatchObject({
@@ -530,6 +533,9 @@ describe("dashboard studio API", () => {
       autoAdvance: true,
       defaultSlideSeconds: 20,
       transition: "fade",
+      themeBuiltin: "netrics_dark",
+      themeId: null,
+      accentColor: null,
     });
   });
 

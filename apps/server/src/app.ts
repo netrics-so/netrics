@@ -42,6 +42,7 @@ import { registerMetricRoutes } from "./routes/metrics.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerOpenApi, routeSchema } from "./routes/openapi.js";
 import { registerSessionRoutes } from "./routes/session.js";
+import { registerThemeRoutes } from "./routes/themes.js";
 import { registerWorkspaceRoutes } from "./routes/workspaces.js";
 
 export interface AppDeps {
@@ -164,6 +165,7 @@ export async function buildApp(
     ...(deps.now ? { now: deps.now } : {}),
   });
   registerDashboardRoutes(app, { authService, db });
+  registerThemeRoutes(app, { authService, db });
   registerDeviceRoutes(app, {
     authService,
     db,
