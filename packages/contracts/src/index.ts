@@ -525,6 +525,27 @@ export type AppStoreAnalyticsStatusResponse = z.infer<
   typeof appStoreAnalyticsStatusResponseSchema
 >;
 
+/**
+ * The optional reviews key of an App Store Connect connection (ADR 0014
+ * decision 2, #190), asked live with its own token: not_configured (no
+ * reviews key stored), active (Apple accepts it), paused (Apple refused it:
+ * revoked, or its role no longer reads reviews; review metrics pause while
+ * sales keep syncing), unknown (Apple could not be asked right now). Added,
+ * replaced and removed through PATCH …/connections/:id with
+ * `credentials: { reviews: { keyId, privateKey } }` or `{ reviews: null }`.
+ * `keyId` is the stored reviews key's (non-secret) key ID.
+ */
+export const appStoreReviewsStatusResponseSchema = z.object({
+  status: z.enum(["not_configured", "active", "paused", "unknown"]),
+  keyId: z.string().nullable(),
+  message: z.string().nullable(),
+  /** Where team keys are created and revoked. */
+  keysUrl: z.string(),
+});
+export type AppStoreReviewsStatusResponse = z.infer<
+  typeof appStoreReviewsStatusResponseSchema
+>;
+
 // "pending" = never synced successfully yet; the other states mirror
 // connection_state.auth_state.
 export const connectionHealthSchema = z.enum([

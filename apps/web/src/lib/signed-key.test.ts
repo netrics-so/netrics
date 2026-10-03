@@ -175,6 +175,19 @@ describe("connection page", () => {
         { sourceTimestamp: "2026-09-29T00:00:00.000Z" },
       ]),
     ).toBe("2026-10-01");
+    // Review metrics (#190) run through today: they do not count.
+    expect(
+      latestReportingDay([
+        {
+          sourceTimestamp: "2026-09-30T00:00:00.000Z",
+          metricKey: "app_store_connect.downloads",
+        },
+        {
+          sourceTimestamp: "2026-10-03T00:00:00.000Z",
+          metricKey: "app_store_connect.reviews",
+        },
+      ]),
+    ).toBe("2026-09-30");
   });
 
   it("round-trips the deleted key's provider through the query, and nothing else", () => {

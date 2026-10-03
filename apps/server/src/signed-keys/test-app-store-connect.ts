@@ -20,10 +20,12 @@ export interface FakeAscTeam {
   apps: Array<{ id: string; name: string; bundleId: string }>;
   vendorNumbers: string[];
   /**
-   * "developer" keys cannot read sales reports (403); only "admin" keys
-   * may request analytics reports.
+   * "developer" and "customer-support" keys cannot read sales reports
+   * (403); only "admin" keys may request analytics reports. Customer
+   * reviews are read by "customer-support", "developer" and "admin" keys,
+   * not by "sales" ones (the default).
    */
-  role?: "sales" | "admin" | "developer";
+  role?: "sales" | "admin" | "developer" | "customer-support";
   /** A revoked key answers 401 everywhere. */
   revoked?: boolean;
   /**
@@ -36,6 +38,22 @@ export interface FakeAscTeam {
    * give every key entry of a team the same object.
    */
   analytics?: FakeAscAnalytics;
+  /**
+   * Customer reviews per app ID (#190). Keys of one team share them: give
+   * every key entry of a team the same object.
+   */
+  reviews?: Record<string, FakeAscReview[]>;
+}
+
+export interface FakeAscReview {
+  rating: number;
+  /** ISO date-time with offset, as Apple returns it. */
+  createdDate: string;
+  /** Alpha-3 territory code. */
+  territory: string;
+  title?: string;
+  body?: string;
+  reviewerNickname?: string;
 }
 
 /** The pinned production bucket host of analytics segment links. */
@@ -90,6 +108,8 @@ export interface FakeAsc {
   requests: Array<{
     url: URL;
     issuerId: string | undefined;
+    /** The key ID of the key that signed the request's token. */
+    keyId?: string | undefined;
     method?: string;
     authorization?: string | undefined;
   }>;
@@ -178,6 +198,7 @@ export function createFakeAsc(teams: FakeAscTeam[]): FakeAsc {
       requests.push({
         url,
         issuerId: team?.issuerId,
+        keyId: team?.keyId,
         method: init?.method ?? "GET",
       });
       if (!team) {
@@ -217,8 +238,50 @@ export function createFakeAsc(teams: FakeAscTeam[]): FakeAsc {
           links: {},
         });
       }
+      const reviews = /^\/v1\/apps\/(\d+)\/customerReviews$/.exec(url.pathname);
+      if (reviews) {
+        if (
+          team.role !== "customer-support" &&
+          team.role !== "developer" &&
+          team.role !== "admin"
+        ) {
+          return error(
+            403,
+            "FORBIDDEN_ERROR",
+            "This request is forbidden for security reasons",
+            "The API key in use does not allow this request",
+          );
+        }
+        const list = [...(team.reviews?.[reviews[1]!] ?? [])].sort(
+          (a, b) => Date.parse(b.createdDate) - Date.parse(a.createdDate),
+        );
+        const limit = Number(url.searchParams.get("limit") ?? 50);
+        const offset = Number(url.searchParams.get("cursor") ?? 0);
+        const fields = (
+          url.searchParams.get("fields[customerReviews]") ??
+          "rating,title,body,reviewerNickname,createdDate,territory"
+        ).split(",");
+        const page = list.slice(offset, offset + limit);
+        const next = offset + limit < list.length;
+        const query = new URLSearchParams(url.searchParams);
+        query.set("cursor", String(offset + limit));
+        return reply(200, {
+          data: page.map((review, index) => ({
+            type: "customerReviews",
+            id: `review-${reviews[1]}-${offset + index}`,
+            attributes: Object.fromEntries(
+              Object.entries(review).filter(([field]) =>
+                fields.includes(field),
+              ),
+            ),
+          })),
+          links: next
+            ? { next: `https://${url.hostname}${url.pathname}?${query}` }
+            : {},
+        });
+      }
       if (url.pathname === "/v1/salesReports") {
-        if (team.role === "developer") {
+        if (team.role === "developer" || team.role === "customer-support") {
           return error(
             403,
             "FORBIDDEN_ERROR",

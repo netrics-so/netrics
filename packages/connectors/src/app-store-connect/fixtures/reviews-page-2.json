@@ -1,0 +1,40 @@
+{
+  "data": [
+    {
+      "type": "customerReviews",
+      "id": "00000000-0000-4000-8000-0000000a0004",
+      "attributes": {
+        "rating": 3,
+        "title": "Synthetic review title",
+        "body": "Synthetic review body that netrics must never store.",
+        "reviewerNickname": "synthetic-reviewer",
+        "createdDate": "2026-09-28T12:00:00-07:00",
+        "territory": "GBR"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/customerReviews/00000000-0000-4000-8000-0000000a0004"
+      }
+    },
+    {
+      "type": "customerReviews",
+      "id": "00000000-0000-4000-8000-0000000a0005",
+      "attributes": {
+        "rating": 5,
+        "createdDate": "2026-08-15T10:00:00-07:00",
+        "territory": "USA"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/customerReviews/00000000-0000-4000-8000-0000000a0005"
+      }
+    }
+  ],
+  "links": {
+    "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000001/customerReviews?cursor=Mw.AJ5kVmQ&sort=-createdDate&limit=200&fields%5BcustomerReviews%5D=rating%2CcreatedDate%2Cterritory"
+  },
+  "meta": {
+    "paging": {
+      "total": 5,
+      "limit": 200
+    }
+  }
+}

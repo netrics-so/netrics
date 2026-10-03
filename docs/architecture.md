@@ -351,7 +351,15 @@ A manifest declares one or more of these strategies:
   provider's field labels and setup steps for the wizard. A 401 or 403 from
   the provider during a connector call puts the connection in `auth_failed`
   with the provider's "upload a new key" message; there is nothing to
-  refresh.
+  refresh. A provider may also define optional additional keys (#190: App
+  Store Connect's reviews key, stored as `reviews: { keyId, privateKey }`
+  in the same envelope, issuer ID shared). Each is checked with its own
+  probes, signed into its own token per call and handed to the connector in
+  a provider-named credential field (`credentials.reviewsAccessToken`). A
+  refusal of that token is the connector's to handle: it pauses what the
+  key reads and never puts the connection in `auth_failed`. This needs no
+  SDK change: `credentials` is an opaque record, and a connector on a host
+  without the additional key simply gets no such field.
 
 A provider id is lowercase words joined by hyphens (`google`,
 `app-store-connect`). Connectors may name a provider but never define one.

@@ -71,7 +71,11 @@ export async function callWithSignedKey<T>(
     );
   let value: T;
   try {
-    value = await input.call({ accessToken: key.mintToken() }, options);
+    // The main key's token, and one per additional key (#190) in its own
+    // credential field. A refusal of an additional key's token is the
+    // connector's to handle (it pauses what that key reads); only a
+    // failed call is mapped to the main key's auth failure.
+    value = await input.call(key.mintTokens(), options);
   } catch (error) {
     if (error instanceof Error && error.name === ACCESS_TOKEN_REJECTED_ERROR) {
       throw rejection(401);

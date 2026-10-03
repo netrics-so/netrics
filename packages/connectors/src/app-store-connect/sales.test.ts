@@ -175,11 +175,14 @@ runConnectorContractTests(
 
 describe("sales manifest", () => {
   it("declares the ADR 0014 sales and analytics metrics, daily deltas", () => {
+    // Review metrics (#190) are declared in reviews.test.ts.
     const metrics = Object.fromEntries(
-      appStoreConnectManifest.metrics.map((metric) => [
-        metric.key,
-        [metric.unit, metric.dimensions, metric.kind, metric.granularity],
-      ]),
+      appStoreConnectManifest.metrics
+        .filter((metric) => !metric.key.includes("review"))
+        .map((metric) => [
+          metric.key,
+          [metric.unit, metric.dimensions, metric.kind, metric.granularity],
+        ]),
     );
     expect(metrics).toEqual({
       "app_store_connect.downloads": [

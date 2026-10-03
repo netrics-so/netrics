@@ -19,10 +19,16 @@ export interface FakeTeam {
   appPages?: unknown[];
   vendorNumbers: string[];
   /**
-   * "sales" (Sales/Finance) reads reports; "admin" also requests analytics
-   * reports; "developer" cannot read sales.
+   * "sales" (Sales/Finance, the default) reads reports but no reviews;
+   * "admin" reads both and requests analytics reports; "developer" and
+   * "customer-support" read reviews but no sales.
    */
-  role?: "sales" | "admin" | "developer";
+  role?: "sales" | "admin" | "developer" | "customer-support";
+  /**
+   * Customer review pages (#190) by request path, with `?cursor=<c>` for a
+   * page reached through links.next. An app without pages has no reviews.
+   */
+  reviewPages?: Record<string, unknown>;
   /** The Account Holder has not accepted the current agreements. */
   agreementsMissing?: boolean;
   /** Days (YYYY-MM-DD) with sales (SALES_REPORT_TSV); other days answer 404. */
@@ -198,7 +204,7 @@ export function createFakeAppStoreConnect(
       if (team.agreementsMissing) {
         return jsonResponse(403, fixture("error-forbidden-agreements"), rate());
       }
-      if (team.role === "developer") {
+      if (team.role === "developer" || team.role === "customer-support") {
         return jsonResponse(403, fixture("error-forbidden-role"), rate());
       }
       const vendor = url.searchParams.get("filter[vendorNumber]") ?? "";
@@ -219,6 +225,26 @@ export function createFakeAppStoreConnect(
         return jsonResponse(404, fixture("error-not-found-no-sales"), rate());
       }
       return gzipResponse(SALES_REPORT_TSV, rate());
+    }
+    if (
+      /^\/v1\/apps\/\d+\/customerReviews$/.test(url.pathname) &&
+      init?.method === "GET"
+    ) {
+      if (team.role === undefined || team.role === "sales") {
+        return jsonResponse(403, fixture("error-forbidden-role"), rate());
+      }
+      const cursor = url.searchParams.get("cursor");
+      const page =
+        team.reviewPages?.[
+          cursor === null ? url.pathname : `${url.pathname}?cursor=${cursor}`
+        ];
+      const limit = Number(url.searchParams.get("limit") ?? 50);
+      const body = (page ?? { data: [], links: {} }) as { data: unknown[] };
+      return jsonResponse(
+        200,
+        limit === 1 ? { ...body, data: body.data.slice(0, 1) } : body,
+        rate(),
+      );
     }
     const analytics = team.analytics;
     if (

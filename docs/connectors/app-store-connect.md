@@ -3,12 +3,13 @@
 Reads your apps' App Store sales (downloads, in-app purchases and proceeds)
 from [App Store Connect](https://appstoreconnect.apple.com/), for one team
 and one vendor number per connection, and, once enabled, App Store
-analytics (impressions, product page views, downloads by source)
+analytics (impressions, product page views, downloads by source) and, with
+an optional second key, ratings and reviews
 ([ADR 0014](../decisions/0014-app-store-connect-signed-keys.md)).
 
-> Status: the key check, app discovery (#171), the daily sales sync (#172)
-> and App Store analytics (#174) are in place. The exit gate (#176) checks
-> them against a real account.
+> Status: the key check, app discovery (#171), the daily sales sync (#172),
+> App Store analytics (#174) and ratings and reviews (#190) are in place.
+> The exit gate (#176) checks them against a real account.
 
 ## Connect
 
@@ -63,6 +64,9 @@ you change it later.
 | Admin            | Yes   | Works, but can change apps, users and pricing. netrics does not need that; avoid it.    |
 | Developer, other | No    | Cannot read sales reports. netrics refuses the key with "This key cannot read sales …". |
 | Individual key   | No    | Individual keys cannot read sales reports.                                              |
+
+The optional reviews key has its own roles; see
+[Ratings and reviews](#ratings-and-reviews).
 
 ## Rotating or revoking the key
 
@@ -220,6 +224,97 @@ Apple serves a segment from another host, that app's analytics fail with
 "App Store analytics segment is hosted on …, which netrics does not allow",
 and sales keep syncing.
 
+## Ratings and reviews
+
+Customer reviews and their star ratings come from
+[`GET /v1/apps/{id}/customerReviews`](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-apps-_id_-customerreviews).
+The Sales key cannot read them: "View ratings and reviews" is not part of
+the Sales or Finance role. So reviews need a **second, optional team key**
+with a review-reading role, stored on the same connection (ADR 0014,
+decision 2). Sales and analytics never need it.
+
+### Add a Customer Support key
+
+On the connection page, under **App Store ratings and reviews**, choose
+**Add a Customer Support key (optional)**:
+
+1. Sign in to App Store Connect as the Account Holder or an Admin and open
+   [Users and Access → Integrations → App Store Connect API](https://appstoreconnect.apple.com/access/integrations/api).
+2. Under **Team Keys**, choose **Generate API Key** (the **+** button),
+   name it "netrics reviews" and pick the **Customer Support** role.
+3. Download the `.p8` file right away (Apple offers it only once) and copy
+   the key's **Key ID** from its row.
+4. In netrics, enter the key ID and choose the `.p8` file. The issuer ID is
+   the same for every key of the team, so it is not asked again.
+
+| Role                 | Works | Notes                                                                                         |
+| -------------------- | ----- | --------------------------------------------------------------------------------------------- |
+| Customer Support     | Yes   | Recommended: the fewest other rights (it can also edit App Store details and answer reviews). |
+| Developer, Marketing | Yes   | Work, but grant much more (builds, certificates, in-app purchases, pricing).                  |
+| App Manager          | Yes   | Works, but can change apps and their users; avoid it.                                         |
+| Admin                | No    | netrics refuses it: it never stores an Admin key.                                             |
+| Sales, Finance       | No    | Cannot read reviews: "This key cannot read ratings and reviews …".                            |
+
+No role reads reviews read-only, so Apple gives every review-reading key a
+little more than netrics needs. netrics only ever reads reviews with it.
+
+Before the key is stored, netrics checks it against Apple:
+
+1. `GET /v1/apps/{id}/customerReviews?limit=1` for the connection's first
+   app: a 401 means the key ID and private key do not belong to the
+   connection's issuer ID (another team's key), or the key was revoked; a
+   403 means its role cannot read reviews.
+2. The daily sales report of the vendor number: a key that reads reviews
+   **and** sales reports has the Admin role (review readers and sales
+   readers only overlap there), and is refused.
+3. It must be a different key from the Sales key.
+
+A key that fails a check is not stored. The new key is stored in the same
+encrypted envelope as the Sales key (`reviews: { keyId, privateKey }`) and
+audited as `connection.credentials_updated` with `key: "reviews"`, never
+with key material. Adding a key reads the review history of the last 365
+days with the next sync.
+
+**Replace or remove.** **Replace reviews key** checks and stores a new key
+the same way, then reminds you to revoke the old one; **Remove reviews key**
+deletes it (review metrics stop updating, the data already read stays).
+Rotating the Sales key keeps the reviews key when the new Sales key is of
+the same team; a Sales key of another team drops it.
+
+**Paused.** If Apple refuses the reviews key during a sync (it was revoked,
+or its role changed), only the review metrics pause. The connection stays
+healthy, sales and analytics keep syncing, and the card shows "App Store
+reviews paused — upload a new reviews key".
+
+### What is read and kept
+
+- Reviews are read newest first (`sort=-createdDate`, 200 per page), and
+  only `rating`, `createdDate` and `territory` are requested. **Review
+  titles, texts and reviewer nicknames are never fetched or stored**; only
+  counts and star sums are kept.
+- A review counts on the **Pacific Time** day of its creation date, like
+  sales.
+- Each sync reads at least the last 7 days again (from the start of that
+  month, for the territory ranking), so edited and deleted reviews correct
+  their day. Days without reviews are stored as 0.
+- At most 3,000 reviews per app and sync are read; an app with more in the
+  window keeps the newest complete days, and the log says so.
+- The reviews key has its own hourly request budget at Apple.
+- The API returns the reviews customers wrote. It has **no aggregate star
+  rating**, so these numbers are not the rating shown on the App Store.
+  Whether ratings without a written review appear in the API is checked
+  against a real account at the exit gate (#176) and recorded in ADR 0014.
+
+| Metric                                   | Unit      | Dimensions          | What it counts                                                              |
+| ---------------------------------------- | --------- | ------------------- | --------------------------------------------------------------------------- |
+| `app_store_connect.reviews`              | `reviews` | resource            | Reviews created that day                                                    |
+| `app_store_connect.review_rating_sum`    | `stars`   | resource            | Sum of their star ratings; ÷ reviews = their average rating                 |
+| `app_store_connect.reviews_by_rating`    | `reviews` | resource, rating    | Reviews per star rating (`1`–`5`)                                           |
+| `app_store_connect.reviews_by_territory` | `reviews` | resource, territory | Reviews for the 10 territories with the most reviews of the month, "Others" |
+
+Territories are ISO alpha-2 codes, like the sales report's (Apple's reviews
+API uses alpha-3 codes; netrics maps them).
+
 ## Currencies
 
 Apple reports proceeds per row in a currency of proceeds, so one day
@@ -336,6 +431,9 @@ give netrics its own key.
 | "hourly request limit" / "not answering"                                               | Nothing: netrics retries automatically.                                                                   |
 | "This key cannot request App Store analytics"                                          | Enabling analytics needs a team key with the Admin role, once. Use a temporary one and revoke it after.   |
 | "App Store analytics paused — enable again"                                            | Apple stopped the report request. Enable App Store analytics again with a temporary Admin key.            |
+| "This key cannot read ratings and reviews"                                             | The reviews key needs the Customer Support role. Create one and add it on the connection page.            |
+| "This key can also read sales reports, so it has the Admin role"                       | netrics does not store Admin keys. Create a Customer Support key; revoke the Admin key if it was for us.  |
+| "App Store reviews paused — upload a new reviews key"                                  | Apple refused the reviews key (revoked or role changed). Upload a new Customer Support key; sales go on.  |
 
 ## Network access
 
