@@ -958,6 +958,73 @@ describe("incremental syncs and the two meanings of 404", () => {
     expect(result.nextCursor).toBe("2026-09-28T00:00:00.000Z");
   });
 
+  it("a day without sales has proceeds 0 in each currency the app earned in that month", async () => {
+    const usdOnly = buildReport([
+      {
+        SKU: "EXFIELDNOTES",
+        "Product Type Identifier": "1F",
+        Units: "1",
+        "Developer Proceeds": "0.70",
+        "Country Code": "US",
+        "Currency of Proceeds": "USD",
+        "Apple Identifier": FIELD_NOTES,
+        Device: "iPhone",
+      },
+    ]);
+    const NO_SALES = "1000000099";
+    const api = fake({ reports: { ...reports, "2026-09-28": usdOnly } });
+    const result = await connector(AFTERNOON).sync(
+      CONTEXT,
+      request("2026-09-26T00:00:00.000Z", new Date(AFTERNOON).toISOString(), {
+        resources: [FIELD_NOTES, NO_SALES],
+      }),
+      api.runtime,
+    );
+    const app = { resource: FIELD_NOTES };
+    const proceedsOf = (currency: string, at: string) =>
+      valueOf(result.observations, "proceeds", { ...app, currency }, at);
+    // Each currency is a continuous daily series: no gaps on days (or in
+    // currencies) without sales.
+    for (const currency of ["EUR", "JPY", "USD"]) {
+      expect(proceedsOf(currency, "2026-09-27")).toBe(0);
+      expect(proceedsOf(currency, "2026-09-30")).toBe(0);
+    }
+    expect(proceedsOf("USD", "2026-09-28")).toBe(70);
+    expect(proceedsOf("EUR", "2026-09-28")).toBe(0);
+    expect(proceedsOf("JPY", "2026-09-28")).toBe(0);
+    expect(proceedsOf("EUR", "2026-09-29")).toBe(1047);
+    // The zeros change no sum: the window's total per currency is the
+    // sales days' total.
+    const total = (currency: string) =>
+      result.observations
+        .filter(
+          (observation) =>
+            observation.metricKey === "app_store_connect.proceeds" &&
+            observation.dimensions.resource === FIELD_NOTES &&
+            observation.dimensions.currency === currency,
+        )
+        .reduce((sum, observation) => sum + observation.value, 0);
+    expect(total("EUR")).toBe(2 * 1047);
+    expect(total("USD")).toBe(2 * 280 + 70);
+    // An app without any proceeds this month has no currency to fill: its
+    // counts are 0, and it has no proceeds series.
+    expect(
+      valueOf(
+        result.observations,
+        "downloads",
+        { resource: NO_SALES },
+        "2026-09-27",
+      ),
+    ).toBe(0);
+    expect(
+      result.observations.some(
+        (observation) =>
+          observation.metricKey === "app_store_connect.proceeds" &&
+          observation.dimensions.resource === NO_SALES,
+      ),
+    ).toBe(false);
+  });
+
   it("a 404 for a day that may not be published yet keeps the cursor before it", async () => {
     const api = fake({ reports, pendingDays: ["2026-09-30"] });
     const result = await connector(NOW).sync(
