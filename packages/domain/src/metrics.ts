@@ -29,8 +29,27 @@ export const PERIODS = [
   "last_7_days",
   "last_30_days",
   "this_month",
+  "last_90_days",
+  "last_12_months",
 ] as const;
 export type Period = (typeof PERIODS)[number];
+
+/** The span of one sparkline point. */
+export type SeriesUnit = "hour" | "day" | "week" | "month";
+
+/**
+ * Sparkline points per period, within MAX_BUCKETS: hours today, days up to a
+ * month, weeks (starting Monday) for 90 days, calendar months for 12 months.
+ * A daily metric has one point today.
+ */
+export const SERIES_UNITS: Record<Period, SeriesUnit> = {
+  today: "hour",
+  last_7_days: "day",
+  last_30_days: "day",
+  this_month: "day",
+  last_90_days: "week",
+  last_12_months: "month",
+};
 
 /** Aggregations that mean something for each kind, in preference order. */
 const KIND_AGGREGATIONS: Record<MetricKind, readonly Aggregation[]> = {
@@ -247,18 +266,35 @@ export interface PeriodWindow {
   current: InstantRange;
   /** Same elapsed length as `current`, immediately before it. */
   previous: InstantRange;
-  /** Sparkline bucket for hourly and instant metrics. */
+  /** Read bucket for hourly and instant metrics. */
   bucket: "hour" | "day";
+  /** Sparkline point; days roll up into weeks or months for long periods. */
+  series: SeriesUnit;
 }
 
 function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
+/** The first of the month `months` after (or before) `date`'s month. */
+function addMonths(date: CivilDate, months: number): CivilDate {
+  const [year, month] = parseCivil(date);
+  return new Date(Date.UTC(year, month - 1 + months, 1))
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** `date`'s day of month in the month starting `monthStart`, capped at its end. */
+function sameDayIn(monthStart: CivilDate, day: number): CivilDate {
+  const [year, month] = parseCivil(monthStart);
+  return addDays(monthStart, Math.min(day, daysInMonth(year, month)) - 1);
+}
+
 /**
  * The current and previous window of a period at `now` in the zone. The
  * previous window is the same length: yesterday up to the same time of day,
- * the 7 or 30 days before, or the same first days of the previous month.
+ * the 7, 30 or 90 days before, the same first days of the previous month, or
+ * the 12 calendar months before up to the same day a year ago.
  */
 export function resolvePeriod(
   period: Period,
@@ -274,27 +310,34 @@ export function resolvePeriod(
       previousDates = { from: addDays(today, -1), to: addDays(today, -1) };
       break;
     case "last_7_days":
-    case "last_30_days": {
-      const length = period === "last_7_days" ? 7 : 30;
+    case "last_30_days":
+    case "last_90_days": {
+      const length = { last_7_days: 7, last_30_days: 30, last_90_days: 90 }[
+        period
+      ];
       const from = addDays(today, -(length - 1));
       dates = { from, to: today };
       previousDates = { from: addDays(from, -length), to: addDays(from, -1) };
       break;
     }
     case "this_month": {
-      const [year, month, day] = parseCivil(today);
-      const from = `${today.slice(0, 7)}-01`;
+      const from = addMonths(today, 0);
       dates = { from, to: today };
-      const previousYear = month === 1 ? year - 1 : year;
-      const previousMonth = month === 1 ? 12 : month - 1;
-      const previousFrom = `${previousYear}-${String(previousMonth).padStart(2, "0")}-01`;
-      const previousDays = Math.min(
-        day,
-        daysInMonth(previousYear, previousMonth),
-      );
+      const previousFrom = addMonths(today, -1);
       previousDates = {
         from: previousFrom,
-        to: addDays(previousFrom, previousDays - 1),
+        to: sameDayIn(previousFrom, parseCivil(today)[2]),
+      };
+      break;
+    }
+    case "last_12_months": {
+      // Twelve calendar months, the current one so far: whole months make
+      // whole sparkline points.
+      const from = addMonths(today, -11);
+      dates = { from, to: today };
+      previousDates = {
+        from: addMonths(today, -23),
+        to: sameDayIn(addMonths(today, -12), parseCivil(today)[2]),
       };
       break;
     }
@@ -316,13 +359,14 @@ export function resolvePeriod(
     current: { start, end: now },
     previous: { start: previousStart, end: previousEnd },
     bucket: period === "today" ? "hour" : "day",
+    series: SERIES_UNITS[period],
   };
 }
 
 // ─── Buckets ────────────────────────────────────────────────────────────────
 
-/** Longest window a query may cover, in days (a month plus its predecessor). */
-export const MAX_WINDOW_DAYS = 62;
+/** Longest window a query may cover, in days (12 calendar months). */
+export const MAX_WINDOW_DAYS = 366;
 /** Most sparkline points a query may return. */
 export const MAX_BUCKETS = 100;
 
@@ -335,15 +379,52 @@ export type BucketUnit = "hour" | "day";
  */
 export interface BucketPlan {
   selection: "dates" | "instants";
+  /** The buckets values are read in, and a tile's number is formed over. */
   unit: BucketUnit;
-  /** Bucket starts (ISO 8601) of the current window, in order. */
+  /**
+   * Sparkline point starts (ISO 8601) of the current window, in order: the
+   * read buckets, or for weeks and months the first read bucket of each
+   * (the window's first day for a partial first week).
+   */
   starts: string[];
+  /** The sparkline point: `unit`, or weeks or months of days. */
+  series: SeriesUnit;
+  /** Zone the read buckets start in ("UTC" for reporting dates). */
+  timeZone: string;
+  /** The window's first reporting date. */
+  from: CivilDate;
 }
 
-function dateStarts(range: DateRange, toInstant: (date: CivilDate) => Date) {
+function dayOfWeek(date: CivilDate): number {
+  const [year, month, day] = parseCivil(date);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+}
+
+/** The first day of the week (Monday) or month holding `date`, not before `from`. */
+function seriesDate(
+  date: CivilDate,
+  series: SeriesUnit,
+  from: CivilDate,
+): CivilDate {
+  const start =
+    series === "week"
+      ? addDays(date, -((dayOfWeek(date) + 6) % 7))
+      : series === "month"
+        ? addMonths(date, 0)
+        : date;
+  return start < from ? from : start;
+}
+
+function dateStarts(
+  range: DateRange,
+  series: SeriesUnit,
+  toInstant: (date: CivilDate) => Date,
+) {
   const starts: string[] = [];
   for (let date = range.from; date <= range.to; date = addDays(date, 1)) {
-    starts.push(toInstant(date).toISOString());
+    if (seriesDate(date, series, range.from) === date) {
+      starts.push(toInstant(date).toISOString());
+    }
   }
   return starts;
 }
@@ -352,18 +433,29 @@ export function planBuckets(
   window: PeriodWindow,
   granularity: Granularity,
 ): BucketPlan {
+  const series = window.series === "hour" ? "day" : window.series;
   if (granularity === "day") {
     return {
       selection: "dates",
       unit: "day",
-      starts: dateStarts(window.dates, (date) => new Date(`${date}T00:00:00Z`)),
+      series,
+      timeZone: "UTC",
+      from: window.dates.from,
+      starts: dateStarts(
+        window.dates,
+        series,
+        (date) => new Date(`${date}T00:00:00Z`),
+      ),
     };
   }
   if (window.bucket === "day") {
     return {
       selection: "instants",
       unit: "day",
-      starts: dateStarts(window.dates, (date) =>
+      series,
+      timeZone: window.timeZone,
+      from: window.dates.from,
+      starts: dateStarts(window.dates, series, (date) =>
         startOfDay(date, window.timeZone),
       ),
     };
@@ -377,5 +469,45 @@ export function planBuckets(
   ) {
     starts.push(new Date(instant).toISOString());
   }
-  return { selection: "instants", unit: "hour", starts };
+  return {
+    selection: "instants",
+    unit: "hour",
+    series: "hour",
+    timeZone: window.timeZone,
+    from: window.dates.from,
+    starts,
+  };
+}
+
+/**
+ * The sparkline points of read buckets: each point is the tile's
+ * aggregation over the buckets it spans (a week's total, its average day,
+ * its highest day, its latest reading), so a point means what the tile's
+ * number means. Identity when points are the read buckets.
+ */
+export function seriesPoints(
+  plan: BucketPlan,
+  aggregation: Aggregation,
+  buckets: readonly BucketValue[],
+): BucketValue[] {
+  if (plan.series === plan.unit) {
+    return [...buckets];
+  }
+  const groups = new Map<string, BucketValue[]>();
+  for (const bucket of buckets) {
+    const date = civilDate(new Date(bucket.bucket), plan.timeZone);
+    const start = seriesDate(date, plan.series, plan.from);
+    const key = (
+      plan.selection === "dates"
+        ? new Date(`${start}T00:00:00Z`)
+        : startOfDay(start, plan.timeZone)
+    ).toISOString();
+    groups.set(key, [...(groups.get(key) ?? []), bucket]);
+  }
+  return [...groups]
+    .map(([bucket, members]) => ({
+      bucket,
+      value: aggregateBuckets(aggregation, members)!,
+    }))
+    .sort((a, b) => (a.bucket < b.bucket ? -1 : 1));
 }

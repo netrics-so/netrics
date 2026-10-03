@@ -4,10 +4,12 @@ import type {
   MetricPeriod,
 } from "@netrics/contracts";
 import {
+  SERIES_UNITS,
   amountCurrency,
   currencyExponent,
   isPerCurrencyUnit,
   toMajorUnits,
+  type SeriesUnit,
 } from "@netrics/domain";
 
 /**
@@ -119,6 +121,8 @@ export const PERIOD_LABELS: Record<MetricPeriod, string> = {
   last_7_days: "Last 7 days",
   last_30_days: "Last 30 days",
   this_month: "This month",
+  last_90_days: "Last 90 days",
+  last_12_months: "Last 12 months",
 };
 
 /** What the change is measured against, e.g. "vs previous 7 days". */
@@ -127,7 +131,43 @@ export const COMPARISON_LABELS: Record<MetricPeriod, string> = {
   last_7_days: "vs previous 7 days",
   last_30_days: "vs previous 30 days",
   this_month: "vs last month",
+  last_90_days: "vs previous 90 days",
+  last_12_months: "vs previous 12 months",
 };
+
+/**
+ * A sparkline point's label in the workspace's zone: "14:00" for hours,
+ * "Sep 28" for days, "Week of Sep 28" for weeks (starting Monday, or the
+ * period's first day), "Sep 2026" for months. Daily metrics' buckets are
+ * reporting dates stamped at UTC midnight (ADR 0008), so those are read in
+ * UTC.
+ */
+export function sparkBucketLabel(
+  bucket: string | undefined,
+  period: MetricPeriod,
+  timeZone: string,
+): string | null {
+  if (bucket === undefined) {
+    return null;
+  }
+  const step: SeriesUnit = SERIES_UNITS[period];
+  const reportingDate = step !== "hour" && bucket.endsWith("T00:00:00.000Z");
+  const format = (options: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat(LOCALE, {
+      timeZone: reportingDate ? "UTC" : timeZone,
+      ...options,
+    }).format(new Date(bucket));
+  switch (step) {
+    case "hour":
+      return format({ hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+    case "day":
+      return format({ month: "short", day: "numeric" });
+    case "week":
+      return `Week of ${format({ month: "short", day: "numeric" })}`;
+    case "month":
+      return format({ month: "short", year: "numeric" });
+  }
+}
 
 export const AGGREGATION_LABELS: Record<MetricAggregation, string> = {
   sum: "Total",

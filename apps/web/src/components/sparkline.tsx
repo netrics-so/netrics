@@ -2,7 +2,9 @@
 
 import { useState, type PointerEvent } from "react";
 
-import { formatValue } from "@/lib/format-metric";
+import type { MetricPeriod } from "@netrics/contracts";
+
+import { formatValue, sparkBucketLabel } from "@/lib/format-metric";
 
 export interface SparkPoint {
   /** The bucket's start; absent when only the values are known (devices). */
@@ -15,41 +17,19 @@ const HEIGHT = 40;
 const PAD = 3;
 
 /**
- * Bucket label in the workspace's zone: "14:00" for hours, "Sep 28" for
- * days. Daily metrics' buckets are reporting dates stamped at UTC midnight
- * (ADR 0008), so those are read in UTC.
- */
-function bucketLabel(
-  bucket: string | undefined,
-  hourly: boolean,
-  timeZone: string,
-): string | null {
-  if (bucket === undefined) {
-    return null;
-  }
-  const reportingDate = !hourly && bucket.endsWith("T00:00:00.000Z");
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: reportingDate ? "UTC" : timeZone,
-    ...(hourly
-      ? { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }
-      : { month: "short", day: "numeric" }),
-  }).format(new Date(bucket));
-}
-
-/**
  * A tile's trend: the current period, one point per bucket. Gaps where a
  * bucket has no data; the latest value is marked in the accent colour.
  */
 export function Sparkline({
   series,
   unit,
-  hourly,
+  period,
   timeZone,
 }: {
   series: SparkPoint[];
   unit: string;
-  /** Hourly buckets (Today) or daily ones. */
-  hourly: boolean;
+  /** Which points the series has: hours, days, weeks or months. */
+  period: MetricPeriod;
   timeZone: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -103,12 +83,12 @@ export function Sparkline({
   }
 
   const hovered = hover === null ? null : series[hover]!;
-  const lastLabel = bucketLabel(last.bucket, hourly, timeZone);
+  const lastLabel = sparkBucketLabel(last.bucket, period, timeZone);
   const summary =
     `Trend from ${formatValue(min, unit)} to ${formatValue(max, unit)}, ` +
     `latest ${formatValue(last.value, unit)}${lastLabel ? ` (${lastLabel})` : ""}.`;
   const hoveredLabel = hovered
-    ? bucketLabel(hovered.bucket, hourly, timeZone)
+    ? sparkBucketLabel(hovered.bucket, period, timeZone)
     : null;
 
   return (

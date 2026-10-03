@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   bootstrapRequestSchema,
+  dashboardTileInputSchema,
+  metricPeriodSchema,
+  metricQueryRequestSchema,
   healthLiveResponseSchema,
   healthReadyResponseSchema,
   meResponseSchema,
@@ -142,5 +145,24 @@ describe("session contracts", () => {
         ],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("metric periods (#212)", () => {
+  it("accepts the longer periods for queries and tiles", () => {
+    for (const period of ["last_90_days", "last_12_months"]) {
+      expect(metricPeriodSchema.parse(period)).toBe(period);
+      const query = {
+        connectionId: "00000000-0000-4000-8000-000000000000",
+        metricKey: "demo.signups",
+        period,
+      };
+      expect(metricQueryRequestSchema.parse(query).period).toBe(period);
+      expect(dashboardTileInputSchema.parse(query).period).toBe(period);
+    }
+  });
+
+  it("rejects periods the server does not know", () => {
+    expect(metricPeriodSchema.safeParse("last_year").success).toBe(false);
   });
 });

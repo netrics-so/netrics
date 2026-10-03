@@ -45,6 +45,7 @@ import {
   isPerCurrencyUnit,
   planBuckets,
   resolvePeriod,
+  seriesPoints,
   type Aggregation,
   type BucketValue,
   type DateRange,
@@ -187,8 +188,13 @@ export async function queryMetric(
     timeZone,
     combination,
   };
+  // The tile's number is formed over the read buckets (days, or hours
+  // today), so an average is per day; the sparkline rolls days up into weeks
+  // or months for long periods. Amounts are converted per day before.
   const series = (buckets: readonly BucketValue[]) => {
-    const values = new Map(buckets.map((b) => [b.bucket, b.value]));
+    const values = new Map(
+      seriesPoints(plan, aggregation, buckets).map((b) => [b.bucket, b.value]),
+    );
     return plan.starts.map((bucket) => ({
       bucket,
       value: values.get(bucket) ?? null,
