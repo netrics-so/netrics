@@ -91,7 +91,7 @@ import {
   type WorkspaceRole,
 } from "@netrics/contracts";
 
-import { apiBaseUrl } from "./api-proxy";
+import { apiFetch } from "./api-fetch";
 
 /**
  * API failures carry a machine-readable code in the response body
@@ -211,10 +211,9 @@ function serverGet<T>(
   cookieHeader: string,
   path: string,
 ): Promise<T> {
-  return fetch(`${apiBaseUrl()}${path}`, {
-    headers: { cookie: cookieHeader },
-    cache: "no-store",
-  }).then((response) => parseResponse(schema, response));
+  return apiFetch(path, { headers: { cookie: cookieHeader } }).then(
+    (response) => parseResponse(schema, response),
+  );
 }
 
 export function listInvitations(
@@ -232,9 +231,8 @@ export function listInvitations(
 export async function getInvitationPreview(
   token: string,
 ): Promise<InvitationPreviewResponse | null> {
-  const response = await fetch(
-    `${apiBaseUrl()}/v1/invitations/${encodeURIComponent(token)}`,
-    { cache: "no-store" },
+  const response = await apiFetch(
+    `/v1/invitations/${encodeURIComponent(token)}`,
   );
   if (response.status === 404) {
     return null;
@@ -244,17 +242,14 @@ export async function getInvitationPreview(
 
 /** Public: whether first-run setup is pending and whether sign-up is open. */
 export async function getSetupStatus(): Promise<SetupStatusResponse> {
-  const response = await fetch(`${apiBaseUrl()}/v1/setup-status`, {
-    cache: "no-store",
-  });
+  const response = await apiFetch("/v1/setup-status");
   return parseResponse(setupStatusResponseSchema, response);
 }
 
 /** Returns null on 401 so pages can redirect to /login themselves. */
 export async function getMe(cookieHeader: string): Promise<MeResponse | null> {
-  const response = await fetch(`${apiBaseUrl()}/v1/me`, {
+  const response = await apiFetch("/v1/me", {
     headers: { cookie: cookieHeader },
-    cache: "no-store",
   });
   if (response.status === 401) {
     return null;
@@ -273,9 +268,8 @@ export async function getWorkspace(
   cookieHeader: string,
   workspaceId: string,
 ): Promise<WorkspaceResponse | null> {
-  const response = await fetch(`${apiBaseUrl()}/v1/workspaces/${workspaceId}`, {
+  const response = await apiFetch(`/v1/workspaces/${workspaceId}`, {
     headers: { cookie: cookieHeader },
-    cache: "no-store",
   });
   if (response.status === 404) {
     return null;
@@ -328,9 +322,9 @@ export async function getConnection(
   workspaceId: string,
   connectionId: string,
 ): Promise<ConnectionDetailResponse | null> {
-  const response = await fetch(
-    `${apiBaseUrl()}/v1/workspaces/${workspaceId}/connections/${connectionId}`,
-    { headers: { cookie: cookieHeader }, cache: "no-store" },
+  const response = await apiFetch(
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}`,
+    { headers: { cookie: cookieHeader } },
   );
   if (response.status === 404) {
     return null;
@@ -368,8 +362,8 @@ export interface ApiHealth {
 export async function fetchApiHealth(): Promise<ApiHealth> {
   try {
     const [liveResponse, readyResponse] = await Promise.all([
-      fetch(`${apiBaseUrl()}/health/live`, { cache: "no-store" }),
-      fetch(`${apiBaseUrl()}/health/ready`, { cache: "no-store" }),
+      apiFetch("/health/live"),
+      apiFetch("/health/ready"),
     ]);
 
     const live = liveResponse.ok
@@ -390,7 +384,8 @@ export async function fetchApiHealth(): Promise<ApiHealth> {
 
 // ---------------------------------------------------------------------------
 // Browser-side mutations: same-origin relative URLs, proxied to the API by
-// the Next rewrites; the session cookie is attached automatically.
+// the /v1 route handler (lib/api-proxy); the session cookie is attached
+// automatically.
 // ---------------------------------------------------------------------------
 
 async function browserSend<T>(
@@ -645,9 +640,9 @@ export async function getDashboard(
   workspaceId: string,
   dashboardId: string,
 ): Promise<DashboardResponse | null> {
-  const response = await fetch(
-    `${apiBaseUrl()}/v1/workspaces/${workspaceId}/dashboards/${dashboardId}`,
-    { headers: { cookie: cookieHeader }, cache: "no-store" },
+  const response = await apiFetch(
+    `/v1/workspaces/${workspaceId}/dashboards/${dashboardId}`,
+    { headers: { cookie: cookieHeader } },
   );
   if (response.status === 404) {
     return null;

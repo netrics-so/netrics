@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { apiBaseUrl } from "./api-proxy";
+import { apiFetch } from "./api-fetch";
 
 const getSessionResponseSchema = z
   .object({
@@ -29,9 +29,8 @@ export async function getSessionUser(
   cookieHeader: string,
 ): Promise<SessionUser | null> {
   try {
-    const response = await fetch(`${apiBaseUrl()}/api/auth/get-session`, {
+    const response = await apiFetch("/api/auth/get-session", {
       headers: { cookie: cookieHeader },
-      cache: "no-store",
     });
     if (!response.ok) {
       return null;

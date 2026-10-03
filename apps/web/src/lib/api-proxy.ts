@@ -1,11 +1,13 @@
 /**
  * Same-origin proxy from the web app to the API. The browser only ever talks
  * to the web origin, so the session cookie stays first-party and no CORS is
- * involved. The API location is read from NETRICS_API_URL on every request:
- * one published image works against any API address (SaaS and self-hosted).
+ * involved. Requests reach the API through apiFetch (lib/api-fetch), which
+ * reads NETRICS_API_URL on every request and forwards the client address.
  */
 
 import type { ErrorResponse } from "@netrics/contracts";
+
+import { apiFetch } from "./api-fetch";
 
 // Same as the API's Fastify default bodyLimit, so the proxy rejects no less.
 export const MAX_PROXY_BODY_BYTES = 1_048_576;
@@ -23,7 +25,7 @@ const DROPPED_REQUEST_HEADERS = new Set([
   "upgrade",
   "host",
   "content-length",
-  // Client-supplied forwarding headers are replaced; see clientIp().
+  // Client-supplied forwarding headers are replaced by apiFetch.
   "forwarded",
   "x-forwarded-for",
   "x-real-ip",
@@ -34,70 +36,14 @@ const DROPPED_RESPONSE_HEADERS = new Set([
   "set-cookie", // re-added one by one below
 ]);
 
-export function apiBaseUrl(): string {
-  return process.env.NETRICS_API_URL ?? "http://localhost:3001";
-}
-
-/**
- * How many proxies stand in front of the web server (Caddy in the Compose
- * install, the platform edge on Railway). Each appends the address it
- * received the request from to X-Forwarded-For. Next.js fills the header from
- * the socket when it is absent.
- */
-export function trustedProxyHops(): number {
-  const value = Number(process.env.NETRICS_TRUSTED_PROXY_HOPS ?? "1");
-  return Number.isInteger(value) && value >= 1 ? value : 1;
-}
-
-/**
- * Optional header in which the proxy in front of the web server states the
- * client address as one value (for example x-real-ip), for platforms whose
- * X-Forwarded-For chain is not a fixed number of hops. Unset: use
- * X-Forwarded-For and NETRICS_TRUSTED_PROXY_HOPS.
- */
-export function clientIpHeader(): string | null {
-  const name = process.env.NETRICS_CLIENT_IP_HEADER?.trim().toLowerCase();
-  return name ? name : null;
-}
-
-/**
- * The client address as seen by the outermost trusted proxy: the entry that
- * many hops from the right of X-Forwarded-For. Entries further left were
- * written by the client and are ignored.
- */
-export function clientIp(
-  incoming: Headers,
-  hops: number,
-  header: string | null = null,
-): string | null {
-  if (header) {
-    return incoming.get(header)?.trim() || null;
-  }
-  const chain = (incoming.get("x-forwarded-for") ?? "")
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-  return chain[Math.max(chain.length - hops, 0)] ?? null;
-}
-
-export function proxyRequestHeaders(
-  incoming: Headers,
-  hops: number = trustedProxyHops(),
-  ipHeader: string | null = clientIpHeader(),
-): Headers {
+/** The browser's end-to-end headers; apiFetch adds the client address. */
+export function proxyRequestHeaders(incoming: Headers): Headers {
   const headers = new Headers();
   incoming.forEach((value, key) => {
     if (!DROPPED_REQUEST_HEADERS.has(key.toLowerCase())) {
       headers.set(key, value);
     }
   });
-  // The API trusts this hop (NETRICS_TRUSTED_PROXIES) and rate-limits auth
-  // by the one address it forwards.
-  const ip = clientIp(incoming, hops, ipHeader);
-  if (ip) {
-    headers.set("x-forwarded-for", ip);
-    headers.set("x-real-ip", ip);
-  }
   return headers;
 }
 
@@ -157,7 +103,6 @@ export async function readBodyWithin(
 
 export async function proxyToApi(request: Request): Promise<Response> {
   const incoming = new URL(request.url);
-  const target = new URL(incoming.pathname + incoming.search, apiBaseUrl());
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   let upstream: Response;
   try {
@@ -172,12 +117,12 @@ export async function proxyToApi(request: Request): Promise<Response> {
       }
       body = read;
     }
-    upstream = await fetch(target, {
+    upstream = await apiFetch(incoming.pathname + incoming.search, {
       method: request.method,
       headers: proxyRequestHeaders(request.headers),
+      client: request.headers,
       body,
       redirect: "manual",
-      cache: "no-store",
     });
   } catch {
     return errorResponse("api_unreachable", 502);
