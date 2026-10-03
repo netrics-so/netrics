@@ -401,10 +401,16 @@ As built (#191):
 - **Screens.** The metric query returns `conversion` (display currency,
   source, unconverted amounts); the web tile shows "≈", the source and the
   unconverted amounts. The device payload keeps `unit` as
-  `<display currency>_minor`, adds `conversion`, and appends
-  "≈ EUR, ECB reference rates" (and "TWD not converted") to the tile
-  label, which the current tvOS app already shows on the tile's second
-  line: no app update is needed.
+  `<display currency>_minor` and the label unchanged (titles stay
+  readable), and adds `conversion`. The kiosk and the tvOS app (from the
+  version that decodes `conversion`) show "≈" before the value and a muted
+  note line, "ECB reference rates · TWD not converted"; older tvOS builds
+  show the converted value without the marking.
+- **Fallback ranking.** A tile that follows a workspace without a display
+  currency shows the currency with the largest total. When rates are
+  available, totals are ranked by their value in EUR at each day's rate;
+  currencies without a rate rank after those with one. Without rates
+  (instance off), raw minor-unit totals rank as before.
 
 ### Time zones, backfill and latency
 

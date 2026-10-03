@@ -266,16 +266,11 @@ export function isDisplayCurrency(
 }
 
 /**
- * What a screen shows next to a converted amount, for screens that only
- * read the tile label (tvOS, ADR 0007): "≈ EUR, ECB reference rates", and
- * the currencies left out ("TWD not converted").
+ * The note screens show under a converted amount (kiosk, tvOS): the source,
+ * and the currencies left out: "ECB reference rates · TWD not converted".
  */
-export function conversionNote(
-  displayCurrency: string,
-  unconverted: readonly string[],
-): string {
-  const note = `≈ ${displayCurrency}, ${EXCHANGE_RATE_SOURCE.shortName}`;
+export function conversionNote(unconverted: readonly string[]): string {
   return unconverted.length > 0
-    ? `${note}; ${unconverted.join(", ")} not converted`
-    : note;
+    ? `${EXCHANGE_RATE_SOURCE.shortName} · ${unconverted.join(", ")} not converted`
+    : EXCHANGE_RATE_SOURCE.shortName;
 }

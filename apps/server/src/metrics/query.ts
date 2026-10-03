@@ -21,6 +21,7 @@ import {
   queryMetricCurrencyTotals,
   type ConnectionMetric,
   type MetricCurrencyBucket,
+  type MetricCurrencyTotal,
   type Transaction,
 } from "@netrics/database";
 import {
@@ -163,15 +164,13 @@ export async function queryMetric(
       ? (request.displayCurrency ?? workspace.displayCurrency ?? null)
       : null;
     if (displayCurrency === null) {
-      const range = rankingRange(current);
-      const [largest] = await queryMetricCurrencyTotals(tx, {
+      const [largest] = await rankedCurrencyTotals(tx, {
         workspaceId,
-        connectionId: metric.connectionId,
-        metricKey: metric.key,
+        metric,
         ...(request.dimensions ? { dimensions: request.dimensions } : {}),
-        from: range.start,
-        to: range.end,
-        combination,
+        range: rankingRange(current),
+        timeZone,
+        exchangeRates: options.exchangeRates ?? false,
       });
       dimensions = largest
         ? { ...request.dimensions, [CURRENCY_DIMENSION]: largest.currency }
@@ -341,6 +340,7 @@ export async function listMetricCurrencies(
   workspaceId: string,
   request: MetricCurrenciesRequest,
   now: Date = new Date(),
+  options: QueryOptions = {},
 ): Promise<MetricResult<MetricCurrenciesResponse>> {
   const workspace = await findWorkspace(tx, workspaceId);
   const found = await findConnectionMetric(
@@ -366,17 +366,94 @@ export async function listMetricCurrencies(
   const current =
     plan.selection === "dates" ? datesToRange(window.dates) : window.current;
   // An empty window (exactly at local midnight) ranks by the day before.
-  const range = rankingRange(current);
-  const currencies = await queryMetricCurrencyTotals(tx, {
+  const currencies = await rankedCurrencyTotals(tx, {
     workspaceId,
-    connectionId: metric.connectionId,
-    metricKey: metric.key,
+    metric,
     ...(Object.keys(dimensions).length > 0 ? { dimensions } : {}),
-    from: range.start,
-    to: range.end,
-    combination: bucketCombination(metric.kind),
+    range: rankingRange(current),
+    timeZone: plan.selection === "dates" ? "UTC" : workspace.timeZone,
+    exchangeRates: options.exchangeRates ?? false,
   });
   return { ok: true, value: { currencies } };
+}
+
+/**
+ * Each currency's own total over the range, largest first. Totals in
+ * different currencies are not comparable as they are: with rates (#191)
+ * they rank by their value in EUR at each day's rate, currencies without a
+ * rate after those with one; without rates, by minor units.
+ */
+async function rankedCurrencyTotals(
+  tx: Transaction,
+  query: {
+    workspaceId: string;
+    metric: WorkspaceMetric;
+    dimensions?: Record<string, string>;
+    range: InstantRange;
+    /** The zone reporting days are cut in. */
+    timeZone: string;
+    exchangeRates: boolean;
+  },
+): Promise<MetricCurrencyTotal[]> {
+  const scope = {
+    workspaceId: query.workspaceId,
+    connectionId: query.metric.connectionId,
+    metricKey: query.metric.key,
+    ...(query.dimensions ? { dimensions: query.dimensions } : {}),
+    from: query.range.start,
+    to: query.range.end,
+    combination: bucketCombination(query.metric.kind),
+  };
+  const totals = await queryMetricCurrencyTotals(tx, scope);
+  if (!query.exchangeRates || totals.length < 2) {
+    return totals;
+  }
+  const rows = (
+    await queryMetricCurrencyBuckets(tx, {
+      ...scope,
+      unit: "day",
+      timeZone: query.timeZone,
+    })
+  ).map((row) => ({
+    ...row,
+    date: civilDate(new Date(row.bucket), query.timeZone),
+  }));
+  const dates = rows.map((row) => row.date).sort();
+  if (dates.length === 0) {
+    return totals;
+  }
+  const rates = new RateTable(
+    await findExchangeRates(tx, {
+      currencies: totals
+        .map((total) => total.currency)
+        .filter((currency) => currency !== RATE_BASE_CURRENCY),
+      from: addDays(dates[0]!, -RATE_LOOKBACK_DAYS),
+      to: dates.at(-1)!,
+    }),
+  );
+  const inEur = new Map<string, number>();
+  for (const { currency } of totals) {
+    const converted = convertBuckets(
+      rows.filter((row) => row.currency === currency),
+      RATE_BASE_CURRENCY,
+      rates,
+    ).converted;
+    if (converted.length > 0) {
+      inEur.set(
+        currency,
+        converted.reduce((sum, bucket) => sum + bucket.value, 0),
+      );
+    }
+  }
+  // Stable: unrated currencies keep their minor-unit order after the rest.
+  return [...totals].sort((a, b) => {
+    const x = inEur.get(a.currency);
+    const y = inEur.get(b.currency);
+    if (x === undefined || y === undefined) {
+      return x === undefined ? (y === undefined ? 0 : 1) : -1;
+    }
+    return y - x;
+  });
 }
 
 /**

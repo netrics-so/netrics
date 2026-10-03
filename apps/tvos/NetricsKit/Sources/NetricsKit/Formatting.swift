@@ -309,3 +309,24 @@ public enum PairingAddress {
         return text
     }
 }
+
+/** Converted amounts (#191): marked approximate, with their source. */
+public enum ConversionFormat {
+    /** "≈ €339.82" for a converted value, the plain value otherwise. */
+    public static func value(_ tile: DeviceTile, unit: String) -> String {
+        let text = MetricFormat.value(tile.value, unit: unit)
+        return tile.conversion != nil && tile.value != nil ? "≈ \(text)" : text
+    }
+
+    /**
+     * The muted line at the bottom of a converted tile: "ECB reference
+     * rates", plus "· TWD not converted" for amounts left out. Nil for
+     * exact values.
+     */
+    public static func note(_ conversion: TileConversion?) -> String? {
+        guard let conversion else { return nil }
+        let source = conversion.source.hasPrefix("ECB") ? "ECB reference rates" : conversion.source
+        let left = conversion.unconverted.map(\.currency)
+        return left.isEmpty ? source : "\(source) · \(left.joined(separator: ", ")) not converted"
+    }
+}

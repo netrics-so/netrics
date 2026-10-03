@@ -20,7 +20,6 @@ import {
 import {
   EXCHANGE_RATE_SOURCE,
   RESOURCE_DIMENSION,
-  conversionNote,
   tileLabel,
 } from "@netrics/domain";
 
@@ -178,15 +177,9 @@ export async function buildDeviceDashboard(
       });
       tiles.push({
         id: tile.id,
-        // Converted amounts say so in the label, which every screen shows
-        // (tvOS reads no other field for it): "Proceeds · All apps · ≈ EUR,
-        // ECB reference rates".
-        label: conversion
-          ? `${label} · ${conversionNote(
-              conversion.displayCurrency,
-              conversion.unconverted.map((entry) => entry.currency),
-            )}`
-          : label,
+        // The label stays the tile's title: screens mark converted amounts
+        // from `conversion` (#191).
+        label,
         period: request.period,
         aggregation: query?.aggregation ?? request.aggregation,
         value,

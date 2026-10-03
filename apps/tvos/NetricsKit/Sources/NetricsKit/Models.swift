@@ -216,6 +216,35 @@ public struct TileChange: Codable, Sendable, Equatable {
     }
 }
 
+/**
+ * How a converted amount came about (#191): the value is in
+ * `displayCurrency`, approximately, at ECB reference rates; amounts in
+ * `unconverted` currencies are not part of it. Absent from older servers.
+ */
+public struct TileConversion: Codable, Sendable, Equatable {
+    public struct Unconverted: Codable, Sendable, Equatable {
+        public var currency: String
+        /** Minor units of `currency`; null without data this period. */
+        public var value: Double?
+
+        public init(currency: String, value: Double?) {
+            self.currency = currency
+            self.value = value
+        }
+    }
+
+    public var displayCurrency: String
+    /** E.g. "ECB euro foreign exchange reference rates". */
+    public var source: String
+    public var unconverted: [Unconverted]
+
+    public init(displayCurrency: String, source: String, unconverted: [Unconverted]) {
+        self.displayCurrency = displayCurrency
+        self.source = source
+        self.unconverted = unconverted
+    }
+}
+
 public struct DeviceTile: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var label: String
@@ -231,11 +260,13 @@ public struct DeviceTile: Codable, Sendable, Equatable, Identifiable {
     public var status: DeviceTileStatus
     /** The connection's last successful sync. */
     public var updatedAt: String?
+    /** Set when the value was converted into a display currency (#191). */
+    public var conversion: TileConversion?
 
     public init(
         id: String, label: String, period: MetricPeriod, aggregation: MetricAggregation,
         value: Double?, unit: String?, change: TileChange, spark: [Double?],
-        status: DeviceTileStatus, updatedAt: String?
+        status: DeviceTileStatus, updatedAt: String?, conversion: TileConversion? = nil
     ) {
         self.id = id
         self.label = label
@@ -247,10 +278,28 @@ public struct DeviceTile: Codable, Sendable, Equatable, Identifiable {
         self.spark = spark
         self.status = status
         self.updatedAt = updatedAt
+        self.conversion = conversion
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, label, period, aggregation, value, unit, change, spark, status, updatedAt
+        case id, label, period, aggregation, value, unit, change, spark, status, updatedAt, conversion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        label = try container.decode(String.self, forKey: .label)
+        period = try container.decode(MetricPeriod.self, forKey: .period)
+        aggregation = try container.decode(MetricAggregation.self, forKey: .aggregation)
+        value = try container.decodeIfPresent(Double.self, forKey: .value)
+        unit = try container.decodeIfPresent(String.self, forKey: .unit)
+        change = try container.decode(TileChange.self, forKey: .change)
+        spark = try container.decode([Double?].self, forKey: .spark)
+        status = try container.decode(DeviceTileStatus.self, forKey: .status)
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+        // Optional extra (#191): absent from older servers, and a shape this
+        // build does not understand only drops the marking, never the tile.
+        conversion = (try? container.decodeIfPresent(TileConversion.self, forKey: .conversion)) ?? nil
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -265,6 +314,7 @@ public struct DeviceTile: Codable, Sendable, Equatable, Identifiable {
         try container.encode(spark, forKey: .spark)
         try container.encode(status.rawValue, forKey: .status)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(conversion, forKey: .conversion)
     }
 }
 

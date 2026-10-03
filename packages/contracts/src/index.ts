@@ -1412,10 +1412,9 @@ export const deviceTileSchema = z.object({
    */
   unit: z.string().nullable(),
   /**
-   * Set when the amounts were converted into a display currency (#191).
-   * The label then also ends in a note such as "≈ EUR, ECB reference
-   * rates", so screens that only show the label mark the value as
-   * approximate and cite the source.
+   * Set when the amounts were converted into a display currency (#191):
+   * screens show the value as approximate ("≈") and cite the source. The
+   * label is not changed. Null for exact values.
    */
   conversion: z
     .object({

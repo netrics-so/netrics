@@ -722,10 +722,46 @@ describe("per-currency amounts (#173)", () => {
         workspaceResponseSchema.parse(workspace.json()).workspace
           .displayCurrency,
       ).toBeNull();
-      // The largest currency, exactly: NT$30.00.
+      // The largest currency, exactly. With rates, "largest" compares
+      // values in EUR: €13.34 beats ¥1000 (€10), $5.00 (€4) and NT$30.00,
+      // which has no rate (raw minor units would pick TWD's 3000).
       expect(
         metricQueryResponseSchema.parse((await askFx()).json()),
-      ).toMatchObject({ currency: "TWD", value: 3_000, conversion: null });
+      ).toMatchObject({ currency: "EUR", value: 1_334, conversion: null });
+    });
+
+    it("ranks currencies by their value in EUR when rates exist", async () => {
+      const list = (target: FastifyInstance) =>
+        target.inject({
+          method: "POST",
+          url: `/v1/workspaces/${fxWorkspace}/metrics/currencies`,
+          headers: { cookie: owner },
+          payload: {
+            connectionId: fx,
+            metricKey: "store.proceeds",
+            period: "last_7_days",
+          },
+        });
+      const ranked = metricCurrenciesResponseSchema.parse(
+        (await list(app)).json(),
+      );
+      // Totals stay in their own minor units; only the order changes.
+      expect(ranked.currencies).toEqual([
+        { currency: "EUR", total: 1_334 },
+        { currency: "JPY", total: 1_000 },
+        { currency: "USD", total: 500 },
+        { currency: "TWD", total: 3_000 },
+      ]);
+      // Without rates, by minor units as before.
+      const raw = metricCurrenciesResponseSchema.parse(
+        (await list(offApp)).json(),
+      );
+      expect(raw.currencies.map((entry) => entry.currency)).toEqual([
+        "TWD",
+        "EUR",
+        "JPY",
+        "USD",
+      ]);
     });
 
     it("sets the workspace's display currency to EUR or a covered one", async () => {
@@ -843,7 +879,8 @@ describe("per-currency amounts (#173)", () => {
       expect(eurTile).toMatchObject({
         value: 2_734,
         unit: "EUR_minor",
-        label: "Proceeds · ≈ EUR, ECB reference rates; TWD not converted",
+        // The title stays readable; the conversion is its own field.
+        label: "Proceeds",
         conversion: {
           displayCurrency: "EUR",
           unconverted: [{ currency: "TWD", value: 3_000 }],
@@ -869,7 +906,7 @@ describe("per-currency amounts (#173)", () => {
       ).toBeNull();
       expect(
         metricQueryResponseSchema.parse((await askFx()).json()),
-      ).toMatchObject({ currency: "TWD", conversion: null });
+      ).toMatchObject({ currency: "EUR", value: 1_334, conversion: null });
     });
   });
 });

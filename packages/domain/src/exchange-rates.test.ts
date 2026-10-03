@@ -168,9 +168,9 @@ describe("display currency labels", () => {
   });
 
   it("marks values approximate and names what was left out", () => {
-    expect(conversionNote("EUR", [])).toBe("≈ EUR, ECB reference rates");
-    expect(conversionNote("USD", ["AED", "TWD"])).toBe(
-      "≈ USD, ECB reference rates; AED, TWD not converted",
+    expect(conversionNote([])).toBe("ECB reference rates");
+    expect(conversionNote(["AED", "TWD"])).toBe(
+      "ECB reference rates · AED, TWD not converted",
     );
   });
 });

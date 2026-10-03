@@ -166,7 +166,10 @@ export function registerMetricRoutes(
           const result = await withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            (tx) => listMetricCurrencies(tx, access.workspaceId, body, now()),
+            (tx) =>
+              listMetricCurrencies(tx, access.workspaceId, body, now(), {
+                exchangeRates: deps.exchangeRates ?? false,
+              }),
           );
           if (!result.ok) {
             return sendError(reply, result.status, result.error);
