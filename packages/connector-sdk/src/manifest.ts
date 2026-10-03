@@ -92,6 +92,14 @@ export const metricDefinitionSchema = z.object({
    * colour a change by it.
    */
   better: z.enum(["higher", "lower"]).optional(),
+  /**
+   * "primary" (default) metrics are shown on their own; a "helper" is an
+   * input for derived values (e.g. a position sum divided by impressions).
+   * Helpers are stored and queryable like any metric, but tile pickers do
+   * not offer them. Presentation only: a runtime that does not know the
+   * field ignores it.
+   */
+  role: z.enum(["primary", "helper"]).optional(),
 });
 export type MetricDefinition = z.infer<typeof metricDefinitionSchema>;
 

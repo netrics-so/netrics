@@ -266,12 +266,19 @@ export const metricDefinitions = pgTable(
     aggregations: jsonb("aggregations").notNull(),
     // Which way is good for the metric: "higher" or "lower" (#136).
     better: text("better").notNull().default("higher"),
+    // "primary" or "helper": helpers feed derived values and are not offered
+    // for tiles (#166).
+    role: text("role").notNull().default("primary"),
   },
   (table) => [
     unique().on(table.connectorId, table.key),
     check(
       "metric_definitions_better_valid",
       sql`${table.better} in ('higher', 'lower')`,
+    ),
+    check(
+      "metric_definitions_role_valid",
+      sql`${table.role} in ('primary', 'helper')`,
     ),
     check(
       "metric_definitions_kind_valid",

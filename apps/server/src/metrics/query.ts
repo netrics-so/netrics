@@ -44,6 +44,7 @@ function present(metric: ConnectionMetric): WorkspaceMetric {
       metric.aggregations as Aggregation[],
     ),
     better: metric.better === "lower" ? "lower" : "higher",
+    role: metric.role === "helper" ? "helper" : "primary",
   };
 }
 

@@ -44,7 +44,7 @@ import {
 } from "../oauth/test-provider.js";
 import { createOAuthTokenService } from "../oauth/tokens.js";
 import type { OAuthProviderDefinition } from "../oauth/providers/types.js";
-import { listMetrics } from "../metrics/query.js";
+import { listMetrics, queryMetric } from "../metrics/query.js";
 import { runSchedulerTick } from "../scheduler.js";
 import { Secret } from "../secret.js";
 import { createTestDatabase, type TestDatabase } from "../test-db.js";
@@ -549,6 +549,35 @@ describe("Google Search Console in the sync engine", () => {
     expect(better[`${CONNECTOR_ID}.position`]).toBe("lower");
     expect(better[`${CONNECTOR_ID}.clicks`]).toBe("higher");
     expect(better[`${CONNECTOR_ID}.ctr`]).toBe("higher");
+  });
+
+  it("lists the position sums as helpers, still queryable", async () => {
+    const { connectionId } = await seed();
+    const metrics = await withWorkspace(appDb, { workspaceId }, (tx) =>
+      listMetrics(tx, workspaceId),
+    );
+    const own = metrics.filter(
+      (metric) => metric.connectionId === connectionId,
+    );
+    const helpers = own
+      .filter((metric) => metric.role === "helper")
+      .map((metric) => metric.key)
+      .sort();
+    expect(helpers).toEqual([
+      `${CONNECTOR_ID}.breakdown_position_sum`,
+      `${CONNECTOR_ID}.position_sum`,
+    ]);
+    expect(
+      own.find((metric) => metric.key === `${CONNECTOR_ID}.clicks`)?.role,
+    ).toBe("primary");
+    const queried = await withWorkspace(appDb, { workspaceId }, (tx) =>
+      queryMetric(tx, workspaceId, {
+        connectionId,
+        metricKey: `${CONNECTOR_ID}.position_sum`,
+        period: "last_7_days",
+      }),
+    );
+    expect(queried.ok).toBe(true);
   });
 
   it("refreshes an expired access token once before calling Google", async () => {

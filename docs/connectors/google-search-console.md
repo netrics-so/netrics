@@ -52,6 +52,10 @@ results.
 | Impressions by breakdown  | Impressions per day for each breakdown row                 |
 | Position sum by breakdown | Average position × impressions per breakdown row           |
 
+The two position sums are helper metrics: they are stored and queryable, but
+the tile editor does not offer them, since they only mean something divided
+by impressions (derived metrics, milestone 10).
+
 Breakdown rows carry the dimensions `page` (URL), `query` (search text),
 `country` (ISO 3166-1 alpha-3, lower case, e.g. `usa`) and `device`
 (`DESKTOP`, `MOBILE`, `TABLET`), as Search Console reports them.

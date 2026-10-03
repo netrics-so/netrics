@@ -735,6 +735,14 @@ export type MetricAggregation = z.infer<typeof metricAggregationSchema>;
 export const metricBetterSchema = z.enum(["higher", "lower"]);
 export type MetricBetter = z.infer<typeof metricBetterSchema>;
 
+/**
+ * "primary" metrics are shown on their own; a "helper" (e.g. Search
+ * Console's position sum) is an input for derived values. Helpers stay
+ * queryable, but tile pickers do not offer them.
+ */
+export const metricRoleSchema = z.enum(["primary", "helper"]);
+export type MetricRole = z.infer<typeof metricRoleSchema>;
+
 export const workspaceMetricSchema = z.object({
   connectionId: z.uuid(),
   connectionName: z.string(),
@@ -748,6 +756,7 @@ export const workspaceMetricSchema = z.object({
   /** Aggregations a tile may use, default first. Empty: not displayable. */
   aggregations: z.array(metricAggregationSchema),
   better: metricBetterSchema,
+  role: metricRoleSchema,
 });
 export type WorkspaceMetric = z.infer<typeof workspaceMetricSchema>;
 

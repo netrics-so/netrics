@@ -138,3 +138,54 @@ export function aggregationLabel(
   }
   return AGGREGATION_LABELS[aggregation];
 }
+
+/**
+ * Every metric names the resource it belongs to (a property, a project);
+ * further dimensions make it a breakdown (per page, query, route…).
+ */
+const RESOURCE_DIMENSION = "resource";
+
+/** A metric's breakdown dimensions, i.e. all but the resource. */
+export function breakdownDimensions(dimensions: readonly string[]): string[] {
+  return dimensions.filter((dimension) => dimension !== RESOURCE_DIMENSION);
+}
+
+/**
+ * Metrics a tile can show: displayable ones (an aggregation fits) that are
+ * not helpers. Helpers (inputs for derived values, such as a position sum)
+ * stay queryable, and existing tiles on them keep working.
+ */
+export function pickableMetrics<
+  T extends { aggregations: readonly unknown[]; role: string },
+>(metrics: readonly T[]): T[] {
+  return metrics.filter(
+    (metric) => metric.aggregations.length > 0 && metric.role !== "helper",
+  );
+}
+
+/**
+ * The tile picker's name for a metric. A breakdown says what it is broken
+ * down by, e.g. "Clicks by breakdown (per page / query / country / device)",
+ * so it cannot be mistaken for the total.
+ */
+export function metricPickerLabel(metric: {
+  name: string;
+  dimensions: readonly string[];
+}): string {
+  const breakdown = breakdownDimensions(metric.dimensions);
+  return breakdown.length === 0
+    ? metric.name
+    : `${metric.name} (per ${breakdown.join(" / ")})`;
+}
+
+/**
+ * An observation's breakdown values besides the resource, by dimension name,
+ * e.g. [["device", "MOBILE"], ["query", "running shoes"]]; empty for a total.
+ */
+export function observationBreakdown(
+  dimensions: Readonly<Record<string, string>>,
+): Array<[dimension: string, value: string]> {
+  return breakdownDimensions(Object.keys(dimensions))
+    .sort()
+    .map((dimension) => [dimension, dimensions[dimension]!]);
+}

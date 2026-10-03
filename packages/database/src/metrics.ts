@@ -19,6 +19,7 @@ export interface ConnectionMetric {
   dimensions: string[];
   aggregations: string[];
   better: string;
+  role: string;
 }
 
 function toMetric(row: Record<string, unknown>): ConnectionMetric {
@@ -34,6 +35,7 @@ function toMetric(row: Record<string, unknown>): ConnectionMetric {
     dimensions: row.dimensions as string[],
     aggregations: row.aggregations as string[],
     better: row.better as string,
+    role: row.role as string,
   };
 }
 
@@ -45,7 +47,7 @@ export async function listWorkspaceMetrics(
   const rows = await tx.execute(sql`
     select c.id as connection_id, c.name as connection_name, m.key, m.name,
            m.description, m.kind, m.unit, m.granularity, m.dimensions,
-           m.aggregations, m.better
+           m.aggregations, m.better, m.role
     from connections c
     join metric_definitions m on m.connector_id = c.connector_id
     where c.workspace_id = ${workspaceId}
@@ -62,7 +64,7 @@ export async function findConnectionMetric(
   const rows = await tx.execute(sql`
     select c.id as connection_id, c.name as connection_name, m.key, m.name,
            m.description, m.kind, m.unit, m.granularity, m.dimensions,
-           m.aggregations, m.better
+           m.aggregations, m.better, m.role
     from connections c
     join metric_definitions m on m.connector_id = c.connector_id
     where c.workspace_id = ${workspaceId}

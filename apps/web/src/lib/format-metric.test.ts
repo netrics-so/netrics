@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { aggregationLabel, formatChange, formatValue } from "./format-metric";
+import {
+  aggregationLabel,
+  formatChange,
+  formatValue,
+  metricPickerLabel,
+  observationBreakdown,
+  pickableMetrics,
+} from "./format-metric";
 
 describe("formatValue", () => {
   it.each([
@@ -75,5 +82,59 @@ describe("Search Console readings", () => {
     expect(aggregationLabel("sum", { kind: "delta", granularity: "day" })).toBe(
       "Total",
     );
+  });
+});
+
+describe("the tile metric picker", () => {
+  const metric = (
+    key: string,
+    role: "primary" | "helper",
+    aggregations: string[] = ["sum"],
+  ) => ({ key, role, aggregations });
+
+  it("leaves out helpers and metrics no aggregation fits", () => {
+    const metrics = [
+      metric("clicks", "primary"),
+      metric("position_sum", "helper"),
+      metric("breakdown_position_sum", "helper"),
+      metric("raw", "primary", []),
+    ];
+    expect(pickableMetrics(metrics).map((m) => m.key)).toEqual(["clicks"]);
+  });
+
+  it("names a breakdown by its dimensions besides the resource", () => {
+    expect(
+      metricPickerLabel({ name: "Clicks", dimensions: ["resource"] }),
+    ).toBe("Clicks");
+    expect(
+      metricPickerLabel({
+        name: "Clicks by breakdown",
+        dimensions: ["resource", "page", "query", "country", "device"],
+      }),
+    ).toBe("Clicks by breakdown (per page / query / country / device)");
+    expect(
+      metricPickerLabel({
+        name: "Requests by route",
+        dimensions: ["resource", "route"],
+      }),
+    ).toBe("Requests by route (per route)");
+  });
+});
+
+describe("observationBreakdown", () => {
+  it("lists the values besides the resource", () => {
+    expect(observationBreakdown({ resource: "sc-domain:a.example" })).toEqual(
+      [],
+    );
+    expect(
+      observationBreakdown({
+        resource: "sc-domain:a.example",
+        query: "running shoes",
+        device: "MOBILE",
+      }),
+    ).toEqual([
+      ["device", "MOBILE"],
+      ["query", "running shoes"],
+    ]);
   });
 });
