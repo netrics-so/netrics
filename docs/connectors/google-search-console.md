@@ -17,7 +17,8 @@ You authorize netrics at Google; there is no token to paste
   (`sc-domain:example.com`). Properties you have not verified, or that are
   only listed for your account without access, are not offered.
 - On a self-hosted instance an administrator registers a Google OAuth app
-  first. Until then the connector is listed as unavailable.
+  first (see the [setup guide](../../deploy/compose/google-oauth.md)). Until
+  then the connector is listed as unavailable.
 
 netrics never sees your Google password. The refresh token is stored
 encrypted (AES-GCM, bound to the connection); the connector itself only
