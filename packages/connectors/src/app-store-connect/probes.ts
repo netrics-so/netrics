@@ -4,6 +4,7 @@ import {
   type AppStoreConnectClient,
   type AscErrorBody,
 } from "./api.js";
+import { SALES_REPORT_VERSION } from "./sales-report.js";
 
 // The key, role and vendor-number check (ADR 0014, "Validation before
 // anything is stored"). The same two probes run on the host before a key is
@@ -62,14 +63,12 @@ export function vendorNumberOf(
   return VENDOR_NUMBER.test(value) ? value : undefined;
 }
 
-/** The sales report the probe reads: one day, SALES/SUMMARY, version 1_0. */
+/** The daily SALES/SUMMARY report the probe and the sync read. */
 export const SALES_REPORT_FILTERS = {
   "filter[frequency]": "DAILY",
   "filter[reportType]": "SALES",
   "filter[reportSubType]": "SUMMARY",
-  // The version Apple's API reference lists for SALES/SUMMARY; #172 pins
-  // the version of the sync against a real account.
-  "filter[version]": "1_0",
+  "filter[version]": SALES_REPORT_VERSION,
 } as const;
 
 const PACIFIC = new Intl.DateTimeFormat("en-CA", {
@@ -81,6 +80,37 @@ const PACIFIC = new Intl.DateTimeFormat("en-CA", {
   hourCycle: "h23",
 });
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function pacificParts(nowMs: number) {
+  const parts = Object.fromEntries(
+    PACIFIC.formatToParts(new Date(nowMs)).map((part) => [
+      part.type,
+      part.value,
+    ]),
+  );
+  return {
+    /** Today's date in California, as UTC midnight of that date. */
+    today: Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+    ),
+    hour: Number(parts.hour),
+  };
+}
+
+/** Today's Pacific-Time date, as UTC midnight of that date (ms). */
+export function pacificToday(nowMs: number): number {
+  return pacificParts(nowMs).today;
+}
+
+/** UTC midnight (ms) of the latest reporting day whose report should exist. */
+export function latestReportDay(nowMs: number): number {
+  const { today, hour } = pacificParts(nowMs);
+  return today - (hour >= 12 ? 1 : 2) * DAY_MS;
+}
+
 /**
  * The latest reporting day whose daily report should exist: reporting days
  * are Pacific Time and a day D is published by the next morning, so D is
@@ -88,21 +118,7 @@ const PACIFIC = new Intl.DateTimeFormat("en-CA", {
  * "404 has two meanings").
  */
 export function latestReportDate(nowMs: number): string {
-  const parts = Object.fromEntries(
-    PACIFIC.formatToParts(new Date(nowMs)).map((part) => [
-      part.type,
-      part.value,
-    ]),
-  );
-  const todayPacific = Date.UTC(
-    Number(parts.year),
-    Number(parts.month) - 1,
-    Number(parts.day),
-  );
-  const back = Number(parts.hour) >= 12 ? 1 : 2;
-  return new Date(todayPacific - back * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
+  return new Date(latestReportDay(nowMs)).toISOString().slice(0, 10);
 }
 
 function isAgreements(body: AscErrorBody): boolean {

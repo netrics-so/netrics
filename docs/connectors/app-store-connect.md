@@ -59,6 +59,71 @@ listed as "app".
 Connections of different teams can live side by side in one workspace, each
 with its own key and vendor number.
 
+## Metrics
+
+All values come from Apple's daily Sales and Trends report (SALES,
+SUMMARY, version `1_0`): one gzip file per vendor number and reporting day
+that covers every app of the vendor. One request per day reads all selected
+apps. Every metric is a daily sum per app (`resource` is the app's Apple
+ID).
+
+| Metric                                     | Unit             | Dimensions          | What it counts                                                                     |
+| ------------------------------------------ | ---------------- | ------------------- | ---------------------------------------------------------------------------------- |
+| `app_store_connect.downloads`              | `downloads`      | resource            | First-time downloads: free, paid, bundle and custom apps                           |
+| `app_store_connect.downloads_by_territory` | `downloads`      | resource, territory | First-time downloads for the 10 largest territories of the month, plus "Others"    |
+| `app_store_connect.downloads_by_device`    | `downloads`      | resource, device    | First-time downloads per device (iPhone, iPad, Desktop, Apple TV, Apple Vision, …) |
+| `app_store_connect.redownloads`            | `downloads`      | resource            | Downloads by people who had the app before                                         |
+| `app_store_connect.updates`                | `updates`        | resource            | App updates                                                                        |
+| `app_store_connect.iap_units`              | `purchases`      | resource            | In-app purchases and subscriptions, counted for their app                          |
+| `app_store_connect.proceeds`               | `currency_minor` | resource, currency  | Units × developer proceeds, in each currency of proceeds                           |
+
+How report rows become values:
+
+- **Product types** decide the metric, following Apple's
+  [product type identifiers](https://developer.apple.com/help/app-store-connect/reference/reporting/product-type-identifiers):
+  first downloads `1`, `1-B`, `F1-B`, `1E`, `1EP`, `1EU`, `1F`, `1T`, `F1`;
+  redownloads `3`, `3F`; updates `7`, `7F`, `7T`, `F7`; in-app purchases
+  `IA1`, `IA1-M`, `FI1`, `IA9`, `IA9-M`, `IAY`, `IAY-M`. Restored purchases
+  (`IA3`) are not counted. A type netrics does not know is counted in no
+  metric and noted in the server log by its code.
+- **Apps.** App rows belong to their `Apple Identifier`. An in-app purchase
+  names its app by SKU (`Parent Identifier`); netrics matches it to the
+  app's Apple ID from the same reports, or from the team's app list. Rows of
+  apps you did not select are left out.
+- **Refunds** are rows with negative units. They are included, so a day's
+  value can be lower than its sales, or negative.
+- **Proceeds** are units × developer proceeds per unit, summed per app, day
+  and currency of proceeds, and stored as whole minor units of that
+  currency (cents for USD, yen for JPY, which has no minor unit). Amounts in
+  different currencies are separate series and are never added up; netrics
+  does not convert currencies. Apple's own Sales and Trends view converts at
+  a monthly average rate, so its totals differ.
+- **Territories.** `downloads_by_territory` keeps the 10 territories with
+  the most first-time downloads per app and calendar month, and adds up the
+  rest as "Others", so a month has about 11 series per app. While a month is
+  running its ranking can still change; a territory that drops out moves
+  into "Others" for the days netrics reads again (and shows 0 on its own
+  series for those days), so no download is counted twice. Devices are kept
+  whole.
+
+### Reporting days and latency
+
+- Reporting days are **Pacific Time**. A value for Apple's day D is stored at
+  D 00:00 UTC, whatever your workspace's time zone, so "yesterday" in a tile
+  can be a day Apple has not reported yet.
+- Apple publishes day D the next morning (generally by 8 a.m. Pacific Time).
+  netrics expects D from 12:00 Pacific Time on D + 1. Until then, a missing
+  report means "not published yet": netrics keeps its place and asks again
+  on the next sync. After that, a missing report means the day had no sales,
+  and netrics stores zeros for it.
+- Every sync reads the last 3 reporting days again, so Apple's corrections
+  replace the stored values instead of adding to them.
+- The first sync goes back **365 days**, Apple's retention for daily
+  reports. It reads one calendar month per step (one request per day), about
+  365 requests in all: roughly a tenth of the key's hourly budget. Later
+  syncs read the current month up to the latest day (at most about 31
+  requests), because the territory ranking needs the whole month.
+
 ## Limits
 
 Apple allows about 3,500 requests per key and rolling hour, and reports the

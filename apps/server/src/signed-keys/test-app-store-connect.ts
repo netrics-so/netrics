@@ -1,3 +1,5 @@
+import { gzipSync } from "node:zlib";
+
 import type {
   ConnectorFetchInit,
   ConnectorResponse,
@@ -20,6 +22,11 @@ export interface FakeAscTeam {
   role?: "sales" | "developer";
   /** A revoked key answers 401 everywhere. */
   revoked?: boolean;
+  /**
+   * Daily sales reports (YYYY-MM-DD → tab-separated text, served gzipped);
+   * other days answer 404 "no sales".
+   */
+  reports?: Record<string, string>;
 }
 
 export interface FakeAsc {
@@ -144,7 +151,24 @@ export function createFakeAsc(teams: FakeAscTeam[]): FakeAsc {
             ],
           });
         }
-        // No sales on the latest day: a 404 that counts as success.
+        const report =
+          team.reports?.[url.searchParams.get("filter[reportDate]") ?? ""];
+        if (report !== undefined) {
+          const bytes = new Uint8Array(gzipSync(report));
+          return {
+            status: 200,
+            headers: {
+              "content-type": "application/a-gzip",
+              "x-rate-limit": "user-hour-lim:3500;user-hour-rem:3400;",
+            },
+            text: () => new TextDecoder().decode(bytes),
+            json: () => {
+              throw new Error("not JSON");
+            },
+            bytes: () => new Uint8Array(bytes),
+          };
+        }
+        // No sales that day: a 404 that counts as success.
         return error(
           404,
           "NOT_FOUND",
