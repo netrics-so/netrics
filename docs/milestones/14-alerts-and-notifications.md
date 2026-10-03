@@ -1,4 +1,4 @@
-# Milestone 13 — Alerts and notifications
+# Milestone 14 — Alerts and notifications
 
 ## Outcome
 
@@ -7,7 +7,7 @@ and receive email or webhook notifications without alert storms.
 
 ## Dependencies
 
-- Milestones 10 and 12
+- Milestones 11 and 13
 
 ## In scope
 

@@ -1,4 +1,4 @@
-# Milestone 09 — Apple Ads connector
+# Milestone 10 — Apple Ads connector
 
 ## Outcome
 

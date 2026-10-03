@@ -1,4 +1,4 @@
-# Milestone 12 — Custom API connector
+# Milestone 13 — Custom API connector
 
 ## Outcome
 
@@ -7,7 +7,7 @@ through the UI without executing custom code.
 
 ## Dependencies
 
-- Milestones 03–04 and 11
+- Milestones 03–04 and 12
 
 ## In scope
 

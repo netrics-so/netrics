@@ -1,4 +1,4 @@
-# Milestone 15 — SaaS control plane
+# Milestone 16 — SaaS control plane
 
 ## Outcome
 
@@ -7,7 +7,7 @@ workspaces while the public core remains complete and self-hostable.
 
 ## Dependencies
 
-- Milestones 01–14
+- Milestones 01–15
 
 ## In scope
 

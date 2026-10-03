@@ -1,4 +1,4 @@
-# Milestone 11 — Community connector system
+# Milestone 12 — Community connector system
 
 ## Outcome
 
@@ -8,7 +8,7 @@ marketplace and hosted connector bundle.
 
 ## Dependencies
 
-- Milestones 03 and 05–09
+- Milestones 03, 05–08 and 10
 
 ## Why this follows real connectors
 

@@ -45,7 +45,7 @@ auth strategy in its manifest:
 `{ strategy: "oauth2", provider: "google", scopes: [...] }`. Search Console
 asks for `https://www.googleapis.com/auth/webmasters.readonly` and nothing
 else. The change is additive: `SDK_VERSION` becomes 0.2.1 and existing
-`^0.2.0` connectors keep loading. Community connectors (milestone 11) can use
+`^0.2.0` connectors keep loading. Community connectors (milestone 12) can use
 a provider but never define one, so endpoints and client secrets stay out of
 connector code.
 

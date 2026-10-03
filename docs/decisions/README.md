@@ -19,3 +19,4 @@ product is built.
 | [0012](./0012-oauth-authorization-code-platform.md) | OAuth authorization-code platform for connectors             |
 | [0013](./0013-web-frontend-on-vercel.md)            | Hosted web frontend on Vercel                                |
 | [0014](./0014-app-store-connect-signed-keys.md)     | App Store Connect: signed-key credentials and report sources |
+| [0015](./0015-dashboard-studio.md)                  | Dashboard Studio: slides, widgets, themes and images         |

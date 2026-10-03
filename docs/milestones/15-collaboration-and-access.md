@@ -1,4 +1,4 @@
-# Milestone 14 — Collaboration and access
+# Milestone 15 — Collaboration and access
 
 ## Outcome
 
@@ -7,7 +7,7 @@ capabilities for small teams and enterprise identity environments.
 
 ## Dependencies
 
-- Milestones 02, 04, and 13
+- Milestones 02, 04, 09, and 14
 
 ## In scope
 

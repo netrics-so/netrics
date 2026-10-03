@@ -47,9 +47,9 @@ and a self-hosted web app served from a different origin than the API.
   web app marks its API calls with the secret and the forwarded client
   address, and the API accepts session cookies only on requests carrying it;
   bearer tokens are unaffected.
-- **Dev mailer until milestone 13.** Verification and password-reset emails
+- **Dev mailer until milestone 14.** Verification and password-reset emails
   are logged by a logging mailer (`requireEmailVerification: false`) until
-  real SMTP/alerting infrastructure arrives in milestone 13.
+  real SMTP/alerting infrastructure arrives in milestone 14.
 
 ## Alternatives considered
 
