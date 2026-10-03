@@ -7,6 +7,9 @@ import type {
   SyncRequest,
   SyncResult,
 } from "@netrics/connector-sdk";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+
 import { describe, expect, it } from "vitest";
 
 import { demoManifest } from "@netrics/connectors";
@@ -279,5 +282,35 @@ describe("runtime capabilities", () => {
     await expect(executeSync(sneaky, baseContext, request)).rejects.toThrow(
       /not in the connector's outboundDomains/,
     );
+  });
+
+  it("reports response statuses to the host, without bodies", async () => {
+    // ADR 0012: the host notices a provider 401 to refresh the token.
+    const server = createServer((req, res) => {
+      res.writeHead(req.url === "/denied" ? 401 : 200);
+      res.end("body");
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    try {
+      const statuses: number[] = [];
+      const caller: Connector = {
+        ...connectorWith({ ...demoManifest, outboundDomains: ["127.0.0.1"] }),
+        sync: async (_context, _request, runtime) => {
+          await runtime.fetch(`http://127.0.0.1:${port}/ok`);
+          await runtime.fetch(`http://127.0.0.1:${port}/denied`);
+          return { observations: [], done: true };
+        },
+      };
+      await executeSync(caller, baseContext, request, {
+        onResponse: (status) => statuses.push(status),
+        egress: { allowInsecureHttp: true, allowPrivateAddresses: true },
+      });
+      expect(statuses).toEqual([200, 401]);
+    } finally {
+      server.close();
+    }
   });
 });

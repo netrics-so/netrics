@@ -165,3 +165,139 @@ export async function findConnectionOAuth(
     .limit(1);
   return row ?? null;
 }
+
+/**
+ * The token service's view of a grant, locked for update (ADR 0012:
+ * refresh is serialized per connection). A concurrent caller waits here
+ * until the holder commits and then reads the refreshed token. Also returns
+ * the connection's credentials envelope (the refresh token).
+ */
+export async function lockConnectionOAuth(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+): Promise<{
+  oauth: ConnectionOAuthRow;
+  credentialsEncrypted: Buffer | null;
+} | null> {
+  const [oauth] = await tx
+    .select()
+    .from(schema.connectionOAuth)
+    .where(
+      and(
+        eq(schema.connectionOAuth.workspaceId, workspaceId),
+        eq(schema.connectionOAuth.connectionId, connectionId),
+      ),
+    )
+    .for("update")
+    .limit(1);
+  if (!oauth) {
+    return null;
+  }
+  const [connection] = await tx
+    .select({ credentialsEncrypted: schema.connections.credentialsEncrypted })
+    .from(schema.connections)
+    .where(
+      and(
+        eq(schema.connections.workspaceId, workspaceId),
+        eq(schema.connections.id, connectionId),
+      ),
+    )
+    .limit(1);
+  return {
+    oauth,
+    credentialsEncrypted: connection?.credentialsEncrypted ?? null,
+  };
+}
+
+export interface OAuthTokenUpdate {
+  /** The new access-token envelope and its expiry; both or neither. */
+  accessTokenEncrypted: Buffer | null;
+  accessTokenExpiresAt: Date | null;
+  /** Scopes the provider reports for the grant, when it reports them. */
+  grantedScopes?: string[];
+  /** A rotated refresh token's credentials envelope, when one was issued. */
+  credentialsEncrypted?: Buffer;
+}
+
+/** Stores the outcome of a refresh (or clears the cached access token). */
+export async function updateConnectionOAuthTokens(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+  update: OAuthTokenUpdate,
+): Promise<void> {
+  await tx
+    .update(schema.connectionOAuth)
+    .set({
+      accessTokenEncrypted: update.accessTokenEncrypted,
+      accessTokenExpiresAt: update.accessTokenExpiresAt,
+      ...(update.grantedScopes ? { grantedScopes: update.grantedScopes } : {}),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.connectionOAuth.workspaceId, workspaceId),
+        eq(schema.connectionOAuth.connectionId, connectionId),
+      ),
+    );
+  if (update.credentialsEncrypted) {
+    await tx
+      .update(schema.connections)
+      .set({
+        credentialsEncrypted: update.credentialsEncrypted,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.connections.workspaceId, workspaceId),
+          eq(schema.connections.id, connectionId),
+        ),
+      );
+  }
+}
+
+export type OAuthAuthReason = "invalid_grant" | "scope_missing";
+
+/**
+ * Moves a connection to needs_reauthorization (ADR 0012). The scheduler
+ * skips it until a reauthorization resets the state.
+ */
+export async function markNeedsReauthorization(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+  reason: OAuthAuthReason,
+): Promise<void> {
+  await tx
+    .update(schema.connectionState)
+    .set({ authState: "needs_reauthorization", authReason: reason })
+    .where(
+      and(
+        eq(schema.connectionState.workspaceId, workspaceId),
+        eq(schema.connectionState.connectionId, connectionId),
+      ),
+    );
+}
+
+interface ReleaseRow extends Record<string, unknown> {
+  shared: boolean;
+}
+
+/**
+ * Disconnect (ADR 0012): takes a transaction advisory lock on
+ * (provider, sub) until commit and reports whether another connection on
+ * the instance, in any workspace, still holds a grant for the same account.
+ * Call it inside the deleting withWorkspace transaction, before the delete;
+ * revoke at the provider after commit only when it returned false. Raises
+ * when the connection does not hold this grant.
+ */
+export async function releaseOAuthGrant(
+  tx: Transaction,
+  input: { provider: string; accountSub: string; connectionId: string },
+): Promise<boolean> {
+  const rows = await tx.execute<ReleaseRow>(
+    sql`select oauth_release_grant(${input.provider}, ${input.accountSub}, ${input.connectionId}::uuid) as shared`,
+  );
+  return rows[0]?.shared === true;
+}

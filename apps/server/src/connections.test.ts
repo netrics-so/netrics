@@ -903,7 +903,9 @@ describe("delete", () => {
       url: `/v1/workspaces/${w1Id}/connections/${editorConnectionId}`,
       cookie: cookies.owner,
     });
-    expect(response.statusCode).toBe(204);
+    expect(response.statusCode).toBe(200);
+    // Not an OAuth connection: nothing to revoke.
+    expect(response.json()).toEqual({ revocation: null });
 
     const after = await world.admin`
       select

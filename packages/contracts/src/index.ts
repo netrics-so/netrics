@@ -540,6 +540,32 @@ export type UpdateConnectionRequest = z.infer<
   typeof updateConnectionRequestSchema
 >;
 
+/**
+ * What deleting an OAuth connection did with the grant at the provider
+ * (ADR 0012):
+ * - revoked: this was the last connection on the instance using the
+ *   account's grant, and the provider confirmed the revocation;
+ * - kept: another connection (in any workspace) still uses the grant, so
+ *   only the stored tokens were deleted;
+ * - failed: the revocation did not go through; the user can remove access
+ *   at `accountPermissionsUrl`.
+ * The connection is deleted in every case.
+ */
+export const connectionRevocationSchema = z.object({
+  provider: z.string().min(1),
+  status: z.enum(["revoked", "kept", "failed"]),
+  accountPermissionsUrl: z.url().nullable(),
+});
+export type ConnectionRevocation = z.infer<typeof connectionRevocationSchema>;
+
+export const deleteConnectionResponseSchema = z.object({
+  /** Null for connections not authorized through OAuth. */
+  revocation: connectionRevocationSchema.nullable(),
+});
+export type DeleteConnectionResponse = z.infer<
+  typeof deleteConnectionResponseSchema
+>;
+
 export const enqueueSyncResponseSchema = z.object({
   jobId: z.uuid(),
 });

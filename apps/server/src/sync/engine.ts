@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import {
   ContractViolationError,
@@ -6,15 +6,22 @@ import {
   executeSync,
   redactSecrets,
   type ConnectorRegistry,
+  type ExecuteOptions,
 } from "@netrics/connector-runtime";
 import {
   observationKey,
+  type ConnectionContext,
   type Observation,
   type SyncMode,
   type SyncRequest,
   type SyncResult,
 } from "@netrics/connector-sdk";
-import { schema, withWorkspace, type Transaction } from "@netrics/database";
+import {
+  schema,
+  withWorkspace,
+  type OAuthAuthReason,
+  type Transaction,
+} from "@netrics/database";
 
 import { decryptCredentials, type CredentialKeyring } from "../credentials.js";
 import {
@@ -23,6 +30,12 @@ import {
   type JobHandler,
   type JobHandlerContext,
 } from "../jobs/handlers.js";
+import {
+  callWithAccessToken,
+  NeedsReauthorizationError,
+  oauthStrategyFor,
+} from "../oauth/connector-auth.js";
+import { OAuthTokenError, type OAuthTokenService } from "../oauth/tokens.js";
 
 /** First-ever incremental sync with no cursor and no last success. */
 const INITIAL_INCREMENTAL_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -34,6 +47,10 @@ export interface SyncEngineDeps {
   credentialKeyring: CredentialKeyring;
   /** Clock for sync windows and state timestamps; defaults to the wall clock. */
   now?: () => Date;
+  /** Access tokens for OAuth connections (ADR 0012). */
+  oauthTokens?: OAuthTokenService;
+  /** Tests only: options for every connector call (e.g. local egress). */
+  executeOptions?: ExecuteOptions;
 }
 
 type ErrorClass = "auth" | "transient" | "contract";
@@ -181,9 +198,22 @@ async function runSync(
         connectorId: schema.connections.connectorId,
         config: schema.connections.config,
         credentialsEncrypted: schema.connections.credentialsEncrypted,
+        oauthProvider: schema.connectionOAuth.provider,
       })
       .from(schema.connections)
-      .where(eq(schema.connections.id, connectionId))
+      .leftJoin(
+        schema.connectionOAuth,
+        and(
+          eq(schema.connectionOAuth.connectionId, schema.connections.id),
+          eq(schema.connectionOAuth.workspaceId, workspaceId),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.connections.id, connectionId),
+          eq(schema.connections.workspaceId, workspaceId),
+        ),
+      )
       .limit(1);
     if (!connection) {
       return null;
@@ -240,6 +270,7 @@ async function runSync(
   const recordFailure = async (
     errorClass: ErrorClass,
     error: unknown,
+    authReason?: OAuthAuthReason,
   ): Promise<void> => {
     const message = safeMessage(error);
     try {
@@ -259,8 +290,9 @@ async function runSync(
           errorMessage: message,
           observationsWritten: 0,
         });
-        const statePatch =
-          errorClass === "auth"
+        const statePatch = authReason
+          ? { authState: "needs_reauthorization", authReason }
+          : errorClass === "auth"
             ? { authState: "auth_failed", authReason: null }
             : errorClass === "transient"
               ? { authState: "outage", authReason: null }
@@ -310,19 +342,35 @@ async function runSync(
     throw new NonRetryableJobError(error.message);
   }
 
+  // OAuth connections (ADR 0012): the connector receives a short-lived
+  // access token per call; the refresh token never leaves the host.
+  const oauthProvider = connection.oauthProvider;
+  const oauthStrategy = oauthProvider
+    ? oauthStrategyFor(manifest, oauthProvider)
+    : undefined;
+  if (oauthProvider && !oauthStrategy) {
+    const error = new Error(
+      `contract: connector "${manifest.id}" has no oauth2 strategy for provider "${oauthProvider}"`,
+    );
+    await recordFailure("contract", error);
+    throw new NonRetryableJobError(error.message);
+  }
+
   // Decrypt credentials; a broken envelope needs operator attention, not a
   // retry loop — classified as contract.
   let credentials: Record<string, unknown>;
   try {
-    credentials = connection.credentialsEncrypted
-      ? (JSON.parse(
-          decryptCredentials(
-            connection.credentialsEncrypted.toString("utf8"),
-            deps.credentialKeyring,
-            { workspaceId: connection.workspaceId, connectionId },
-          ),
-        ) as Record<string, unknown>)
-      : {};
+    credentials = oauthStrategy
+      ? {}
+      : connection.credentialsEncrypted
+        ? (JSON.parse(
+            decryptCredentials(
+              connection.credentialsEncrypted.toString("utf8"),
+              deps.credentialKeyring,
+              { workspaceId: connection.workspaceId, connectionId },
+            ),
+          ) as Record<string, unknown>)
+        : {};
   } catch (error) {
     await recordFailure("contract", error);
     throw new NonRetryableJobError(safeMessage(error));
@@ -333,6 +381,48 @@ async function runSync(
     config: connection.config,
     credentials,
   };
+  const binding = { workspaceId, connectionId };
+
+  /**
+   * Runs one connector call with this connection's credentials: stored
+   * credentials, or for OAuth a valid access token (one retry with a
+   * refreshed token after a provider 401).
+   */
+  const callConnector = <T>(
+    call: (context: ConnectionContext, options: ExecuteOptions) => Promise<T>,
+    rejected?: (value: T) => boolean,
+  ): Promise<T> =>
+    oauthStrategy
+      ? callWithAccessToken({
+          tokens: deps.oauthTokens,
+          binding,
+          requiredScopes: oauthStrategy.scopes,
+          ...(deps.executeOptions ? { options: deps.executeOptions } : {}),
+          call: (oauthCredentials, options) =>
+            call({ ...context, credentials: { ...oauthCredentials } }, options),
+          ...(rejected ? { rejected } : {}),
+        })
+      : call(context, deps.executeOptions ?? {});
+
+  /**
+   * Records an OAuth token failure; returns the error to throw, or null
+   * when the error is not one.
+   */
+  const oauthFailure = async (error: unknown): Promise<Error | null> => {
+    if (error instanceof NeedsReauthorizationError) {
+      await recordFailure("auth", error, error.reason);
+      return new TerminalJobError(error.message);
+    }
+    if (error instanceof OAuthTokenError) {
+      if (error.kind === "configuration") {
+        await recordFailure("contract", error);
+        return new NonRetryableJobError(safeMessage(error));
+      }
+      await recordFailure("transient", error);
+      return error;
+    }
+    return null;
+  };
 
   // Step 2: credential check. ok:false is terminal until the user repairs
   // credentials (auth_failed; the scheduler skips such connections and the
@@ -340,8 +430,15 @@ async function runSync(
   // provider failure.
   let check;
   try {
-    check = await executeCheck(connector, context);
+    check = await callConnector(
+      (callContext, options) => executeCheck(connector, callContext, options),
+      (result) => !result.ok,
+    );
   } catch (error) {
+    const oauthError = await oauthFailure(error);
+    if (oauthError) {
+      throw oauthError;
+    }
     await recordFailure("transient", error);
     throw error;
   }
@@ -374,7 +471,9 @@ async function runSync(
           ...(cursor ? { cursor } : {}),
           ...(selectedResources ? { resources: selectedResources } : {}),
         };
-        const result = await executeSync(connector, context, request);
+        const result = await callConnector((callContext, options) =>
+          executeSync(connector, callContext, request, options),
+        );
         if (!result.done && !result.nextCursor) {
           throw new ContractViolationError(
             `connector "${manifest.id}" returned done=false without a nextCursor`,
@@ -458,6 +557,10 @@ async function runSync(
       });
     });
   } catch (error) {
+    const oauthError = await oauthFailure(error);
+    if (oauthError) {
+      throw oauthError;
+    }
     const errorClass: ErrorClass =
       error instanceof ContractViolationError ? "contract" : "transient";
     await recordFailure(errorClass, error);

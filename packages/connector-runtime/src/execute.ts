@@ -14,12 +14,28 @@ import {
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
-import { EgressDeniedError, createEgressFetch } from "./egress.js";
+import {
+  EgressDeniedError,
+  createEgressFetch,
+  type EgressOptions,
+} from "./egress.js";
 import { redactConnectorError, redactCredentialValues } from "./redact.js";
 
 /** Time budget per connector call (one check, discover, or sync page). */
 export interface ExecuteOptions {
   timeoutMs?: number;
+  /**
+   * Observes the status of every response connector code receives through
+   * runtime.fetch (after redirects). The host uses it to notice a provider
+   * 401 on an OAuth connection and refresh the access token (ADR 0012); it
+   * sees no bodies or headers.
+   */
+  onResponse?: (status: number) => void;
+  /** Tests only: reach a local fixture provider (see EgressOptions). */
+  egress?: Pick<
+    EgressOptions,
+    "lookup" | "allowPrivateAddresses" | "allowInsecureHttp"
+  >;
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -62,11 +78,20 @@ async function withRuntime<T>(
 ): Promise<T> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
+  const egressFetch = createEgressFetch({
+    ...options.egress,
+    allowedDomains: connector.manifest.outboundDomains,
+    signal: controller.signal,
+  });
+  const onResponse = options.onResponse;
   const runtime: ConnectorRuntime = {
-    fetch: createEgressFetch({
-      allowedDomains: connector.manifest.outboundDomains,
-      signal: controller.signal,
-    }),
+    fetch: onResponse
+      ? async (url, init) => {
+          const response = await egressFetch(url, init);
+          onResponse(response.status);
+          return response;
+        }
+      : egressFetch,
     signal: controller.signal,
   };
   let timer: ReturnType<typeof setTimeout> | undefined;

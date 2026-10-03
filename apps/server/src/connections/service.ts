@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   ConnectorAuthStrategy,
   CreateConnectionRequest,
+  DeleteConnectionResponse,
   ObservationListQuery,
   PreviewConnectionRequest,
   UpdateConnectionRequest,
@@ -18,12 +19,14 @@ import {
   deleteConnection as deleteConnectionRow,
   enqueueJob,
   findConnection,
+  findConnectionOAuth,
   findProject,
   insertAuditEvent,
   insertConnection,
   listConnections as listConnectionRows,
   listObservations as listObservationRows,
   listRecentSyncRuns,
+  releaseOAuthGrant,
   requestConnectionSync,
   resetConnectionAuth,
   updateConnection as updateConnectionRow,
@@ -40,6 +43,17 @@ import {
   type CredentialKeyring,
 } from "../credentials.js";
 import type { OAuthProviders } from "../oauth/config.js";
+import {
+  callWithAccessToken,
+  NeedsReauthorizationError,
+  oauthStrategyFor,
+} from "../oauth/connector-auth.js";
+import {
+  createOAuthTokenService,
+  OAuthTokenError,
+  openOAuthCredentials,
+  type OAuthTokenService,
+} from "../oauth/tokens.js";
 import {
   presentConnection,
   presentConnectionDetail,
@@ -58,6 +72,8 @@ export interface ConnectionServiceDeps {
   registry: ConnectorRegistry;
   credentialKeyring: CredentialKeyring;
   oauthProviders: OAuthProviders;
+  /** Default: a token service over db, keyring and providers. */
+  oauthTokens?: OAuthTokenService;
 }
 
 /** Who acts on which workspace (see routes/access.ts). */
@@ -190,6 +206,59 @@ function acceptsCredentials(manifest: ConnectorManifest): boolean {
 
 export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db, registry, credentialKeyring, oauthProviders } = deps;
+  const oauthTokens =
+    deps.oauthTokens ??
+    createOAuthTokenService({
+      db,
+      credentialKeyring,
+      providers: oauthProviders,
+    });
+
+  /**
+   * The connector check of an existing OAuth connection with a candidate
+   * config: the connector gets a fresh access token, never the stored
+   * refresh token (ADR 0012).
+   */
+  async function checkOAuthConnection(
+    actor: Actor,
+    connectorId: string,
+    connectionId: string,
+    provider: string,
+    config: Record<string, unknown>,
+  ): Promise<Result<true>> {
+    const registered = registry.get(connectorId);
+    const strategy = registered
+      ? oauthStrategyFor(registered.manifest, provider)
+      : undefined;
+    if (!registered || !strategy) {
+      return fail(400, "invalid_request");
+    }
+    try {
+      const check = await callWithAccessToken({
+        tokens: oauthTokens,
+        binding: { workspaceId: actor.workspaceId, connectionId },
+        requiredScopes: strategy.scopes,
+        call: (credentials, options) =>
+          executeCheck(
+            registered.connector,
+            { connectionId, config, credentials: { ...credentials } },
+            options,
+          ),
+        rejected: (result) => !result.ok,
+      });
+      return check.ok
+        ? ok(true)
+        : fail(400, check.message ?? "credential check failed");
+    } catch (error) {
+      if (error instanceof NeedsReauthorizationError) {
+        return fail(400, "oauth_reauthorization_required");
+      }
+      if (error instanceof OAuthTokenError) {
+        return fail(400, safeMessage(error));
+      }
+      return fail(400, safeMessage(error));
+    }
+  }
 
   /**
    * Connections made from credentials (POST /connections, preview) need a
@@ -421,9 +490,29 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         }
       }
 
+      // OAuth connections get new credentials only through reauthorization.
+      if (existing.oauth && body.credentials !== undefined) {
+        return fail(400, "oauth_authorization_required");
+      }
+      if (existing.oauth && body.config !== undefined) {
+        const check = await checkOAuthConnection(
+          actor,
+          existing.row.connectorId,
+          connectionId,
+          existing.oauth.provider,
+          nextConfig ?? existingConfig,
+        );
+        if (!check.ok) {
+          return check;
+        }
+      }
+
       // Config or credential changes are re-checked against the connector
       // before they persist (same rule as creation).
-      if (body.config !== undefined || body.credentials !== undefined) {
+      if (
+        !existing.oauth &&
+        (body.config !== undefined || body.credentials !== undefined)
+      ) {
         let credentials: Record<string, unknown>;
         if (body.credentials !== undefined) {
           credentials = body.credentials;
@@ -524,15 +613,56 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       });
     },
 
-    async remove(actor: Actor, connectionId: string) {
-      return inWorkspace(actor, async (tx) => {
+    /**
+     * Deletes a connection. For an OAuth connection (ADR 0012) the grant is
+     * released in the deleting transaction: oauth_release_grant serializes
+     * disconnects of one account and says whether another connection on the
+     * instance still uses the grant. Only when none does is the refresh
+     * token revoked at the provider, after commit, best effort. A failed
+     * revocation still deletes and is reported.
+     */
+    async remove(
+      actor: Actor,
+      connectionId: string,
+    ): Promise<Result<DeleteConnectionResponse>> {
+      const deleted = await inWorkspace(actor, async (tx) => {
         const loaded = await findConnection(
           tx,
           actor.workspaceId,
           connectionId,
         );
         if (!loaded) {
-          return fail<null>(404, NOT_FOUND);
+          return null;
+        }
+        const grant = loaded.oauth
+          ? await findConnectionOAuth(tx, actor.workspaceId, connectionId)
+          : null;
+        let release: {
+          provider: string;
+          refreshToken: string | null;
+          shared: boolean;
+        } | null = null;
+        if (grant) {
+          let refreshToken: string | null;
+          try {
+            refreshToken = loaded.row.credentialsEncrypted
+              ? openOAuthCredentials(
+                  loaded.row.credentialsEncrypted,
+                  credentialKeyring,
+                  { workspaceId: actor.workspaceId, connectionId },
+                )
+              : null;
+          } catch {
+            // An unreadable envelope cannot be revoked; deletion goes on
+            // and the revocation is reported as failed.
+            refreshToken = null;
+          }
+          const shared = await releaseOAuthGrant(tx, {
+            provider: grant.provider,
+            accountSub: grant.accountSub,
+            connectionId,
+          });
+          release = { provider: grant.provider, refreshToken, shared };
         }
         await deleteConnectionRow(tx, actor.workspaceId, connectionId);
         await insertAuditEvent(tx, {
@@ -543,9 +673,44 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           metadata: {
             name: loaded.row.name,
             connectorId: loaded.row.connectorId,
+            ...(release
+              ? {
+                  oauthProvider: release.provider,
+                  oauthGrant: release.shared ? "kept" : "released",
+                }
+              : {}),
           },
         });
-        return ok(null);
+        return { release };
+      });
+      if (!deleted) {
+        return fail(404, NOT_FOUND);
+      }
+      const { release } = deleted;
+      if (!release) {
+        return ok({ revocation: null });
+      }
+      const accountPermissionsUrl =
+        oauthProviders.get(release.provider)?.definition
+          .accountPermissionsUrl ?? null;
+      if (release.shared) {
+        return ok({
+          revocation: {
+            provider: release.provider,
+            status: "kept",
+            accountPermissionsUrl,
+          },
+        });
+      }
+      const revoked = release.refreshToken
+        ? await oauthTokens.revokeGrant(release.provider, release.refreshToken)
+        : false;
+      return ok({
+        revocation: {
+          provider: release.provider,
+          status: revoked ? "revoked" : "failed",
+          accountPermissionsUrl,
+        },
       });
     },
 

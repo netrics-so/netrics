@@ -2,7 +2,10 @@ import type { Database, Job } from "@netrics/database";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import type { Logger } from "pino";
 
+import type { ExecuteOptions } from "@netrics/connector-runtime";
+
 import type { CredentialKeyring } from "../credentials.js";
+import type { OAuthTokenService } from "../oauth/tokens.js";
 
 import { createSyncJobHandlers } from "../sync/engine.js";
 
@@ -63,6 +66,10 @@ export interface JobHandlerDeps {
   credentialKeyring: CredentialKeyring;
   /** Clock for sync windows; tests pin it. */
   now?: () => Date;
+  /** Access tokens for OAuth connections (ADR 0012). */
+  oauthTokens?: OAuthTokenService;
+  /** Tests only: options for every connector call (e.g. local egress). */
+  executeOptions?: ExecuteOptions;
 }
 
 /**
