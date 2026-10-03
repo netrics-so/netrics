@@ -16,9 +16,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { migrationsFolder, runMigrations } from "./index.js";
 
-// Migration 0029 (#166) on metric definitions in the previous shape: every
+// Migration 0028 (#166) on metric definitions in the previous shape: every
 // existing definition becomes a "primary" metric; only the two roles are
-// allowed. (0028 belongs to another change and is not needed here.)
+// allowed.
 
 const LAST_BEFORE = "0027_gsc_zero_impressions";
 
@@ -68,7 +68,7 @@ afterAll(async () => {
   await server.end({ timeout: 5 });
 });
 
-describe("migration 0029 on stored metric definitions", () => {
+describe("migration 0028 on stored metric definitions", () => {
   it("makes existing definitions primary and allows only the two roles", async () => {
     const owner = postgres(adminUrl, { max: 1, onnotice: () => undefined });
     try {
