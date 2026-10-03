@@ -23,11 +23,12 @@ import {
   insertAuditEvent,
   insertConnection,
   insertOAuthAuthorization,
-  lockOAuthGrant,
   oauthAccountHasGrant,
+  releaseOAuthGrant,
   resetConnectionAuth,
   updateConnection,
   upsertConnectionOAuth,
+  withOAuthGrantLocks,
   withUserContext,
   withWorkspace,
   type ConsumedOAuthAuthorization,
@@ -38,25 +39,29 @@ import { can, type WorkspaceAction } from "@netrics/domain";
 
 import {
   decryptOAuthCodeVerifier,
-  encryptCredentials,
   encryptOAuthAccessToken,
   encryptOAuthCodeVerifier,
   type CredentialKeyring,
 } from "../credentials.js";
-import type { Secret } from "../secret.js";
+import { Secret } from "../secret.js";
 import {
   buildAuthorizationUrl,
   exchangeCode,
   hashState,
+  isRefreshTokenLive,
   OAuthError,
   randomToken,
-  revokeToken,
   verifyIdToken,
   type IdTokenAccount,
   type OAuthHttpFactory,
   type TokenSet,
 } from "./client.js";
 import type { ConfiguredOAuthProvider, OAuthProviders } from "./config.js";
+import {
+  openOAuthCredentials,
+  sealOAuthCredentials,
+  type OAuthTokenService,
+} from "./tokens.js";
 import {
   defaultReturnPath,
   isAllowedReturnPath,
@@ -81,6 +86,8 @@ export interface OAuthFlowDeps {
   credentialKeyring: CredentialKeyring;
   oauthProviders: OAuthProviders;
   oauthHttp: OAuthHttpFactory;
+  /** Revocations (best effort, short timeout) go through the token service. */
+  oauthTokens: OAuthTokenService;
   logger: FastifyBaseLogger;
   now?: () => Date;
 }
@@ -140,21 +147,25 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
   /**
    * Revokes a refused grant at the provider, unless a connection on this
    * instance holds a grant of the same account: Google revokes per account
-   * and client, so that would stop those connections too.
+   * and project, so that would stop those connections too. Runs under the
+   * account's grant lock (`lockedDb`), so no grant of the account is stored
+   * between the check and the revocation.
    */
   async function discardGrant(
+    lockedDb: Database,
     provider: ConfiguredOAuthProvider,
     tokens: TokenSet,
     account: IdTokenAccount,
   ): Promise<void> {
-    if (await oauthAccountHasGrant(db, provider.definition.id, account.sub)) {
+    if (
+      await oauthAccountHasGrant(lockedDb, provider.definition.id, account.sub)
+    ) {
       return;
     }
     const token: Secret = tokens.refreshToken ?? tokens.accessToken;
-    const revoked = await revokeToken(
-      provider,
-      deps.oauthHttp(provider.definition),
-      token,
+    const revoked = await deps.oauthTokens.revokeGrant(
+      provider.definition.id,
+      token.reveal(),
     );
     if (!revoked) {
       logger.warn(
@@ -366,60 +377,97 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
           now: now(),
         });
 
-        // 5. Every scope the connector needs must be granted.
+        // 5. Every scope the connector needs must be granted, and a grant
+        //    without a refresh token is of no use. Both are refused below,
+        //    under the account's grant lock, and revoked when unused.
         const granted = tokens.scopes ?? [
           ...provider.definition.identityScopes,
           ...strategy.scopes,
         ];
-        if (strategy.scopes.some((scope) => !granted.includes(scope))) {
-          await discardGrant(provider, tokens, account);
-          throw new FlowStop("scope_missing", "scope_missing");
-        }
-        if (!tokens.refreshToken) {
-          await discardGrant(provider, tokens, account);
-          throw new FlowStop("failed", "no_refresh_token");
-        }
-        const refreshToken = tokens.refreshToken;
+        const refusal = strategy.scopes.some(
+          (scope) => !granted.includes(scope),
+        )
+          ? new FlowStop("scope_missing", "scope_missing")
+          : !tokens.refreshToken
+            ? new FlowStop("failed", "no_refresh_token")
+            : null;
 
-        // 6. Store, bound to the workspace (and connection) of the state.
-        const result = await withWorkspace(
-          db,
-          { workspaceId: authorization.workspaceId, userId },
-          async (tx) => {
-            if (
-              !(await stillAllowed(
-                tx,
+        // 6. Store, bound to the workspace (and connection) of the state,
+        //    under the grant lock of the account (ADR 0012, "Grant lock").
+        //    A reauthorization also locks the account linked now, since an
+        //    account change releases that account's grant; the locks are
+        //    taken in a fixed order, so two account swaps cannot deadlock.
+        const previousSub =
+          authorization.purpose === "reauthorize" && authorization.connectionId
+            ? await linkedAccount(
                 authorization.workspaceId,
                 userId,
-                authorization.purpose,
-              ))
-            ) {
-              throw new FlowStop("forbidden", "role_missing");
-            }
-            // Serialize with disconnects of the same account (#133).
-            await lockOAuthGrant(tx, providerId, account.sub);
-            return authorization.purpose === "connect"
-              ? connect(tx, authorization, registered.manifest, {
-                  tokens,
-                  refreshToken,
-                  account,
-                  granted,
-                })
-              : reauthorize(tx, authorization, {
-                  tokens,
-                  refreshToken,
-                  account,
-                  granted,
-                });
-          },
-        ).catch(async (error: unknown) => {
-          if (
-            error instanceof FlowStop &&
-            error.outcome === "account_mismatch"
-          ) {
-            await discardGrant(provider, tokens, account);
+                authorization.connectionId,
+              )
+            : null;
+        const keys = [account.sub, ...(previousSub ? [previousSub] : [])].map(
+          (accountSub) => ({ provider: providerId, accountSub }),
+        );
+        const result = await withOAuthGrantLocks(db, keys, async (lockedDb) => {
+          const refreshToken = tokens.refreshToken;
+          if (refusal || !refreshToken) {
+            await discardGrant(lockedDb, provider, tokens, account);
+            throw refusal ?? new FlowStop("failed", "no_refresh_token");
           }
-          throw error;
+          // Revocation is account-wide: a disconnect of this account that
+          // revoked between the code exchange and this lock also killed
+          // this grant. No revocation can start while the lock is held, so
+          // one refresh tells whether the grant is still live.
+          if (!(await isRefreshTokenLive(provider, http, refreshToken))) {
+            throw new FlowStop("failed", "grant_revoked");
+          }
+          const grant = { tokens, refreshToken, account, granted };
+          let stored: Stored;
+          try {
+            stored = await withWorkspace(
+              lockedDb,
+              { workspaceId: authorization.workspaceId, userId },
+              async (tx) => {
+                if (
+                  !(await stillAllowed(
+                    tx,
+                    authorization.workspaceId,
+                    userId,
+                    authorization.purpose,
+                  ))
+                ) {
+                  throw new FlowStop("forbidden", "role_missing");
+                }
+                return authorization.purpose === "connect"
+                  ? connect(tx, authorization, registered.manifest, grant)
+                  : reauthorize(tx, authorization, grant, previousSub);
+              },
+            );
+          } catch (error) {
+            if (
+              error instanceof FlowStop &&
+              error.outcome === "account_mismatch"
+            ) {
+              await discardGrant(lockedDb, provider, tokens, account);
+            }
+            throw error;
+          }
+          // An account change released the previous account's grant on
+          // this connection; when no other connection on the instance uses
+          // it, it is revoked, still under that account's lock.
+          if (stored.releasedRefreshToken) {
+            const revoked = await deps.oauthTokens.revokeGrant(
+              providerId,
+              stored.releasedRefreshToken.reveal(),
+            );
+            if (!revoked) {
+              logger.warn(
+                { provider: providerId },
+                "oauth revocation of the previous account failed",
+              );
+            }
+          }
+          return stored.response;
         });
         logger.info(
           {
@@ -472,18 +520,32 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
     granted: string[];
   }
 
+  interface Stored {
+    response: OAuthCallbackResponse;
+    /** The previous account's refresh token, to revoke after commit. */
+    releasedRefreshToken: Secret | null;
+  }
+
+  /** The account a connection is linked to now (null: none, or gone). */
+  async function linkedAccount(
+    workspaceId: string,
+    userId: string,
+    connectionId: string,
+  ): Promise<string | null> {
+    const linked = await withWorkspace(db, { workspaceId, userId }, (tx) =>
+      findConnectionOAuth(tx, workspaceId, connectionId),
+    );
+    return linked?.accountSub ?? null;
+  }
+
   function sealGrant(workspaceId: string, connectionId: string, grant: Grant) {
     const binding = { workspaceId, connectionId };
     return {
-      // The credentials envelope of an OAuth connection holds the refresh
-      // token as {"refreshToken": "..."}; the token service (#133) reads it.
-      credentialsEncrypted: Buffer.from(
-        encryptCredentials(
-          JSON.stringify({ refreshToken: grant.refreshToken.reveal() }),
-          credentialKeyring,
-          binding,
-        ),
-        "utf8",
+      // The token service's envelope format (#133): {"refreshToken": "..."}.
+      credentialsEncrypted: sealOAuthCredentials(
+        grant.refreshToken.reveal(),
+        credentialKeyring,
+        binding,
       ),
       accessTokenEncrypted: Buffer.from(
         encryptOAuthAccessToken(
@@ -502,7 +564,7 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
     authorization: ConsumedOAuthAuthorization,
     manifest: ConnectorManifest,
     grant: Grant,
-  ): Promise<OAuthCallbackResponse> {
+  ): Promise<Stored> {
     const { workspaceId, userId, provider } = authorization;
     const connectionId = randomUUID();
     const sealed = sealGrant(workspaceId, connectionId, grant);
@@ -542,23 +604,29 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
       metadata: { connectorId: authorization.connectorId, provider },
     });
     return {
-      outcome: "connected",
-      redirectTo: withOutcome(authorization.returnPath, {
-        oauth: "connected",
-        connection: connectionId,
-      }),
+      response: {
+        outcome: "connected",
+        redirectTo: withOutcome(authorization.returnPath, {
+          oauth: "connected",
+          connection: connectionId,
+        }),
+      },
+      releasedRefreshToken: null,
     };
   }
 
   /**
    * New tokens for the connection bound into the state: same workspace (the
    * transaction's), same connector, same account unless a change was chosen.
+   * `lockedSub` is the account whose grant lock the caller holds as the
+   * connection's current one.
    */
   async function reauthorize(
     tx: Transaction,
     authorization: ConsumedOAuthAuthorization,
     grant: Grant,
-  ): Promise<OAuthCallbackResponse> {
+    lockedSub: string | null,
+  ): Promise<Stored> {
     const { workspaceId, userId, provider } = authorization;
     const connectionId = authorization.connectionId!;
     const existing = await findConnection(tx, workspaceId, connectionId);
@@ -570,9 +638,41 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
       throw new FlowStop("failed", "connection_gone");
     }
     const linked = await findConnectionOAuth(tx, workspaceId, connectionId);
-    const accountChanged = linked?.accountSub !== grant.account.sub;
+    if (!linked || linked.accountSub !== lockedSub) {
+      // Changed by a concurrent reauthorization after the lock was chosen.
+      throw new FlowStop("failed", "connection_changed");
+    }
+    const accountChanged = linked.accountSub !== grant.account.sub;
     if (accountChanged && !authorization.allowAccountChange) {
       throw new FlowStop("account_mismatch", "account_mismatch");
+    }
+    // An account change releases the previous account's grant here, like a
+    // disconnect: revoke it (after commit) only if no other connection on
+    // the instance uses it.
+    let releasedRefreshToken: Secret | null = null;
+    let previousGrant: "kept" | "released" | null = null;
+    if (accountChanged) {
+      const shared = await releaseOAuthGrant(tx, {
+        provider,
+        accountSub: linked.accountSub,
+        connectionId,
+      });
+      previousGrant = shared ? "kept" : "released";
+      if (!shared && existing.row.credentialsEncrypted) {
+        try {
+          releasedRefreshToken = new Secret(
+            openOAuthCredentials(
+              existing.row.credentialsEncrypted,
+              credentialKeyring,
+              { workspaceId, connectionId },
+            ),
+          );
+        } catch {
+          // Unreadable: nothing to revoke; the user can remove access at
+          // the provider.
+          releasedRefreshToken = null;
+        }
+      }
     }
     const sealed = sealGrant(workspaceId, connectionId, grant);
     await updateConnection(tx, workspaceId, connectionId, {
@@ -605,14 +705,21 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
         actorUserId: userId,
         action: "connection.oauth_account_changed",
         target: connectionId,
-        metadata: { connectorId: authorization.connectorId, provider },
+        metadata: {
+          connectorId: authorization.connectorId,
+          provider,
+          previousGrant,
+        },
       });
     }
     return {
-      outcome: "reauthorized",
-      redirectTo: withOutcome(authorization.returnPath, {
-        oauth: "reauthorized",
-      }),
+      response: {
+        outcome: "reauthorized",
+        redirectTo: withOutcome(authorization.returnPath, {
+          oauth: "reauthorized",
+        }),
+      },
+      releasedRefreshToken,
     };
   }
 }

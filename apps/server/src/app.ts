@@ -26,7 +26,10 @@ import {
 import { createMailer, type Mailer } from "./mail/mailer.js";
 import { providerHttp, type OAuthHttpFactory } from "./oauth/client.js";
 import { createOAuthProviders, type OAuthProviders } from "./oauth/config.js";
-import type { OAuthTokenService } from "./oauth/tokens.js";
+import {
+  createOAuthTokenService,
+  type OAuthTokenService,
+} from "./oauth/tokens.js";
 import { createOAuthFlow } from "./oauth/flow.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerConnectionRoutes } from "./routes/connections.js";
@@ -158,13 +161,21 @@ export async function buildApp(
     pairingUrl: config.pairingUrl,
     version: config.version,
   });
+  const oauthTokens =
+    deps.oauthTokens ??
+    createOAuthTokenService({
+      db,
+      credentialKeyring,
+      providers: oauthProviders,
+      ...(deps.oauthHttp ? { http: deps.oauthHttp } : {}),
+    });
   registerConnectionRoutes(app, {
     authService,
     db,
     registry,
     credentialKeyring,
     oauthProviders,
-    ...(deps.oauthTokens ? { oauthTokens: deps.oauthTokens } : {}),
+    oauthTokens,
   });
   registerOAuthRoutes(app, {
     authService,
@@ -175,6 +186,7 @@ export async function buildApp(
       credentialKeyring,
       oauthProviders,
       oauthHttp: deps.oauthHttp ?? providerHttp,
+      oauthTokens,
       logger: app.log,
     }),
   });

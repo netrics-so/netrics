@@ -30,6 +30,7 @@ import {
   requestConnectionSync,
   resetConnectionAuth,
   updateConnection as updateConnectionRow,
+  withOAuthGrantLocks,
   withWorkspace,
   type ConnectionChanges,
   type Database,
@@ -282,6 +283,121 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       run,
     );
 
+  /**
+   * The disconnect under the grant lock of `key` (null: not an OAuth
+   * connection when looked up). Answers "account_changed" when the
+   * connection's grant no longer belongs to the locked account.
+   */
+  async function disconnect(
+    handle: Database,
+    actor: Actor,
+    connectionId: string,
+    key: { provider: string; accountSub: string } | null,
+  ): Promise<Result<DeleteConnectionResponse> | "account_changed"> {
+    const deleted = await withWorkspace(
+      handle,
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      async (tx) => {
+        const loaded = await findConnection(
+          tx,
+          actor.workspaceId,
+          connectionId,
+        );
+        if (!loaded) {
+          return null;
+        }
+        const grant = loaded.oauth
+          ? await findConnectionOAuth(tx, actor.workspaceId, connectionId)
+          : null;
+        if (
+          (grant?.provider ?? null) !== (key?.provider ?? null) ||
+          (grant?.accountSub ?? null) !== (key?.accountSub ?? null)
+        ) {
+          return "account_changed" as const;
+        }
+        let release: {
+          provider: string;
+          refreshToken: string | null;
+          shared: boolean;
+        } | null = null;
+        if (grant) {
+          let refreshToken: string | null;
+          try {
+            refreshToken = loaded.row.credentialsEncrypted
+              ? openOAuthCredentials(
+                  loaded.row.credentialsEncrypted,
+                  credentialKeyring,
+                  { workspaceId: actor.workspaceId, connectionId },
+                )
+              : null;
+          } catch {
+            // An unreadable envelope cannot be revoked; deletion goes on
+            // and the revocation is reported as failed.
+            refreshToken = null;
+          }
+          const shared = await releaseOAuthGrant(tx, {
+            provider: grant.provider,
+            accountSub: grant.accountSub,
+            connectionId,
+          });
+          release = { provider: grant.provider, refreshToken, shared };
+        }
+        await deleteConnectionRow(tx, actor.workspaceId, connectionId);
+        await insertAuditEvent(tx, {
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.callerId,
+          action: "connection.deleted",
+          target: connectionId,
+          metadata: {
+            name: loaded.row.name,
+            connectorId: loaded.row.connectorId,
+            ...(release
+              ? {
+                  oauthProvider: release.provider,
+                  oauthGrant: release.shared ? "kept" : "released",
+                }
+              : {}),
+          },
+        });
+        return { release };
+      },
+    );
+    if (deleted === "account_changed") {
+      return deleted;
+    }
+    if (!deleted) {
+      return fail(404, NOT_FOUND);
+    }
+    const { release } = deleted;
+    if (!release) {
+      return ok({ revocation: null });
+    }
+    const accountPermissionsUrl =
+      oauthProviders.get(release.provider)?.definition.accountPermissionsUrl ??
+      null;
+    if (release.shared) {
+      return ok({
+        revocation: {
+          provider: release.provider,
+          status: "kept",
+          accountPermissionsUrl,
+        },
+      });
+    }
+    // Still under the grant lock: no grant of this account can be stored
+    // until the provider has answered (or the short timeout passed).
+    const revoked = release.refreshToken
+      ? await oauthTokens.revokeGrant(release.provider, release.refreshToken)
+      : false;
+    return ok({
+      revocation: {
+        provider: release.provider,
+        status: revoked ? "revoked" : "failed",
+        accountPermissionsUrl,
+      },
+    });
+  }
+
   return {
     /** The installation's catalog, from the deployed bundle. */
     listConnectors() {
@@ -465,18 +581,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       if (!registered) {
         return fail(400, "invalid_request");
       }
-      if (existing.oauth) {
-        // An OAuth connection's credentials are its grant: they change only
-        // through reauthorization (ADR 0012), never by pasting a token.
-        if (body.credentials !== undefined) {
-          return fail(400, "oauth_credentials_not_editable");
-        }
-        // Config changes are checked against the connector, which must get
-        // an access token from the token service (#133), never the stored
-        // refresh token. Until that is wired here they are refused.
-        if (body.config !== undefined) {
-          return fail(400, "oauth_config_change_unsupported");
-        }
+      // An OAuth connection's credentials are its grant: they change only
+      // through reauthorization (ADR 0012), never by pasting a token.
+      if (existing.oauth && body.credentials !== undefined) {
+        return fail(400, "oauth_authorization_required");
       }
 
       const existingConfig = existing.row.config as Record<string, unknown>;
@@ -503,10 +611,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         }
       }
 
-      // OAuth connections get new credentials only through reauthorization.
-      if (existing.oauth && body.credentials !== undefined) {
-        return fail(400, "oauth_authorization_required");
-      }
+      // A config change of an OAuth connection is checked with a fresh access
+      // token from the token service, never the stored refresh token.
       if (existing.oauth && body.config !== undefined) {
         const check = await checkOAuthConnection(
           actor,
@@ -627,104 +733,39 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     },
 
     /**
-     * Deletes a connection. For an OAuth connection (ADR 0012) the grant is
-     * released in the deleting transaction: oauth_release_grant serializes
-     * disconnects of one account and says whether another connection on the
-     * instance still uses the grant. Only when none does is the refresh
-     * token revoked at the provider, after commit, best effort. A failed
-     * revocation still deletes and is reported.
+     * Deletes a connection. For an OAuth connection (ADR 0012, "Disconnect")
+     * the whole disconnect runs under the session-level grant lock of its
+     * provider account: oauth_release_grant (in the deleting transaction)
+     * says whether another connection on the instance still uses the grant,
+     * and only when none does is the refresh token revoked at the provider,
+     * after commit, best effort, before the lock is released. A callback
+     * storing a grant of the same account waits for the lock, so the
+     * provider's account-wide revocation cannot hit a grant stored in
+     * between. A failed revocation still deletes and is reported.
      */
     async remove(
       actor: Actor,
       connectionId: string,
     ): Promise<Result<DeleteConnectionResponse>> {
-      const deleted = await inWorkspace(actor, async (tx) => {
-        const loaded = await findConnection(
-          tx,
-          actor.workspaceId,
-          connectionId,
+      // The grant's account decides the lock; a reauthorization may change
+      // the account while this waits, so it is read again under the lock.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const linked = await inWorkspace(actor, (tx) =>
+          findConnectionOAuth(tx, actor.workspaceId, connectionId),
         );
-        if (!loaded) {
-          return null;
-        }
-        const grant = loaded.oauth
-          ? await findConnectionOAuth(tx, actor.workspaceId, connectionId)
+        const key = linked
+          ? { provider: linked.provider, accountSub: linked.accountSub }
           : null;
-        let release: {
-          provider: string;
-          refreshToken: string | null;
-          shared: boolean;
-        } | null = null;
-        if (grant) {
-          let refreshToken: string | null;
-          try {
-            refreshToken = loaded.row.credentialsEncrypted
-              ? openOAuthCredentials(
-                  loaded.row.credentialsEncrypted,
-                  credentialKeyring,
-                  { workspaceId: actor.workspaceId, connectionId },
-                )
-              : null;
-          } catch {
-            // An unreadable envelope cannot be revoked; deletion goes on
-            // and the revocation is reported as failed.
-            refreshToken = null;
-          }
-          const shared = await releaseOAuthGrant(tx, {
-            provider: grant.provider,
-            accountSub: grant.accountSub,
-            connectionId,
-          });
-          release = { provider: grant.provider, refreshToken, shared };
+        const outcome = key
+          ? await withOAuthGrantLocks(db, [key], (lockedDb) =>
+              disconnect(lockedDb, actor, connectionId, key),
+            )
+          : await disconnect(db, actor, connectionId, null);
+        if (outcome !== "account_changed") {
+          return outcome;
         }
-        await deleteConnectionRow(tx, actor.workspaceId, connectionId);
-        await insertAuditEvent(tx, {
-          workspaceId: actor.workspaceId,
-          actorUserId: actor.callerId,
-          action: "connection.deleted",
-          target: connectionId,
-          metadata: {
-            name: loaded.row.name,
-            connectorId: loaded.row.connectorId,
-            ...(release
-              ? {
-                  oauthProvider: release.provider,
-                  oauthGrant: release.shared ? "kept" : "released",
-                }
-              : {}),
-          },
-        });
-        return { release };
-      });
-      if (!deleted) {
-        return fail(404, NOT_FOUND);
       }
-      const { release } = deleted;
-      if (!release) {
-        return ok({ revocation: null });
-      }
-      const accountPermissionsUrl =
-        oauthProviders.get(release.provider)?.definition
-          .accountPermissionsUrl ?? null;
-      if (release.shared) {
-        return ok({
-          revocation: {
-            provider: release.provider,
-            status: "kept",
-            accountPermissionsUrl,
-          },
-        });
-      }
-      const revoked = release.refreshToken
-        ? await oauthTokens.revokeGrant(release.provider, release.refreshToken)
-        : false;
-      return ok({
-        revocation: {
-          provider: release.provider,
-          status: revoked ? "revoked" : "failed",
-          accountPermissionsUrl,
-        },
-      });
+      return fail(400, "connection_busy");
     },
 
     /** Reuses a sync that is already waiting instead of queueing another. */

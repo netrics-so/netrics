@@ -35,23 +35,104 @@ REVOKE ALL ON FUNCTION prune_oauth_authorizations(integer) FROM PUBLIC;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION prune_oauth_authorizations(integer) TO netrics_scheduler;
 --> statement-breakpoint
--- 3. A callback that refuses a grant (scopes missing, account mismatch)
---    revokes it at the provider only when no connection on the instance holds
---    a grant of the same provider account: Google revokes per account and
---    client, so revoking would also stop those connections (ADR 0012,
---    "Disconnect"). The callback runs in one workspace, so this looks across
---    workspaces as the owner and answers only a boolean.
-CREATE FUNCTION oauth_account_has_grant(p_provider text, p_account_sub text)
+-- 3. One lock per provider account (ADR 0012, "Grant lock"). Every change to
+--    whether an account holds a grant on this instance, and every revocation
+--    at the provider, runs under an advisory lock on (provider, sub), so a
+--    shared-grant check and the revocation or store that follows it cannot
+--    interleave with another for the same account. oauth_grant_lock is the
+--    only place the key is derived; 0023's oauth_release_grant is redefined
+--    below to use it. Advisory locks need no table privileges, so this is not
+--    SECURITY DEFINER. Modes:
+--    - 'xact': pg_advisory_xact_lock, released at commit or rollback;
+--    - 'session': pg_advisory_lock, held across the revocation HTTP call by
+--      a disconnect (or a callback) on one reserved connection;
+--    - 'unlock': releases one 'session' hold, returns whether it was held.
+--    Session and transaction holds of one key conflict between sessions and
+--    are reentrant within one, so a holder of the session lock can still
+--    call oauth_release_grant.
+CREATE FUNCTION oauth_grant_lock(p_provider text, p_sub text, p_mode text)
 RETURNS boolean
-LANGUAGE sql
-STABLE
+LANGUAGE plpgsql
+VOLATILE
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  k1 integer := hashtext('netrics.oauth_grant');
+  k2 integer := hashtext(p_provider || chr(31) || p_sub);
+BEGIN
+  CASE p_mode
+    WHEN 'xact' THEN
+      PERFORM pg_advisory_xact_lock(k1, k2);
+      RETURN true;
+    WHEN 'session' THEN
+      PERFORM pg_advisory_lock(k1, k2);
+      RETURN true;
+    WHEN 'unlock' THEN
+      RETURN pg_advisory_unlock(k1, k2);
+  END CASE;
+END;
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION oauth_grant_lock(text, text, text) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION oauth_grant_lock(text, text, text) TO netrics_app;
+--> statement-breakpoint
+-- 4. oauth_release_grant (0023) with the key from oauth_grant_lock; the
+--    behaviour is unchanged (same key, same checks, same answer).
+CREATE OR REPLACE FUNCTION oauth_release_grant(
+  p_provider text,
+  p_sub text,
+  p_connection_id uuid
+)
+RETURNS boolean
+LANGUAGE plpgsql
+VOLATILE
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-  SELECT EXISTS (
+BEGIN
+  PERFORM oauth_grant_lock(p_provider, p_sub, 'xact');
+  IF NOT EXISTS (
+    SELECT 1 FROM connection_oauth o
+    WHERE o.connection_id = p_connection_id
+      AND o.workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+      AND o.provider = p_provider
+      AND o.account_sub = p_sub
+  ) THEN
+    RAISE EXCEPTION 'oauth_release_grant: the connection does not hold this grant'
+      USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN EXISTS (
+    SELECT 1 FROM connection_oauth o
+    WHERE o.provider = p_provider
+      AND o.account_sub = p_sub
+      AND o.connection_id <> p_connection_id
+  );
+END;
+$$;
+--> statement-breakpoint
+-- 5. A callback that refuses a grant (scopes missing, account mismatch, no
+--    refresh token) revokes it at the provider only when no connection on the
+--    instance holds a grant of the same provider account: Google revokes per
+--    account and project, so revoking would also stop those connections (ADR
+--    0012, "Disconnect"). Unlike oauth_release_grant there is no connection
+--    of the caller to start from, so this is the non-deleting variant: it
+--    takes the same lock (reentrant for a caller already holding it), looks
+--    across workspaces as the owner and answers only a boolean.
+CREATE FUNCTION oauth_account_has_grant(p_provider text, p_account_sub text)
+RETURNS boolean
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  PERFORM oauth_grant_lock(p_provider, p_account_sub, 'xact');
+  RETURN EXISTS (
     SELECT 1 FROM connection_oauth o
     WHERE o.provider = p_provider AND o.account_sub = p_account_sub
   );
+END;
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION oauth_account_has_grant(text, text) FROM PUBLIC;

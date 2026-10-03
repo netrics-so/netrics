@@ -33,7 +33,7 @@ import {
   FIXTURE_ACCOUNT,
   type ConsentOptions,
   type FixtureAccount,
-} from "./oauth/testing/fixture-provider.js";
+} from "./oauth/test-provider.js";
 import { syncCatalog } from "./sync/catalog.js";
 import { createTestDatabase } from "./test-db.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
@@ -423,7 +423,7 @@ describe("connecting", () => {
     ]);
   });
 
-  it("refuses credential and config changes on an OAuth connection", async () => {
+  it("refuses credential changes; checks config changes with a fresh access token and keeps setup pending", async () => {
     const id = connectionIdOf(await flow(cookies.owner));
     const patch = (payload: Record<string, unknown>) =>
       app.inject({
@@ -436,11 +436,23 @@ describe("connecting", () => {
     const credentials = await patch({ credentials: { token: "pasted" } });
     expect(credentials.statusCode).toBe(400);
     expect(credentials.json()).toEqual({
-      error: "oauth_credentials_not_editable",
+      error: "oauth_authorization_required",
     });
+    expect((await credentialsOf(id)).equals(before)).toBe(true);
+
+    // The token service supplies the connector check (#133); finishing
+    // setup (clearing setup_pending, #136) is not part of a config change.
     const config = await patch({ config: { seed: 2 } });
-    expect(config.statusCode).toBe(400);
-    expect(config.json()).toEqual({ error: "oauth_config_change_unsupported" });
+    expect(config.statusCode, config.body).toBe(200);
+    const [row] = await admin`
+      select c.config, c.setup_pending, s.next_due_at
+      from connections c join connection_state s on s.connection_id = c.id
+      where c.id = ${id}`;
+    expect(row).toMatchObject({
+      config: { seed: 2 },
+      setup_pending: true,
+      next_due_at: null,
+    });
     expect((await credentialsOf(id)).equals(before)).toBe(true);
 
     const renamed = await patch({ name: "My property" });

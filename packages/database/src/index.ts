@@ -164,10 +164,10 @@ export {
   markNeedsReauthorization,
   releaseOAuthGrant,
   updateConnectionOAuthTokens,
-  lockOAuthGrant,
   oauthAccountHasGrant,
   pruneOAuthAuthorizations,
   upsertConnectionOAuth,
+  withOAuthGrantLocks,
 } from "./oauth.js";
 export type {
   ConnectionOAuthInput,
@@ -175,6 +175,7 @@ export type {
   ConsumedOAuthAuthorization,
   NewOAuthAuthorization,
   OAuthAuthReason,
+  OAuthGrantKey,
   OAuthAuthorizationPurpose,
   OAuthTokenUpdate,
   OAuthAuthorizationRow,

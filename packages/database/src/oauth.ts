@@ -1,5 +1,8 @@
 import { and, eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import type postgres from "postgres";
 
+import * as authSchema from "./auth-schema.js";
 import type { Db, Transaction } from "./context.js";
 import * as schema from "./schema.js";
 
@@ -300,10 +303,17 @@ export async function releaseOAuthGrant(
     sql`select oauth_release_grant(${input.provider}, ${input.accountSub}, ${input.connectionId}::uuid) as shared`,
   );
   return rows[0]?.shared === true;
+}
+
+/**
  * Whether any connection on the instance holds a grant of this provider
- * account (SECURITY DEFINER, migration 0024; a boolean only). The callback
- * revokes a refused grant only when this is false, so it never stops
- * another connection's access.
+ * account (SECURITY DEFINER, migration 0024; a boolean only). The
+ * non-deleting counterpart of releaseOAuthGrant, for a caller that has no
+ * connection holding the grant: the callback revokes a refused grant only
+ * when this is false, so it never stops another connection's access. Takes
+ * the account's grant lock for the transaction; call it while holding
+ * withOAuthGrantLocks for the account so the revocation that follows is
+ * covered too.
  */
 export async function oauthAccountHasGrant(
   db: Db | Transaction,
@@ -331,22 +341,121 @@ export async function pruneOAuthAuthorizations(
   return row?.deleted ?? 0;
 }
 
-/**
- * Serializes grant changes of one provider account across the instance
- * (transaction advisory lock, released at commit). Same key as
- * oauth_release_grant (#133): a callback storing a grant for (provider, sub)
- * waits for a concurrent disconnect's shared-grant check of that account,
- * and the check sees the new grant once this transaction commits.
- */
-export async function lockOAuthGrant(
-  tx: Transaction,
-  provider: string,
-  accountSub: string,
-): Promise<void> {
-  await tx.execute(
-    sql`select pg_advisory_xact_lock(
-          hashtext('netrics.oauth_grant'),
-          hashtext(${provider} || chr(31) || ${accountSub})
-        )`,
+/** One provider account: the unit of the grant lock (ADR 0012). */
+export interface OAuthGrantKey {
+  provider: string;
+  accountSub: string;
+}
+
+/** Deterministic lock order (provider, then sub), without duplicates. */
+function lockOrder(keys: readonly OAuthGrantKey[]): OAuthGrantKey[] {
+  const unique = new Map<string, OAuthGrantKey>();
+  for (const key of keys) {
+    unique.set(`${key.provider}\u001f${key.accountSub}`, key);
+  }
+  return [...unique.values()].sort((a, b) =>
+    a.provider === b.provider
+      ? a.accountSub < b.accountSub
+        ? -1
+        : a.accountSub > b.accountSub
+          ? 1
+          : 0
+      : a.provider < b.provider
+        ? -1
+        : 1,
   );
+}
+
+type ReservedSql = Awaited<ReturnType<postgres.Sql["reserve"]>>;
+
+/** A pooled database handle (createDatabase). */
+type PooledDb = Db & { $client: postgres.Sql };
+
+/**
+ * A drizzle handle over one reserved connection. postgres.js gives a
+ * reserved connection no begin(), so transactions are opened here with
+ * BEGIN/COMMIT on that connection; nested transactions (savepoints) are not
+ * needed by the callers and refused.
+ */
+function reservedDatabase(parent: PooledDb, reserved: ReservedSql): PooledDb {
+  const client = parent.$client;
+  const noSavepoints = () => {
+    throw new Error(
+      "withOAuthGrantLocks: nested transactions are not supported",
+    );
+  };
+  const shim = {
+    options: client.options,
+    unsafe: reserved.unsafe.bind(reserved),
+    savepoint: noSavepoints,
+    begin: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
+      await reserved.unsafe("begin");
+      try {
+        const result = await fn({
+          options: client.options,
+          unsafe: reserved.unsafe.bind(reserved),
+          savepoint: noSavepoints,
+        });
+        await reserved.unsafe("commit");
+        return result;
+      } catch (error) {
+        await reserved.unsafe("rollback").catch(() => undefined);
+        throw error;
+      }
+    },
+  };
+  return drizzle(shim as unknown as postgres.Sql, {
+    schema: { ...schema, ...authSchema },
+  });
+}
+
+/**
+ * Runs `fn` while holding the session-level grant lock of every account in
+ * `keys` (ADR 0012, "Grant lock"; the key is derived only by
+ * oauth_grant_lock, migration 0024, which oauth_release_grant and
+ * oauth_account_has_grant also take). The hold outlives transactions: a
+ * disconnect keeps it from its shared-grant check through the revocation
+ * HTTP call, and a callback from before it stores a grant until any
+ * revocation of a refused or released grant is done, so no grant of the
+ * account can be stored between a check and the provider's account-wide
+ * revocation.
+ *
+ * The locks are taken on one reserved pool connection, in a deterministic
+ * order (so two holders of overlapping account sets cannot deadlock), and
+ * released in `finally` on that same connection before it goes back to the
+ * pool. `fn` gets a database handle on that connection: transactions it
+ * opens there (withWorkspace) run in the lock-holding session, where the
+ * transaction-level lock of oauth_release_grant is reentrant. Using the
+ * pool handle inside `fn` for the same account would wait on itself, and
+ * `lockedDb` cannot nest another withOAuthGrantLocks.
+ */
+export async function withOAuthGrantLocks<T>(
+  db: PooledDb,
+  keys: readonly OAuthGrantKey[],
+  fn: (lockedDb: PooledDb) => Promise<T>,
+): Promise<T> {
+  const ordered = lockOrder(keys);
+  const reserved = await db.$client.reserve();
+  const held: OAuthGrantKey[] = [];
+  try {
+    for (const key of ordered) {
+      await reserved`select oauth_grant_lock(${key.provider}, ${key.accountSub}, 'session')`;
+      held.push(key);
+    }
+    return await fn(reservedDatabase(db, reserved));
+  } finally {
+    let released = true;
+    for (const key of held.reverse()) {
+      try {
+        await reserved`select oauth_grant_lock(${key.provider}, ${key.accountSub}, 'unlock')`;
+      } catch {
+        released = false;
+      }
+    }
+    if (!released) {
+      // Never hand a connection that may still hold a lock back to the pool.
+      await reserved`select pg_advisory_unlock_all()`.catch(() => undefined);
+    }
+    reserved.release();
+  }
 }

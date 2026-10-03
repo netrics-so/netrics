@@ -113,6 +113,23 @@ The API validates in this order and fails closed:
    when starting. Credentials can therefore only land on the connection and
    workspace bound into the state.
 
+Refused grants (steps 5 and 6, or no refresh token) are revoked at the
+provider only when no connection on the instance holds a grant of that
+account (`oauth_account_has_grant(provider, sub)`, a boolean-only SECURITY
+DEFINER function), for the reason given under "Disconnect". Storing a grant,
+and any such revocation, happen under the account's grant lock (see "Grant
+lock"); before storing, the callback confirms with one refresh that the new
+grant is still live, because a disconnect of the same account that revoked
+between the code exchange and the lock also revoked it. A grant found dead
+ends the flow as `failed` with nothing stored, and the user connects again.
+
+An account change on reauthorization releases the previous account's grant
+on that connection like a disconnect: in the storing transaction
+`oauth_release_grant` checks the previous account, and when no other
+connection uses it, its refresh token is revoked after commit. The callback
+holds the grant locks of both accounts, taken in a fixed order (provider,
+then `sub`) so two connections swapping accounts cannot deadlock.
+
 A new connection is created by the callback in a _setup_ state: it holds the
 grant but no property yet, is not scheduled, and the web app shows "Finish
 setup" until a property is chosen. This keeps all secrets on the connection
@@ -165,22 +182,45 @@ this instance, in any workspace. Deleting an OAuth connection therefore
 revokes at the provider only when it held the last grant for that provider
 and account `sub`:
 
-1. In the deleting transaction, the API decrypts the refresh token, then
-   calls `oauth_release_grant(provider, sub, connection_id)`, a SECURITY
-   DEFINER function (the pattern of ADR 0009). It takes a transaction
-   advisory lock on (provider, sub), so two deletions for one account
+1. The API takes the session-level grant lock of (provider, sub) (see
+   "Grant lock") and holds it until step 4 is done.
+2. In the deleting transaction, on the lock-holding connection, the API
+   decrypts the refresh token, then calls
+   `oauth_release_grant(provider, sub, connection_id)`, a SECURITY DEFINER
+   function (the pattern of ADR 0009). It also takes the grant lock (for the
+   transaction; reentrant for the holder), so two deletions for one account
    serialize, and returns only a boolean: whether any other
    `connection_oauth` row on the instance has the same provider and `sub`.
    It returns no ids, workspaces or counts. An index on (provider, sub)
    backs it.
-2. The connection is deleted and the transaction commits.
-3. If no other connection holds a grant, the refresh token is revoked at the
-   provider (best effort, short timeout). Otherwise only the stored tokens
-   are gone.
+3. The connection is deleted and the transaction commits.
+4. If no other connection holds a grant, the refresh token is revoked at the
+   provider (best effort, 5 s timeout). Otherwise only the stored tokens are
+   gone. Then the lock is released.
+
+Holding the lock across the revocation matters because the provider revokes
+the account's whole grant: a callback storing a new grant of the same
+account between the commit and the revocation would otherwise lose it
+without anyone noticing.
 
 If the revocation fails, the deletion stands and the UI links to the
 provider's account permissions page. The API reports the outcome in the
 `DELETE` response (`revocation.status`: `revoked`, `kept` or `failed`).
+
+**Grant lock.** Whether an account holds a grant on the instance, and every
+revocation that depends on it, is serialized by one PostgreSQL advisory lock
+per provider account. Its key is derived in one place,
+`oauth_grant_lock(provider, sub, mode)`:
+`(hashtext('netrics.oauth_grant'), hashtext(provider || chr(31) || sub))`.
+Disconnects and callbacks hold it at session level on one reserved pool
+connection (`pg_advisory_lock`, released in `finally` on that connection),
+because it must outlive the transaction until the revocation HTTP call has
+answered; the SECURITY DEFINER checks (`oauth_release_grant`,
+`oauth_account_has_grant`) take it for their transaction. Session and
+transaction holds of one key conflict across sessions and are reentrant
+within one. A holder of several accounts takes them in a fixed order. The
+lock is held across at most one token or revocation call (short timeouts)
+and blocks only work on the same account.
 
 _Google's revocation scope (verified 2026-10-03, #133)._ Google's
 documentation of `https://oauth2.googleapis.com/revoke` says: "Revocation
@@ -247,8 +287,9 @@ so the browser flow can be exercised end to end without Google.
 ## Consequences
 
 - New tables `oauth_authorizations` and `connection_oauth`, a new
-  `auth_state` value, and SECURITY DEFINER functions for consuming states and
-  for the shared-grant check on disconnect.
+  `auth_state` value, SECURITY DEFINER functions for consuming states and
+  for the shared-grant checks, and one advisory grant lock per provider
+  account.
 - Hosted operation needs a verified, published Google app. Until it is
   published, connections need reauthorization every 7 days.
 - Self-hosters register a Google OAuth app, set two variables and register

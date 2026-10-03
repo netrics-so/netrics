@@ -45,7 +45,7 @@ export const providerHttp: OAuthHttpFactory = (provider) => (url, init) =>
  */
 export class OAuthError extends Error {
   constructor(
-    readonly step: "token_exchange" | "id_token",
+    readonly step: "token_exchange" | "token_refresh" | "id_token",
     readonly code: string,
   ) {
     super(`oauth ${step} failed: ${code}`);
@@ -299,22 +299,41 @@ export function verifyIdToken(
 }
 
 /**
- * Revokes a token at the provider (RFC 7009), best effort: returns whether
- * the provider confirmed. Never throws and never reports the token.
+ * Whether a refresh token still works, by one refresh_token grant. Answers
+ * false only for `invalid_grant` (revoked or expired); any other failure
+ * throws an OAuthError, so callers fail closed. The new access token is
+ * discarded.
  */
-export async function revokeToken(
+export async function isRefreshTokenLive(
   provider: ConfiguredOAuthProvider,
   http: OAuthHttp,
-  token: Secret,
+  refreshToken: Secret,
 ): Promise<boolean> {
-  const endpoint = provider.definition.revocationEndpoint;
-  if (!endpoint) {
-    return false;
-  }
+  let response: ConnectorResponse;
   try {
-    const response = await http(endpoint, form({ token: token.reveal() }));
-    return response.status === 200;
-  } catch {
+    response = await http(
+      provider.definition.tokenEndpoint,
+      form({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken.reveal(),
+        client_id: provider.clientId,
+        client_secret: provider.clientSecret.reveal(),
+      }),
+    );
+  } catch (error) {
+    throw new OAuthError(
+      "token_refresh",
+      error instanceof Error && ERROR_CODE.test(error.name)
+        ? error.name
+        : "request_failed",
+    );
+  }
+  if (response.status === 200) {
+    return true;
+  }
+  const code = providerErrorCode(response);
+  if (code === "invalid_grant") {
     return false;
   }
+  throw new OAuthError("token_refresh", code);
 }

@@ -198,6 +198,7 @@ async function runSync(
         connectorId: schema.connections.connectorId,
         config: schema.connections.config,
         credentialsEncrypted: schema.connections.credentialsEncrypted,
+        setupPending: schema.connections.setupPending,
         oauthProvider: schema.connectionOAuth.provider,
       })
       .from(schema.connections)
@@ -236,6 +237,14 @@ async function runSync(
     throw new NonRetryableJobError(
       "contract: connection not found in the job's workspace",
     );
+  }
+  // A connection whose setup is pending (ADR 0012: created by an OAuth
+  // callback, no config yet) is never synced: the scheduler does not see it
+  // (no next_due_at) and the API refuses manual syncs; a job that still
+  // reaches it ends here without a run or a state change.
+  if (loaded.connection.setupPending) {
+    log.info("sync skipped: connection setup is pending");
+    return;
   }
   const connection = {
     ...loaded.connection,

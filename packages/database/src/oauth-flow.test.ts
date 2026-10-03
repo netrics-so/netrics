@@ -8,19 +8,23 @@ import * as authSchema from "./auth-schema.js";
 import { createWorkspace, withWorkspace } from "./context.js";
 import {
   insertOAuthAuthorization,
-  lockOAuthGrant,
   oauthAccountHasGrant,
   pruneOAuthAuthorizations,
+  releaseOAuthGrant,
   upsertConnectionOAuth,
+  withOAuthGrantLocks,
 } from "./oauth.js";
 import * as schema from "./schema.js";
 import { createTestDatabase, type TestDatabase } from "./test-db.js";
 
 // Migration 0024 (#132): pruning finished OAuth authorizations from the
-// scheduler, and the cross-workspace "does this account hold a grant" check
-// the callback uses before revoking a refused grant.
+// scheduler, the cross-workspace "does this account hold a grant" check the
+// callback uses before revoking a refused grant, and the one grant lock per
+// provider account (oauth_grant_lock) that disconnects and callbacks share.
 
-type Db = PostgresJsDatabase<typeof schema & typeof authSchema>;
+type Db = PostgresJsDatabase<typeof schema & typeof authSchema> & {
+  $client: postgres.Sql;
+};
 
 function roleUrl(base: string, role: string): string {
   const url = new URL(base);
@@ -164,13 +168,43 @@ describe("oauthAccountHasGrant", () => {
   });
 });
 
-describe("lockOAuthGrant", () => {
-  it("waits for a holder of the same account key as oauth_release_grant", async () => {
+describe("the grant lock", () => {
+  const sleep = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
+  /** Resolves when `promise` settles, or "pending" after `ms`. */
+  function within<T>(promise: Promise<T>, ms: number) {
+    return Promise.race([
+      promise.then(() => "settled" as const),
+      sleep(ms).then(() => "pending" as const),
+    ]);
+  }
+
+  async function grantRow(workspaceId: string, sub: string): Promise<string> {
+    return withWorkspace(db, { workspaceId }, async (tx) => {
+      const [row] = await tx
+        .insert(schema.connections)
+        .values({ workspaceId, connectorId: "demo", name: sub })
+        .returning({ id: schema.connections.id });
+      await upsertConnectionOAuth(tx, {
+        workspaceId,
+        connectionId: row!.id,
+        provider: "google",
+        accountSub: sub,
+        accountEmail: null,
+        grantedScopes: ["openid"],
+        accessTokenEncrypted: null,
+        accessTokenExpiresAt: null,
+      });
+      return row!.id;
+    });
+  }
+
+  it("uses the key oauth_release_grant was introduced with (migration 0023)", async () => {
     let release!: () => void;
     const released = new Promise<void>((resolve) => (release = resolve));
     let locked!: () => void;
     const holding = new Promise<void>((resolve) => (locked = resolve));
-    // The key oauth_release_grant (#133) locks for (google, sub-lock).
     const holder = admin.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(
         hashtext('netrics.oauth_grant'), hashtext('google' || chr(31) || 'sub-lock'))`;
@@ -179,24 +213,118 @@ describe("lockOAuthGrant", () => {
     });
     await holding;
 
-    let acquired = false;
-    const waiter = withWorkspace(
+    const waiter = withOAuthGrantLocks(
       db,
-      { workspaceId: workspaceA },
-      async (tx) => {
-        await lockOAuthGrant(tx, "google", "sub-lock");
-        acquired = true;
-      },
+      [{ provider: "google", accountSub: "sub-lock" }],
+      async () => "acquired",
     );
     // Another account is not blocked.
-    await withWorkspace(db, { workspaceId: workspaceA }, (tx) =>
-      lockOAuthGrant(tx, "google", "sub-other"),
+    await withOAuthGrantLocks(
+      db,
+      [{ provider: "google", accountSub: "sub-other" }],
+      async () => undefined,
     );
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(acquired).toBe(false);
+    expect(await within(waiter, 200)).toBe("pending");
     release();
     await holder;
-    await waiter;
-    expect(acquired).toBe(true);
+    expect(await waiter).toBe("acquired");
+  });
+
+  it("holds across transactions: other sessions' release checks wait, its own do not", async () => {
+    for (let round = 0; round < 5; round += 1) {
+      const sub = `sub-session-${round}`;
+      const mine = await grantRow(workspaceA, sub);
+      const theirs = await grantRow(workspaceB, sub);
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => (release = resolve));
+      let inside!: () => void;
+      const holding = new Promise<void>((resolve) => (inside = resolve));
+      const holder = withOAuthGrantLocks(
+        db,
+        [{ provider: "google", accountSub: sub }],
+        async (lockedDb) => {
+          // Reentrant in the holding session (a committed transaction).
+          const shared = await withWorkspace(
+            lockedDb,
+            { workspaceId: workspaceA },
+            (tx) =>
+              releaseOAuthGrant(tx, {
+                provider: "google",
+                accountSub: sub,
+                connectionId: mine,
+              }),
+          );
+          inside();
+          await released;
+          return shared;
+        },
+      );
+      await holding;
+      // Another session's check and the non-deleting check both wait.
+      const other = withWorkspace(db, { workspaceId: workspaceB }, (tx) =>
+        releaseOAuthGrant(tx, {
+          provider: "google",
+          accountSub: sub,
+          connectionId: theirs,
+        }),
+      );
+      const any = withWorkspace(db, { workspaceId: workspaceB }, (tx) =>
+        oauthAccountHasGrant(tx, "google", sub),
+      );
+      expect(await within(other, 150)).toBe("pending");
+      expect(await within(any, 10)).toBe("pending");
+      release();
+      expect(await holder).toBe(true);
+      expect(await other).toBe(true);
+      expect(await any).toBe(true);
+    }
+  });
+
+  it("releases its locks when the work throws", async () => {
+    await expect(
+      withOAuthGrantLocks(
+        db,
+        [
+          { provider: "google", accountSub: "sub-throw-a" },
+          { provider: "google", accountSub: "sub-throw-b" },
+        ],
+        async (lockedDb) => {
+          await withWorkspace(lockedDb, { workspaceId: workspaceA }, () =>
+            Promise.reject(new Error("boom")),
+          );
+        },
+      ),
+    ).rejects.toThrow("boom");
+    // Free for every other session, and no session holds an advisory lock.
+    const [row] = await admin`
+      select count(*)::int as held from pg_locks
+      where locktype = 'advisory'
+        and database = (select oid from pg_database where datname = current_database())`;
+    expect(row!.held).toBe(0);
+    await withOAuthGrantLocks(
+      db,
+      [{ provider: "google", accountSub: "sub-throw-a" }],
+      async () => undefined,
+    );
+  });
+
+  it("takes several accounts in a fixed order: crossed holders do not deadlock (5 rounds)", async () => {
+    for (let round = 0; round < 5; round += 1) {
+      const a = { provider: "google", accountSub: `sub-cross-a-${round}` };
+      const b = { provider: "google", accountSub: `sub-cross-b-${round}` };
+      const order: string[] = [];
+      const hold = (keys: (typeof a)[], name: string) =>
+        withOAuthGrantLocks(db, keys, async () => {
+          order.push(`${name}:start`);
+          await sleep(50);
+          order.push(`${name}:end`);
+        });
+      await Promise.all([hold([a, b], "first"), hold([b, a], "second")]);
+      // Serialized, never interleaved.
+      expect([
+        ["first:start", "first:end", "second:start", "second:end"],
+        ["second:start", "second:end", "first:start", "first:end"],
+      ]).toContainEqual(order);
+    }
   });
 });
