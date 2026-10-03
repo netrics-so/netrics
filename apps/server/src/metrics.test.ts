@@ -355,3 +355,49 @@ describe("queryMetric", () => {
     });
   });
 });
+
+describe("daily gauges with missing days (#165)", () => {
+  // demo.visitors is a daily gauge. Days without a value (a Search Console
+  // day without impressions has no position) are skipped, not read as 0.
+  const now = new Date("2020-03-10T12:00:00Z");
+  const run = (aggregation: "last" | "min" | "max") =>
+    withWorkspace(db, { workspaceId }, (tx) =>
+      queryMetric(
+        tx,
+        workspaceId,
+        {
+          connectionId,
+          metricKey: "demo.visitors",
+          period: "last_7_days",
+          aggregation,
+        },
+        now,
+      ),
+    );
+
+  beforeAll(async () => {
+    // 03-04..03-08 have values; 03-09 and 03-10 (today) have none.
+    for (const [date, value] of [
+      ["2020-03-04", 5],
+      ["2020-03-05", 3],
+      ["2020-03-06", 8],
+      ["2020-03-07", 6],
+      ["2020-03-08", 4],
+    ] as const) {
+      await observe(workspaceId, connectionId, "demo.visitors", date, value);
+    }
+  });
+
+  it("reads Latest day as the latest day that has a value", async () => {
+    const result = await run("last");
+    expect(result.ok && result.value.value).toBe(4);
+    expect(
+      result.ok && result.value.series.map((point) => point.value),
+    ).toEqual([5, 3, 8, 6, 4, null, null]);
+  });
+
+  it("reads Lowest and Highest day over the days that have a value", async () => {
+    expect(await run("min")).toMatchObject({ value: { value: 3 } });
+    expect(await run("max")).toMatchObject({ value: { value: 8 } });
+  });
+});
