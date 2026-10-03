@@ -3,10 +3,15 @@ import {
   AppStoreConnectRateBudgetError,
   createAppStoreConnectClient,
   probeApps,
+  probeCustomerReviews,
+  probeReviewsKeyNotAdmin,
   probeSalesReport,
+  reviewsProbeApp,
 } from "@netrics/connectors";
 
 import type {
+  SignedKeyAdditionalKey,
+  SignedKeyField,
   SignedKeyProbe,
   SignedKeyProbeContext,
   SignedKeyProbeResult,
@@ -83,6 +88,74 @@ export const appStoreConnectProbes: readonly SignedKeyProbe[] = [
   ),
 ];
 
+const keyIdField = (description: string): SignedKeyField => ({
+  key: "keyId",
+  label: "Key ID",
+  description,
+  input: "text",
+  secret: false,
+  placeholder: "2X9R4HXF34",
+  maxBytes: 32,
+  validate: (value) =>
+    KEY_ID.test(value)
+      ? null
+      : "Key ID must be 10 uppercase letters and digits, such as 2X9R4HXF34. Copy it from the row of your team key.",
+});
+
+const privateKeyField = (description: string): SignedKeyField => ({
+  key: "privateKey",
+  label: "Private key",
+  description,
+  input: "file",
+  secret: true,
+  maxBytes: 4096,
+  privateKey: true,
+});
+
+/**
+ * The reviews key's probes (#190): it reads the customer reviews of an app
+ * of the connection (401: not this team's key, or revoked; 403: the role
+ * cannot read reviews), and it must not read sales reports too, which only
+ * an Admin key does (netrics never stores an Admin key).
+ */
+export const appStoreConnectReviewsProbes: readonly SignedKeyProbe[] = [
+  probe("customer-reviews", async (client, context) => {
+    const appId = await reviewsProbeApp(client, context.config);
+    if (appId === undefined) {
+      // A team without apps has no reviews; the role is checked next.
+      return { ok: true };
+    }
+    if (typeof appId !== "string") {
+      return appId;
+    }
+    return probeCustomerReviews(client, appId);
+  }),
+  probe("reviews-not-admin", (client, context) =>
+    probeReviewsKeyNotAdmin(client, context.config, Date.now()),
+  ),
+];
+
+/**
+ * The optional second key for ratings and reviews (ADR 0014 decision 2,
+ * #190): a team key of the same issuer with the Customer Support role.
+ * Stored in the envelope as `reviews: { keyId, privateKey }`; the connector
+ * receives its token as `credentials.reviewsAccessToken`.
+ */
+export const appStoreConnectReviewsKey: SignedKeyAdditionalKey = {
+  id: "reviews",
+  name: "Customer Support key",
+  tokenField: "reviewsAccessToken",
+  fields: [
+    keyIdField(
+      "The 10-character Key ID in the row of the Customer Support key (also in its file name, AuthKey_<Key ID>.p8).",
+    ),
+    privateKeyField(
+      "The AuthKey_<Key ID>.p8 file of the Customer Support key. Apple lets you download it only once.",
+    ),
+  ],
+  probes: appStoreConnectReviewsProbes,
+};
+
 export const appStoreConnectProvider: SignedKeyProviderDefinition = {
   id: "app-store-connect",
   name: "App Store Connect",
@@ -101,29 +174,10 @@ export const appStoreConnectProvider: SignedKeyProviderDefinition = {
           ? null
           : "Issuer ID must be a UUID such as 57246542-96fe-1a63-e053-0824d011072a. Copy it from above the list of team keys.",
     },
-    {
-      key: "keyId",
-      label: "Key ID",
-      description: "The 10-character Key ID in the row of your team key.",
-      input: "text",
-      secret: false,
-      placeholder: "2X9R4HXF34",
-      maxBytes: 32,
-      validate: (value) =>
-        KEY_ID.test(value)
-          ? null
-          : "Key ID must be 10 uppercase letters and digits, such as 2X9R4HXF34. Copy it from the row of your team key.",
-    },
-    {
-      key: "privateKey",
-      label: "Private key",
-      description:
-        "The AuthKey_<Key ID>.p8 file you downloaded when you created the key. Apple lets you download it only once.",
-      input: "file",
-      secret: true,
-      maxBytes: 4096,
-      privateKey: true,
-    },
+    keyIdField("The 10-character Key ID in the row of your team key."),
+    privateKeyField(
+      "The AuthKey_<Key ID>.p8 file you downloaded when you created the key. Apple lets you download it only once.",
+    ),
   ],
   token: (credentials) => ({
     kid: credentials.keyId!,
@@ -154,6 +208,7 @@ export const appStoreConnectProvider: SignedKeyProviderDefinition = {
     ],
   },
   probes: appStoreConnectProbes,
+  additionalKeys: [appStoreConnectReviewsKey],
   authFailure: {
     unauthorized:
       "App Store Connect refused the key: it was revoked, or the issuer ID, key ID and private key do not belong together. Upload a new App Store Connect key.",

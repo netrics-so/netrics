@@ -279,6 +279,26 @@ gate; #190 tracks them as an optional stretch. Sales never require this key.
   average is derived (milestone 10) or computed by the tile. Review text
   and nicknames are not stored. The API has no aggregate store rating, so
   the UI does not present these numbers as the App Store's star rating.
+- **Implementation (#190).** The provider declares the reviews key as an
+  optional additional key; the connector receives its token as
+  `credentials.reviewsAccessToken` (no SDK change: credentials are opaque).
+  The probe also reads the vendor's sales report with the candidate key: a
+  key that reads reviews and sales is an Admin key and is refused (review
+  readers and sales readers overlap only in Admin). It is added, replaced
+  and removed with `PATCH …/connections/:id` and
+  `credentials: { reviews: { keyId, privateKey } }` or `{ reviews: null }`,
+  which leaves the main key and the connection's auth state untouched; a
+  main-key rotation within the same issuer keeps it. Only `rating`,
+  `createdDate` and `territory` are requested
+  (`fields[customerReviews]`). Metrics: `reviews`, `review_rating_sum`
+  (unit `stars`), `reviews_by_rating` (dimension `rating`) and
+  `reviews_by_territory` (top 10 per month + "Others", alpha-3 territories
+  mapped to alpha-2), daily per app on Pacific days, zeros on days without
+  reviews; each sync re-reads at least 7 days. The connection page asks
+  Apple live whether the key is accepted (`GET …/app-store-reviews`).
+- **Open check (#176).** Whether ratings without written text appear in
+  `customerReviews` is to be observed once on a real team with a Customer
+  Support key and recorded here.
 
 ### Metrics, identity and dimensions
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   appStoreAnalyticsStatusResponseSchema,
+  appStoreReviewsStatusResponseSchema,
   connectionDetailResponseSchema,
   connectionListResponseSchema,
   connectionPreviewResponseSchema,
@@ -297,6 +298,41 @@ export function registerConnectionRoutes(
           }
           reply.header("cache-control", "no-store");
           return appStoreAnalyticsStatusResponseSchema.parse(status);
+        },
+      );
+
+      scope.get(
+        "/workspaces/:workspaceId/connections/:connectionId/app-store-reviews",
+        {
+          schema: routeSchema({
+            summary:
+              "Status of the optional App Store reviews key (Customer Support role)",
+            tags: ["connections"],
+            response: appStoreReviewsStatusResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:update")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const status = unwrap(
+            await connections.appStoreReviews(access, params.data.connectionId),
+            reply,
+          );
+          if (!status) {
+            return;
+          }
+          reply.header("cache-control", "no-store");
+          return appStoreReviewsStatusResponseSchema.parse(status);
         },
       );
 

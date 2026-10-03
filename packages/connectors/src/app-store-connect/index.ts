@@ -28,6 +28,13 @@ import {
 import { ANALYTICS_SOURCE_TYPES, OTHER_SOURCE } from "./analytics-report.js";
 import { checkKey, vendorNumberOf } from "./probes.js";
 import {
+  RATINGS,
+  REVIEWS_APPS_PER_PAGE,
+  REVIEW_METRIC_KEYS,
+  TOP_REVIEW_TERRITORIES,
+  syncReviewApps,
+} from "./reviews.js";
+import {
   BACKFILL_DAYS,
   OTHERS,
   SALES_METRIC_KEYS,
@@ -95,6 +102,30 @@ export {
   type ProbeResult,
 } from "./probes.js";
 export {
+  MAX_REVIEW_PAGES,
+  RATINGS,
+  REVIEWS_ADMIN_MESSAGE,
+  REVIEWS_APPS_PER_PAGE,
+  REVIEWS_KEY_MISMATCH_MESSAGE,
+  REVIEWS_LOOKBACK_DAYS,
+  REVIEWS_PAGE_SIZE,
+  REVIEWS_PAUSED_MESSAGE,
+  REVIEWS_ROLE_MESSAGE,
+  REVIEW_FIELDS,
+  REVIEW_METRIC_KEYS,
+  TOP_REVIEW_TERRITORIES,
+  probeCustomerReviews,
+  probeReviewsKeyNotAdmin,
+  readAppReviews,
+  reviewObservations,
+  reviewsProbeApp,
+  reviewsWindow,
+  syncReviewApps,
+  type AppReviewsResult,
+  type ReviewEntry,
+} from "./reviews.js";
+export { territoryAlpha2 } from "./territories.js";
+export {
   MAX_REPORT_BYTES,
   PRODUCT_TYPES,
   SALES_REPORT_VERSION,
@@ -128,7 +159,7 @@ export const appStoreConnectManifest: ConnectorManifest = {
   sdkVersion: "^0.2.3",
   name: "App Store Connect",
   description:
-    "Downloads, in-app purchases and proceeds of your apps from App Store Connect sales reports, per app; impressions, product page views and downloads by source once App Store analytics are enabled.",
+    "Downloads, in-app purchases and proceeds of your apps from App Store Connect sales reports, per app; impressions, product page views and downloads by source once App Store analytics are enabled; ratings and reviews with an optional Customer Support key.",
   url: "https://appstoreconnect.apple.com/",
   docsUrl:
     "https://github.com/netrics-so/netrics/blob/main/docs/connectors/app-store-connect.md",
@@ -252,6 +283,48 @@ export const appStoreConnectManifest: ConnectorManifest = {
       unit: "downloads",
       granularity: "day",
       dimensions: ["resource", "source"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
+    {
+      key: REVIEW_METRIC_KEYS.reviews,
+      name: "Reviews",
+      description:
+        "Customer reviews per day and app, as the App Store Connect API returns them (Pacific Time days). Needs the optional Customer Support key. Not the App Store's star rating: the API has no aggregate rating.",
+      kind: "delta",
+      unit: "reviews",
+      granularity: "day",
+      dimensions: ["resource"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
+    {
+      key: REVIEW_METRIC_KEYS.reviewRatingSum,
+      name: "Review stars",
+      description:
+        "The sum of the star ratings (1–5) of the reviews per day and app. Divided by Reviews it is the average rating of those reviews. Needs the optional Customer Support key.",
+      kind: "delta",
+      unit: "stars",
+      granularity: "day",
+      dimensions: ["resource"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
+    {
+      key: REVIEW_METRIC_KEYS.reviewsByRating,
+      name: "Reviews by rating",
+      description: `Customer reviews per day, app and star rating (${RATINGS.join(", ")}). Needs the optional Customer Support key.`,
+      kind: "delta",
+      unit: "reviews",
+      granularity: "day",
+      dimensions: ["resource", "rating"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
+    {
+      key: REVIEW_METRIC_KEYS.reviewsByTerritory,
+      name: "Reviews by territory",
+      description: `Customer reviews per day for the ${TOP_REVIEW_TERRITORIES} territories with the most reviews of each app and calendar month (ISO country codes); other territories are grouped as "${OTHERS}". Needs the optional Customer Support key.`,
+      kind: "delta",
+      unit: "reviews",
+      granularity: "day",
+      dimensions: ["resource", "territory"],
       aggregations: ["sum", "avg", "min", "max"],
     },
   ],
@@ -409,6 +482,18 @@ function accessTokenOf(context: ConnectionContext): string | undefined {
     : undefined;
 }
 
+/**
+ * The token of the optional reviews key (#190), signed by the host like the
+ * main one. Absent when the connection has no reviews key, or on a host
+ * that does not know reviews keys: then no review is read.
+ */
+function reviewsTokenOf(context: ConnectionContext): string | undefined {
+  const token = context.credentials.reviewsAccessToken;
+  return typeof token === "string" && token.trim() !== ""
+    ? token.trim()
+    : undefined;
+}
+
 export interface AppStoreConnectConnectorOptions {
   now?: () => number;
   /**
@@ -421,6 +506,16 @@ export interface AppStoreConnectConnectorOptions {
    * tests turn it off to look at sales pages alone.
    */
   analytics?: boolean;
+}
+
+/**
+ * The cursor of a reviews page: `reviews:<app index>:<sales cursor>`, read
+ * after the analytics pages with the optional reviews key (#190).
+ */
+const REVIEWS_CURSOR = /^reviews:(\d+):(.+)$/;
+
+export function reviewsCursor(index: number, salesCursor: string): string {
+  return `reviews:${index}:${salesCursor}`;
 }
 
 /**
@@ -508,6 +603,48 @@ export function createAppStoreConnectConnector(
         );
       }
       const client = createAppStoreConnectClient(runtime.fetch, token(context));
+      const reviewsToken = reviewsTokenOf(context);
+      const appIdsOf = async () =>
+        request.resources !== undefined
+          ? [...request.resources].sort()
+          : (await listApps(client)).map((app) => app.id).sort();
+      /** What follows the analytics: the reviews, or the end of the run. */
+      const afterAnalytics = (
+        observations: SyncResult["observations"],
+        salesCursor: string,
+      ): SyncResult =>
+        reviewsToken !== undefined && request.resources?.length !== 0
+          ? {
+              observations,
+              nextCursor: reviewsCursor(0, salesCursor),
+              done: false,
+            }
+          : { observations, nextCursor: salesCursor, done: true };
+
+      // Reviews pages come last (#190), with the reviews key's own token
+      // and hourly budget. A refused reviews key pauses only the reviews.
+      const reviewsResumed = REVIEWS_CURSOR.exec(request.cursor ?? "");
+      if (reviewsResumed) {
+        const start = Number(reviewsResumed[1]);
+        const salesCursor = reviewsResumed[2]!;
+        if (reviewsToken === undefined) {
+          return { observations: [], nextCursor: salesCursor, done: true };
+        }
+        const appIds = await appIdsOf();
+        const end = Math.min(start + REVIEWS_APPS_PER_PAGE, appIds.length);
+        const { observations, stop } = await syncReviewApps(
+          createAppStoreConnectClient(runtime.fetch, reviewsToken),
+          appIds.slice(start, end),
+          { now: now(), from: request.from, maxDays: BACKFILL_DAYS, log },
+        );
+        return end < appIds.length && !stop
+          ? {
+              observations,
+              nextCursor: reviewsCursor(end, salesCursor),
+              done: false,
+            }
+          : { observations, nextCursor: salesCursor, done: true };
+      }
 
       // Analytics pages come after the sales of a sync (ADR 0014, #174):
       // a few apps per page, each page within its own time budget.
@@ -515,10 +652,7 @@ export function createAppStoreConnectConnector(
       if (resumed) {
         const start = Number(resumed[1]);
         const salesCursor = resumed[2]!;
-        const appIds =
-          request.resources !== undefined
-            ? [...request.resources].sort()
-            : (await listApps(client)).map((app) => app.id).sort();
+        const appIds = await appIdsOf();
         const end = Math.min(start + ANALYTICS_APPS_PER_PAGE, appIds.length);
         const { observations, rateLimited } = await syncAnalyticsApps(
           client,
@@ -532,7 +666,7 @@ export function createAppStoreConnectConnector(
               nextCursor: analyticsCursor(end, salesCursor),
               done: false,
             }
-          : { observations, nextCursor: salesCursor, done: true };
+          : afterAnalytics(observations, salesCursor);
       }
 
       const sales = await syncSalesPage(client, request, {
@@ -546,8 +680,11 @@ export function createAppStoreConnectConnector(
             ),
           ),
       });
-      if (!sales.done || !analytics || request.resources?.length === 0) {
+      if (!sales.done || request.resources?.length === 0) {
         return sales;
+      }
+      if (!analytics) {
+        return afterAnalytics(sales.observations, sales.nextCursor!);
       }
       return {
         observations: sales.observations,
