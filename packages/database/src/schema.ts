@@ -3,11 +3,13 @@ import {
   boolean,
   check,
   customType,
+  date,
   foreignKey,
   doublePrecision,
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   smallint,
@@ -121,6 +123,9 @@ export const workspaces = pgTable("workspaces", {
   name: text("name").notNull(),
   // IANA zone for "today" and daily buckets (#48); validated by the API.
   timeZone: text("time_zone").notNull().default("UTC"),
+  // Amounts of "currency_minor" metrics converted into this ISO 4217 code
+  // with ECB reference rates (#191); null shows them per currency (exact).
+  displayCurrency: text("display_currency"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -251,6 +256,33 @@ export const connectors = pgTable("connectors", {
     .notNull()
     .defaultNow(),
 });
+
+// ECB euro reference rates (#191): installation-level reference data, no
+// tenant RLS. netrics_app only reads; the scheduler's rate job writes.
+export const exchangeRates = pgTable(
+  "exchange_rates",
+  {
+    rateDate: date("rate_date", { mode: "string" }).notNull(),
+    currency: text("currency").notNull(),
+    // Units of the currency per euro, exact (numeric, never a float).
+    unitsPerEur: numeric("units_per_eur").notNull(),
+    source: text("source").notNull().default("ecb"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: "exchange_rates_pk",
+      columns: [table.source, table.rateDate, table.currency],
+    }),
+    check(
+      "exchange_rates_currency_valid",
+      sql`${table.currency} ~ '^[A-Z]{3}$'`,
+    ),
+    check("exchange_rates_rate_positive", sql`${table.unitsPerEur} > 0`),
+  ],
+);
 
 // Installation-level metric catalog: no tenant RLS.
 export const metricDefinitions = pgTable(
@@ -635,6 +667,11 @@ export const dashboardTiles = pgTable(
     dimensions: jsonb("dimensions").notNull().default({}),
     /** Overrides the metric name when set. */
     title: text("title"),
+    /**
+     * A per-currency amount converted into this ISO 4217 code (#191),
+     * overriding the workspace's display currency.
+     */
+    displayCurrency: text("display_currency"),
     position: integer("position").notNull(),
   },
   (table) => [

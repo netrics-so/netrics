@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import { can } from "@netrics/domain";
 
 import {
+  getCurrencyConversion,
   getDashboard,
+  getWorkspace,
   listConnections,
   listWorkspaceMetrics,
   listWorkspaces,
@@ -32,10 +34,13 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
   if (!membership || !dashboardResult) {
     notFound();
   }
-  const [{ metrics }, { connections }] = await Promise.all([
-    listWorkspaceMetrics(cookieHeader, workspaceId),
-    listConnections(cookieHeader, workspaceId),
-  ]);
+  const [{ metrics }, { connections }, workspaceResult, conversion] =
+    await Promise.all([
+      listWorkspaceMetrics(cookieHeader, workspaceId),
+      listConnections(cookieHeader, workspaceId),
+      getWorkspace(cookieHeader, workspaceId),
+      getCurrencyConversion(cookieHeader, workspaceId),
+    ]);
   const byId: Record<string, TileConnection> = Object.fromEntries(
     connections.map((connection) => [
       connection.id,
@@ -54,6 +59,10 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
         dashboard={dashboardResult.dashboard}
         metrics={metrics}
         connections={byId}
+        currency={{
+          displayCurrency: workspaceResult?.workspace.displayCurrency ?? null,
+          convertible: conversion.enabled ? conversion.currencies : [],
+        }}
         canEdit={can(membership.role, "dashboards:update")}
         canDuplicate={can(membership.role, "dashboards:create")}
         canDelete={can(membership.role, "dashboards:delete")}

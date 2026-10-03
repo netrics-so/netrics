@@ -30,6 +30,8 @@ export interface TileInput {
   period: string;
   dimensions: Record<string, string>;
   title: string | null;
+  /** A per-currency amount converted into this currency (#191). */
+  displayCurrency?: string | null;
 }
 
 export interface DashboardInput {
@@ -118,6 +120,7 @@ async function writeTiles(
         period: tile.period,
         dimensions: tile.dimensions,
         title: tile.title,
+        displayCurrency: tile.displayCurrency ?? null,
         position,
       })),
     )

@@ -93,7 +93,11 @@ export async function findWorkspace(
 export async function updateWorkspace(
   tx: Transaction,
   workspaceId: string,
-  changes: { name?: string; timeZone?: string },
+  changes: {
+    name?: string;
+    timeZone?: string;
+    displayCurrency?: string | null;
+  },
 ): Promise<Workspace | null> {
   const rows = await tx
     .update(schema.workspaces)

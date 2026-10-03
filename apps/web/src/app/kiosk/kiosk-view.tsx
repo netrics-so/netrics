@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import type { DeviceDashboardResponse } from "@netrics/contracts";
+import { conversionNote } from "@netrics/domain";
 
 import { TileNotice, TileView } from "@/components/tile-view";
 import { TvFrame, useClock } from "@/components/tv-frame";
@@ -182,12 +183,24 @@ function KioskDashboard({
                     ratio: tile.change.ratio,
                     series: tile.spark.map((value) => ({ value })),
                     timeZone: dashboard.timeZone,
+                    approximate: tile.conversion !== null,
                   }
             }
             fallback={
               <div className="tile-error">
                 <p>This tile could not load.</p>
               </div>
+            }
+            // Converted amounts cite the ECB and name what was left out
+            // (#191), as on tvOS.
+            note={
+              tile.conversion ? (
+                <p className="tile-conversion">
+                  {conversionNote(
+                    tile.conversion.unconverted.map((entry) => entry.currency),
+                  )}
+                </p>
+              ) : null
             }
             footer={notice ? <TileNotice>{notice}</TileNotice> : null}
           />

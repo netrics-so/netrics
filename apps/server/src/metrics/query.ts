@@ -1,4 +1,5 @@
 import type {
+  CurrencyConversionOptionsResponse,
   MetricCurrenciesRequest,
   MetricCurrenciesResponse,
   MetricQueryRequest,
@@ -13,27 +14,39 @@ import {
   findWorkspace,
   listMetricResources,
   listWorkspaceMetrics,
+  findExchangeRates,
+  listRateCurrencies,
   queryMetricBuckets,
+  queryMetricCurrencyBuckets,
   queryMetricCurrencyTotals,
   type ConnectionMetric,
+  type MetricCurrencyBucket,
+  type MetricCurrencyTotal,
   type Transaction,
 } from "@netrics/database";
 import {
   CURRENCY_DIMENSION,
   DEFAULT_RESOURCE_NOUN,
+  EXCHANGE_RATE_SOURCE,
+  RATE_BASE_CURRENCY,
+  RATE_LOOKBACK_DAYS,
   RESOURCE_DIMENSION,
+  RateTable,
   addDays,
   allResourcesName,
   amountCurrency,
   aggregateBuckets,
   bucketCombination,
+  civilDate,
   compare,
+  convertBuckets,
   compatibleAggregations,
   isCurrencyCode,
   isPerCurrencyUnit,
   planBuckets,
   resolvePeriod,
   type Aggregation,
+  type BucketValue,
   type DateRange,
   type Granularity,
   type InstantRange,
@@ -77,11 +90,34 @@ function datesToRange(dates: DateRange): InstantRange {
   };
 }
 
+/** Instance settings the query service follows. */
+export interface QueryOptions {
+  /**
+   * Whether amounts may be converted into a display currency (#191):
+   * NETRICS_EXCHANGE_RATES. Off, every amount stays per currency.
+   */
+  exchangeRates?: boolean;
+}
+
+/**
+ * The window a per-currency ranking covers: the current one, or the day
+ * before when it is empty (exactly at local midnight).
+ */
+function rankingRange(current: InstantRange): InstantRange {
+  return current.end > current.start
+    ? current
+    : {
+        start: new Date(current.end.getTime() - 24 * 60 * 60 * 1000),
+        end: current.end,
+      };
+}
+
 export async function queryMetric(
   tx: Transaction,
   workspaceId: string,
   request: MetricQueryRequest,
   now: Date = new Date(),
+  options: QueryOptions = {},
 ): Promise<MetricResult<MetricQueryResponse>> {
   const workspace = await findWorkspace(tx, workspaceId);
   const found = await findConnectionMetric(
@@ -101,13 +137,10 @@ export async function queryMetric(
   if (Object.keys(request.dimensions ?? {}).length > 10) {
     return { ok: false, status: 400, error: "too_many_dimension_filters" };
   }
-  // Amounts in different currencies never add up (ADR 0014): a per-currency
-  // metric is read one currency at a time.
-  const currency = request.dimensions?.[CURRENCY_DIMENSION];
-  if (
-    isPerCurrencyUnit(metric.unit) &&
-    (currency === undefined || !isCurrencyCode(currency))
-  ) {
+  // Amounts in different currencies never add up unconverted (ADR 0014).
+  const perCurrency = isPerCurrencyUnit(metric.unit);
+  const filtered = request.dimensions?.[CURRENCY_DIMENSION];
+  if (perCurrency && filtered !== undefined && !isCurrencyCode(filtered)) {
     return { ok: false, status: 400, error: "currency_required" };
   }
 
@@ -118,15 +151,141 @@ export async function queryMetric(
   const previous = byDate
     ? datesToRange(window.previousDates)
     : window.previous;
+  const timeZone = byDate ? "UTC" : workspace.timeZone;
+  const combination = bucketCombination(metric.kind);
+
+  // Without a currency filter a per-currency amount is converted into the
+  // tile's or the workspace's display currency (#191), else read in the
+  // currency with the largest total over the period.
+  let dimensions = request.dimensions;
+  let displayCurrency: string | null = null;
+  if (perCurrency && filtered === undefined) {
+    displayCurrency = options.exchangeRates
+      ? (request.displayCurrency ?? workspace.displayCurrency ?? null)
+      : null;
+    if (displayCurrency === null) {
+      const [largest] = await rankedCurrencyTotals(tx, {
+        workspaceId,
+        metric,
+        ...(request.dimensions ? { dimensions: request.dimensions } : {}),
+        range: rankingRange(current),
+        timeZone,
+        exchangeRates: options.exchangeRates ?? false,
+      });
+      dimensions = largest
+        ? { ...request.dimensions, [CURRENCY_DIMENSION]: largest.currency }
+        : request.dimensions;
+    }
+  }
+
   const base = {
     workspaceId,
     connectionId: metric.connectionId,
     metricKey: metric.key,
-    ...(request.dimensions ? { dimensions: request.dimensions } : {}),
+    ...(dimensions ? { dimensions } : {}),
     unit: plan.unit,
-    timeZone: byDate ? "UTC" : workspace.timeZone,
-    combination: bucketCombination(metric.kind),
+    timeZone,
+    combination,
   };
+  const series = (buckets: readonly BucketValue[]) => {
+    const values = new Map(buckets.map((b) => [b.bucket, b.value]));
+    return plan.starts.map((bucket) => ({
+      bucket,
+      value: values.get(bucket) ?? null,
+    }));
+  };
+  const respond = (
+    currentBuckets: readonly BucketValue[],
+    previousBuckets: readonly BucketValue[],
+    currency: string | null,
+    conversion: MetricQueryResponse["conversion"],
+  ): MetricResult<MetricQueryResponse> => {
+    const change = compare(
+      aggregateBuckets(aggregation, currentBuckets),
+      aggregateBuckets(aggregation, previousBuckets),
+    );
+    return {
+      ok: true,
+      value: {
+        metric,
+        period: request.period,
+        timeZone: workspace.timeZone,
+        aggregation,
+        currency,
+        conversion,
+        value: change.value,
+        previousValue: change.previousValue,
+        delta: change.delta,
+        ratio: change.ratio,
+        series: series(currentBuckets),
+      },
+    };
+  };
+
+  if (displayCurrency !== null) {
+    const target = displayCurrency;
+    const read = (range: InstantRange) =>
+      range.end > range.start
+        ? queryMetricCurrencyBuckets(tx, {
+            ...base,
+            from: range.start,
+            to: range.end,
+          })
+        : Promise.resolve([]);
+    const [currentRows, previousRows] = [
+      await read(current),
+      await read(previous),
+    ];
+    // Each bucket at the rate of its reporting day (the bucket's date in
+    // the zone it was cut in), or the last rate before it.
+    const dated = (rows: readonly MetricCurrencyBucket[]) =>
+      rows.map((row) => ({
+        ...row,
+        date: civilDate(new Date(row.bucket), timeZone),
+      }));
+    const all = [...dated(currentRows), ...dated(previousRows)];
+    const currencies = [
+      ...new Set([target, ...all.map((row) => row.currency)]),
+    ].filter((currency) => currency !== RATE_BASE_CURRENCY);
+    const dates = all.map((row) => row.date).sort();
+    const rates = new RateTable(
+      dates.length > 0
+        ? await findExchangeRates(tx, {
+            currencies,
+            from: addDays(dates[0]!, -RATE_LOOKBACK_DAYS),
+            to: dates.at(-1)!,
+          })
+        : [],
+    );
+    const inWindow = convertBuckets(dated(currentRows), target, rates);
+    const before = convertBuckets(dated(previousRows), target, rates);
+    const left = [
+      ...new Set([
+        ...inWindow.unconverted.keys(),
+        ...before.unconverted.keys(),
+      ]),
+    ].sort();
+    return respond(inWindow.converted, before.converted, target, {
+      displayCurrency: target,
+      approximate: true,
+      source: {
+        name: EXCHANGE_RATE_SOURCE.name,
+        url: EXCHANGE_RATE_SOURCE.url,
+      },
+      unconverted: left.map((currency) => ({
+        currency,
+        value: aggregateBuckets(
+          aggregation,
+          inWindow.unconverted.get(currency) ?? [],
+        ),
+        previousValue: aggregateBuckets(
+          aggregation,
+          before.unconverted.get(currency) ?? [],
+        ),
+      })),
+    });
+  }
+
   // A window can be empty, e.g. exactly at local midnight.
   const read = (range: InstantRange) =>
     range.end > range.start
@@ -134,29 +293,39 @@ export async function queryMetric(
       : Promise.resolve([]);
   const currentBuckets = await read(current);
   const previousBuckets = await read(previous);
-
-  const change = compare(
-    aggregateBuckets(aggregation, currentBuckets),
-    aggregateBuckets(aggregation, previousBuckets),
+  return respond(
+    currentBuckets,
+    previousBuckets,
+    amountCurrency(metric.unit, dimensions?.[CURRENCY_DIMENSION]),
+    null,
   );
-  const values = new Map(currentBuckets.map((b) => [b.bucket, b.value]));
+}
+
+/**
+ * Whether amounts can be converted on this instance, and into which
+ * currencies: EUR and those with a rate in the last RATE_LOOKBACK_DAYS
+ * before the latest publication day (#191).
+ */
+export async function conversionOptions(
+  tx: Transaction,
+  enabled: boolean,
+): Promise<CurrencyConversionOptionsResponse> {
+  const source = {
+    name: EXCHANGE_RATE_SOURCE.name,
+    url: EXCHANGE_RATE_SOURCE.url,
+  };
+  if (!enabled) {
+    return { enabled: false, currencies: [], latestRateDate: null, source };
+  }
+  const { currencies, latestDate } = await listRateCurrencies(
+    tx,
+    RATE_LOOKBACK_DAYS,
+  );
   return {
-    ok: true,
-    value: {
-      metric,
-      period: request.period,
-      timeZone: workspace.timeZone,
-      aggregation,
-      currency: amountCurrency(metric.unit, currency),
-      value: change.value,
-      previousValue: change.previousValue,
-      delta: change.delta,
-      ratio: change.ratio,
-      series: plan.starts.map((bucket) => ({
-        bucket,
-        value: values.get(bucket) ?? null,
-      })),
-    },
+    enabled: true,
+    currencies: [...new Set([RATE_BASE_CURRENCY, ...currencies])].sort(),
+    latestRateDate: latestDate,
+    source,
   };
 }
 
@@ -171,6 +340,7 @@ export async function listMetricCurrencies(
   workspaceId: string,
   request: MetricCurrenciesRequest,
   now: Date = new Date(),
+  options: QueryOptions = {},
 ): Promise<MetricResult<MetricCurrenciesResponse>> {
   const workspace = await findWorkspace(tx, workspaceId);
   const found = await findConnectionMetric(
@@ -196,23 +366,94 @@ export async function listMetricCurrencies(
   const current =
     plan.selection === "dates" ? datesToRange(window.dates) : window.current;
   // An empty window (exactly at local midnight) ranks by the day before.
-  const range =
-    current.end > current.start
-      ? current
-      : {
-          start: new Date(current.end.getTime() - 24 * 60 * 60 * 1000),
-          end: current.end,
-        };
-  const currencies = await queryMetricCurrencyTotals(tx, {
+  const currencies = await rankedCurrencyTotals(tx, {
     workspaceId,
-    connectionId: metric.connectionId,
-    metricKey: metric.key,
+    metric,
     ...(Object.keys(dimensions).length > 0 ? { dimensions } : {}),
-    from: range.start,
-    to: range.end,
-    combination: bucketCombination(metric.kind),
+    range: rankingRange(current),
+    timeZone: plan.selection === "dates" ? "UTC" : workspace.timeZone,
+    exchangeRates: options.exchangeRates ?? false,
   });
   return { ok: true, value: { currencies } };
+}
+
+/**
+ * Each currency's own total over the range, largest first. Totals in
+ * different currencies are not comparable as they are: with rates (#191)
+ * they rank by their value in EUR at each day's rate, currencies without a
+ * rate after those with one; without rates, by minor units.
+ */
+async function rankedCurrencyTotals(
+  tx: Transaction,
+  query: {
+    workspaceId: string;
+    metric: WorkspaceMetric;
+    dimensions?: Record<string, string>;
+    range: InstantRange;
+    /** The zone reporting days are cut in. */
+    timeZone: string;
+    exchangeRates: boolean;
+  },
+): Promise<MetricCurrencyTotal[]> {
+  const scope = {
+    workspaceId: query.workspaceId,
+    connectionId: query.metric.connectionId,
+    metricKey: query.metric.key,
+    ...(query.dimensions ? { dimensions: query.dimensions } : {}),
+    from: query.range.start,
+    to: query.range.end,
+    combination: bucketCombination(query.metric.kind),
+  };
+  const totals = await queryMetricCurrencyTotals(tx, scope);
+  if (!query.exchangeRates || totals.length < 2) {
+    return totals;
+  }
+  const rows = (
+    await queryMetricCurrencyBuckets(tx, {
+      ...scope,
+      unit: "day",
+      timeZone: query.timeZone,
+    })
+  ).map((row) => ({
+    ...row,
+    date: civilDate(new Date(row.bucket), query.timeZone),
+  }));
+  const dates = rows.map((row) => row.date).sort();
+  if (dates.length === 0) {
+    return totals;
+  }
+  const rates = new RateTable(
+    await findExchangeRates(tx, {
+      currencies: totals
+        .map((total) => total.currency)
+        .filter((currency) => currency !== RATE_BASE_CURRENCY),
+      from: addDays(dates[0]!, -RATE_LOOKBACK_DAYS),
+      to: dates.at(-1)!,
+    }),
+  );
+  const inEur = new Map<string, number>();
+  for (const { currency } of totals) {
+    const converted = convertBuckets(
+      rows.filter((row) => row.currency === currency),
+      RATE_BASE_CURRENCY,
+      rates,
+    ).converted;
+    if (converted.length > 0) {
+      inEur.set(
+        currency,
+        converted.reduce((sum, bucket) => sum + bucket.value, 0),
+      );
+    }
+  }
+  // Stable: unrated currencies keep their minor-unit order after the rest.
+  return [...totals].sort((a, b) => {
+    const x = inEur.get(a.currency);
+    const y = inEur.get(b.currency);
+    if (x === undefined || y === undefined) {
+      return x === undefined ? (y === undefined ? 0 : 1) : -1;
+    }
+    return y - x;
+  });
 }
 
 /**

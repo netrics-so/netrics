@@ -3,6 +3,7 @@ import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  currencyConversionOptionsResponseSchema,
   dashboardResponseSchema,
   errorResponseSchema,
   metricCurrenciesResponseSchema,
@@ -462,15 +463,24 @@ describe("per-currency amounts (#173)", () => {
     await proceeds(addDays(today, -7), 1_000, "EUR");
   });
 
-  it("rejects a query that would add up several currencies", async () => {
-    const response = await ask();
-    expect(response.statusCode).toBe(400);
-    expect(errorResponseSchema.parse(response.json()).error).toBe(
+  it("without a currency shows the largest one exactly, never a sum", async () => {
+    // The workspace has no display currency (the default): per currency.
+    const largest = metricQueryResponseSchema.parse((await ask()).json());
+    expect(largest).toMatchObject({
+      currency: "EUR",
+      conversion: null,
+      value: 1_334,
+      previousValue: 1_000,
+    });
+    const app1 = metricQueryResponseSchema.parse(
+      (await ask({ app: "app-1" })).json(),
+    );
+    expect(app1).toMatchObject({ currency: "EUR", value: 1_234 });
+    const invalid = await ask({ currency: "euro" });
+    expect(invalid.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(invalid.json()).error).toBe(
       "currency_required",
     );
-    // Filtering on another dimension still mixes currencies.
-    expect((await ask({ app: "app-1" })).statusCode).toBe(400);
-    expect((await ask({ currency: "euro" })).statusCode).toBe(400);
   });
 
   it("sums one currency's minor units and compares within it", async () => {
@@ -538,7 +548,7 @@ describe("per-currency amounts (#173)", () => {
     expect(foreign.statusCode).toBe(404);
   });
 
-  it("saves tiles only with a currency, and shows them on screens", async () => {
+  it("saves tiles with a currency or following the workspace, and shows them on screens", async () => {
     const create = (dimensions: Record<string, string>) =>
       call("POST", `/v1/workspaces/${storeWorkspace}/dashboards`, owner, {
         name: "Proceeds",
@@ -551,11 +561,31 @@ describe("per-currency amounts (#173)", () => {
           },
         ],
       });
-    const without = await create({ app: "app-1" });
-    expect(without.statusCode).toBe(400);
-    expect(errorResponseSchema.parse(without.json()).error).toBe(
+    const invalid = await create({ currency: "yen" });
+    expect(invalid.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(invalid.json()).error).toBe(
       "currency_required",
     );
+    // Without a currency the tile follows the workspace: per currency, the
+    // largest one today.
+    const following = await create({ app: "app-1" });
+    expect(following.statusCode).toBe(200);
+    const followingTiles = await withWorkspace(
+      db,
+      { workspaceId: storeWorkspace },
+      (tx) =>
+        buildDeviceDashboard(
+          tx,
+          storeWorkspace,
+          dashboardResponseSchema.parse(following.json()).dashboard.id,
+          { now: NOW, exchangeRates: true },
+        ),
+    );
+    expect(followingTiles.tiles[0]).toMatchObject({
+      value: 1_234,
+      unit: "EUR_minor",
+      conversion: null,
+    });
 
     const saved = await create({ currency: "JPY" });
     expect(saved.statusCode).toBe(200);
@@ -568,6 +598,316 @@ describe("per-currency amounts (#173)", () => {
     );
     // Screens get the currency's own unit, which they already format.
     expect(device.tiles[0]).toMatchObject({ value: 900, unit: "JPY_minor" });
+  });
+
+  describe("display currency with ECB reference rates (#191)", () => {
+    // Its own workspace and connection of the same metric, with rates
+    // published on some days only. NOW is Tuesday 2025-07-15; last 7 days
+    // are 07-09..07-15, the previous ones 07-02..07-08.
+    let fxWorkspace: string;
+    let fx: string;
+    let offApp: FastifyInstance;
+
+    async function amount(date: string, value: number, currency: string) {
+      await admin`
+        insert into observations (workspace_id, connection_id,
+          metric_definition_id, dimensions, source_timestamp, value)
+        select ${fxWorkspace}, ${fx}, m.id,
+               ${admin.json({ app: "app-1", currency })},
+               ${`${date}T00:00:00Z`}::timestamptz, ${value}
+        from metric_definitions m
+        where m.connector_id = 'test-store' and m.key = 'store.proceeds'`;
+    }
+
+    const askFx = (
+      body: Record<string, unknown> = {},
+      target: FastifyInstance = app,
+    ) =>
+      target.inject({
+        method: "POST",
+        url: `/v1/workspaces/${fxWorkspace}/metrics/query`,
+        headers: { cookie: owner },
+        payload: {
+          connectionId: fx,
+          metricKey: "store.proceeds",
+          period: "last_7_days",
+          ...body,
+        },
+      });
+
+    const setDisplayCurrency = (
+      displayCurrency: string | null,
+      target: FastifyInstance = app,
+    ) =>
+      target.inject({
+        method: "PATCH",
+        url: `/v1/workspaces/${fxWorkspace}`,
+        headers: { cookie: owner },
+        payload: { displayCurrency },
+      });
+
+    beforeAll(async () => {
+      fxWorkspace = (await createWorkspace(owner)).id;
+      const [row] = await admin`
+        insert into connections (workspace_id, connector_id, name)
+        values (${fxWorkspace}, 'test-store', 'Store') returning id`;
+      fx = row!.id as string;
+      // Units per euro: USD 2 on Friday 07-04, 1.25 on Monday 07-14; JPY
+      // 100 on 07-14. Nothing yet for today, 07-15.
+      await admin`
+        insert into exchange_rates (rate_date, currency, units_per_eur)
+        values ('2025-07-04', 'USD', '2'), ('2025-07-14', 'USD', '1.25'),
+               ('2025-07-14', 'JPY', '100')`;
+      // Today: €13.34, $5.00, ¥900 and NT$30.00 (no ECB rate); yesterday
+      // ¥100. Previous period: €10.00 on 07-08, $10.00 on Saturday 07-05.
+      await amount(today, 1_334, "EUR");
+      await amount(today, 500, "USD");
+      await amount(today, 900, "JPY");
+      await amount(today, 3_000, "TWD");
+      await amount(addDays(today, -1), 100, "JPY");
+      await amount(addDays(today, -7), 1_000, "EUR");
+      await amount("2025-07-05", 1_000, "USD");
+
+      const offConfig = loadConfig({
+        DATABASE_URL: "postgres://unused@localhost/unused",
+        LOG_LEVEL: "silent",
+        BETTER_AUTH_URL: "http://localhost:3001",
+        WEB_ORIGIN: "http://localhost:3000",
+        NETRICS_EXCHANGE_RATES: "off",
+      });
+      offApp = await buildApp(offConfig, {
+        db,
+        authService: createAuthService(offConfig, db, {
+          logger: pino({ level: "silent" }),
+        }),
+        checkDb: async () => true,
+        now: () => NOW,
+      });
+    });
+
+    afterAll(async () => {
+      await offApp.close();
+    });
+
+    it("lists EUR and the currencies with recent rates", async () => {
+      const response = await call(
+        "GET",
+        `/v1/workspaces/${fxWorkspace}/currency-conversion`,
+        owner,
+      );
+      expect(
+        currencyConversionOptionsResponseSchema.parse(response.json()),
+      ).toMatchObject({
+        enabled: true,
+        currencies: ["EUR", "JPY", "USD"],
+        latestRateDate: "2025-07-14",
+      });
+      const off = await offApp.inject({
+        method: "GET",
+        url: `/v1/workspaces/${fxWorkspace}/currency-conversion`,
+        headers: { cookie: owner },
+      });
+      expect(
+        currencyConversionOptionsResponseSchema.parse(off.json()),
+      ).toMatchObject({ enabled: false, currencies: [] });
+    });
+
+    it("is per currency by default", async () => {
+      const workspace = await call(
+        "GET",
+        `/v1/workspaces/${fxWorkspace}`,
+        owner,
+      );
+      expect(
+        workspaceResponseSchema.parse(workspace.json()).workspace
+          .displayCurrency,
+      ).toBeNull();
+      // The largest currency, exactly. With rates, "largest" compares
+      // values in EUR: €13.34 beats ¥1000 (€10), $5.00 (€4) and NT$30.00,
+      // which has no rate (raw minor units would pick TWD's 3000).
+      expect(
+        metricQueryResponseSchema.parse((await askFx()).json()),
+      ).toMatchObject({ currency: "EUR", value: 1_334, conversion: null });
+    });
+
+    it("ranks currencies by their value in EUR when rates exist", async () => {
+      const list = (target: FastifyInstance) =>
+        target.inject({
+          method: "POST",
+          url: `/v1/workspaces/${fxWorkspace}/metrics/currencies`,
+          headers: { cookie: owner },
+          payload: {
+            connectionId: fx,
+            metricKey: "store.proceeds",
+            period: "last_7_days",
+          },
+        });
+      const ranked = metricCurrenciesResponseSchema.parse(
+        (await list(app)).json(),
+      );
+      // Totals stay in their own minor units; only the order changes.
+      expect(ranked.currencies).toEqual([
+        { currency: "EUR", total: 1_334 },
+        { currency: "JPY", total: 1_000 },
+        { currency: "USD", total: 500 },
+        { currency: "TWD", total: 3_000 },
+      ]);
+      // Without rates, by minor units as before.
+      const raw = metricCurrenciesResponseSchema.parse(
+        (await list(offApp)).json(),
+      );
+      expect(raw.currencies.map((entry) => entry.currency)).toEqual([
+        "TWD",
+        "EUR",
+        "JPY",
+        "USD",
+      ]);
+    });
+
+    it("sets the workspace's display currency to EUR or a covered one", async () => {
+      const uncovered = await setDisplayCurrency("TWD");
+      expect(uncovered.statusCode).toBe(400);
+      expect(errorResponseSchema.parse(uncovered.json()).error).toBe(
+        "currency_not_covered",
+      );
+      const off = await setDisplayCurrency("EUR", offApp);
+      expect(off.statusCode).toBe(400);
+      expect(errorResponseSchema.parse(off.json()).error).toBe(
+        "currency_conversion_off",
+      );
+      const eur = await setDisplayCurrency("EUR");
+      expect(eur.statusCode).toBe(200);
+      expect(
+        workspaceResponseSchema.parse(eur.json()).workspace.displayCurrency,
+      ).toBe("EUR");
+      const [audit] = await admin`
+        select metadata from audit_events
+        where workspace_id = ${fxWorkspace}
+          and action = 'workspace.display_currency_changed'`;
+      expect(audit?.metadata).toEqual({
+        oldDisplayCurrency: null,
+        newDisplayCurrency: "EUR",
+      });
+    });
+
+    it("converts each day at its rate and keeps uncovered currencies apart", async () => {
+      const result = metricQueryResponseSchema.parse((await askFx()).json());
+      // Today at Monday's rates (none yet for today): €13.34 + $5.00 / 1.25
+      // + ¥900 / 100 = €26.34; yesterday ¥100 / 100 = €1.00. Previous
+      // period: €10.00, and Saturday's $10.00 at Friday's rate 2 = €5.00.
+      expect(result).toMatchObject({
+        currency: "EUR",
+        value: 2_734,
+        previousValue: 1_500,
+        delta: 1_234,
+        conversion: {
+          displayCurrency: "EUR",
+          approximate: true,
+          unconverted: [{ currency: "TWD", value: 3_000, previousValue: null }],
+        },
+      });
+      expect(result.conversion?.source.url).toContain("ecb.europa.eu");
+      expect(result.series.at(-1)?.value).toBe(2_634);
+      expect(result.series.at(-2)?.value).toBe(100);
+      // One currency stays exact, whatever the workspace converts into.
+      expect(
+        metricQueryResponseSchema.parse(
+          (await askFx({ dimensions: { currency: "USD" } })).json(),
+        ),
+      ).toMatchObject({ currency: "USD", value: 500, conversion: null });
+    });
+
+    it("converts into a tile's own display currency", async () => {
+      // In USD at 1.25 per euro: €13.34 → $16.675, ¥900 → $11.25, plus
+      // $5.00 = $32.925 → 3293 cents today; ¥100 → $1.25 yesterday.
+      const result = metricQueryResponseSchema.parse(
+        (await askFx({ displayCurrency: "USD" })).json(),
+      );
+      expect(result).toMatchObject({ currency: "USD", value: 3_418 });
+      expect(result.series.at(-1)?.value).toBe(3_293);
+    });
+
+    it("does not convert when the instance fetches no rates", async () => {
+      const result = metricQueryResponseSchema.parse(
+        (await askFx({}, offApp)).json(),
+      );
+      expect(result).toMatchObject({
+        currency: "TWD",
+        value: 3_000,
+        conversion: null,
+      });
+    });
+
+    it("saves tiles that convert, and labels them on screens", async () => {
+      const create = (tile: Record<string, unknown>) =>
+        call("POST", `/v1/workspaces/${fxWorkspace}/dashboards`, owner, {
+          name: "Proceeds",
+          tiles: [
+            {
+              connectionId: fx,
+              metricKey: "store.proceeds",
+              period: "last_7_days",
+              ...tile,
+            },
+          ],
+        });
+      const conflict = await create({
+        dimensions: { currency: "USD" },
+        displayCurrency: "EUR",
+      });
+      expect(conflict.statusCode).toBe(400);
+      expect(errorResponseSchema.parse(conflict.json()).error).toBe(
+        "currency_choice_conflict",
+      );
+
+      const following = dashboardResponseSchema.parse(
+        (await create({})).json(),
+      ).dashboard;
+      const inUsd = dashboardResponseSchema.parse(
+        (await create({ displayCurrency: "USD" })).json(),
+      ).dashboard;
+      expect(inUsd.tiles[0]?.displayCurrency).toBe("USD");
+
+      const screen = (dashboardId: string, exchangeRates: boolean) =>
+        withWorkspace(db, { workspaceId: fxWorkspace }, (tx) =>
+          buildDeviceDashboard(tx, fxWorkspace, dashboardId, {
+            now: NOW,
+            exchangeRates,
+          }),
+        );
+      const eurTile = (await screen(following.id, true)).tiles[0];
+      expect(eurTile).toMatchObject({
+        value: 2_734,
+        unit: "EUR_minor",
+        // The title stays readable; the conversion is its own field.
+        label: "Proceeds",
+        conversion: {
+          displayCurrency: "EUR",
+          unconverted: [{ currency: "TWD", value: 3_000 }],
+        },
+      });
+      expect((await screen(inUsd.id, true)).tiles[0]).toMatchObject({
+        value: 3_418,
+        unit: "USD_minor",
+      });
+      // Rates off: the same tile shows the largest currency, exactly.
+      expect((await screen(following.id, false)).tiles[0]).toMatchObject({
+        value: 3_000,
+        unit: "TWD_minor",
+        label: "Proceeds",
+        conversion: null,
+      });
+    });
+
+    it("goes back to amounts per currency", async () => {
+      const reset = await setDisplayCurrency(null);
+      expect(
+        workspaceResponseSchema.parse(reset.json()).workspace.displayCurrency,
+      ).toBeNull();
+      expect(
+        metricQueryResponseSchema.parse((await askFx()).json()),
+      ).toMatchObject({ currency: "EUR", value: 1_334, conversion: null });
+    });
   });
 });
 

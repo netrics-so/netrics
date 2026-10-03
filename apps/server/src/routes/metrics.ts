@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
 import {
+  currencyConversionOptionsResponseSchema,
   metricCurrenciesRequestSchema,
   metricCurrenciesResponseSchema,
   metricQueryRequestSchema,
@@ -14,6 +15,7 @@ import { can } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
 import {
+  conversionOptions,
   listMetricCurrencies,
   listMetrics,
   listResourcesOfMetric,
@@ -27,6 +29,8 @@ export interface MetricRouteDeps {
   authService: AuthService;
   db: Database;
   now?: () => Date;
+  /** NETRICS_EXCHANGE_RATES: display-currency conversion (#191). */
+  exchangeRates?: boolean;
 }
 
 export function registerMetricRoutes(
@@ -95,12 +99,43 @@ export function registerMetricRoutes(
           const result = await withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            (tx) => queryMetric(tx, access.workspaceId, body, now()),
+            (tx) =>
+              queryMetric(tx, access.workspaceId, body, now(), {
+                exchangeRates: deps.exchangeRates ?? false,
+              }),
           );
           if (!result.ok) {
             return sendError(reply, result.status, result.error);
           }
           return metricQueryResponseSchema.parse(result.value);
+        },
+      );
+
+      scope.get(
+        "/workspaces/:workspaceId/currency-conversion",
+        {
+          schema: routeSchema({
+            summary:
+              "Whether amounts can be converted into a display currency, and into which",
+            tags: ["metrics"],
+            response: currencyConversionOptionsResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:view")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const options = await withWorkspace(
+            deps.db,
+            { workspaceId: access.workspaceId, userId: access.callerId },
+            (tx) => conversionOptions(tx, deps.exchangeRates ?? false),
+          );
+          return currencyConversionOptionsResponseSchema.parse(options);
         },
       );
 
@@ -131,7 +166,10 @@ export function registerMetricRoutes(
           const result = await withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            (tx) => listMetricCurrencies(tx, access.workspaceId, body, now()),
+            (tx) =>
+              listMetricCurrencies(tx, access.workspaceId, body, now(), {
+                exchangeRates: deps.exchangeRates ?? false,
+              }),
           );
           if (!result.ok) {
             return sendError(reply, result.status, result.error);

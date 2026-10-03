@@ -91,6 +91,11 @@ NETRICS_SIGNUP=closed
 # the redirect URI ${public_url}/oauth/google/callback; see google-oauth.md.
 # NETRICS_OAUTH_GOOGLE_CLIENT_ID=
 # NETRICS_OAUTH_GOOGLE_CLIENT_SECRET=
+
+# Display currency: the scheduler fetches the ECB euro reference rates daily
+# from www.ecb.europa.eu. "off" makes no request and keeps amounts per
+# currency.
+# NETRICS_EXCHANGE_RATES=off
 ENV
 chmod 600 .env
 

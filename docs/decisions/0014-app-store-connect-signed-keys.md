@@ -344,14 +344,15 @@ A manifest's unit is static, so this needs one additive convention: unit
 `currency_minor` means integer minor units, with the ISO 4217 code in the
 observation's `currency` dimension. ADR 0008's `<ISO>_minor` stays for
 single-currency metrics. The query service refuses to aggregate a
-`currency_minor` metric across currencies: a tile picks one currency, and
-the default is the one with the largest proceeds. Minor units follow ISO
+`currency_minor` metric across currencies unconverted: a tile shows one
+currency, by default the one with the largest proceeds, unless it is
+converted into a display currency (#191, below). Minor units follow ISO
 4217 exponents (JPY has 0). Apple Ads reuses the convention for
 organization currencies.
 
-**Display currency (follow-up, #191).** Per currency stays the default and
-the exact view. A workspace, or a single tile, may instead show amounts
-converted into a chosen display currency:
+**Display currency (#191).** Per currency stays the default and the exact
+view. A workspace, or a single tile, may instead show amounts converted
+into a chosen display currency:
 
 - Rates are the [ECB euro foreign exchange reference rates](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html):
   published around 16:00 CET on TARGET working days, base EUR, 29
@@ -370,6 +371,46 @@ converted into a chosen display currency:
   SAR or AED) stay unconverted and are shown separately, never dropped.
 - Self-hosters can turn the job and the option off at runtime; then no
   request goes to the ECB.
+
+As built (#191):
+
+- **Settings.** `workspaces.display_currency` (null: per currency, the
+  default) and `dashboard_tiles.display_currency` (a tile's own target). A
+  tile of a `currency_minor` metric either filters one `currency` (exact),
+  or converts into its own display currency, or follows the workspace:
+  converted into the workspace's display currency, else the currency with
+  the largest total over the period (no longer a fixed pick, so a CLP
+  default does not stick). A display currency is EUR or a currency with a
+  rate in the 14 days before the latest publication.
+- **Job.** The scheduler process runs it as `netrics_scheduler`, the only
+  role with INSERT/UPDATE on `exchange_rates` (`netrics_app` may only
+  SELECT; no RLS, like the connector catalog). It reads
+  `eurofxref-hist-90d.xml` when the table is empty or more than four days
+  behind, else `eurofxref-daily.xml`, every six hours (one hour after a
+  failure), through `createEgressFetch` limited to `www.ecb.europa.eu`
+  with connector timeouts and size limits. A file is parsed all or nothing;
+  a truncated or malformed one stores nothing. `NETRICS_EXCHANGE_RATES=off`
+  (api and scheduler) disables job and option; tiles then fall back to per
+  currency.
+- **Conversion.** Per bucket and currency at the rate of the bucket's
+  reporting day, else the last one at most 14 days before it; amounts in a
+  bucket are added as exact fractions (BigInt) and rounded once, halves
+  away from zero. The previous period is converted the same way, each day
+  at its own rate. Amounts without a rate are returned per currency in
+  `conversion.unconverted`, never added.
+- **Screens.** The metric query returns `conversion` (display currency,
+  source, unconverted amounts); the web tile shows "≈", the source and the
+  unconverted amounts. The device payload keeps `unit` as
+  `<display currency>_minor` and the label unchanged (titles stay
+  readable), and adds `conversion`. The kiosk and the tvOS app (from the
+  version that decodes `conversion`) show "≈" before the value and a muted
+  note line, "ECB reference rates · TWD not converted"; older tvOS builds
+  show the converted value without the marking.
+- **Fallback ranking.** A tile that follows a workspace without a display
+  currency shows the currency with the largest total. When rates are
+  available, totals are ranked by their value in EUR at each day's rate;
+  currencies without a rate rank after those with one. Without rates
+  (instance off), raw minor-unit totals rank as before.
 
 ### Time zones, backfill and latency
 

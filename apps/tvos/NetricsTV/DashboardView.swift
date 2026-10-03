@@ -121,7 +121,7 @@ struct TileView: View {
                 }
 
                 if let unit = tile.unit {
-                    Text(MetricFormat.value(tile.value, unit: unit))
+                    Text(ConversionFormat.value(tile, unit: unit))
                         .font(.system(size: min(h * 0.30, w * 0.17), weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
@@ -145,6 +145,16 @@ struct TileView: View {
                         .font(.system(size: min(h * 0.07, w * 0.046)))
                         .foregroundStyle(Theme.down)
                     Spacer(minLength: 0)
+                }
+
+                // Converted amounts cite their source on one muted line.
+                if let note = ConversionFormat.note(tile.conversion) {
+                    Text(note)
+                        .font(.system(size: min(h * 0.055, w * 0.036)))
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .truncationMode(.tail)
                 }
 
                 if let notice = TileNotices.notice(status: tile.status, updatedAt: tile.updatedAt, now: now) {

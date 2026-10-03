@@ -151,12 +151,21 @@ export {
   findConnectionMetric,
   listWorkspaceMetrics,
   queryMetricBuckets,
+  queryMetricCurrencyBuckets,
   queryMetricCurrencyTotals,
 } from "./metrics.js";
+export {
+  findExchangeRates,
+  latestExchangeRateDate,
+  listRateCurrencies,
+  upsertExchangeRates,
+} from "./exchange-rates.js";
+export type { StoredExchangeRate } from "./exchange-rates.js";
 export type {
   ConnectionMetric,
   MetricBucket,
   MetricBucketQuery,
+  MetricCurrencyBucket,
   MetricCurrencyQuery,
   MetricCurrencyTotal,
 } from "./metrics.js";

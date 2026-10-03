@@ -103,15 +103,7 @@ const MAX_WINDOW_MS = 63 * DAY_MS;
 const MAX_HOURLY_WINDOW_MS = 2 * DAY_MS + 2 * 60 * 60 * 1000;
 const MAX_DIMENSION_FILTERS = 10;
 
-/**
- * Bucketed values of one metric of one connection. Rejects windows longer
- * than about two months, hourly buckets over more than about two days, and
- * more than 10 dimension filters (RangeError).
- */
-export async function queryMetricBuckets(
-  tx: Transaction,
-  query: MetricBucketQuery,
-): Promise<MetricBucket[]> {
+function checkBucketQuery(query: MetricBucketQuery): void {
   const span = query.to.getTime() - query.from.getTime();
   if (!(span > 0) || span > MAX_WINDOW_MS) {
     throw new RangeError("metric window must be positive and at most 63 days");
@@ -119,14 +111,29 @@ export async function queryMetricBuckets(
   if (query.unit === "hour" && span > MAX_HOURLY_WINDOW_MS) {
     throw new RangeError("hourly buckets cover at most two days");
   }
-  const dimensions = query.dimensions ?? {};
-  if (Object.keys(dimensions).length > MAX_DIMENSION_FILTERS) {
+  if (Object.keys(query.dimensions ?? {}).length > MAX_DIMENSION_FILTERS) {
     throw new RangeError("at most 10 dimension filters");
   }
+}
 
+/**
+ * Bucket sums of one metric of one connection, also by currency when
+ * `byCurrency` is set.
+ */
+async function bucketRows(
+  tx: Transaction,
+  query: MetricBucketQuery,
+  byCurrency: boolean,
+) {
+  checkBucketQuery(query);
+  const dimensions = query.dimensions ?? {};
   const bucket = sql`date_trunc(${query.unit}, o.source_timestamp, ${query.timeZone})`;
+  const currency = byCurrency
+    ? sql`o.dimensions ->> 'currency'`
+    : sql`null::text`;
   const points = sql`
-    select o.series_key, ${bucket} as bucket, o.source_timestamp, o.value
+    select o.series_key, ${bucket} as bucket, ${currency} as currency,
+           o.source_timestamp, o.value
     from observations o
     join connections c on c.id = o.connection_id
     join metric_definitions m
@@ -137,27 +144,65 @@ export async function queryMetricBuckets(
       and m.key = ${query.metricKey}
       and o.source_timestamp >= ${query.from.toISOString()}::timestamptz
       and o.source_timestamp < ${query.to.toISOString()}::timestamptz
-      and o.dimensions @> ${JSON.stringify(dimensions)}::jsonb`;
+      and o.dimensions @> ${JSON.stringify(dimensions)}::jsonb
+      ${byCurrency ? sql`and o.dimensions ->> 'currency' is not null` : sql``}`;
 
   const rows =
     query.combination === "sum"
       ? await tx.execute(sql`
           with points as (${points})
-          select bucket, sum(value) as value
-          from points group by bucket order by bucket`)
+          select bucket, currency, sum(value) as value
+          from points group by bucket, currency order by bucket, currency`)
       : await tx.execute(sql`
           with points as (${points}),
           last_per_series as (
-            select distinct on (series_key, bucket) bucket, value
+            select distinct on (series_key, bucket) bucket, currency, value
             from points
             order by series_key, bucket, source_timestamp desc
           )
-          select bucket, sum(value) as value
-          from last_per_series group by bucket order by bucket`);
-
+          select bucket, currency, sum(value) as value
+          from last_per_series group by bucket, currency
+          order by bucket, currency`);
   return rows.map((row) => ({
     bucket: new Date(row.bucket as string | Date).toISOString(),
+    currency: row.currency as string | null,
     value: Number(row.value),
+  }));
+}
+
+/**
+ * Bucketed values of one metric of one connection. Rejects windows longer
+ * than about two months, hourly buckets over more than about two days, and
+ * more than 10 dimension filters (RangeError).
+ */
+export async function queryMetricBuckets(
+  tx: Transaction,
+  query: MetricBucketQuery,
+): Promise<MetricBucket[]> {
+  return (await bucketRows(tx, query, false)).map(({ bucket, value }) => ({
+    bucket,
+    value,
+  }));
+}
+
+export interface MetricCurrencyBucket extends MetricBucket {
+  /** ISO 4217 code from the observations' `currency` dimension. */
+  currency: string;
+}
+
+/**
+ * Like queryMetricBuckets for a "currency_minor" metric, with one row per
+ * bucket and currency: amounts are never added across currencies here
+ * (display-currency conversion happens on these rows, #191).
+ */
+export async function queryMetricCurrencyBuckets(
+  tx: Transaction,
+  query: MetricBucketQuery,
+): Promise<MetricCurrencyBucket[]> {
+  return (await bucketRows(tx, query, true)).map((row) => ({
+    bucket: row.bucket,
+    currency: row.currency!,
+    value: row.value,
   }));
 }
 

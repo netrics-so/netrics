@@ -14,6 +14,7 @@ import { tileLabel } from "@netrics/domain";
 import { TileNotice, TileView } from "@/components/tile-view";
 import { apiErrorMessage, queryMetric } from "@/lib/api";
 import { displayUnit } from "@/lib/format-metric";
+import { conversionNote } from "@/lib/tile-currency";
 import { TILE_NOTICES, lastSyncNotice } from "@/lib/tile-status";
 
 export interface TileConnection {
@@ -83,6 +84,9 @@ export function MetricTile({
         ...(Object.keys(tile.dimensions).length > 0
           ? { dimensions: tile.dimensions }
           : {}),
+        ...(tile.displayCurrency
+          ? { displayCurrency: tile.displayCurrency }
+          : {}),
       });
       setData(result);
       setError(null);
@@ -120,6 +124,9 @@ export function MetricTile({
     data?.currency ?? tile.dimensions.currency,
   );
   const stale = staleness(connection);
+  // Converted amounts are approximate and cite the ECB (#191); amounts
+  // without a rate are listed apart, never dropped.
+  const conversion = data?.conversion ? conversionNote(data.conversion) : null;
 
   return (
     <TileView
@@ -138,8 +145,29 @@ export function MetricTile({
               ratio: data.ratio,
               series: data.series,
               timeZone: data.timeZone,
+              approximate: data.conversion !== null,
             }
           : null
+      }
+      note={
+        conversion && data?.conversion ? (
+          <p className="tile-conversion" title={conversion.title}>
+            {conversion.text} (
+            <a
+              href={data.conversion.source.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              source
+            </a>
+            )
+            {conversion.unconverted.map((line) => (
+              <span key={line} className="tile-unconverted">
+                + {line}
+              </span>
+            ))}
+          </p>
+        ) : null
       }
       fallback={
         loading ? (

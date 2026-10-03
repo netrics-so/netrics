@@ -141,6 +141,7 @@ export async function buildApp(
   registerWorkspaceRoutes(app, {
     authService,
     db,
+    exchangeRates: config.exchangeRates,
     addDemoContent: createOnboarding({
       db,
       registry,
@@ -159,6 +160,7 @@ export async function buildApp(
   registerMetricRoutes(app, {
     authService,
     db,
+    exchangeRates: config.exchangeRates,
     ...(deps.now ? { now: deps.now } : {}),
   });
   registerDashboardRoutes(app, { authService, db });
@@ -167,6 +169,7 @@ export async function buildApp(
     db,
     pairingUrl: config.pairingUrl,
     version: config.version,
+    exchangeRates: config.exchangeRates,
   });
   const oauthTokens =
     deps.oauthTokens ??

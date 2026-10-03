@@ -129,6 +129,8 @@ export interface DeviceServiceDeps {
   db: Database;
   pairingUrl: string;
   now?: () => Date;
+  /** NETRICS_EXCHANGE_RATES: display-currency conversion (#191). */
+  exchangeRates?: boolean;
 }
 
 export function createDeviceService(deps: DeviceServiceDeps) {
@@ -441,7 +443,11 @@ export function createDeviceService(deps: DeviceServiceDeps) {
               tx,
               principal.workspaceId,
               device.dashboardId,
-              { now: now(), ...(log ? { log } : {}) },
+              {
+                now: now(),
+                exchangeRates: deps.exchangeRates ?? false,
+                ...(log ? { log } : {}),
+              },
             ),
           );
         },
