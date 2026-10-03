@@ -128,6 +128,20 @@ public enum MetricFormat {
     }
 
     /** "Today · Total" */
+    /**
+     * The tile label split for two lines: the metric, and the resource it
+     * is about ("Downloads · Wurfel" → "Downloads", "Wurfel"; tileLabel in
+     * @netrics/domain joins them with " · "). A label without the separator,
+     * such as a custom title, stays on one line.
+     */
+    public static func titleParts(_ label: String) -> (title: String, detail: String?) {
+        guard let range = label.range(of: " · ") else { return (label, nil) }
+        let title = label[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
+        let detail = label[range.upperBound...].trimmingCharacters(in: .whitespaces)
+        if title.isEmpty || detail.isEmpty { return (label, nil) }
+        return (title, detail)
+    }
+
     public static func subtitle(_ tile: DeviceTile) -> String {
         [periodLabel(tile.period), aggregationLabel(tile.aggregation)].filter { !$0.isEmpty }
             .joined(separator: " · ")

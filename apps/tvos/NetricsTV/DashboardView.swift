@@ -93,16 +93,31 @@ struct TileView: View {
             let w = box.size.width
             let now = Date()
             VStack(alignment: .leading, spacing: h * 0.03) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(tile.label)
-                        .font(.system(size: min(h * 0.09, w * 0.06), weight: .medium))
-                        .foregroundStyle(Theme.label)
-                        .lineLimit(1)
-                    Spacer(minLength: 12)
-                    Text(MetricFormat.subtitle(tile))
-                        .font(.system(size: min(h * 0.065, w * 0.042)))
-                        .foregroundStyle(Theme.muted)
-                        .lineLimit(1)
+                let parts = MetricFormat.titleParts(tile.label)
+                VStack(alignment: .leading, spacing: h * 0.012) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(parts.title)
+                            .font(.system(size: min(h * 0.09, w * 0.06), weight: .medium))
+                            .foregroundStyle(Theme.label)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Spacer(minLength: 12)
+                        Text(MetricFormat.subtitle(tile))
+                            .font(.system(size: min(h * 0.065, w * 0.042)))
+                            .foregroundStyle(Theme.muted)
+                            .lineLimit(1)
+                            .layoutPriority(-1)
+                    }
+                    // The resource (which app, site or project) gets its own
+                    // line: without it the number is meaningless.
+                    if let detail = parts.detail {
+                        Text(detail)
+                            .font(.system(size: min(h * 0.08, w * 0.054), weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.75)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 if let unit = tile.unit {

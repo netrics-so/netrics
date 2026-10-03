@@ -56,6 +56,20 @@ import Testing
         #expect(MetricFormat.changeLine(tile).text == "No data for this period yet")
         #expect(MetricFormat.subtitle(tile) == "Last 7 days · Total")
     }
+
+    @Test func titlePartsSplitMetricAndResource() {
+        let wurfel = MetricFormat.titleParts("Downloads · Wurfel – Cube Solver")
+        #expect(wurfel.title == "Downloads")
+        #expect(wurfel.detail == "Wurfel – Cube Solver")
+        // Only the first separator splits; the resource name keeps the rest.
+        let dotted = MetricFormat.titleParts("Clicks · sc-domain:a · b")
+        #expect(dotted.title == "Clicks")
+        #expect(dotted.detail == "sc-domain:a · b")
+        let plain = MetricFormat.titleParts("Signups this week")
+        #expect(plain.title == "Signups this week")
+        #expect(plain.detail == nil)
+        #expect(MetricFormat.titleParts(" · x").detail == nil)
+    }
 }
 
 @Suite struct TileNoticeTests {
