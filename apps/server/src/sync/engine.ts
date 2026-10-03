@@ -14,7 +14,6 @@ import {
   type Observation,
   type SyncMode,
   type SyncRequest,
-  type SyncResult,
 } from "@netrics/connector-sdk";
 import {
   schema,
@@ -41,6 +40,11 @@ import { OAuthTokenError, type OAuthTokenService } from "../oauth/tokens.js";
 const INITIAL_INCREMENTAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Pagination bound: a connector paging forever is a contract violation. */
 const MAX_PAGES = 100;
+/**
+ * Rows per observation INSERT: PostgreSQL binds at most 65,535 parameters in
+ * one statement and a row binds six.
+ */
+const INSERT_BATCH_ROWS = 5_000;
 
 export interface SyncEngineDeps {
   registry: ConnectorRegistry;
@@ -93,11 +97,7 @@ function computeWindow(
 }
 
 /**
- * Inserts observations with (connection_id, source_identity) idempotency and
- * returns how many rows were actually written (duplicates are skipped).
- */
-/**
- * Upserts a run's observations. Identity is (connection, metric, series,
+ * Upserts one page's observations. Identity is (connection, metric, series,
  * timestamp) with the series derived by the database from the dimensions
  * (ADR 0008): a changed value for an existing key is a provider revision and
  * replaces the stored one; an unchanged value is a no-op. Returns the number
@@ -113,7 +113,7 @@ async function ingestObservations(
   },
 ): Promise<number> {
   // One statement may not touch a key twice (ON CONFLICT DO UPDATE); when a
-  // run repeats a key across pages, the later value wins.
+  // page repeats a key, the later value wins (as a later page's would).
   const latest = new Map<string, Observation>();
   for (const observation of input.observations) {
     latest.set(observationKey(observation), observation);
@@ -141,21 +141,27 @@ async function ingestObservations(
       dimensions: observation.dimensions,
     };
   });
-  const written = await tx
-    .insert(schema.observations)
-    .values(rows)
-    .onConflictDoUpdate({
-      target: [
-        schema.observations.connectionId,
-        schema.observations.metricDefinitionId,
-        schema.observations.seriesKey,
-        schema.observations.sourceTimestamp,
-      ],
-      set: { value: sql`excluded.value`, ingestedAt: sql`now()` },
-      setWhere: sql`${schema.observations.value} is distinct from excluded.value`,
-    })
-    .returning({ connectionId: schema.observations.connectionId });
-  return written.length;
+  // A large page (a week of Search Console breakdowns) exceeds what one
+  // statement may bind; batches share the page's transaction.
+  let written = 0;
+  for (let start = 0; start < rows.length; start += INSERT_BATCH_ROWS) {
+    const batch = await tx
+      .insert(schema.observations)
+      .values(rows.slice(start, start + INSERT_BATCH_ROWS))
+      .onConflictDoUpdate({
+        target: [
+          schema.observations.connectionId,
+          schema.observations.metricDefinitionId,
+          schema.observations.seriesKey,
+          schema.observations.sourceTimestamp,
+        ],
+        set: { value: sql`excluded.value`, ingestedAt: sql`now()` },
+        setWhere: sql`${schema.observations.value} is distinct from excluded.value`,
+      })
+      .returning({ connectionId: schema.observations.connectionId });
+    written += batch.length;
+  }
+  return written;
 }
 
 /**
@@ -166,11 +172,16 @@ async function ingestObservations(
  *     id decides the registry lookup; a missing row under RLS means a
  *     cross-workspace job and is rejected as a contract error).
  *  2. The credential check runs outside any transaction.
- *  3. Connector sync, ingestion, cursor advancement, state update, and the
- *     sync_run success all commit in ONE tenant transaction. Any failure
- *     rolls the whole attempt back — zero observations, untouched cursor.
+ *  3. Pages are fetched one at a time outside any transaction. Each non-final
+ *     page commits in its own short tenant transaction together with its
+ *     nextCursor as the checkpoint (#145): the run holds one page in memory,
+ *     never the whole window, and the cursor never passes data that is not
+ *     committed. The final page commits with the run's cursor, the success
+ *     state and the succeeded sync_run in one transaction.
  *  4. Failures are then recorded in a fresh tenant transaction (failed
- *     sync_run + connection_state) before the job error propagates.
+ *     sync_run with what earlier pages committed + connection_state) before
+ *     the job error propagates. A retry (or the next run) starts at the
+ *     checkpoint; re-sent observations are idempotent upserts.
  */
 async function runSync(
   ctx: JobHandlerContext,
@@ -275,6 +286,16 @@ async function runSync(
       .minRefreshIntervalSeconds ??
     300;
 
+  /**
+   * What this attempt has committed so far: pages before the final one are
+   * checkpointed as they complete, so a failed run reports them.
+   */
+  const progress = {
+    pagesCommitted: 0,
+    observationsWritten: 0,
+    cursor: state?.cursor ?? null,
+  };
+
   /** Records a failed sync_run + connection_state in a fresh transaction. */
   const recordFailure = async (
     errorClass: ErrorClass,
@@ -291,13 +312,16 @@ async function runSync(
           requestedFrom: window.from,
           requestedTo: window.to,
           cursorBefore: state?.cursor ?? null,
+          // The checkpoint the next attempt resumes from, when pages
+          // committed before the failure.
+          cursorAfter: progress.pagesCommitted > 0 ? progress.cursor : null,
           attempt,
           status: "failed",
           startedAt: now,
           finishedAt: new Date(),
           errorClass,
           errorMessage: message,
-          observationsWritten: 0,
+          observationsWritten: progress.observationsWritten,
         });
         const statePatch = authReason
           ? { authState: "needs_reauthorization", authReason }
@@ -457,17 +481,45 @@ async function runSync(
     throw new TerminalJobError(safeMessage(error));
   }
 
-  // Step 3: fetch every page from the provider OUTSIDE any transaction (no
-  // database connection waits on external I/O), bounded by MAX_PAGES. Then
-  // step 4 commits ingest + cursor advance + success in ONE short tenant
-  // transaction: all or nothing, as before.
+  // Step 3: fetch pages from the provider OUTSIDE any transaction (no
+  // database connection waits on external I/O), bounded by MAX_PAGES, and
+  // commit each one as it arrives (see the run's doc comment).
   try {
-    const pages: SyncResult[] = [];
+    let metricDefinitionIds: Map<string, string> | null = null;
+    /** Upserts one page's observations in the given tenant transaction. */
+    const ingestPage = async (
+      tx: Transaction,
+      observations: Observation[],
+    ): Promise<number> => {
+      if (observations.length === 0) {
+        return 0;
+      }
+      // Catalog rows come from the deploy-time migrate step (read-only for
+      // the app role); no row lock on the shared connector row here.
+      metricDefinitionIds ??= new Map(
+        (
+          await tx
+            .select({
+              id: schema.metricDefinitions.id,
+              key: schema.metricDefinitions.key,
+            })
+            .from(schema.metricDefinitions)
+            .where(eq(schema.metricDefinitions.connectorId, manifest.id))
+        ).map((row) => [row.key, row.id]),
+      );
+      return ingestObservations(tx, {
+        workspaceId,
+        connectionId,
+        metricDefinitionIds,
+        observations,
+      });
+    };
+
+    let finalObservations: Observation[] = [];
     let finalCursor = state?.cursor ?? null;
     if (window.from < window.to) {
       let cursor = state?.cursor ?? undefined;
-      let done = false;
-      for (let page = 1; !done; page += 1) {
+      for (let page = 1; ; page += 1) {
         if (page > MAX_PAGES) {
           throw new ContractViolationError(
             `connector "${manifest.id}" paged more than ${MAX_PAGES} times without finishing`,
@@ -483,46 +535,55 @@ async function runSync(
         const result = await callConnector((callContext, options) =>
           executeSync(connector, callContext, request, options),
         );
-        if (!result.done && !result.nextCursor) {
+        if (result.done) {
+          finalObservations = result.observations;
+          finalCursor = result.nextCursor ?? iso(window.to);
+          break;
+        }
+        const nextCursor = result.nextCursor;
+        if (!nextCursor) {
           throw new ContractViolationError(
             `connector "${manifest.id}" returned done=false without a nextCursor`,
           );
         }
-        if (!result.done && result.nextCursor === cursor) {
+        if (nextCursor === cursor) {
           throw new ContractViolationError(
             `connector "${manifest.id}" returned a non-advancing cursor`,
           );
         }
-        pages.push(result);
-        cursor = result.nextCursor;
-        done = result.done;
+        // Checkpoint: the page's observations and the cursor after them
+        // commit together, so the cursor never passes uncommitted data.
+        const written = await withWorkspace(
+          appDb,
+          { workspaceId },
+          async (tx) => {
+            const count = await ingestPage(tx, result.observations);
+            await tx
+              .insert(schema.connectionState)
+              .values({
+                connectionId,
+                workspaceId,
+                pollIntervalSeconds,
+                cursor: nextCursor,
+              })
+              .onConflictDoUpdate({
+                target: schema.connectionState.connectionId,
+                set: { cursor: nextCursor },
+              });
+            return count;
+          },
+        );
+        progress.pagesCommitted += 1;
+        progress.observationsWritten += written;
+        progress.cursor = nextCursor;
+        cursor = nextCursor;
       }
-      finalCursor = cursor ?? iso(window.to);
     }
 
     await withWorkspace(appDb, { workspaceId }, async (tx) => {
-      // Catalog rows come from the deploy-time migrate step (read-only for
-      // the app role); no row lock on the shared connector row here.
-      const definitions = await tx
-        .select({
-          id: schema.metricDefinitions.id,
-          key: schema.metricDefinitions.key,
-        })
-        .from(schema.metricDefinitions)
-        .where(eq(schema.metricDefinitions.connectorId, manifest.id));
-      const metricDefinitionIds = new Map(
-        definitions.map((row) => [row.key, row.id]),
-      );
-
-      let observationsWritten = 0;
-      for (const result of pages) {
-        observationsWritten += await ingestObservations(tx, {
-          workspaceId,
-          connectionId,
-          metricDefinitionIds,
-          observations: result.observations,
-        });
-      }
+      const observationsWritten =
+        progress.observationsWritten +
+        (await ingestPage(tx, finalObservations));
 
       // Cursor advancement commits in this same transaction as the
       // observation inserts — never without them.
