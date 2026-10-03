@@ -9,6 +9,7 @@ import { relativeTime } from "./relative-time";
 export const TILE_NOTICES = {
   removed: "Connection removed",
   authFailed: "Connection needs new credentials",
+  needsReconnect: "Connection needs to be reconnected",
   outage: "Source unreachable",
   firstSync: "Waiting for the first sync",
 } as const;

@@ -186,6 +186,38 @@ export async function updateConnection(
 }
 
 /**
+ * Ends the setup state of a connection created by an OAuth callback (ADR
+ * 0012): clears setup_pending and makes the connection due now. Only the
+ * caller that flips the flag gets true, so concurrent finishes schedule it
+ * once. The caller queues the backfill in the same transaction.
+ */
+export async function finishConnectionSetup(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+): Promise<ConnectionStateRow | null> {
+  const [row] = await tx
+    .update(schema.connections)
+    .set({ setupPending: false, updatedAt: new Date() })
+    .where(
+      and(
+        connectionScope(workspaceId, connectionId),
+        eq(schema.connections.setupPending, true),
+      ),
+    )
+    .returning({ id: schema.connections.id });
+  if (!row) {
+    return null;
+  }
+  const [state] = await tx
+    .update(schema.connectionState)
+    .set({ nextDueAt: new Date() })
+    .where(stateScope(workspaceId, connectionId))
+    .returning();
+  return state ?? null;
+}
+
+/**
  * Recovery after new credentials: the connection is healthy again, due
  * immediately, and its failure streak starts over. With `schedule: false`
  * (a connection whose setup is pending) it stays unscheduled.

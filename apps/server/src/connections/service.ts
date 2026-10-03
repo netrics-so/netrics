@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type {
+  ConnectionResourcesResponse,
   ConnectorAuthStrategy,
   CreateConnectionRequest,
   DeleteConnectionResponse,
@@ -20,6 +21,7 @@ import {
   enqueueJob,
   findConnection,
   findConnectionOAuth,
+  finishConnectionSetup,
   findProject,
   insertAuditEvent,
   insertConnection,
@@ -51,7 +53,6 @@ import {
 } from "../oauth/connector-auth.js";
 import {
   createOAuthTokenService,
-  OAuthTokenError,
   openOAuthCredentials,
   type OAuthTokenService,
 } from "../oauth/tokens.js";
@@ -251,14 +252,17 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         ? ok(true)
         : fail(400, check.message ?? "credential check failed");
     } catch (error) {
-      if (error instanceof NeedsReauthorizationError) {
-        return fail(400, "oauth_reauthorization_required");
-      }
-      if (error instanceof OAuthTokenError) {
-        return fail(400, safeMessage(error));
-      }
-      return fail(400, safeMessage(error));
+      // OAuthTokenError and connector failures carry redacted messages.
+      return oauthCallFailure(error);
     }
+  }
+
+  /** Maps a failed OAuth connector call to a 400 the web app can explain. */
+  function oauthCallFailure<T>(error: unknown): Result<T> {
+    if (error instanceof NeedsReauthorizationError) {
+      return fail(400, "oauth_reauthorization_required");
+    }
+    return fail(400, safeMessage(error));
   }
 
   /**
@@ -531,6 +535,51 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       }
     },
 
+    /**
+     * What an existing OAuth connection can read at its provider (finish
+     * setup, change the property). The connector's discover gets a fresh
+     * access token from the token service, never the refresh token, and the
+     * response carries only the connector's resources (ADR 0012).
+     */
+    async discoverResources(
+      actor: Actor,
+      connectionId: string,
+    ): Promise<Result<ConnectionResourcesResponse>> {
+      const existing = await inWorkspace(actor, (tx) =>
+        findConnection(tx, actor.workspaceId, connectionId),
+      );
+      if (!existing) {
+        return fail(404, NOT_FOUND);
+      }
+      if (!existing.oauth) {
+        return fail(400, "oauth_connection_required");
+      }
+      const registered = registry.get(existing.row.connectorId);
+      const strategy = registered
+        ? oauthStrategyFor(registered.manifest, existing.oauth.provider)
+        : undefined;
+      if (!registered || !strategy) {
+        return fail(400, "invalid_request");
+      }
+      const config = existing.row.config as Record<string, unknown>;
+      try {
+        const resources = await callWithAccessToken({
+          tokens: oauthTokens,
+          binding: { workspaceId: actor.workspaceId, connectionId },
+          requiredScopes: strategy.scopes,
+          call: (credentials, options) =>
+            executeDiscover(
+              registered.connector,
+              { connectionId, config, credentials: { ...credentials } },
+              options,
+            ),
+        });
+        return ok({ resources });
+      } catch (error) {
+        return oauthCallFailure(error);
+      }
+    },
+
     async list(actor: Actor) {
       const rows = await inWorkspace(actor, (tx) =>
         listConnectionRows(tx, actor.workspaceId),
@@ -688,6 +737,35 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           return fail(404, NOT_FOUND);
         }
         let state = existing.state;
+        let setupPending = row.setupPending;
+        // Finishing setup (ADR 0012): a connection created by an OAuth
+        // callback gets its first checked config. It is scheduled and its
+        // backfill queued in this commit, like a newly created connection;
+        // finishConnectionSetup lets only one concurrent finish do it.
+        if (existing.row.setupPending && nextConfig !== undefined) {
+          const finished = await finishConnectionSetup(
+            tx,
+            actor.workspaceId,
+            connectionId,
+          );
+          if (finished) {
+            state = finished;
+            setupPending = false;
+            await enqueueJob(tx, {
+              kind: "connection.backfill",
+              workspaceId: actor.workspaceId,
+              connectionId,
+              idempotencyKey: `backfill:${connectionId}`,
+            });
+            await insertAuditEvent(tx, {
+              workspaceId: actor.workspaceId,
+              actorUserId: actor.callerId,
+              action: "connection.setup_finished",
+              target: connectionId,
+              metadata: { connectorId: row.connectorId },
+            });
+          }
+        }
         if (body.credentials !== undefined) {
           // Recovery path for auth_failed/outage: fresh credentials make the
           // connection due immediately and reset the failure streak.
@@ -724,7 +802,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         }
         return ok(
           presentConnectionDetail(registry, {
-            row,
+            row: { ...row, setupPending },
             state,
             oauth: existing.oauth,
           }),

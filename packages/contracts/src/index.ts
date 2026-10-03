@@ -403,6 +403,19 @@ export type ConnectionPreviewResponse = z.infer<
   typeof connectionPreviewResponseSchema
 >;
 
+/**
+ * What an existing OAuth connection can read at its provider (e.g. the
+ * Search Console properties of the linked Google account), discovered with
+ * a short-lived access token from the token service (ADR 0012). Used to
+ * finish setup and to change the chosen resource.
+ */
+export const connectionResourcesResponseSchema = z.object({
+  resources: z.array(discoveredResourceSchema),
+});
+export type ConnectionResourcesResponse = z.infer<
+  typeof connectionResourcesResponseSchema
+>;
+
 // "pending" = never synced successfully yet; the other states mirror
 // connection_state.auth_state.
 export const connectionHealthSchema = z.enum([
@@ -566,6 +579,8 @@ export const connectionSchema = z.object({
    * Created by an OAuth authorization and not finished yet (ADR 0012): it
    * holds the grant, but its config (e.g. the property) is still to be
    * chosen. Not scheduled until then; the web app shows "Finish setup".
+   * A PATCH with a config that passes the connector check finishes it: the
+   * connection is scheduled and its backfill queued in the same commit.
    */
   setupPending: z.boolean(),
   createdAt: z.iso.datetime(),
@@ -713,6 +728,13 @@ export const metricAggregationSchema = z.enum(AGGREGATIONS);
 export type MetricPeriod = z.infer<typeof metricPeriodSchema>;
 export type MetricAggregation = z.infer<typeof metricAggregationSchema>;
 
+/**
+ * Which way is good for a metric: "higher" (most metrics) or "lower" (e.g.
+ * an average position, where 1 is the top). Tiles colour a change by it.
+ */
+export const metricBetterSchema = z.enum(["higher", "lower"]);
+export type MetricBetter = z.infer<typeof metricBetterSchema>;
+
 export const workspaceMetricSchema = z.object({
   connectionId: z.uuid(),
   connectionName: z.string(),
@@ -725,6 +747,7 @@ export const workspaceMetricSchema = z.object({
   dimensions: z.array(z.string()),
   /** Aggregations a tile may use, default first. Empty: not displayable. */
   aggregations: z.array(metricAggregationSchema),
+  better: metricBetterSchema,
 });
 export type WorkspaceMetric = z.infer<typeof workspaceMetricSchema>;
 
@@ -1032,6 +1055,13 @@ export const deviceTileSchema = z.object({
   }),
   /** One point per bucket of the current period, oldest first; null = gap. */
   spark: z.array(z.number().nullable()),
+  /**
+   * The metric's kind and granularity (a daily gauge reads "Latest day"),
+   * null when the tile could not load; and which way is good for a change.
+   */
+  kind: z.enum(METRIC_KINDS).nullable(),
+  granularity: z.enum(GRANULARITIES).nullable(),
+  better: metricBetterSchema,
   status: deviceTileStatusSchema,
   /** The connection's last successful sync. */
   updatedAt: z.iso.datetime().nullable(),

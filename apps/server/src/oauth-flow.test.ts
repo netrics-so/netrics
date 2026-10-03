@@ -423,7 +423,7 @@ describe("connecting", () => {
     ]);
   });
 
-  it("refuses credential changes; checks config changes with a fresh access token and keeps setup pending", async () => {
+  it("refuses credential changes; a checked config change finishes setup", async () => {
     const id = connectionIdOf(await flow(cookies.owner));
     const patch = (payload: Record<string, unknown>) =>
       app.inject({
@@ -440,19 +440,19 @@ describe("connecting", () => {
     });
     expect((await credentialsOf(id)).equals(before)).toBe(true);
 
-    // The token service supplies the connector check (#133); finishing
-    // setup (clearing setup_pending, #136) is not part of a config change.
+    // The token service supplies the connector check (#133); the first
+    // checked config finishes setup (#136, see oauth-setup.test.ts).
     const config = await patch({ config: { seed: 2 } });
     expect(config.statusCode, config.body).toBe(200);
+    expect(
+      connectionResponseSchema.parse(config.json()).connection.setupPending,
+    ).toBe(false);
     const [row] = await admin`
       select c.config, c.setup_pending, s.next_due_at
       from connections c join connection_state s on s.connection_id = c.id
       where c.id = ${id}`;
-    expect(row).toMatchObject({
-      config: { seed: 2 },
-      setup_pending: true,
-      next_due_at: null,
-    });
+    expect(row).toMatchObject({ config: { seed: 2 }, setup_pending: false });
+    expect(row!.next_due_at).not.toBeNull();
     expect((await credentialsOf(id)).equals(before)).toBe(true);
 
     const renamed = await patch({ name: "My property" });

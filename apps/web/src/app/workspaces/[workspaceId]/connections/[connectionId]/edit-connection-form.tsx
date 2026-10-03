@@ -45,7 +45,11 @@ export function EditConnectionForm({
   const tokenStrategy = connector?.authStrategies.find(
     (strategy) => strategy.strategy === "token",
   );
-  const wantsToken = tokenStrategy !== undefined || connection.hasCredentials;
+  // An OAuth connection's credentials are its grant: renewed by reconnecting
+  // at the provider, never by pasting a token (ADR 0012).
+  const wantsToken =
+    connection.oauth === null &&
+    (tokenStrategy !== undefined || connection.hasCredentials);
   const needsToken = connection.state.authState === "auth_failed";
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {

@@ -19,7 +19,11 @@ import {
   duplicateDashboard,
   saveDashboard,
 } from "@/lib/api";
-import { AGGREGATION_LABELS, PERIOD_LABELS } from "@/lib/format-metric";
+import {
+  AGGREGATION_LABELS,
+  PERIOD_LABELS,
+  aggregationLabel,
+} from "@/lib/format-metric";
 
 import { MetricTile, type TileConnection } from "./metric-tile";
 import { useServerRefresh } from "./use-server-refresh";
@@ -282,8 +286,10 @@ export function DashboardView({
                       </strong>{" "}
                       <span className="muted">
                         {PERIOD_LABELS[tile.period]} ·{" "}
-                        {AGGREGATION_LABELS[tile.aggregation]} ·{" "}
-                        {metric?.connectionName ?? "removed connection"}
+                        {metric
+                          ? aggregationLabel(tile.aggregation, metric)
+                          : AGGREGATION_LABELS[tile.aggregation]}{" "}
+                        · {metric?.connectionName ?? "removed connection"}
                       </span>
                     </span>
                     <span className="actions">
@@ -436,10 +442,13 @@ function AddTileForm({
         >
           {(metric?.aggregations ?? []).map((option) => (
             <option key={option} value={option}>
-              {AGGREGATION_LABELS[option]}
+              {aggregationLabel(option, metric!)}
             </option>
           ))}
         </select>
+        {metric?.description ? (
+          <p className="help">{metric.description}</p>
+        ) : null}
       </div>
       <div className="field">
         <label htmlFor="tile-period">Period</label>

@@ -44,11 +44,13 @@ import {
 } from "../oauth/test-provider.js";
 import { createOAuthTokenService } from "../oauth/tokens.js";
 import type { OAuthProviderDefinition } from "../oauth/providers/types.js";
+import { listMetrics } from "../metrics/query.js";
 import { runSchedulerTick } from "../scheduler.js";
 import { Secret } from "../secret.js";
 import { createTestDatabase, type TestDatabase } from "../test-db.js";
 import { createWorker, type WorkerHandle } from "../worker.js";
 import { syncCatalog } from "./catalog.js";
+import BY_QUERY_DEVICE from "../../../../packages/connectors/src/google-search-console/fixtures/analytics-by-query-device.json" with { type: "json" };
 
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -154,6 +156,12 @@ async function answerApi(request: IncomingMessage, response: ServerResponse) {
       dimensions?: string[];
     };
     const syncPage = input.dimensions?.[0] === "date";
+    // A day's breakdown by query and device: Search Console's own answer
+    // (the connector's contract fixture), keyed [query, device].
+    if (input.dimensions?.join(",") === "query,device") {
+      send(200, BY_QUERY_DEVICE);
+      return;
+    }
     if (syncPage && rejectNext.syncQuery > 0) {
       rejectNext.syncQuery -= 1;
       send(401, unauthenticated);
@@ -243,7 +251,11 @@ async function waitFor(check: () => Promise<boolean>, timeoutMs = 15_000) {
 
 /** A Search Console connection as the authorization flow leaves it. */
 async function seed(
-  options: { expired?: boolean; setupPending?: boolean } = {},
+  options: {
+    expired?: boolean;
+    setupPending?: boolean;
+    config?: Record<string, unknown>;
+  } = {},
 ) {
   subCounter += 1;
   const sub = `gsc-sub-${subCounter}`;
@@ -273,7 +285,10 @@ async function seed(
       .set(
         options.setupPending
           ? { setupPending: true, config: {} }
-          : { setupPending: false, config: { siteUrl: SITE } },
+          : {
+              setupPending: false,
+              config: { siteUrl: SITE, ...options.config },
+            },
       )
       .where(eq(schema.connections.id, connectionId));
     // Keep the scheduler away from it unless a test asks.
@@ -459,6 +474,81 @@ describe("Google Search Console in the sync engine", () => {
       consecutiveFailures: 0,
     });
     expect((await stateOf(connectionId)).lastSuccessAt).not.toBeNull();
+  });
+
+  it("stores a query and device breakdown beside the totals", async () => {
+    const { connectionId } = await seed({
+      config: { dimensions: "query,device", rowLimit: 1000 },
+    });
+    expect((await runJob(connectionId)).status).toBe("succeeded");
+
+    const rows = await withWorkspace(appDb, { workspaceId }, (tx) =>
+      tx
+        .select({
+          key: schema.metricDefinitions.key,
+          value: schema.observations.value,
+          dimensions: schema.observations.dimensions,
+          sourceTimestamp: schema.observations.sourceTimestamp,
+        })
+        .from(schema.observations)
+        .innerJoin(
+          schema.metricDefinitions,
+          eq(
+            schema.metricDefinitions.id,
+            schema.observations.metricDefinitionId,
+          ),
+        )
+        .where(eq(schema.observations.connectionId, connectionId)),
+    );
+    const days = new Set(
+      rows
+        .filter((row) => row.key === `${CONNECTOR_ID}.clicks`)
+        .map((row) => row.sourceTimestamp.toISOString()),
+    );
+    expect(days.size).toBeGreaterThanOrEqual(1);
+    const expected = BY_QUERY_DEVICE.rows;
+    for (const [suffix, valueOf] of [
+      ["breakdown_clicks", (r: (typeof expected)[0]) => r.clicks],
+      ["breakdown_impressions", (r: (typeof expected)[0]) => r.impressions],
+      [
+        "breakdown_position_sum",
+        (r: (typeof expected)[0]) => r.position * r.impressions,
+      ],
+    ] as const) {
+      const stored = rows.filter(
+        (row) => row.key === `${CONNECTOR_ID}.${suffix}`,
+      );
+      // Every fixture row on every synced day, keyed by query and device.
+      expect(stored).toHaveLength(expected.length * days.size);
+      for (const row of expected) {
+        const match = stored.find((entry) => {
+          const dimensions = entry.dimensions as Record<string, string>;
+          return (
+            Object.keys(dimensions).length === 3 &&
+            dimensions.resource === SITE &&
+            dimensions.query === row.keys[0] &&
+            dimensions.device === row.keys[1]
+          );
+        });
+        expect(match?.value, `${suffix} ${row.keys.join("/")}`).toBeCloseTo(
+          valueOf(row),
+          6,
+        );
+      }
+    }
+  });
+
+  it("marks average position as lower-is-better in the catalog", async () => {
+    await seed();
+    const metrics = await withWorkspace(appDb, { workspaceId }, (tx) =>
+      listMetrics(tx, workspaceId),
+    );
+    const better = Object.fromEntries(
+      metrics.map((metric) => [metric.key, metric.better]),
+    );
+    expect(better[`${CONNECTOR_ID}.position`]).toBe("lower");
+    expect(better[`${CONNECTOR_ID}.clicks`]).toBe("higher");
+    expect(better[`${CONNECTOR_ID}.ctr`]).toBe("higher");
   });
 
   it("refreshes an expired access token once before calling Google", async () => {

@@ -5,6 +5,8 @@ import { can } from "@netrics/domain";
 
 import { CreateDashboardForm } from "./create-dashboard-form";
 import { CreateProjectForm } from "./create-project-form";
+import { DisconnectResult } from "./connections/disconnect-result";
+import { OAuthOutcomeBanner } from "./connections/oauth-outcome";
 import { DeviceControls } from "./device-controls";
 import { HealthBadge } from "./health-badge";
 import {
@@ -16,6 +18,7 @@ import {
   listWorkspaces,
 } from "@/lib/api";
 import { summarizeHeartbeat } from "@/lib/device-heartbeat";
+import { parseDisconnected, parseOAuthOutcome } from "@/lib/oauth-connection";
 import { relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
 
@@ -23,10 +26,17 @@ export const dynamic = "force-dynamic";
 
 interface WorkspacePageProps {
   params: Promise<{ workspaceId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function WorkspacePage({ params }: WorkspacePageProps) {
+export default async function WorkspacePage({
+  params,
+  searchParams,
+}: WorkspacePageProps) {
   const { workspaceId } = await params;
+  const query = await searchParams;
+  const outcome = parseOAuthOutcome(query.oauth);
+  const disconnected = parseDisconnected(query);
   const { cookieHeader } = await requireSession();
 
   const [{ workspaces }, workspaceResult] = await Promise.all([
@@ -58,6 +68,8 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
   return (
     <>
       <h1>{workspaceResult.workspace.name}</h1>
+      <OAuthOutcomeBanner outcome={outcome} />
+      <DisconnectResult revocation={disconnected} />
       <p className="subtitle">
         Your role: <span className="role-badge">{role}</span>
       </p>
@@ -190,7 +202,16 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
                     {connection.connectorName} {connection.connectorVersion}
                   </td>
                   <td>
-                    <HealthBadge health={connection.state.health} />
+                    {connection.setupPending ? (
+                      <Link
+                        className="health-badge pending"
+                        href={`/workspaces/${workspaceId}/connections/${connection.id}#finish-setup`}
+                      >
+                        Finish setup
+                      </Link>
+                    ) : (
+                      <HealthBadge health={connection.state.health} />
+                    )}
                   </td>
                   <td className="muted">
                     {relativeTime(connection.state.lastSuccessAt)}

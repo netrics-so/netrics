@@ -163,6 +163,15 @@ function KioskDashboard({
             label={tile.label}
             period={tile.period}
             aggregation={tile.aggregation}
+            metric={
+              tile.kind && tile.granularity
+                ? {
+                    kind: tile.kind,
+                    granularity: tile.granularity,
+                    better: tile.better,
+                  }
+                : null
+            }
             reading={
               tile.unit === null
                 ? null

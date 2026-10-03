@@ -31,11 +31,11 @@ function staleness(connection: TileConnection | undefined): string | null {
     return TILE_NOTICES.removed;
   }
   const { state } = connection;
-  if (
-    state.health === "auth_failed" ||
-    state.health === "needs_reauthorization"
-  ) {
+  if (state.health === "auth_failed") {
     return TILE_NOTICES.authFailed;
+  }
+  if (state.health === "needs_reauthorization") {
+    return TILE_NOTICES.needsReconnect;
   }
   if (state.health === "outage") {
     return TILE_NOTICES.outage;
@@ -113,6 +113,7 @@ export function MetricTile({
       label={label}
       period={tile.period}
       aggregation={tile.aggregation}
+      metric={data?.metric ?? metric ?? null}
       busy={loading}
       reading={
         data
