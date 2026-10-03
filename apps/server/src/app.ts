@@ -15,6 +15,7 @@ import {
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 
 import { createAuthService, type AuthService } from "./auth/index.js";
+import { registerClientAddress } from "./client-address.js";
 import { createDefaultRegistry } from "./connectors.js";
 import { createOnboarding } from "./onboarding.js";
 import { createCredentialKeyring } from "./credentials.js";
@@ -82,6 +83,9 @@ export async function buildApp(
     trustProxy:
       config.trustedProxies.length > 0 ? config.trustedProxies : false,
   });
+  // First: every later hook and route reads request.clientIp and sees the
+  // cookie rule already applied.
+  registerClientAddress(app, config.proxySecrets);
   registerHttpHardening(app, config);
   await registerOpenApi(app, config.version);
 

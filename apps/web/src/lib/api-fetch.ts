@@ -12,9 +12,21 @@
  * commit").
  */
 
+/** Marks a request as coming from this frontend (ADR 0013, #156). */
+export const PROXY_SECRET_HEADER = "x-netrics-proxy-secret";
+/** The client address, believed by the API only next to a valid secret. */
+export const CLIENT_IP_HEADER = "x-netrics-client-ip";
+
 // Forwarding headers are only ever set by outboundHeaders(), from the client
-// address it resolves itself; a value a caller copied over is dropped.
-const FORWARDING_HEADERS = ["forwarded", "x-forwarded-for", "x-real-ip"];
+// address it resolves itself; a value a caller copied over (for example the
+// browser's own headers in the proxy) is dropped.
+const FORWARDING_HEADERS = [
+  "forwarded",
+  "x-forwarded-for",
+  "x-real-ip",
+  PROXY_SECRET_HEADER,
+  CLIENT_IP_HEADER,
+];
 
 function apiBaseUrl(): string {
   return process.env.NETRICS_API_URL ?? "http://localhost:3001";
@@ -62,6 +74,39 @@ export function clientIp(
   return chain[Math.max(chain.length - hops, 0)] ?? null;
 }
 
+/**
+ * NETRICS_PROXY_SECRET, shared with the API: with it set, every call carries
+ * the secret, so the API believes the forwarded client address and accepts
+ * session cookies (ADR 0013). The API accepts two comma-separated values
+ * during a rotation; the web app sends the first. Unset: nothing is sent.
+ */
+export function proxySecret(): string | null {
+  const first = process.env.NETRICS_PROXY_SECRET?.split(",")[0]?.trim();
+  return first ? first : null;
+}
+
+const IPV4 =
+  /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+
+/**
+ * Whether `value` is one IPv4 or IPv6 address and nothing else: no list, no
+ * port, no zone. (No node:net here, so this module stays runtime-neutral.)
+ */
+export function isSingleIp(value: string): boolean {
+  if (IPV4.test(value)) {
+    return true;
+  }
+  if (!value.includes(":") || /[^0-9a-fA-F:.]/.test(value)) {
+    return false;
+  }
+  try {
+    new URL(`http://[${value}]/`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export interface ApiFetchInit extends Omit<RequestInit, "cache"> {
   /**
    * The headers of the browser request this call is made for. When given,
@@ -73,8 +118,10 @@ export interface ApiFetchInit extends Omit<RequestInit, "cache"> {
 
 /**
  * The headers of a call to the API: the caller's headers, minus any
- * forwarding headers, plus the client address when `client` is given. This
- * is the single place for headers every web→API request carries.
+ * forwarding headers, plus the client address when `client` is given, plus
+ * the proxy secret when one is configured (then also the client address in
+ * x-netrics-client-ip, if it is a single valid IP). This is the single place
+ * for headers every web→API request carries.
  */
 export function outboundHeaders(
   init: HeadersInit | undefined,
@@ -84,11 +131,18 @@ export function outboundHeaders(
   for (const name of FORWARDING_HEADERS) {
     headers.delete(name);
   }
-  if (client) {
-    const ip = clientIp(client, trustedProxyHops(), clientIpHeader());
-    if (ip) {
-      headers.set("x-forwarded-for", ip);
-      headers.set("x-real-ip", ip);
+  const ip = client
+    ? clientIp(client, trustedProxyHops(), clientIpHeader())
+    : null;
+  if (ip) {
+    headers.set("x-forwarded-for", ip);
+    headers.set("x-real-ip", ip);
+  }
+  const secret = proxySecret();
+  if (secret) {
+    headers.set(PROXY_SECRET_HEADER, secret);
+    if (ip && isSingleIp(ip)) {
+      headers.set(CLIENT_IP_HEADER, ip);
     }
   }
   return headers;
