@@ -97,8 +97,8 @@ export interface MetricBucket {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** A month and its predecessor, plus slack for time zones. */
-const MAX_WINDOW_MS = 63 * DAY_MS;
+/** Twelve calendar months (one window of last_12_months), plus slack for time zones. */
+const MAX_WINDOW_MS = 368 * DAY_MS;
 /** Hourly buckets only for about a day (at most 50 buckets). */
 const MAX_HOURLY_WINDOW_MS = 2 * DAY_MS + 2 * 60 * 60 * 1000;
 const MAX_DIMENSION_FILTERS = 10;
@@ -106,7 +106,7 @@ const MAX_DIMENSION_FILTERS = 10;
 function checkBucketQuery(query: MetricBucketQuery): void {
   const span = query.to.getTime() - query.from.getTime();
   if (!(span > 0) || span > MAX_WINDOW_MS) {
-    throw new RangeError("metric window must be positive and at most 63 days");
+    throw new RangeError("metric window must be positive and at most 368 days");
   }
   if (query.unit === "hour" && span > MAX_HOURLY_WINDOW_MS) {
     throw new RangeError("hourly buckets cover at most two days");
@@ -172,7 +172,7 @@ async function bucketRows(
 
 /**
  * Bucketed values of one metric of one connection. Rejects windows longer
- * than about two months, hourly buckets over more than about two days, and
+ * than about a year, hourly buckets over more than about two days, and
  * more than 10 dimension filters (RangeError).
  */
 export async function queryMetricBuckets(
@@ -239,7 +239,7 @@ export async function queryMetricCurrencyTotals(
 ): Promise<MetricCurrencyTotal[]> {
   const span = query.to.getTime() - query.from.getTime();
   if (!(span > 0) || span > MAX_WINDOW_MS) {
-    throw new RangeError("metric window must be positive and at most 63 days");
+    throw new RangeError("metric window must be positive and at most 368 days");
   }
   const dimensions = query.dimensions ?? {};
   if (Object.keys(dimensions).length > MAX_DIMENSION_FILTERS) {

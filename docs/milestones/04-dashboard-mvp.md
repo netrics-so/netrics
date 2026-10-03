@@ -84,7 +84,10 @@ dashboard, #51 onboarding dashboard, #52 TV full-screen layout.
 - **Periods.** Tiles offer fixed presets: Today, Last 7 days, Last 30 days,
   This month. Each compares with the previous window of equal length:
   yesterday up to the same time of day, the 7 or 30 days before, or the same
-  first days of the previous month.
+  first days of the previous month. Later (#212): Last 90 days (against the
+  90 days before, with weekly sparkline points) and Last 12 months (the
+  current calendar month so far and the 11 before, against the 12 before up
+  to the same day, with monthly points).
 - **Aggregation by kind** (`packages/domain/src/metrics.ts`): deltas add up
   (sum, or avg/min/max over buckets); gauges and counters use each series'
   latest reading (last, or avg/min/max over buckets). A tile may use only

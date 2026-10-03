@@ -57,6 +57,21 @@ import Testing
         #expect(MetricFormat.subtitle(tile) == "Last 7 days · Total")
     }
 
+    @Test func longerPeriodLabels() {
+        var tile = dashboard("v1").tiles[0]
+        tile.change = TileChange(previousValue: 40, delta: 10, ratio: 0.25)
+        tile.period = .last90Days
+        #expect(MetricFormat.changeLine(tile).text == "▲ +25% vs previous 90 days")
+        #expect(MetricFormat.subtitle(tile).hasPrefix("Last 90 days · "))
+        tile.period = .last12Months
+        #expect(MetricFormat.changeLine(tile).text == "▲ +25% vs previous 12 months")
+        #expect(MetricFormat.subtitle(tile).hasPrefix("Last 12 months · "))
+        // A period this build does not know keeps the tile readable.
+        tile.period = .unknown
+        #expect(MetricFormat.changeLine(tile).text == "▲ +25% vs previous period")
+        #expect(!MetricFormat.subtitle(tile).contains("·"))
+    }
+
     @Test func titlePartsSplitMetricAndResource() {
         let wurfel = MetricFormat.titleParts("Downloads · Wurfel – Cube Solver")
         #expect(wurfel.title == "Downloads")
@@ -162,7 +177,7 @@ import Testing
     @Test func toleratesNewEnumValues() throws {
         let body = """
             {"version":"abc","refreshAfterSec":60,"timeZone":"UTC","dashboard":null,
-             "tiles":[{"id":"x","label":"L","period":"last_90_days","aggregation":"median","value":null,
+             "tiles":[{"id":"x","label":"L","period":"last_5_years","aggregation":"median","value":null,
                "unit":null,"change":{"previousValue":null,"delta":null,"ratio":null},
                "spark":[],"status":"brand_new","updatedAt":null}]}
             """
@@ -170,6 +185,25 @@ import Testing
         #expect(payload.dashboard == nil)
         #expect(payload.tiles[0].period == .unknown)
         #expect(payload.tiles[0].status == .ok)
+    }
+
+    @Test(arguments: [
+        ("last_90_days", MetricPeriod.last90Days),
+        ("last_12_months", .last12Months),
+        ("this_month", .thisMonth),
+    ])
+    func decodesLongerPeriods(_ raw: String, _ period: MetricPeriod) throws {
+        let body = """
+            {"version":"abc","refreshAfterSec":60,"timeZone":"UTC","dashboard":null,
+             "tiles":[{"id":"x","label":"L","period":"\(raw)","aggregation":"sum","value":1,
+               "unit":"count","change":{"previousValue":null,"delta":null,"ratio":null},
+               "spark":[1,2],"status":"ok","updatedAt":null}]}
+            """
+        let payload = try JSONDecoder().decode(DeviceDashboard.self, from: Data(body.utf8))
+        #expect(payload.tiles[0].period == period)
+        // The disk cache writes the raw value back.
+        let again = try JSONDecoder().decode(DeviceDashboard.self, from: JSONEncoder().encode(payload))
+        #expect(again.tiles[0].period == period)
     }
 
     @Test func decodesPollResponses() throws {

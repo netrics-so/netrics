@@ -167,6 +167,9 @@ public enum MetricPeriod: String, OpenAPIEnum {
     case last7Days = "last_7_days"
     case last30Days = "last_30_days"
     case thisMonth = "this_month"
+    case last90Days = "last_90_days"
+    case last12Months = "last_12_months"
+    // A period a newer server adds: no period label, "vs previous period".
     case unknown
 
     public static var fallback: MetricPeriod { .unknown }

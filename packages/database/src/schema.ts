@@ -696,7 +696,7 @@ export const dashboardTiles = pgTable(
     ),
     check(
       "dashboard_tiles_period_valid",
-      sql`${table.period} in ('today', 'last_7_days', 'last_30_days', 'this_month')`,
+      sql`${table.period} in ('today', 'last_7_days', 'last_30_days', 'this_month', 'last_90_days', 'last_12_months')`,
     ),
     check("dashboard_tiles_position_valid", sql`${table.position} >= 0`),
   ],
