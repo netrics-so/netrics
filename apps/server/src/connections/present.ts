@@ -2,6 +2,7 @@ import type {
   ConnectionAuthReason,
   ConnectionAuthState,
   ConnectionHealth,
+  ConnectionSignedKeyView,
   ConnectionStateView,
 } from "@netrics/contracts";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
@@ -72,6 +73,8 @@ export function presentConnection(
 export function presentConnectionDetail(
   registry: ConnectorRegistry,
   loaded: ConnectionWithState,
+  /** The stored signed key's non-secret fields (ADR 0014), if any. */
+  signedKey: ConnectionSignedKeyView | null = null,
 ) {
   // Strip the reserved resource-selection key from the echoed config; it is
   // an engine concern, not a manifest config property.
@@ -80,6 +83,7 @@ export function presentConnectionDetail(
   return {
     ...presentConnection(registry, loaded),
     config,
+    signedKey,
   };
 }
 

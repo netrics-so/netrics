@@ -40,8 +40,19 @@ export interface SignedKeyProviderDefinition {
    * outboundDomains.
    */
   readonly serverDomains: readonly string[];
-  /** The wizard's setup copy: steps to create the key, and the keys page. */
-  readonly setup: { readonly steps: readonly string[]; readonly url: string };
+  /**
+   * The wizard's setup copy: steps to create the key, the keys page, and
+   * deep links shown with a step (`step` indexes `steps`).
+   */
+  readonly setup: {
+    readonly steps: readonly string[];
+    readonly url: string;
+    readonly links?: readonly {
+      readonly step: number;
+      readonly label: string;
+      readonly url: string;
+    }[];
+  };
   /**
    * Checks with a freshly signed token before the credentials are stored
    * (create, preview, rotation, config change). They run in order after the

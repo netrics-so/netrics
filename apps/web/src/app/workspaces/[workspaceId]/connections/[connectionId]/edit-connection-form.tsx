@@ -16,6 +16,7 @@ import {
   initialConfigValues,
   parseConfigSchema,
 } from "@/lib/config-schema";
+import { signedKeyStrategyOf } from "@/lib/signed-key";
 
 interface EditConnectionFormProps {
   workspaceId: string;
@@ -47,8 +48,10 @@ export function EditConnectionForm({
   );
   // An OAuth connection's credentials are its grant: renewed by reconnecting
   // at the provider, never by pasting a token (ADR 0012).
+  // A signed key (ADR 0014) is replaced in its own panel, never here.
   const wantsToken =
     connection.oauth === null &&
+    signedKeyStrategyOf(connector) === null &&
     (tokenStrategy !== undefined || connection.hasCredentials);
   const needsToken = connection.state.authState === "auth_failed";
 

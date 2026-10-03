@@ -9,6 +9,7 @@ import {
   triggerConnectionSync,
 } from "@/lib/api";
 import { disconnectQuery, providerName } from "@/lib/oauth-connection";
+import { keyRemovedQuery } from "@/lib/signed-key";
 
 interface ConnectionActionsProps {
   workspaceId: string;
@@ -16,6 +17,13 @@ interface ConnectionActionsProps {
   connectionName: string;
   /** The OAuth provider the connection is authorized at, if any. */
   oauthProvider: string | null;
+  /** The uploaded key of a signed-key connection (ADR 0014), if any. */
+  signedKey?: {
+    provider: string;
+    providerName: string;
+    revokeUrl: string | null;
+    keyId: string | null;
+  } | null;
   canSync: boolean;
   canUpdate: boolean;
   canDelete: boolean;
@@ -26,6 +34,7 @@ export function ConnectionActions({
   connectionId,
   connectionName,
   oauthProvider,
+  signedKey = null,
   canSync,
   canUpdate,
   canDelete,
@@ -57,10 +66,14 @@ export function ConnectionActions({
     try {
       const result = await deleteConnection(workspaceId, connectionId);
       // The workspace page says what happened at the provider.
+      // The workspace page says what happened at the provider, or for an
+      // uploaded key that it is still valid there until revoked.
       router.push(
         result.revocation
           ? `/workspaces/${workspaceId}?${disconnectQuery(result.revocation)}`
-          : `/workspaces/${workspaceId}`,
+          : signedKey
+            ? `/workspaces/${workspaceId}?${keyRemovedQuery(signedKey.provider)}`
+            : `/workspaces/${workspaceId}`,
       );
     } catch (cause) {
       setError(apiErrorMessage(cause));
@@ -119,6 +132,28 @@ export function ConnectionActions({
               netrics also removes its access to your {name} account, unless
               other netrics connections still use that account; then the access
               stays until the last one is disconnected.
+            </p>
+          ) : null}
+          {signedKey ? (
+            <p className="muted">
+              netrics deletes its copy of the {signedKey.providerName} key
+              {signedKey.keyId ? ` ${signedKey.keyId}` : ""}. The key itself
+              stays valid at {signedKey.providerName} until you revoke it there
+              {signedKey.revokeUrl ? (
+                <>
+                  {" "}
+                  (
+                  <a
+                    href={signedKey.revokeUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    API keys ↗
+                  </a>
+                  )
+                </>
+              ) : null}
+              .
             </p>
           ) : null}
           <div className="actions">

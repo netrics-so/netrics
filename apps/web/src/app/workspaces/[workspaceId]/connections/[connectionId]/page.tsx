@@ -10,6 +10,7 @@ import { ReconnectBanner } from "../reconnect-banner";
 import { SearchConsoleSettings } from "../search-console-settings";
 import { ConnectionActions } from "./connection-actions";
 import { EditConnectionForm } from "./edit-connection-form";
+import { SignedKeyPanel } from "./signed-key-panel";
 import {
   getConnection,
   getWorkspace,
@@ -26,6 +27,12 @@ import {
 import { observationBreakdown } from "@/lib/format-metric";
 import { intervalLabel, relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
+import {
+  APP_STORE_CONNECT_CONNECTOR_ID,
+  APP_STORE_CONNECT_DOCS_URL,
+  latestReportingDay,
+  signedKeyStrategyOf,
+} from "@/lib/signed-key";
 import { nextSyncLabel } from "@/lib/sync-schedule";
 
 export const dynamic = "force-dynamic";
@@ -81,6 +88,10 @@ export default async function ConnectionDetailPage({
   const oauth = connection.oauth;
   const searchConsole = connection.connectorId === SEARCH_CONSOLE_CONNECTOR_ID;
   const returnPath = `/workspaces/${workspaceId}/connections/${connection.id}`;
+  // A connection with an uploaded key (ADR 0014): rotation and revocation.
+  const keyStrategy = oauth ? null : signedKeyStrategyOf(connector);
+  const keyName = keyStrategy?.providerName ?? connection.connectorName;
+  const appStore = connection.connectorId === APP_STORE_CONNECT_CONNECTOR_ID;
 
   return (
     <>
@@ -130,7 +141,17 @@ export default async function ConnectionDetailPage({
             {authMessage ?? ""}
           </p>
           <p>
-            {oauth ? (
+            {keyStrategy ? (
+              canUpdate ? (
+                <>
+                  <a href="#replace-key">Upload a new {keyName} key</a>. netrics
+                  checks it first; saving it restarts syncing right away, and
+                  the data collected so far is kept.
+                </>
+              ) : (
+                `Ask a workspace owner, admin or editor to upload a new ${keyName} key.`
+              )
+            ) : oauth ? (
               searchConsole ? (
                 "Restore the account's permission for the property in Search Console, or choose another property below."
               ) : (
@@ -201,11 +222,62 @@ export default async function ConnectionDetailPage({
           connectionId={connection.id}
           connectionName={connection.name}
           oauthProvider={oauth?.provider ?? null}
+          signedKey={
+            keyStrategy
+              ? {
+                  provider: keyStrategy.provider,
+                  providerName: keyName,
+                  revokeUrl: keyStrategy.setup?.url ?? null,
+                  keyId:
+                    connection.signedKey?.fields.find(
+                      (field) => field.key === "keyId",
+                    )?.value ?? null,
+                }
+              : null
+          }
           canSync={!connection.setupPending && !needsReconnect}
           canUpdate={canUpdate}
           canDelete={can(role, "connections:delete")}
         />
       </div>
+
+      {keyStrategy ? (
+        <SignedKeyPanel
+          workspaceId={workspaceId}
+          connectionId={connection.id}
+          strategy={keyStrategy}
+          signedKey={connection.signedKey}
+          hasCredentials={connection.hasCredentials}
+          authFailed={authFailed}
+          canUpdate={canUpdate}
+        />
+      ) : null}
+
+      {appStore ? (
+        <div className="card">
+          <h2>About App Store Connect data</h2>
+          <div className="row">
+            <span className="label">Latest reporting day</span>
+            <span className="value">
+              {latestReportingDay(observations) ?? "None yet"}
+            </span>
+          </div>
+          <p className="muted">
+            Sales arrive the next morning, Pacific Time (Apple publishes a
+            day&apos;s report by about 8 a.m. PT); App Store analytics follow
+            about two days later. Reporting days are Pacific Time days, not your
+            workspace&apos;s time zone. Proceeds are kept in each currency Apple
+            reports.{" "}
+            <a
+              href={APP_STORE_CONNECT_DOCS_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              More about the connector
+            </a>
+          </p>
+        </div>
+      ) : null}
 
       {searchConsole ? (
         <div className="card">

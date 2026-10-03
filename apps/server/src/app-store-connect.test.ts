@@ -151,7 +151,15 @@ const TEAM_B: FakeAscTeam = {
   vendorNumbers: ["86000001"],
 };
 
-const asc = createFakeAsc([TEAM_A, TEAM_B]);
+// Team A's next key (#175 rotation): same team, a new key ID and key.
+const TEAM_A_ROTATED: FakeAscTeam = {
+  ...TEAM_A,
+  keyId: "7MZ3QW8N2D",
+  key: p256KeyPair(),
+};
+
+const teams = [TEAM_A, TEAM_B];
+const asc = createFakeAsc(teams);
 
 /** The real connector, its runtime.fetch pointed at the fake API. */
 function towardsFake(connector: Connector): Connector {
@@ -255,7 +263,7 @@ afterAll(async () => {
 });
 
 async function call(
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PATCH",
   path: string,
   payload?: Record<string, unknown>,
 ) {
@@ -455,9 +463,57 @@ describe("App Store Connect connections", () => {
     ).toBe(12);
   });
 
+  it("shows the stored key's issuer ID and key ID, never the private key", async () => {
+    const response = await call("GET", `/connections/${ids.a}`);
+    expect(response.statusCode).toBe(200);
+    expect(
+      connectionResponseSchema.parse(response.json()).connection.signedKey,
+    ).toEqual({
+      provider: "app-store-connect",
+      fields: [
+        { key: "issuerId", label: "Issuer ID", value: TEAM_A.issuerId },
+        { key: "keyId", label: "Key ID", value: TEAM_A.keyId },
+      ],
+    });
+    expect(response.body).not.toContain("privateKey");
+    expect(response.body).not.toContain("PRIVATE KEY");
+  });
+
+  it("keeps the stored key when a replacement fails, and shows the new key ID after rotating", async () => {
+    const keyIdOf = async () =>
+      connectionResponseSchema
+        .parse((await call("GET", `/connections/${ids.a}`)).json())
+        .connection.signedKey?.fields.find((field) => field.key === "keyId")
+        ?.value;
+
+    // A key Apple does not know: refused, the old envelope stays.
+    const unknown = await call("PATCH", `/connections/${ids.a}`, {
+      credentials: credentialsOf({ ...TEAM_A_ROTATED, keyId: "0000000000" }),
+    });
+    expect(unknown.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(unknown.json()).error).toMatch(
+      /do not belong together, or the key was revoked/,
+    );
+    expect(await keyIdOf()).toBe(TEAM_A.keyId);
+
+    // The team's new key: validated, stored, and shown by its key ID.
+    teams.push(TEAM_A_ROTATED);
+    const rotated = await call("PATCH", `/connections/${ids.a}`, {
+      credentials: credentialsOf(TEAM_A_ROTATED),
+    });
+    expect(rotated.statusCode).toBe(200);
+    expect(
+      connectionResponseSchema
+        .parse(rotated.json())
+        .connection.signedKey?.fields.map((field) => field.value),
+    ).toEqual([TEAM_A_ROTATED.issuerId, TEAM_A_ROTATED.keyId]);
+    expect(await keyIdOf()).toBe(TEAM_A_ROTATED.keyId);
+    expect(rotated.body).not.toContain("PRIVATE KEY");
+  });
+
   it("puts no key material or token in responses or logs", () => {
     const text = [...bodies, ...logs].join("\n");
-    for (const team of [TEAM_A, TEAM_B]) {
+    for (const team of [TEAM_A, TEAM_B, TEAM_A_ROTATED]) {
       expect(text).not.toContain(pemBody(team.key.privateKeyPem).slice(0, 24));
     }
     expect(text).not.toMatch(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./);
