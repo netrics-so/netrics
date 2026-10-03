@@ -49,6 +49,22 @@ jobs:
       # the tvOS app are generated from it). Fix with `pnpm openapi`.
       - run: pnpm openapi:check
 
+  # NetricsKit (tvOS protocol and layout logic) builds for macOS too, so its
+  # tests run here, including the studio layout vectors shared with
+  # packages/domain (#215). The app target itself needs the tvOS SDK of a
+  # current Xcode and is built locally.
+  netricskit:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: swift --version
+      - run: swift test
+        working-directory: apps/tvos/NetricsKit
+
   migrations:
     runs-on: ubuntu-24.04
     permissions:
