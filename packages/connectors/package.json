@@ -16,6 +16,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./app-store-connect": {
+      "types": "./dist/app-store-connect/index.d.ts",
+      "default": "./dist/app-store-connect/index.js"
+    },
     "./demo": {
       "types": "./dist/demo/index.d.ts",
       "default": "./dist/demo/index.js"

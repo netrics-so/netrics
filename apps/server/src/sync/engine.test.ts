@@ -499,6 +499,7 @@ describe("catalog sync", () => {
   it("upserts connectors and metric definitions from manifests", async () => {
     const connectors = await appDb.select().from(schema.connectors);
     expect(connectors.map((row) => row.id).sort()).toEqual([
+      "app-store-connect",
       "broken",
       "demo",
       "endless",
@@ -522,6 +523,7 @@ describe("catalog sync", () => {
     expect(keys).toContain(
       "google-search-console/google-search-console.clicks",
     );
+    expect(keys).toContain("app-store-connect/app_store_connect.downloads");
     // Idempotent re-sync: exactly one row per (connector, key).
     expect(new Set(keys).size).toBe(keys.length);
   });
