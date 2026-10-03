@@ -116,6 +116,21 @@ jobs:
           fi
       - name: Build web image
         run: docker build -f apps/web/Dockerfile -t netrics-web:ci .
+      # Proxies in front of the web server reuse idle connections for up to
+      # 60 s (Railway's edge) or 2 min (Caddy); the server must keep them
+      # open longer, or requests fail sporadically with 502/503 (#195). Node
+      # announces its keep-alive timeout in the Keep-Alive response header.
+      - name: Check web keep-alive timeout
+        run: |
+          docker run -d --name web-keepalive -p 127.0.0.1:3000:3000 netrics-web:ci
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://127.0.0.1:3000/healthz && break
+            sleep 1
+          done
+          timeout=$(curl -s -D - -o /dev/null http://127.0.0.1:3000/healthz | tr -d '\r' | sed -n 's/^keep-alive: *timeout=\([0-9]*\).*/\1/Ip')
+          echo "web keep-alive timeout: ${timeout:-none} s"
+          docker rm -f web-keepalive >/dev/null
+          test "${timeout:-0}" -gt 120 || { echo "::error::web server closes idle connections before the proxy does"; exit 1; }
 
   # The supported self-hosted install must keep working end to end: build the
   # images from this commit, run install.sh, start deploy/compose, and complete

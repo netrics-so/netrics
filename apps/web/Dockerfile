@@ -21,9 +21,16 @@ FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b533
 # the API location is baked into the image.
 ARG NEXT_PUBLIC_APP_VERSION=0.0.0-dev
 ARG NEXT_PUBLIC_GIT_SHA=dev
+# KEEP_ALIVE_TIMEOUT (ms, read by the standalone server.js): the proxy in
+# front keeps idle connections to this server open and reuses them (Railway's
+# edge for 60 s, Caddy's reverse_proxy for 2 min). Node closes them after 5 s
+# by default, so a request the proxy sends on a connection being closed fails
+# and reaches the browser as a 502/503: sporadic failed prefetches, or a page
+# that never hydrates when a script chunk is hit (#195). Outlast both.
 ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     PORT=3000 \
+    KEEP_ALIVE_TIMEOUT=125000 \
     NEXT_PUBLIC_APP_VERSION=$NEXT_PUBLIC_APP_VERSION \
     NEXT_PUBLIC_GIT_SHA=$NEXT_PUBLIC_GIT_SHA \
     NETRICS_API_URL=http://localhost:3001
