@@ -5,6 +5,7 @@ import type { Logger } from "pino";
 import type { ExecuteOptions } from "@netrics/connector-runtime";
 
 import type { CredentialKeyring } from "../credentials.js";
+import type { SignedKeyProviders } from "../signed-keys/registry.js";
 import type { OAuthTokenService } from "../oauth/tokens.js";
 
 import { createSyncJobHandlers } from "../sync/engine.js";
@@ -68,6 +69,8 @@ export interface JobHandlerDeps {
   now?: () => Date;
   /** Access tokens for OAuth connections (ADR 0012). */
   oauthTokens?: OAuthTokenService;
+  /** Default: the signed-key providers of this server (ADR 0014). */
+  signedKeys?: SignedKeyProviders;
   /** Tests only: options for every connector call (e.g. local egress). */
   executeOptions?: ExecuteOptions;
 }

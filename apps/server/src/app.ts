@@ -27,6 +27,7 @@ import {
 import { createMailer, type Mailer } from "./mail/mailer.js";
 import { providerHttp, type OAuthHttpFactory } from "./oauth/client.js";
 import { createOAuthProviders, type OAuthProviders } from "./oauth/config.js";
+import type { SignedKeyProviders } from "./signed-keys/registry.js";
 import {
   createOAuthTokenService,
   type OAuthTokenService,
@@ -57,6 +58,8 @@ export interface AppDeps {
   oauthTokens?: OAuthTokenService;
   /** Default: guarded fetch to each provider's server domains. */
   oauthHttp?: OAuthHttpFactory;
+  /** Default: the signed-key providers of this server (ADR 0014). */
+  signedKeys?: SignedKeyProviders;
   /** Tests: capture the app's logs. */
   logger?: FastifyBaseLogger;
 }
@@ -180,6 +183,7 @@ export async function buildApp(
     credentialKeyring,
     oauthProviders,
     oauthTokens,
+    ...(deps.signedKeys ? { signedKeys: deps.signedKeys } : {}),
   });
   registerOAuthRoutes(app, {
     authService,

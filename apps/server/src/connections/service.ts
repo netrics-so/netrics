@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type {
+  ConnectionPreviewResponse,
   ConnectionResourcesResponse,
   ConnectorAuthStrategy,
   CreateConnectionRequest,
@@ -15,7 +16,7 @@ import {
   executeDiscover,
   type ConnectorRegistry,
 } from "@netrics/connector-runtime";
-import type { ConnectorManifest } from "@netrics/connector-sdk";
+import type { Connector, ConnectorManifest } from "@netrics/connector-sdk";
 import {
   deleteConnection as deleteConnectionRow,
   enqueueJob,
@@ -36,6 +37,7 @@ import {
   withOAuthGrantLocks,
   withWorkspace,
   type ConnectionChanges,
+  type ConnectionWithState,
   type Database,
   type Transaction,
 } from "@netrics/database";
@@ -58,6 +60,16 @@ import {
   type OAuthTokenService,
 } from "../oauth/tokens.js";
 import {
+  callWithSignedKey,
+  SignedKeyRejectedError,
+} from "../signed-keys/connector-auth.js";
+import type { SignedKeyProviderDefinition } from "../signed-keys/providers/index.js";
+import {
+  createSignedKeyProviders,
+  type SignedKey,
+  type SignedKeyProviders,
+} from "../signed-keys/registry.js";
+import {
   presentConnection,
   presentConnectionDetail,
   presentSyncRun,
@@ -77,6 +89,8 @@ export interface ConnectionServiceDeps {
   oauthProviders: OAuthProviders;
   /** Default: a token service over db, keyring and providers. */
   oauthTokens?: OAuthTokenService;
+  /** Default: the signed-key providers of this server (ADR 0014). */
+  signedKeys?: SignedKeyProviders;
 }
 
 /** Who acts on which workspace (see routes/access.ts). */
@@ -183,6 +197,53 @@ async function checkCredentials(
   }
 }
 
+/**
+ * The connector check with a signed key (ADR 0014): the connector gets a
+ * freshly signed token, never the key. A provider 401/403 answers with the
+ * provider's actionable message.
+ */
+async function checkSignedKey(
+  registry: ConnectorRegistry,
+  connectorId: string,
+  connectionId: string,
+  config: Record<string, unknown>,
+  key: SignedKey,
+): Promise<Result<true>> {
+  const registered = registry.get(connectorId);
+  if (!registered) {
+    return fail(400, "invalid_request");
+  }
+  try {
+    const check = await callWithSignedKey({
+      key,
+      call: (credentials, options) =>
+        executeCheck(
+          registered.connector,
+          { connectionId, config, credentials: { ...credentials } },
+          options,
+        ),
+      rejected: (result) => !result.ok,
+    });
+    return check.ok
+      ? ok(true)
+      : fail(400, check.message ?? "credential check failed");
+  } catch (error) {
+    return signedKeyCallFailure(error);
+  }
+}
+
+/** Maps a failed signed-key connector call to a 400 the web app can show. */
+function signedKeyCallFailure<T>(error: unknown): Result<T> {
+  // SignedKeyRejectedError carries the provider's fixed text; connector
+  // errors are redacted of the token at the runtime boundary.
+  return fail(
+    400,
+    error instanceof SignedKeyRejectedError
+      ? error.message
+      : safeMessage(error),
+  );
+}
+
 function encrypt(
   keyring: CredentialKeyring,
   credentials: Record<string, unknown>,
@@ -200,9 +261,15 @@ function encrypt(
  */
 function presentAuthStrategy(
   strategy: ConnectorManifest["authStrategies"][number],
+  signedKeys: SignedKeyProviders,
 ): ConnectorAuthStrategy {
   if (strategy.strategy === "signed-key") {
-    return { strategy: "signed-key", provider: strategy.provider };
+    const provider = signedKeys.get(strategy.provider);
+    return {
+      strategy: "signed-key",
+      provider: strategy.provider,
+      ...(provider ? presentSignedKeyProvider(provider) : {}),
+    };
   }
   if (strategy.strategy === "oauth2") {
     return {
@@ -240,6 +307,25 @@ function presentAuthStrategy(
   };
 }
 
+/** The wizard's form for a signed-key provider: fields and setup copy. */
+function presentSignedKeyProvider(
+  provider: SignedKeyProviderDefinition,
+): Pick<ConnectorAuthStrategy, "providerName" | "fields" | "setup"> {
+  return {
+    providerName: provider.name,
+    fields: provider.fields.map((field) => ({
+      key: field.key,
+      label: field.label,
+      description: field.description,
+      input: field.input,
+      secret: field.secret,
+      ...(field.placeholder ? { placeholder: field.placeholder } : {}),
+      maxBytes: field.maxBytes,
+    })),
+    setup: { steps: [...provider.setup.steps], url: provider.setup.url },
+  };
+}
+
 /** Whether the connector has an auth strategy besides OAuth. */
 function acceptsCredentials(manifest: ConnectorManifest): boolean {
   return manifest.authStrategies.some(
@@ -249,6 +335,7 @@ function acceptsCredentials(manifest: ConnectorManifest): boolean {
 
 export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db, registry, credentialKeyring, oauthProviders } = deps;
+  const signedKeys = deps.signedKeys ?? createSignedKeyProviders();
   const oauthTokens =
     deps.oauthTokens ??
     createOAuthTokenService({
@@ -298,6 +385,152 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     }
   }
 
+  /**
+   * Validates candidate credentials of a credentials-based connection and
+   * runs the connector check; returns what the envelope stores. With a
+   * signed-key provider (ADR 0014) the fields and the key are checked, then
+   * the provider's probes run, then the connector check gets a freshly
+   * signed token: the key is stored normalized, and only after all of it
+   * passed. Otherwise the credentials go to the connector check as given.
+   */
+  async function checkCandidate(
+    manifest: ConnectorManifest,
+    connectionId: string,
+    config: Record<string, unknown>,
+    credentials: Record<string, unknown>,
+  ): Promise<Result<Record<string, unknown>>> {
+    const provider = signedKeys.providerFor(manifest, credentials);
+    if (provider) {
+      const key = await signedKeys.validate(provider, credentials, config);
+      if (!key.ok) {
+        return fail(400, key.message);
+      }
+      const check = await checkSignedKey(
+        registry,
+        manifest.id,
+        connectionId,
+        config,
+        key.value,
+      );
+      return check.ok ? ok(key.value.stored()) : check;
+    }
+    const check = await checkCredentials(
+      registry,
+      manifest.id,
+      connectionId,
+      config,
+      credentials,
+    );
+    return check.ok ? ok(credentials) : check;
+  }
+
+  /** The stored signed key of a connection, re-checked (no probes). */
+  function storedSignedKey(
+    manifest: ConnectorManifest,
+    credentials: Record<string, unknown>,
+  ): Result<SignedKey> | null {
+    const provider = signedKeys.providerFor(manifest, credentials);
+    if (!provider) {
+      return null;
+    }
+    const key = signedKeys.parse(provider, credentials);
+    return key.ok ? ok(key.value) : fail(400, key.message);
+  }
+
+  /**
+   * Preview with a signed key: validation and probes, then check and
+   * discover, each with its own freshly signed token. Persists nothing.
+   */
+  async function previewSignedKey(
+    connector: Connector,
+    provider: SignedKeyProviderDefinition,
+    config: Record<string, unknown>,
+    credentials: Record<string, unknown> | undefined,
+  ): Promise<Result<ConnectionPreviewResponse>> {
+    const key = await signedKeys.validate(provider, credentials, config);
+    if (!key.ok) {
+      return fail(400, key.message);
+    }
+    const context = { connectionId: "preview", config };
+    try {
+      const check = await callWithSignedKey({
+        key: key.value,
+        call: (tokenCredentials, options) =>
+          executeCheck(
+            connector,
+            { ...context, credentials: { ...tokenCredentials } },
+            options,
+          ),
+        rejected: (result) => !result.ok,
+      });
+      if (!check.ok) {
+        return ok({ check, resources: [] });
+      }
+      const resources = await callWithSignedKey({
+        key: key.value,
+        call: (tokenCredentials, options) =>
+          executeDiscover(
+            connector,
+            { ...context, credentials: { ...tokenCredentials } },
+            options,
+          ),
+      });
+      return ok({ check, resources });
+    } catch (error) {
+      return signedKeyCallFailure(error);
+    }
+  }
+
+  /**
+   * Discovery of an existing signed-key connection (ADR 0014) with a
+   * freshly signed token from its stored key. Other credentials-based
+   * connections keep "oauth_connection_required".
+   */
+  async function discoverWithSignedKey(
+    actor: Actor,
+    connectionId: string,
+    existing: ConnectionWithState,
+  ): Promise<Result<ConnectionResourcesResponse>> {
+    const registered = registry.get(existing.row.connectorId);
+    if (!registered || !existing.row.credentialsEncrypted) {
+      return fail(400, "oauth_connection_required");
+    }
+    let credentials: Record<string, unknown>;
+    try {
+      credentials = JSON.parse(
+        decryptCredentials(
+          existing.row.credentialsEncrypted.toString("utf8"),
+          credentialKeyring,
+          { workspaceId: actor.workspaceId, connectionId },
+        ),
+      ) as Record<string, unknown>;
+    } catch (error) {
+      return fail(400, safeMessage(error));
+    }
+    const key = storedSignedKey(registered.manifest, credentials);
+    if (!key) {
+      return fail(400, "oauth_connection_required");
+    }
+    if (!key.ok) {
+      return key;
+    }
+    const config = existing.row.config as Record<string, unknown>;
+    try {
+      const resources = await callWithSignedKey({
+        key: key.value,
+        call: (tokenCredentials, options) =>
+          executeDiscover(
+            registered.connector,
+            { connectionId, config, credentials: { ...tokenCredentials } },
+            options,
+          ),
+      });
+      return ok({ resources });
+    } catch (error) {
+      return signedKeyCallFailure(error);
+    }
+  }
+
   /** Maps a failed OAuth connector call to a 400 the web app can explain. */
   function oauthCallFailure<T>(error: unknown): Result<T> {
     if (error instanceof NeedsReauthorizationError) {
@@ -313,7 +546,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
    * whose callback creates the connection (ADR 0012).
    */
   function checkCredentialConnector(manifest: ConnectorManifest): Result<true> {
-    if (!oauthProviders.connectorAvailability(manifest).available) {
+    if (!oauthProviders.connectorAvailability(manifest, signedKeys).available) {
       return fail(400, "connector_unavailable");
     }
     if (!acceptsCredentials(manifest)) {
@@ -455,8 +688,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         minRefreshIntervalSeconds: manifest.minRefreshIntervalSeconds,
         supportsBackfill: manifest.supportsBackfill,
         configSchema: { ...manifest.configSchema },
-        authStrategies: manifest.authStrategies.map(presentAuthStrategy),
-        ...oauthProviders.connectorAvailability(manifest),
+        authStrategies: manifest.authStrategies.map((strategy) =>
+          presentAuthStrategy(strategy, signedKeys),
+        ),
+        ...oauthProviders.connectorAvailability(manifest, signedKeys),
       }));
     },
 
@@ -484,9 +719,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       // Check BEFORE anything is persisted: bad credentials are a 400 with
       // the connector's actionable message and leave no rows behind.
       const connectionId = randomUUID();
-      const check = await checkCredentials(
-        registry,
-        body.connectorId,
+      const check = await checkCandidate(
+        registered.manifest,
         connectionId,
         config,
         body.credentials ?? {},
@@ -494,6 +728,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       if (!check.ok) {
         return check;
       }
+      const credentials = body.credentials ? check.value : null;
 
       return inWorkspace(actor, async (tx) => {
         if (body.projectId) {
@@ -512,8 +747,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           connectorId: body.connectorId,
           name: body.name,
           config,
-          credentialsEncrypted: body.credentials
-            ? encrypt(credentialKeyring, body.credentials, {
+          credentialsEncrypted: credentials
+            ? encrypt(credentialKeyring, credentials, {
                 workspaceId: actor.workspaceId,
                 connectionId,
               })
@@ -554,6 +789,18 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       if (!validated.ok) {
         return validated;
       }
+      const provider = signedKeys.providerFor(
+        registered.manifest,
+        body.credentials,
+      );
+      if (provider) {
+        return previewSignedKey(
+          registered.connector,
+          provider,
+          validated.value,
+          body.credentials,
+        );
+      }
       const context = {
         connectionId: "preview",
         config: validated.value,
@@ -593,7 +840,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return fail(404, NOT_FOUND);
       }
       if (!existing.oauth) {
-        return fail(400, "oauth_connection_required");
+        return discoverWithSignedKey(actor, connectionId, existing);
       }
       const registered = registry.get(existing.row.connectorId);
       const strategy = registered
@@ -718,6 +965,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 
       // Config or credential changes are re-checked against the connector
       // before they persist (same rule as creation).
+      let storedCredentials: Record<string, unknown> | undefined;
       if (
         !existing.oauth &&
         (body.config !== undefined || body.credentials !== undefined)
@@ -740,9 +988,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         } else {
           credentials = {};
         }
-        const check = await checkCredentials(
-          registry,
-          existing.row.connectorId,
+        // Rotation (ADR 0014): a new key is validated in full before it
+        // replaces the envelope; a failure keeps the old one untouched.
+        const check = await checkCandidate(
+          registered.manifest,
           connectionId,
           nextConfig ?? existingConfig,
           credentials,
@@ -750,6 +999,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!check.ok) {
           return check;
         }
+        storedCredentials = check.value;
       }
 
       const changes: ConnectionChanges = {
@@ -759,7 +1009,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           ? {
               credentialsEncrypted: encrypt(
                 credentialKeyring,
-                body.credentials,
+                storedCredentials ?? body.credentials,
                 { workspaceId: actor.workspaceId, connectionId },
               ),
             }

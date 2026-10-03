@@ -7370,6 +7370,58 @@
                                   "type": "string",
                                   "minLength": 1
                                 },
+                                "providerName": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "fields": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "key": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "label": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "description": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "input": {
+                                        "type": "string",
+                                        "enum": [
+                                          "text",
+                                          "file"
+                                        ]
+                                      },
+                                      "secret": {
+                                        "type": "boolean"
+                                      },
+                                      "placeholder": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "maxBytes": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0,
+                                        "maximum": 9007199254740991
+                                      }
+                                    },
+                                    "required": [
+                                      "key",
+                                      "label",
+                                      "description",
+                                      "input",
+                                      "secret",
+                                      "maxBytes"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
                                 "setup": {
                                   "type": "object",
                                   "properties": {
@@ -9293,7 +9345,7 @@
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/resources": {
       "get": {
-        "summary": "Discover resources of an OAuth connection",
+        "summary": "Discover resources of an OAuth or signed-key connection",
         "tags": [
           "connections"
         ],
