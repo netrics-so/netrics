@@ -50,8 +50,10 @@ struct RootView: View {
             switch model.route {
             case .launching:
                 MessageView(title: "netrics", text: "Loading…")
-            case .serverChoice:
-                ServerChoiceView()
+            case .connectingCloud:
+                ConnectingCloudView()
+            case .ownServer:
+                ServerEntryView()
             case .running:
                 DeviceView()
             }

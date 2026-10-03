@@ -5,15 +5,19 @@ import UIKit
 
 /**
  * The app's state: which server this TV uses (Keychain), and the device
- * client that pairs and polls it. The server changes only by unpairing
- * (ADR 0010).
+ * client that pairs and polls it. A new TV starts pairing with netrics cloud
+ * at once; until it is paired it can switch to its own server and back. Once
+ * paired, the server changes only by unpairing (ADR 0010).
  */
 @MainActor
 @Observable
 final class AppModel {
     enum Route: Equatable {
         case launching
-        case serverChoice
+        /** No server yet: checking netrics cloud, retrying until it answers. */
+        case connectingCloud
+        /** The user's own server: address and transport setting. */
+        case ownServer
         case running
     }
 
@@ -22,12 +26,17 @@ final class AppModel {
     private(set) var device = DeviceState()
     /** Shown on the server screen when the Keychain refuses to save. */
     var storageError: String?
+    /** Why netrics cloud did not answer the last check, while retrying. */
+    private(set) var cloudError: String?
+    /** Seconds between checks of netrics cloud while it does not answer. */
+    static let cloudRetryInterval: Duration = .seconds(10)
 
     private let store: any CredentialStore = KeychainCredentialStore()
     private let cache: any DashboardCache = FileDashboardCache.inCachesDirectory()
     private var client: DeviceClient?
     private var runTask: Task<Void, Never>?
     private var updatesTask: Task<Void, Never>?
+    private var cloudTask: Task<Void, Never>?
 
     static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
@@ -37,13 +46,66 @@ final class AppModel {
         guard route == .launching else { return }
         if let server = store.loadServer() {
             start(server)
+        } else if DebugLaunch.server != nil {
+            route = .ownServer
         } else {
-            route = .serverChoice
+            connectToCloud()
         }
+    }
+
+    /** Checks netrics cloud and starts pairing; retries while it is unreachable. */
+    func connectToCloud() {
+        cloudTask?.cancel()
+        cloudError = nil
+        route = .connectingCloud
+        cloudTask = Task { [weak self] in
+            while !Task.isCancelled {
+                let result = await ServerChecker.live.check(ServerConfig.cloud)
+                guard let self, !Task.isCancelled, self.route == .connectingCloud else { return }
+                switch result {
+                case .success(let checked):
+                    self.use(checked)
+                    return
+                case .failure(let failure):
+                    self.cloudError = failure.message
+                }
+                try? await Task.sleep(for: Self.cloudRetryInterval)
+            }
+        }
+    }
+
+    /** Not paired yet: drop the current server and enter the user's own. */
+    func switchToOwnServer() {
+        forgetServer()
+        route = .ownServer
+    }
+
+    /** Not paired yet: drop the current server and pair with netrics cloud. */
+    func switchToCloud() {
+        forgetServer()
+        connectToCloud()
+    }
+
+    /** True while the TV is not paired, so changing the server loses nothing. */
+    var canSwitchServer: Bool {
+        route != .running || device.phase != .paired
+    }
+
+    private func forgetServer() {
+        cloudTask?.cancel()
+        cloudTask = nil
+        stopClient()
+        store.clearAll()
+        cache.clear()
+        server = nil
+        device = DeviceState()
+        storageError = nil
     }
 
     /** A server passed the check: remember it and start pairing. */
     func use(_ result: ServerCheckResult) {
+        cloudTask?.cancel()
+        cloudTask = nil
         do {
             try store.saveServer(result.config)
             storageError = nil
@@ -93,7 +155,7 @@ final class AppModel {
         client = nil
     }
 
-    /** Settings → Unpair: clears Keychain and cache, back to the server choice. */
+    /** Settings → Unpair: clears Keychain and cache, then pairs with netrics cloud again. */
     func unpair() async {
         if let client {
             await client.unpair()
@@ -104,6 +166,6 @@ final class AppModel {
         server = nil
         device = DeviceState()
         UIApplication.shared.isIdleTimerDisabled = false
-        route = .serverChoice
+        connectToCloud()
     }
 }

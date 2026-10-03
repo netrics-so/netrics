@@ -2,87 +2,36 @@ import NetricsKit
 import SwiftUI
 
 /**
- * First start (ADR 0010): netrics cloud by default, or the user's own
- * server, checked with GET /v1/server before pairing.
+ * First start (ADR 0010): the TV checks netrics cloud on its own and goes
+ * straight to the pairing code. This screen only shows while the cloud does
+ * not answer; it retries by itself, and offers the user's own server.
  */
-struct ServerChoiceView: View {
+struct ConnectingCloudView: View {
     @Environment(AppModel.self) private var model
-    @State private var checking = false
-    @State private var error: String?
-    @State private var showOwnServer = false
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 48) {
-                Spacer()
-                Text("netrics")
-                    .font(.system(size: 88, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                Text("Show your dashboards on this TV. Where are they?")
-                    .font(.system(size: 34))
-                    .foregroundStyle(Theme.muted)
-
-                VStack(spacing: 28) {
-                    Button {
-                        Task { await connectToCloud() }
-                    } label: {
-                        ChoiceLabel(title: "netrics cloud", detail: "The hosted service")
-                    }
-                    Button {
-                        showOwnServer = true
-                    } label: {
-                        ChoiceLabel(title: "Your own server", detail: "A self-hosted netrics server")
-                    }
-                }
-                .disabled(checking)
-                .frame(width: 900)
-
-                StatusLine(checking: checking, error: error ?? model.storageError)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Theme.background)
-            .navigationDestination(isPresented: $showOwnServer) {
-                ServerEntryView()
-            }
-            .onAppear {
-                if DebugLaunch.server != nil {
-                    showOwnServer = true
-                }
-            }
+        VStack(spacing: 48) {
+            Spacer()
+            Text("netrics")
+                .font(.system(size: 88, weight: .semibold))
+                .foregroundStyle(Theme.text)
+            StatusLine(
+                checking: model.cloudError == nil,
+                checkingText: "Connecting to netrics cloud…",
+                error: model.cloudError.map { "\($0)\nRetrying…" } ?? model.storageError)
+            Spacer()
+            Button("Use your own server") { model.switchToOwnServer() }
+                .font(.system(size: 24))
         }
-    }
-
-    private func connectToCloud() async {
-        checking = true
-        error = nil
-        let result = await ServerChecker.live.check(ServerConfig.cloud)
-        checking = false
-        switch result {
-        case .success(let checked):
-            model.use(checked)
-        case .failure(let failure):
-            error = failure.message
-        }
-    }
-}
-
-private struct ChoiceLabel: View {
-    let title: String
-    let detail: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 36, weight: .semibold))
-            Text(detail).font(.system(size: 24)).opacity(0.7)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 12)
+        .padding(.vertical, 60)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.background)
     }
 }
 
 private struct StatusLine: View {
     let checking: Bool
+    var checkingText = "Checking the server…"
     let error: String?
 
     var body: some View {
@@ -90,7 +39,7 @@ private struct StatusLine: View {
             if checking {
                 HStack(spacing: 16) {
                     ProgressView()
-                    Text("Checking the server…").foregroundStyle(Theme.muted)
+                    Text(checkingText).foregroundStyle(Theme.muted)
                 }
             } else if let error {
                 Text(error).foregroundStyle(Theme.down)
@@ -153,6 +102,10 @@ struct ServerEntryView: View {
             .disabled(checking || address.trimmingCharacters(in: .whitespaces).isEmpty)
 
             StatusLine(checking: checking, error: error)
+
+            Button("Use netrics cloud instead") { model.switchToCloud() }
+                .font(.system(size: 24))
+                .disabled(checking)
         }
         .padding(.horizontal, 240)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

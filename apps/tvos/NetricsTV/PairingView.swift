@@ -53,6 +53,11 @@ struct PairingView: View {
                     }
                 }
                 Spacer()
+                if model.server?.kind == .cloud {
+                    Button("Use your own server") { model.switchToOwnServer() }
+                } else {
+                    Button("Use netrics cloud") { model.switchToCloud() }
+                }
                 Button("Settings", action: openSettings)
             }
             .font(.system(size: 24))
