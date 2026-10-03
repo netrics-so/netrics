@@ -2,7 +2,10 @@ import {
   EgressDeniedError,
   createEgressFetch,
 } from "@netrics/connector-runtime";
-import { searchConsoleManifest } from "@netrics/connectors";
+import {
+  appStoreConnectManifest,
+  searchConsoleManifest,
+} from "@netrics/connectors";
 import { validateConnectionConfig } from "@netrics/contracts";
 import { describe, expect, it } from "vitest";
 
@@ -25,6 +28,50 @@ describe("createDefaultRegistry", () => {
         scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
       },
     ]);
+  });
+});
+
+describe("App Store Connect in the bundle", () => {
+  it("ships as a signed-key connector with the vendor number as config", () => {
+    const manifest = createDefaultRegistry().get("app-store-connect")?.manifest;
+    expect(manifest?.authStrategies).toEqual([
+      { strategy: "signed-key", provider: "app-store-connect" },
+    ]);
+    const validate = (config: Record<string, unknown>) =>
+      validateConnectionConfig(appStoreConnectManifest.configSchema, config);
+    expect(validate({ vendorNumber: "85012345" })).toEqual({
+      ok: true,
+      config: { vendorNumber: "85012345" },
+    });
+    expect(validate({}).ok).toBe(false);
+    expect(validate({ vendorNumber: "85012345", issuerId: "x" }).ok).toBe(
+      false,
+    );
+  });
+
+  it("reaches api.appstoreconnect.apple.com and nothing else", async () => {
+    const lookedUp: string[] = [];
+    const fetch = createEgressFetch({
+      allowedDomains: appStoreConnectManifest.outboundDomains,
+      signal: new AbortController().signal,
+      lookup: ((hostname: string, _options: unknown, callback: unknown) => {
+        lookedUp.push(hostname);
+        (callback as (error: Error) => void)(new Error("offline test"));
+      }) as never,
+    });
+    for (const url of [
+      "https://appstoreconnect.apple.com/access/integrations/api",
+      "https://api.appstoreconnect.apple.com.evil.example/v1/apps",
+      "http://api.appstoreconnect.apple.com/v1/apps",
+      "https://example.s3.us-west-2.amazonaws.com/segment.csv.gz",
+    ]) {
+      await expect(fetch(url)).rejects.toBeInstanceOf(EgressDeniedError);
+    }
+    expect(lookedUp).toEqual([]);
+    await expect(
+      fetch("https://api.appstoreconnect.apple.com/v1/apps"),
+    ).rejects.not.toBeInstanceOf(EgressDeniedError);
+    expect(lookedUp).toEqual(["api.appstoreconnect.apple.com"]);
   });
 });
 

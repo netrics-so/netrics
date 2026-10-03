@@ -1,0 +1,98 @@
+{
+  "data": [
+    {
+      "type": "apps",
+      "id": "1000000003",
+      "attributes": {
+        "name": "Example Atlas",
+        "bundleId": "com.example.atlas",
+        "sku": "EXATLAS"
+      },
+      "relationships": {
+        "appStoreVersions": {
+          "meta": {
+            "paging": {
+              "total": 2,
+              "limit": 50
+            }
+          },
+          "data": [
+            {
+              "type": "appStoreVersions",
+              "id": "a1b2c3d4-0003-4000-8000-000000000001"
+            },
+            {
+              "type": "appStoreVersions",
+              "id": "a1b2c3d4-0003-4000-8000-000000000002"
+            }
+          ],
+          "links": {
+            "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000003/relationships/appStoreVersions",
+            "related": "https://api.appstoreconnect.apple.com/v1/apps/1000000003/appStoreVersions"
+          }
+        }
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000003"
+      }
+    },
+    {
+      "type": "apps",
+      "id": "1000000004",
+      "attributes": {
+        "name": "Example Draft",
+        "bundleId": "com.example.draft",
+        "sku": "EXDRAFT"
+      },
+      "relationships": {
+        "appStoreVersions": {
+          "meta": {
+            "paging": {
+              "total": 0,
+              "limit": 50
+            }
+          },
+          "data": [],
+          "links": {
+            "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000004/relationships/appStoreVersions",
+            "related": "https://api.appstoreconnect.apple.com/v1/apps/1000000004/appStoreVersions"
+          }
+        }
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000004"
+      }
+    }
+  ],
+  "included": [
+    {
+      "type": "appStoreVersions",
+      "id": "a1b2c3d4-0003-4000-8000-000000000001",
+      "attributes": {
+        "platform": "VISION_OS"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/appStoreVersions/a1b2c3d4-0003-4000-8000-000000000001"
+      }
+    },
+    {
+      "type": "appStoreVersions",
+      "id": "a1b2c3d4-0003-4000-8000-000000000002",
+      "attributes": {
+        "platform": "IOS"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/appStoreVersions/a1b2c3d4-0003-4000-8000-000000000002"
+      }
+    }
+  ],
+  "links": {
+    "self": "https://api.appstoreconnect.apple.com/v1/apps?cursor=Ag.AAAAAg&fields%5Bapps%5D=name%2CbundleId%2Csku%2CappStoreVersions&include=appStoreVersions&fields%5BappStoreVersions%5D=platform&limit%5BappStoreVersions%5D=50&limit=2"
+  },
+  "meta": {
+    "paging": {
+      "total": 4,
+      "limit": 2
+    }
+  }
+}

@@ -1,4 +1,17 @@
-import type { SignedKeyProviderDefinition } from "./types.js";
+import {
+  AppStoreConnectApiError,
+  AppStoreConnectRateBudgetError,
+  createAppStoreConnectClient,
+  probeApps,
+  probeSalesReport,
+} from "@netrics/connectors";
+
+import type {
+  SignedKeyProbe,
+  SignedKeyProbeContext,
+  SignedKeyProbeResult,
+  SignedKeyProviderDefinition,
+} from "./types.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KEY_ID = /^[A-Z0-9]{10}$/;
@@ -14,10 +27,58 @@ export const APP_STORE_CONNECT_KEYS_URL =
  * Apple's 20-minute ceiling. The vendor number is not a secret: it is
  * connection config, which the probes receive.
  *
- * The validation probes against the API (`GET /v1/apps?limit=1` and the
- * sales report of the configured vendor number) belong to #171 and plug
- * into `probes`.
+ * The validation probes (#171) are the connector's own key check, run here
+ * before anything is stored: `GET /v1/apps?limit=1` (a 401 means the three
+ * values do not belong together, or the key was revoked), then the daily
+ * sales report of the configured vendor number (a 403 names the missing
+ * role, a vendor error the vendor number; a 404 for a day without sales
+ * passes).
  */
+export const RATE_LIMITED_MESSAGE =
+  "App Store Connect's hourly request limit for this key is used up. Try again in an hour.";
+
+/**
+ * A probe with one freshly signed token. A rate limit (429, or a nearly
+ * used-up hourly budget) gets its own message; other thrown failures (5xx,
+ * network) become the host's generic "could not be reached".
+ */
+function probe(
+  name: string,
+  run: (
+    client: ReturnType<typeof createAppStoreConnectClient>,
+    context: SignedKeyProbeContext,
+  ) => Promise<SignedKeyProbeResult>,
+): SignedKeyProbe {
+  return {
+    name,
+    async run(context) {
+      const client = createAppStoreConnectClient(
+        context.fetch,
+        context.accessToken(),
+      );
+      try {
+        return await run(client, context);
+      } catch (error) {
+        if (
+          error instanceof AppStoreConnectRateBudgetError ||
+          (error instanceof AppStoreConnectApiError && error.status === 429)
+        ) {
+          return { ok: false, message: RATE_LIMITED_MESSAGE };
+        }
+        throw error;
+      }
+    },
+  };
+}
+
+/** The key, role and vendor-number probes, in order (#171). */
+export const appStoreConnectProbes: readonly SignedKeyProbe[] = [
+  probe("apps", (client) => probeApps(client)),
+  probe("sales-report", (client, context) =>
+    probeSalesReport(client, context.config, Date.now()),
+  ),
+];
+
 export const appStoreConnectProvider: SignedKeyProviderDefinition = {
   id: "app-store-connect",
   name: "App Store Connect",
@@ -75,8 +136,7 @@ export const appStoreConnectProvider: SignedKeyProviderDefinition = {
     ],
     url: APP_STORE_CONNECT_KEYS_URL,
   },
-  // #171 adds the apps and sales-report probes.
-  probes: [],
+  probes: appStoreConnectProbes,
   authFailure: {
     unauthorized:
       "App Store Connect refused the key: it was revoked, or the issuer ID, key ID and private key do not belong together. Upload a new App Store Connect key.",
