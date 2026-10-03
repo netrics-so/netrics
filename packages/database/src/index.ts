@@ -149,6 +149,7 @@ export type {
 export {
   deleteConnection,
   findConnection,
+  finishConnectionSetup,
   insertConnection,
   listConnections,
   listObservations,

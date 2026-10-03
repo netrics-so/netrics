@@ -403,6 +403,19 @@ export type ConnectionPreviewResponse = z.infer<
   typeof connectionPreviewResponseSchema
 >;
 
+/**
+ * What an existing OAuth connection can read at its provider (e.g. the
+ * Search Console properties of the linked Google account), discovered with
+ * a short-lived access token from the token service (ADR 0012). Used to
+ * finish setup and to change the chosen resource.
+ */
+export const connectionResourcesResponseSchema = z.object({
+  resources: z.array(discoveredResourceSchema),
+});
+export type ConnectionResourcesResponse = z.infer<
+  typeof connectionResourcesResponseSchema
+>;
+
 // "pending" = never synced successfully yet; the other states mirror
 // connection_state.auth_state.
 export const connectionHealthSchema = z.enum([
@@ -566,6 +579,8 @@ export const connectionSchema = z.object({
    * Created by an OAuth authorization and not finished yet (ADR 0012): it
    * holds the grant, but its config (e.g. the property) is still to be
    * chosen. Not scheduled until then; the web app shows "Finish setup".
+   * A PATCH with a config that passes the connector check finishes it: the
+   * connection is scheduled and its backfill queued in the same commit.
    */
   setupPending: z.boolean(),
   createdAt: z.iso.datetime(),

@@ -5,6 +5,7 @@ import {
   connectionDetailResponseSchema,
   connectionListResponseSchema,
   connectionPreviewResponseSchema,
+  connectionResourcesResponseSchema,
   connectionResponseSchema,
   connectorListResponseSchema,
   createConnectionRequestSchema,
@@ -207,6 +208,47 @@ export function registerConnectionRoutes(
             return;
           }
           return connectionDetailResponseSchema.parse(detail);
+        },
+      );
+
+      // Discovery for an existing OAuth connection (ADR 0012): the
+      // connector lists what the linked account can read, with an access
+      // token from the token service. Needs connections:update, because it
+      // serves finishing setup and changing the chosen resource.
+      scope.get(
+        "/workspaces/:workspaceId/connections/:connectionId/resources",
+        {
+          schema: routeSchema({
+            summary: "Discover resources of an OAuth connection",
+            tags: ["connections"],
+            response: connectionResourcesResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:update")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const resources = unwrap(
+            await connections.discoverResources(
+              access,
+              params.data.connectionId,
+            ),
+            reply,
+          );
+          if (!resources) {
+            return;
+          }
+          reply.header("cache-control", "no-store");
+          return connectionResourcesResponseSchema.parse(resources);
         },
       );
 
