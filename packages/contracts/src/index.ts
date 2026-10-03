@@ -326,6 +326,20 @@ export const connectorAuthStrategySchema = z.object({
     .object({
       steps: z.array(z.string().min(1)),
       url: z.url().optional(),
+      /**
+       * For "signed-key": deep links shown with a step (`step` is the
+       * zero-based index into `steps`), e.g. the keys page or the page
+       * that shows the vendor number.
+       */
+      links: z
+        .array(
+          z.object({
+            step: z.number().int().nonnegative(),
+            label: z.string().min(1),
+            url: z.url(),
+          }),
+        )
+        .optional(),
     })
     .optional(),
 });
@@ -625,8 +639,30 @@ export type ConnectionListResponse = z.infer<
   typeof connectionListResponseSchema
 >;
 
+/**
+ * The stored key of a signed-key connection (ADR 0014), by its non-secret
+ * fields only (e.g. issuer ID and key ID), so the user can tell which key
+ * to revoke after rotating. Secret fields such as the private key are never
+ * part of it.
+ */
+export const connectionSignedKeyViewSchema = z.object({
+  provider: z.string().min(1),
+  fields: z.array(
+    z.object({
+      key: z.string().min(1),
+      label: z.string().min(1),
+      value: z.string(),
+    }),
+  ),
+});
+export type ConnectionSignedKeyView = z.infer<
+  typeof connectionSignedKeyViewSchema
+>;
+
 export const connectionDetailSchema = connectionSchema.extend({
   config: connectionConfigSchema,
+  /** The stored signed key's non-secret fields; null for other connections. */
+  signedKey: connectionSignedKeyViewSchema.nullable(),
 });
 export type ConnectionDetail = z.infer<typeof connectionDetailSchema>;
 

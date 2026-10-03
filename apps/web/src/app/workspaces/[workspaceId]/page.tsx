@@ -12,6 +12,7 @@ import { HealthBadge } from "./health-badge";
 import {
   getWorkspace,
   listConnections,
+  listConnectors,
   listDashboards,
   listDevices,
   listProjects,
@@ -21,6 +22,7 @@ import { summarizeHeartbeat } from "@/lib/device-heartbeat";
 import { parseDisconnected, parseOAuthOutcome } from "@/lib/oauth-connection";
 import { relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
+import { parseKeyRemoved } from "@/lib/signed-key";
 import { nextSyncLabel } from "@/lib/sync-schedule";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +40,7 @@ export default async function WorkspacePage({
   const query = await searchParams;
   const outcome = parseOAuthOutcome(query.oauth);
   const disconnected = parseDisconnected(query);
+  const keyRemoved = parseKeyRemoved(query);
   const { cookieHeader } = await requireSession();
 
   const [{ workspaces }, workspaceResult] = await Promise.all([
@@ -52,6 +55,16 @@ export default async function WorkspacePage({
   const { projects } = await listProjects(cookieHeader, workspaceId);
   const { connections } = await listConnections(cookieHeader, workspaceId);
   const { dashboards } = await listDashboards(cookieHeader, workspaceId);
+  // After deleting a connection with an uploaded key: where to revoke it.
+  const removedKey = keyRemoved
+    ? (await listConnectors(cookieHeader)).connectors
+        .flatMap((connector) => connector.authStrategies)
+        .find(
+          (strategy) =>
+            strategy.strategy === "signed-key" &&
+            strategy.provider === keyRemoved,
+        )
+    : undefined;
   const role = membership.role;
   // Active TVs first, revoked ones after (the sort is stable).
   const devices = can(role, "devices:view")
@@ -71,6 +84,20 @@ export default async function WorkspacePage({
       <h1>{workspaceResult.workspace.name}</h1>
       <OAuthOutcomeBanner outcome={outcome} />
       <DisconnectResult revocation={disconnected} />
+      {removedKey ? (
+        <div className="notice page-alert" role="status">
+          <p>
+            Connection deleted, together with netrics&apos; copy of its{" "}
+            {removedKey.providerName ?? "provider"} key. The key itself stays
+            valid until you revoke it.{" "}
+            {removedKey.setup?.url ? (
+              <a href={removedKey.setup.url} target="_blank" rel="noreferrer">
+                Revoke it in {removedKey.providerName ?? "the provider"} ↗
+              </a>
+            ) : null}
+          </p>
+        </div>
+      ) : null}
       <p className="subtitle">
         Your role: <span className="role-badge">{role}</span>
       </p>

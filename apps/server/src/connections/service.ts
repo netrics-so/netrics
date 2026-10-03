@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   ConnectionPreviewResponse,
   ConnectionResourcesResponse,
+  ConnectionSignedKeyView,
   ConnectorAuthStrategy,
   CreateConnectionRequest,
   DeleteConnectionResponse,
@@ -322,7 +323,13 @@ function presentSignedKeyProvider(
       ...(field.placeholder ? { placeholder: field.placeholder } : {}),
       maxBytes: field.maxBytes,
     })),
-    setup: { steps: [...provider.setup.steps], url: provider.setup.url },
+    setup: {
+      steps: [...provider.setup.steps],
+      url: provider.setup.url,
+      ...(provider.setup.links
+        ? { links: provider.setup.links.map((link) => ({ ...link })) }
+        : {}),
+    },
   };
 }
 
@@ -422,6 +429,60 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       credentials,
     );
     return check.ok ? ok(credentials) : check;
+  }
+
+  /**
+   * The non-secret fields of a signed-key connection's stored key (ADR
+   * 0014), e.g. issuer ID and key ID, for the connection page. Only fields
+   * the provider marks as not secret are read out of the envelope; the
+   * private key never leaves this function. Null for other connections, or
+   * when the envelope cannot be opened (the page then shows "stored").
+   */
+  function signedKeyView(
+    workspaceId: string,
+    row: ConnectionWithState["row"],
+  ): ConnectionSignedKeyView | null {
+    const manifest = registry.get(row.connectorId)?.manifest;
+    if (!manifest || !row.credentialsEncrypted) {
+      return null;
+    }
+    const strategy = manifest.authStrategies.find(
+      (entry) => entry.strategy === "signed-key",
+    );
+    const provider =
+      strategy?.strategy === "signed-key"
+        ? signedKeys.get(strategy.provider)
+        : undefined;
+    if (!provider) {
+      return null;
+    }
+    let stored: Record<string, unknown>;
+    try {
+      stored = JSON.parse(
+        decryptCredentials(
+          row.credentialsEncrypted.toString("utf8"),
+          credentialKeyring,
+          { workspaceId, connectionId: row.id },
+        ),
+      ) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+    // A connector that also takes a token may hold one instead of a key.
+    if (signedKeys.providerFor(manifest, stored) !== provider) {
+      return null;
+    }
+    return {
+      provider: provider.id,
+      fields: provider.fields
+        .filter((field) => !field.secret)
+        .flatMap((field) => {
+          const value = stored[field.key];
+          return typeof value === "string"
+            ? [{ key: field.key, label: field.label, value }]
+            : [];
+        }),
+    };
   }
 
   /** The stored signed key of a connection, re-checked (no probes). */
@@ -771,7 +832,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           target: connectionId,
           metadata: { name: body.name, connectorId: body.connectorId },
         });
-        return ok(presentConnectionDetail(registry, created));
+        return ok(
+          presentConnectionDetail(
+            registry,
+            created,
+            signedKeyView(actor.workspaceId, created.row),
+          ),
+        );
       });
     },
 
@@ -898,7 +965,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return fail(404, NOT_FOUND);
       }
       return ok({
-        connection: presentConnectionDetail(registry, found),
+        connection: presentConnectionDetail(
+          registry,
+          found,
+          signedKeyView(actor.workspaceId, found.row),
+        ),
         syncRuns: found.syncRuns.map(presentSyncRun),
       });
     },
@@ -1110,11 +1181,15 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           });
         }
         return ok(
-          presentConnectionDetail(registry, {
-            row: { ...row, setupPending },
-            state,
-            oauth: existing.oauth,
-          }),
+          presentConnectionDetail(
+            registry,
+            {
+              row: { ...row, setupPending },
+              state,
+              oauth: existing.oauth,
+            },
+            signedKeyView(actor.workspaceId, row),
+          ),
         );
       });
     },

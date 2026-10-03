@@ -5,28 +5,34 @@ from [App Store Connect](https://appstoreconnect.apple.com/), for one team
 and one vendor number per connection
 ([ADR 0014](../decisions/0014-app-store-connect-signed-keys.md)).
 
-> Status: connecting, the key check and app discovery are in place (#171).
-> The daily sales sync follows in #172; until then a connection lists your
-> apps but collects no values.
+> Status: the key check, app discovery (#171) and the daily sales sync
+> (#172) are in place. App Store analytics follow in #174.
 
 ## Connect
 
 Apple offers no "Sign in with Apple" for its API. You create an API key in
-App Store Connect and upload it to netrics once:
+App Store Connect and upload it to netrics once. The wizard (Add connection
+→ App Store Connect) shows these steps with links:
 
 1. Sign in to App Store Connect as the Account Holder or an Admin and open
    [Users and Access → Integrations → App Store Connect API](https://appstoreconnect.apple.com/access/integrations/api).
-2. Under **Team Keys**, generate a key with the **Sales** role. Finance also
-   works; Admin works too but grants far more than netrics needs.
-   Individual keys cannot read sales reports and are not accepted.
-3. Download the `.p8` file (Apple offers it only once), and copy the
-   **Issuer ID** (above the key list) and the **Key ID** (in the key's row).
-4. Find your **vendor number** in Payments and Financial Reports, under your
-   legal entity name.
+   The first time, the Account Holder has to request API access there.
+2. Under **Team Keys**, generate a key named "netrics" with the **Sales**
+   role (see [Roles](#roles)).
+3. Download the `.p8` file right away: Apple offers it only once. Copy the
+   **Key ID** from the key's row and the **Issuer ID** shown above the list.
+4. Find your **vendor number** in
+   [Payments and Financial Reports](https://appstoreconnect.apple.com/itc/payments_and_financial_reports),
+   under your legal entity name.
+5. In netrics, enter the issuer ID, choose the `.p8` file (or paste its
+   content), and enter the vendor number. When the file keeps Apple's name
+   `AuthKey_<Key ID>.p8`, the key ID is filled in from it.
 
-In netrics, enter the issuer ID, the key ID and the `.p8` file, and the
-vendor number. Before anything is stored, netrics checks them against
-Apple:
+The file is read in your browser and sent to netrics once. After that,
+netrics never shows the private key again: the connection page shows only
+"stored" with the issuer ID and key ID, which are not secret.
+
+Before anything is stored, netrics checks the values against Apple:
 
 1. `GET /v1/apps?limit=1`: the issuer ID, key ID and private key must belong
    together, and the key must not be revoked.
@@ -34,11 +40,66 @@ Apple:
    day: the key must have a role that reads sales reports, and the vendor
    number must belong to the team. A day without sales is fine.
 
+Each failed check is shown next to the field it is about (issuer ID, key
+ID, private key, vendor number), or for the key as a whole (wrong
+combination, role, agreements, rate limit). Then netrics lists the apps of
+the key's team; untick the ones you do not want, and create the connection.
+
 netrics stores the key encrypted (AES-GCM, bound to the connection) and
 signs a short-lived token (10 minutes) for every call. The connector itself
-never sees the key, only the token. To rotate, upload a new key to the same
-connection, then revoke the old one in App Store Connect; netrics cannot
-revoke keys for you.
+never sees the key, only the token.
+
+## Roles
+
+A team key carries the role chosen when it was created; Apple does not let
+you change it later.
+
+| Role             | Works | Notes                                                                                   |
+| ---------------- | ----- | --------------------------------------------------------------------------------------- |
+| Sales            | Yes   | Recommended: reads sales reports and nothing it does not need.                          |
+| Finance          | Yes   | Also reads sales reports.                                                               |
+| Admin            | Yes   | Works, but can change apps, users and pricing. netrics does not need that; avoid it.    |
+| Developer, other | No    | Cannot read sales reports. netrics refuses the key with "This key cannot read sales …". |
+| Individual key   | No    | Individual keys cannot read sales reports.                                              |
+
+## Rotating or revoking the key
+
+- **Rotate**: create a new team key, then on the connection page choose
+  **Replace key** and upload it. netrics checks the new key with Apple
+  first. If the check fails, the stored key stays as it is and syncing
+  continues. When it passes, the new key replaces the old one, and the page
+  reminds you to revoke the old key (by its key ID) in App Store Connect.
+  netrics cannot revoke keys for you: Apple has no API for that.
+- **Revoked or downgraded key**: when Apple refuses the stored key (it was
+  revoked, or its access was removed), the connection is paused in "Auth
+  failed" with Apple's reason, and the page offers **Upload a new App Store
+  Connect key**. Syncing restarts as soon as a new key passes the check; the
+  data collected so far is kept.
+- **Delete the connection**: netrics deletes its copy of the key. The key
+  stays valid at Apple until you revoke it under
+  [Users and Access → Integrations](https://appstoreconnect.apple.com/access/integrations/api);
+  netrics links there after deleting.
+
+## When data arrives
+
+- **Sales** for a day are published by Apple the next morning, Pacific Time
+  (generally by 8 a.m. PT). A day's sales appear in netrics at
+  the first sync after Apple publishes them.
+- **App Store analytics** (#174), once enabled, arrive about two days later
+  than sales.
+- **Reporting days are Pacific Time days.** A sale at 23:30 PT on the 1st
+  counts on the 1st, even if your workspace's time zone already shows the
+  2nd. netrics does not shift Apple's days into the workspace time zone.
+- The connection page shows the latest reporting day collected.
+- Apple keeps daily reports for one year, which bounds what can be read
+  back.
+
+## Currencies
+
+Apple reports proceeds per row in a currency of proceeds, so one day
+often has several currencies.
+netrics keeps one amount per currency and never converts or adds up
+different currencies; a tile shows one currency at a time.
 
 ## Configuration
 
@@ -129,7 +190,9 @@ How report rows become values:
 Apple allows about 3,500 requests per key and rolling hour, and reports the
 rest in the `X-Rate-Limit` header. netrics stops a sync when fewer than 100
 requests are left, and retries later; a 429 or a server error from Apple is
-retried the same way. Connections that share one key share Apple's budget.
+retried the same way. The limit belongs to the key, not to the connection:
+connections (or other tools) that share one key share Apple's budget, so
+give netrics its own key.
 
 ## When something goes wrong
 
@@ -139,7 +202,7 @@ retried the same way. Connections that share one key share Apple's budget.
 | "This key cannot read sales reports"                                                   | The key's role lacks sales access. Create a team key with the Sales role (roles cannot be changed later). |
 | "App Store Connect does not know vendor number …"                                      | Copy the vendor number from Payments and Financial Reports.                                               |
 | "requires an agreement that is missing or has expired"                                 | The Account Holder accepts the latest agreements in App Store Connect (Business).                         |
-| "Upload a new App Store Connect key"                                                   | The key was revoked or its access removed after connecting. Upload a new key to the connection.           |
+| "Upload a new App Store Connect key"                                                   | The key was revoked or its access removed after connecting. Upload a new key on the connection page.      |
 | "hourly request limit" / "not answering"                                               | Nothing: netrics retries automatically.                                                                   |
 
 ## Network access

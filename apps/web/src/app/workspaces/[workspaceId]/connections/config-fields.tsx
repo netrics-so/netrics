@@ -7,6 +7,8 @@ interface ConfigFieldsProps {
   values: Record<string, string>;
   onChange: (key: string, value: string) => void;
   disabled?: boolean;
+  /** Messages from the server, per field key. */
+  errors?: Record<string, string | undefined>;
 }
 
 /** Renders one input per manifest configSchema property (subset subset). */
@@ -15,6 +17,7 @@ export function ConfigFields({
   values,
   onChange,
   disabled,
+  errors = {},
 }: ConfigFieldsProps) {
   if (fields.length === 0) {
     return <p className="muted">This connector has no configuration.</p>;
@@ -95,6 +98,7 @@ export function ConfigFields({
             </div>
           );
         }
+        const error = errors[field.key];
         return (
           <div className="field" key={field.key}>
             <label htmlFor={id}>{label}</label>
@@ -104,9 +108,15 @@ export function ConfigFields({
               type="text"
               value={value}
               disabled={disabled}
+              aria-invalid={error ? true : undefined}
               onChange={(event) => onChange(field.key, event.target.value)}
             />
             {help}
+            {error ? (
+              <p className="field-error" role="alert">
+                {error}
+              </p>
+            ) : null}
           </div>
         );
       })}

@@ -360,6 +360,18 @@ describe("catalog", () => {
             expect.stringMatching(/Sales role/),
           ]) as unknown as string[],
           url: "https://appstoreconnect.apple.com/access/integrations/api",
+          links: [
+            {
+              step: 0,
+              label: "Open App Store Connect API keys",
+              url: "https://appstoreconnect.apple.com/access/integrations/api",
+            },
+            {
+              step: 3,
+              label: "Open Payments and Financial Reports",
+              url: "https://appstoreconnect.apple.com/itc/payments_and_financial_reports",
+            },
+          ],
         },
       },
     ]);

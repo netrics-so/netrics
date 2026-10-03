@@ -20,6 +20,10 @@ const KEY_ID = /^[A-Z0-9]{10}$/;
 export const APP_STORE_CONNECT_KEYS_URL =
   "https://appstoreconnect.apple.com/access/integrations/api";
 
+/** Payments and Financial Reports, which shows the vendor number. */
+export const APP_STORE_CONNECT_PAYMENTS_URL =
+  "https://appstoreconnect.apple.com/itc/payments_and_financial_reports";
+
 /**
  * App Store Connect (ADR 0014): a team API key (issuer ID, key ID and the
  * `.p8` private key) signed into ES256 JWTs with `aud: appstoreconnect-v1`.
@@ -129,12 +133,25 @@ export const appStoreConnectProvider: SignedKeyProviderDefinition = {
   serverDomains: ["api.appstoreconnect.apple.com"],
   setup: {
     steps: [
-      "Sign in to App Store Connect as the Account Holder or an Admin and open Users and Access → Integrations → App Store Connect API.",
-      "Under Team Keys, generate a key with the Sales role (Finance also works; Admin works but grants more than netrics needs). Individual keys cannot read sales reports.",
-      "Download the .p8 file (Apple offers it only once), and copy the Issuer ID and the Key ID.",
-      "Your vendor number is in Payments and Financial Reports, under your legal entity name.",
+      "Sign in to App Store Connect as the Account Holder or an Admin and open Users and Access → Integrations → App Store Connect API. The first time, the Account Holder has to request API access there.",
+      "Under Team Keys, generate a key named “netrics” with the Sales role. Finance also works; Admin works too, but grants far more than netrics needs. Individual keys cannot read sales reports.",
+      "Download the .p8 file right away (Apple offers it only once). Copy the Key ID from the key's row and the Issuer ID shown above the list.",
+      "Find your vendor number in Payments and Financial Reports, under your legal entity name.",
+      "Enter the values below. netrics checks the key with Apple before it stores anything.",
     ],
     url: APP_STORE_CONNECT_KEYS_URL,
+    links: [
+      {
+        step: 0,
+        label: "Open App Store Connect API keys",
+        url: APP_STORE_CONNECT_KEYS_URL,
+      },
+      {
+        step: 3,
+        label: "Open Payments and Financial Reports",
+        url: APP_STORE_CONNECT_PAYMENTS_URL,
+      },
+    ],
   },
   probes: appStoreConnectProbes,
   authFailure: {

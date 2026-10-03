@@ -10,6 +10,7 @@ import type {
 
 import { ConfigFields } from "../config-fields";
 import { ConnectOAuthButton } from "../connect-oauth-button";
+import { SignedKeyFields } from "../signed-key-fields";
 import { TokenField } from "../token-field";
 import {
   apiErrorMessage,
@@ -26,6 +27,15 @@ import {
   providerName,
   unavailableCopy,
 } from "@/lib/oauth-connection";
+import {
+  APP_STORE_CONNECT_DOCS_URL,
+  APP_STORE_CONNECT_PROVIDER,
+  emptyKeyValues,
+  fieldOfMessage,
+  keyCredentials,
+  missingKeyField,
+  signedKeyStrategyOf,
+} from "@/lib/signed-key";
 
 interface NewConnectionWizardProps {
   workspaceId: string;
@@ -43,6 +53,10 @@ export function NewConnectionWizard({
   const [name, setName] = useState("");
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [token, setToken] = useState("");
+  const [keyValues, setKeyValues] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<
+    Record<string, string | undefined>
+  >({});
   const [preview, setPreview] = useState<ConnectionPreviewResponse | null>(
     null,
   );
@@ -58,7 +72,11 @@ export function NewConnectionWizard({
   const tokenStrategy = connector?.authStrategies.find(
     (strategy) => strategy.strategy === "token",
   );
-  const wantsToken = tokenStrategy !== undefined;
+  // A signed-key provider (ADR 0014) asks for its key fields instead.
+  const keyStrategy = signedKeyStrategyOf(connector ?? undefined);
+  const wantsToken = tokenStrategy !== undefined && keyStrategy === null;
+  const appStore = keyStrategy?.provider === APP_STORE_CONNECT_PROVIDER;
+  const resourceNoun = appStore ? "apps" : "resources";
   // OAuth-only connectors connect at the provider; the callback creates the
   // connection and setup continues on the return (ADR 0012).
   const oauthProvider =
@@ -66,14 +84,38 @@ export function NewConnectionWizard({
       ? oauthProviderOf(connector)
       : null;
 
+  // Check failures show in the form they are about; create failures below.
+  const errorInConfigure =
+    connector !== null &&
+    connector.available &&
+    !oauthProvider &&
+    !preview?.check.ok;
+
   function selectConnector(entry: ConnectorCatalogEntry) {
     setConnector(entry);
     setName(entry.name);
     setConfigValues(initialConfigValues(parseConfigSchema(entry.configSchema)));
     setToken("");
+    const strategy = signedKeyStrategyOf(entry);
+    setKeyValues(strategy ? emptyKeyValues(strategy) : {});
+    setFieldErrors({});
     setPreview(null);
     setSelectedResources(null);
     setError(null);
+  }
+
+  /** Shows a server message next to its field, or for the whole form. */
+  function showFailure(message: string) {
+    const field = keyStrategy
+      ? fieldOfMessage(message, keyStrategy.fields, fields)
+      : null;
+    if (field) {
+      setFieldErrors({ [field]: message });
+      setError(null);
+    } else {
+      setFieldErrors({});
+      setError(message);
+    }
   }
 
   function invalidatePreview() {
@@ -83,7 +125,11 @@ export function NewConnectionWizard({
 
   function buildPayload() {
     const config = coerceConfigValues(fields, configValues);
-    const credentials = wantsToken && token !== "" ? { token } : undefined;
+    const credentials = keyStrategy
+      ? keyCredentials(keyStrategy, keyValues)
+      : wantsToken && token !== ""
+        ? { token }
+        : undefined;
     return { config, ...(credentials ? { credentials } : {}) };
   }
 
@@ -92,6 +138,19 @@ export function NewConnectionWizard({
       return;
     }
     setError(null);
+    setFieldErrors({});
+    const missing = keyStrategy
+      ? missingKeyField(keyStrategy, keyValues)
+      : null;
+    if (missing) {
+      setFieldErrors({
+        [missing.key]:
+          missing.input === "file"
+            ? `Choose the .p8 file, or paste the key.`
+            : `${missing.label} is required.`,
+      });
+      return;
+    }
     setPending("preview");
     try {
       const result = await previewConnection(workspaceId, {
@@ -101,11 +160,11 @@ export function NewConnectionWizard({
       setPreview(result);
       setSelectedResources(new Set(result.resources.map((r) => r.id)));
       if (!result.check.ok) {
-        setError(result.check.message ?? "The connection check failed.");
+        showFailure(result.check.message ?? "The connection check failed.");
       }
     } catch (cause) {
       setPreview(null);
-      setError(apiErrorMessage(cause));
+      showFailure(apiErrorMessage(cause));
     } finally {
       setPending(null);
     }
@@ -122,7 +181,7 @@ export function NewConnectionWizard({
       let resources: string[] | undefined;
       if (preview && preview.resources.length > 0 && selectedResources) {
         if (selectedResources.size === 0) {
-          setError("Select at least one discovered resource.");
+          setError(`Select at least one of the discovered ${resourceNoun}.`);
           setPending(null);
           return;
         }
@@ -206,7 +265,26 @@ export function NewConnectionWizard({
 
       {connector && connector.available && !oauthProvider ? (
         <div className="card">
-          <h2>2. Configure</h2>
+          <h2>
+            {keyStrategy
+              ? `2. Add your ${keyStrategy.providerName ?? connector.name} key`
+              : "2. Configure"}
+          </h2>
+          {appStore ? (
+            <p className="muted">
+              App Store Connect has no &ldquo;Sign in with Apple&rdquo; for its
+              data, so netrics reads it with a team API key that you create
+              once. It takes about two minutes; netrics stores the key encrypted
+              and checks it with Apple before saving.{" "}
+              <a
+                href={APP_STORE_CONNECT_DOCS_URL}
+                target="_blank"
+                rel="noreferrer"
+              >
+                More about the connector
+              </a>
+            </p>
+          ) : null}
           <form className="stack" onSubmit={(event) => event.preventDefault()}>
             <div className="field">
               <label htmlFor="connection-name">Name</label>
@@ -234,31 +312,64 @@ export function NewConnectionWizard({
                 }}
               />
             ) : null}
+            {keyStrategy ? (
+              <SignedKeyFields
+                strategy={keyStrategy}
+                values={keyValues}
+                errors={fieldErrors}
+                disabled={pending !== null}
+                guideOpen
+                onChange={(key, value) => {
+                  setKeyValues((current) => ({ ...current, [key]: value }));
+                  setFieldErrors((current) => ({
+                    ...current,
+                    [key]: undefined,
+                  }));
+                  invalidatePreview();
+                }}
+              />
+            ) : null}
             <ConfigFields
               fields={fields}
               values={configValues}
+              errors={fieldErrors}
               disabled={pending !== null}
               onChange={(key, value) => {
                 setConfigValues((current) => ({ ...current, [key]: value }));
+                setFieldErrors((current) => ({ ...current, [key]: undefined }));
                 invalidatePreview();
               }}
             />
             <div className="actions">
               <button
                 type="button"
+                className={keyStrategy ? "primary" : undefined}
                 disabled={pending !== null}
                 onClick={onTest}
               >
-                {pending === "preview" ? "Testing…" : "Test connection"}
+                {pending === "preview"
+                  ? keyStrategy
+                    ? "Checking with Apple…"
+                    : "Testing…"
+                  : keyStrategy
+                    ? "Check key and find apps"
+                    : "Test connection"}
               </button>
             </div>
+            {error && errorInConfigure ? (
+              <div className="error" role="alert">
+                {error}
+              </div>
+            ) : null}
           </form>
         </div>
       ) : null}
 
       {preview && preview.check.ok ? (
         <div className="card">
-          <h2>3. Review and create</h2>
+          <h2>
+            {appStore ? "3. Choose apps and create" : "3. Review and create"}
+          </h2>
           <div className="notice">
             Connection check passed
             {preview.check.message ? `: ${preview.check.message}` : "."}
@@ -266,7 +377,7 @@ export function NewConnectionWizard({
           {preview.resources.length > 0 ? (
             <>
               <p className="muted">
-                Discovered {preview.resources.length} resources — uncheck any
+                Found {preview.resources.length} {resourceNoun} — uncheck any
                 you do not want to sync.
               </p>
               <ul className="workspace-list">
@@ -299,7 +410,7 @@ export function NewConnectionWizard({
         </div>
       ) : null}
 
-      {error ? <div className="error">{error}</div> : null}
+      {error && !errorInConfigure ? <div className="error">{error}</div> : null}
     </>
   );
 }
