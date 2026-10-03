@@ -1006,6 +1006,14 @@ export const metricResourcesResponseSchema = z.object({
       name: z.string().nullable(),
     }),
   ),
+  /**
+   * What the connector calls its resources ({ singular: "app", plural:
+   * "apps" }), "resource"/"resources" when it does not say (#208).
+   */
+  resourceNoun: z.object({
+    singular: z.string().min(1),
+    plural: z.string().min(1),
+  }),
 });
 export type MetricResourcesResponse = z.infer<
   typeof metricResourcesResponseSchema
@@ -1058,6 +1066,12 @@ export const dashboardTileSchema = z.object({
    * or a resource without a known name. Read-only.
    */
   resourceName: z.string().nullable(),
+  /**
+   * For a tile of all resources added up, when its connection has more than
+   * one for the metric: their scope, "All apps" (#208), shown after the
+   * metric name like a resource name. Null otherwise. Read-only.
+   */
+  allResourcesName: z.string().nullable(),
 });
 export type DashboardTile = z.infer<typeof dashboardTileSchema>;
 
@@ -1272,7 +1286,8 @@ export const deviceTileSchema = z.object({
   id: z.uuid(),
   /**
    * The tile title, else the metric name, followed by the resource name for
-   * a tile of one resource ("Downloads · Wurfel", #194).
+   * a tile of one resource ("Downloads · Wurfel", #194) or by the scope of a
+   * tile that adds up several ("Downloads · All apps", #208).
    */
   label: z.string().min(1),
   period: metricPeriodSchema,

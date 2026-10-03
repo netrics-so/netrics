@@ -56,13 +56,36 @@ describe("assertManifestCompatible", () => {
     ).toThrow();
   });
 
-  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.2", () => {
-    expect(SDK_VERSION).toBe("0.2.3");
-    for (const sdkVersion of ["^0.2.0", "^0.2.1", "^0.2.2", "^0.2.3"]) {
+  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.4", () => {
+    expect(SDK_VERSION).toBe("0.2.4");
+    for (const sdkVersion of [
+      "^0.2.0",
+      "^0.2.1",
+      "^0.2.2",
+      "^0.2.3",
+      "^0.2.4",
+    ]) {
       expect(
         assertManifestCompatible({ ...validManifest(), sdkVersion }).id,
       ).toBe("acme-analytics");
     }
+  });
+
+  it("keeps the noun a connector calls its resources by (0.2.4)", () => {
+    const manifest = assertManifestCompatible({
+      ...validManifest(),
+      resourceNoun: { singular: "app", plural: "apps" },
+    });
+    expect(manifest.resourceNoun).toEqual({ singular: "app", plural: "apps" });
+    expect(assertManifestCompatible(validManifest()).resourceNoun).toBe(
+      undefined,
+    );
+    expect(() =>
+      assertManifestCompatible({
+        ...validManifest(),
+        resourceNoun: { singular: "app", plural: "" },
+      }),
+    ).toThrow();
   });
 
   it("accepts a signed-key strategy that names only its provider", () => {

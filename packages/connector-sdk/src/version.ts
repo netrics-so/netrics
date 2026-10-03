@@ -6,8 +6,9 @@ import { satisfiesRange } from "./semver.js";
 // ConnectorResponse.bytes() for binary bodies (ADR 0014).
 // 0.2.3: the "currency_minor" unit, whose metrics declare a "currency"
 // dimension (ADR 0014).
+// 0.2.4: the optional manifest field resourceNoun (#208).
 // All are additive: ^0.2.0 connectors keep loading.
-export const SDK_VERSION = "0.2.3";
+export const SDK_VERSION = "0.2.4";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

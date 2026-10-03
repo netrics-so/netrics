@@ -68,6 +68,7 @@ export const demoManifest: ConnectorManifest = {
   supportsBackfill: true,
   backfillDays: 90,
   outboundDomains: [],
+  resourceNoun: { singular: "site", plural: "sites" },
 };
 
 type Simulation = "outage" | "bad-credentials";

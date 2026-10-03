@@ -105,12 +105,14 @@ export function MetricTile({
     return () => clearInterval(timer);
   }, [load, refreshMs]);
 
-  // "Downloads · Wurfel" for a tile of one resource (#194).
+  // "Downloads · Wurfel" for a tile of one resource (#194), "Downloads ·
+  // All apps" for one that adds up several (#208).
   const label = tileLabel({
     title: tile.title,
     metricName: metric?.name ?? tile.metricKey,
     dimensions: tile.dimensions,
     resourceName: tile.resourceName,
+    allResourcesName: tile.allResourcesName,
   });
   // A per-currency amount formats in the currency the tile shows.
   const unit = displayUnit(

@@ -613,9 +613,14 @@ describe("one resource per tile (#194)", () => {
       metricKey,
     });
 
-  const tile = (dimensions: Record<string, string>, title?: string) => ({
-    connectionId: apps,
-    metricKey: "apps.downloads",
+  const tile = (
+    dimensions: Record<string, string>,
+    title?: string,
+    connectionId = apps,
+    metricKey = "apps.downloads",
+  ) => ({
+    connectionId,
+    metricKey,
     period: "last_7_days",
     dimensions,
     ...(title ? { title } : {}),
@@ -631,7 +636,10 @@ describe("one resource per tile (#194)", () => {
     appsWorkspace = (await createWorkspace(owner)).id;
     await admin`
       insert into connectors (id, version, manifest)
-      values ('test-apps', '1.0.0', '{"id":"test-apps"}'::jsonb)`;
+      values ('test-apps', '1.0.0', ${admin.json({
+        id: "test-apps",
+        resourceNoun: { singular: "app", plural: "apps" },
+      })})`;
     await admin`
       insert into metric_definitions (connector_id, key, name, description,
         kind, unit, granularity, dimensions, aggregations)
@@ -693,6 +701,7 @@ describe("one resource per tile (#194)", () => {
         { id: "app-1", name: "Wurfel" },
         { id: "app-9", name: null },
       ],
+      resourceNoun: { singular: "app", plural: "apps" },
     });
   });
 
@@ -700,6 +709,7 @@ describe("one resource per tile (#194)", () => {
     const none = await resourcesOf(owner, appsWorkspace, apps, "apps.crashes");
     expect(metricResourcesResponseSchema.parse(none.json())).toEqual({
       resources: [],
+      resourceNoun: { singular: "app", plural: "apps" },
     });
     const foreign = await resourcesOf(
       stranger,
@@ -734,28 +744,51 @@ describe("one resource per tile (#194)", () => {
       tile({ resource: "app-1" }),
       tile({ resource: "app-9" }),
       tile({ resource: "app-2" }, "Dice installs"),
+      // All apps under a title of its own; one app in all; no apps at all.
+      tile({}, "Installs"),
+      tile({}, undefined, otherApps),
+      tile({}, undefined, apps, "apps.crashes"),
     ]);
     expect(saved.statusCode).toBe(200);
     const { dashboard } = dashboardResponseSchema.parse(saved.json());
     const shape = (tiles: typeof dashboard.tiles) =>
-      tiles.map(({ dimensions, title, resourceName }) => ({
+      tiles.map(({ dimensions, title, resourceName, allResourcesName }) => ({
         dimensions,
         title,
         resourceName,
+        allResourcesName,
       }));
+    const none = { resourceName: null, allResourcesName: null };
     const expected = [
-      { dimensions: {}, title: null, resourceName: null },
+      // Several apps added up name their scope (#208).
+      {
+        dimensions: {},
+        title: null,
+        resourceName: null,
+        allResourcesName: "All apps",
+      },
       {
         dimensions: { resource: "app-1" },
         title: null,
         resourceName: "Wurfel",
+        allResourcesName: null,
       },
-      { dimensions: { resource: "app-9" }, title: null, resourceName: null },
+      { dimensions: { resource: "app-9" }, title: null, ...none },
       {
         dimensions: { resource: "app-2" },
         title: "Dice installs",
         resourceName: "Dicey",
+        allResourcesName: null,
       },
+      {
+        dimensions: {},
+        title: "Installs",
+        resourceName: null,
+        allResourcesName: "All apps",
+      },
+      // One app is the same as all of them; a metric without apps.
+      { dimensions: {}, title: null, ...none },
+      { dimensions: {}, title: null, ...none },
     ];
     expect(shape(dashboard.tiles)).toEqual(expected);
 
@@ -768,7 +801,8 @@ describe("one resource per tile (#194)", () => {
       shape(dashboardResponseSchema.parse(loaded.json()).dashboard.tiles),
     ).toEqual(expected);
 
-    // Screens: the resource's name in the label, its own numbers.
+    // Screens: the resource's name (or their scope) in the label, its own
+    // numbers.
     const device = await withWorkspace(
       db,
       { workspaceId: appsWorkspace },
@@ -782,10 +816,13 @@ describe("one resource per tile (#194)", () => {
         previousValue: change.previousValue,
       })),
     ).toEqual([
-      { label: "Downloads", value: 16, previousValue: 10 },
+      { label: "Downloads · All apps", value: 16, previousValue: 10 },
       { label: "Downloads · Wurfel", value: 10, previousValue: 4 },
       { label: "Downloads · app-9", value: 1, previousValue: null },
       { label: "Dice installs", value: 5, previousValue: 6 },
+      { label: "Installs", value: 16, previousValue: 10 },
+      { label: "Downloads", value: 100, previousValue: null },
+      { label: "Crashes", value: null, previousValue: null },
     ]);
   });
 });

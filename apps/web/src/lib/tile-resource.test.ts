@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  allResourcesOption,
   effectiveResource,
   hasResources,
+  newTileScope,
   offersResourceChoice,
+  resourceFieldLabel,
   resourceOptionLabel,
   withResource,
 } from "./tile-resource";
@@ -13,7 +16,27 @@ const apps = [
   { id: "6700000001", name: null },
 ];
 
+const appNoun = { singular: "app", plural: "apps" };
+
 describe("tile resources", () => {
+  it("names the picker after what the connector calls its resources", () => {
+    expect(resourceFieldLabel(appNoun)).toBe("App");
+    expect(allResourcesOption(appNoun)).toBe("All apps");
+    expect(
+      resourceFieldLabel({ singular: "resource", plural: "resources" }),
+    ).toBe("Resource");
+  });
+
+  it("gives a new tile of all of several resources their scope", () => {
+    expect(newTileScope(apps, null, appNoun)).toBe("All apps");
+    expect(newTileScope(apps, null, null)).toBe("All resources");
+    // One resource picked: its name labels the tile instead.
+    expect(newTileScope(apps, apps[0]!, appNoun)).toBeNull();
+    // A single resource, or none yet, is the same as all of them.
+    expect(newTileScope([apps[0]!], null, appNoun)).toBeNull();
+    expect(newTileScope(null, null, appNoun)).toBeNull();
+  });
+
   it("applies to metrics with a resource dimension", () => {
     expect(hasResources({ dimensions: ["resource", "territory"] })).toBe(true);
     expect(hasResources({ dimensions: ["page"] })).toBe(false);

@@ -204,6 +204,7 @@ export const searchConsoleManifest: ConnectorManifest = {
   // window to the oldest day Search Console keeps.
   backfillDays: 490,
   outboundDomains: ["searchconsole.googleapis.com"],
+  resourceNoun: { singular: "property", plural: "properties" },
   // Google's per-property and per-user limit for Search Analytics queries.
   rateLimit: { maxRequests: 1200, windowSeconds: 60, scope: "property" },
 };

@@ -33,6 +33,11 @@ import {
   type MetricKind,
 } from "@netrics/domain";
 
+import {
+  findAllResourcesNames,
+  tileAllResourcesName,
+} from "../metrics/query.js";
+
 /**
  * Dashboard use cases (#49). Tiles are validated against the workspace's
  * connections and their metrics: a tile can only show a metric its
@@ -92,6 +97,16 @@ export async function presentDashboard(
         : [{ connectionId: tile.connectionId, resourceId }];
     }),
   );
+  // "Downloads · All apps" for a tile that adds up several (#208).
+  const scopes = await findAllResourcesNames(
+    tx,
+    workspaceId,
+    dashboard.tiles.map((tile) => ({
+      connectionId: tile.connectionId,
+      metricKey: tile.metricKey,
+      dimensions: tile.dimensions as Record<string, string>,
+    })),
+  );
   return {
     id: dashboard.id,
     name: dashboard.name,
@@ -109,6 +124,11 @@ export async function presentDashboard(
       dimensions: tile.dimensions as Record<string, string>,
       title: tile.title,
       resourceName: resourceName(names, tile),
+      allResourcesName: tileAllResourcesName(scopes, {
+        connectionId: tile.connectionId,
+        metricKey: tile.metricKey,
+        dimensions: tile.dimensions as Record<string, string>,
+      }),
     })),
   };
 }

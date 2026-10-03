@@ -9,6 +9,7 @@ import type {
 } from "@netrics/contracts";
 import {
   findConnectionMetric,
+  findConnectionResourceNoun,
   findWorkspace,
   listMetricResources,
   listWorkspaceMetrics,
@@ -19,8 +20,10 @@ import {
 } from "@netrics/database";
 import {
   CURRENCY_DIMENSION,
+  DEFAULT_RESOURCE_NOUN,
   RESOURCE_DIMENSION,
   addDays,
+  allResourcesName,
   amountCurrency,
   aggregateBuckets,
   bucketCombination,
@@ -231,13 +234,86 @@ export async function listResourcesOfMetric(
   if (!metric) {
     return { ok: false, status: 404, error: "metric_not_found" };
   }
+  const resourceNoun =
+    (await findConnectionResourceNoun(tx, workspaceId, metric.connectionId)) ??
+    DEFAULT_RESOURCE_NOUN;
   if (!metric.dimensions.includes(RESOURCE_DIMENSION)) {
-    return { ok: true, value: { resources: [] } };
+    return { ok: true, value: { resources: [], resourceNoun } };
   }
   const resources = await listMetricResources(tx, {
     workspaceId,
     connectionId: metric.connectionId,
     metricKey: metric.key,
   });
-  return { ok: true, value: { resources } };
+  return { ok: true, value: { resources, resourceNoun } };
+}
+
+function allResourcesKey(connectionId: string, metricKey: string): string {
+  return `${connectionId}|${metricKey}`;
+}
+
+interface ScopedTile {
+  connectionId: string;
+  metricKey: string;
+  dimensions: Readonly<Record<string, string>>;
+}
+
+/**
+ * A tile's scope from findAllResourcesNames: null for a tile of one
+ * resource, whose resource name labels it instead.
+ */
+export function tileAllResourcesName(
+  names: ReadonlyMap<string, string>,
+  tile: ScopedTile,
+): string | null {
+  return tile.dimensions[RESOURCE_DIMENSION] === undefined
+    ? (names.get(allResourcesKey(tile.connectionId, tile.metricKey)) ?? null)
+    : null;
+}
+
+/**
+ * The scope of each tile of all resources (#208), read with
+ * tileAllResourcesName: "All apps" when the metric has a "resource" dimension and
+ * its connection more than one resource of it. Tiles of one resource, of
+ * metrics without resources and of connections with a single resource are
+ * missing from the map; their labels stay as they were.
+ */
+export async function findAllResourcesNames(
+  tx: Transaction,
+  workspaceId: string,
+  tiles: readonly ScopedTile[],
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const done = new Set<string>();
+  for (const tile of tiles) {
+    const key = allResourcesKey(tile.connectionId, tile.metricKey);
+    if (tile.dimensions[RESOURCE_DIMENSION] !== undefined || done.has(key)) {
+      continue;
+    }
+    done.add(key);
+    const metric = await findConnectionMetric(
+      tx,
+      workspaceId,
+      tile.connectionId,
+      tile.metricKey,
+    );
+    if (!metric?.dimensions.includes(RESOURCE_DIMENSION)) {
+      continue;
+    }
+    const resources = await listMetricResources(tx, {
+      workspaceId,
+      connectionId: tile.connectionId,
+      metricKey: tile.metricKey,
+    });
+    const name = allResourcesName(
+      resources.length > 1
+        ? await findConnectionResourceNoun(tx, workspaceId, tile.connectionId)
+        : null,
+      resources.length,
+    );
+    if (name !== null) {
+      names.set(key, name);
+    }
+  }
+  return names;
 }

@@ -7,6 +7,7 @@ import { withWorkspace } from "./context.js";
 import {
   connectionHasResource,
   connectionResourcesDiscoveredAt,
+  findConnectionResourceNoun,
   findResourceNames,
   listMetricResources,
   resourceNameKey,
@@ -239,5 +240,33 @@ describe("connection resources", () => {
     const left =
       await admin`select count(*)::int as n from connection_resources where connection_id = ${id}`;
     expect(left[0]!.n).toBe(0);
+  });
+
+  it("reads what the connector calls its resources from its manifest", async () => {
+    // The test manifest names none.
+    expect(
+      await inA((tx) =>
+        findConnectionResourceNoun(tx, workspaceA, connectionA),
+      ),
+    ).toBeNull();
+    await admin`
+      update connectors
+      set manifest = manifest || ${admin.json({ resourceNoun: { singular: "app", plural: "apps" } })}
+      where id = 'demo'`;
+    try {
+      expect(
+        await inA((tx) =>
+          findConnectionResourceNoun(tx, workspaceA, connectionA),
+        ),
+      ).toEqual({ singular: "app", plural: "apps" });
+      // Another workspace's connection is not found.
+      expect(
+        await inA((tx) =>
+          findConnectionResourceNoun(tx, workspaceA, connectionB),
+        ),
+      ).toBeNull();
+    } finally {
+      await admin`update connectors set manifest = manifest - 'resourceNoun' where id = 'demo'`;
+    }
   });
 });
