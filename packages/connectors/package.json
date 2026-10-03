@@ -20,6 +20,10 @@
       "types": "./dist/demo/index.d.ts",
       "default": "./dist/demo/index.js"
     },
+    "./google-search-console": {
+      "types": "./dist/google-search-console/index.d.ts",
+      "default": "./dist/google-search-console/index.js"
+    },
     "./vercel": {
       "types": "./dist/vercel/index.d.ts",
       "default": "./dist/vercel/index.js"

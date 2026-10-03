@@ -1,5 +1,7 @@
 import type { ConnectorRuntime } from "@netrics/connector-sdk";
 
+import { abortableSleep } from "../sleep.js";
+
 export const VERCEL_API = "https://api.vercel.com";
 
 /** Longest wait for a rate-limit reset before the call gives up (retried later). */
@@ -53,24 +55,6 @@ export interface ClientOptions {
   /** Waits between retries; replaced in tests. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   now?: () => number;
-}
-
-export function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(signal.reason);
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(signal.reason);
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
 }
 
 function buildUrl(path: string, query: Query): string {
