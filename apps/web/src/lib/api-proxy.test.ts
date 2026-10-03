@@ -11,8 +11,8 @@ import {
   vi,
 } from "vitest";
 
+import { clientIp } from "./api-fetch";
 import {
-  clientIp,
   MAX_PROXY_BODY_BYTES,
   proxyRequestHeaders,
   proxyResponseHeaders,
@@ -57,22 +57,6 @@ describe("api proxy headers", () => {
     expect(headers.get("content-type")).toBe("application/json");
   });
 
-  it("forwards only the client address the trusted proxy saw", () => {
-    // The client sent a forged chain; the proxy in front of the web server
-    // appended the address it really received the request from.
-    const headers = proxyRequestHeaders(
-      new Headers({
-        "x-forwarded-for": "203.0.113.66, 10.0.0.9, 198.51.100.7",
-        "x-real-ip": "203.0.113.66",
-        forwarded: "for=203.0.113.66",
-      }),
-      1,
-    );
-    expect(headers.get("x-forwarded-for")).toBe("198.51.100.7");
-    expect(headers.get("x-real-ip")).toBe("198.51.100.7");
-    expect(headers.get("forwarded")).toBeNull();
-  });
-
   it("walks back one entry per configured proxy hop", () => {
     const incoming = new Headers({
       "x-forwarded-for": "203.0.113.66, 198.51.100.7, 192.0.2.10",
@@ -82,23 +66,62 @@ describe("api proxy headers", () => {
     // More hops than entries: the leftmost address is all there is.
     expect(clientIp(incoming, 5)).toBe("203.0.113.66");
   });
+});
 
-  it("sends no forwarding headers when there is no address", () => {
-    const headers = proxyRequestHeaders(
-      new Headers({ "x-real-ip": "1.2.3.4" }),
+// The headers the proxy hands to the API, as fetch sees them.
+describe("api proxy forwarding", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  async function sentHeaders(headers: Record<string, string>) {
+    const upstream = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(null, { status: 204 }),
     );
+    vi.stubGlobal("fetch", upstream);
+    await proxyToApi(
+      new Request("https://netrics.example.com/v1/me", { headers }),
+    );
+    return new Headers(upstream.mock.calls[0]![1]!.headers);
+  }
+
+  it("forwards only the client address the trusted proxy saw", async () => {
+    // The client sent a forged chain; the proxy in front of the web server
+    // appended the address it really received the request from.
+    const headers = await sentHeaders({
+      "x-forwarded-for": "203.0.113.66, 10.0.0.9, 198.51.100.7",
+      "x-real-ip": "203.0.113.66",
+      forwarded: "for=203.0.113.66",
+    });
+    expect(headers.get("x-forwarded-for")).toBe("198.51.100.7");
+    expect(headers.get("x-real-ip")).toBe("198.51.100.7");
+    expect(headers.get("forwarded")).toBeNull();
+  });
+
+  it("walks back NETRICS_TRUSTED_PROXY_HOPS entries", async () => {
+    vi.stubEnv("NETRICS_TRUSTED_PROXY_HOPS", "2");
+    const headers = await sentHeaders({
+      "x-forwarded-for": "203.0.113.66, 198.51.100.7, 192.0.2.10",
+    });
+    expect(headers.get("x-forwarded-for")).toBe("198.51.100.7");
+  });
+
+  it("sends no forwarding headers when there is no address", async () => {
+    const headers = await sentHeaders({ "x-real-ip": "1.2.3.4" });
     expect(headers.get("x-forwarded-for")).toBeNull();
     expect(headers.get("x-real-ip")).toBeNull();
   });
 
-  it("can take the client address from a header the edge sets", () => {
-    const incoming = new Headers({
+  it("can take the client address from a header the edge sets", async () => {
+    vi.stubEnv("NETRICS_CLIENT_IP_HEADER", "X-Real-IP");
+    const headers = await sentHeaders({
       "x-forwarded-for": "203.0.113.66, 100.64.0.3, 100.64.0.4",
       "x-real-ip": "198.51.100.7",
     });
-    expect(clientIp(incoming, 1, "x-real-ip")).toBe("198.51.100.7");
-    const headers = proxyRequestHeaders(incoming, 1, "x-real-ip");
     expect(headers.get("x-forwarded-for")).toBe("198.51.100.7");
+    expect(headers.get("x-real-ip")).toBe("198.51.100.7");
   });
 });
 

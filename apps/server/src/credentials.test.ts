@@ -161,7 +161,10 @@ describe("envelope purposes (ADR 0012)", () => {
 
   it("round-trips an access token bound to its connection", () => {
     const envelope = encryptOAuthAccessToken("ya29.access", ringA, binding);
-    expect(envelope).not.toContain("ya29");
+    // The whole token, not a fragment: random base64 ciphertext can contain
+    // a short substring like "ya29" by chance.
+    expect(envelope).not.toContain("ya29.access");
+    expect(JSON.stringify(decode(envelope))).not.toContain("ya29.access");
     expect(decryptOAuthAccessToken(envelope, ringA, binding)).toBe(
       "ya29.access",
     );

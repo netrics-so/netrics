@@ -1,7 +1,7 @@
 /**
  * The web half of the OAuth callback (ADR 0012). The provider redirects the
  * browser here with `state` and `code` (or `error`); this forwards them with
- * the session cookie to the API (NETRICS_API_URL, like the /v1 proxy), which
+ * the session cookie to the API (through apiFetch, like the /v1 proxy), which
  * validates the state, exchanges the code and stores the grant. The browser
  * gets a 303 to the relative app path the API returns, never a token.
  *
@@ -12,12 +12,7 @@
 
 import { oauthCallbackResponseSchema } from "@netrics/contracts";
 
-import {
-  apiBaseUrl,
-  clientIp,
-  clientIpHeader,
-  trustedProxyHops,
-} from "./api-proxy";
+import { apiFetch } from "./api-fetch";
 
 const PROVIDER = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -48,8 +43,9 @@ function queryValues(url: URL): Record<string, string> {
 }
 
 /**
- * The headers of the call to the API: the session cookie and the client
- * address, nothing else. The browser's own headers are not forwarded: it
+ * The headers of the call to the API: the session cookie, nothing else
+ * (apiFetch adds the client address). The browser's own headers are not
+ * forwarded: it
  * arrives from the provider's site (Sec-Fetch-Site: cross-site), and the
  * state, bound to the user who started the flow, is what protects this call.
  */
@@ -62,11 +58,6 @@ export function callbackHeaders(incoming: Headers): Headers {
   if (cookie) {
     headers.set("cookie", cookie);
   }
-  const ip = clientIp(incoming, trustedProxyHops(), clientIpHeader());
-  if (ip) {
-    headers.set("x-forwarded-for", ip);
-    headers.set("x-real-ip", ip);
-  }
   return headers;
 }
 
@@ -77,18 +68,14 @@ export async function relayOAuthCallback(
   if (!PROVIDER.test(provider)) {
     return seeOther("/?oauth=failed");
   }
-  const target = new URL(
-    `/v1/oauth/${provider}/callback`,
-    apiBaseUrl(),
-  ).toString();
   let upstream: Response;
   try {
-    upstream = await fetch(target, {
+    upstream = await apiFetch(`/v1/oauth/${provider}/callback`, {
       method: "POST",
       headers: callbackHeaders(request.headers),
+      client: request.headers,
       body: JSON.stringify(queryValues(new URL(request.url))),
       redirect: "manual",
-      cache: "no-store",
     });
   } catch {
     return seeOther("/?oauth=failed");
