@@ -1,6 +1,6 @@
 # 0014 — App Store Connect: signed-key credentials and report sources
 
-Status: proposed (2026-10-03, milestone 08)
+Status: accepted (2026-10-03, milestone 08)
 
 ## Context
 
@@ -67,7 +67,7 @@ Product rules:
   | Sales and Trends reports (`/v1/salesReports`)              | Sales ("Sales and Reports"), Finance, Admin, Account Holder                          |
   | Read analytics reports that were already requested         | Sales, Finance, Admin                                                                |
   | Request an analytics report for the first time (POST)      | **Admin** only                                                                       |
-  | Read ratings and reviews (`/v1/apps/{id}/customerReviews`) | Marketing, Developer, App Manager, Customer Support, Admin; **not** Sales or Finance |
+  | Read ratings and reviews (`/v1/apps/{id}/customerReviews`) | Customer Support, Developer, Marketing, App Manager, Admin; **not** Sales or Finance |
 
 - **Rate limit.** About 3,500 requests per key per rolling hour, reported in
   `X-Rate-Limit: user-hour-lim:…;user-hour-rem:…;`. Above it Apple answers
@@ -169,7 +169,7 @@ day.
 | ---------------------------------------------------------- | --------------------------------- | ---------------------------- |
 | (a) Sales and Trends, `GET /v1/salesReports` SALES/SUMMARY | Yes: downloads, units, proceeds   | Subscription reports         |
 | (b) Analytics Reports API                                  | Yes, behind a one-time Admin step | Sessions, crashes, retention |
-| (c) Customer reviews and ratings                           | No                                | See "Ratings" below          |
+| (c) Customer reviews and ratings                           | Optional stretch (#190)           | Second key, see (c) below    |
 
 **(a) Sales and Trends** works with the least-privilege Sales key and
 backfills a year, so it is the core.
@@ -246,12 +246,39 @@ users and pricing, and asking for a second key. We decide:
   per 31 days and its depth varies
   ([forum](https://developer.apple.com/forums/thread/759773)).
 
-**(c) Ratings and reviews are out of scope for milestone 08.** The reviews
-endpoint has no aggregate rating, it needs a role the Sales key lacks (so
-it would mean a second key), and the public `itunes.apple.com/lookup`
-fields `averageUserRating` and `userRatingCount` are per storefront and not
-in Apple's documented API. A follow-up decides between a second key and the
-public lookup.
+**(c) Ratings and reviews come from the official API with a second,
+optional key.** They are not in the first milestone 08 scope or its exit
+gate; #190 tracks them as an optional stretch. Sales never require this key.
+
+- **Role.** "View ratings and reviews" is granted to Account Holder, Admin,
+  App Manager, Developer, Marketing and Customer Support, and not to Sales
+  or Finance; key roles are the same as user roles
+  ([Role permissions](https://developer.apple.com/support/roles/),
+  [Creating API keys](https://developer.apple.com/documentation/appstoreconnectapi/creating-api-keys-for-app-store-connect-api),
+  checked 2026-10-03). No role reads reviews read-only. **Customer
+  Support** grants the fewest other permissions (it can also edit App Store
+  details and respond to reviews), so the wizard recommends it. Developer
+  and Marketing also work but grant much more (builds, certificates, in-app
+  purchases, pricing visibility).
+- **Credential.** An optional second signed-key credential on the same
+  `app-store-connect` connection, not a second connection. The envelope
+  JSON gains an optional `reviews: { keyId, privateKey }` member; the issuer
+  ID is team-wide and shared. Same envelope, field validation and redaction
+  as the main key, and no new table.
+- **Probe.** Before it is stored, the reviews key must answer
+  `GET /v1/apps/{id}/customerReviews?limit=1` for a selected app. 401 and
+  403 get the same kind of specific messages as the main key, naming the
+  Customer Support role.
+- **Signing.** The host signs a separate short-lived token for the reviews
+  key and passes it as an additive credential field (for example
+  `reviewsAccessToken`). The connector sees neither private key.
+- **Failure isolation.** A revoked or under-privileged reviews key pauses
+  only the review metrics ("App Store reviews paused — upload a new
+  reviews key"). The connection does not become `auth_failed`.
+- **Data.** Review counts and the sum of star ratings per app and day; the
+  average is derived (milestone 10) or computed by the tile. Review text
+  and nicknames are not stored. The API has no aggregate store rating, so
+  the UI does not present these numbers as the App Store's star rating.
 
 ### Metrics, identity and dimensions
 
@@ -301,6 +328,28 @@ single-currency metrics. The query service refuses to aggregate a
 the default is the one with the largest proceeds. Minor units follow ISO
 4217 exponents (JPY has 0). Apple Ads reuses the convention for
 organization currencies.
+
+**Display currency (follow-up, #191).** Per currency stays the default and
+the exact view. A workspace, or a single tile, may instead show amounts
+converted into a chosen display currency:
+
+- Rates are the [ECB euro foreign exchange reference rates](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html):
+  published around 16:00 CET on TARGET working days, base EUR, 29
+  currencies on 2026-10-02, as XML without a key
+  (`eurofxref-daily.xml`, `eurofxref-hist.zip`). The ECB publishes them
+  "for information purposes only". Its
+  [reuse terms](https://www.ecb.europa.eu/services/disclaimer/html/index.en.html)
+  allow free use when the ECB is cited as the source and modified data is
+  marked as such.
+- A host job, not a connector, fetches them on a schedule into a global,
+  non-tenant table. Stored observations never change; conversion happens
+  at query time with each reporting day's rate, or the last published rate
+  before it (weekends, holidays).
+- Converted values are labelled approximate and cite the ECB. Currencies
+  the ECB does not publish (Apple pays proceeds in some, for example TWD,
+  SAR or AED) stay unconverted and are shown separately, never dropped.
+- Self-hosters can turn the job and the option off at runtime; then no
+  request goes to the ECB.
 
 ### Time zones, backfill and latency
 
@@ -376,8 +425,19 @@ tests assert that the connector cannot reach any other host.
 - **Store an Admin key for analytics.** It would give netrics write access
   to apps, prices and users for a read-only product. A one-time step keeps
   the stored key read-only.
-- **Convert proceeds to one currency.** The API exposes no rates, and
-  importing FX data is a separate decision (milestone 10 derived metrics).
+- **Leave analytics out of milestone 08.** It would drop impressions and
+  product page views, which need only one Admin step per app.
+- **Ratings from the public lookup** (`itunes.apple.com/lookup`,
+  `averageUserRating`, `userRatingCount`). Not part of Apple's documented
+  API, per storefront, and without a key; rejected in favour of the
+  official API.
+- **One broader key for sales and reviews** (Admin or App Manager). It
+  would make every connection carry write rights to apps; a second,
+  optional key keeps the main key at the Sales role.
+- **Always convert proceeds to one currency.** The API exposes no rates,
+  and Apple's own conversion (a rolling average of the previous month) is
+  not available. Conversion is an opt-in display choice with labelled
+  approximate values instead (#191).
 - **Sales and Trends only.** It misses impressions and product page views,
   the most useful store metrics after downloads.
 - **The `scope` claim.** It cannot express daily report requests.
@@ -394,13 +454,30 @@ tests assert that the connector cannot reach any other host.
 - Users must have an Account Holder or Admin create the key. The wizard
   links to the keys page, names the Sales role and explains the vendor
   number. Enabling analytics needs an Admin key once.
-- Ratings and reviews, subscription reports, and analytics backfill through
-  a snapshot are follow-ups.
+- Ratings and reviews (#190, optional second key), display-currency
+  conversion (#191), subscription reports, and analytics backfill through a
+  snapshot are follow-ups.
 
-## Open questions for the owner
+## Decision record (owner, 2026-10-03)
 
-1. Is the temporary Admin key for enabling analytics acceptable, or should
-   analytics be left out of milestone 08?
-2. Should ratings come from a second key with a review-reading role, or
-   from the public lookup (undocumented fields, per storefront)?
-3. Is per-currency proceeds without conversion acceptable for the TV tiles?
+1. **Analytics enablement.** Accepted as proposed: a temporary Admin key,
+   used in memory once to create the ONGOING report requests, and never
+   stored. #174 proceeds.
+2. **Ratings.** From the official API with a second, optional key that has
+   a review-reading role (Customer Support recommended), stored on the same
+   connection with its own probe, never required for sales. Not in the
+   first milestone 08 scope: #190, optional stretch in milestone 08.
+3. **Currency.** The user chooses per workspace or per tile: amounts per
+   currency (default, exact), or converted into a display currency with
+   daily ECB reference rates, labelled approximate, and switchable off for
+   self-hosters. #191, no milestone yet (milestone 10 lists currency
+   exchange as out of scope).
+4. **Role names and sales report version.** Confirmed with a real account
+   at the exit gate (#176), which records them.
+
+### Open checks for the exit gate (#176)
+
+- The role names shown when creating a key (Sales, Finance, Admin,
+  Customer Support) match this ADR and the wizard copy.
+- The pinned Sales and Trends report version (currently `1_0`; the
+  reporting help also lists `1_3`) returns the expected columns.
