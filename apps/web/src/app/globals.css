@@ -1079,3 +1079,21 @@ a.health-badge:hover {
 #replace-key form > p.muted {
   margin: 0;
 }
+
+/* ─── New deployment notice (#200) ─────────────────────────────────── */
+
+.deploy-notice {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 100;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 10px 16px;
+  border: 1px solid #2c4a33;
+  border-radius: 8px;
+  background: #101a13;
+  color: #9fd6a8;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 40%);
+}

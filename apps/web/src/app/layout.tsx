@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import { DeployWatcher } from "@/components/deploy-watcher";
 import { Nav } from "@/components/nav";
 
 import "./globals.css";
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <Nav />
         <main className="container">{children}</main>
+        <DeployWatcher />
       </body>
     </html>
   );
