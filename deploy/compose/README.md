@@ -176,3 +176,8 @@ cosign verify-attestation --type spdxjson \
   `docker compose run --rm migrate node dist/admin-cli.js create-service-token --name ops --scope installation:workspaces:read`
 - Rotating the encryption key: see the main README, "Rotating the encryption
   key". Run `reencrypt-credentials` the same way.
+- Reading a connection's whole history again (for example after an upgrade
+  whose release notes say a connector now writes values it skipped before):
+  `docker compose run --rm migrate node dist/admin-cli.js backfill-connection --workspace <workspace id> --connection <connection id>`.
+  Both ids are in the connection's URL in the web app. Stored values stay
+  until the backfill overwrites them.
