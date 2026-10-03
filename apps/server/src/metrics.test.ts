@@ -3,7 +3,9 @@ import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  dashboardResponseSchema,
   errorResponseSchema,
+  metricCurrenciesResponseSchema,
   metricQueryResponseSchema,
   workspaceMetricListResponseSchema,
   workspaceResponseSchema,
@@ -19,6 +21,7 @@ import { addDays, civilDate } from "@netrics/domain";
 
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
+import { buildDeviceDashboard } from "./devices/dashboard.js";
 import { loadConfig } from "./env.js";
 import { queryMetric } from "./metrics/query.js";
 import { createTestDatabase } from "./test-db.js";
@@ -399,5 +402,170 @@ describe("daily gauges with missing days (#165)", () => {
   it("reads Lowest and Highest day over the days that have a value", async () => {
     expect(await run("min")).toMatchObject({ value: { value: 3 } });
     expect(await run("max")).toMatchObject({ value: { value: 8 } });
+  });
+});
+
+describe("per-currency amounts (#173)", () => {
+  // A "currency_minor" metric (ADR 0014): integer minor units, the ISO 4217
+  // code in the "currency" dimension. Its own workspace and connector, so
+  // the demo metrics above stay as they are.
+  let storeWorkspace: string;
+  let store: string;
+  const today = civilDate(NOW, "UTC");
+
+  async function proceeds(
+    date: string,
+    value: number,
+    currency: string,
+    app = "app-1",
+  ) {
+    await admin`
+      insert into observations (workspace_id, connection_id,
+        metric_definition_id, dimensions, source_timestamp, value)
+      select ${storeWorkspace}, ${store}, m.id, ${admin.json({ app, currency })},
+             ${`${date}T00:00:00Z`}::timestamptz, ${value}
+      from metric_definitions m
+      where m.connector_id = 'test-store' and m.key = 'store.proceeds'`;
+  }
+
+  const ask = (dimensions?: Record<string, string>) =>
+    query(owner, storeWorkspace, {
+      connectionId: store,
+      metricKey: "store.proceeds",
+      period: "last_7_days",
+      ...(dimensions ? { dimensions } : {}),
+    });
+
+  beforeAll(async () => {
+    storeWorkspace = (await createWorkspace(owner)).id;
+    await admin`
+      insert into connectors (id, version, manifest)
+      values ('test-store', '1.0.0', '{"id":"test-store"}'::jsonb)`;
+    await admin`
+      insert into metric_definitions (connector_id, key, name, description,
+        kind, unit, granularity, dimensions, aggregations)
+      values ('test-store', 'store.proceeds', 'Proceeds', 'Proceeds per day',
+        'delta', 'currency_minor', 'day', '["app","currency"]', '["sum"]')`;
+    const [row] = await admin`
+      insert into connections (workspace_id, connector_id, name)
+      values (${storeWorkspace}, 'test-store', 'Store') returning id`;
+    store = row!.id as string;
+
+    // Today: €12.34 + €1.00, $5.00, ¥900; yesterday ¥100. A week before
+    // (the previous period): €10.00.
+    await proceeds(today, 1_234, "EUR");
+    await proceeds(today, 100, "EUR", "app-2");
+    await proceeds(today, 500, "USD");
+    await proceeds(today, 900, "JPY");
+    await proceeds(addDays(today, -1), 100, "JPY");
+    await proceeds(addDays(today, -7), 1_000, "EUR");
+  });
+
+  it("rejects a query that would add up several currencies", async () => {
+    const response = await ask();
+    expect(response.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(response.json()).error).toBe(
+      "currency_required",
+    );
+    // Filtering on another dimension still mixes currencies.
+    expect((await ask({ app: "app-1" })).statusCode).toBe(400);
+    expect((await ask({ currency: "euro" })).statusCode).toBe(400);
+  });
+
+  it("sums one currency's minor units and compares within it", async () => {
+    const eur = metricQueryResponseSchema.parse(
+      (await ask({ currency: "EUR" })).json(),
+    );
+    expect(eur).toMatchObject({
+      currency: "EUR",
+      value: 1_334,
+      previousValue: 1_000,
+      delta: 334,
+    });
+    expect(eur.metric.unit).toBe("currency_minor");
+    const jpy = metricQueryResponseSchema.parse(
+      (await ask({ currency: "JPY" })).json(),
+    );
+    expect(jpy).toMatchObject({ currency: "JPY", value: 1_000 });
+    expect(jpy.series.at(-1)?.value).toBe(900);
+  });
+
+  it("reports no currency for other metrics", async () => {
+    const response = await query(owner, workspaceId, {
+      connectionId,
+      metricKey: "demo.signups",
+      period: "today",
+    });
+    expect(metricQueryResponseSchema.parse(response.json()).currency).toBe(
+      null,
+    );
+  });
+
+  it("lists the currencies with their own totals, largest first", async () => {
+    const response = await call(
+      "POST",
+      `/v1/workspaces/${storeWorkspace}/metrics/currencies`,
+      owner,
+      { connectionId: store, metricKey: "store.proceeds", period: "today" },
+    );
+    expect(response.statusCode).toBe(200);
+    expect(metricCurrenciesResponseSchema.parse(response.json())).toEqual({
+      currencies: [
+        { currency: "EUR", total: 1_334 },
+        { currency: "JPY", total: 900 },
+        { currency: "USD", total: 500 },
+      ],
+    });
+  });
+
+  it("lists currencies only for per-currency metrics, within the workspace", async () => {
+    const notPerCurrency = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/metrics/currencies`,
+      owner,
+      { connectionId, metricKey: "demo.signups", period: "today" },
+    );
+    expect(errorResponseSchema.parse(notPerCurrency.json()).error).toBe(
+      "metric_not_per_currency",
+    );
+    const foreign = await call(
+      "POST",
+      `/v1/workspaces/${storeWorkspace}/metrics/currencies`,
+      stranger,
+      { connectionId: store, metricKey: "store.proceeds", period: "today" },
+    );
+    expect(foreign.statusCode).toBe(404);
+  });
+
+  it("saves tiles only with a currency, and shows them on screens", async () => {
+    const create = (dimensions: Record<string, string>) =>
+      call("POST", `/v1/workspaces/${storeWorkspace}/dashboards`, owner, {
+        name: "Proceeds",
+        tiles: [
+          {
+            connectionId: store,
+            metricKey: "store.proceeds",
+            period: "today",
+            dimensions,
+          },
+        ],
+      });
+    const without = await create({ app: "app-1" });
+    expect(without.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(without.json()).error).toBe(
+      "currency_required",
+    );
+
+    const saved = await create({ currency: "JPY" });
+    expect(saved.statusCode).toBe(200);
+    const { dashboard } = dashboardResponseSchema.parse(saved.json());
+    const device = await withWorkspace(
+      db,
+      { workspaceId: storeWorkspace },
+      (tx) =>
+        buildDeviceDashboard(tx, storeWorkspace, dashboard.id, { now: NOW }),
+    );
+    // Screens get the currency's own unit, which they already format.
+    expect(device.tiles[0]).toMatchObject({ value: 900, unit: "JPY_minor" });
   });
 });

@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 
 import {
+  metricCurrenciesRequestSchema,
+  metricCurrenciesResponseSchema,
   metricQueryRequestSchema,
   metricQueryResponseSchema,
   workspaceMetricListResponseSchema,
@@ -9,7 +11,11 @@ import { withWorkspace, type Database } from "@netrics/database";
 import { can } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
-import { listMetrics, queryMetric } from "../metrics/query.js";
+import {
+  listMetricCurrencies,
+  listMetrics,
+  queryMetric,
+} from "../metrics/query.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
@@ -92,6 +98,42 @@ export function registerMetricRoutes(
             return sendError(reply, result.status, result.error);
           }
           return metricQueryResponseSchema.parse(result.value);
+        },
+      );
+
+      scope.post(
+        "/workspaces/:workspaceId/metrics/currencies",
+        {
+          schema: routeSchema({
+            summary:
+              "Currencies of a per-currency amount metric, each with its own total",
+            tags: ["metrics"],
+            body: metricCurrenciesRequestSchema,
+            response: metricCurrenciesResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:view")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const body = parseBody(metricCurrenciesRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const result = await withWorkspace(
+            deps.db,
+            { workspaceId: access.workspaceId, userId: access.callerId },
+            (tx) => listMetricCurrencies(tx, access.workspaceId, body, now()),
+          );
+          if (!result.ok) {
+            return sendError(reply, result.status, result.error);
+          }
+          return metricCurrenciesResponseSchema.parse(result.value);
         },
       );
 

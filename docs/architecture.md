@@ -310,11 +310,12 @@ The testing kit (`@netrics/connector-sdk/testing`) builds fixture responses:
 SDK versions are additive within 0.2: a connector that declares `^0.2.0`
 keeps loading on every 0.2.x runtime.
 
-| SDK   | Adds                                                    |
-| ----- | ------------------------------------------------------- |
-| 0.2.0 | The contract above; `token` and `none` auth strategies  |
-| 0.2.1 | The `oauth2` auth strategy (ADR 0012)                   |
-| 0.2.2 | The `signed-key` auth strategy and `bytes()` (ADR 0014) |
+| SDK   | Adds                                                             |
+| ----- | ---------------------------------------------------------------- |
+| 0.2.0 | The contract above; `token` and `none` auth strategies           |
+| 0.2.1 | The `oauth2` auth strategy (ADR 0012)                            |
+| 0.2.2 | The `signed-key` auth strategy and `bytes()` (ADR 0014)          |
+| 0.2.3 | The `currency_minor` unit with a `currency` dimension (ADR 0014) |
 
 ### Authentication strategies
 

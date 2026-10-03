@@ -9,7 +9,9 @@ import {
   findConnectionMetric,
   listWorkspaceMetrics,
   queryMetricBuckets,
+  queryMetricCurrencyTotals,
   type MetricBucketQuery,
+  type MetricCurrencyQuery,
 } from "./metrics.js";
 import * as schema from "./schema.js";
 import { createTestDatabase, type TestDatabase } from "./test-db.js";
@@ -70,7 +72,9 @@ beforeAll(async () => {
       ('demo', 'visits', 'Visits', 'Visits per day', 'delta', 'count', 'day',
        '["country"]', '["sum","avg","min","max"]'),
       ('demo', 'active', 'Active users', 'Active right now', 'gauge', 'count',
-       'instant', '["country"]', '["last","avg","min","max"]')`;
+       'instant', '["country"]', '["last","avg","min","max"]'),
+      ('demo', 'proceeds', 'Proceeds', 'Proceeds per currency', 'delta',
+       'currency_minor', 'day', '["app","currency"]', '["sum"]')`;
   const [a] =
     await admin`insert into workspaces (name) values ('A') returning id`;
   const [b] =
@@ -108,6 +112,33 @@ beforeAll(async () => {
   ] as const) {
     await observe(workspaceA, connectionA, "active", at, value, { country });
   }
+
+  // Proceeds in minor units per app and currency (ADR 0014).
+  for (const [at, value, app, currency] of [
+    ["2026-09-01T00:00:00Z", 1_000, "a", "EUR"],
+    ["2026-09-01T00:00:00Z", 2_000, "b", "EUR"],
+    ["2026-09-02T00:00:00Z", 500, "a", "EUR"],
+    ["2026-09-01T00:00:00Z", 4_000, "a", "USD"],
+    ["2026-09-01T00:00:00Z", 90_000, "a", "JPY"],
+    // Before the window: listed, with a total of 0.
+    ["2026-08-01T00:00:00Z", 7_000, "a", "CHF"],
+  ] as const) {
+    await observe(workspaceA, connectionA, "proceeds", at, value, {
+      app,
+      currency,
+    });
+  }
+  await observe(
+    workspaceB,
+    connectionB,
+    "proceeds",
+    "2026-09-01T00:00:00Z",
+    1,
+    {
+      app: "a",
+      currency: "GBP",
+    },
+  );
 }, 30_000);
 
 afterAll(async () => {
@@ -220,9 +251,10 @@ describe("metric lookup", () => {
     );
     expect(metrics.map((m) => [m.connectionId, m.key])).toEqual([
       [connectionA, "active"],
+      [connectionA, "proceeds"],
       [connectionA, "visits"],
     ]);
-    expect(metrics[1]).toMatchObject({
+    expect(metrics[2]).toMatchObject({
       kind: "delta",
       granularity: "day",
       aggregations: ["sum", "avg", "min", "max"],
@@ -238,5 +270,69 @@ describe("metric lookup", () => {
       findConnectionMetric(tx, workspaceA, connectionB, "visits"),
     );
     expect(foreign).toBeNull();
+  });
+});
+
+function currencies(
+  workspaceId: string,
+  overrides: Partial<MetricCurrencyQuery> = {},
+) {
+  return withWorkspace(db, { workspaceId }, (tx) =>
+    queryMetricCurrencyTotals(tx, {
+      workspaceId,
+      connectionId: connectionA,
+      metricKey: "proceeds",
+      from: new Date("2026-09-01T00:00:00Z"),
+      to: new Date("2026-09-08T00:00:00Z"),
+      combination: "sum",
+      ...overrides,
+    }),
+  );
+}
+
+describe("currency_minor amounts", () => {
+  it("are stored and summed per currency, never across", async () => {
+    expect(await currencies(workspaceA)).toEqual([
+      { currency: "JPY", total: 90_000 },
+      { currency: "USD", total: 4_000 },
+      { currency: "EUR", total: 3_500 },
+      { currency: "CHF", total: 0 },
+    ]);
+  });
+
+  it("bucket one currency when filtered to it", async () => {
+    expect(
+      await query(workspaceA, {
+        metricKey: "proceeds",
+        dimensions: { currency: "EUR" },
+      }),
+    ).toEqual([
+      { bucket: "2026-09-01T00:00:00.000Z", value: 3_000 },
+      { bucket: "2026-09-02T00:00:00.000Z", value: 500 },
+    ]);
+  });
+
+  it("combine with other dimension filters", async () => {
+    expect(await currencies(workspaceA, { dimensions: { app: "b" } })).toEqual([
+      { currency: "EUR", total: 2_000 },
+    ]);
+  });
+
+  it("never list another workspace's currencies", async () => {
+    expect(await currencies(workspaceB, { connectionId: connectionA })).toEqual(
+      [],
+    );
+    expect(await currencies(workspaceA, { connectionId: connectionB })).toEqual(
+      [],
+    );
+    expect(await currencies(workspaceB, { connectionId: connectionB })).toEqual(
+      [{ currency: "GBP", total: 1 }],
+    );
+  });
+
+  it("rejects an unbounded window", async () => {
+    await expect(
+      currencies(workspaceA, { from: new Date("2026-01-01T00:00:00Z") }),
+    ).rejects.toThrow(/at most 63 days/);
   });
 });

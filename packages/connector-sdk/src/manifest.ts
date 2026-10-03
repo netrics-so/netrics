@@ -105,27 +105,50 @@ export const granularitySchema = z.enum(["day", "hour", "instant"]);
 export type Granularity = z.infer<typeof granularitySchema>;
 export type Aggregation = z.infer<typeof aggregationSchema>;
 
-export const metricDefinitionSchema = z.object({
-  key: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string().min(1),
-  kind: metricKindSchema,
-  /**
-   * Unit of the value. Currency amounts are integer minor units named by
-   * ISO 4217 code plus "_minor" (e.g. "EUR_minor" for cents), so values stay
-   * exact in double precision.
-   */
-  unit: z.string().min(1),
-  granularity: granularitySchema,
-  dimensions: z.array(z.string().min(1)),
-  aggregations: z.array(aggregationSchema).min(1),
-  /**
-   * Which way is good: "higher" (default; more clicks, more revenue) or
-   * "lower" (a rank such as average position, an error rate). Dashboards
-   * colour a change by it.
-   */
-  better: z.enum(["higher", "lower"]).optional(),
-});
+/**
+ * Unit of a currency amount whose currency varies per observation (ADR
+ * 0014): integer minor units, with the ISO 4217 code in the observation's
+ * `currency` dimension (e.g. App Store proceeds per currency of proceeds).
+ * Since SDK 0.2.3.
+ */
+export const CURRENCY_MINOR_UNIT = "currency_minor";
+/** The dimension that holds a `currency_minor` value's ISO 4217 code. */
+export const CURRENCY_DIMENSION = "currency";
+
+export const metricDefinitionSchema = z
+  .object({
+    key: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string().min(1),
+    kind: metricKindSchema,
+    /**
+     * Unit of the value. Currency amounts are integer minor units named by
+     * ISO 4217 code plus "_minor" (e.g. "EUR_minor" for cents), so values stay
+     * exact in double precision. When the currency varies per observation, the
+     * unit is "currency_minor" and the metric declares a "currency" dimension
+     * holding the ISO 4217 code; amounts in different currencies are never
+     * added up.
+     */
+    unit: z.string().min(1),
+    granularity: granularitySchema,
+    dimensions: z.array(z.string().min(1)),
+    aggregations: z.array(aggregationSchema).min(1),
+    /**
+     * Which way is good: "higher" (default; more clicks, more revenue) or
+     * "lower" (a rank such as average position, an error rate). Dashboards
+     * colour a change by it.
+     */
+    better: z.enum(["higher", "lower"]).optional(),
+  })
+  .refine(
+    (metric) =>
+      metric.unit !== CURRENCY_MINOR_UNIT ||
+      metric.dimensions.includes(CURRENCY_DIMENSION),
+    {
+      message: `a "${CURRENCY_MINOR_UNIT}" metric needs a "${CURRENCY_DIMENSION}" dimension`,
+      path: ["dimensions"],
+    },
+  );
 export type MetricDefinition = z.infer<typeof metricDefinitionSchema>;
 
 export const rateLimitHintSchema = z.object({

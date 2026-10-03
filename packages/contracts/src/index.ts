@@ -749,6 +749,12 @@ export const workspaceMetricSchema = z.object({
   name: z.string().min(1),
   description: z.string(),
   kind: z.enum(METRIC_KINDS),
+  /**
+   * E.g. "count", "percent", "<ISO 4217>_minor" for amounts in one currency
+   * (integer minor units, ADR 0008), or "currency_minor" for amounts whose
+   * ISO 4217 code is in the "currency" dimension (ADR 0014). A
+   * "currency_minor" metric is only queried per currency.
+   */
   unit: z.string().min(1),
   granularity: z.enum(GRANULARITIES),
   dimensions: z.array(z.string()),
@@ -771,7 +777,11 @@ export const metricQueryRequestSchema = z.object({
   period: metricPeriodSchema,
   /** Defaults to the metric's first compatible aggregation. */
   aggregation: metricAggregationSchema.optional(),
-  /** Only series with these dimension values (at most 10). */
+  /**
+   * Only series with these dimension values (at most 10). A "currency_minor"
+   * metric needs a "currency" filter (an ISO 4217 code): amounts in
+   * different currencies are never added up (400 currency_required).
+   */
   dimensions: z
     .record(z.string().min(1).max(100), z.string().max(200))
     .optional(),
@@ -783,6 +793,12 @@ export const metricQueryResponseSchema = z.object({
   period: metricPeriodSchema,
   timeZone: z.string().min(1),
   aggregation: metricAggregationSchema,
+  /**
+   * ISO 4217 code of the amounts (in minor units) when the metric is an
+   * amount: from a "<ISO>_minor" unit or the "currency" filter. Null
+   * otherwise.
+   */
+  currency: z.string().nullable(),
   /** Null when the window has no data. */
   value: z.number().nullable(),
   previousValue: z.number().nullable(),
@@ -796,6 +812,36 @@ export const metricQueryResponseSchema = z.object({
   ),
 });
 export type MetricQueryResponse = z.infer<typeof metricQueryResponseSchema>;
+
+/** The currencies of a "currency_minor" metric, for picking one (ADR 0014). */
+export const metricCurrenciesRequestSchema = z.object({
+  connectionId: z.uuid(),
+  metricKey: z.string().min(1).max(200),
+  /** The totals cover the period's current window. */
+  period: metricPeriodSchema,
+  /** Other dimension filters (at most 10); a "currency" filter is ignored. */
+  dimensions: z
+    .record(z.string().min(1).max(100), z.string().max(200))
+    .optional(),
+});
+export type MetricCurrenciesRequest = z.infer<
+  typeof metricCurrenciesRequestSchema
+>;
+
+export const metricCurrenciesResponseSchema = z.object({
+  /**
+   * Each currency with its own total in minor units over the period, largest
+   * first (the default for a tile). Currencies seen only before the period
+   * have a total of 0. Totals of different currencies are not comparable
+   * amounts; they only order the list.
+   */
+  currencies: z.array(
+    z.object({ currency: z.string().length(3), total: z.number() }),
+  ),
+});
+export type MetricCurrenciesResponse = z.infer<
+  typeof metricCurrenciesResponseSchema
+>;
 
 // ─── Dashboards (#49) ───────────────────────────────────────────────────────
 
@@ -1049,7 +1095,9 @@ export const deviceTileSchema = z.object({
   value: z.number().nullable(),
   /**
    * E.g. "count", "percent", or "<ISO 4217>_minor" for currency amounts in
-   * integer minor units (ADR 0008). Null when the tile could not load.
+   * integer minor units (ADR 0008). A tile of a "currency_minor" metric
+   * reports its currency's "<ISO 4217>_minor" here (ADR 0014), so screens
+   * need nothing new. Null when the tile could not load.
    */
   unit: z.string().nullable(),
   /** Against the previous period of the same length. */

@@ -4,8 +4,10 @@ import { satisfiesRange } from "./semver.js";
 // 0.2.1: the additive "oauth2" auth strategy (ADR 0012).
 // 0.2.2: the additive "signed-key" auth strategy and
 // ConnectorResponse.bytes() for binary bodies (ADR 0014).
-// Both are additive: ^0.2.0 connectors keep loading.
-export const SDK_VERSION = "0.2.2";
+// 0.2.3: the "currency_minor" unit, whose metrics declare a "currency"
+// dimension (ADR 0014).
+// All are additive: ^0.2.0 connectors keep loading.
+export const SDK_VERSION = "0.2.3";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

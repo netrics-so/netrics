@@ -112,6 +112,56 @@ describe("executeSync", () => {
     );
   });
 
+  describe("currency_minor amounts", () => {
+    const manifest: ConnectorManifest = {
+      ...demoManifest,
+      metrics: [
+        {
+          key: "demo.proceeds",
+          name: "Proceeds",
+          description: "Proceeds per currency.",
+          kind: "delta",
+          unit: "currency_minor",
+          granularity: "day",
+          dimensions: ["resource", "currency"],
+          aggregations: ["sum"],
+        },
+      ],
+    };
+    const amount = (dimensions: Record<string, string>, value = 1234) =>
+      observation({ metricKey: "demo.proceeds", dimensions, value });
+    const run = (observations: Observation[]) =>
+      executeSync(
+        connectorWith(manifest, () => ({ observations, done: true })),
+        baseContext,
+        request,
+      );
+
+    it("accepts integer minor units with an ISO 4217 currency", async () => {
+      const result = await run([
+        amount({ resource: "app-1", currency: "EUR" }),
+        amount({ resource: "app-1", currency: "JPY" }, 500),
+      ]);
+      expect(result.observations).toHaveLength(2);
+    });
+
+    it.each([
+      ["no currency", { resource: "app-1" }],
+      ["a lowercase code", { resource: "app-1", currency: "eur" }],
+      ["a name", { resource: "app-1", currency: "Euro" }],
+    ])("rejects an amount with %s", async (_label, dimensions) => {
+      await expect(run([amount(dimensions)])).rejects.toThrow(
+        /without an ISO 4217 "currency" dimension/,
+      );
+    });
+
+    it("rejects fractional minor units", async () => {
+      await expect(
+        run([amount({ resource: "app-1", currency: "EUR" }, 12.5)]),
+      ).rejects.toThrow(/not in integer minor units/);
+    });
+  });
+
   it("rejects malformed transport objects", async () => {
     const connector = connectorWith(demoManifest, () => ({
       observations: [observation({ value: Number.NaN })],

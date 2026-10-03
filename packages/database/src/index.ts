@@ -141,11 +141,14 @@ export {
   findConnectionMetric,
   listWorkspaceMetrics,
   queryMetricBuckets,
+  queryMetricCurrencyTotals,
 } from "./metrics.js";
 export type {
   ConnectionMetric,
   MetricBucket,
   MetricBucketQuery,
+  MetricCurrencyQuery,
+  MetricCurrencyTotal,
 } from "./metrics.js";
 export {
   deleteConnection,

@@ -1,4 +1,6 @@
 import type {
+  MetricCurrenciesRequest,
+  MetricCurrenciesResponse,
   MetricQueryRequest,
   MetricQueryResponse,
   WorkspaceMetric,
@@ -8,15 +10,20 @@ import {
   findWorkspace,
   listWorkspaceMetrics,
   queryMetricBuckets,
+  queryMetricCurrencyTotals,
   type ConnectionMetric,
   type Transaction,
 } from "@netrics/database";
 import {
+  CURRENCY_DIMENSION,
   addDays,
+  amountCurrency,
   aggregateBuckets,
   bucketCombination,
   compare,
   compatibleAggregations,
+  isCurrencyCode,
+  isPerCurrencyUnit,
   planBuckets,
   resolvePeriod,
   type Aggregation,
@@ -86,6 +93,15 @@ export async function queryMetric(
   if (Object.keys(request.dimensions ?? {}).length > 10) {
     return { ok: false, status: 400, error: "too_many_dimension_filters" };
   }
+  // Amounts in different currencies never add up (ADR 0014): a per-currency
+  // metric is read one currency at a time.
+  const currency = request.dimensions?.[CURRENCY_DIMENSION];
+  if (
+    isPerCurrencyUnit(metric.unit) &&
+    (currency === undefined || !isCurrencyCode(currency))
+  ) {
+    return { ok: false, status: 400, error: "currency_required" };
+  }
 
   const window = resolvePeriod(request.period, now, workspace.timeZone);
   const plan = planBuckets(window, metric.granularity);
@@ -123,6 +139,7 @@ export async function queryMetric(
       period: request.period,
       timeZone: workspace.timeZone,
       aggregation,
+      currency: amountCurrency(metric.unit, currency),
       value: change.value,
       previousValue: change.previousValue,
       delta: change.delta,
@@ -133,4 +150,59 @@ export async function queryMetric(
       })),
     },
   };
+}
+
+/**
+ * The currencies of a "currency_minor" metric, each with its own total over
+ * the period's current window, largest first (ADR 0014). This is the
+ * per-currency breakdown a tile editor picks from; nothing is added across
+ * currencies.
+ */
+export async function listMetricCurrencies(
+  tx: Transaction,
+  workspaceId: string,
+  request: MetricCurrenciesRequest,
+  now: Date = new Date(),
+): Promise<MetricResult<MetricCurrenciesResponse>> {
+  const workspace = await findWorkspace(tx, workspaceId);
+  const found = await findConnectionMetric(
+    tx,
+    workspaceId,
+    request.connectionId,
+    request.metricKey,
+  );
+  if (!workspace || !found) {
+    return { ok: false, status: 404, error: "metric_not_found" };
+  }
+  const metric = present(found);
+  if (!isPerCurrencyUnit(metric.unit)) {
+    return { ok: false, status: 400, error: "metric_not_per_currency" };
+  }
+  const { [CURRENCY_DIMENSION]: _currency, ...dimensions } =
+    request.dimensions ?? {};
+  if (Object.keys(dimensions).length > 10) {
+    return { ok: false, status: 400, error: "too_many_dimension_filters" };
+  }
+  const window = resolvePeriod(request.period, now, workspace.timeZone);
+  const plan = planBuckets(window, metric.granularity);
+  const current =
+    plan.selection === "dates" ? datesToRange(window.dates) : window.current;
+  // An empty window (exactly at local midnight) ranks by the day before.
+  const range =
+    current.end > current.start
+      ? current
+      : {
+          start: new Date(current.end.getTime() - 24 * 60 * 60 * 1000),
+          end: current.end,
+        };
+  const currencies = await queryMetricCurrencyTotals(tx, {
+    workspaceId,
+    connectionId: metric.connectionId,
+    metricKey: metric.key,
+    ...(Object.keys(dimensions).length > 0 ? { dimensions } : {}),
+    from: range.start,
+    to: range.end,
+    combination: bucketCombination(metric.kind),
+  });
+  return { ok: true, value: { currencies } };
 }

@@ -17,6 +17,7 @@ import {
   apiErrorMessage,
   deleteDashboard,
   duplicateDashboard,
+  listMetricCurrencies,
   saveDashboard,
 } from "@/lib/api";
 import {
@@ -24,6 +25,14 @@ import {
   PERIOD_LABELS,
   aggregationLabel,
 } from "@/lib/format-metric";
+import {
+  currencyOptionLabel,
+  effectiveCurrency,
+  needsCurrency,
+  tileCurrency,
+  tileDimensions,
+  type CurrencyTotals,
+} from "@/lib/tile-currency";
 
 import { MetricTile, type TileConnection } from "./metric-tile";
 import { useServerRefresh } from "./use-server-refresh";
@@ -278,6 +287,7 @@ export function DashboardView({
             <ol className="tile-edit-list">
               {tiles.map((tile, index) => {
                 const metric = metricsById.get(tileMetricId(tile));
+                const currency = tileCurrency(tile.dimensions);
                 return (
                   <li key={tile.key}>
                     <span>
@@ -289,7 +299,8 @@ export function DashboardView({
                         {metric
                           ? aggregationLabel(tile.aggregation, metric)
                           : AGGREGATION_LABELS[tile.aggregation]}{" "}
-                        · {metric?.connectionName ?? "removed connection"}
+                        {currency ? `· ${currency} ` : null}·{" "}
+                        {metric?.connectionName ?? "removed connection"}
                       </span>
                     </span>
                     <span className="actions">
@@ -328,6 +339,7 @@ export function DashboardView({
           )}
           {tiles.length < MAX_DASHBOARD_TILES ? (
             <AddTileForm
+              workspaceId={workspaceId}
               metrics={pickable}
               onAdd={(tile) => setTiles((current) => [...current, tile])}
             />
@@ -354,10 +366,59 @@ export function DashboardView({
   );
 }
 
+/**
+ * The currencies of a per-currency amount metric over a period, largest
+ * total first; null while loading or for other metrics.
+ */
+function useCurrencies(
+  workspaceId: string,
+  metric: WorkspaceMetric | undefined,
+  period: MetricPeriod,
+): { totals: CurrencyTotals | null; error: string | null } {
+  const [state, setState] = useState<{
+    key: string;
+    totals: CurrencyTotals | null;
+    error: string | null;
+  }>({ key: "", totals: null, error: null });
+  const perCurrency = needsCurrency(metric);
+  const key = metric && perCurrency ? `${metricId(metric)}|${period}` : "";
+
+  useEffect(() => {
+    if (!metric || !perCurrency) {
+      return;
+    }
+    let current = true;
+    listMetricCurrencies(workspaceId, {
+      connectionId: metric.connectionId,
+      metricKey: metric.key,
+      period,
+    })
+      .then((response) => {
+        if (current) {
+          setState({ key, totals: response.currencies, error: null });
+        }
+      })
+      .catch((cause: unknown) => {
+        if (current) {
+          setState({ key, totals: null, error: apiErrorMessage(cause) });
+        }
+      });
+    return () => {
+      current = false;
+    };
+  }, [workspaceId, metric, perCurrency, period, key]);
+
+  return state.key === key && key !== ""
+    ? { totals: state.totals, error: state.error }
+    : { totals: null, error: null };
+}
+
 function AddTileForm({
+  workspaceId,
   metrics,
   onAdd,
 }: {
+  workspaceId: string;
   metrics: WorkspaceMetric[];
   onAdd: (tile: DraftTile) => void;
 }) {
@@ -368,6 +429,13 @@ function AddTileForm({
   const [aggregation, setAggregation] = useState<MetricAggregation | "">("");
   const [period, setPeriod] = useState<MetricPeriod>("last_7_days");
   const [title, setTitle] = useState("");
+  // Amounts in several currencies: the tile shows one (ADR 0014).
+  const perCurrency = needsCurrency(metric);
+  const currencies = useCurrencies(workspaceId, metric, period);
+  const [pickedCurrency, setPickedCurrency] = useState("");
+  const currency = currencies.totals
+    ? effectiveCurrency(currencies.totals, pickedCurrency)
+    : null;
 
   if (metrics.length === 0) {
     return (
@@ -393,7 +461,7 @@ function AddTileForm({
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!metric || !effectiveAggregation) {
+    if (!metric || !effectiveAggregation || (perCurrency && !currency)) {
       return;
     }
     onAdd({
@@ -402,7 +470,7 @@ function AddTileForm({
       metricKey: metric.key,
       aggregation: effectiveAggregation,
       period,
-      dimensions: {},
+      dimensions: tileDimensions(metric, currency),
       title: title.trim() === "" ? null : title.trim(),
     });
     setTitle("");
@@ -464,6 +532,32 @@ function AddTileForm({
           ))}
         </select>
       </div>
+      {perCurrency ? (
+        <div className="field">
+          <label htmlFor="tile-currency">Currency</label>
+          <select
+            id="tile-currency"
+            value={currency ?? ""}
+            disabled={!currencies.totals || currencies.totals.length === 0}
+            onChange={(event) => setPickedCurrency(event.target.value)}
+          >
+            {(currencies.totals ?? []).map((option) => (
+              <option key={option.currency} value={option.currency}>
+                {currencyOptionLabel(option)}
+              </option>
+            ))}
+          </select>
+          <p className="help">
+            {currencies.error
+              ? currencies.error
+              : !currencies.totals
+                ? "Loading currencies…"
+                : currencies.totals.length === 0
+                  ? "No amounts yet. Pick a currency once the connection has synced."
+                  : `Amounts are not converted: a tile shows one currency. Totals for ${PERIOD_LABELS[period].toLowerCase()}.`}
+          </p>
+        </div>
+      ) : null}
       <div className="field">
         <label htmlFor="tile-title">Title (optional)</label>
         <input
@@ -474,7 +568,9 @@ function AddTileForm({
           onChange={(event) => setTitle(event.target.value)}
         />
       </div>
-      <button type="submit">Add tile</button>
+      <button type="submit" disabled={perCurrency && !currency}>
+        Add tile
+      </button>
     </form>
   );
 }

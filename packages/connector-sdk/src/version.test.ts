@@ -56,9 +56,9 @@ describe("assertManifestCompatible", () => {
     ).toThrow();
   });
 
-  it("keeps loading connectors written for SDK ^0.2.0 and ^0.2.1", () => {
-    expect(SDK_VERSION).toBe("0.2.2");
-    for (const sdkVersion of ["^0.2.0", "^0.2.1", "^0.2.2"]) {
+  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.2", () => {
+    expect(SDK_VERSION).toBe("0.2.3");
+    for (const sdkVersion of ["^0.2.0", "^0.2.1", "^0.2.2", "^0.2.3"]) {
       expect(
         assertManifestCompatible({ ...validManifest(), sdkVersion }).id,
       ).toBe("acme-analytics");
@@ -181,6 +181,25 @@ describe("assertManifestCompatible", () => {
         metrics: [metricWithout],
       }),
     ).toThrow();
+  });
+
+  it("requires a currency dimension for currency_minor metrics", () => {
+    const proceeds = {
+      ...validManifest().metrics[0]!,
+      key: "acme.proceeds",
+      kind: "delta",
+      unit: "currency_minor",
+      aggregations: ["sum"],
+    };
+    expect(() =>
+      assertManifestCompatible({ ...validManifest(), metrics: [proceeds] }),
+    ).toThrow(/needs a .*currency.* dimension/);
+    expect(
+      assertManifestCompatible({
+        ...validManifest(),
+        metrics: [{ ...proceeds, dimensions: ["resource", "currency"] }],
+      }).metrics[0]!.unit,
+    ).toBe("currency_minor");
   });
 
   it("rejects malformed manifests", () => {

@@ -19,6 +19,10 @@ import Testing
         (1500, "EUR_minor", "€15"),
         (0, "count", "0"),
         (-1284, "count", "-1,284"),
+        // ISO 4217 exponents: JPY has none, BHD three.
+        (1_234, "JPY_minor", "¥1,234"),
+        (150, "EUR_minor", "€1.50"),
+        (99, "USD_minor", "$0.99"),
     ])
     func formats(_ value: Double?, _ unit: String, _ expected: String) {
         #expect(MetricFormat.value(value, unit: unit) == expected)

@@ -21,7 +21,10 @@ import {
   type Transaction,
 } from "@netrics/database";
 import {
+  CURRENCY_DIMENSION,
   compatibleAggregations,
+  isCurrencyCode,
+  isPerCurrencyUnit,
   type Aggregation,
   type MetricKind,
 } from "@netrics/domain";
@@ -101,6 +104,14 @@ async function validateTiles(
       Object.keys(dimensions).some((key) => !metric.dimensions.includes(key))
     ) {
       return fail(400, "unknown_dimension");
+    }
+    // A tile of a per-currency amount shows one currency (ADR 0014).
+    const currency = dimensions[CURRENCY_DIMENSION];
+    if (
+      isPerCurrencyUnit(metric.unit) &&
+      (currency === undefined || !isCurrencyCode(currency))
+    ) {
+      return fail(400, "currency_required");
     }
     valid.push({
       connectionId: tile.connectionId,
