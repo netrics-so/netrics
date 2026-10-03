@@ -232,6 +232,13 @@
       "when": 1791066303185,
       "tag": "0032_longer_periods",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791068100186,
+      "tag": "0033_dashboard_studio",
+      "breakpoints": true
     }
   ]
 }

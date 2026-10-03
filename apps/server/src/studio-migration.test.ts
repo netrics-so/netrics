@@ -1,10 +1,19 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import {
   createDatabase,
   createRawSqlClient,
+  migrationsFolder,
   withWorkspace,
   type Database,
   type Sql,
 } from "@netrics/database";
+import {
+  LEGACY_TILES_PER_SLIDE,
+  legacyGrid,
+  legacyLayout,
+} from "@netrics/domain";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { buildDeviceDashboard } from "./devices/dashboard.js";
@@ -26,6 +35,8 @@ let rich: string;
 let large: string;
 let empty: string;
 let deviceIds: string[];
+/** A dashboard of n tiles for n = 1…24, by n. */
+const bySize = new Map<number, string>();
 
 beforeAll(async () => {
   testDb = await createTestDatabase({ upTo: LAST_BEFORE });
@@ -154,6 +165,22 @@ beforeAll(async () => {
     });
   }
   empty = await dashboard("Empty", "33333333-3333-4333-8333-333333333333");
+  for (let size = 1; size <= 24; size++) {
+    const id = await dashboard(
+      `${size} tiles`,
+      `44444444-4444-4444-8444-${String(size).padStart(12, "0")}`,
+    );
+    bySize.set(size, id);
+    for (let position = 0; position < size; position++) {
+      await tile(id, position, {
+        metricKey: position % 2 ? "snap.proceeds" : "snap.downloads",
+        title: position % 5 === 0 ? `Tile ${position}` : null,
+        ...(position % 2
+          ? { displayCurrency: position % 3 ? "USD" : null }
+          : { dimensions: { resource: "app-1" } }),
+      });
+    }
+  }
 
   deviceIds = [];
   for (const [index, dashboardId] of [rich, large, empty].entries()) {
@@ -209,5 +236,134 @@ describe("device payload schema 1 after the studio migration", () => {
       select dashboard_id from devices where id in ${owner(deviceIds)}
       order by name`;
     expect(rows.map((row) => row.dashboard_id)).toEqual([rich, large, empty]);
+  });
+});
+
+describe("studio migration of tile dashboards", () => {
+  it("turns every tile into a metric widget with the same id and binding", async () => {
+    const pairs = await owner`
+      select t.*, w.type as w_type, w.connection_id as w_connection_id,
+             w.metric_key as w_metric_key, w.aggregation as w_aggregation,
+             w.period as w_period, w.dimensions as w_dimensions,
+             w.title as w_title, w.display_currency as w_display_currency,
+             w.text as w_text, w.options as w_options,
+             w.workspace_id as w_workspace_id, w.dashboard_id as w_dashboard_id
+      from dashboard_tiles t
+      left join dashboard_widgets w on w.id = t.id`;
+    const [{ widgets }] = (await owner`
+      select count(*)::int as widgets from dashboard_widgets`) as unknown as [
+      { widgets: number },
+    ];
+    expect(pairs).toHaveLength(7 + 17 + (24 * 25) / 2);
+    expect(widgets).toBe(pairs.length);
+    for (const row of pairs) {
+      expect({
+        type: row.w_type,
+        workspaceId: row.w_workspace_id,
+        dashboardId: row.w_dashboard_id,
+        connectionId: row.w_connection_id,
+        metricKey: row.w_metric_key,
+        aggregation: row.w_aggregation,
+        period: row.w_period,
+        dimensions: row.w_dimensions,
+        title: row.w_title,
+        displayCurrency: row.w_display_currency,
+        text: row.w_text,
+        options: row.w_options,
+      }).toEqual({
+        type: "metric",
+        workspaceId: row.workspace_id,
+        dashboardId: row.dashboard_id,
+        connectionId: row.connection_id,
+        metricKey: row.metric_key,
+        aggregation: row.aggregation,
+        period: row.period,
+        dimensions: row.dimensions,
+        title: row.title,
+        displayCurrency: row.display_currency,
+        text: null,
+        options: {},
+      });
+    }
+  });
+
+  it("lays out 1–24 tiles like legacyLayout, a second slide after 16", async () => {
+    for (const [size, dashboardId] of bySize) {
+      const slides = await owner`
+        select id, position, name, duration_seconds, enabled
+        from dashboard_slides where dashboard_id = ${dashboardId}
+        order by position`;
+      expect(slides).toHaveLength(size > LEGACY_TILES_PER_SLIDE ? 2 : 1);
+      for (const slide of slides) {
+        expect(slide).toMatchObject({
+          name: null,
+          duration_seconds: null,
+          enabled: true,
+        });
+      }
+      const widgets = await owner`
+        select s.position as slide, w.x, w.y, w.w, w.h
+        from dashboard_tiles t
+        join dashboard_widgets w on w.id = t.id
+        join dashboard_slides s on s.id = w.slide_id
+        where t.dashboard_id = ${dashboardId}
+        order by t.position`;
+      expect(
+        widgets.map((w) => ({
+          slide: w.slide,
+          x: w.x,
+          y: w.y,
+          w: w.w,
+          h: w.h,
+        })),
+        `${size} tiles`,
+      ).toEqual(
+        legacyLayout(size).flatMap((placements, slide) =>
+          placements.map((placement) => ({ slide, ...placement })),
+        ),
+      );
+    }
+  });
+
+  it("gives an empty dashboard one empty slide and default settings", async () => {
+    const [settings] = await owner`
+      select show_header, auto_advance, default_slide_seconds, transition
+      from dashboards where id = ${empty}`;
+    expect(settings).toEqual({
+      show_header: true,
+      auto_advance: true,
+      default_slide_seconds: 20,
+      transition: "fade",
+    });
+    const slides = await owner`
+      select s.position, count(w.id)::int as widgets
+      from dashboard_slides s left join dashboard_widgets w on w.slide_id = s.id
+      where s.dashboard_id = ${empty} group by s.position`;
+    expect(slides).toEqual([{ position: 0, widgets: 0 }]);
+  });
+
+  it("uses a lookup table that equals legacyGrid", () => {
+    const sql = readFileSync(
+      path.join(migrationsFolder, "0033_dashboard_studio.sql"),
+      "utf8",
+    );
+    const values =
+      /"grid" \("tiles", "columns", "rows"\) AS \(\s*VALUES ([^)]*\)(?:,\s*\([^)]*\))*)/.exec(
+        sql,
+      );
+    expect(values).not.toBeNull();
+    const table = [...values![1]!.matchAll(/\((\d+), (\d+), (\d+)\)/g)].map(
+      ([, tiles, columns, rows]) => [
+        Number(tiles),
+        Number(columns),
+        Number(rows),
+      ],
+    );
+    expect(table).toEqual(
+      Array.from({ length: LEGACY_TILES_PER_SLIDE }, (_, index) => {
+        const { columns, rows } = legacyGrid(index + 1);
+        return [index + 1, columns, rows];
+      }),
+    );
   });
 });

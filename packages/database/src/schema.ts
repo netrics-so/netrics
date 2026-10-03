@@ -639,6 +639,13 @@ export const dashboards = pgTable(
     }),
     name: text("name").notNull(),
     version: integer("version").notNull().default(1),
+    // Studio settings (ADR 0015 section 1): the header band above the
+    // grid, and how screens rotate through the slides.
+    showHeader: boolean("show_header").notNull().default(true),
+    /** False: screens show only the first enabled slide. */
+    autoAdvance: boolean("auto_advance").notNull().default(true),
+    defaultSlideSeconds: integer("default_slide_seconds").notNull().default(20),
+    transition: text("transition").notNull().default("fade"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -650,6 +657,136 @@ export const dashboards = pgTable(
     unique("dashboards_id_workspace_unique").on(table.id, table.workspaceId),
     index("dashboards_workspace_idx").on(table.workspaceId),
     check("dashboards_version_positive", sql`${table.version} >= 1`),
+    check(
+      "dashboards_default_slide_seconds_valid",
+      sql`${table.defaultSlideSeconds} between 5 and 3600`,
+    ),
+    check(
+      "dashboards_transition_valid",
+      sql`${table.transition} in ('none', 'fade')`,
+    ),
+  ],
+);
+
+// Dashboard Studio (ADR 0015): a dashboard is an ordered list of slides,
+// each a 12 × 8 grid of widgets. Composite foreign keys keep every slide in
+// the workspace of its dashboard, and every widget on a slide of its own
+// dashboard and in the workspace of its connection. Migration 0033 also
+// adds the deferrable unique (dashboard_id, position) on slides, which
+// drizzle cannot express.
+export const dashboardSlides = pgTable(
+  "dashboard_slides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    dashboardId: uuid("dashboard_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    position: integer("position").notNull(),
+    /** Shown in the header and the editor. */
+    name: text("name"),
+    /** Null: the dashboard's default_slide_seconds. */
+    durationSeconds: integer("duration_seconds"),
+    /** Screens skip disabled slides. */
+    enabled: boolean("enabled").notNull().default(true),
+  },
+  (table) => [
+    foreignKey({
+      name: "dashboard_slides_dashboard_fk",
+      columns: [table.dashboardId, table.workspaceId],
+      foreignColumns: [dashboards.id, dashboards.workspaceId],
+    }).onDelete("cascade"),
+    unique("dashboard_slides_id_dashboard_workspace_unique").on(
+      table.id,
+      table.dashboardId,
+      table.workspaceId,
+    ),
+    index("dashboard_slides_workspace_idx").on(table.workspaceId),
+    check("dashboard_slides_position_valid", sql`${table.position} >= 0`),
+    check(
+      "dashboard_slides_name_valid",
+      sql`${table.name} is null or char_length(${table.name}) between 1 and 60`,
+    ),
+    check(
+      "dashboard_slides_duration_valid",
+      sql`${table.durationSeconds} is null or ${table.durationSeconds} between 5 and 3600`,
+    ),
+  ],
+);
+
+export const dashboardWidgets = pgTable(
+  "dashboard_widgets",
+  {
+    // Stable across saves (ADR 0015 section 3); a migrated tile keeps its id.
+    id: uuid("id").primaryKey().defaultRandom(),
+    slideId: uuid("slide_id").notNull(),
+    dashboardId: uuid("dashboard_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    type: text("type").notNull(),
+    x: smallint("x").notNull(),
+    y: smallint("y").notNull(),
+    w: smallint("w").notNull(),
+    h: smallint("h").notNull(),
+    /** Overrides the default label when set. */
+    title: text("title"),
+    // Data widgets (metric, line, bar), as dashboard_tiles.
+    connectionId: uuid("connection_id"),
+    metricKey: text("metric_key"),
+    aggregation: text("aggregation"),
+    period: text("period"),
+    dimensions: jsonb("dimensions").notNull().default({}),
+    displayCurrency: text("display_currency"),
+    /** Text widgets: markdown-lite, never HTML. */
+    text: text("text"),
+    /** Type-specific style, validated per type by the API contract. */
+    options: jsonb("options").notNull().default({}),
+  },
+  (table) => [
+    foreignKey({
+      name: "dashboard_widgets_slide_fk",
+      columns: [table.slideId, table.dashboardId, table.workspaceId],
+      foreignColumns: [
+        dashboardSlides.id,
+        dashboardSlides.dashboardId,
+        dashboardSlides.workspaceId,
+      ],
+    }).onDelete("cascade"),
+    // A widget goes with its connection, like a tile.
+    foreignKey({
+      name: "dashboard_widgets_connection_fk",
+      columns: [table.connectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("cascade"),
+    index("dashboard_widgets_slide_idx").on(table.slideId),
+    index("dashboard_widgets_dashboard_idx").on(table.dashboardId),
+    index("dashboard_widgets_connection_idx").on(table.connectionId),
+    check(
+      "dashboard_widgets_type_valid",
+      sql`${table.type} in ('metric', 'line', 'bar', 'text', 'clock')`,
+    ),
+    check(
+      "dashboard_widgets_grid_valid",
+      sql`${table.x} >= 0 and ${table.y} >= 0 and ${table.w} >= 1 and ${table.h} >= 1 and ${table.x} + ${table.w} <= 12 and ${table.y} + ${table.h} <= 8`,
+    ),
+    check(
+      "dashboard_widgets_title_valid",
+      sql`${table.title} is null or char_length(${table.title}) between 1 and 100`,
+    ),
+    check(
+      "dashboard_widgets_text_valid",
+      sql`${table.text} is null or char_length(${table.text}) <= 500`,
+    ),
+    check(
+      "dashboard_widgets_aggregation_valid",
+      sql`${table.aggregation} is null or ${table.aggregation} in ('sum', 'avg', 'min', 'max', 'last')`,
+    ),
+    check(
+      "dashboard_widgets_period_valid",
+      sql`${table.period} is null or ${table.period} in ('today', 'last_7_days', 'last_30_days', 'this_month', 'last_90_days', 'last_12_months')`,
+    ),
+    // Data widgets have a metric binding and no text; the others neither.
+    check(
+      "dashboard_widgets_type_columns",
+      sql`case when ${table.type} in ('metric', 'line', 'bar') then ${table.connectionId} is not null and ${table.metricKey} is not null and ${table.aggregation} is not null and ${table.period} is not null and ${table.text} is null else ${table.connectionId} is null and ${table.metricKey} is null and ${table.aggregation} is null and ${table.period} is null and ${table.displayCurrency} is null and ${table.dimensions} = '{}'::jsonb and (${table.text} is not null) = (${table.type} = 'text') end`,
+    ),
   ],
 );
 

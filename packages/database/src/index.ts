@@ -136,16 +136,22 @@ export {
   findDashboard,
   insertDashboard,
   listDashboards,
+  metricWidgets,
   replaceDashboard,
+  schema1Tiles,
 } from "./dashboards.js";
 export type {
   Dashboard,
   DashboardInput,
   DashboardRow,
+  DashboardSettings,
+  DashboardSlide,
+  DashboardSlideRow,
   DashboardSummary,
-  DashboardTileRow,
+  DashboardWidgetRow,
   ReplaceResult,
-  TileInput,
+  SlideInput,
+  WidgetInput,
 } from "./dashboards.js";
 export {
   BREAKDOWN_TIMEOUT_MS,

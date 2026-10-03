@@ -15,6 +15,7 @@ import {
   findWorkspace,
   listConnections,
   resourceNameKey,
+  schema1Tiles,
   type Transaction,
 } from "@netrics/database";
 import {
@@ -32,6 +33,9 @@ import {
 
 // The device dashboard read model (ADR 0007, #57): the assigned dashboard's
 // tiles, computed by the same metric query service as the web dashboard.
+// Schema 1 (ADR 0015 section 7): the tiles are the metric widgets of the
+// enabled slides in reading order, at most 24; for a migrated tile
+// dashboard exactly its tiles as before.
 
 /**
  * Data older than this many poll intervals (at least 15 minutes) is stale.
@@ -102,6 +106,22 @@ export async function buildDeviceDashboard(
     : null;
   const tiles: DeviceTile[] = [];
   if (dashboard) {
+    const sources = schema1Tiles(dashboard.slides).flatMap((widget) =>
+      widget.connectionId !== null &&
+      widget.metricKey !== null &&
+      widget.period !== null &&
+      widget.aggregation !== null
+        ? [
+            {
+              ...widget,
+              connectionId: widget.connectionId,
+              metricKey: widget.metricKey,
+              period: widget.period,
+              aggregation: widget.aggregation,
+            },
+          ]
+        : [],
+    );
     const states = new Map(
       (await listConnections(tx, workspaceId)).map(({ row, state }) => [
         row.id,
@@ -112,7 +132,7 @@ export async function buildDeviceDashboard(
     const resourceNames = await findResourceNames(
       tx,
       workspaceId,
-      dashboard.tiles.flatMap((tile) => {
+      sources.flatMap((tile) => {
         const resourceId = (tile.dimensions as Record<string, string>)[
           RESOURCE_DIMENSION
         ];
@@ -125,13 +145,13 @@ export async function buildDeviceDashboard(
     const scopes = await findAllResourcesNames(
       tx,
       workspaceId,
-      dashboard.tiles.map((tile) => ({
+      sources.map((tile) => ({
         connectionId: tile.connectionId,
         metricKey: tile.metricKey,
         dimensions: tile.dimensions as Record<string, string>,
       })),
     );
-    for (const tile of dashboard.tiles) {
+    for (const tile of sources) {
       const dimensions = tile.dimensions as Record<string, string>;
       const resourceId = dimensions[RESOURCE_DIMENSION];
       const request = {
