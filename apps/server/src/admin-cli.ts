@@ -8,8 +8,10 @@ import {
 } from "@netrics/database";
 import { INSTALLATION_SCOPES, isInstallationScope } from "@netrics/domain";
 
+import { createDefaultRegistry } from "./connectors.js";
 import { createCredentialKeyring } from "./credentials.js";
 import { ConfigError, loadKeyringConfig, loadMigrationConfig } from "./env.js";
+import { requestOperatorBackfill } from "./operator-backfill.js";
 import { reencryptCredentials } from "./reencrypt.js";
 import { generatePrincipalToken, hashToken } from "./tokens.js";
 
@@ -22,6 +24,7 @@ import { generatePrincipalToken, hashToken } from "./tokens.js";
  *   node dist/admin-cli.js list-tokens
  *   node dist/admin-cli.js revoke-token --id <uuid>
  *   node dist/admin-cli.js reencrypt-credentials   # after a key rotation
+ *   node dist/admin-cli.js backfill-connection --workspace <uuid> --connection <uuid>
  *
  * A created token is printed once and cannot be shown again.
  */
@@ -30,6 +33,8 @@ const USAGE = `usage:
   admin-cli list-tokens
   admin-cli revoke-token --id <token id>
   admin-cli reencrypt-credentials   (needs APP_ENCRYPTION_KEY[, _KEYS_PREVIOUS])
+  admin-cli backfill-connection --workspace <id> --connection <id>
+    (reads the connection's whole history again, e.g. after a connector fix)
 
 scopes: ${INSTALLATION_SCOPES.join(", ")}`;
 
@@ -57,6 +62,8 @@ const { values } = parseArgs({
     scope: { type: "string", multiple: true },
     "expires-days": { type: "string" },
     id: { type: "string" },
+    workspace: { type: "string" },
+    connection: { type: "string" },
   },
   strict: true,
 });
@@ -151,6 +158,22 @@ try {
       console.log(
         "All credentials use the current key; APP_ENCRYPTION_KEYS_PREVIOUS can be removed.",
       );
+    }
+  } else if (command === "backfill-connection") {
+    if (!values.workspace || !values.connection) {
+      fail("--workspace and --connection are required");
+    }
+    const result = await requestOperatorBackfill(db, createDefaultRegistry(), {
+      workspaceId: values.workspace,
+      connectionId: values.connection,
+    });
+    if (result.ok) {
+      console.log(
+        `queued backfill ${result.jobId} for ${result.connectorId} connection ${values.connection}`,
+      );
+    } else {
+      console.error(`not queued: ${result.reason}`);
+      process.exitCode = 1;
     }
   } else {
     fail(command ? `unknown command: ${command}` : "missing command");
