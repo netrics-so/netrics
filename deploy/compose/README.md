@@ -59,9 +59,12 @@ MAIL_FROM=netrics <no-reply@netrics.example.com>
 ### Google connectors
 
 Connectors that sign in with Google (Search Console) need a Google OAuth app
-registered for this instance. Without one they are listed as unavailable.
-Register the redirect URI `<NETRICS_PUBLIC_URL>/oauth/google/callback`, then
-add both values to `.env` and run `docker compose up -d`:
+registered for this instance, in a Google Cloud project of its own. Without
+one they are listed as unavailable. [Google OAuth app](google-oauth.md)
+walks through it: project, Search Console API, consent screen, client,
+testing versus publishing, and troubleshooting. In short, register the
+redirect URI `<NETRICS_PUBLIC_URL>/oauth/google/callback`, then add both
+values to `.env` and run `docker compose up -d`:
 
 ```sh
 NETRICS_OAUTH_GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
@@ -69,7 +72,9 @@ NETRICS_OAUTH_GOOGLE_CLIENT_SECRET=...
 ```
 
 Set both or neither; the API refuses to start with only one. Its startup log
-names the configured providers and their redirect URIs.
+(`oauth providers configured`) names the configured providers and their
+redirect URIs. While the app is External and in Testing, Google expires
+refresh tokens after 7 days; publish it or use an Internal app.
 
 ### Another port
 

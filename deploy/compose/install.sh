@@ -88,7 +88,7 @@ NETRICS_SIGNUP=closed
 # MAIL_FROM=netrics <no-reply@${domain}>
 
 # Optional Google OAuth app (Google connectors; both or neither). Register
-# the redirect URI ${public_url}/oauth/google/callback.
+# the redirect URI ${public_url}/oauth/google/callback; see google-oauth.md.
 # NETRICS_OAUTH_GOOGLE_CLIENT_ID=
 # NETRICS_OAUTH_GOOGLE_CLIENT_SECRET=
 ENV
