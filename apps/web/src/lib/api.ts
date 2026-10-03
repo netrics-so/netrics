@@ -162,6 +162,8 @@ export function apiErrorMessage(error: unknown): string {
         return "The request was too large to send.";
       case "version_conflict":
         return "Someone else saved this dashboard in the meantime. Reload to see their changes, then edit again.";
+      case "studio_dashboard":
+        return "This dashboard now has slides or widgets that the tile editor cannot keep. Reload it before editing.";
       case "dashboard_not_found":
         return "This dashboard no longer exists.";
       case "device_not_found":

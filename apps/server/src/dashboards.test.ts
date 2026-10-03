@@ -357,3 +357,592 @@ describe("dashboards API", () => {
     ).toEqual([connectionId]);
   });
 });
+
+describe("dashboard studio API", () => {
+  // The table rows below are built before beforeAll ran: "own" stands for
+  // the workspace's connection until the test resolves it.
+  const metricWidget = (overrides: Record<string, unknown> = {}) => ({
+    type: "metric",
+    x: 0,
+    y: 0,
+    w: 3,
+    h: 2,
+    connectionId: connectionId ?? "own",
+    metricKey: "demo.signups",
+    period: "last_7_days",
+    ...overrides,
+  });
+
+  const studioSlides = () => [
+    {
+      name: "Sales",
+      durationSeconds: 30,
+      widgets: [
+        metricWidget({ x: 4, y: 0, title: "Right" }),
+        metricWidget({ x: 0, y: 0, options: { showSparkline: false } }),
+        {
+          type: "line",
+          x: 0,
+          y: 2,
+          w: 6,
+          h: 4,
+          connectionId,
+          metricKey: "demo.visitors",
+          period: "last_30_days",
+          dimensions: { resource: "site-1" },
+        },
+        {
+          type: "bar",
+          x: 6,
+          y: 2,
+          w: 6,
+          h: 6,
+          connectionId,
+          metricKey: "demo.signups",
+          period: "this_month",
+          options: { groupBy: "resource" },
+        },
+      ],
+    },
+    {
+      enabled: false,
+      widgets: [
+        { type: "text", x: 0, y: 0, w: 12, h: 2, text: "## Hello\n**bold**" },
+        { type: "clock", x: 0, y: 2, w: 2, h: 1 },
+        metricWidget({ x: 0, y: 3 }),
+      ],
+    },
+  ];
+
+  async function studio(body: Record<string, unknown> = {}) {
+    const response = await createDashboard(owner, {
+      name: "Studio",
+      slides: studioSlides(),
+      ...body,
+    });
+    expect(response.statusCode).toBe(200);
+    return dashboardResponseSchema.parse(response.json()).dashboard;
+  }
+
+  function put(
+    dashboard: { id: string; version: number; name: string },
+    body: Record<string, unknown>,
+    cookie = owner,
+  ) {
+    return call("PUT", `${base()}/${dashboard.id}`, cookie, {
+      version: dashboard.version,
+      name: dashboard.name,
+      projectId: null,
+      ...body,
+    });
+  }
+
+  beforeAll(async () => {
+    await admin`
+      insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values (${connectionId}, ${workspaceId}, 'site-1', 'Main site', 'site')
+      on conflict do nothing`;
+  });
+
+  it("stores a document of slides and widgets and reads it back", async () => {
+    const dashboard = await studio({
+      settings: { autoAdvance: false, defaultSlideSeconds: 45 },
+    });
+    expect(dashboard.settings).toEqual({
+      showHeader: true,
+      autoAdvance: false,
+      defaultSlideSeconds: 45,
+      transition: "fade",
+    });
+    const [sales, notes] = dashboard.slides;
+    expect(sales).toMatchObject({
+      position: 0,
+      name: "Sales",
+      durationSeconds: 30,
+      enabled: true,
+    });
+    expect(notes).toMatchObject({ position: 1, name: null, enabled: false });
+    // Reading order, defaults filled in, metric bindings as for tiles.
+    expect(sales!.widgets.map((w) => [w.type, w.x, w.y])).toEqual([
+      ["metric", 0, 0],
+      ["metric", 4, 0],
+      ["line", 0, 2],
+      ["bar", 6, 2],
+    ]);
+    expect(sales!.widgets[0]).toMatchObject({
+      aggregation: "sum",
+      title: null,
+      options: { showSparkline: false, showChange: true },
+    });
+    expect(sales!.widgets[2]).toMatchObject({
+      type: "line",
+      aggregation: "last",
+      resourceName: "Main site",
+      options: { showPrevious: true, showAxis: true },
+    });
+    expect(sales!.widgets[3]).toMatchObject({
+      options: { groupBy: "resource", limit: 5 },
+    });
+    expect(notes!.widgets).toMatchObject([
+      {
+        type: "text",
+        text: "## Hello\n**bold**",
+        options: { size: "body", align: "start" },
+      },
+      {
+        type: "clock",
+        options: { showDate: true, hour12: false, timeZone: null },
+      },
+      { type: "metric" },
+    ]);
+    // Tiles: the metric widgets of all slides in reading order.
+    expect(dashboard.tiles.map((t) => [t.position, t.id])).toEqual([
+      [0, sales!.widgets[0]!.id],
+      [1, sales!.widgets[1]!.id],
+      [2, notes!.widgets[2]!.id],
+    ]);
+    expect(dashboard.tiles[1]!.title).toBe("Right");
+
+    const read = await call("GET", `${base()}/${dashboard.id}`, viewer);
+    expect(dashboardResponseSchema.parse(read.json()).dashboard).toEqual(
+      dashboard,
+    );
+    const [summary] = dashboardListResponseSchema
+      .parse((await call("GET", base(), viewer)).json())
+      .dashboards.filter((d) => d.id === dashboard.id);
+    expect(summary).toMatchObject({
+      tileCount: 3,
+      slideCount: 2,
+      widgetCount: 7,
+    });
+  });
+
+  it("creates one empty slide without slides", async () => {
+    const response = await createDashboard(owner, { name: "Blank" });
+    const { dashboard } = dashboardResponseSchema.parse(response.json());
+    expect(dashboard.slides).toMatchObject([
+      { position: 0, name: null, durationSeconds: null, enabled: true },
+    ]);
+    expect(dashboard.slides[0]!.widgets).toEqual([]);
+    expect(dashboard.settings).toEqual({
+      showHeader: true,
+      autoAdvance: true,
+      defaultSlideSeconds: 20,
+      transition: "fade",
+    });
+  });
+
+  it("keeps slide and widget ids across saves, sent back as read", async () => {
+    const dashboard = await studio();
+    const [sales, notes] = dashboard.slides;
+    // The client sends back what it read, with the slides swapped and a
+    // new widget without an id.
+    const response = await put(dashboard, {
+      settings: { transition: "none" },
+      slides: [
+        notes,
+        {
+          ...sales,
+          widgets: [
+            ...sales!.widgets.slice(0, 2),
+            { type: "clock", x: 0, y: 7, w: 3, h: 1 },
+          ],
+        },
+      ],
+    });
+    expect(response.statusCode).toBe(200);
+    const next = dashboardResponseSchema.parse(response.json()).dashboard;
+    expect(next.version).toBe(dashboard.version + 1);
+    expect(next.settings).toMatchObject({
+      transition: "none",
+      autoAdvance: true,
+    });
+    expect(next.slides.map((s) => s.id)).toEqual([notes!.id, sales!.id]);
+    expect(next.slides[0]!.widgets.map((w) => w.id)).toEqual(
+      notes!.widgets.map((w) => w.id),
+    );
+    const ids = next.slides[1]!.widgets.map((w) => w.id);
+    expect(ids.slice(0, 2)).toEqual(
+      sales!.widgets.slice(0, 2).map((w) => w.id),
+    );
+    expect(ids[2]).not.toBe(sales!.widgets[2]!.id);
+
+    // A stale save of the old version conflicts.
+    expectError(await put(dashboard, { slides: [] }), 409, "version_conflict");
+
+    // A duplicate copies slides and widgets under new ids.
+    const copy = dashboardResponseSchema.parse(
+      (
+        await call("POST", `${base()}/${dashboard.id}/duplicate`, owner, {})
+      ).json(),
+    ).dashboard;
+    expect(copy.settings).toEqual(next.settings);
+    expect(
+      copy.slides.map((s) => s.widgets.map((w) => [w.type, w.x, w.y])),
+    ).toEqual(next.slides.map((s) => s.widgets.map((w) => [w.type, w.x, w.y])));
+    const copyIds = copy.slides.flatMap((s) => [
+      s.id,
+      ...s.widgets.map((w) => w.id),
+    ]);
+    const nextIds = next.slides.flatMap((s) => [
+      s.id,
+      ...s.widgets.map((w) => w.id),
+    ]);
+    expect(copyIds.filter((id) => nextIds.includes(id))).toEqual([]);
+  });
+
+  const many = (count: number, make: (index: number) => unknown) =>
+    Array.from({ length: count }, (_, index) => make(index));
+  const fullSlide = () => ({
+    widgets: many(16, (i) =>
+      metricWidget({ x: (i % 4) * 3, y: Math.floor(i / 4) * 2 }),
+    ),
+  });
+
+  it.each<[string, unknown, number, string]>([
+    [
+      "overlapping widgets",
+      [{ widgets: [metricWidget(), metricWidget({ x: 2, y: 1 })] }],
+      400,
+      "widgets_overlap",
+    ],
+    [
+      "a widget past the grid",
+      [{ widgets: [metricWidget({ x: 10 })] }],
+      400,
+      "widget_out_of_bounds",
+    ],
+    [
+      "a widget below the grid",
+      [{ widgets: [metricWidget({ y: 7 })] }],
+      400,
+      "widget_out_of_bounds",
+    ],
+    [
+      "a metric below its minimum size",
+      [{ widgets: [metricWidget({ w: 2 })] }],
+      400,
+      "widget_too_small",
+    ],
+    [
+      "a line below its minimum size",
+      [
+        {
+          widgets: [metricWidget({ type: "line", w: 4, h: 2 })],
+        },
+      ],
+      400,
+      "widget_too_small",
+    ],
+    [
+      "a text below its minimum size",
+      [{ widgets: [{ type: "text", x: 0, y: 0, w: 1, h: 1, text: "x" }] }],
+      400,
+      "widget_too_small",
+    ],
+    [
+      "a bar grouped by an unknown dimension",
+      [
+        {
+          widgets: [
+            metricWidget({
+              type: "bar",
+              w: 4,
+              h: 3,
+              options: { groupBy: "country" },
+            }),
+          ],
+        },
+      ],
+      400,
+      "unknown_dimension",
+    ],
+    [
+      "a bar without grouping",
+      [{ widgets: [metricWidget({ type: "bar", w: 4, h: 3 })] }],
+      400,
+      "invalid_request",
+    ],
+    [
+      "a text widget without text",
+      [{ widgets: [{ type: "text", x: 0, y: 0, w: 2, h: 1 }] }],
+      400,
+      "invalid_request",
+    ],
+    [
+      "a data widget without a metric",
+      [{ widgets: [{ type: "metric", x: 0, y: 0, w: 3, h: 2 }] }],
+      400,
+      "invalid_request",
+    ],
+    [
+      "an unknown widget type",
+      [{ widgets: [{ type: "table", x: 0, y: 0, w: 3, h: 2 }] }],
+      400,
+      "invalid_request",
+    ],
+    [
+      "a text over 500 characters",
+      [
+        {
+          widgets: [
+            { type: "text", x: 0, y: 0, w: 2, h: 1, text: "x".repeat(501) },
+          ],
+        },
+      ],
+      400,
+      "invalid_request",
+    ],
+    [
+      "a slide name over 60 characters",
+      [{ name: "x".repeat(61), widgets: [] }],
+      400,
+      "invalid_request",
+    ],
+    [
+      "a slide duration under 5 seconds",
+      [{ durationSeconds: 4, widgets: [] }],
+      400,
+      "invalid_request",
+    ],
+    [
+      "an unknown clock time zone",
+      [
+        {
+          widgets: [
+            {
+              type: "clock",
+              x: 0,
+              y: 0,
+              w: 2,
+              h: 1,
+              options: { timeZone: "Mars/Olympus" },
+            },
+          ],
+        },
+      ],
+      400,
+      "invalid_request",
+    ],
+    ["13 slides", many(13, () => ({ widgets: [] })), 400, "invalid_request"],
+    [
+      "17 widgets on a slide",
+      [
+        {
+          widgets: many(17, (i) => ({
+            type: "clock",
+            x: (i % 6) * 2,
+            y: Math.floor(i / 6),
+            w: 2,
+            h: 1,
+          })),
+        },
+      ],
+      400,
+      "invalid_request",
+    ],
+    [
+      "49 data widgets",
+      [fullSlide(), fullSlide(), fullSlide(), { widgets: [metricWidget()] }],
+      400,
+      "too_many_data_widgets",
+    ],
+    [
+      "another workspace's connection",
+      [{ widgets: [metricWidget({ connectionId: "foreign" })] }],
+      400,
+      "tile_metric_not_found",
+    ],
+    [
+      "a resource of no connection",
+      [{ widgets: [metricWidget({ dimensions: { resource: "site-9" } })] }],
+      400,
+      "unknown_resource",
+    ],
+  ])("refuses %s", async (_label, slides, status, error) => {
+    const resolved = JSON.parse(
+      JSON.stringify(slides)
+        .replaceAll('"foreign"', `"${foreignConnectionId}"`)
+        .replaceAll('"own"', `"${connectionId}"`),
+    ) as unknown;
+    expectError(
+      await createDashboard(owner, { name: "Invalid", slides: resolved }),
+      status,
+      error,
+    );
+    const dashboard = dashboardResponseSchema.parse(
+      (await createDashboard(owner, { name: "Valid" })).json(),
+    ).dashboard;
+    expectError(await put(dashboard, { slides: resolved }), status, error);
+  });
+
+  it("accepts 48 data widgets and tiles or slides, not both", async () => {
+    const response = await createDashboard(owner, {
+      name: "Full",
+      slides: [fullSlide(), fullSlide(), fullSlide()],
+    });
+    expect(response.statusCode).toBe(200);
+    expectError(
+      await createDashboard(owner, {
+        name: "Both",
+        tiles: [signupsTile()],
+        slides: [],
+      }),
+      400,
+      "invalid_request",
+    );
+    const { dashboard } = dashboardResponseSchema.parse(response.json());
+    expectError(await put(dashboard, {}), 400, "invalid_request");
+  });
+
+  it("keeps slides and widgets inside their workspace", async () => {
+    const dashboard = await studio();
+    const strangers = await newWorkspace(stranger);
+    const strangerConnection = await newConnection(strangers);
+    const foreignBase = `/v1/workspaces/${strangers}/dashboards`;
+    // Another workspace's dashboard id is unknown there.
+    expectError(
+      await call("PUT", `${foreignBase}/${dashboard.id}`, stranger, {
+        version: dashboard.version,
+        name: "Hijack",
+        projectId: null,
+        slides: [],
+      }),
+      404,
+      "dashboard_not_found",
+    );
+    // Ids of another workspace's slides and widgets are not taken over.
+    const own = dashboardResponseSchema.parse(
+      (await call("POST", foreignBase, stranger, { name: "Mine" })).json(),
+    ).dashboard;
+    const sales = dashboard.slides[0]!;
+    const response = await call("PUT", `${foreignBase}/${own.id}`, stranger, {
+      version: own.version,
+      name: own.name,
+      projectId: null,
+      slides: [
+        {
+          id: sales.id,
+          widgets: [
+            {
+              ...sales.widgets[0],
+              connectionId: strangerConnection,
+            },
+          ],
+        },
+      ],
+    });
+    expect(response.statusCode).toBe(200);
+    const saved = dashboardResponseSchema.parse(response.json()).dashboard;
+    expect(saved.slides[0]!.id).not.toBe(sales.id);
+    expect(saved.slides[0]!.widgets[0]!.id).not.toBe(sales.widgets[0]!.id);
+    const after = dashboardResponseSchema.parse(
+      (await call("GET", `${base()}/${dashboard.id}`, owner)).json(),
+    ).dashboard;
+    expect(after).toEqual(dashboard);
+  });
+
+  describe("legacy tile saves", () => {
+    async function tileDashboard(count: number) {
+      const response = await createDashboard(owner, {
+        name: `${count} tiles`,
+        tiles: many(count, (i) =>
+          signupsTile({ title: `Tile ${i}`, period: "today" }),
+        ),
+      });
+      expect(response.statusCode).toBe(200);
+      return dashboardResponseSchema.parse(response.json()).dashboard;
+    }
+
+    it("lays tiles out like the TV grid and keeps working on them", async () => {
+      const dashboard = await tileDashboard(17);
+      expect(dashboard.slides).toHaveLength(2);
+      expect(dashboard.slides[1]!.widgets).toMatchObject([
+        { type: "metric", x: 0, y: 0, w: 12, h: 8, title: "Tile 16" },
+      ]);
+      expect(dashboard.tiles.map((t) => t.title)).toEqual(
+        many(17, (i) => `Tile ${i}`),
+      );
+      // The tile editor saves 7 tiles: one slide again, same slide id.
+      const response = await put(dashboard, {
+        tiles: many(7, () => signupsTile()),
+      });
+      expect(response.statusCode).toBe(200);
+      const next = dashboardResponseSchema.parse(response.json()).dashboard;
+      expect(next.slides.map((s) => s.id)).toEqual([dashboard.slides[0]!.id]);
+      expect(next.slides[0]!.widgets.map((w) => [w.x, w.y, w.w, w.h])).toEqual([
+        [0, 0, 3, 4],
+        [3, 0, 3, 4],
+        [6, 0, 3, 4],
+        [9, 0, 3, 4],
+        [0, 4, 3, 4],
+        [3, 4, 3, 4],
+        [6, 4, 3, 4],
+      ]);
+      // An empty tile list keeps one empty slide.
+      const emptied = await put(next, { tiles: [] });
+      expect(emptied.statusCode).toBe(200);
+      expect(
+        dashboardResponseSchema.parse(emptied.json()).dashboard.slides,
+      ).toMatchObject([{ widgets: [] }]);
+    });
+
+    it.each<[string, (slides: ReturnType<typeof studioSlides>) => unknown]>([
+      ["a moved widget", () => [{ widgets: [metricWidget({ x: 3 })] }]],
+      [
+        "a text widget",
+        () => [
+          {
+            widgets: [{ type: "text", x: 0, y: 0, w: 2, h: 1, text: "Hi" }],
+          },
+        ],
+      ],
+      [
+        "a named slide",
+        () => [{ name: "Sales", widgets: [metricWidget({ w: 12, h: 8 })] }],
+      ],
+      [
+        "a disabled slide",
+        () => [{ enabled: false, widgets: [metricWidget({ w: 12, h: 8 })] }],
+      ],
+      [
+        "a widget without its sparkline",
+        () => [
+          {
+            widgets: [
+              metricWidget({ w: 12, h: 8, options: { showSparkline: false } }),
+            ],
+          },
+        ],
+      ],
+      ["a second slide", (slides) => slides],
+    ])(
+      "refuses to flatten a studio dashboard with %s (409)",
+      async (_label, make) => {
+        const dashboard = await studio({ slides: make(studioSlides()) });
+        // What a stale tab of the tile editor sends.
+        const response = await put(dashboard, {
+          tiles: [signupsTile()],
+        });
+        expectError(response, 409, "studio_dashboard");
+        const after = dashboardResponseSchema.parse(
+          (await call("GET", `${base()}/${dashboard.id}`, owner)).json(),
+        ).dashboard;
+        expect(after).toEqual(dashboard);
+      },
+    );
+
+    it("answers a stale tile save with version_conflict first", async () => {
+      const dashboard = await tileDashboard(2);
+      expect(
+        (await put(dashboard, { tiles: [signupsTile()] })).statusCode,
+      ).toBe(200);
+      expectError(
+        await put(dashboard, { tiles: [signupsTile()] }),
+        409,
+        "version_conflict",
+      );
+    });
+  });
+});

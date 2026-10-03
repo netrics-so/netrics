@@ -99,6 +99,7 @@ workspace of its parent, like `dashboard_tiles` today):
 | `dimensions`       | jsonb      | default `{}`; includes `resource` (#194)                  |
 | `display_currency` | text, null | as #191                                                   |
 | `image_id`         | uuid, null | image widgets; FK, on delete restrict                     |
+| `text`             | text, null | text widgets (markdown-lite), max 500                     |
 | `options`          | jsonb      | type-specific style, validated by zod per type (below)    |
 
 A check ties columns to types: data widgets (`metric`, `line`, `bar`) have
@@ -170,8 +171,9 @@ concurrency (`version`, 409 `version_conflict`), as today.
 - `POST …/dashboards/:id/duplicate` copies slides and widgets.
 - **Expand/contract for tiles.** For one release, responses also carry
   `tiles` (the metric widgets in reading order), and `PUT` still accepts a
-  legacy `tiles` body: it replaces the widgets of a dashboard that has one
-  slide with only metric widgets in the automatic layout. A studio
+  legacy `tiles` body: it replaces the widgets of a dashboard that has only
+  metric widgets in the automatic layout (one slide, or two for more than
+  16 tiles, as the migration lays them out). A studio
   dashboard answers 409 `studio_dashboard`, so a stale browser tab cannot
   flatten it. A later release removes `tiles`.
 - Themes: `GET/POST /v1/workspaces/:w/themes` (built-ins and custom),

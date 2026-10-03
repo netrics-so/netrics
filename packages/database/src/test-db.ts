@@ -1,9 +1,20 @@
 import { randomBytes } from "node:crypto";
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { afterAll } from "vitest";
 
-import { runMigrations } from "./index.js";
+import { migrationsFolder, runMigrations } from "./index.js";
 import { DEV_ROLE_PASSWORDS } from "./roles.js";
 
 // Test-only helper, also exported as @netrics/database/testing (kept out of
@@ -25,11 +36,47 @@ export interface TestDatabase {
   /** Connection URL as the admin/migration role for this database. */
   adminUrl: string;
   drop: () => Promise<void>;
+  /**
+   * Applies every remaining migration and the development role passwords,
+   * for a database created with `upTo` (data in a previous shape).
+   */
+  migrate: () => Promise<void>;
 }
 
 export interface TestDatabaseOptions {
   /** Runs after migrations as the owner role, e.g. to write the catalog. */
   seed?: (adminUrl: string) => Promise<void>;
+  /**
+   * Stops after this migration (its tag, e.g. "0032_longer_periods"), so a
+   * test can write data in the previous shape and then call `migrate()`.
+   */
+  upTo?: string;
+}
+
+/** Applies the migrations up to and including `lastTag`. */
+async function migrateUpTo(adminUrl: string, lastTag: string): Promise<void> {
+  const copy = mkdtempSync(path.join(tmpdir(), "netrics-migrations-"));
+  try {
+    cpSync(migrationsFolder, copy, { recursive: true });
+    const journalPath = path.join(copy, "meta", "_journal.json");
+    const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+      entries: Array<{ tag: string }>;
+    };
+    const last = journal.entries.findIndex((entry) => entry.tag === lastTag);
+    if (last < 0) {
+      throw new Error(`unknown migration ${lastTag}`);
+    }
+    journal.entries = journal.entries.slice(0, last + 1);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    const client = postgres(adminUrl, { max: 1, onnotice: () => undefined });
+    try {
+      await migrate(drizzle(client), { migrationsFolder: copy });
+    } finally {
+      await client.end({ timeout: 5 }).catch(() => undefined);
+    }
+  } finally {
+    rmSync(copy, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -71,13 +118,20 @@ export async function createTestDatabase(
   app.password = "netrics_app";
   const appUrl = app.toString();
 
-  await runMigrations(adminUrl, { rolePasswords: DEV_ROLE_PASSWORDS });
+  const migrateAll = () =>
+    runMigrations(adminUrl, { rolePasswords: DEV_ROLE_PASSWORDS });
+  if (options.upTo === undefined) {
+    await migrateAll();
+  } else {
+    await migrateUpTo(adminUrl, options.upTo);
+  }
   await options.seed?.(adminUrl);
 
   const database: TestDatabase = {
     name,
     appUrl,
     adminUrl,
+    migrate: migrateAll,
     drop: async () => {
       const client = postgres(serverUrl, { max: 1, connect_timeout: 5 });
       try {

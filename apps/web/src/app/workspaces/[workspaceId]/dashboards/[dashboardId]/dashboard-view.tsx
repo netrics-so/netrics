@@ -179,7 +179,9 @@ export function DashboardView({
       router.refresh();
     } catch (cause) {
       setConflict(
-        cause instanceof ApiError && cause.code === "version_conflict",
+        cause instanceof ApiError &&
+          (cause.code === "version_conflict" ||
+            cause.code === "studio_dashboard"),
       );
       setError(apiErrorMessage(cause));
     } finally {

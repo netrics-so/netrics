@@ -995,7 +995,7 @@ describe("device dashboard", () => {
     ]);
     // An aggregation the metric does not support makes the query fail.
     await admin`
-      update dashboard_tiles set aggregation = 'avg'
+      update dashboard_widgets set aggregation = 'avg'
       where dashboard_id = ${id} and period = 'today'`;
     const { accessToken } = await pair("Partial TV", id);
     const { body } = await read(accessToken);

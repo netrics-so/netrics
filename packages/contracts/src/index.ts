@@ -5,6 +5,11 @@ import {
   GRANULARITIES,
   METRIC_KINDS,
   PERIODS,
+  SLIDE_SECONDS,
+  SLIDE_TRANSITIONS,
+  STUDIO_GRID,
+  STUDIO_LIMITS,
+  WIDGET_TYPES,
   WORKSPACE_ROLES,
   isValidTimeZone,
 } from "@netrics/domain";
@@ -1270,6 +1275,230 @@ export const dashboardTileSchema = z.object({
 });
 export type DashboardTile = z.infer<typeof dashboardTileSchema>;
 
+// ─── Dashboard Studio (ADR 0015) ────────────────────────────────────────────
+//
+// A dashboard is an ordered list of slides, each a 12 × 8 grid of widgets.
+// Bounds, minimum sizes and overlaps are checked by the server (400
+// widget_out_of_bounds, widget_too_small, widgets_overlap); see
+// slideLayoutProblem in @netrics/domain.
+
+export const widgetTypeSchema = z.enum(WIDGET_TYPES);
+export type WidgetType = z.infer<typeof widgetTypeSchema>;
+
+export const slideTransitionSchema = z.enum(SLIDE_TRANSITIONS);
+
+const slideSecondsSchema = z
+  .number()
+  .int()
+  .min(SLIDE_SECONDS.min)
+  .max(SLIDE_SECONDS.max);
+
+export const dashboardSettingsSchema = z.object({
+  /** The band with name, slide name and clock above the grid. */
+  showHeader: z.boolean(),
+  /** False: screens show only the first enabled slide. */
+  autoAdvance: z.boolean(),
+  /** How long a slide without its own duration stays on screen. */
+  defaultSlideSeconds: slideSecondsSchema,
+  transition: slideTransitionSchema,
+});
+export type DashboardSettings = z.infer<typeof dashboardSettingsSchema>;
+
+/** Settings sent with a dashboard; a missing field keeps its value. */
+export const dashboardSettingsInputSchema = dashboardSettingsSchema.partial();
+
+const widgetPlacementShape = {
+  /** Column of the top left cell, 0–11. */
+  x: z.number().int().min(0).max(STUDIO_GRID.columns),
+  /** Row of the top left cell, 0–7. */
+  y: z.number().int().min(0).max(STUDIO_GRID.rows),
+  /** Width in cells. */
+  w: z.number().int().min(1).max(STUDIO_GRID.columns),
+  /** Height in cells. */
+  h: z.number().int().min(1).max(STUDIO_GRID.rows),
+};
+
+const widgetTitleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(STUDIO_LIMITS.widgetTitleLength);
+
+const alignSchema = z.enum(["start", "center", "end"]);
+
+export const metricWidgetOptionsSchema = z.object({
+  showSparkline: z.boolean().default(true),
+  showChange: z.boolean().default(true),
+});
+export const lineWidgetOptionsSchema = z.object({
+  /** The previous period, dashed. */
+  showPrevious: z.boolean().default(true),
+  showAxis: z.boolean().default(true),
+});
+export const barWidgetOptionsSchema = z.object({
+  /** A dimension of the metric, e.g. "resource" or "territory". */
+  groupBy: z.string().min(1).max(100),
+  /** Bars shown, the rest add up to "Other". */
+  limit: z.number().int().min(3).max(10).default(5),
+});
+export const textWidgetOptionsSchema = z.object({
+  size: z.enum(["body", "heading", "display"]).default("body"),
+  align: alignSchema.default("start"),
+});
+export const clockWidgetOptionsSchema = z.object({
+  showDate: z.boolean().default(true),
+  hour12: z.boolean().default(false),
+  /** IANA time zone; null shows the workspace's. */
+  timeZone: timeZoneSchema.nullable().default(null),
+});
+
+/** The metric a data widget shows, validated like a tile's. */
+const dataBindingInputShape = {
+  connectionId: z.uuid(),
+  metricKey: z.string().min(1).max(200),
+  /** Defaults to the metric's first compatible aggregation. */
+  aggregation: metricAggregationSchema.optional(),
+  period: metricPeriodSchema,
+  /** As a tile's; "resource" shows one resource of the connection. */
+  dimensions: dimensionFilterSchema.optional(),
+  /** As a tile's (#191). */
+  displayCurrency: currencyCodeSchema.nullable().optional(),
+};
+
+const widgetInputShape = {
+  /**
+   * A widget of this dashboard keeps its id; a missing or unknown id gets
+   * a new one.
+   */
+  id: z.uuid().optional(),
+  ...widgetPlacementShape,
+  /** Shown instead of the default label. */
+  title: widgetTitleSchema.nullable().optional(),
+};
+
+export const dashboardWidgetInputSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("metric"),
+    ...widgetInputShape,
+    ...dataBindingInputShape,
+    options: metricWidgetOptionsSchema.prefault({}),
+  }),
+  z.object({
+    type: z.literal("line"),
+    ...widgetInputShape,
+    ...dataBindingInputShape,
+    options: lineWidgetOptionsSchema.prefault({}),
+  }),
+  z.object({
+    type: z.literal("bar"),
+    ...widgetInputShape,
+    ...dataBindingInputShape,
+    options: barWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("text"),
+    ...widgetInputShape,
+    /** Markdown-lite: paragraphs, #/## headings, **bold**, *italic*. */
+    text: z.string().min(1).max(STUDIO_LIMITS.textLength),
+    options: textWidgetOptionsSchema.prefault({}),
+  }),
+  z.object({
+    type: z.literal("clock"),
+    ...widgetInputShape,
+    options: clockWidgetOptionsSchema.prefault({}),
+  }),
+]);
+export type DashboardWidgetInput = z.input<typeof dashboardWidgetInputSchema>;
+export type DashboardWidgetInputParsed = z.infer<
+  typeof dashboardWidgetInputSchema
+>;
+
+export const dashboardSlideInputSchema = z.object({
+  /**
+   * A slide of this dashboard keeps its id; a missing or unknown id gets a
+   * new one.
+   */
+  id: z.uuid().optional(),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(STUDIO_LIMITS.slideNameLength)
+    .nullable()
+    .optional(),
+  /** Null or missing: the dashboard's defaultSlideSeconds. */
+  durationSeconds: slideSecondsSchema.nullable().optional(),
+  /** Screens skip disabled slides. Default true. */
+  enabled: z.boolean().optional(),
+  widgets: z
+    .array(dashboardWidgetInputSchema)
+    .max(STUDIO_LIMITS.widgetsPerSlide),
+});
+export type DashboardSlideInput = z.input<typeof dashboardSlideInputSchema>;
+
+const widgetShape = {
+  id: z.uuid(),
+  ...widgetPlacementShape,
+  title: z.string().nullable(),
+};
+
+const dataBindingShape = {
+  connectionId: z.uuid(),
+  metricKey: z.string().min(1),
+  aggregation: metricAggregationSchema,
+  period: metricPeriodSchema,
+  dimensions: z.record(z.string(), z.string()),
+  displayCurrency: z.string().nullable(),
+  /** As on a tile (#194). Read-only. */
+  resourceName: z.string().nullable(),
+  /** As on a tile (#208). Read-only. */
+  allResourcesName: z.string().nullable(),
+};
+
+export const dashboardWidgetSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("metric"),
+    ...widgetShape,
+    ...dataBindingShape,
+    options: metricWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("line"),
+    ...widgetShape,
+    ...dataBindingShape,
+    options: lineWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("bar"),
+    ...widgetShape,
+    ...dataBindingShape,
+    options: barWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("text"),
+    ...widgetShape,
+    text: z.string(),
+    options: textWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("clock"),
+    ...widgetShape,
+    options: clockWidgetOptionsSchema,
+  }),
+]);
+export type DashboardWidget = z.infer<typeof dashboardWidgetSchema>;
+
+export const dashboardSlideSchema = z.object({
+  id: z.uuid(),
+  position: z.number().int().min(0),
+  name: z.string().nullable(),
+  durationSeconds: z.number().int().nullable(),
+  enabled: z.boolean(),
+  /** In reading order: top to bottom, then left to right. */
+  widgets: z.array(dashboardWidgetSchema),
+});
+export type DashboardSlide = z.infer<typeof dashboardSlideSchema>;
+
 export const dashboardSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
@@ -1278,6 +1507,12 @@ export const dashboardSchema = z.object({
   version: z.number().int().min(1),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+  settings: dashboardSettingsSchema,
+  slides: z.array(dashboardSlideSchema),
+  /**
+   * The metric widgets of all slides in reading order, as tiles. Kept for
+   * one release while clients move to `slides` (ADR 0015 section 3).
+   */
   tiles: z.array(dashboardTileSchema),
 });
 export type Dashboard = z.infer<typeof dashboardSchema>;
@@ -1292,29 +1527,68 @@ export const dashboardListResponseSchema = z.object({
       name: z.string().min(1),
       projectId: z.uuid().nullable(),
       version: z.number().int().min(1),
+      /** Metric widgets. */
       tileCount: z.number().int().min(0),
+      slideCount: z.number().int().min(0),
+      widgetCount: z.number().int().min(0),
       updatedAt: z.iso.datetime(),
     }),
   ),
 });
 export type DashboardListResponse = z.infer<typeof dashboardListResponseSchema>;
 
-export const createDashboardRequestSchema = z.object({
-  name: nameSchema,
-  projectId: z.uuid().nullable().optional(),
-  tiles: z.array(dashboardTileInputSchema).max(MAX_DASHBOARD_TILES).optional(),
-});
+const dashboardSlidesInputSchema = z
+  .array(dashboardSlideInputSchema)
+  .max(STUDIO_LIMITS.slides);
+
+const notTilesAndSlides = (body: { tiles?: unknown; slides?: unknown }) =>
+  body.tiles === undefined || body.slides === undefined;
+
+/**
+ * A new dashboard from `slides` (without them: one empty slide), or from
+ * legacy `tiles`, laid out like the TV grid.
+ */
+export const createDashboardRequestSchema = z
+  .object({
+    name: nameSchema,
+    projectId: z.uuid().nullable().optional(),
+    settings: dashboardSettingsInputSchema.optional(),
+    slides: dashboardSlidesInputSchema.optional(),
+    /** Legacy; not together with `slides`. */
+    tiles: z
+      .array(dashboardTileInputSchema)
+      .max(MAX_DASHBOARD_TILES)
+      .optional(),
+  })
+  .refine(notTilesAndSlides, { message: "tiles or slides, not both" });
 export type CreateDashboardRequest = z.infer<
   typeof createDashboardRequestSchema
 >;
 
-/** Replaces name, project and the ordered tiles in one step. */
-export const replaceDashboardRequestSchema = z.object({
-  version: z.number().int().min(1),
-  name: nameSchema,
-  projectId: z.uuid().nullable(),
-  tiles: z.array(dashboardTileInputSchema).max(MAX_DASHBOARD_TILES),
-});
+/**
+ * Replaces name, project, settings, slides and widgets in one step. The
+ * legacy form sends `tiles` instead of `slides`: it works on a dashboard of
+ * metric widgets in the automatic layout and answers 409 studio_dashboard
+ * otherwise, so an old client cannot flatten a studio dashboard.
+ */
+export const replaceDashboardRequestSchema = z
+  .object({
+    version: z.number().int().min(1),
+    name: nameSchema,
+    projectId: z.uuid().nullable(),
+    settings: dashboardSettingsInputSchema.optional(),
+    slides: dashboardSlidesInputSchema.optional(),
+    /** Legacy; exactly one of `tiles` and `slides`. */
+    tiles: z
+      .array(dashboardTileInputSchema)
+      .max(MAX_DASHBOARD_TILES)
+      .optional(),
+  })
+  .refine(
+    (body) =>
+      notTilesAndSlides(body) && (body.tiles ?? body.slides) !== undefined,
+    { message: "tiles or slides" },
+  );
 export type ReplaceDashboardRequest = z.infer<
   typeof replaceDashboardRequestSchema
 >;

@@ -13,8 +13,11 @@ export type { TestDatabase };
  * A migrated test database with the default connector catalog written as
  * the owner, like `migrate` does (see @netrics/database/testing).
  */
-export function createTestDatabase(): Promise<TestDatabase> {
+export function createTestDatabase(
+  options: { upTo?: string } = {},
+): Promise<TestDatabase> {
   return createMigratedDatabase({
+    ...options,
     seed: async (adminUrl) => {
       const owner = createDatabase(adminUrl, { max: 1 });
       try {
