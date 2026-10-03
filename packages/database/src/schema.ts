@@ -340,6 +340,11 @@ export const connectionState = pgTable(
       .notNull()
       .default(300),
     cursor: text("cursor"),
+    // The connection.backfill job whose window the cursor continues (#153).
+    // A backfill job starts at its window start unless this is its own id,
+    // so a new backfill reads the whole window while a retried or reclaimed
+    // one resumes from its checkpoint. No foreign key: job rows are pruned.
+    backfillJobId: uuid("backfill_job_id"),
     authState: text("auth_state").notNull().default("ok"),
     // Why the connection needs reauthorization (ADR 0012); set only with
     // auth_state needs_reauthorization.
@@ -525,6 +530,13 @@ export const jobs = pgTable(
       .on(table.connectionId)
       .where(
         sql`${table.kind} = 'connection.sync' and ${table.status} = 'pending'`,
+      ),
+    // At most one waiting backfill per connection: a newly requested one
+    // supersedes the waiting one (#153).
+    uniqueIndex("jobs_one_pending_backfill")
+      .on(table.connectionId)
+      .where(
+        sql`${table.kind} = 'connection.backfill' and ${table.status} = 'pending'`,
       ),
     // claim_jobs skips a connection that already has a running job
     // (migration 0011).

@@ -148,19 +148,28 @@ export function SearchConsoleSettings({
           ? `Search Console: ${chosen.name}`
           : connection.name
         : name.trim();
+    const nextConfig = {
+      siteUrl,
+      dimensions: toDimensionsValue(dimensions),
+      ...(dimensions.length > 0 && limit !== null ? { rowLimit: limit } : {}),
+    };
+    // The server reads the last 16 months again when the collected data
+    // changes (#153); omitted rows per day mean the default on both sides.
+    const refetch =
+      nextConfig.siteUrl !== config.siteUrl ||
+      nextConfig.dimensions !==
+        toDimensionsValue(fromDimensionsValue(config.dimensions)) ||
+      (nextConfig.rowLimit ?? DEFAULT_ROW_LIMIT) !==
+        (typeof config.rowLimit === "number"
+          ? config.rowLimit
+          : DEFAULT_ROW_LIMIT);
     setPending(true);
     try {
       await updateConnection(workspaceId, connection.id, {
         ...(nextName !== "" && nextName !== connection.name
           ? { name: nextName }
           : {}),
-        config: {
-          siteUrl,
-          dimensions: toDimensionsValue(dimensions),
-          ...(dimensions.length > 0 && limit !== null
-            ? { rowLimit: limit }
-            : {}),
-        },
+        config: nextConfig,
       });
       if (mode === "finish") {
         router.replace(
@@ -168,7 +177,11 @@ export function SearchConsoleSettings({
         );
         return;
       }
-      setNotice("Settings saved.");
+      setNotice(
+        refetch
+          ? "Settings saved. The last 16 months are read again with the new settings."
+          : "Settings saved.",
+      );
       router.refresh();
     } catch (cause) {
       setError(apiErrorMessage(cause));
@@ -311,7 +324,14 @@ export function SearchConsoleSettings({
           filled in once Google finalises them. The first sync reads the last 16
           months, as far back as Search Console keeps data.
         </p>
-      ) : null}
+      ) : (
+        <p className="muted">
+          Changing the property, breakdown or rows per day reads the last 16
+          months again with the new settings. Data collected with the earlier
+          settings stays: a breakdown you remove keeps its past values but is no
+          longer updated.
+        </p>
+      )}
 
       <div className="actions">
         <button

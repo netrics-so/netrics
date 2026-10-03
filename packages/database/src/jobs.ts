@@ -292,6 +292,58 @@ export async function requestConnectionSync(
   return waiting.id;
 }
 
+/**
+ * Requests a fresh backfill of the connector's whole window (#153), e.g.
+ * after a config change that affects the collected data. App role, inside
+ * the caller's tenant transaction. A backfill that is still waiting (never
+ * started, or waiting to retry) is superseded: it would resume its
+ * checkpoint, which belongs to the previous request. A running backfill is
+ * left alone; the new job runs after it (one connection job runs at a time).
+ * When a concurrent request queued one first, that job is returned instead.
+ */
+export async function requestConnectionBackfill(
+  tx: Transaction,
+  input: { workspaceId: string; connectionId: string },
+): Promise<string> {
+  const waiting = and(
+    eq(schema.jobs.workspaceId, input.workspaceId),
+    eq(schema.jobs.connectionId, input.connectionId),
+    eq(schema.jobs.kind, "connection.backfill"),
+    eq(schema.jobs.status, "pending"),
+  );
+  await tx
+    .update(schema.jobs)
+    .set({ status: "failed", lastError: "superseded by a newer backfill" })
+    .where(waiting);
+  const inserted = await tx
+    .insert(schema.jobs)
+    .values({
+      kind: "connection.backfill",
+      workspaceId: input.workspaceId,
+      connectionId: input.connectionId,
+      payload: {
+        workspace_id: input.workspaceId,
+        connection_id: input.connectionId,
+      },
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.jobs.id });
+  if (inserted[0]) {
+    return inserted[0].id;
+  }
+  const [queued] = await tx
+    .select({ id: schema.jobs.id })
+    .from(schema.jobs)
+    .where(waiting)
+    .limit(1);
+  if (!queued) {
+    throw new Error(
+      "requestConnectionBackfill: no job inserted and none waiting",
+    );
+  }
+  return queued.id;
+}
+
 export type DueConnection = Pick<
   typeof schema.connectionState.$inferSelect,
   | "connectionId"

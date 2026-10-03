@@ -61,6 +61,7 @@ type ErrorClass = "auth" | "transient" | "contract";
 
 interface StateRow {
   cursor: string | null;
+  backfillJobId: string | null;
   lastSuccessAt: Date | null;
   pollIntervalSeconds: number;
 }
@@ -181,7 +182,9 @@ async function ingestObservations(
  *  4. Failures are then recorded in a fresh tenant transaction (failed
  *     sync_run with what earlier pages committed + connection_state) before
  *     the job error propagates. A retry (or the next run) starts at the
- *     checkpoint; re-sent observations are idempotent upserts.
+ *     checkpoint; re-sent observations are idempotent upserts. A new
+ *     backfill job ignores the stored cursor and reads the whole window;
+ *     once it has checkpointed, its retries resume from there (#153).
  */
 async function runSync(
   ctx: JobHandlerContext,
@@ -233,6 +236,7 @@ async function runSync(
     const [state] = await tx
       .select({
         cursor: schema.connectionState.cursor,
+        backfillJobId: schema.connectionState.backfillJobId,
         lastSuccessAt: schema.connectionState.lastSuccessAt,
         pollIntervalSeconds: schema.connectionState.pollIntervalSeconds,
       })
@@ -262,6 +266,17 @@ async function runSync(
     config: loaded.connection.config as Record<string, unknown>,
   };
   const state = loaded.state;
+  /**
+   * Where this run starts (#153). An incremental run continues from the
+   * stored cursor. A backfill reads the connector's whole window: fresh, it
+   * ignores the stored cursor (a later incremental sync's position, or the
+   * checkpoint of an earlier backfill); a retried or reclaimed attempt of
+   * the same job finds its own id next to the cursor and resumes from its
+   * checkpoint (#145). Every checkpoint of a backfill records the job's id.
+   */
+  const fresh = mode === "backfill" && state?.backfillJobId !== job.id;
+  const startCursor = fresh ? null : (state?.cursor ?? null);
+  const backfillMarker = mode === "backfill" ? { backfillJobId: job.id } : {};
 
   // Optional resource subset chosen at creation time (stored in config under
   // a reserved key so it cannot clash with manifest config properties, whose
@@ -293,7 +308,7 @@ async function runSync(
   const progress = {
     pagesCommitted: 0,
     observationsWritten: 0,
-    cursor: state?.cursor ?? null,
+    cursor: startCursor,
   };
 
   /** Records a failed sync_run + connection_state in a fresh transaction. */
@@ -311,7 +326,7 @@ async function runSync(
           mode,
           requestedFrom: window.from,
           requestedTo: window.to,
-          cursorBefore: state?.cursor ?? null,
+          cursorBefore: startCursor,
           // The checkpoint the next attempt resumes from, when pages
           // committed before the failure.
           cursorAfter: progress.pagesCommitted > 0 ? progress.cursor : null,
@@ -516,9 +531,9 @@ async function runSync(
     };
 
     let finalObservations: Observation[] = [];
-    let finalCursor = state?.cursor ?? null;
+    let finalCursor = startCursor;
     if (window.from < window.to) {
-      let cursor = state?.cursor ?? undefined;
+      let cursor = startCursor ?? undefined;
       for (let page = 1; ; page += 1) {
         if (page > MAX_PAGES) {
           throw new ContractViolationError(
@@ -565,10 +580,11 @@ async function runSync(
                 workspaceId,
                 pollIntervalSeconds,
                 cursor: nextCursor,
+                ...backfillMarker,
               })
               .onConflictDoUpdate({
                 target: schema.connectionState.connectionId,
-                set: { cursor: nextCursor },
+                set: { cursor: nextCursor, ...backfillMarker },
               });
             return count;
           },
@@ -596,6 +612,7 @@ async function runSync(
           lastSuccessAt: now,
           nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
           cursor: finalCursor,
+          ...backfillMarker,
           authState: "ok",
           authReason: null,
           consecutiveFailures: 0,
@@ -606,6 +623,7 @@ async function runSync(
             lastSuccessAt: now,
             nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
             cursor: finalCursor,
+            ...backfillMarker,
             authState: "ok",
             authReason: null,
             consecutiveFailures: 0,
@@ -617,7 +635,7 @@ async function runSync(
         mode,
         requestedFrom: window.from,
         requestedTo: window.to,
-        cursorBefore: state?.cursor ?? null,
+        cursorBefore: startCursor,
         cursorAfter: finalCursor,
         attempt,
         status: "succeeded",
