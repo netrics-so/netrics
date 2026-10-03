@@ -4,8 +4,8 @@ import SwiftUI
 /**
  * Reached with the Siri Remote (Play/Pause, or press and hold the clickpad
  * on the dashboard; the Settings button while pairing). Shows what this TV
- * is connected to; Unpair clears the Keychain and the cache and returns to
- * the server choice.
+ * is connected to; Unpair clears the Keychain and the cache and starts
+ * pairing with netrics cloud again (another server is one button away).
  */
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
@@ -63,7 +63,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This TV forgets its server and credentials and shows the server choice again.")
+            Text("This TV forgets its server and credentials and shows a new pairing code for netrics cloud.")
         }
     }
 }

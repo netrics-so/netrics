@@ -80,10 +80,13 @@ drops the alpha channel of opaque images and checks the sizes.
 
 ## How it works
 
-- **Server choice.** netrics cloud (`NetricsCloud.baseURL` in
-  `ServerConfig.swift`) or the user's own server. `GET /v1/server` must
-  answer `product: "netrics"` and a supported `deviceApiVersion`. The
-  server is stored with the credentials and changes only by unpairing.
+- **Server.** A new TV checks netrics cloud (`NetricsCloud.baseURL` in
+  `ServerConfig.swift`) at once and shows its pairing code, retrying every
+  10 seconds while the cloud is unreachable. Until it is paired, "Use your
+  own server" (and back) changes the server. `GET /v1/server` must answer
+  `product: "netrics"` and a supported `deviceApiVersion`. The server is
+  stored with the credentials; once paired it changes only by unpairing,
+  which starts over with netrics cloud.
 - **Pairing.** The TV shows the code, the pairing URL the server reports and
   a QR code of `approveUrl`. It polls at `pollIntervalSeconds` and starts a
   new pairing when the code expires or is gone.
@@ -99,7 +102,7 @@ drops the alpha channel of opaque images and checks the sizes.
 - **Heartbeat.** Every 5 minutes: app version, uptime and the last error.
 - **Settings.** Press Play/Pause, or press and hold the clickpad, on the
   dashboard. The pairing screen has a Settings button. Unpair clears the
-  Keychain and the cache.
+  Keychain and the cache and shows a new netrics cloud code.
 
 `DeviceClient` follows the browser kiosk (`apps/web/src/lib/kiosk-client.ts`)
 rule for rule, and its tests cover the same cases. Number formatting, tile

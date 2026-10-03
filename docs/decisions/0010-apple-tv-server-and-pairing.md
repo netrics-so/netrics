@@ -13,15 +13,23 @@ invariants, ADR 0009 device principals).
 
 ## Decision
 
-**Server choice.** On first start the app offers:
+**Server choice.** On first start the app connects to **netrics cloud** at
+once and shows the pairing code: the hosted service needs no input, and most
+TVs pair with it. Until the TV is paired, the pairing screen offers **Use
+your own server** (and that screen offers the way back):
 
-- **netrics cloud** (default): the hosted service, no input needed.
+- **netrics cloud** (default): the hosted service, no input needed. If it is
+  unreachable, the app says so and retries by itself.
 - **Your own server**: the user enters its URL once. The iPhone keyboard
   helps with this. Before pairing, the app checks a public, unauthenticated
   endpoint that identifies a netrics server and its API version, and refuses
   incompatible or unrelated servers with a clear message. The chosen server
-  is stored with the device credentials and can be changed only by
-  unpairing.
+  is stored with the device credentials. Once the TV is paired, the server
+  changes only by unpairing, which starts over with netrics cloud.
+
+_Amended 2026-10-03: the first version showed a choice screen before
+pairing; the app now starts pairing with netrics cloud directly, so a new
+TV shows its code without any input._
 
 There is no relay through our cloud and no network discovery: a self-hosted
 TV talks only to its own server.
