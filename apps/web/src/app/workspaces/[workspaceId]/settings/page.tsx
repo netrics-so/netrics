@@ -89,6 +89,21 @@ export default async function WorkspaceSettingsPage({
         </div>
       ) : null}
 
+      {can(role, "dashboards:view") ? (
+        <div className="card">
+          <h2>Themes</h2>
+          <p className="muted">
+            Colours and text size of dashboards on TVs: five built-in themes and
+            your own.
+          </p>
+          <p>
+            <Link href={`/workspaces/${workspaceId}/settings/themes`}>
+              Manage themes
+            </Link>
+          </p>
+        </div>
+      ) : null}
+
       <MembersManager
         workspaceId={workspaceId}
         members={members}

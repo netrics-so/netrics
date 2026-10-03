@@ -7,6 +7,7 @@ import {
   type CreateDashboardRequest,
   type Dashboard as DashboardView,
   type DashboardSettings as DashboardSettingsView,
+  type DashboardSettingsInput,
   type DashboardTileInput,
   type DashboardWidget,
   type DashboardWidgetInputParsed,
@@ -28,6 +29,7 @@ import {
   resourceNameKey,
   withWorkspace,
   type Dashboard,
+  type DashboardSettings,
   type DashboardSlide,
   type DashboardWidgetRow,
   type Database,
@@ -38,7 +40,9 @@ import {
 import {
   CURRENCY_DIMENSION,
   DEFAULT_DASHBOARD_SETTINGS,
+  DEFAULT_THEME_KEY,
   RESOURCE_DIMENSION,
+  checkAccentContrast,
   STUDIO_LIMITS,
   compatibleAggregations,
   isCurrencyCode,
@@ -52,6 +56,7 @@ import {
   type WidgetType,
 } from "@netrics/domain";
 
+import { resolveThemeTokens } from "../themes/service.js";
 import {
   findAllResourcesNames,
   tileAllResourcesName,
@@ -119,6 +124,9 @@ function settingsOf(dashboard: Dashboard): DashboardSettingsView {
     autoAdvance: dashboard.autoAdvance,
     defaultSlideSeconds: dashboard.defaultSlideSeconds,
     transition: dashboard.transition as SlideTransition,
+    themeBuiltin: dashboard.themeBuiltin,
+    themeId: dashboard.themeId,
+    accentColor: dashboard.accentColor,
   };
 }
 
@@ -513,6 +521,67 @@ const EMPTY_SLIDE: SlideInput = {
   widgets: [],
 };
 
+type ThemeSettings = Pick<
+  DashboardSettings,
+  "themeBuiltin" | "themeId" | "accentColor"
+>;
+
+/** Splits the theme fields off the settings a request sends. */
+function splitSettings(input: DashboardSettingsInput | undefined): {
+  rest: Partial<DashboardSettings>;
+  theme: Partial<ThemeSettings>;
+} {
+  const { themeBuiltin, themeId, accentColor, ...rest } = input ?? {};
+  return { rest, theme: { themeBuiltin, themeId, accentColor } };
+}
+
+/**
+ * The theme and accent a request sets (#216): a custom theme must be the
+ * workspace's, and a brand accent must stay readable on the theme's surface
+ * (ADR 0015, section 6). `current` is the saved dashboard, whose choice
+ * applies where the request leaves something out; null on create.
+ */
+async function chooseTheme(
+  tx: Transaction,
+  workspaceId: string,
+  request: Partial<ThemeSettings>,
+  current: ThemeSettings | null,
+): Promise<Result<Partial<ThemeSettings>>> {
+  const choice: Partial<ThemeSettings> = {};
+  if (request.themeBuiltin != null) {
+    choice.themeBuiltin = request.themeBuiltin;
+    choice.themeId = null;
+  } else if (request.themeId != null) {
+    choice.themeBuiltin = null;
+    choice.themeId = request.themeId;
+  }
+  if (request.accentColor !== undefined) {
+    choice.accentColor = request.accentColor;
+  }
+  const changesTheme = choice.themeId !== undefined;
+  const ref = changesTheme
+    ? { themeBuiltin: choice.themeBuiltin!, themeId: choice.themeId! }
+    : {
+        themeBuiltin: current ? current.themeBuiltin : DEFAULT_THEME_KEY,
+        themeId: current ? current.themeId : null,
+      };
+  const accent =
+    choice.accentColor !== undefined
+      ? choice.accentColor
+      : (current?.accentColor ?? null);
+  if (!changesTheme && accent === null) {
+    return ok(choice);
+  }
+  const tokens = await resolveThemeTokens(tx, workspaceId, ref);
+  if (!tokens) {
+    return fail(404, "theme_not_found");
+  }
+  if (accent !== null && checkAccentContrast(accent, tokens).level === "fail") {
+    return fail(400, "contrast_too_low");
+  }
+  return ok(choice);
+}
+
 async function checkProject(
   tx: Transaction,
   workspaceId: string,
@@ -576,10 +645,24 @@ export function createDashboardService(deps: { db: Database }) {
         if (!slides.ok) {
           return slides;
         }
+        const { rest, theme: themeRequest } = splitSettings(body.settings);
+        const theme = await chooseTheme(
+          tx,
+          actor.workspaceId,
+          themeRequest,
+          null,
+        );
+        if (!theme.ok) {
+          return theme;
+        }
         const dashboard = await insertDashboard(tx, actor.workspaceId, {
           name: body.name,
           projectId: body.projectId ?? null,
-          settings: { ...DEFAULT_DASHBOARD_SETTINGS, ...body.settings },
+          settings: {
+            ...DEFAULT_DASHBOARD_SETTINGS,
+            ...rest,
+            ...theme.value,
+          },
           slides: slides.value.length > 0 ? slides.value : [EMPTY_SLIDE],
         });
         await insertAuditEvent(tx, {
@@ -632,6 +715,28 @@ export function createDashboardService(deps: { db: Database }) {
         if (!slides.ok) {
           return slides;
         }
+        const { rest, theme: themeRequest } = splitSettings(body.settings);
+        let themeSettings: Partial<ThemeSettings> = {};
+        if (Object.values(themeRequest).some((value) => value !== undefined)) {
+          const current = await findDashboard(
+            tx,
+            actor.workspaceId,
+            dashboardId,
+          );
+          if (!current) {
+            return fail<DashboardView>(404, NOT_FOUND);
+          }
+          const theme = await chooseTheme(
+            tx,
+            actor.workspaceId,
+            themeRequest,
+            current,
+          );
+          if (!theme.ok) {
+            return theme;
+          }
+          themeSettings = theme.value;
+        }
         const result = await replaceDashboard(
           tx,
           actor.workspaceId,
@@ -640,7 +745,9 @@ export function createDashboardService(deps: { db: Database }) {
           {
             name: body.name,
             projectId: body.projectId,
-            ...(body.settings ? { settings: body.settings } : {}),
+            ...(body.settings
+              ? { settings: { ...rest, ...themeSettings } }
+              : {}),
             slides: slides.value.length > 0 ? slides.value : [EMPTY_SLIDE],
           },
         );

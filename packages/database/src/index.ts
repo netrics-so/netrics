@@ -140,6 +140,22 @@ export {
   replaceDashboard,
   schema1Tiles,
 } from "./dashboards.js";
+export {
+  deleteTheme,
+  findDashboardsUsingTheme,
+  findTheme,
+  insertTheme,
+  listThemes,
+  updateTheme,
+} from "./themes.js";
+export type {
+  DeleteThemeResult,
+  InsertThemeResult,
+  ThemeInput,
+  ThemeUser,
+  UpdateThemeResult,
+  WorkspaceThemeRow,
+} from "./themes.js";
 export type {
   Dashboard,
   DashboardInput,

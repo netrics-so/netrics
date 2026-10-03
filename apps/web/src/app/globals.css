@@ -1122,3 +1122,333 @@ a.health-badge:hover {
   font-size: 13px;
   box-shadow: 0 4px 16px rgb(0 0 0 / 40%);
 }
+
+/* ─── Themes (#216) ─────────────────────────────────────────────────── */
+
+.container:has(.theme-editor-page),
+.container:has(.themes-page) {
+  max-width: 1120px;
+}
+
+.theme-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.theme-list-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.contrast-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.contrast-badge.pass {
+  color: #9fd6a8;
+  border-color: #2c4a33;
+}
+
+.contrast-badge.warn {
+  color: #e3b341;
+  border-color: #5c4a1a;
+}
+
+.contrast-badge.fail {
+  color: #f0a3a3;
+  border-color: #5a2c2c;
+}
+
+.theme-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 800px) {
+  .theme-editor-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.theme-tokens {
+  border: 1px solid #23272e;
+  border-radius: 8px;
+  padding: 12px 16px 16px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #11141a;
+}
+
+.theme-tokens legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.theme-token {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.theme-token input[type="color"] {
+  width: 44px;
+  height: 38px;
+  padding: 2px;
+  margin-top: 20px;
+  cursor: pointer;
+}
+
+.theme-hex {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+}
+
+.theme-contrast ul {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+}
+
+.theme-contrast li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid #1b1f26;
+}
+
+.theme-contrast {
+  margin-top: 20px;
+}
+
+/* A sample slide drawn with a theme's tokens (CSS variables from
+   themeStyle). Sizes follow the preview's width, like a TV canvas. */
+.theme-preview {
+  container-type: inline-size;
+  aspect-ratio: 16 / 9;
+  background: var(--t-background);
+  border: 1px solid #23272e;
+  border-radius: 8px;
+  padding: 3cqw;
+  display: flex;
+  flex-direction: column;
+  gap: 2cqw;
+  overflow: hidden;
+  color: var(--t-text);
+  --s: var(--t-font-scale);
+}
+
+.theme-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.theme-preview-title {
+  font-size: calc(3.4cqw * var(--s));
+  font-weight: 600;
+  color: var(--t-text);
+}
+
+.theme-preview-clock {
+  font-size: calc(3.4cqw * var(--s));
+  color: var(--t-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.theme-preview-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2cqw;
+}
+
+.theme-preview-widget {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: 1.2cqw;
+  padding: 1.8cqw;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6cqw;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.theme-preview-metric {
+  grid-row: span 1;
+}
+
+.theme-preview-line {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.theme-preview-bar {
+  grid-column: 1 / span 3;
+  grid-row: 2;
+}
+
+.theme-preview-grid > .theme-preview-metric:nth-child(1) {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.theme-preview-grid > .theme-preview-metric:nth-child(2) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.theme-preview .tp-label {
+  font-size: calc(2.1cqw * var(--s));
+  color: var(--t-label);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theme-preview .tp-muted {
+  font-size: calc(1.6cqw * var(--s));
+  color: var(--t-muted);
+}
+
+.theme-preview .tp-value {
+  font-size: calc(4.6cqw * var(--s));
+  font-weight: 600;
+  color: var(--t-text);
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.theme-preview .tp-up,
+.theme-preview .tp-down,
+.theme-preview .tp-warning {
+  font-size: calc(1.6cqw * var(--s));
+}
+
+.theme-preview .tp-up {
+  color: var(--t-up);
+}
+
+.theme-preview .tp-down {
+  color: var(--t-down);
+}
+
+.theme-preview .tp-warning {
+  color: var(--t-warning);
+}
+
+.theme-preview .tp-spark {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.theme-preview .tp-spark polyline {
+  fill: none;
+  stroke: var(--t-chart-line);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.theme-preview .tp-chart {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.theme-preview .tp-area {
+  fill: var(--t-chart-fill);
+  opacity: 0.35;
+}
+
+.theme-preview .tp-line {
+  fill: none;
+  stroke: var(--t-chart-line);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.theme-preview .tp-previous {
+  fill: none;
+  stroke: var(--t-muted);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+
+.theme-preview .tp-axis {
+  stroke: var(--t-border);
+  stroke-width: 1;
+}
+
+.theme-preview .tp-axis-label {
+  fill: var(--t-muted);
+  font-size: calc(13px * var(--s));
+}
+
+.theme-preview .tp-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  flex: 1;
+}
+
+.theme-preview .tp-bars li {
+  display: grid;
+  grid-template-columns: 18cqw 1fr 7cqw;
+  align-items: center;
+  gap: 1.4cqw;
+  font-size: calc(1.7cqw * var(--s));
+}
+
+.theme-preview .tp-bar-label {
+  color: var(--t-label);
+}
+
+.theme-preview .tp-bar-track {
+  height: 1.6cqw;
+}
+
+.theme-preview .tp-bar {
+  display: block;
+  height: 100%;
+  border-radius: 0.4cqw;
+  background: var(--t-chart-fill);
+}
+
+.theme-preview .tp-bar-value {
+  color: var(--t-text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.theme-editor .actions {
+  align-items: center;
+}

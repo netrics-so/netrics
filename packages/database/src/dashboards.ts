@@ -39,6 +39,11 @@ export interface DashboardSettings {
   autoAdvance: boolean;
   defaultSlideSeconds: number;
   transition: string;
+  /** A built-in theme key or a custom theme id, exactly one (#216). */
+  themeBuiltin: string | null;
+  themeId: string | null;
+  /** `#rrggbb`, overrides the theme accent. */
+  accentColor: string | null;
 }
 
 export interface WidgetInput {

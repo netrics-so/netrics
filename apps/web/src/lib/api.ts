@@ -107,6 +107,16 @@ import {
   type WorkspaceListResponse,
   type WorkspaceResponse,
   type WorkspaceRole,
+  createThemeRequestSchema,
+  themeErrorResponseSchema,
+  themeListResponseSchema,
+  themeResponseSchema,
+  updateThemeRequestSchema,
+  type CreateThemeRequest,
+  type ThemeErrorResponse,
+  type ThemeListResponse,
+  type ThemeResponse,
+  type UpdateThemeRequest,
 } from "@netrics/contracts";
 
 import { apiFetch } from "./api-fetch";
@@ -120,6 +130,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly code: string,
+    /** Extra fields some errors carry (theme contrast, dashboards in use). */
+    public readonly details: Omit<ThemeErrorResponse, "error"> = {},
   ) {
     super(code);
     this.name = "ApiError";
@@ -166,6 +178,18 @@ export function apiErrorMessage(error: unknown): string {
         return "This dashboard now has slides or widgets that the tile editor cannot keep. Reload it before editing.";
       case "dashboard_not_found":
         return "This dashboard no longer exists.";
+      case "theme_not_found":
+        return "That theme no longer exists.";
+      case "theme_name_taken":
+        return "A theme with that name already exists in this workspace.";
+      case "contrast_too_low":
+        return "Some text would be too hard to read on a TV: every text colour needs at least 3:1 contrast against its background.";
+      case "theme_in_use": {
+        const names = error.details.dashboards?.map((d) => d.name) ?? [];
+        return names.length > 0
+          ? `Dashboards still use this theme: ${names.join(", ")}. Pick another theme for them first.`
+          : "Dashboards still use this theme. Pick another theme for them first.";
+      }
       case "device_not_found":
         return "That TV no longer exists.";
       case "pairing_not_found":
@@ -222,12 +246,23 @@ async function readErrorCode(response: Response): Promise<string> {
   }
 }
 
+async function readError(response: Response): Promise<ApiError> {
+  try {
+    const { error, ...details } = themeErrorResponseSchema.parse(
+      await response.json(),
+    );
+    return new ApiError(response.status, error, details);
+  } catch {
+    return new ApiError(response.status, "request_failed");
+  }
+}
+
 async function parseResponse<T>(
   schema: ZodType<T>,
   response: Response,
 ): Promise<T> {
   if (!response.ok) {
-    throw new ApiError(response.status, await readErrorCode(response));
+    throw await readError(response);
   }
   return schema.parse(await response.json());
 }
@@ -811,6 +846,77 @@ export async function deleteDashboard(
   );
   if (!response.ok && response.status !== 204) {
     throw new ApiError(response.status, await readErrorCode(response));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard themes (#216)
+// ---------------------------------------------------------------------------
+
+export function listThemes(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<ThemeListResponse> {
+  return serverGet(
+    themeListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/themes`,
+  );
+}
+
+/** Returns null on 404. */
+export async function getTheme(
+  cookieHeader: string,
+  workspaceId: string,
+  themeId: string,
+): Promise<ThemeResponse | null> {
+  const response = await apiFetch(
+    `/v1/workspaces/${workspaceId}/themes/${themeId}`,
+    { headers: { cookie: cookieHeader } },
+  );
+  if (response.status === 404) {
+    return null;
+  }
+  return parseResponse(themeResponseSchema, response);
+}
+
+export function createTheme(
+  workspaceId: string,
+  body: CreateThemeRequest,
+): Promise<ThemeResponse> {
+  return browserSend(
+    themeResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/themes`,
+    createThemeRequestSchema.parse(body),
+  );
+}
+
+/** Throws ApiError "version_conflict" (409) when someone saved first. */
+export function updateTheme(
+  workspaceId: string,
+  themeId: string,
+  body: UpdateThemeRequest,
+): Promise<ThemeResponse> {
+  return browserSend(
+    themeResponseSchema,
+    "PUT",
+    `/v1/workspaces/${workspaceId}/themes/${themeId}`,
+    updateThemeRequestSchema.parse(body),
+  );
+}
+
+/** Throws ApiError "theme_in_use" (409) with the dashboards that use it. */
+export async function deleteTheme(
+  workspaceId: string,
+  themeId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/v1/workspaces/${workspaceId}/themes/${themeId}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw await readError(response);
   }
 }
 

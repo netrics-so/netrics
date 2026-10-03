@@ -33,6 +33,8 @@ export interface RouteDoc {
   /** Success response; omit for 204 No Content. */
   response?: z.ZodType;
   errors?: ErrorStatus[];
+  /** A richer error body for some statuses (it still has `error`). */
+  errorSchemas?: Partial<Record<ErrorStatus, z.ZodType>>;
   /** Public route (no session): no 401 documented. */
   public?: boolean;
   /** Admin API: instance-admin session or a scoped service bearer token. */
@@ -73,7 +75,11 @@ export function routeSchema(doc: RouteDoc) {
       .describe("Not modified: If-None-Match holds the current ETag");
   }
   for (const status of errors) {
-    response[status] = errorResponseSchema.describe(ERROR_DESCRIPTIONS[status]);
+    const schema =
+      status === 401 ? undefined : doc.errorSchemas?.[status as ErrorStatus];
+    response[status] = (schema ?? errorResponseSchema).describe(
+      ERROR_DESCRIPTIONS[status],
+    );
   }
   return {
     summary: doc.summary,
