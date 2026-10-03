@@ -19,6 +19,13 @@ import {
   createAppStoreConnectClient,
   type AppStoreConnectClient,
 } from "./api.js";
+import {
+  ANALYTICS_APPS_PER_PAGE,
+  ANALYTICS_METRIC_KEYS,
+  ANALYTICS_SEGMENT_HOSTS,
+  syncAnalyticsApps,
+} from "./analytics-sync.js";
+import { ANALYTICS_SOURCE_TYPES, OTHER_SOURCE } from "./analytics-report.js";
 import { checkKey, vendorNumberOf } from "./probes.js";
 import {
   BACKFILL_DAYS,
@@ -38,6 +45,39 @@ export {
   parseRateLimit,
   type AscFetch,
 } from "./api.js";
+export {
+  ANALYTICS_ACCESS_TYPE,
+  activeRequest,
+  ensureAnalyticsRequest,
+  listAnalyticsRequests,
+  type AnalyticsReportRequest,
+  type AnalyticsRequestOutcome,
+} from "./analytics-requests.js";
+export {
+  ANALYTICS_SOURCE_TYPES,
+  AnalyticsReportError,
+  DISCOVERY_REPORT_NAME,
+  DOWNLOADS_REPORT_NAME,
+  OTHER_SOURCE,
+  md5Hex,
+  parseDiscoveryReport,
+  parseDownloadsReport,
+  readSegment,
+  reportDate,
+  sourceLabel,
+} from "./analytics-report.js";
+export {
+  ANALYTICS_APPS_PER_PAGE,
+  ANALYTICS_LOOKBACK_DAYS,
+  ANALYTICS_METRIC_KEYS,
+  ANALYTICS_SEGMENT_HOSTS,
+  AnalyticsSegmentHostError,
+  downloadSegment,
+  readAppAnalytics,
+  syncAnalyticsApps,
+  type AppAnalyticsResult,
+  type AppAnalyticsStatus,
+} from "./analytics-sync.js";
 export {
   AGREEMENTS_MESSAGE,
   KEY_MISMATCH_MESSAGE,
@@ -88,7 +128,7 @@ export const appStoreConnectManifest: ConnectorManifest = {
   sdkVersion: "^0.2.3",
   name: "App Store Connect",
   description:
-    "Downloads, in-app purchases and proceeds of your apps from App Store Connect sales reports, per app.",
+    "Downloads, in-app purchases and proceeds of your apps from App Store Connect sales reports, per app; impressions, product page views and downloads by source once App Store analytics are enabled.",
   url: "https://appstoreconnect.apple.com/",
   docsUrl:
     "https://github.com/netrics-so/netrics/blob/main/docs/connectors/app-store-connect.md",
@@ -182,6 +222,38 @@ export const appStoreConnectManifest: ConnectorManifest = {
       dimensions: ["resource", CURRENCY_DIMENSION],
       aggregations: ["sum", "avg", "min", "max"],
     },
+    {
+      key: ANALYTICS_METRIC_KEYS.impressions,
+      name: "App Store impressions",
+      description:
+        "How often the app's icon was shown on the App Store (search results, charts, Today, Apps and Games), per day and app. From App Store analytics, which have to be enabled once; a day is complete about two days later.",
+      kind: "delta",
+      unit: "impressions",
+      granularity: "day",
+      dimensions: ["resource"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
+    {
+      key: ANALYTICS_METRIC_KEYS.productPageViews,
+      name: "Product page views",
+      description:
+        "Views of the app's App Store product page (including product pages shown inside other apps), per day and app. From App Store analytics.",
+      kind: "delta",
+      unit: "views",
+      granularity: "day",
+      dimensions: ["resource"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
+    {
+      key: ANALYTICS_METRIC_KEYS.storeDownloads,
+      name: "Downloads by source",
+      description: `First-time downloads per day, app and where people found the app: ${ANALYTICS_SOURCE_TYPES.join(", ")} (anything new is "${OTHER_SOURCE}"). From App Store analytics.`,
+      kind: "delta",
+      unit: "downloads",
+      granularity: "day",
+      dimensions: ["resource", "source"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
   ],
   // Daily reports arrive once a day, the next morning Pacific Time.
   minRefreshIntervalSeconds: 6 * 60 * 60,
@@ -189,8 +261,9 @@ export const appStoreConnectManifest: ConnectorManifest = {
   // tenth of the hourly limit (ADR 0014).
   supportsBackfill: true,
   backfillDays: BACKFILL_DAYS,
-  // The analytics segment host joins with the analytics issue (#174).
-  outboundDomains: [APP_STORE_CONNECT_HOST],
+  // The API, and the bucket host of the presigned analytics segment URLs,
+  // exactly (ADR 0014: never *.amazonaws.com).
+  outboundDomains: [APP_STORE_CONNECT_HOST, ...ANALYTICS_SEGMENT_HOSTS],
   // Apple's limit is per key and rolling hour; connections sharing a key
   // share it (ADR 0014).
   rateLimit: { maxRequests: 3500, windowSeconds: 3600, scope: "key" },
@@ -338,10 +411,26 @@ function accessTokenOf(context: ConnectionContext): string | undefined {
 export interface AppStoreConnectConnectorOptions {
   now?: () => number;
   /**
-   * Notes that carry no data (unknown product type codes). Default:
-   * console.warn.
+   * Notes that carry no data (unknown product type codes, skipped
+   * analytics). Default: console.warn.
    */
   log?: (message: string) => void;
+  /**
+   * Read App Store analytics after the sales (default true). The sales
+   * tests turn it off to look at sales pages alone.
+   */
+  analytics?: boolean;
+}
+
+/**
+ * The cursor of an analytics page: `analytics:<app index>:<sales cursor>`.
+ * Sales cursors are ISO timestamps, so they never look like this; the
+ * sales cursor is where the next sync's sales continue.
+ */
+const ANALYTICS_CURSOR = /^analytics:(\d+):(.+)$/;
+
+export function analyticsCursor(index: number, salesCursor: string): string {
+  return `analytics:${index}:${salesCursor}`;
 }
 
 /**
@@ -358,6 +447,7 @@ export function createAppStoreConnectConnector(
 ): Connector {
   const now = options.now ?? Date.now;
   const log = options.log ?? ((message: string) => console.warn(message));
+  const analytics = options.analytics ?? true;
 
   function token(context: ConnectionContext): string {
     const value = accessTokenOf(context);
@@ -417,7 +507,34 @@ export function createAppStoreConnectConnector(
         );
       }
       const client = createAppStoreConnectClient(runtime.fetch, token(context));
-      return syncSalesPage(client, request, {
+
+      // Analytics pages come after the sales of a sync (ADR 0014, #174):
+      // a few apps per page, each page within its own time budget.
+      const resumed = ANALYTICS_CURSOR.exec(request.cursor ?? "");
+      if (resumed) {
+        const start = Number(resumed[1]);
+        const salesCursor = resumed[2]!;
+        const appIds =
+          request.resources !== undefined
+            ? [...request.resources].sort()
+            : (await listApps(client)).map((app) => app.id).sort();
+        const end = Math.min(start + ANALYTICS_APPS_PER_PAGE, appIds.length);
+        const { observations, rateLimited } = await syncAnalyticsApps(
+          client,
+          runtime.fetch,
+          appIds.slice(start, end),
+          { now: now(), log },
+        );
+        return end < appIds.length && !rateLimited
+          ? {
+              observations,
+              nextCursor: analyticsCursor(end, salesCursor),
+              done: false,
+            }
+          : { observations, nextCursor: salesCursor, done: true };
+      }
+
+      const sales = await syncSalesPage(client, request, {
         now: now(),
         vendorNumber,
         log,
@@ -428,6 +545,14 @@ export function createAppStoreConnectConnector(
             ),
           ),
       });
+      if (!sales.done || !analytics || request.resources?.length === 0) {
+        return sales;
+      }
+      return {
+        observations: sales.observations,
+        nextCursor: analyticsCursor(0, sales.nextCursor!),
+        done: false,
+      };
     },
   };
 }

@@ -18,8 +18,11 @@ export interface FakeTeam {
   /** Apps listed by GET /v1/apps, in fixture-page shape. */
   appPages?: unknown[];
   vendorNumbers: string[];
-  /** "sales" (Sales/Finance/Admin) reads reports; "developer" cannot. */
-  role?: "sales" | "developer";
+  /**
+   * "sales" (Sales/Finance) reads reports; "admin" also requests analytics
+   * reports; "developer" cannot read sales.
+   */
+  role?: "sales" | "admin" | "developer";
   /** The Account Holder has not accepted the current agreements. */
   agreementsMissing?: boolean;
   /** Days (YYYY-MM-DD) with sales (SALES_REPORT_TSV); other days answer 404. */
@@ -28,6 +31,33 @@ export interface FakeTeam {
   reports?: Record<string, string | Uint8Array>;
   /** Days whose report is not published yet (404 "not available yet"). */
   pendingDays?: string[];
+  /** The Analytics Reports API of this team (#174). */
+  analytics?: FakeAnalytics;
+}
+
+/**
+ * Analytics endpoints served from fixtures: JSON:API pages by request path
+ * (with `?cursor=<c>` for a page reached through links.next), and the
+ * segment files of the presigned S3 links by path.
+ */
+export interface FakeAnalytics {
+  pages: Record<string, unknown>;
+  files?: Record<string, Uint8Array>;
+  /**
+   * How POST /v1/analyticsReportRequests answers: created (201), 409
+   * (already requested), or by role (default: 201 for "admin", else 403).
+   */
+  create?: "created" | "conflict";
+}
+
+/** The pinned production bucket host of analytics segment links. */
+export const SEGMENT_HOST = "asp-us-west-2.s3.us-west-2.amazonaws.com";
+
+/** A segment file fixture (`fixtures/<name>.csv.gz`) as bytes. */
+export function segmentFixture(name: string): Uint8Array {
+  return new Uint8Array(
+    readFileSync(new URL(`./fixtures/${name}.csv.gz`, import.meta.url)),
+  );
 }
 
 export interface FakeAppStoreConnectOptions {
@@ -46,6 +76,8 @@ export interface FakeAppStoreConnect {
   runtime: ConnectorRuntime;
   fetch: ConnectorRuntime["fetch"];
   requests: Array<{ url: URL; init: ConnectorFetchInit | undefined }>;
+  /** Bodies of POST /v1/analyticsReportRequests. */
+  created: unknown[];
 }
 
 export function fixture(name: string): unknown {
@@ -117,6 +149,7 @@ export function createFakeAppStoreConnect(
 ): FakeAppStoreConnect {
   const failures = [...(options.failures ?? [])];
   const requests: FakeAppStoreConnect["requests"] = [];
+  const created: unknown[] = [];
   const rate = () => ({
     "x-rate-limit": `user-hour-lim:3500;user-hour-rem:${options.remaining ?? 3000};`,
   });
@@ -165,7 +198,7 @@ export function createFakeAppStoreConnect(
       if (team.agreementsMissing) {
         return jsonResponse(403, fixture("error-forbidden-agreements"), rate());
       }
-      if ((team.role ?? "sales") !== "sales") {
+      if (team.role === "developer") {
         return jsonResponse(403, fixture("error-forbidden-role"), rate());
       }
       const vendor = url.searchParams.get("filter[vendorNumber]") ?? "";
@@ -187,6 +220,31 @@ export function createFakeAppStoreConnect(
       }
       return gzipResponse(SALES_REPORT_TSV, rate());
     }
+    const analytics = team.analytics;
+    if (
+      analytics &&
+      url.pathname === "/v1/analyticsReportRequests" &&
+      init?.method === "POST"
+    ) {
+      created.push(JSON.parse(init.body ?? "null"));
+      const outcome =
+        analytics.create ?? (team.role === "admin" ? "created" : "forbidden");
+      if (outcome === "conflict") {
+        return jsonResponse(409, fixture("error-conflict"), rate());
+      }
+      if (outcome === "forbidden") {
+        return jsonResponse(403, fixture("error-forbidden-role"), rate());
+      }
+      return jsonResponse(201, fixture("analytics-request-created"), rate());
+    }
+    if (analytics && init?.method === "GET") {
+      const cursor = url.searchParams.get("cursor");
+      const page =
+        analytics.pages[
+          cursor === null ? url.pathname : `${url.pathname}?cursor=${cursor}`
+        ];
+      if (page !== undefined) return jsonResponse(200, page, rate());
+    }
     return jsonResponse(
       404,
       {
@@ -206,6 +264,33 @@ export function createFakeAppStoreConnect(
   const fetch: ConnectorRuntime["fetch"] = async (raw, init) => {
     const url = new URL(raw);
     requests.push({ url, init });
+    if (url.protocol === "https:" && url.hostname === SEGMENT_HOST) {
+      // S3 answers a presigned link without any Authorization header.
+      const file = options.teams
+        .map((team) => team.analytics?.files?.[url.pathname])
+        .find((entry) => entry !== undefined);
+      if (!file || init?.headers?.authorization !== undefined) {
+        const text = "<Error><Code>AccessDenied</Code></Error>";
+        return {
+          status: 403,
+          headers: { "content-type": "application/xml" },
+          text: () => text,
+          json: () => {
+            throw new Error("not JSON");
+          },
+          bytes: () => new TextEncoder().encode(text),
+        };
+      }
+      return {
+        status: 200,
+        headers: { "content-type": "application/octet-stream" },
+        text: () => new TextDecoder().decode(file),
+        json: () => {
+          throw new Error("not JSON");
+        },
+        bytes: () => new Uint8Array(file),
+      };
+    }
     if (
       url.protocol !== "https:" ||
       url.hostname !== "api.appstoreconnect.apple.com"
@@ -217,6 +302,7 @@ export function createFakeAppStoreConnect(
 
   return {
     requests,
+    created,
     fetch,
     runtime: { signal: new AbortController().signal, fetch },
   };

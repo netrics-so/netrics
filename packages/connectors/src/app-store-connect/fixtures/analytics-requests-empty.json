@@ -1,0 +1,12 @@
+{
+  "data": [],
+  "links": {
+    "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000002/analyticsReportRequests"
+  },
+  "meta": {
+    "paging": {
+      "total": 0,
+      "limit": 50
+    }
+  }
+}

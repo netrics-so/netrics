@@ -459,6 +459,72 @@ export type ConnectionResourcesResponse = z.infer<
   typeof connectionResourcesResponseSchema
 >;
 
+/**
+ * Enabling App Store analytics (ADR 0014, #174): a temporary Admin team key
+ * (issuer ID, key ID, private key), used in memory for this one request to
+ * create the missing ONGOING analytics report requests. Input-only: the key
+ * is never stored, enqueued, logged or returned.
+ */
+export const enableAppStoreAnalyticsRequestSchema = z.object({
+  credentials: connectionCredentialsSchema,
+});
+export type EnableAppStoreAnalyticsRequest = z.infer<
+  typeof enableAppStoreAnalyticsRequestSchema
+>;
+
+/** Per app: what the enablement did. */
+export const appStoreAnalyticsOutcomeSchema = z.object({
+  appId: z.string().min(1),
+  name: z.string().nullable(),
+  /** created: requested now; existing: already requested; failed. */
+  outcome: z.enum(["created", "existing", "failed"]),
+  message: z.string().nullable(),
+});
+export type AppStoreAnalyticsOutcome = z.infer<
+  typeof appStoreAnalyticsOutcomeSchema
+>;
+
+export const enableAppStoreAnalyticsResponseSchema = z.object({
+  apps: z.array(appStoreAnalyticsOutcomeSchema),
+  /** Where the user revokes the temporary key now. */
+  keysUrl: z.string(),
+});
+export type EnableAppStoreAnalyticsResponse = z.infer<
+  typeof enableAppStoreAnalyticsResponseSchema
+>;
+
+/**
+ * Per app, read with the connection's own key: not_enabled (no ONGOING
+ * request), stopped (Apple stopped it: enable again), requested (data
+ * pending, the first reports take 1–2 days), available (analytics data
+ * stored, `latestDay` the newest), unknown (Apple could not be asked).
+ */
+export const appStoreAnalyticsAppStatusSchema = z.object({
+  appId: z.string().min(1),
+  name: z.string().nullable(),
+  status: z.enum([
+    "not_enabled",
+    "stopped",
+    "requested",
+    "available",
+    "unknown",
+  ]),
+  latestDay: z.string().nullable(),
+  message: z.string().nullable(),
+});
+export type AppStoreAnalyticsAppStatus = z.infer<
+  typeof appStoreAnalyticsAppStatusSchema
+>;
+
+export const appStoreAnalyticsStatusResponseSchema = z.object({
+  apps: z.array(appStoreAnalyticsAppStatusSchema),
+  /** Where team keys are created and revoked. */
+  keysUrl: z.string(),
+});
+export type AppStoreAnalyticsStatusResponse = z.infer<
+  typeof appStoreAnalyticsStatusResponseSchema
+>;
+
 // "pending" = never synced successfully yet; the other states mirror
 // connection_state.auth_state.
 export const connectionHealthSchema = z.enum([

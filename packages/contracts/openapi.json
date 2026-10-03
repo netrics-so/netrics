@@ -9677,6 +9677,387 @@
         }
       }
     },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/app-store-analytics": {
+      "get": {
+        "summary": "App Store analytics status per app",
+        "tags": [
+          "connections"
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "connectionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "apps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "appId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "not_enabled",
+                              "stopped",
+                              "requested",
+                              "available",
+                              "unknown"
+                            ]
+                          },
+                          "latestDay": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "message": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "appId",
+                          "name",
+                          "status",
+                          "latestDay",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "keysUrl": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "apps",
+                    "keysUrl"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Enable App Store analytics with a temporary Admin key (not stored)",
+        "tags": [
+          "connections"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "credentials": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "credentials"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "connectionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "apps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "appId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "created",
+                              "existing",
+                              "failed"
+                            ]
+                          },
+                          "message": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "appId",
+                          "name",
+                          "outcome",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "keysUrl": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "apps",
+                    "keysUrl"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/sync": {
       "post": {
         "summary": "Request a sync",

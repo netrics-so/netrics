@@ -2,11 +2,13 @@
 
 Reads your apps' App Store sales (downloads, in-app purchases and proceeds)
 from [App Store Connect](https://appstoreconnect.apple.com/), for one team
-and one vendor number per connection
+and one vendor number per connection, and, once enabled, App Store
+analytics (impressions, product page views, downloads by source)
 ([ADR 0014](../decisions/0014-app-store-connect-signed-keys.md)).
 
-> Status: the key check, app discovery (#171) and the daily sales sync
-> (#172) are in place. App Store analytics follow in #174.
+> Status: the key check, app discovery (#171), the daily sales sync (#172)
+> and App Store analytics (#174) are in place. The exit gate (#176) checks
+> them against a real account.
 
 ## Connect
 
@@ -85,14 +87,138 @@ you change it later.
 - **Sales** for a day are published by Apple the next morning, Pacific Time
   (generally by 8 a.m. PT). A day's sales appear in netrics at
   the first sync after Apple publishes them.
-- **App Store analytics** (#174), once enabled, arrive about two days later
-  than sales.
+- **App Store analytics**, once enabled, start 1–2 days after the request,
+  and a day is complete about two days later than its sales (see
+  [App Store analytics](#app-store-analytics)).
 - **Reporting days are Pacific Time days.** A sale at 23:30 PT on the 1st
   counts on the 1st, even if your workspace's time zone already shows the
   2nd. netrics does not shift Apple's days into the workspace time zone.
 - The connection page shows the latest reporting day collected.
 - Apple keeps daily reports for one year, which bounds what can be read
   back.
+
+## App Store analytics
+
+Impressions, product page views and downloads by source are not in the
+sales reports. They come from Apple's
+[Analytics Reports API](https://developer.apple.com/documentation/appstoreconnectapi/downloading-analytics-reports),
+which generates reports only for apps someone has requested them for.
+Reading them works with the Sales key netrics stores, but **requesting**
+them needs a key with the **Admin** role, once per app. netrics never stores
+an Admin key, so this is a separate, optional step.
+
+### Enable App Store analytics
+
+On the connection page, the **App Store analytics** card lists the
+connection's apps and their state. When an app is not requested yet:
+
+1. In App Store Connect, under
+   [Users and Access → Integrations → App Store Connect API](https://appstoreconnect.apple.com/access/integrations/api),
+   generate a team key named "netrics analytics (temporary)" with the
+   **Admin** role, and download its `.p8` file.
+2. Choose **Enable App Store analytics** and upload it (the same form as
+   the key: issuer ID, key ID, `.p8` file or paste). The issuer ID must be
+   the one of the stored key: both keys belong to the same team.
+3. netrics uses the key **in memory, for this one request**: per app it
+   lists the existing analytics report requests
+   (`GET /v1/apps/{id}/analyticsReportRequests`, access type `ONGOING`) and
+   creates one (`POST /v1/analyticsReportRequests`) only when none is
+   running. Apple's 409 ("already exists") counts as requested. The key is
+   not stored, not put in a job and not logged; the audit log records
+   `connection.analytics_enabled` with the app IDs only.
+4. **Revoke the temporary key** right afterwards; the page reminds you,
+   with its key ID. Nothing needs it any more.
+
+When a request already exists (made by hand or by another tool), nothing is
+needed: the card shows the app as requested, and the step is skipped.
+Running the step again creates nothing new.
+
+| State on the card                         | Meaning                                                                                 |
+| ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| Not enabled                               | No `ONGOING` request for the app: use **Enable App Store analytics**.                   |
+| Requested — data pending                  | Apple has the request; its first reports take 1–2 days.                                 |
+| Available through _day_                   | netrics has analytics data up to that reporting day.                                    |
+| App Store analytics paused — enable again | Apple stopped the request (`stoppedDueToInactivity`). Enabling again creates a new one. |
+
+Apple stops an `ONGOING` request whose reports nobody reads for a long
+time. netrics reads them on every sync, so this happens mainly when a
+connection was paused; sales keep syncing either way.
+
+### How analytics are read
+
+Every sync, after the sales, reads per app (two apps per sync step) with
+the Sales key: the app's running request → its reports → `DAILY` instances
+→ segments → the segment files. Two reports, in their **standard** variant
+(the detailed ones add fields netrics does not use and stricter privacy
+thresholds):
+
+| Report (API name)                             | Category               | Fields used                                                    |
+| --------------------------------------------- | ---------------------- | -------------------------------------------------------------- |
+| `App Store Discovery and Engagement Standard` | `APP_STORE_ENGAGEMENT` | Date, App Apple Identifier, Event, Page Type, Counts           |
+| `App Downloads Standard`                      | `COMMERCE`             | Date, App Apple Identifier, Download Type, Source Type, Counts |
+
+Field names and values follow Apple's reference:
+[App Store Discovery and Engagement](https://developer.apple.com/documentation/analytics-reports/app-store-discovery-and-engagement)
+and [App Store Downloads](https://developer.apple.com/documentation/analytics-reports/app-download).
+The report names are the API's (`name` attribute, with the `Standard` or
+`Detailed` suffix, as in Apple's
+[example](https://developer.apple.com/documentation/appstoreconnectapi/downloading-analytics-reports)).
+Columns are matched by name, unknown columns are ignored, and a missing
+column fails the analytics of that app (sales go on).
+
+| Metric                                 | Unit          | Dimensions       | What it counts                                                                                   |
+| -------------------------------------- | ------------- | ---------------- | ------------------------------------------------------------------------------------------------ |
+| `app_store_connect.impressions`        | `impressions` | resource         | Event "Impression": the app's icon shown in a list (search results, charts, Today, Apps, Games)  |
+| `app_store_connect.product_page_views` | `views`       | resource         | Event "Page view" on the "Product page" or a "Store sheet" (the product page inside another app) |
+| `app_store_connect.store_downloads`    | `downloads`   | resource, source | Download Type "First-time download", per Source Type                                             |
+
+- **Source types** are Apple's: App Store search, App Store browse, App
+  referrer, Web referrer, App Clip, Notification, Institutional purchase,
+  Unavailable (also for an empty value). A source Apple adds later is
+  counted as "Other", so an app has at most nine source series.
+- Redownloads, updates and restores are not first-time downloads and are
+  not counted in `store_downloads`. The sales metric
+  `app_store_connect.downloads` counts first-time downloads too, from the
+  sales report; the two can differ slightly (different pipelines). Views of
+  in-app event pages, version history and other pages are not product page
+  views.
+- **Days** are Apple's report dates, stored at D 00:00 UTC like the sales
+  (Pacific Time days, ADR 0008).
+- **Late data.** An instance (processing day P) holds data up to P,
+  including late events of earlier days. Every sync reads the instances
+  processed in the last 7 days and adds up all of them per day. A day older
+  than the oldest instance read is left alone, since an older instance may
+  hold part of it; when no older instance exists (a new request), every day
+  in the files is used. Revisions replace stored values.
+- **History** starts with the request: `ONGOING` reports do not go back.
+  A one-time snapshot backfill is a later step.
+- **Downloads and checks.** Segment files are presigned links valid for 5
+  minutes, downloaded right after listing, without the App Store Connect
+  token. Each file is checked against Apple's MD5 `checksum`, inflated with
+  a 64 MiB bound (gzip; the files are tab-separated despite their `.csv.gz`
+  name, and comma-separated files are read too), and parsed. Any failure (a
+  checksum mismatch, a host outside the allowlist, an unreadable file) skips
+  that app's analytics for this sync and is logged without the link; sales
+  and other apps continue. A rate limit postpones the remaining analytics to
+  the next sync.
+- **Cost.** About 20–40 requests per app and sync, depending on how many
+  instances and segments there are.
+
+### Segment host
+
+The segment files are downloaded from Amazon S3. The egress allowlist
+contains the bucket host exactly, never a wildcard such as
+`*.amazonaws.com`:
+
+| Host                                       | Recorded                                                                                                                                                                                                                                             |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `asp-us-west-2.s3.us-west-2.amazonaws.com` | 2026-10-03, from production segment URLs (`/reports/<app id>/<report>/daily/ongoing/<date>/….csv.gz`) recorded by other integrations in Aug/Sep 2026. Apple's documentation only shows its QA bucket, `asp-qa-us-west-2.s3.us-west-2.amazonaws.com`. |
+
+netrics has not yet seen a live response of its own; the exit gate (#176)
+confirms the host against a real account and records the date here. If
+Apple serves a segment from another host, that app's analytics fail with
+"App Store analytics segment is hosted on …, which netrics does not allow",
+and sales keep syncing.
 
 ## Currencies
 
@@ -204,8 +330,14 @@ give netrics its own key.
 | "requires an agreement that is missing or has expired"                                 | The Account Holder accepts the latest agreements in App Store Connect (Business).                         |
 | "Upload a new App Store Connect key"                                                   | The key was revoked or its access removed after connecting. Upload a new key on the connection page.      |
 | "hourly request limit" / "not answering"                                               | Nothing: netrics retries automatically.                                                                   |
+| "This key cannot request App Store analytics"                                          | Enabling analytics needs a team key with the Admin role, once. Use a temporary one and revoke it after.   |
+| "App Store analytics paused — enable again"                                            | Apple stopped the report request. Enable App Store analytics again with a temporary Admin key.            |
 
 ## Network access
 
-The connector only talks to `api.appstoreconnect.apple.com`. Token signing
-is done by the netrics server, not by connector code.
+The connector only talks to `api.appstoreconnect.apple.com` and the
+analytics segment bucket `asp-us-west-2.s3.us-west-2.amazonaws.com` (see
+[Segment host](#segment-host)). Token signing is done by the netrics server,
+not by connector code; the App Store Connect token is never sent to the
+bucket. The one-time analytics step runs on the server, also only against
+`api.appstoreconnect.apple.com`.

@@ -195,9 +195,13 @@ describe("App Store Connect validation probes", () => {
     expect(asc.requests).toHaveLength(0);
   });
 
-  it("probes only the hosts the connector may reach", () => {
-    expect(appStoreConnectProvider.serverDomains).toEqual(
-      appStoreConnectManifest.outboundDomains,
+  it("probes (and enables analytics) only on Apple's API, which the connector may reach too", () => {
+    // The analytics segment bucket is the connector's alone (#174).
+    expect(appStoreConnectProvider.serverDomains).toEqual([
+      "api.appstoreconnect.apple.com",
+    ]);
+    expect(appStoreConnectManifest.outboundDomains).toEqual(
+      expect.arrayContaining([...appStoreConnectProvider.serverDomains]),
     );
     expect(appStoreConnectProvider.probes.map((probe) => probe.name)).toEqual([
       "apps",
