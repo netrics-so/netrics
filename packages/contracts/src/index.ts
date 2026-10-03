@@ -819,6 +819,12 @@ export const observationSchema = z.object({
   value: z.number(),
   dimensions: z.record(z.string(), z.string()),
   ingestedAt: z.iso.datetime(),
+  /**
+   * Name of the observation's resource (its "resource" dimension: an app, a
+   * project, a property) as the connector last reported it (#196). Null
+   * without a "resource" dimension or before the connector has named it.
+   */
+  resourceName: z.string().nullable(),
 });
 export type Observation = z.infer<typeof observationSchema>;
 

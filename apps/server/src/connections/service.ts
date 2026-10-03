@@ -29,6 +29,7 @@ import {
   findConnectionOAuth,
   finishConnectionSetup,
   findProject,
+  findResourceNames,
   insertAuditEvent,
   insertConnection,
   latestObservationByResource,
@@ -39,6 +40,7 @@ import {
   requestConnectionBackfill,
   requestConnectionSync,
   resetConnectionAuth,
+  resourceNameKey,
   updateConnection as updateConnectionRow,
   withOAuthGrantLocks,
   withWorkspace,
@@ -1445,25 +1447,53 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!loaded) {
           return null;
         }
-        return listObservationRows(tx, actor.workspaceId, connectionId, {
-          ...(query.metricKey ? { metricKey: query.metricKey } : {}),
-          ...(query.from ? { from: new Date(query.from) } : {}),
-          ...(query.to ? { to: new Date(query.to) } : {}),
-          limit: query.limit,
-        });
+        const observations = await listObservationRows(
+          tx,
+          actor.workspaceId,
+          connectionId,
+          {
+            ...(query.metricKey ? { metricKey: query.metricKey } : {}),
+            ...(query.from ? { from: new Date(query.from) } : {}),
+            ...(query.to ? { to: new Date(query.to) } : {}),
+            limit: query.limit,
+          },
+        );
+        // The names the connector reported for the resources (#196).
+        const names = await findResourceNames(
+          tx,
+          actor.workspaceId,
+          [
+            ...new Set(
+              observations.flatMap((row) => {
+                const resource = (row.dimensions as Record<string, string>)
+                  .resource;
+                return resource ? [resource] : [];
+              }),
+            ),
+          ].map((resourceId) => ({ connectionId, resourceId })),
+        );
+        return { observations, names };
       });
       if (!rows) {
         return fail(404, NOT_FOUND);
       }
       return ok(
-        rows.map((row) => ({
-          metricKey: row.metricKey,
-          seriesKey: row.seriesKey,
-          sourceTimestamp: row.sourceTimestamp.toISOString(),
-          value: row.value,
-          dimensions: row.dimensions as Record<string, string>,
-          ingestedAt: row.ingestedAt.toISOString(),
-        })),
+        rows.observations.map((row) => {
+          const dimensions = row.dimensions as Record<string, string>;
+          return {
+            metricKey: row.metricKey,
+            seriesKey: row.seriesKey,
+            sourceTimestamp: row.sourceTimestamp.toISOString(),
+            value: row.value,
+            dimensions,
+            ingestedAt: row.ingestedAt.toISOString(),
+            resourceName: dimensions.resource
+              ? (rows.names.get(
+                  resourceNameKey(connectionId, dimensions.resource),
+                ) ?? null)
+              : null,
+          };
+        }),
       );
     },
   };

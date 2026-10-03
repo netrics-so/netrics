@@ -531,6 +531,10 @@ describe("engine run and observations", () => {
         observation.metricKey,
       );
       expect(observation.dimensions.resource).toMatch(/^demo-site-[12]$/);
+      // The name the connector's discover reported (#196).
+      expect(observation.resourceName).toBe(
+        `Demo Site ${observation.dimensions.resource!.slice(-1)}`,
+      );
     }
     const timestamps = observations.map((o) => Date.parse(o.sourceTimestamp));
     expect(timestamps).toEqual([...timestamps].sort((a, b) => b - a));
@@ -592,6 +596,49 @@ describe("engine run and observations", () => {
       attempt: 1,
     });
     expect(detail.syncRuns[0]!.observationsWritten).toBeGreaterThan(0);
+  });
+
+  it("names only the resources the connector named, from this connection", async () => {
+    // demo-site-2 loses its name; another connection's name for the same id
+    // must not stand in for it.
+    const [other] = await world.admin<{ id: string; workspace_id: string }[]>`
+      select id, workspace_id from connections
+      where id <> ${connectionId}::uuid limit 1`;
+    await world.admin`
+      delete from connection_resources
+      where connection_id = ${connectionId}::uuid and resource_id = 'demo-site-2'`;
+    if (other) {
+      await world.admin`
+        insert into connection_resources (connection_id, workspace_id, resource_id, name, kind)
+        values (${other.id}::uuid, ${other.workspace_id}::uuid, 'demo-site-2', 'Not this one', 'site')
+        on conflict do nothing`;
+    }
+    try {
+      const { observations } = observationListResponseSchema.parse(
+        (
+          await call(world.app, {
+            method: "GET",
+            url: `/v1/workspaces/${w1Id}/connections/${connectionId}/observations`,
+            cookie: cookies.viewer,
+          })
+        ).json(),
+      );
+      const names = new Map(
+        observations.map((o) => [o.dimensions.resource, o.resourceName]),
+      );
+      expect(names.get("demo-site-1")).toBe("Demo Site 1");
+      expect(names.get("demo-site-2")).toBeNull();
+    } finally {
+      await world.admin`
+        insert into connection_resources (connection_id, workspace_id, resource_id, name, kind)
+        values (${connectionId}::uuid, ${w1Id}::uuid, 'demo-site-2', 'Demo Site 2', 'site')
+        on conflict do nothing`;
+      if (other) {
+        await world.admin`
+          delete from connection_resources
+          where connection_id = ${other.id}::uuid and name = 'Not this one'`;
+      }
+    }
   });
 
   it("enqueues a manual sync", async () => {
