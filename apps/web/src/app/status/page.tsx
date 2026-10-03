@@ -1,4 +1,5 @@
 import { fetchApiHealth } from "@/lib/api";
+import { buildInfo } from "@/lib/build-info";
 
 export const dynamic = "force-dynamic";
 
@@ -32,8 +33,7 @@ export default async function StatusPage() {
       : "down"
     : "unknown";
 
-  const webVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0-dev";
-  const webCommit = process.env.NEXT_PUBLIC_GIT_SHA ?? "dev";
+  const { version: webVersion, commit: webCommit } = buildInfo();
   const apiVersion = health.live ? health.live.version : "unknown";
   const apiCommit = health.live ? health.live.commit : "unknown";
 

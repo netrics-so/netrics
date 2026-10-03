@@ -21,13 +21,14 @@ does (see `docs/architecture.md`, "Application release").
    immutable commit SHA: `ghcr.io/netrics-so/{server,web}:<sha>`. The
    release version (root `package.json` `version`) and commit SHA are baked in
    as build args (`APP_VERSION` / `GIT_SHA`; `NEXT_PUBLIC_*` for web), so the
-   running API reports them on `/health/live` and `/health/ready` and the web
-   status page displays them. Nothing environment-specific is baked into any
-   image: the web image reads `NETRICS_API_URL` at request time, so the same
-   image runs against any API. Self-hosters run these images. The hosted
-   service runs the server image and, per ADR 0013, builds the web frontend
-   on Vercel from the same commit and lockfile with no environment-specific
-   build inputs (one source, same commit). Until that cut-over (#161) the
+   running API reports them on `/health/live` and `/health/ready`, and the web
+   reports them on `/healthz` (`{"status":"ok","version":…,"commit":…}`) and
+   displays them on its status page. Nothing environment-specific is baked
+   into any image: the web image reads `NETRICS_API_URL` at request time, so
+   the same image runs against any API. Self-hosters run these images. The
+   hosted service runs the server image and, per ADR 0013, builds the web
+   frontend on Vercel from the same commit and lockfile with no
+   environment-specific build inputs (one source, same commit). Until that cut-over (#161) the
    hosted web still runs the web image on Railway.
 4. **Record digests.** The index digest of each image
    (`ghcr.io/netrics-so/server@sha256:…`) goes to the job summary and to the
@@ -55,7 +56,10 @@ does (see `docs/architecture.md`, "Application release").
    The private workflow then runs migrations with the exact candidate server
    image, deploys in order (API/web, then worker/scheduler),
    health-gates the rollout, runs a smoke test, and records the digests in
-   `release/production.yaml`.
+   `release/production.yaml`. The smoke test compares the candidate commit
+   with the `commit` reported by the API's `/health/live` and by the web's
+   `/healthz`. Health probes (the Docker `HEALTHCHECK`, the platform's) check
+   only the status code.
 
    Migrations run as the API's pre-deploy command: `node dist/migrate.js`, an
    entrypoint in the server image that applies the SQL migrations bundled in
