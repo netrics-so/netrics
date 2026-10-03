@@ -119,7 +119,10 @@ export function registerDeviceRoutes(
       }),
     },
     async (request, reply) => {
-      const pairing = unwrap(await devices.createPairing(request.ip), reply);
+      const pairing = unwrap(
+        await devices.createPairing(request.clientIp),
+        reply,
+      );
       if (!pairing) {
         return;
       }

@@ -4,11 +4,16 @@
  *
  * The client IP is never read from a header the client controls: Fastify
  * resolves request.ip from the socket and the trusted proxy hops
- * (NETRICS_TRUSTED_PROXIES), and the auth bridge hands better-auth exactly
- * that value in CLIENT_IP_HEADER, overwriting anything the client sent.
+ * (NETRICS_TRUSTED_PROXIES); on a request carrying a valid
+ * NETRICS_PROXY_SECRET the web frontend's forwarded address replaces it
+ * (client-address.ts). The auth bridge hands better-auth exactly that
+ * request.clientIp in CLIENT_IP_HEADER, overwriting anything the client sent.
  */
 
-/** Internal header carrying the resolved client IP into better-auth. */
+/**
+ * Internal header carrying the resolved client IP into better-auth; the same
+ * name the frontend forwards it under (FORWARDED_CLIENT_IP_HEADER).
+ */
 export const CLIENT_IP_HEADER = "x-netrics-client-ip";
 
 interface Rule {

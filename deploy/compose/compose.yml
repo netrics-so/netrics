@@ -60,6 +60,7 @@ services:
       MAIL_FROM: ${MAIL_FROM:-}
       NETRICS_OAUTH_GOOGLE_CLIENT_ID: ${NETRICS_OAUTH_GOOGLE_CLIENT_ID:-}
       NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: ${NETRICS_OAUTH_GOOGLE_CLIENT_SECRET:-}
+      NETRICS_PROXY_SECRET: ${NETRICS_PROXY_SECRET:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   worker:
@@ -87,6 +88,7 @@ services:
     restart: unless-stopped
     environment:
       NETRICS_API_URL: http://api:3001
+      NETRICS_PROXY_SECRET: ${NETRICS_PROXY_SECRET:-}
     depends_on:
       - api
 

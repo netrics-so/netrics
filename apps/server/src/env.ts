@@ -82,6 +82,32 @@ const previousKeys = z
   )
   .pipe(z.array(base64Key("APP_ENCRYPTION_KEYS_PREVIOUS entries")));
 
+// Shared secret marking requests from the web frontend (ADR 0013, #156; see
+// src/client-address.ts). Comma-separated, at most two values so the secret
+// can rotate without downtime. Messages never echo a value.
+const PROXY_SECRET_MIN_LENGTH = 32;
+const proxySecrets = z
+  .string()
+  .optional()
+  .transform((value) =>
+    (value ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  )
+  .pipe(
+    z
+      .array(
+        z.string().min(PROXY_SECRET_MIN_LENGTH, {
+          message: `NETRICS_PROXY_SECRET values must be at least ${PROXY_SECRET_MIN_LENGTH} characters`,
+        }),
+      )
+      .max(2, {
+        message:
+          "NETRICS_PROXY_SECRET takes at most two comma-separated values (current, previous)",
+      }),
+  );
+
 /** An instance's OAuth app at one provider (ADR 0012). */
 export interface OAuthClientConfig {
   clientId: string;
@@ -153,6 +179,8 @@ const envSchema = z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
       .default("info"),
     NETRICS_TRUSTED_PROXIES: trustedProxies,
+    // Unset by default (self-hosting with one origin needs none).
+    NETRICS_PROXY_SECRET: proxySecrets,
     // Per-client-IP limits on sign-in, sign-up and password reset (see
     // src/auth/rate-limit.ts). Default: on in production, off otherwise so
     // local development and tests are not throttled.
@@ -300,6 +328,7 @@ const envSchema = z
         : null,
     logLevel: env.LOG_LEVEL,
     trustedProxies: env.NETRICS_TRUSTED_PROXIES,
+    proxySecrets: env.NETRICS_PROXY_SECRET.map((value) => new Secret(value)),
     authRateLimit:
       (env.NETRICS_AUTH_RATE_LIMIT ??
         (env.NODE_ENV === "production" ? "on" : "off")) === "on",
