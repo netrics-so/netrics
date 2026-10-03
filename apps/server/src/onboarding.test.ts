@@ -101,19 +101,31 @@ afterAll(async () => {
 
 describe("workspace onboarding", () => {
   // Fixed clocks (#144), so the result does not depend on the time of day.
-  // The demo connector reports by UTC date, so a Berlin workspace's "today"
-  // has no data yet between local and UTC midnight; both instants here are
-  // on the same date in Berlin and UTC.
+  // The demo connector reports up to the latest date anywhere (UTC+14), so
+  // every tile has data around local and UTC midnight and the 1st (#148).
   it.each([
-    ["at midday", "2025-07-15T12:00:00Z"],
-    ["just after UTC midnight", "2025-07-15T00:30:00Z"],
+    ["at midday", "2025-07-15T12:00:00Z", "Europe/Berlin"],
+    ["just after UTC midnight", "2025-07-15T00:30:00Z", "Europe/Berlin"],
+    // Already the next day in Berlin, not yet in UTC.
+    ["between local and UTC midnight", "2025-07-15T22:30:00Z", "Europe/Berlin"],
+    [
+      "on the 1st, before UTC midnight",
+      "2025-07-31T22:30:00Z",
+      "Europe/Berlin",
+    ],
+    ["just after local midnight", "2025-07-15T10:30:00Z", "Pacific/Kiritimati"],
+    [
+      "just after local midnight",
+      "2025-07-15T07:30:00Z",
+      "America/Los_Angeles",
+    ],
   ])(
-    "reaches a populated dashboard without manual steps %s",
-    async (_label, at) => {
+    "reaches a populated dashboard without manual steps %s (%s, %s)",
+    async (_label, at, timeZone) => {
       const now = () => new Date(at);
       const pinned = await buildWith(undefined, now);
       try {
-        await reachPopulatedDashboard(pinned, now);
+        await reachPopulatedDashboard(pinned, now, timeZone);
       } finally {
         await pinned.close();
       }
@@ -124,10 +136,11 @@ describe("workspace onboarding", () => {
   async function reachPopulatedDashboard(
     target: FastifyInstance,
     now: () => Date,
+    timeZone: string,
   ) {
     const created = await createWorkspace(target, cookie, {
       withDemo: true,
-      timeZone: "Europe/Berlin",
+      timeZone,
     });
     expect(created.statusCode).toBe(200);
     const { workspace, demoDashboardId } = createWorkspaceResponseSchema.parse(
@@ -193,6 +206,9 @@ describe("workspace onboarding", () => {
       expect(response.statusCode).toBe(200);
       const result = metricQueryResponseSchema.parse(response.json());
       expect(result.value, tile.title ?? tile.metricKey).not.toBeNull();
+      // The comparison period (yesterday, the previous month's first days,
+      // the 7 or 30 days before) is populated too.
+      expect(result.previousValue, tile.title ?? tile.metricKey).not.toBeNull();
     }
 
     const actions = await admin`
