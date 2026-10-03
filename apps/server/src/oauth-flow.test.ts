@@ -727,6 +727,24 @@ describe("reauthorization", () => {
     expect(audit!.action).toBe("connection.oauth_reauthorized");
   });
 
+  it("refuses a manual sync until the connection is reconnected", async () => {
+    const syncUrl = `/v1/workspaces/${workspaceId}/connections/${connectionId}/sync`;
+    const jobsBefore = await admin`
+      select id from jobs where connection_id = ${connectionId}`;
+    const refused = await post(syncUrl, cookies.owner, {});
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json()).toEqual({
+      error: "oauth_reauthorization_required",
+    });
+    const jobsAfter = await admin`
+      select id from jobs where connection_id = ${connectionId}`;
+    expect(jobsAfter).toHaveLength(jobsBefore.length);
+
+    expect((await reauthorize()).outcome).toBe("reauthorized");
+    const accepted = await post(syncUrl, cookies.owner, {});
+    expect(accepted.statusCode, accepted.body).toBe(200);
+  });
+
   it("keeps a connection whose setup is pending unscheduled", async () => {
     await admin`update connections set setup_pending = true where id = ${connectionId}`;
     try {

@@ -21,6 +21,7 @@ import { summarizeHeartbeat } from "@/lib/device-heartbeat";
 import { parseDisconnected, parseOAuthOutcome } from "@/lib/oauth-connection";
 import { relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
+import { nextSyncLabel } from "@/lib/sync-schedule";
 
 export const dynamic = "force-dynamic";
 
@@ -216,9 +217,7 @@ export default async function WorkspacePage({
                   <td className="muted">
                     {relativeTime(connection.state.lastSuccessAt)}
                   </td>
-                  <td className="muted">
-                    {relativeTime(connection.state.nextDueAt)}
-                  </td>
+                  <td className="muted">{nextSyncLabel(connection.state)}</td>
                 </tr>
               ))}
             </tbody>

@@ -24,6 +24,8 @@ import {
   AGGREGATION_LABELS,
   PERIOD_LABELS,
   aggregationLabel,
+  metricPickerLabel,
+  pickableMetrics,
 } from "@/lib/format-metric";
 import {
   currencyOptionLabel,
@@ -104,7 +106,7 @@ export function DashboardView({
     () => new Map(metrics.map((metric) => [metricId(metric), metric])),
     [metrics],
   );
-  const pickable = metrics.filter((metric) => metric.aggregations.length > 0);
+  const pickable = pickableMetrics(metrics);
 
   function startEditing() {
     setName(dashboard.name);
@@ -492,7 +494,7 @@ function AddTileForm({
             <optgroup key={connectionName} label={connectionName}>
               {list.map((candidate) => (
                 <option key={metricId(candidate)} value={metricId(candidate)}>
-                  {candidate.name}
+                  {metricPickerLabel(candidate)}
                 </option>
               ))}
             </optgroup>

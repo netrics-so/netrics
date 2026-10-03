@@ -15,6 +15,7 @@ import {
   getWorkspace,
   listConnectors,
   listObservations,
+  listWorkspaceMetrics,
   listWorkspaces,
 } from "@/lib/api";
 import {
@@ -22,8 +23,10 @@ import {
   providerName,
   SEARCH_CONSOLE_CONNECTOR_ID,
 } from "@/lib/oauth-connection";
+import { observationBreakdown } from "@/lib/format-metric";
 import { intervalLabel, relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
+import { nextSyncLabel } from "@/lib/sync-schedule";
 
 export const dynamic = "force-dynamic";
 
@@ -56,13 +59,22 @@ export default async function ConnectionDetailPage({
   const role = membership.role;
   const { connection, syncRuns } = detail;
 
-  const [{ connectors }, { observations }] = await Promise.all([
+  const [{ connectors }, { observations }, { metrics }] = await Promise.all([
     listConnectors(cookieHeader),
     listObservations(cookieHeader, workspaceId, connectionId, { limit: 100 }),
+    listWorkspaceMetrics(cookieHeader, workspaceId),
   ]);
+  // Metric names for the observations table (the key stays in the tooltip).
+  const metricNames = new Map(
+    metrics
+      .filter((metric) => metric.connectionId === connectionId)
+      .map((metric) => [metric.key, metric.name]),
+  );
   const connector = connectors.find((c) => c.id === connection.connectorId);
   const canUpdate = can(role, "connections:update");
   const authFailed = connection.state.authState === "auth_failed";
+  // A sync can only fail until the grant is reconnected (the API refuses it).
+  const needsReconnect = connection.state.authState === "needs_reauthorization";
   const authMessage = syncRuns.find(
     (run) => run.errorClass === "auth",
   )?.errorMessage;
@@ -157,9 +169,7 @@ export default async function ConnectionDetailPage({
         </div>
         <div className="row">
           <span className="label">Next sync due</span>
-          <span className="value">
-            {relativeTime(connection.state.nextDueAt)}
-          </span>
+          <span className="value">{nextSyncLabel(connection.state)}</span>
         </div>
         <div className="row">
           <span className="label">Poll interval</span>
@@ -191,7 +201,7 @@ export default async function ConnectionDetailPage({
           connectionId={connection.id}
           connectionName={connection.name}
           oauthProvider={oauth?.provider ?? null}
-          canSync={!connection.setupPending}
+          canSync={!connection.setupPending && !needsReconnect}
           canUpdate={canUpdate}
           canDelete={can(role, "connections:delete")}
         />
@@ -297,6 +307,7 @@ export default async function ConnectionDetailPage({
               <tr>
                 <th>Metric</th>
                 <th>Resource</th>
+                <th>Breakdown</th>
                 <th>Day</th>
                 <th>Value</th>
               </tr>
@@ -306,14 +317,26 @@ export default async function ConnectionDetailPage({
                 <tr
                   key={`${observation.metricKey}/${observation.seriesKey}/${observation.sourceTimestamp}`}
                 >
-                  <td>{observation.metricKey}</td>
+                  <td title={observation.metricKey}>
+                    {metricNames.get(observation.metricKey) ??
+                      observation.metricKey}
+                  </td>
                   <td className="muted">
                     {observation.dimensions.resource ?? "—"}
                   </td>
-                  <td className="muted">
+                  <td>
+                    {observationBreakdown(observation.dimensions).map(
+                      ([dimension, value]) => (
+                        <div key={dimension}>
+                          <span className="muted">{dimension}</span> {value}
+                        </div>
+                      ),
+                    )}
+                  </td>
+                  <td className="muted nowrap">
                     {observation.sourceTimestamp.slice(0, 10)}
                   </td>
-                  <td>{observation.value}</td>
+                  <td className="nowrap">{observation.value}</td>
                 </tr>
               ))}
             </tbody>

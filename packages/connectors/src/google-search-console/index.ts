@@ -159,6 +159,8 @@ export const searchConsoleManifest: ConnectorManifest = {
       granularity: "day",
       dimensions: ["resource"],
       aggregations: ["sum"],
+      // Only meaningful divided by impressions (derived metrics).
+      role: "helper",
     },
     {
       key: `${PREFIX}.breakdown_clicks`,
@@ -192,6 +194,7 @@ export const searchConsoleManifest: ConnectorManifest = {
       granularity: "day",
       dimensions: BREAKDOWN_DIMENSIONS,
       aggregations: ["sum"],
+      role: "helper",
     },
   ],
   // Final data changes once a day.

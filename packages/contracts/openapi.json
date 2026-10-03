@@ -3714,6 +3714,13 @@
                               "higher",
                               "lower"
                             ]
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "primary",
+                              "helper"
+                            ]
                           }
                         },
                         "required": [
@@ -3727,7 +3734,8 @@
                           "granularity",
                           "dimensions",
                           "aggregations",
-                          "better"
+                          "better",
+                          "role"
                         ],
                         "additionalProperties": false
                       }
@@ -3961,6 +3969,13 @@
                             "higher",
                             "lower"
                           ]
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "primary",
+                            "helper"
+                          ]
                         }
                       },
                       "required": [
@@ -3974,7 +3989,8 @@
                         "granularity",
                         "dimensions",
                         "aggregations",
-                        "better"
+                        "better",
+                        "role"
                       ],
                       "additionalProperties": false
                     },

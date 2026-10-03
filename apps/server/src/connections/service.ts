@@ -920,6 +920,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (loaded.row.setupPending) {
           return fail<string>(400, "connection_setup_pending");
         }
+        // The grant no longer works: a sync can only fail until the
+        // connection is reconnected, which then schedules one itself.
+        if (loaded.state?.authState === "needs_reauthorization") {
+          return fail<string>(400, "oauth_reauthorization_required");
+        }
         const jobId = await requestConnectionSync(tx, {
           workspaceId: actor.workspaceId,
           connectionId,

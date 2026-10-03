@@ -339,6 +339,10 @@ button.danger:hover:not(:disabled) {
   vertical-align: top;
 }
 
+.table td.nowrap {
+  white-space: nowrap;
+}
+
 .table tr:last-child td {
   border-bottom: none;
 }
