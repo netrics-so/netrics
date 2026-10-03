@@ -17,3 +17,4 @@ product is built.
 | [0010](./0010-apple-tv-server-and-pairing.md)       | Apple TV: one app for hosted and self-hosted servers        |
 | [0011](./0011-device-pairing-and-credentials.md)    | Device pairing and credentials                              |
 | [0012](./0012-oauth-authorization-code-platform.md) | OAuth authorization-code platform for connectors            |
+| [0013](./0013-web-frontend-on-vercel.md)            | Hosted web frontend on Vercel                               |

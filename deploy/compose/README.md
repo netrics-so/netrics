@@ -1,7 +1,7 @@
 # Self-hosting netrics with Docker Compose
 
-This runs the same images as the hosted service: web, api, worker, scheduler,
-PostgreSQL and Caddy (automatic HTTPS). Every product feature is included; no
+This runs the signed release images, built from the same commits as the hosted
+service (ADR 0013): web, api, worker, scheduler, PostgreSQL and Caddy (automatic HTTPS). Every product feature is included; no
 license key is needed.
 
 ## Requirements

@@ -41,8 +41,9 @@ Version 1 is complete when a small product team can:
 - Buy and operate the hosted service
 - Install the same complete product through Docker Compose
 
-The hosted service runs immutable public images on Railway. The self-hosted
-distribution uses the same images.
+The hosted service runs immutable public server images on Railway and builds
+the web frontend on Vercel from the same commit (ADR 0013). The self-hosted
+distribution runs the signed images.
 
 ## Sequence
 
