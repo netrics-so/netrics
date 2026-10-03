@@ -409,8 +409,17 @@ export default async function ConnectionDetailPage({
                     {metricNames.get(observation.metricKey) ??
                       observation.metricKey}
                   </td>
-                  <td className="muted">
-                    {observation.dimensions.resource ?? "—"}
+                  <td
+                    className="muted"
+                    title={
+                      observation.resourceName
+                        ? observation.dimensions.resource
+                        : undefined
+                    }
+                  >
+                    {observation.resourceName ??
+                      observation.dimensions.resource ??
+                      "—"}
                   </td>
                   <td>
                     {observationBreakdown(observation.dimensions).map(
