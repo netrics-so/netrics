@@ -11,10 +11,13 @@ import {
 } from "@netrics/contracts";
 import {
   findDashboard,
+  findResourceNames,
   findWorkspace,
   listConnections,
+  resourceNameKey,
   type Transaction,
 } from "@netrics/database";
+import { RESOURCE_DIMENSION, tileLabel } from "@netrics/domain";
 
 import { toStateView } from "../connections/present.js";
 import { queryMetric } from "../metrics/query.js";
@@ -92,15 +95,28 @@ export async function buildDeviceDashboard(
         toStateView(state),
       ]),
     );
+    // Tiles of one resource are labelled with its name (#194).
+    const resourceNames = await findResourceNames(
+      tx,
+      workspaceId,
+      dashboard.tiles.flatMap((tile) => {
+        const resourceId = (tile.dimensions as Record<string, string>)[
+          RESOURCE_DIMENSION
+        ];
+        return resourceId === undefined
+          ? []
+          : [{ connectionId: tile.connectionId, resourceId }];
+      }),
+    );
     for (const tile of dashboard.tiles) {
+      const dimensions = tile.dimensions as Record<string, string>;
+      const resourceId = dimensions[RESOURCE_DIMENSION];
       const request = {
         connectionId: tile.connectionId,
         metricKey: tile.metricKey,
         period: tile.period as MetricPeriod,
         aggregation: tile.aggregation as MetricAggregation,
-        ...(Object.keys(tile.dimensions as object).length > 0
-          ? { dimensions: tile.dimensions as Record<string, string> }
-          : {}),
+        ...(Object.keys(dimensions).length > 0 ? { dimensions } : {}),
       };
       // A savepoint per tile: a failing query must not abort the others.
       const result = await tx
@@ -116,7 +132,17 @@ export async function buildDeviceDashboard(
       const value = query?.value ?? null;
       tiles.push({
         id: tile.id,
-        label: tile.title ?? query?.metric.name ?? tile.metricKey,
+        label: tileLabel({
+          title: tile.title,
+          metricName: query?.metric.name ?? tile.metricKey,
+          dimensions,
+          resourceName:
+            resourceId === undefined
+              ? null
+              : (resourceNames.get(
+                  resourceNameKey(tile.connectionId, resourceId),
+                ) ?? null),
+        }),
         period: request.period,
         aggregation: query?.aggregation ?? request.aggregation,
         value,

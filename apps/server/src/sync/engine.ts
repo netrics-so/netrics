@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import {
   ContractViolationError,
   executeCheck,
+  executeDiscover,
   executeSync,
   redactSecrets,
   type ConnectorRegistry,
@@ -16,7 +17,9 @@ import {
   type SyncRequest,
 } from "@netrics/connector-sdk";
 import {
+  connectionResourcesDiscoveredAt,
   schema,
+  upsertConnectionResources,
   withWorkspace,
   type OAuthAuthReason,
   type Transaction,
@@ -54,6 +57,8 @@ const MAX_PAGES = 100;
  * one statement and a row binds six.
  */
 const INSERT_BATCH_ROWS = 5_000;
+/** How often a successful sync refreshes the resource names (#194). */
+const RESOURCE_NAMES_REFRESH_MS = 24 * 60 * 60 * 1000;
 
 export interface SyncEngineDeps {
   registry: ConnectorRegistry;
@@ -712,6 +717,34 @@ async function runSync(
     { mode, window: { from: iso(window.from), to: iso(window.to) } },
     "sync run succeeded",
   );
+
+  // Step 4 (#194): the names of the connection's resources (apps,
+  // projects, properties), so a tile of one resource can show its name.
+  // At most daily, after the data is committed, and best effort: a failed
+  // discover is logged and never fails the run.
+  try {
+    const discoveredAt = await withWorkspace(appDb, { workspaceId }, (tx) =>
+      connectionResourcesDiscoveredAt(tx, workspaceId, connectionId),
+    );
+    if (
+      !discoveredAt ||
+      now.getTime() - discoveredAt.getTime() >= RESOURCE_NAMES_REFRESH_MS
+    ) {
+      const resources = await callConnector((callContext, options) =>
+        executeDiscover(connector, callContext, options),
+      );
+      await withWorkspace(appDb, { workspaceId }, (tx) =>
+        upsertConnectionResources(tx, {
+          workspaceId,
+          connectionId,
+          resources,
+          now,
+        }),
+      );
+    }
+  } catch (error) {
+    log.warn({ err: safeMessage(error) }, "resource names not refreshed");
+  }
 }
 
 /** Registers both connection sync job kinds against the same engine. */

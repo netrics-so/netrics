@@ -11,6 +11,7 @@ import {
   type MetricPeriod,
   type WorkspaceMetric,
 } from "@netrics/contracts";
+import { RESOURCE_DIMENSION, tileLabel } from "@netrics/domain";
 
 import {
   ApiError,
@@ -18,6 +19,7 @@ import {
   deleteDashboard,
   duplicateDashboard,
   listMetricCurrencies,
+  listMetricResources,
   saveDashboard,
 } from "@/lib/api";
 import {
@@ -35,6 +37,14 @@ import {
   tileDimensions,
   type CurrencyTotals,
 } from "@/lib/tile-currency";
+import {
+  effectiveResource,
+  hasResources,
+  offersResourceChoice,
+  resourceOptionLabel,
+  withResource,
+  type TileResources,
+} from "@/lib/tile-resource";
 
 import { MetricTile, type TileConnection } from "./metric-tile";
 import { useServerRefresh } from "./use-server-refresh";
@@ -48,6 +58,8 @@ interface DraftTile {
   period: MetricPeriod;
   dimensions: Record<string, string>;
   title: string | null;
+  /** Name of the resource the tile shows, if it shows one (#194). */
+  resourceName: string | null;
 }
 
 const PERIODS = Object.keys(PERIOD_LABELS) as MetricPeriod[];
@@ -133,7 +145,9 @@ export function DashboardView({
         version: dashboard.version,
         name,
         projectId: dashboard.projectId,
-        tiles: tiles.map(({ key: _key, ...tile }) => tile),
+        tiles: tiles.map(
+          ({ key: _key, resourceName: _resourceName, ...tile }) => tile,
+        ),
       });
       setDashboard(saved.dashboard);
       setEditing(false);
@@ -294,7 +308,12 @@ export function DashboardView({
                   <li key={tile.key}>
                     <span>
                       <strong>
-                        {tile.title ?? metric?.name ?? tile.metricKey}
+                        {tileLabel({
+                          title: tile.title,
+                          metricName: metric?.name ?? tile.metricKey,
+                          dimensions: tile.dimensions,
+                          resourceName: tile.resourceName,
+                        })}
                       </strong>{" "}
                       <span className="muted">
                         {PERIOD_LABELS[tile.period]} ·{" "}
@@ -376,6 +395,8 @@ function useCurrencies(
   workspaceId: string,
   metric: WorkspaceMetric | undefined,
   period: MetricPeriod,
+  /** The tile's resource: its currencies only. */
+  resourceId: string | null,
 ): { totals: CurrencyTotals | null; error: string | null } {
   const [state, setState] = useState<{
     key: string;
@@ -383,7 +404,10 @@ function useCurrencies(
     error: string | null;
   }>({ key: "", totals: null, error: null });
   const perCurrency = needsCurrency(metric);
-  const key = metric && perCurrency ? `${metricId(metric)}|${period}` : "";
+  const key =
+    metric && perCurrency
+      ? `${metricId(metric)}|${period}|${resourceId ?? ""}`
+      : "";
 
   useEffect(() => {
     if (!metric || !perCurrency) {
@@ -394,6 +418,9 @@ function useCurrencies(
       connectionId: metric.connectionId,
       metricKey: metric.key,
       period,
+      ...(resourceId
+        ? { dimensions: { [RESOURCE_DIMENSION]: resourceId } }
+        : {}),
     })
       .then((response) => {
         if (current) {
@@ -408,11 +435,56 @@ function useCurrencies(
     return () => {
       current = false;
     };
-  }, [workspaceId, metric, perCurrency, period, key]);
+  }, [workspaceId, metric, perCurrency, period, resourceId, key]);
 
   return state.key === key && key !== ""
     ? { totals: state.totals, error: state.error }
     : { totals: null, error: null };
+}
+
+/**
+ * The resources a tile of the metric can show (#194), named first; null
+ * while loading or for metrics without resources.
+ */
+function useResources(
+  workspaceId: string,
+  metric: WorkspaceMetric | undefined,
+): { resources: TileResources | null; error: string | null } {
+  const [state, setState] = useState<{
+    key: string;
+    resources: TileResources | null;
+    error: string | null;
+  }>({ key: "", resources: null, error: null });
+  const applies = hasResources(metric);
+  const key = metric && applies ? metricId(metric) : "";
+
+  useEffect(() => {
+    if (!metric || !applies) {
+      return;
+    }
+    let current = true;
+    listMetricResources(workspaceId, {
+      connectionId: metric.connectionId,
+      metricKey: metric.key,
+    })
+      .then((response) => {
+        if (current) {
+          setState({ key, resources: response.resources, error: null });
+        }
+      })
+      .catch((cause: unknown) => {
+        if (current) {
+          setState({ key, resources: null, error: apiErrorMessage(cause) });
+        }
+      });
+    return () => {
+      current = false;
+    };
+  }, [workspaceId, metric, applies, key]);
+
+  return state.key === key && key !== ""
+    ? { resources: state.resources, error: state.error }
+    : { resources: null, error: null };
 }
 
 function AddTileForm({
@@ -431,9 +503,18 @@ function AddTileForm({
   const [aggregation, setAggregation] = useState<MetricAggregation | "">("");
   const [period, setPeriod] = useState<MetricPeriod>("last_7_days");
   const [title, setTitle] = useState("");
+  // All resources added up (the default), or one app or project (#194).
+  const resources = useResources(workspaceId, metric);
+  const [pickedResource, setPickedResource] = useState("");
+  const resource = effectiveResource(resources.resources, pickedResource);
   // Amounts in several currencies: the tile shows one (ADR 0014).
   const perCurrency = needsCurrency(metric);
-  const currencies = useCurrencies(workspaceId, metric, period);
+  const currencies = useCurrencies(
+    workspaceId,
+    metric,
+    period,
+    resource?.id ?? null,
+  );
   const [pickedCurrency, setPickedCurrency] = useState("");
   const currency = currencies.totals
     ? effectiveCurrency(currencies.totals, pickedCurrency)
@@ -472,8 +553,9 @@ function AddTileForm({
       metricKey: metric.key,
       aggregation: effectiveAggregation,
       period,
-      dimensions: tileDimensions(metric, currency),
+      dimensions: withResource(tileDimensions(metric, currency), resource),
       title: title.trim() === "" ? null : title.trim(),
+      resourceName: resource?.name ?? null,
     });
     setTitle("");
   }
@@ -488,6 +570,7 @@ function AddTileForm({
           onChange={(event) => {
             setSelected(event.target.value);
             setAggregation("");
+            setPickedResource("");
           }}
         >
           {[...byConnection.entries()].map(([connectionName, list]) => (
@@ -534,6 +617,28 @@ function AddTileForm({
           ))}
         </select>
       </div>
+      {offersResourceChoice(resources.resources) || resources.error ? (
+        <div className="field">
+          <label htmlFor="tile-resource">Resource</label>
+          <select
+            id="tile-resource"
+            value={resource?.id ?? ""}
+            disabled={!resources.resources}
+            onChange={(event) => setPickedResource(event.target.value)}
+          >
+            <option value="">All resources</option>
+            {(resources.resources ?? []).map((option) => (
+              <option key={option.id} value={option.id}>
+                {resourceOptionLabel(option)}
+              </option>
+            ))}
+          </select>
+          <p className="help">
+            {resources.error ??
+              `All ${resources.resources?.length ?? 0} of ${metric?.connectionName ?? "the connection"} added up, or one of them.`}
+          </p>
+        </div>
+      ) : null}
       {perCurrency ? (
         <div className="field">
           <label htmlFor="tile-currency">Currency</label>
@@ -566,7 +671,16 @@ function AddTileForm({
           id="tile-title"
           value={title}
           maxLength={100}
-          placeholder={metric?.name}
+          placeholder={
+            metric
+              ? tileLabel({
+                  title: null,
+                  metricName: metric.name,
+                  dimensions: withResource({}, resource),
+                  resourceName: resource?.name ?? null,
+                })
+              : undefined
+          }
           onChange={(event) => setTitle(event.target.value)}
         />
       </div>

@@ -141,6 +141,40 @@ const probeConnector: Connector = {
   },
 };
 
+/** Names its resources (#194); counts discovers, may fail them. */
+let namingDiscovers = 0;
+let namingName = "Wurfel";
+let namingFails = false;
+const namingConnector: Connector = {
+  manifest: testManifest("naming", "naming.downloads"),
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    namingDiscovers += 1;
+    if (namingFails) {
+      throw new Error("provider cannot list apps right now");
+    }
+    return [
+      { id: "app-1", name: namingName, kind: "app" },
+      { id: "app-2", name: "Dicey", kind: "app" },
+    ];
+  },
+  async sync() {
+    return {
+      observations: [
+        {
+          metricKey: "naming.downloads",
+          sourceTimestamp: "2026-09-20T00:00:00.000Z",
+          value: 1,
+          dimensions: { resource: "app-1" },
+        },
+      ],
+      done: true,
+    };
+  },
+};
+
 /** Reports one daily value that the "provider" may later correct. */
 let revisingValue = 10;
 const revisingConnector: Connector = {
@@ -454,6 +488,7 @@ beforeAll(async () => {
   registry.register(leakyConnector);
   registry.register(probeConnector);
   registry.register(revisingConnector);
+  registry.register(namingConnector);
   activityProbe = createRawSqlClient(testDb.adminUrl, { max: 1 });
 
   // Explicit catalog sync (production does this at process startup).
@@ -506,6 +541,7 @@ describe("catalog sync", () => {
       "flaky-pages",
       "google-search-console",
       "leaky",
+      "naming",
       "pager-fresh",
       "pager-large",
       "pager-resume",
@@ -1154,3 +1190,78 @@ function dayStartUtc(timestampMs: number): number {
   const date = new Date(timestampMs);
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
+
+describe("resource names (#194)", () => {
+  /** One sync attempt at the given time. */
+  const syncAt = (connectionId: string, at: Date) =>
+    createJobHandlers({
+      registry,
+      credentialKeyring: KEYRING,
+      now: () => at,
+    })["connection.sync"]!({
+      job: {
+        id: randomUUID(),
+        kind: "connection.sync",
+        workspaceId: workspaceA,
+        connectionId,
+        attempts: 0,
+        payload: {},
+      } as unknown as Job,
+      appDb,
+      schedulerDb,
+      logger: pino({ level: "silent" }),
+    });
+
+  const names = (connectionId: string) =>
+    withWorkspace(appDb, { workspaceId: workspaceA }, (tx) =>
+      tx
+        .select({
+          id: schema.connectionResources.resourceId,
+          name: schema.connectionResources.name,
+        })
+        .from(schema.connectionResources)
+        .where(eq(schema.connectionResources.connectionId, connectionId))
+        .orderBy(schema.connectionResources.resourceId),
+    );
+
+  it("are discovered after a successful sync and refreshed at most daily", async () => {
+    const connectionId = await seedConnection(workspaceA, "naming");
+    const start = new Date("2026-09-21T08:00:00Z");
+    namingDiscovers = 0;
+    namingName = "Wurfel";
+
+    await syncAt(connectionId, start);
+    expect(namingDiscovers).toBe(1);
+    expect(await names(connectionId)).toEqual([
+      { id: "app-1", name: "Wurfel" },
+      { id: "app-2", name: "Dicey" },
+    ]);
+
+    // An hour later: the names are fresh, no discover.
+    namingName = "Wurfel 2";
+    await syncAt(connectionId, new Date(start.getTime() + 60 * 60 * 1000));
+    expect(namingDiscovers).toBe(1);
+
+    // A day later: refreshed.
+    await syncAt(connectionId, new Date(start.getTime() + DAY_MS));
+    expect(namingDiscovers).toBe(2);
+    expect((await names(connectionId))[0]).toEqual({
+      id: "app-1",
+      name: "Wurfel 2",
+    });
+  });
+
+  it("never fail the sync when discover fails", async () => {
+    const connectionId = await seedConnection(workspaceA, "naming");
+    namingFails = true;
+    try {
+      await syncAt(connectionId, new Date("2026-09-21T08:00:00Z"));
+    } finally {
+      namingFails = false;
+    }
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs.map((run) => run.status)).toEqual(["succeeded"]);
+    expect(await connectionObservationCount(workspaceA, connectionId)).toBe(1);
+    expect(await names(connectionId)).toEqual([]);
+  });
+});

@@ -6,14 +6,17 @@ import type {
   ReplaceDashboardRequest,
 } from "@netrics/contracts";
 import {
+  connectionHasResource,
   deleteDashboard,
   findConnectionMetric,
+  findResourceNames,
   findDashboard,
   findProject,
   insertAuditEvent,
   insertDashboard,
   listDashboards,
   replaceDashboard,
+  resourceNameKey,
   withWorkspace,
   type Dashboard,
   type Database,
@@ -22,6 +25,7 @@ import {
 } from "@netrics/database";
 import {
   CURRENCY_DIMENSION,
+  RESOURCE_DIMENSION,
   compatibleAggregations,
   isCurrencyCode,
   isPerCurrencyUnit,
@@ -54,7 +58,40 @@ function fail<T>(status: 400 | 404 | 409, error: string): Result<T> {
 
 const NOT_FOUND = "dashboard_not_found";
 
-export function presentDashboard(dashboard: Dashboard): DashboardView {
+/** The resource a tile shows, when it shows one (#194). */
+function tileResource(tile: Dashboard["tiles"][number]): string | undefined {
+  return (tile.dimensions as Record<string, string>)[RESOURCE_DIMENSION];
+}
+
+function resourceName(
+  names: Map<string, string>,
+  tile: Dashboard["tiles"][number],
+): string | null {
+  const resourceId = tileResource(tile);
+  return resourceId === undefined
+    ? null
+    : (names.get(resourceNameKey(tile.connectionId, resourceId)) ?? null);
+}
+
+/**
+ * The dashboard as the API returns it, with the names of the resources its
+ * tiles show (#194).
+ */
+export async function presentDashboard(
+  tx: Transaction,
+  workspaceId: string,
+  dashboard: Dashboard,
+): Promise<DashboardView> {
+  const names = await findResourceNames(
+    tx,
+    workspaceId,
+    dashboard.tiles.flatMap((tile) => {
+      const resourceId = tileResource(tile);
+      return resourceId === undefined
+        ? []
+        : [{ connectionId: tile.connectionId, resourceId }];
+    }),
+  );
   return {
     id: dashboard.id,
     name: dashboard.name,
@@ -71,6 +108,7 @@ export function presentDashboard(dashboard: Dashboard): DashboardView {
       period: tile.period as DashboardView["tiles"][number]["period"],
       dimensions: tile.dimensions as Record<string, string>,
       title: tile.title,
+      resourceName: resourceName(names, tile),
     })),
   };
 }
@@ -112,6 +150,19 @@ async function validateTiles(
       (currency === undefined || !isCurrencyCode(currency))
     ) {
       return fail(400, "currency_required");
+    }
+    // A tile of one resource shows a resource of its own connection (#194).
+    const resource = dimensions[RESOURCE_DIMENSION];
+    if (
+      resource !== undefined &&
+      !(await connectionHasResource(
+        tx,
+        workspaceId,
+        tile.connectionId,
+        resource,
+      ))
+    ) {
+      return fail(400, "unknown_resource");
     }
     valid.push({
       connectionId: tile.connectionId,
@@ -159,7 +210,7 @@ export function createDashboardService(deps: { db: Database }) {
           dashboardId,
         );
         return dashboard
-          ? ok(presentDashboard(dashboard))
+          ? ok(await presentDashboard(tx, actor.workspaceId, dashboard))
           : fail<DashboardView>(404, NOT_FOUND);
       });
     },
@@ -189,7 +240,7 @@ export function createDashboardService(deps: { db: Database }) {
           target: dashboard.id,
           metadata: { name: dashboard.name },
         });
-        return ok(presentDashboard(dashboard));
+        return ok(await presentDashboard(tx, actor.workspaceId, dashboard));
       });
     },
 
@@ -226,7 +277,9 @@ export function createDashboardService(deps: { db: Database }) {
             tileCount: result.dashboard.tiles.length,
           },
         });
-        return ok(presentDashboard(result.dashboard));
+        return ok(
+          await presentDashboard(tx, actor.workspaceId, result.dashboard),
+        );
       });
     },
 
@@ -260,7 +313,7 @@ export function createDashboardService(deps: { db: Database }) {
           target: copy.id,
           metadata: { name, sourceId: dashboardId },
         });
-        return ok(presentDashboard(copy));
+        return ok(await presentDashboard(tx, actor.workspaceId, copy));
       });
     },
 

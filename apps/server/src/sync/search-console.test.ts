@@ -450,11 +450,16 @@ describe("Google Search Console in the sync engine", () => {
     apiCalls.length = 0;
     expect((await runJob(connectionId)).status).toBe("succeeded");
 
-    // check (sites + property probe) and one sync page, all with one token
+    // check (sites + property probe), one sync page and the first discover
+    // of the property names (#194), all with one token
     for (const credentials of received) {
       expect(Object.keys(credentials)).toEqual(["accessToken"]);
     }
-    expect(apiCalls.map((call) => call.status)).toEqual([200, 200, 200]);
+    expect(apiCalls.map((call) => call.status)).toEqual([200, 200, 200, 200]);
+    expect(apiCalls.at(-1)).toMatchObject({
+      method: "GET",
+      path: "/webmasters/v3/sites",
+    });
     expect(apiCalls[0]).toMatchObject({
       method: "GET",
       path: "/webmasters/v3/sites",

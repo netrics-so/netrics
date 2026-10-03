@@ -12,6 +12,8 @@ import {
   duplicateDashboardRequestSchema,
   metricCurrenciesRequestSchema,
   metricCurrenciesResponseSchema,
+  metricResourcesRequestSchema,
+  metricResourcesResponseSchema,
   metricQueryRequestSchema,
   metricQueryResponseSchema,
   replaceDashboardRequestSchema,
@@ -25,6 +27,8 @@ import {
   type DeviceResponse,
   type MetricCurrenciesRequest,
   type MetricCurrenciesResponse,
+  type MetricResourcesRequest,
+  type MetricResourcesResponse,
   type MetricQueryRequest,
   type MetricQueryResponse,
   type ReplaceDashboardRequest,
@@ -780,6 +784,19 @@ export function listMetricCurrencies(
     "POST",
     `/v1/workspaces/${workspaceId}/metrics/currencies`,
     metricCurrenciesRequestSchema.parse(body),
+  );
+}
+
+/** The resources a tile of a metric can show (#194), named first. */
+export function listMetricResources(
+  workspaceId: string,
+  body: MetricResourcesRequest,
+): Promise<MetricResourcesResponse> {
+  return browserSend(
+    metricResourcesResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/metrics/resources`,
+    metricResourcesRequestSchema.parse(body),
   );
 }
 

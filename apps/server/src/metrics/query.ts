@@ -3,11 +3,14 @@ import type {
   MetricCurrenciesResponse,
   MetricQueryRequest,
   MetricQueryResponse,
+  MetricResourcesRequest,
+  MetricResourcesResponse,
   WorkspaceMetric,
 } from "@netrics/contracts";
 import {
   findConnectionMetric,
   findWorkspace,
+  listMetricResources,
   listWorkspaceMetrics,
   queryMetricBuckets,
   queryMetricCurrencyTotals,
@@ -16,6 +19,7 @@ import {
 } from "@netrics/database";
 import {
   CURRENCY_DIMENSION,
+  RESOURCE_DIMENSION,
   addDays,
   amountCurrency,
   aggregateBuckets,
@@ -206,4 +210,34 @@ export async function listMetricCurrencies(
     combination: bucketCombination(metric.kind),
   });
   return { ok: true, value: { currencies } };
+}
+
+/**
+ * The resources a tile of this metric can show instead of all of them added
+ * up (#194), with the names the connector reported. Empty for a metric
+ * without a "resource" dimension.
+ */
+export async function listResourcesOfMetric(
+  tx: Transaction,
+  workspaceId: string,
+  request: MetricResourcesRequest,
+): Promise<MetricResult<MetricResourcesResponse>> {
+  const metric = await findConnectionMetric(
+    tx,
+    workspaceId,
+    request.connectionId,
+    request.metricKey,
+  );
+  if (!metric) {
+    return { ok: false, status: 404, error: "metric_not_found" };
+  }
+  if (!metric.dimensions.includes(RESOURCE_DIMENSION)) {
+    return { ok: true, value: { resources: [] } };
+  }
+  const resources = await listMetricResources(tx, {
+    workspaceId,
+    connectionId: metric.connectionId,
+    metricKey: metric.key,
+  });
+  return { ok: true, value: { resources } };
 }
