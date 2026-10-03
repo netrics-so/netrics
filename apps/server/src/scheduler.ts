@@ -35,6 +35,8 @@ export interface SchedulerTickResult {
   enqueued: number;
   /** Due rows skipped because the connection's auth failed. */
   skippedAuthFailed: number;
+  /** Due rows skipped because an OAuth grant needs reauthorization. */
+  skippedNeedsReauthorization: number;
 }
 
 /**
@@ -47,8 +49,9 @@ export interface SchedulerTickResult {
  *   re-plans the same slot and dedupes to a no-op.
  * - At most one sync waits per connection (jobs_one_pending_sync), so an
  *   outage of the workers never builds a backlog of identical syncs.
- * next_due_at advances even when the enqueue dedupes. auth_failed
- * connections are skipped entirely: credential repair flows through the API.
+ * next_due_at advances even when the enqueue dedupes. auth_failed and
+ * needs_reauthorization connections are skipped entirely: credential repair
+ * and reauthorization (ADR 0012) flow through the API.
  *
  * Runs as netrics_scheduler and reads ONLY connection_state (the scheduler
  * role has no grant on connections; poll_interval_seconds is denormalized
@@ -63,14 +66,25 @@ export async function runSchedulerTick(
       sql`select pg_try_advisory_xact_lock(hashtext(${SCHEDULER_LOCK_NAME})) as acquired`,
     );
     if (!lock?.acquired) {
-      return { ran: false, scanned: 0, enqueued: 0, skippedAuthFailed: 0 };
+      return {
+        ran: false,
+        scanned: 0,
+        enqueued: 0,
+        skippedAuthFailed: 0,
+        skippedNeedsReauthorization: 0,
+      };
     }
     const due = await listDueConnections(tx, now);
     let enqueued = 0;
     let skippedAuthFailed = 0;
+    let skippedNeedsReauthorization = 0;
     for (const connection of due) {
       if (connection.authState === "auth_failed") {
         skippedAuthFailed += 1;
+        continue;
+      }
+      if (connection.authState === "needs_reauthorization") {
+        skippedNeedsReauthorization += 1;
         continue;
       }
       const id = await enqueueSyncJob(tx, {
@@ -89,7 +103,13 @@ export async function runSchedulerTick(
         new Date(now.getTime() + connection.pollIntervalSeconds * 1000),
       );
     }
-    return { ran: true, scanned: due.length, enqueued, skippedAuthFailed };
+    return {
+      ran: true,
+      scanned: due.length,
+      enqueued,
+      skippedAuthFailed,
+      skippedNeedsReauthorization,
+    };
   });
 }
 

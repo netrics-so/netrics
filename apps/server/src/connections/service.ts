@@ -39,6 +39,7 @@ import {
   redactSecrets,
   type CredentialKeyring,
 } from "../credentials.js";
+import type { OAuthProviders } from "../oauth/config.js";
 import {
   presentConnection,
   presentConnectionDetail,
@@ -56,6 +57,7 @@ export interface ConnectionServiceDeps {
   db: Database;
   registry: ConnectorRegistry;
   credentialKeyring: CredentialKeyring;
+  oauthProviders: OAuthProviders;
 }
 
 /** Who acts on which workspace (see routes/access.ts). */
@@ -136,10 +138,20 @@ function encrypt(
   );
 }
 
-/** The wizard's view of an auth strategy: token field labels and setup steps. */
+/**
+ * The wizard's view of an auth strategy: token field labels and setup
+ * steps, or the OAuth provider and scopes.
+ */
 function presentAuthStrategy(
   strategy: ConnectorManifest["authStrategies"][number],
 ): ConnectorAuthStrategy {
+  if (strategy.strategy === "oauth2") {
+    return {
+      strategy: "oauth2",
+      provider: strategy.provider,
+      scopes: [...strategy.scopes],
+    };
+  }
   const properties = strategy.credentialsSchema?.properties;
   const token =
     properties && typeof properties === "object" && "token" in properties
@@ -169,8 +181,31 @@ function presentAuthStrategy(
   };
 }
 
+/** Whether the connector has an auth strategy besides OAuth. */
+function acceptsCredentials(manifest: ConnectorManifest): boolean {
+  return manifest.authStrategies.some(
+    (strategy) => strategy.strategy !== "oauth2",
+  );
+}
+
 export function createConnectionService(deps: ConnectionServiceDeps) {
-  const { db, registry, credentialKeyring } = deps;
+  const { db, registry, credentialKeyring, oauthProviders } = deps;
+
+  /**
+   * Connections made from credentials (POST /connections, preview) need a
+   * connector that is available on this instance and takes credentials.
+   * OAuth-only connectors are connected through the authorization flow,
+   * whose callback creates the connection (ADR 0012).
+   */
+  function checkCredentialConnector(manifest: ConnectorManifest): Result<true> {
+    if (!oauthProviders.connectorAvailability(manifest).available) {
+      return fail(400, "connector_unavailable");
+    }
+    if (!acceptsCredentials(manifest)) {
+      return fail(400, "oauth_authorization_required");
+    }
+    return ok(true);
+  }
   const inWorkspace = <T>(actor: Actor, run: (tx: Transaction) => Promise<T>) =>
     withWorkspace(
       db,
@@ -191,6 +226,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         supportsBackfill: manifest.supportsBackfill,
         configSchema: { ...manifest.configSchema },
         authStrategies: manifest.authStrategies.map(presentAuthStrategy),
+        ...oauthProviders.connectorAvailability(manifest),
       }));
     },
 
@@ -201,6 +237,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       const registered = registry.get(body.connectorId);
       if (!registered) {
         return fail(400, "invalid_request");
+      }
+      const usable = checkCredentialConnector(registered.manifest);
+      if (!usable.ok) {
+        return usable;
       }
       const validated = validateConfig(registered.manifest, body.config);
       if (!validated.ok) {
@@ -266,9 +306,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           target: connectionId,
           metadata: { name: body.name, connectorId: body.connectorId },
         });
-        return ok(
-          presentConnectionDetail(registry, created.row, created.state),
-        );
+        return ok(presentConnectionDetail(registry, created));
       });
     },
 
@@ -277,6 +315,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       const registered = registry.get(body.connectorId);
       if (!registered) {
         return fail(400, "invalid_request");
+      }
+      const usable = checkCredentialConnector(registered.manifest);
+      if (!usable.ok) {
+        return usable;
       }
       const validated = validateConfig(registered.manifest, body.config);
       if (!validated.ok) {
@@ -308,9 +350,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       const rows = await inWorkspace(actor, (tx) =>
         listConnectionRows(tx, actor.workspaceId),
       );
-      return rows.map(({ row, state }) =>
-        presentConnection(registry, row, state),
-      );
+      return rows.map((loaded) => presentConnection(registry, loaded));
     },
 
     /** The connection with its 20 most recent sync runs. */
@@ -336,7 +376,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return fail(404, NOT_FOUND);
       }
       return ok({
-        connection: presentConnectionDetail(registry, found.row, found.state),
+        connection: presentConnectionDetail(registry, found),
         syncRuns: found.syncRuns.map(presentSyncRun),
       });
     },
@@ -474,7 +514,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             },
           });
         }
-        return ok(presentConnectionDetail(registry, row, state));
+        return ok(
+          presentConnectionDetail(registry, {
+            row,
+            state,
+            oauth: existing.oauth,
+          }),
+        );
       });
     },
 

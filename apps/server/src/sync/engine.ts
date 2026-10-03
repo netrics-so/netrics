@@ -261,9 +261,9 @@ async function runSync(
         });
         const statePatch =
           errorClass === "auth"
-            ? { authState: "auth_failed" }
+            ? { authState: "auth_failed", authReason: null }
             : errorClass === "transient"
-              ? { authState: "outage" }
+              ? { authState: "outage", authReason: null }
               : {};
         await tx
           .insert(schema.connectionState)
@@ -428,6 +428,7 @@ async function runSync(
           nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
           cursor: finalCursor,
           authState: "ok",
+          authReason: null,
           consecutiveFailures: 0,
         })
         .onConflictDoUpdate({
@@ -437,6 +438,7 @@ async function runSync(
             nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
             cursor: finalCursor,
             authState: "ok",
+            authReason: null,
             consecutiveFailures: 0,
           },
         });

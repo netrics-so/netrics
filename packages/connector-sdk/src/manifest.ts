@@ -19,7 +19,8 @@ export const credentialSetupSchema = z.object({
 });
 export type CredentialSetup = z.infer<typeof credentialSetupSchema>;
 
-export const authStrategySchema = z.object({
+/** Credentials the user pastes ("token") or none at all ("none"). */
+export const credentialAuthStrategySchema = z.object({
   strategy: z.enum(["token", "none"]),
   /**
    * For "token": `{ properties: { token: { title?, description? } } }`; the
@@ -28,6 +29,33 @@ export const authStrategySchema = z.object({
   credentialsSchema: jsonSchemaSchema.optional(),
   setup: credentialSetupSchema.optional(),
 });
+export type CredentialAuthStrategy = z.infer<
+  typeof credentialAuthStrategySchema
+>;
+
+/**
+ * The user authorizes netrics at an OAuth provider (ADR 0012). A connector
+ * only names the provider and the scopes it needs; endpoints and client
+ * secrets are trusted host code and instance configuration. The host hands
+ * the connector `credentials: { accessToken }` and never the refresh token.
+ * Since SDK 0.2.1.
+ */
+export const oauth2AuthStrategySchema = z.object({
+  strategy: z.literal("oauth2"),
+  provider: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  scopes: z
+    .array(z.string().min(1))
+    .min(1)
+    .refine((scopes) => new Set(scopes).size === scopes.length, {
+      message: "scopes must be unique",
+    }),
+});
+export type OAuth2AuthStrategy = z.infer<typeof oauth2AuthStrategySchema>;
+
+export const authStrategySchema = z.union([
+  credentialAuthStrategySchema,
+  oauth2AuthStrategySchema,
+]);
 export type AuthStrategy = z.infer<typeof authStrategySchema>;
 
 export const metricKindSchema = z.enum(["gauge", "delta", "counter"]);

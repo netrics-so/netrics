@@ -7,6 +7,7 @@ import type { Database } from "@netrics/database";
 import { createConnectionService, type Actor } from "./connections/service.js";
 import type { CredentialKeyring } from "./credentials.js";
 import { createDashboardService } from "./dashboards/service.js";
+import type { OAuthProviders } from "./oauth/config.js";
 
 /**
  * Onboarding (#51): a new workspace can start with the demo connection and a
@@ -46,6 +47,7 @@ export interface OnboardingDeps {
   db: Database;
   registry: ConnectorRegistry;
   credentialKeyring: CredentialKeyring;
+  oauthProviders: OAuthProviders;
   logger: FastifyBaseLogger;
 }
 

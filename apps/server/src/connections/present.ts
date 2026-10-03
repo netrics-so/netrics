@@ -1,12 +1,13 @@
 import type {
+  ConnectionAuthReason,
   ConnectionAuthState,
   ConnectionHealth,
   ConnectionStateView,
 } from "@netrics/contracts";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import type {
-  ConnectionRow,
   ConnectionStateRow,
+  ConnectionWithState,
   SyncRunRow,
 } from "@netrics/database";
 
@@ -28,6 +29,10 @@ export function toStateView(
   return {
     health,
     authState,
+    authReason:
+      authState === "needs_reauthorization"
+        ? ((state?.authReason as ConnectionAuthReason | null) ?? null)
+        : null,
     lastSuccessAt: state?.lastSuccessAt?.toISOString() ?? null,
     nextDueAt: state?.nextDueAt?.toISOString() ?? null,
     consecutiveFailures: state?.consecutiveFailures ?? 0,
@@ -38,8 +43,7 @@ export function toStateView(
 
 export function presentConnection(
   registry: ConnectorRegistry,
-  row: ConnectionRow,
-  state: ConnectionStateRow | null,
+  { row, state, oauth }: ConnectionWithState,
 ) {
   const manifest = registry.get(row.connectorId)?.manifest;
   return {
@@ -50,6 +54,14 @@ export function presentConnection(
     connectorVersion: manifest?.version ?? "unknown",
     projectId: row.projectId,
     hasCredentials: row.credentialsEncrypted != null,
+    // The linked account only; token material never leaves the database.
+    oauth: oauth
+      ? {
+          provider: oauth.provider,
+          accountEmail: oauth.accountEmail,
+          grantedScopes: [...oauth.grantedScopes],
+        }
+      : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     state: toStateView(state),
@@ -58,15 +70,14 @@ export function presentConnection(
 
 export function presentConnectionDetail(
   registry: ConnectorRegistry,
-  row: ConnectionRow,
-  state: ConnectionStateRow | null,
+  loaded: ConnectionWithState,
 ) {
   // Strip the reserved resource-selection key from the echoed config; it is
   // an engine concern, not a manifest config property.
-  const { resourceSelection: _resourceSelection, ...config } =
-    row.config as Record<string, unknown>;
+  const { resourceSelection: _resourceSelection, ...config } = loaded.row
+    .config as Record<string, unknown>;
   return {
-    ...presentConnection(registry, row, state),
+    ...presentConnection(registry, loaded),
     config,
   };
 }

@@ -288,7 +288,11 @@ export type AuditEventListResponse = z.infer<
 // ---------------------------------------------------------------------------
 
 export const connectorAuthStrategySchema = z.object({
-  strategy: z.enum(["token", "none"]),
+  strategy: z.enum(["token", "none", "oauth2"]),
+  /** For "oauth2": the provider the user authorizes at (ADR 0012). */
+  provider: z.string().min(1).optional(),
+  /** For "oauth2": the scopes the connector needs, besides identity scopes. */
+  scopes: z.array(z.string().min(1)).optional(),
   /** Label and help text for the token field. */
   tokenLabel: z.string().min(1).optional(),
   tokenDescription: z.string().min(1).optional(),
@@ -301,6 +305,28 @@ export const connectorAuthStrategySchema = z.object({
     .optional(),
 });
 export type ConnectorAuthStrategy = z.infer<typeof connectorAuthStrategySchema>;
+
+/**
+ * Why a connector cannot be used on this instance:
+ * - oauth_provider_not_configured: the administrator has not set the
+ *   provider's NETRICS_OAUTH_<PROVIDER>_CLIENT_ID/_CLIENT_SECRET;
+ * - oauth_provider_unsupported: this server has no definition for the
+ *   provider the connector names.
+ */
+export const connectorUnavailableReasonSchema = z.enum([
+  "oauth_provider_not_configured",
+  "oauth_provider_unsupported",
+]);
+export type ConnectorUnavailableReason = z.infer<
+  typeof connectorUnavailableReasonSchema
+>;
+
+export const connectorUnavailableSchema = z.object({
+  reason: connectorUnavailableReasonSchema,
+  /** The OAuth provider concerned. */
+  provider: z.string().min(1),
+});
+export type ConnectorUnavailable = z.infer<typeof connectorUnavailableSchema>;
 
 /** The JSON-Schema subset manifests use travels as an opaque record. */
 const jsonSchemaObjectSchema = z.record(z.string(), z.unknown());
@@ -315,6 +341,13 @@ export const connectorCatalogEntrySchema = z.object({
   supportsBackfill: z.boolean(),
   configSchema: jsonSchemaObjectSchema,
   authStrategies: z.array(connectorAuthStrategySchema),
+  /**
+   * Whether connections can be created on this instance. False when every
+   * auth strategy needs an OAuth provider the instance has not configured
+   * (ADR 0012); `unavailable` then says why, for administrators.
+   */
+  available: z.boolean(),
+  unavailable: connectorUnavailableSchema.nullable(),
 });
 export type ConnectorCatalogEntry = z.infer<typeof connectorCatalogEntrySchema>;
 
@@ -375,27 +408,69 @@ export type ConnectionPreviewResponse = z.infer<
 export const connectionHealthSchema = z.enum([
   "ok",
   "auth_failed",
+  "needs_reauthorization",
   "outage",
   "pending",
 ]);
 export type ConnectionHealth = z.infer<typeof connectionHealthSchema>;
 
+/**
+ * needs_reauthorization (ADR 0012): an OAuth grant no longer works and the
+ * user must authorize again; syncing pauses, as for auth_failed.
+ */
 export const connectionAuthStateSchema = z.enum([
   "ok",
   "auth_failed",
+  "needs_reauthorization",
   "outage",
 ]);
 export type ConnectionAuthState = z.infer<typeof connectionAuthStateSchema>;
 
+/**
+ * Why a connection needs reauthorization: invalid_grant (revoked, expired,
+ * password changed, or the 7-day limit of an OAuth app in testing),
+ * scope_missing (the connector now needs scopes the grant lacks).
+ */
+export const connectionAuthReasonSchema = z.enum([
+  "invalid_grant",
+  "scope_missing",
+]);
+export type ConnectionAuthReason = z.infer<typeof connectionAuthReasonSchema>;
+
 export const connectionStateViewSchema = z.object({
   health: connectionHealthSchema,
   authState: connectionAuthStateSchema,
+  /** Set only with authState needs_reauthorization. */
+  authReason: connectionAuthReasonSchema.nullable(),
   lastSuccessAt: z.iso.datetime().nullable(),
   nextDueAt: z.iso.datetime().nullable(),
   consecutiveFailures: z.number().int().nonnegative(),
   pollIntervalSeconds: z.number().int().positive(),
 });
 export type ConnectionStateView = z.infer<typeof connectionStateViewSchema>;
+
+/**
+ * The provider account a connection is authorized with ("Connected as …").
+ * Never carries token material.
+ */
+export const connectionOAuthViewSchema = z.object({
+  provider: z.string().min(1),
+  accountEmail: z.string().nullable(),
+  grantedScopes: z.array(z.string().min(1)),
+});
+export type ConnectionOAuthView = z.infer<typeof connectionOAuthViewSchema>;
+
+/**
+ * Why an OAuth authorization was started (ADR 0012): a new connection, or a
+ * new grant for an existing one.
+ */
+export const oauthAuthorizationPurposeSchema = z.enum([
+  "connect",
+  "reauthorize",
+]);
+export type OAuthAuthorizationPurpose = z.infer<
+  typeof oauthAuthorizationPurposeSchema
+>;
 
 export const connectionSchema = z.object({
   id: z.uuid(),
@@ -405,6 +480,8 @@ export const connectionSchema = z.object({
   connectorVersion: z.string().min(1),
   projectId: z.uuid().nullable(),
   hasCredentials: z.boolean(),
+  /** The linked OAuth account, for connections authorized at a provider. */
+  oauth: connectionOAuthViewSchema.nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   state: connectionStateViewSchema,

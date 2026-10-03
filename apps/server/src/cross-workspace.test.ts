@@ -45,6 +45,8 @@ interface World {
   app: FastifyInstance;
   admin: Sql;
   db: Database;
+  /** The application role's URL (RLS applies). */
+  appUrl: string;
   close: () => Promise<void>;
 }
 
@@ -70,6 +72,7 @@ async function createWorld(): Promise<World> {
     app,
     admin,
     db,
+    appUrl: testDb.appUrl,
     close: async () => {
       await app.close();
       await db.$client.end({ timeout: 5 }).catch(() => undefined);
@@ -785,5 +788,72 @@ describe("audit isolation", () => {
       );
       expect(events.some((e) => e.action === "auth.login")).toBe(false);
     }
+  });
+});
+
+describe("OAuth records (ADR 0012)", () => {
+  it("never surface in, or reach from, another workspace", async () => {
+    // W1 owns a connection with an OAuth grant and a pending authorization.
+    const created = await call(world.app, {
+      method: "POST",
+      url: `/v1/workspaces/${w1Id}/connections`,
+      cookie: cookies.a,
+      payload: { connectorId: "demo", name: "W1 Google", config: {} },
+    });
+    expect(created.statusCode).toBe(200);
+    const connectionId = (created.json() as { connection: { id: string } })
+      .connection.id;
+    await world.admin`
+      insert into connection_oauth
+        (connection_id, workspace_id, provider, account_sub, account_email, granted_scopes)
+      values (${connectionId}, ${w1Id}, 'google', 'w1-sub', 'w1-marker@example.com', '{openid}')`;
+    await world.admin`
+      insert into oauth_authorizations
+        (workspace_id, user_id, provider, connector_id, connection_id, purpose,
+         return_path, state_hash, nonce, code_verifier_encrypted, expires_at)
+      values (${w1Id}, ${userIds.a}, 'google', 'demo', ${connectionId}, 'reauthorize',
+              '/', ${randomUUID()}, 'n', '\\x00', now() + interval '10 minutes')`;
+
+    // W2's owner sees neither through the API…
+    const w2List = await call(world.app, {
+      method: "GET",
+      url: `/v1/workspaces/${w2Id}/connections`,
+      cookie: cookies.c,
+    });
+    expect(w2List.statusCode).toBe(200);
+    expect(w2List.body).not.toContain("w1-marker");
+    expectError(
+      await call(world.app, {
+        method: "GET",
+        url: `/v1/workspaces/${w2Id}/connections/${connectionId}`,
+        cookie: cookies.c,
+      }),
+      404,
+      "connection_not_found",
+    );
+
+    // …nor as the application role in W2's tenant context.
+    const raw = createRawSqlClient(world.appUrl, { max: 1 });
+    try {
+      await raw.begin(async (tx) => {
+        await tx`select set_config('app.workspace_id', ${w2Id}, true)`;
+        expect(await tx`select * from connection_oauth`).toHaveLength(0);
+        expect(await tx`select * from oauth_authorizations`).toHaveLength(0);
+        const updated = await tx`
+          update connection_oauth set account_email = 'hijacked@example.com'
+          returning connection_id`;
+        expect(updated).toHaveLength(0);
+      });
+    } finally {
+      await raw.end({ timeout: 5 }).catch(() => undefined);
+    }
+
+    // W1's owner sees the linked account.
+    const w1Detail = await call(world.app, {
+      method: "GET",
+      url: `/v1/workspaces/${w1Id}/connections/${connectionId}`,
+      cookie: cookies.a,
+    });
+    expect(w1Detail.body).toContain("w1-marker@example.com");
   });
 });

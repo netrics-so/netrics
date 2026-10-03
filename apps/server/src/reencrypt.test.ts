@@ -14,7 +14,9 @@ import {
 import {
   createCredentialKeyring,
   decryptCredentials,
+  decryptOAuthAccessToken,
   encryptCredentials,
+  encryptOAuthAccessToken,
 } from "./credentials.js";
 import { reencryptCredentials } from "./reencrypt.js";
 import { createTestDatabase } from "./test-db.js";
@@ -109,5 +111,49 @@ describe("reencryptCredentials", () => {
         }),
       ).toBe(`{"token":"t${index}"}`);
     }
+  });
+});
+
+describe("reencryptCredentials with OAuth access tokens (ADR 0012)", () => {
+  it("rotates the access-token envelope as an access token", async () => {
+    const thirdKey = randomBytes(32).toString("base64");
+    const connectionId = connectionIds[0]!;
+    const current = createCredentialKeyring(newKey);
+    await withWorkspace(appDb, { workspaceId }, (tx) =>
+      tx.insert(schema.connectionOAuth).values({
+        connectionId,
+        workspaceId,
+        provider: "google",
+        accountSub: "sub",
+        grantedScopes: ["openid"],
+        accessTokenEncrypted: Buffer.from(
+          encryptOAuthAccessToken("ya29.token", current, {
+            workspaceId,
+            connectionId,
+          }),
+          "utf8",
+        ),
+        accessTokenExpiresAt: new Date(Date.now() + 3600 * 1000),
+      }),
+    );
+
+    const rotating = createCredentialKeyring(thirdKey, [newKey]);
+    expect(await reencryptCredentials(ownerDb, rotating)).toEqual({
+      total: 3,
+      alreadyCurrent: 0,
+      reencrypted: 3,
+      failed: 0,
+    });
+    const [row] = await ownerDb
+      .select({ token: schema.connectionOAuth.accessTokenEncrypted })
+      .from(schema.connectionOAuth)
+      .where(eq(schema.connectionOAuth.connectionId, connectionId));
+    expect(
+      decryptOAuthAccessToken(
+        row!.token!.toString("utf8"),
+        createCredentialKeyring(thirdKey),
+        { workspaceId, connectionId },
+      ),
+    ).toBe("ya29.token");
   });
 });

@@ -86,6 +86,11 @@ NETRICS_SIGNUP=closed
 # Optional email (invitations, password reset), e.g.
 # SMTP_URL=smtps://user:password@smtp.example.com:465
 # MAIL_FROM=netrics <no-reply@${domain}>
+
+# Optional Google OAuth app (Google connectors; both or neither). Register
+# the redirect URI ${public_url}/oauth/google/callback.
+# NETRICS_OAUTH_GOOGLE_CLIENT_ID=
+# NETRICS_OAUTH_GOOGLE_CLIENT_SECRET=
 ENV
 chmod 600 .env
 

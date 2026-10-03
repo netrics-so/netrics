@@ -86,9 +86,37 @@ export function createCredentialKeyring(
   };
 }
 
-function associatedData({ workspaceId, connectionId }: CredentialBinding) {
+/**
+ * What an envelope holds. The purpose is part of the associated data, so an
+ * envelope sealed for one purpose fails authentication as another, even for
+ * the same row (ADR 0012: the access-token envelope cannot be swapped with
+ * the credentials envelope).
+ *
+ * - credentials: connections.credentials_encrypted, bound to the connection
+ *   (for OAuth connections it holds the refresh token);
+ * - oauth-access-token: connection_oauth.access_token_encrypted, bound to
+ *   the connection;
+ * - oauth-code-verifier: oauth_authorizations.code_verifier_encrypted, bound
+ *   to the authorization row (its id in place of the connection id).
+ */
+export type EnvelopePurpose =
+  "credentials" | "oauth-access-token" | "oauth-code-verifier";
+
+/** The row an OAuth authorization's PKCE verifier is sealed to. */
+export interface AuthorizationBinding {
+  workspaceId: string;
+  authorizationId: string;
+}
+
+function associatedData(
+  purpose: EnvelopePurpose,
+  workspaceId: string,
+  recordId: string,
+) {
+  // "credentials" keeps the format of envelopes written before purposes
+  // existed, so stored credentials stay readable.
   return Buffer.from(
-    `netrics:credentials:v${ENVELOPE_VERSION}|${workspaceId}|${connectionId}`,
+    `netrics:${purpose}:v${ENVELOPE_VERSION}|${workspaceId}|${recordId}`,
     "utf8",
   );
 }
@@ -102,26 +130,11 @@ export function encryptCredentials(
   keyring: CredentialKeyring,
   binding: CredentialBinding,
 ): string {
-  const iv = randomBytes(IV_BYTES);
-  const cipher = createCipheriv(
-    "aes-256-gcm",
-    keyring.key(keyring.currentKeyId)!,
-    iv,
-    { authTagLength: TAG_BYTES },
+  return sealEnvelope(
+    plaintextJson,
+    keyring,
+    associatedData("credentials", binding.workspaceId, binding.connectionId),
   );
-  cipher.setAAD(associatedData(binding));
-  const data = Buffer.concat([
-    cipher.update(plaintextJson, "utf8"),
-    cipher.final(),
-  ]);
-  const envelope = {
-    v: ENVELOPE_VERSION,
-    kid: keyring.currentKeyId,
-    iv: iv.toString("base64"),
-    tag: cipher.getAuthTag().toString("base64"),
-    data: data.toString("base64"),
-  };
-  return Buffer.from(JSON.stringify(envelope), "utf8").toString("base64");
 }
 
 /**
@@ -134,6 +147,113 @@ export function decryptCredentials(
   keyring: CredentialKeyring,
   binding: CredentialBinding,
 ): string {
+  return openEnvelope(
+    envelope,
+    keyring,
+    associatedData("credentials", binding.workspaceId, binding.connectionId),
+  );
+}
+
+/** Seals a connection's OAuth access token (ADR 0012). */
+export function encryptOAuthAccessToken(
+  accessToken: string,
+  keyring: CredentialKeyring,
+  binding: CredentialBinding,
+): string {
+  return sealEnvelope(
+    accessToken,
+    keyring,
+    associatedData(
+      "oauth-access-token",
+      binding.workspaceId,
+      binding.connectionId,
+    ),
+  );
+}
+
+/** Opens an envelope produced by encryptOAuthAccessToken (same binding). */
+export function decryptOAuthAccessToken(
+  envelope: string,
+  keyring: CredentialKeyring,
+  binding: CredentialBinding,
+): string {
+  return openEnvelope(
+    envelope,
+    keyring,
+    associatedData(
+      "oauth-access-token",
+      binding.workspaceId,
+      binding.connectionId,
+    ),
+  );
+}
+
+/** Seals the PKCE verifier of an OAuth authorization to its row. */
+export function encryptOAuthCodeVerifier(
+  verifier: string,
+  keyring: CredentialKeyring,
+  binding: AuthorizationBinding,
+): string {
+  return sealEnvelope(
+    verifier,
+    keyring,
+    associatedData(
+      "oauth-code-verifier",
+      binding.workspaceId,
+      binding.authorizationId,
+    ),
+  );
+}
+
+/** Opens an envelope produced by encryptOAuthCodeVerifier (same binding). */
+export function decryptOAuthCodeVerifier(
+  envelope: string,
+  keyring: CredentialKeyring,
+  binding: AuthorizationBinding,
+): string {
+  return openEnvelope(
+    envelope,
+    keyring,
+    associatedData(
+      "oauth-code-verifier",
+      binding.workspaceId,
+      binding.authorizationId,
+    ),
+  );
+}
+
+function sealEnvelope(
+  plaintext: string,
+  keyring: CredentialKeyring,
+  aad: Buffer,
+): string {
+  const iv = randomBytes(IV_BYTES);
+  const cipher = createCipheriv(
+    "aes-256-gcm",
+    keyring.key(keyring.currentKeyId)!,
+    iv,
+    { authTagLength: TAG_BYTES },
+  );
+  cipher.setAAD(aad);
+  const data = Buffer.concat([
+    cipher.update(plaintext, "utf8"),
+    cipher.final(),
+  ]);
+  const envelope = {
+    v: ENVELOPE_VERSION,
+    kid: keyring.currentKeyId,
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+    data: data.toString("base64"),
+  };
+  return Buffer.from(JSON.stringify(envelope), "utf8").toString("base64");
+}
+
+function openEnvelope(
+  envelope: string,
+  keyring: CredentialKeyring,
+  aad: Buffer,
+) {
   let parsed: z.infer<typeof envelopeSchema>;
   try {
     parsed = envelopeSchema.parse(
@@ -164,7 +284,7 @@ export function decryptCredentials(
       Buffer.from(parsed.iv, "base64"),
       { authTagLength: TAG_BYTES },
     );
-    decipher.setAAD(associatedData(binding));
+    decipher.setAAD(aad);
     decipher.setAuthTag(tag);
     return Buffer.concat([
       decipher.update(Buffer.from(parsed.data, "base64")),
@@ -172,7 +292,7 @@ export function decryptCredentials(
     ]).toString("utf8");
   } catch (error) {
     throw new CredentialDecryptionError(
-      "credential envelope failed authentication (wrong key, tampered, or bound to another connection)",
+      "credential envelope failed authentication (wrong key, tampered, or bound to another record or purpose)",
       { cause: error },
     );
   }

@@ -156,8 +156,23 @@ export {
   resetConnectionAuth,
   updateConnection,
 } from "./connections.js";
+export {
+  consumeOAuthAuthorization,
+  findConnectionOAuth,
+  insertOAuthAuthorization,
+  upsertConnectionOAuth,
+} from "./oauth.js";
+export type {
+  ConnectionOAuthInput,
+  ConnectionOAuthRow,
+  ConsumedOAuthAuthorization,
+  NewOAuthAuthorization,
+  OAuthAuthorizationPurpose,
+  OAuthAuthorizationRow,
+} from "./oauth.js";
 export type {
   ConnectionChanges,
+  ConnectionOAuthAccount,
   ConnectionRow,
   ConnectionStateRow,
   ConnectionWithState,

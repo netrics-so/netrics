@@ -1,7 +1,9 @@
 import { connectorManifestSchema, type ConnectorManifest } from "./manifest.js";
 import { satisfiesRange } from "./semver.js";
 
-export const SDK_VERSION = "0.2.0";
+// 0.2.1: the additive "oauth2" auth strategy (ADR 0012); ^0.2.0 connectors
+// keep loading.
+export const SDK_VERSION = "0.2.1";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

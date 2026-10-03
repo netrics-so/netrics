@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createCipheriv, randomBytes, randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
@@ -6,7 +6,11 @@ import {
   CredentialDecryptionError,
   createCredentialKeyring,
   decryptCredentials,
+  decryptOAuthAccessToken,
+  decryptOAuthCodeVerifier,
   encryptCredentials,
+  encryptOAuthAccessToken,
+  encryptOAuthCodeVerifier,
   redactSecrets,
 } from "./credentials.js";
 
@@ -74,7 +78,7 @@ describe("encryptCredentials / decryptCredentials", () => {
       { ...binding, connectionId: randomUUID() },
     ]) {
       expect(() => decryptCredentials(envelope, ringA, other)).toThrow(
-        /bound to another connection/,
+        /bound to another record/,
       );
     }
   });
@@ -122,6 +126,92 @@ describe("encryptCredentials / decryptCredentials", () => {
     expect(() =>
       createCredentialKeyring(randomBytes(16).toString("base64")),
     ).toThrow(/32 bytes/);
+  });
+});
+
+describe("envelope purposes (ADR 0012)", () => {
+  it("still opens credentials envelopes in the pre-OAuth format", () => {
+    // Sealed exactly as before purposes existed: associated data
+    // netrics:credentials:v2|<workspace>|<connection>.
+    const key = Buffer.from(keyA, "base64");
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", key, iv, {
+      authTagLength: 16,
+    });
+    cipher.setAAD(
+      Buffer.from(
+        `netrics:credentials:v2|${binding.workspaceId}|${binding.connectionId}`,
+      ),
+    );
+    const data = Buffer.concat([
+      cipher.update('{"token":"legacy"}', "utf8"),
+      cipher.final(),
+    ]);
+    const legacy = encode({
+      v: 2,
+      kid: ringA.currentKeyId,
+      iv: iv.toString("base64"),
+      tag: cipher.getAuthTag().toString("base64"),
+      data: data.toString("base64"),
+    });
+    expect(decryptCredentials(legacy, ringA, binding)).toBe(
+      '{"token":"legacy"}',
+    );
+  });
+
+  it("round-trips an access token bound to its connection", () => {
+    const envelope = encryptOAuthAccessToken("ya29.access", ringA, binding);
+    expect(envelope).not.toContain("ya29");
+    expect(decryptOAuthAccessToken(envelope, ringA, binding)).toBe(
+      "ya29.access",
+    );
+    for (const other of [
+      { ...binding, workspaceId: randomUUID() },
+      { ...binding, connectionId: randomUUID() },
+    ]) {
+      expect(() => decryptOAuthAccessToken(envelope, ringA, other)).toThrow(
+        CredentialDecryptionError,
+      );
+    }
+  });
+
+  it("cannot open an access-token envelope as credentials, or vice versa", () => {
+    const accessToken = encryptOAuthAccessToken("ya29.access", ringA, binding);
+    expect(() => decryptCredentials(accessToken, ringA, binding)).toThrow(
+      /bound to another record or purpose/,
+    );
+    const credentials = encryptCredentials(
+      '{"refreshToken":"1//refresh"}',
+      ringA,
+      binding,
+    );
+    expect(() => decryptOAuthAccessToken(credentials, ringA, binding)).toThrow(
+      /bound to another record or purpose/,
+    );
+  });
+
+  it("binds the PKCE verifier to its authorization and purpose", () => {
+    const authorization = {
+      workspaceId: binding.workspaceId,
+      authorizationId: binding.connectionId,
+    };
+    const envelope = encryptOAuthCodeVerifier("verifier", ringA, authorization);
+    expect(decryptOAuthCodeVerifier(envelope, ringA, authorization)).toBe(
+      "verifier",
+    );
+    expect(() =>
+      decryptOAuthCodeVerifier(envelope, ringA, {
+        ...authorization,
+        authorizationId: randomUUID(),
+      }),
+    ).toThrow(CredentialDecryptionError);
+    // Same workspace and id, other purposes: still refused.
+    expect(() => decryptCredentials(envelope, ringA, binding)).toThrow(
+      CredentialDecryptionError,
+    );
+    expect(() => decryptOAuthAccessToken(envelope, ringA, binding)).toThrow(
+      CredentialDecryptionError,
+    );
   });
 });
 
