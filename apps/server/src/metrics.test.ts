@@ -36,6 +36,9 @@ let connectionId: string;
 let otherConnectionId: string;
 
 const BERLIN = "Europe/Berlin";
+// A fixed clock (#144): 22:30 UTC is already the next day in Berlin, so the
+// Berlin workspace's "today" differs from the UTC workspace's.
+const NOW = new Date("2025-07-15T22:30:00Z");
 
 function call(
   method: "GET" | "POST" | "PATCH",
@@ -122,7 +125,12 @@ beforeAll(async () => {
   const authService = createAuthService(config, db, {
     logger: pino({ level: "silent" }),
   });
-  app = await buildApp(config, { db, authService, checkDb: async () => true });
+  app = await buildApp(config, {
+    db,
+    authService,
+    checkDb: async () => true,
+    now: () => NOW,
+  });
   admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
 
   owner = await signUp("metrics-owner@example.com");
@@ -133,8 +141,9 @@ beforeAll(async () => {
   otherConnectionId = await createConnection(otherWorkspaceId);
 
   // Daily signups (delta) for the last 14 reporting dates in Berlin, 1..14
-  // with today = 14, plus another workspace's data that must never count.
-  const today = civilDate(new Date(), BERLIN);
+  // with today = 14, plus another (UTC) workspace's data for its own today
+  // that must never count.
+  const today = civilDate(NOW, BERLIN);
   for (let i = 0; i < 14; i++) {
     await observe(
       workspaceId,
@@ -148,7 +157,7 @@ beforeAll(async () => {
     otherWorkspaceId,
     otherConnectionId,
     "demo.signups",
-    today,
+    civilDate(NOW, "UTC"),
     1000,
   );
 }, 60_000);
