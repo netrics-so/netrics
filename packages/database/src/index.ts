@@ -148,9 +148,11 @@ export type {
   TileInput,
 } from "./dashboards.js";
 export {
+  BREAKDOWN_TIMEOUT_MS,
   findConnectionMetric,
   listWorkspaceMetrics,
   queryMetricBuckets,
+  queryMetricGroupBuckets,
   queryMetricCurrencyBuckets,
   queryMetricCurrencyTotals,
 } from "./metrics.js";
@@ -168,6 +170,7 @@ export type {
   MetricCurrencyBucket,
   MetricCurrencyQuery,
   MetricCurrencyTotal,
+  MetricGroupBucket,
 } from "./metrics.js";
 export {
   deleteConnection,

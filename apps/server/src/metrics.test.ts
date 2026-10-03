@@ -1,4 +1,5 @@
 import type { FastifyInstance, InjectOptions } from "fastify";
+import { sql } from "drizzle-orm";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -6,6 +7,7 @@ import {
   currencyConversionOptionsResponseSchema,
   dashboardResponseSchema,
   errorResponseSchema,
+  metricBreakdownResponseSchema,
   metricCurrenciesResponseSchema,
   metricQueryResponseSchema,
   metricResourcesResponseSchema,
@@ -25,7 +27,7 @@ import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { buildDeviceDashboard } from "./devices/dashboard.js";
 import { loadConfig } from "./env.js";
-import { queryMetric } from "./metrics/query.js";
+import { queryMetric, queryMetricBreakdown } from "./metrics/query.js";
 import { createTestDatabase } from "./test-db.js";
 
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
@@ -1371,5 +1373,492 @@ describe("longer periods (#212)", () => {
     expect(metricQueryResponseSchema.parse(http.json()).period).toBe(
       "last_12_months",
     );
+  });
+});
+
+describe("chart queries (#218)", () => {
+  // Its own UTC workspace and connector. NOW is Tuesday 2025-07-15: the
+  // last 7 days are 07-09..07-15, the previous ones 07-02..07-08.
+  let chartWorkspace: string;
+  let chart: string;
+  const today = civilDate(NOW, "UTC");
+
+  async function put(
+    metricKey: string,
+    date: string,
+    value: number,
+    dimensions: Record<string, string>,
+    workspace = chartWorkspace,
+    connection = chart,
+  ) {
+    await admin`
+      insert into observations (workspace_id, connection_id,
+        metric_definition_id, dimensions, source_timestamp, value)
+      select ${workspace}, ${connection}, m.id, ${admin.json(dimensions)},
+             ${`${date}T00:00:00Z`}::timestamptz, ${value}
+      from metric_definitions m
+      where m.connector_id = 'test-chart' and m.key = ${metricKey}`;
+  }
+
+  const breakdown = (
+    body: Record<string, unknown>,
+    cookie: string = owner,
+    workspace: string = chartWorkspace,
+  ) =>
+    call("POST", `/v1/workspaces/${workspace}/metrics/breakdown`, cookie, {
+      connectionId: chart,
+      period: "last_7_days",
+      ...body,
+    });
+
+  const errorOf = (response: InjectResponse) =>
+    errorResponseSchema.parse(response.json()).error;
+
+  beforeAll(async () => {
+    chartWorkspace = (await createWorkspace(owner)).id;
+    await admin`
+      insert into connectors (id, version, manifest)
+      values ('test-chart', '1.0.0', '{"id":"test-chart"}'::jsonb)`;
+    await admin`
+      insert into metric_definitions (connector_id, key, name, description,
+        kind, unit, granularity, dimensions, aggregations)
+      values
+        ('test-chart', 'chart.downloads', 'Downloads', 'Downloads per day',
+         'delta', 'count', 'day', '["resource","territory"]', '["sum","avg"]'),
+        ('test-chart', 'chart.users', 'Users', 'Active users',
+         'gauge', 'count', 'day', '["resource","device"]',
+         '["last","avg","min","max"]'),
+        ('test-chart', 'chart.proceeds', 'Proceeds', 'Proceeds per day',
+         'delta', 'currency_minor', 'day', '["resource","currency"]', '["sum"]')`;
+    const [row] = await admin`
+      insert into connections (workspace_id, connector_id, name)
+      values (${chartWorkspace}, 'test-chart', 'Store') returning id`;
+    chart = row!.id as string;
+    await admin`
+      insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values
+        (${chart}, ${chartWorkspace}, 'app-1', 'Wurfel', 'app'),
+        (${chart}, ${chartWorkspace}, 'app-2', 'Dicey', 'app'),
+        (${chart}, ${chartWorkspace}, 'app-3', 'Quiet', 'app')`;
+
+    // Downloads this week per app and territory: app-1 40 (DE 30, US 10),
+    // app-2 25 (DE), app-3 12, app-4 8, app-5 3 (no names for 4 and 5),
+    // and App Store's own "Others" territory 5 on app-1. The week before:
+    // 07-02 6, 07-08 9; nothing on the days between.
+    await put("chart.downloads", today, 30, {
+      resource: "app-1",
+      territory: "DE",
+    });
+    await put("chart.downloads", addDays(today, -1), 10, {
+      resource: "app-1",
+      territory: "US",
+    });
+    await put("chart.downloads", addDays(today, -2), 5, {
+      resource: "app-1",
+      territory: "Others",
+    });
+    await put("chart.downloads", today, 25, {
+      resource: "app-2",
+      territory: "DE",
+    });
+    await put("chart.downloads", today, 12, {
+      resource: "app-3",
+      territory: "FR",
+    });
+    await put("chart.downloads", today, 8, {
+      resource: "app-4",
+      territory: "FR",
+    });
+    await put("chart.downloads", today, 3, {
+      resource: "app-5",
+      territory: "JP",
+    });
+    await put("chart.downloads", "2025-07-02", 6, {
+      resource: "app-1",
+      territory: "DE",
+    });
+    await put("chart.downloads", "2025-07-08", 9, {
+      resource: "app-2",
+      territory: "DE",
+    });
+
+    // Active users per device: the latest day counts per group.
+    await put("chart.users", addDays(today, -1), 100, {
+      resource: "app-1",
+      device: "iPhone",
+    });
+    await put("chart.users", today, 70, {
+      resource: "app-1",
+      device: "iPhone",
+    });
+    await put("chart.users", today, 80, { resource: "app-1", device: "iPad" });
+    await put("chart.users", addDays(today, -1), 50, {
+      resource: "app-1",
+      device: "Mac",
+    });
+
+    // Proceeds: app-1 €10.00 + £1.00, app-2 €3.00 on 07-10. £1 per €0.5
+    // that day, so £1.00 is €2.00.
+    await put("chart.proceeds", "2025-07-10", 1_000, {
+      resource: "app-1",
+      currency: "EUR",
+    });
+    await put("chart.proceeds", "2025-07-10", 100, {
+      resource: "app-1",
+      currency: "GBP",
+    });
+    await put("chart.proceeds", "2025-07-10", 300, {
+      resource: "app-2",
+      currency: "EUR",
+    });
+    await admin`
+      insert into exchange_rates (rate_date, currency, units_per_eur)
+      values ('2025-07-10', 'GBP', '0.5')
+      on conflict do nothing`;
+  });
+
+  describe("line: the previous period aligned (POST …/metrics/query)", () => {
+    it("returns the previous window's points under the current ones", async () => {
+      const response = await query(owner, chartWorkspace, {
+        connectionId: chart,
+        metricKey: "chart.downloads",
+        period: "last_7_days",
+      });
+      expect(response.statusCode).toBe(200);
+      const result = metricQueryResponseSchema.parse(response.json());
+      expect(result.previousValue).toBe(15);
+      expect(result.previousSeries.map((p) => p.bucket)).toEqual(
+        result.series.map((p) => p.bucket),
+      );
+      // 07-02 sits under 07-09, 07-08 under 07-15; the days between are gaps.
+      expect(result.previousSeries.map((p) => p.value)).toEqual([
+        6,
+        null,
+        null,
+        null,
+        null,
+        null,
+        9,
+      ]);
+    });
+
+    it("forms a gauge's previous points like its own", async () => {
+      const response = await query(owner, chartWorkspace, {
+        connectionId: chart,
+        metricKey: "chart.users",
+        period: "last_7_days",
+      });
+      const result = metricQueryResponseSchema.parse(response.json());
+      expect(result.previousSeries.every((p) => p.value === null)).toBe(true);
+      expect(result.series.at(-1)?.value).toBe(150);
+    });
+
+    it("converts the previous points like the current ones", async () => {
+      const response = await query(owner, chartWorkspace, {
+        connectionId: chart,
+        metricKey: "chart.proceeds",
+        period: "last_7_days",
+        displayCurrency: "EUR",
+      });
+      const result = metricQueryResponseSchema.parse(response.json());
+      expect(result.currency).toBe("EUR");
+      expect(result.series[1]?.value).toBe(1_500);
+      expect(result.previousSeries).toHaveLength(7);
+    });
+  });
+
+  describe("bar: POST …/metrics/breakdown", () => {
+    it("ranks resources by name, largest first, the rest as Others", async () => {
+      const response = await breakdown({
+        metricKey: "chart.downloads",
+        groupBy: "resource",
+        limit: 3,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(
+        metricBreakdownResponseSchema.parse(response.json()),
+      ).toMatchObject({
+        aggregation: "sum",
+        groupBy: "resource",
+        currency: null,
+        conversion: null,
+        groups: [
+          { key: "app-1", label: "Wurfel", value: 45 },
+          { key: "app-2", label: "Dicey", value: 25 },
+          { key: "app-3", label: "Quiet", value: 12 },
+        ],
+        others: { label: "Others", value: 11, groups: 2 },
+      });
+    });
+
+    it("shows every group within the limit and no Others", async () => {
+      const response = await breakdown({
+        metricKey: "chart.downloads",
+        groupBy: "resource",
+      });
+      const result = metricBreakdownResponseSchema.parse(response.json());
+      expect(result.groups.map((g) => g.label)).toEqual([
+        "Wurfel",
+        "Dicey",
+        "Quiet",
+        "app-4",
+        "app-5",
+      ]);
+      expect(result.others).toBeNull();
+    });
+
+    it("names territories and adds the connector's Others to its own", async () => {
+      const response = await breakdown({
+        metricKey: "chart.downloads",
+        groupBy: "territory",
+        limit: 3,
+      });
+      const result = metricBreakdownResponseSchema.parse(response.json());
+      expect(result.groups).toEqual([
+        { key: "DE", label: "Germany", value: 55 },
+        { key: "FR", label: "France", value: 20 },
+        { key: "US", label: "United States", value: 10 },
+      ]);
+      expect(result.others).toEqual({ label: "Others", value: 8, groups: 2 });
+    });
+
+    it("filters by other dimensions and aggregates like the tile", async () => {
+      const filtered = metricBreakdownResponseSchema.parse(
+        (
+          await breakdown({
+            metricKey: "chart.downloads",
+            groupBy: "territory",
+            dimensions: { resource: "app-1" },
+          })
+        ).json(),
+      );
+      expect(filtered.groups.map((g) => [g.key, g.value])).toEqual([
+        ["DE", 30],
+        ["US", 10],
+      ]);
+      expect(filtered.others).toMatchObject({ value: 5, groups: 1 });
+
+      // An average day per territory: DE 55 on one day.
+      const average = metricBreakdownResponseSchema.parse(
+        (
+          await breakdown({
+            metricKey: "chart.downloads",
+            groupBy: "territory",
+            aggregation: "avg",
+            limit: 3,
+          })
+        ).json(),
+      );
+      expect(average.groups[0]).toMatchObject({ key: "DE", value: 55 });
+    });
+
+    it("reads a gauge's latest day per group", async () => {
+      const response = await breakdown({
+        metricKey: "chart.users",
+        groupBy: "device",
+      });
+      const result = metricBreakdownResponseSchema.parse(response.json());
+      expect(result.aggregation).toBe("last");
+      expect(result.groups).toEqual([
+        { key: "iPad", label: "iPad", value: 80 },
+        { key: "iPhone", label: "iPhone", value: 70 },
+        { key: "Mac", label: "Mac", value: 50 },
+      ]);
+    });
+
+    it("is empty without data in the period", async () => {
+      const response = await breakdown({
+        metricKey: "chart.downloads",
+        groupBy: "resource",
+        dimensions: { resource: "nope" },
+      });
+      expect(
+        metricBreakdownResponseSchema.parse(response.json()),
+      ).toMatchObject({
+        groups: [],
+        others: null,
+      });
+    });
+
+    it("refuses unknown dimensions, the currency, and limits out of range", async () => {
+      const unknown = await breakdown({
+        metricKey: "chart.downloads",
+        groupBy: "device",
+      });
+      expect(unknown.statusCode).toBe(400);
+      expect(errorOf(unknown)).toBe("unknown_dimension");
+      const currency = await breakdown({
+        metricKey: "chart.proceeds",
+        groupBy: "currency",
+      });
+      expect(currency.statusCode).toBe(400);
+      expect(errorOf(currency)).toBe("unknown_dimension");
+      for (const limit of [2, 11]) {
+        const response = await breakdown({
+          metricKey: "chart.downloads",
+          groupBy: "resource",
+          limit,
+        });
+        expect(response.statusCode).toBe(400);
+        expect(errorOf(response)).toBe("invalid_request");
+      }
+      const aggregation = await breakdown({
+        metricKey: "chart.downloads",
+        groupBy: "resource",
+        aggregation: "last",
+      });
+      expect(errorOf(aggregation)).toBe("aggregation_not_supported");
+    });
+
+    it("refuses amounts in several currencies with nothing to convert them", async () => {
+      const response = await breakdown({
+        metricKey: "chart.proceeds",
+        groupBy: "resource",
+      });
+      expect(response.statusCode).toBe(400);
+      expect(errorOf(response)).toBe("currency_required");
+    });
+
+    it("shows one currency exactly", async () => {
+      const response = await breakdown({
+        metricKey: "chart.proceeds",
+        groupBy: "resource",
+        dimensions: { currency: "EUR" },
+      });
+      expect(
+        metricBreakdownResponseSchema.parse(response.json()),
+      ).toMatchObject({
+        currency: "EUR",
+        conversion: null,
+        groups: [
+          { key: "app-1", value: 1_000 },
+          { key: "app-2", value: 300 },
+        ],
+      });
+    });
+
+    it("converts each group into the display currency", async () => {
+      const response = await breakdown({
+        metricKey: "chart.proceeds",
+        groupBy: "resource",
+        displayCurrency: "EUR",
+      });
+      const result = metricBreakdownResponseSchema.parse(response.json());
+      expect(result).toMatchObject({
+        currency: "EUR",
+        conversion: {
+          displayCurrency: "EUR",
+          approximate: true,
+          unconverted: [],
+        },
+        groups: [
+          { key: "app-1", label: "Wurfel", value: 1_200 },
+          { key: "app-2", label: "Dicey", value: 300 },
+        ],
+      });
+    });
+
+    it("stays in its workspace", async () => {
+      // Not a member.
+      const stranger404 = await breakdown(
+        { metricKey: "chart.downloads", groupBy: "resource" },
+        stranger,
+      );
+      expect(stranger404.statusCode).toBe(404);
+      // Another workspace's connection is not found from this one.
+      const other = await call(
+        "POST",
+        `/v1/workspaces/${otherWorkspaceId}/metrics/breakdown`,
+        stranger,
+        {
+          connectionId: chart,
+          metricKey: "chart.downloads",
+          period: "last_7_days",
+          groupBy: "resource",
+        },
+      );
+      expect(other.statusCode).toBe(404);
+      expect(errorOf(other)).toBe("metric_not_found");
+      // Each workspace's bars hold only its own data.
+      const [row] = await admin`
+        insert into connections (workspace_id, connector_id, name)
+        values (${otherWorkspaceId}, 'test-chart', 'Theirs') returning id`;
+      const theirs = row!.id as string;
+      await put(
+        "chart.downloads",
+        today,
+        1_000,
+        { resource: "app-1", territory: "DE" },
+        otherWorkspaceId,
+        theirs,
+      );
+      const own = metricBreakdownResponseSchema.parse(
+        (
+          await breakdown({ metricKey: "chart.downloads", groupBy: "resource" })
+        ).json(),
+      );
+      expect(own.groups[0]).toMatchObject({
+        key: "app-1",
+        label: "Wurfel",
+        value: 45,
+      });
+      const theirBars = metricBreakdownResponseSchema.parse(
+        (
+          await call(
+            "POST",
+            `/v1/workspaces/${otherWorkspaceId}/metrics/breakdown`,
+            stranger,
+            {
+              connectionId: theirs,
+              metricKey: "chart.downloads",
+              period: "last_7_days",
+              groupBy: "resource",
+            },
+          )
+        ).json(),
+      );
+      // No name: this workspace's resource names stay here.
+      expect(theirBars.groups).toEqual([
+        { key: "app-1", label: "app-1", value: 1_000 },
+      ]);
+      expect(theirBars.others).toBeNull();
+    });
+
+    it("runs under a time budget and restores the transaction's timeout", async () => {
+      const setting = await withWorkspace(
+        db,
+        { workspaceId: chartWorkspace },
+        async (tx) => {
+          await tx.execute(sql`set local statement_timeout = '42s'`);
+          const result = await queryMetricBreakdown(
+            tx,
+            chartWorkspace,
+            {
+              connectionId: chart,
+              metricKey: "chart.downloads",
+              period: "last_7_days",
+              groupBy: "resource",
+              limit: 5,
+            },
+            NOW,
+          );
+          expect(result.ok).toBe(true);
+          const [row] = await tx.execute(
+            sql`select current_setting('statement_timeout') as value`,
+          );
+          return row?.value;
+        },
+      );
+      expect(setting).toBe("42s");
+    });
+
+    it("requires a session", async () => {
+      const response = await breakdown(
+        { metricKey: "chart.downloads", groupBy: "resource" },
+        null as unknown as string,
+      );
+      expect(response.statusCode).toBe(401);
+    });
   });
 });

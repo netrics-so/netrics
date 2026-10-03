@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   addDays,
+  addUpBuckets,
   aggregateBuckets,
+  alignedPreviousSeries,
+  dimensionValueLabel,
+  rankBreakdown,
   bucketCombination,
   civilDate,
   compare,
@@ -512,5 +516,232 @@ describe("seriesPoints", () => {
     const weekly = seriesPoints(planBuckets(window, "day"), "sum", buckets);
     // Averaging the weekly totals would say 45.
     expect(aggregateBuckets("avg", weekly)).toBe(45);
+  });
+});
+
+describe("alignedPreviousSeries (ADR 0015 line charts)", () => {
+  const day = (date: string, value: number) => ({
+    bucket: `${date}T00:00:00.000Z`,
+    value,
+  });
+
+  it("puts each previous day under the day at the same position", () => {
+    // Tuesday 2025-07-15: 07-09..07-15 against 07-02..07-08.
+    const window = resolvePeriod(
+      "last_7_days",
+      at("2025-07-15T12:00:00Z"),
+      "UTC",
+    );
+    const plan = planBuckets(window, "day");
+    const previous = alignedPreviousSeries(window, plan, "sum", [
+      day("2025-07-02", 1),
+      day("2025-07-05", 4),
+      day("2025-07-08", 7),
+      day("2025-07-09", 99), // the current window: never part of it
+    ]);
+    expect(previous.map((p) => p.bucket)).toEqual(plan.starts);
+    expect(previous.map((p) => p.value)).toEqual([
+      1,
+      null,
+      null,
+      4,
+      null,
+      null,
+      7,
+    ]);
+  });
+
+  it("rolls the previous 90 days into the current window's weeks", () => {
+    // Monday 2026-09-28 in Berlin: 07-01 (Wednesday)..09-28 against
+    // 04-02..06-30. 04-02 sits where 07-01 does, 04-06 where 07-05 (still
+    // the first, partial week) and 04-07 where 07-06 (the first Monday).
+    const window = resolvePeriod(
+      "last_90_days",
+      at("2026-09-28T12:00:00Z"),
+      "Europe/Berlin",
+    );
+    const plan = planBuckets(window, "day");
+    const previous = alignedPreviousSeries(window, plan, "sum", [
+      day("2026-04-02", 2),
+      day("2026-04-06", 3),
+      day("2026-04-07", 10),
+      day("2026-06-30", 5),
+    ]);
+    expect(previous).toHaveLength(plan.starts.length);
+    expect(previous.slice(0, 3)).toEqual([
+      { bucket: "2026-07-01T00:00:00.000Z", value: 5 },
+      { bucket: "2026-07-06T00:00:00.000Z", value: 10 },
+      { bucket: "2026-07-13T00:00:00.000Z", value: null },
+    ]);
+    expect(previous.at(-1)).toEqual({
+      bucket: "2026-09-28T00:00:00.000Z",
+      value: 5,
+    });
+  });
+
+  it("aligns months by month and this month by day of the month", () => {
+    const now = at("2026-09-28T12:00:00Z");
+    const year = resolvePeriod("last_12_months", now, "UTC");
+    const yearPlan = planBuckets(year, "day");
+    const months = alignedPreviousSeries(year, yearPlan, "sum", [
+      day("2024-10-01", 1),
+      day("2024-10-31", 2),
+      day("2025-09-28", 3),
+    ]);
+    expect(months).toHaveLength(12);
+    expect(months[0]).toEqual({ bucket: "2025-10-01T00:00:00.000Z", value: 3 });
+    expect(months[11]).toEqual({
+      bucket: "2026-09-01T00:00:00.000Z",
+      value: 3,
+    });
+
+    // March 2026 so far against February: day 28 of February is day 28 of
+    // March.
+    const march = resolvePeriod(
+      "this_month",
+      at("2026-03-30T12:00:00Z"),
+      "UTC",
+    );
+    const marchPlan = planBuckets(march, "day");
+    const days = alignedPreviousSeries(march, marchPlan, "sum", [
+      day("2026-02-01", 1),
+      day("2026-02-28", 28),
+    ]);
+    expect(days).toHaveLength(30);
+    expect(days[0]?.value).toBe(1);
+    expect(days[27]?.value).toBe(28);
+    expect(days[28]?.value).toBeNull();
+  });
+
+  it("aligns today's hours with yesterday's in the workspace zone", () => {
+    // 10:30 in Berlin (UTC+2): today so far is 11 hours.
+    const window = resolvePeriod(
+      "today",
+      at("2025-07-15T08:30:00Z"),
+      "Europe/Berlin",
+    );
+    const plan = planBuckets(window, "hour");
+    const previous = alignedPreviousSeries(window, plan, "last", [
+      { bucket: "2025-07-13T22:00:00.000Z", value: 5 }, // yesterday 00:00
+      { bucket: "2025-07-14T08:00:00.000Z", value: 9 }, // yesterday 10:00
+    ]);
+    expect(previous).toHaveLength(11);
+    expect(previous[0]).toEqual({
+      bucket: "2025-07-14T22:00:00.000Z",
+      value: 5,
+    });
+    expect(previous[10]).toEqual({
+      bucket: "2025-07-15T08:00:00.000Z",
+      value: 9,
+    });
+    expect(previous.slice(1, 10).every((p) => p.value === null)).toBe(true);
+  });
+
+  it("is all nulls without previous data", () => {
+    const window = resolvePeriod(
+      "last_7_days",
+      at("2025-07-15T12:00:00Z"),
+      "UTC",
+    );
+    const plan = planBuckets(window, "day");
+    expect(
+      alignedPreviousSeries(window, plan, "sum", []).every(
+        (p) => p.value === null,
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("rankBreakdown (ADR 0015 bar charts)", () => {
+  const row = (key: string | null, bucket: string, value: number) => ({
+    key,
+    bucket: `2025-07-${bucket}T00:00:00.000Z`,
+    value,
+  });
+
+  it("keeps the largest groups and adds the rest up as Others", () => {
+    const rows = [
+      row("a", "01", 5),
+      row("a", "02", 5),
+      row("b", "01", 30),
+      row("c", "01", 1),
+      row("d", "02", 2),
+      row("e", "01", 10),
+      row(null, "02", 4), // a series without the dimension
+      row("Others", "01", 6), // the connector's own remainder
+    ];
+    expect(rankBreakdown("sum", rows, 3)).toEqual({
+      groups: [
+        { key: "b", value: 30 },
+        { key: "a", value: 10 },
+        { key: "e", value: 10 },
+      ],
+      others: { value: 13, groups: 3 },
+    });
+    expect(rankBreakdown("sum", rows.slice(0, 6), 10)).toEqual({
+      groups: [
+        { key: "b", value: 30 },
+        { key: "a", value: 10 },
+        { key: "e", value: 10 },
+        { key: "d", value: 2 },
+        { key: "c", value: 1 },
+      ],
+      others: null,
+    });
+  });
+
+  it("forms each group like a tile, and Others over the summed days", () => {
+    const rows = [
+      row("a", "01", 10),
+      row("a", "02", 20),
+      row("b", "01", 1),
+      row("b", "02", 3),
+      row("c", "01", 2),
+      row("c", "02", 2),
+      row("d", "01", 1),
+    ];
+    // Latest reading per group; Others' latest day is c 2 (+ nothing of d).
+    expect(rankBreakdown("last", rows, 1)).toEqual({
+      groups: [{ key: "a", value: 20 }],
+      others: { value: 5, groups: 3 },
+    });
+    // Highest day: Others' days are 1+2+1 = 4 and 3+2 = 5.
+    expect(rankBreakdown("max", rows, 1).others).toEqual({
+      value: 5,
+      groups: 3,
+    });
+    expect(rankBreakdown("avg", rows, 1).groups).toEqual([
+      { key: "a", value: 15 },
+    ]);
+  });
+
+  it("is empty without rows", () => {
+    expect(rankBreakdown("sum", [], 5)).toEqual({ groups: [], others: null });
+  });
+
+  it("adds buckets up per bucket in order", () => {
+    expect(
+      addUpBuckets([
+        { bucket: "b", value: 1 },
+        { bucket: "a", value: 2 },
+        { bucket: "b", value: 3 },
+      ]),
+    ).toEqual([
+      { bucket: "a", value: 2 },
+      { bucket: "b", value: 4 },
+    ]);
+  });
+});
+
+describe("dimensionValueLabel", () => {
+  it("names resources, territories and countries, else shows the value", () => {
+    expect(dimensionValueLabel("resource", "app-1", "Wurfel")).toBe("Wurfel");
+    expect(dimensionValueLabel("resource", "app-9", null)).toBe("app-9");
+    expect(dimensionValueLabel("territory", "DE")).toBe("Germany");
+    expect(dimensionValueLabel("country", "US")).toBe("United States");
+    expect(dimensionValueLabel("territory", "Unknown")).toBe("Unknown");
+    expect(dimensionValueLabel("territory", "XX")).toBe("XX");
+    expect(dimensionValueLabel("device", "iPhone")).toBe("iPhone");
+    expect(dimensionValueLabel("device", "")).toBe("(none)");
   });
 });

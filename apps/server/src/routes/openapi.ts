@@ -11,7 +11,7 @@ import { errorResponseSchema } from "@netrics/contracts";
 
 // Error codes each route documents. Every session route can also answer 401
 // (added automatically), and workspace-scoped routes 404 for non-members.
-type ErrorStatus = 400 | 403 | 404 | 409 | 410 | 429 | 502;
+type ErrorStatus = 400 | 403 | 404 | 409 | 410 | 429 | 502 | 503;
 
 const ERROR_DESCRIPTIONS: Record<ErrorStatus | 401, string> = {
   400: "Invalid request",
@@ -22,6 +22,7 @@ const ERROR_DESCRIPTIONS: Record<ErrorStatus | 401, string> = {
   410: "No longer valid",
   429: "Too many requests; try again later",
   502: "Upstream failure",
+  503: "Took too long; try again later",
 };
 
 export interface RouteDoc {
