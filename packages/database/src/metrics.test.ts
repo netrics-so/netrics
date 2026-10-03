@@ -225,10 +225,10 @@ describe("queryMetricBuckets", () => {
     [{ to: new Date("2026-09-01T00:00:00Z") }, /positive/],
     [
       {
-        from: new Date("2026-06-01T00:00:00Z"),
+        from: new Date("2025-08-28T00:00:00Z"),
         to: new Date("2026-09-01T00:00:00Z"),
       },
-      /at most 63 days/,
+      /at most 368 days/,
     ],
     [{ unit: "hour" as const }, /two days/],
     [
@@ -332,7 +332,7 @@ describe("currency_minor amounts", () => {
 
   it("rejects an unbounded window", async () => {
     await expect(
-      currencies(workspaceA, { from: new Date("2026-01-01T00:00:00Z") }),
-    ).rejects.toThrow(/at most 63 days/);
+      currencies(workspaceA, { from: new Date("2025-09-01T00:00:00Z") }),
+    ).rejects.toThrow(/at most 368 days/);
   });
 });

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  COMPARISON_LABELS,
+  PERIOD_LABELS,
   aggregationLabel,
   displayUnit,
   formatChange,
@@ -8,6 +10,7 @@ import {
   metricPickerLabel,
   observationBreakdown,
   pickableMetrics,
+  sparkBucketLabel,
 } from "./format-metric";
 
 describe("formatValue", () => {
@@ -174,5 +177,32 @@ describe("observationBreakdown", () => {
       ["device", "MOBILE"],
       ["query", "running shoes"],
     ]);
+  });
+});
+
+describe("period labels", () => {
+  it("names every period and what it is compared with", () => {
+    expect(PERIOD_LABELS.last_90_days).toBe("Last 90 days");
+    expect(PERIOD_LABELS.last_12_months).toBe("Last 12 months");
+    expect(COMPARISON_LABELS.last_90_days).toBe("vs previous 90 days");
+    expect(COMPARISON_LABELS.last_12_months).toBe("vs previous 12 months");
+  });
+});
+
+describe("sparkBucketLabel", () => {
+  it.each([
+    ["2026-09-28T12:00:00.000Z", "today", "14:00"],
+    ["2026-09-28T00:00:00.000Z", "last_7_days", "Sep 28"],
+    // A reporting date is read in UTC, an instant bucket in the zone.
+    ["2026-09-27T22:00:00.000Z", "last_30_days", "Sep 28"],
+    ["2026-09-28T00:00:00.000Z", "last_90_days", "Week of Sep 28"],
+    ["2026-08-31T22:00:00.000Z", "last_12_months", "Sep 2026"],
+    ["2026-09-01T00:00:00.000Z", "last_12_months", "Sep 2026"],
+  ] as const)("%s in %s → %s", (bucket, period, expected) => {
+    expect(sparkBucketLabel(bucket, period, "Europe/Berlin")).toBe(expected);
+  });
+
+  it("has no label without a bucket", () => {
+    expect(sparkBucketLabel(undefined, "last_90_days", "UTC")).toBeNull();
   });
 });

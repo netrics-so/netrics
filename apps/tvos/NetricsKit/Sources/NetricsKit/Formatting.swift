@@ -101,6 +101,8 @@ public enum MetricFormat {
         case .last7Days: return "Last 7 days"
         case .last30Days: return "Last 30 days"
         case .thisMonth: return "This month"
+        case .last90Days: return "Last 90 days"
+        case .last12Months: return "Last 12 months"
         case .unknown: return ""
         }
     }
@@ -112,6 +114,8 @@ public enum MetricFormat {
         case .last7Days: return "vs previous 7 days"
         case .last30Days: return "vs previous 30 days"
         case .thisMonth: return "vs last month"
+        case .last90Days: return "vs previous 90 days"
+        case .last12Months: return "vs previous 12 months"
         case .unknown: return "vs previous period"
         }
     }

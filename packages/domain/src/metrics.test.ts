@@ -9,9 +9,12 @@ import {
   compatibleAggregations,
   isValidTimeZone,
   MAX_BUCKETS,
+  MAX_WINDOW_DAYS,
   PERIODS,
   planBuckets,
   resolvePeriod,
+  SERIES_UNITS,
+  seriesPoints,
   startOfDay,
 } from "./metrics.js";
 
@@ -218,6 +221,85 @@ describe("resolvePeriod", () => {
   });
 });
 
+describe("resolvePeriod, longer periods (#212)", () => {
+  it("last 90 days includes today, against the 90 days before", () => {
+    const window = resolvePeriod(
+      "last_90_days",
+      at("2026-09-28T12:00:00Z"),
+      "Europe/Berlin",
+    );
+    expect(window.dates).toEqual({ from: "2026-07-01", to: "2026-09-28" });
+    expect(window.previousDates).toEqual({
+      from: "2026-04-02",
+      to: "2026-06-30",
+    });
+    expect(window.bucket).toBe("day");
+    expect(window.series).toBe("week");
+  });
+
+  it("last 12 months: this month so far and the 11 before, against the 12 before up to the same day", () => {
+    const window = resolvePeriod(
+      "last_12_months",
+      at("2026-09-28T12:00:00Z"),
+      "Europe/Berlin",
+    );
+    expect(window.dates).toEqual({ from: "2025-10-01", to: "2026-09-28" });
+    expect(window.previousDates).toEqual({
+      from: "2024-10-01",
+      to: "2025-09-28",
+    });
+    expect(window.series).toBe("month");
+    // The previous window never runs into the current one.
+    expect(window.previous.end.getTime()).toBeLessThanOrEqual(
+      window.current.start.getTime(),
+    );
+  });
+
+  it("last 12 months crosses the year and caps a leap day", () => {
+    const window = resolvePeriod(
+      "last_12_months",
+      at("2028-02-29T12:00:00Z"),
+      "UTC",
+    );
+    expect(window.dates).toEqual({ from: "2027-03-01", to: "2028-02-29" });
+    expect(window.previousDates).toEqual({
+      from: "2026-03-01",
+      to: "2027-02-28",
+    });
+  });
+
+  it("last 12 months on the 31st compares up to a shorter month's end", () => {
+    const window = resolvePeriod(
+      "last_12_months",
+      at("2026-03-31T12:00:00Z"),
+      "UTC",
+    );
+    expect(window.dates.from).toBe("2025-04-01");
+    expect(window.previousDates).toEqual({
+      from: "2024-04-01",
+      to: "2025-03-31",
+    });
+    const january = resolvePeriod(
+      "last_12_months",
+      at("2027-01-15T12:00:00Z"),
+      "UTC",
+    );
+    expect(january.dates.from).toBe("2026-02-01");
+    expect(january.previousDates.from).toBe("2025-02-01");
+  });
+
+  it("uses the workspace's date at the turn of a month", () => {
+    // 22:30 UTC on Sep 30 is Oct 1 in Berlin: a new month starts.
+    const window = resolvePeriod(
+      "last_12_months",
+      at("2026-09-30T22:30:00Z"),
+      "Europe/Berlin",
+    );
+    expect(window.dates).toEqual({ from: "2025-11-01", to: "2026-10-01" });
+    expect(window.current.start.toISOString()).toBe("2025-10-31T23:00:00.000Z");
+  });
+});
+
 describe("planBuckets", () => {
   it("selects daily metrics by reporting date at UTC midnight", () => {
     const window = resolvePeriod(
@@ -267,12 +349,168 @@ describe("planBuckets", () => {
 
   it("stays within the bounds for every period", () => {
     for (const period of PERIODS) {
-      const window = resolvePeriod(period, at("2026-03-31T21:00:00Z"), "UTC");
-      for (const granularity of ["day", "hour", "instant"] as const) {
-        expect(planBuckets(window, granularity).starts.length).toBeLessThan(
-          MAX_BUCKETS,
-        );
+      for (const now of ["2026-03-31T21:00:00Z", "2028-12-31T23:59:00Z"]) {
+        const window = resolvePeriod(period, at(now), "UTC");
+        for (const granularity of ["day", "hour", "instant"] as const) {
+          expect(planBuckets(window, granularity).starts.length).toBeLessThan(
+            MAX_BUCKETS,
+          );
+        }
+        const days =
+          (Date.parse(`${window.dates.to}T00:00:00Z`) -
+            Date.parse(`${window.dates.from}T00:00:00Z`)) /
+            86_400_000 +
+          1;
+        expect(days).toBeLessThanOrEqual(MAX_WINDOW_DAYS);
       }
     }
+  });
+
+  it("has a sparkline unit for every period", () => {
+    expect(Object.keys(SERIES_UNITS).sort()).toEqual([...PERIODS].sort());
+  });
+
+  it("puts 90 days into weeks starting Monday, the first one partial", () => {
+    // 2026-07-01 is a Wednesday; 2026-09-28 a Monday.
+    const window = resolvePeriod(
+      "last_90_days",
+      at("2026-09-28T12:00:00Z"),
+      "Europe/Berlin",
+    );
+    const plan = planBuckets(window, "day");
+    expect(plan).toMatchObject({
+      selection: "dates",
+      unit: "day",
+      series: "week",
+    });
+    expect(plan.starts[0]).toBe("2026-07-01T00:00:00.000Z");
+    expect(plan.starts[1]).toBe("2026-07-06T00:00:00.000Z");
+    expect(plan.starts.at(-1)).toBe("2026-09-28T00:00:00.000Z");
+    expect(plan.starts).toHaveLength(14);
+  });
+
+  it("starts weeks at local midnight across a DST change for hourly metrics", () => {
+    const window = resolvePeriod(
+      "last_90_days",
+      at("2026-11-10T12:00:00Z"),
+      "Europe/Berlin",
+    );
+    const plan = planBuckets(window, "hour");
+    expect(plan).toMatchObject({ selection: "instants", unit: "day" });
+    // Monday Oct 19 is in summer time, Monday Oct 26 in winter time.
+    expect(plan.starts).toContain("2026-10-18T22:00:00.000Z");
+    expect(plan.starts).toContain("2026-10-25T23:00:00.000Z");
+  });
+
+  it("puts 12 months into calendar months", () => {
+    const window = resolvePeriod(
+      "last_12_months",
+      at("2026-09-28T12:00:00Z"),
+      "Europe/Berlin",
+    );
+    const daily = planBuckets(window, "day");
+    expect(daily.series).toBe("month");
+    expect(daily.starts).toHaveLength(12);
+    expect(daily.starts[0]).toBe("2025-10-01T00:00:00.000Z");
+    expect(daily.starts.at(-1)).toBe("2026-09-01T00:00:00.000Z");
+    const hourly = planBuckets(window, "instant");
+    expect(hourly.starts[0]).toBe("2025-09-30T22:00:00.000Z");
+    // November starts in winter time, April in summer time.
+    expect(hourly.starts[1]).toBe("2025-10-31T23:00:00.000Z");
+    expect(hourly.starts[6]).toBe("2026-03-31T22:00:00.000Z");
+  });
+});
+
+describe("seriesPoints", () => {
+  const day = (date: string, value: number) => ({
+    bucket: `${date}T00:00:00.000Z`,
+    value,
+  });
+
+  it("leaves daily points as they are", () => {
+    const window = resolvePeriod(
+      "last_7_days",
+      at("2026-09-28T12:00:00Z"),
+      "UTC",
+    );
+    const buckets = [day("2026-09-22", 1), day("2026-09-28", 2)];
+    expect(seriesPoints(planBuckets(window, "day"), "sum", buckets)).toEqual(
+      buckets,
+    );
+  });
+
+  it("rolls days into weeks with the tile's aggregation", () => {
+    const window = resolvePeriod(
+      "last_90_days",
+      at("2026-09-28T12:00:00Z"),
+      "Europe/Berlin",
+    );
+    const plan = planBuckets(window, "day");
+    // Wed Jul 1 – Sun Jul 5 is the partial first week; Mon Jul 6 starts the next.
+    const buckets = [
+      day("2026-07-01", 3),
+      day("2026-07-05", 1),
+      day("2026-07-06", 10),
+      day("2026-07-12", 20),
+      day("2026-09-28", 7),
+    ];
+    expect(seriesPoints(plan, "sum", buckets)).toEqual([
+      day("2026-07-01", 4),
+      day("2026-07-06", 30),
+      day("2026-09-28", 7),
+    ]);
+    expect(seriesPoints(plan, "avg", buckets)).toEqual([
+      day("2026-07-01", 2),
+      day("2026-07-06", 15),
+      day("2026-09-28", 7),
+    ]);
+    expect(seriesPoints(plan, "max", buckets)[1]).toEqual(
+      day("2026-07-06", 20),
+    );
+    expect(seriesPoints(plan, "last", buckets)[0]).toEqual(
+      day("2026-07-01", 1),
+    );
+  });
+
+  it("rolls local days of hourly metrics into local months", () => {
+    const window = resolvePeriod(
+      "last_12_months",
+      at("2026-09-28T12:00:00Z"),
+      "Europe/Berlin",
+    );
+    const plan = planBuckets(window, "hour");
+    const buckets = [
+      // Oct 31 and Nov 1 local midnights, either side of the DST change.
+      { bucket: "2025-10-30T23:00:00.000Z", value: 1 },
+      { bucket: "2025-10-31T23:00:00.000Z", value: 5 },
+      { bucket: "2025-11-30T23:00:00.000Z", value: 2 },
+    ];
+    expect(seriesPoints(plan, "sum", buckets)).toEqual([
+      { bucket: "2025-09-30T22:00:00.000Z", value: 1 },
+      { bucket: "2025-10-31T23:00:00.000Z", value: 5 },
+      { bucket: "2025-11-30T23:00:00.000Z", value: 2 },
+    ]);
+    // Every point is one of the plan's starts.
+    for (const point of seriesPoints(plan, "sum", buckets)) {
+      expect(plan.starts).toContain(point.bucket);
+    }
+  });
+
+  it("keeps a tile's average per day, not per week", () => {
+    // Two days in one week and one in another: the tile averages days.
+    const buckets = [
+      day("2026-07-06", 10),
+      day("2026-07-07", 20),
+      day("2026-07-13", 60),
+    ];
+    expect(aggregateBuckets("avg", buckets)).toBe(30);
+    const window = resolvePeriod(
+      "last_90_days",
+      at("2026-09-28T12:00:00Z"),
+      "UTC",
+    );
+    const weekly = seriesPoints(planBuckets(window, "day"), "sum", buckets);
+    // Averaging the weekly totals would say 45.
+    expect(aggregateBuckets("avg", weekly)).toBe(45);
   });
 });

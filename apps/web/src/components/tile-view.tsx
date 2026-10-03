@@ -126,7 +126,7 @@ export function TileView({
           <Sparkline
             series={reading.series}
             unit={reading.unit}
-            hourly={period === "today"}
+            period={period}
             timeZone={reading.timeZone}
           />
         </>

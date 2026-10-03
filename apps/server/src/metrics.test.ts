@@ -827,6 +827,55 @@ describe("per-currency amounts (#173)", () => {
       expect(result.series.at(-1)?.value).toBe(3_293);
     });
 
+    it("converts per day before rolling days into months (#212)", async () => {
+      // July holds $10.00 on 07-05 at Friday's rate 2 (€5.00) and $5.00
+      // today at Monday's 1.25 (€4.00): €9.00, where one rate for the
+      // month's $15.00 would say €7.50 or €12.00.
+      const result = metricQueryResponseSchema.parse(
+        (
+          await askFx({
+            period: "last_12_months",
+            displayCurrency: "EUR",
+            dimensions: {},
+          })
+        ).json(),
+      );
+      expect(result.series).toHaveLength(12);
+      expect(result.series[0]?.bucket).toBe("2024-08-01T00:00:00.000Z");
+      // €26.34 today, €1.00 yesterday, €10.00 on 07-08, €5.00 on 07-05.
+      expect(result.series.at(-1)).toEqual({
+        bucket: "2025-07-01T00:00:00.000Z",
+        value: 4_234,
+      });
+      expect(result).toMatchObject({
+        currency: "EUR",
+        value: 4_234,
+        previousValue: null,
+        conversion: {
+          unconverted: [{ currency: "TWD", value: 3_000, previousValue: null }],
+        },
+      });
+      const usd = metricQueryResponseSchema.parse(
+        (
+          await askFx({
+            period: "last_90_days",
+            displayCurrency: "EUR",
+            dimensions: { currency: "USD" },
+          })
+        ).json(),
+      );
+      // One currency stays exact; weeks start Monday 07-14 and 06-30.
+      expect(usd).toMatchObject({ currency: "USD", value: 1_500 });
+      expect(usd.series.at(-1)).toEqual({
+        bucket: "2025-07-14T00:00:00.000Z",
+        value: 500,
+      });
+      expect(usd.series.at(-3)).toEqual({
+        bucket: "2025-06-30T00:00:00.000Z",
+        value: 1_000,
+      });
+    });
+
     it("does not convert when the instance fetches no rates", async () => {
       const result = metricQueryResponseSchema.parse(
         (await askFx({}, offApp)).json(),
@@ -1164,5 +1213,163 @@ describe("one resource per tile (#194)", () => {
       { label: "Downloads", value: 100, previousValue: null },
       { label: "Crashes", value: null, previousValue: null },
     ]);
+  });
+});
+
+describe("longer periods (#212)", () => {
+  // Its own Berlin workspace. Monday 2026-09-28: the last 90 days are
+  // 07-01 (a Wednesday)..09-28 against 04-02..06-30; the last 12 months
+  // 2025-10-01..2026-09-28 against 2024-10-01..2025-09-28.
+  const now = new Date("2026-09-28T12:00:00Z");
+  let longWorkspace: string;
+  let long: string;
+  const run = (
+    period: "last_90_days" | "last_12_months",
+    aggregation: "sum" | "avg" | "last" = "sum",
+    metricKey = "demo.signups",
+  ) =>
+    withWorkspace(db, { workspaceId: longWorkspace }, (tx) =>
+      queryMetric(
+        tx,
+        longWorkspace,
+        { connectionId: long, metricKey, period, aggregation },
+        now,
+      ),
+    );
+
+  beforeAll(async () => {
+    longWorkspace = (await createWorkspace(owner, BERLIN)).id;
+    long = await createConnection(longWorkspace);
+    for (const [date, value] of [
+      ["2024-09-30", 1_000],
+      ["2025-09-28", 50],
+      ["2025-10-01", 100],
+      ["2026-04-01", 1_000],
+      ["2026-04-02", 2],
+      ["2026-06-30", 5],
+      ["2026-07-01", 3],
+      ["2026-07-05", 1],
+      ["2026-07-06", 10],
+      ["2026-07-12", 20],
+      ["2026-09-28", 7],
+    ] as const) {
+      await observe(longWorkspace, long, "demo.signups", date, value);
+      // The same numbers as a daily gauge, which may be averaged.
+      await observe(longWorkspace, long, "demo.visitors", date, value);
+    }
+  });
+
+  it("sums 90 days, compares with the 90 before and draws weeks", async () => {
+    const result = await run("last_90_days");
+    expect(result).toMatchObject({
+      ok: true,
+      value: { value: 41, previousValue: 7, delta: 34 },
+    });
+    const series = result.ok ? result.value.series : [];
+    expect(series).toHaveLength(14);
+    expect(series.slice(0, 3)).toEqual([
+      { bucket: "2026-07-01T00:00:00.000Z", value: 4 },
+      { bucket: "2026-07-06T00:00:00.000Z", value: 30 },
+      { bucket: "2026-07-13T00:00:00.000Z", value: null },
+    ]);
+    expect(series.at(-1)).toEqual({
+      bucket: "2026-09-28T00:00:00.000Z",
+      value: 7,
+    });
+  });
+
+  it("averages days, not weeks, and reads the latest day", async () => {
+    // Five days with data: 41 / 5; averaging the weeks' totals would say
+    // 41 / 3. A week's point is its average day.
+    const result = await run("last_90_days", "avg", "demo.visitors");
+    expect(result).toMatchObject({
+      ok: true,
+      value: { value: 8.2, previousValue: 3.5 },
+    });
+    expect(result.ok && result.value.series[1]?.value).toBe(15);
+    const latest = await run("last_12_months", "last", "demo.visitors");
+    expect(latest).toMatchObject({
+      ok: true,
+      value: { value: 7, previousValue: 50 },
+    });
+    expect(latest.ok && latest.value.series[6]?.value).toBe(2);
+  });
+
+  it("sums 12 months, compares with the 12 before up to the same day and draws months", async () => {
+    const result = await run("last_12_months");
+    expect(result).toMatchObject({
+      ok: true,
+      value: { value: 1_148, previousValue: 50 },
+    });
+    expect(
+      result.ok &&
+        result.value.series.map((point) => [
+          point.bucket.slice(0, 7),
+          point.value,
+        ]),
+    ).toEqual([
+      ["2025-10", 100],
+      ["2025-11", null],
+      ["2025-12", null],
+      ["2026-01", null],
+      ["2026-02", null],
+      ["2026-03", null],
+      ["2026-04", 1_002],
+      ["2026-05", null],
+      ["2026-06", 5],
+      ["2026-07", 34],
+      ["2026-08", null],
+      ["2026-09", 7],
+    ]);
+  });
+
+  it("saves tiles of the longer periods and shows them on screens", async () => {
+    const response = await call(
+      "POST",
+      `/v1/workspaces/${longWorkspace}/dashboards`,
+      owner,
+      {
+        name: "Long",
+        tiles: [
+          {
+            connectionId: long,
+            metricKey: "demo.signups",
+            period: "last_90_days",
+          },
+          {
+            connectionId: long,
+            metricKey: "demo.signups",
+            period: "last_12_months",
+          },
+        ],
+      },
+    );
+    expect(response.statusCode).toBe(200);
+    const { dashboard } = dashboardResponseSchema.parse(response.json());
+    expect(dashboard.tiles.map((tile) => tile.period)).toEqual([
+      "last_90_days",
+      "last_12_months",
+    ]);
+    const device = await withWorkspace(
+      db,
+      { workspaceId: longWorkspace },
+      (tx) => buildDeviceDashboard(tx, longWorkspace, dashboard.id, { now }),
+    );
+    expect(
+      device.tiles.map((tile) => [tile.period, tile.value, tile.spark.length]),
+    ).toEqual([
+      ["last_90_days", 41, 14],
+      ["last_12_months", 1_148, 12],
+    ]);
+    // Over HTTP too, the period passes the contract.
+    const http = await query(owner, longWorkspace, {
+      connectionId: long,
+      metricKey: "demo.signups",
+      period: "last_12_months",
+    });
+    expect(http.statusCode).toBe(200);
+    expect(metricQueryResponseSchema.parse(http.json()).period).toBe(
+      "last_12_months",
+    );
   });
 });
