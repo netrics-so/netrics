@@ -976,6 +976,35 @@ export type MetricCurrenciesResponse = z.infer<
   typeof metricCurrenciesResponseSchema
 >;
 
+/** The resources a tile of a metric can show (#194). */
+export const metricResourcesRequestSchema = z.object({
+  connectionId: z.uuid(),
+  metricKey: z.string().min(1).max(200),
+});
+export type MetricResourcesRequest = z.infer<
+  typeof metricResourcesRequestSchema
+>;
+
+export const metricResourcesResponseSchema = z.object({
+  /**
+   * The connection's resources (apps, projects, properties) for a tile's
+   * "resource" dimension filter: those with data for the metric, and those
+   * the connector named. Named first, by name; empty for a metric without
+   * a "resource" dimension.
+   */
+  resources: z.array(
+    z.object({
+      /** The "resource" dimension value. */
+      id: z.string().min(1),
+      /** As the provider names it; null until the connector has named it. */
+      name: z.string().nullable(),
+    }),
+  ),
+});
+export type MetricResourcesResponse = z.infer<
+  typeof metricResourcesResponseSchema
+>;
+
 // ─── Dashboards (#49) ───────────────────────────────────────────────────────
 
 /** Most tiles one dashboard may hold. */
@@ -993,8 +1022,17 @@ export const dashboardTileInputSchema = z.object({
   /** Defaults to the metric's first compatible aggregation. */
   aggregation: metricAggregationSchema.optional(),
   period: metricPeriodSchema,
+  /**
+   * Only series with these dimension values. A "resource" filter shows one
+   * of the connection's resources (an app, a project) instead of all added
+   * up (#194); it must be a resource of the connection (400
+   * unknown_resource).
+   */
   dimensions: dimensionFilterSchema.optional(),
-  /** Shown instead of the metric name. */
+  /**
+   * Shown instead of the metric name (and the resource name, for a tile of
+   * one resource).
+   */
   title: z.string().trim().min(1).max(100).nullable().optional(),
 });
 export type DashboardTileInput = z.infer<typeof dashboardTileInputSchema>;
@@ -1008,6 +1046,12 @@ export const dashboardTileSchema = z.object({
   period: metricPeriodSchema,
   dimensions: z.record(z.string(), z.string()),
   title: z.string().nullable(),
+  /**
+   * Name of the resource the tile shows (its "resource" dimension filter,
+   * #194), as the connector reported it. Null for a tile of all resources
+   * or a resource without a known name. Read-only.
+   */
+  resourceName: z.string().nullable(),
 });
 export type DashboardTile = z.infer<typeof dashboardTileSchema>;
 
@@ -1220,7 +1264,10 @@ export type DeviceTileStatus = z.infer<typeof deviceTileStatusSchema>;
 
 export const deviceTileSchema = z.object({
   id: z.uuid(),
-  /** The tile title, else the metric name. */
+  /**
+   * The tile title, else the metric name, followed by the resource name for
+   * a tile of one resource ("Downloads · Wurfel", #194).
+   */
   label: z.string().min(1),
   period: metricPeriodSchema,
   aggregation: metricAggregationSchema,

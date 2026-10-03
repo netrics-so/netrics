@@ -173,6 +173,15 @@ export {
   updateConnection,
 } from "./connections.js";
 export {
+  connectionHasResource,
+  connectionResourcesDiscoveredAt,
+  findResourceNames,
+  listMetricResources,
+  resourceNameKey,
+  upsertConnectionResources,
+} from "./resources.js";
+export type { DiscoveredResourceName, MetricResource } from "./resources.js";
+export {
   consumeOAuthAuthorization,
   findConnectionOAuth,
   insertOAuthAuthorization,

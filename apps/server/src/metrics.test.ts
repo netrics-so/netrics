@@ -7,6 +7,7 @@ import {
   errorResponseSchema,
   metricCurrenciesResponseSchema,
   metricQueryResponseSchema,
+  metricResourcesResponseSchema,
   workspaceMetricListResponseSchema,
   workspaceResponseSchema,
 } from "@netrics/contracts";
@@ -567,5 +568,224 @@ describe("per-currency amounts (#173)", () => {
     );
     // Screens get the currency's own unit, which they already format.
     expect(device.tiles[0]).toMatchObject({ value: 900, unit: "JPY_minor" });
+  });
+});
+
+describe("one resource per tile (#194)", () => {
+  // A connection with several apps: tiles show them added up (the default)
+  // or one of them, by name.
+  let appsWorkspace: string;
+  let apps: string;
+  let otherApps: string;
+  const today = civilDate(NOW, "UTC");
+
+  async function downloads(
+    connection: string,
+    date: string,
+    value: number,
+    resource: string,
+  ) {
+    await admin`
+      insert into observations (workspace_id, connection_id,
+        metric_definition_id, dimensions, source_timestamp, value)
+      select ${appsWorkspace}, ${connection}, m.id, ${admin.json({ resource })},
+             ${`${date}T00:00:00Z`}::timestamptz, ${value}
+      from metric_definitions m
+      where m.connector_id = 'test-apps' and m.key = 'apps.downloads'`;
+  }
+
+  const ask = (dimensions?: Record<string, string>) =>
+    query(owner, appsWorkspace, {
+      connectionId: apps,
+      metricKey: "apps.downloads",
+      period: "last_7_days",
+      ...(dimensions ? { dimensions } : {}),
+    });
+
+  const resourcesOf = (
+    cookie: string,
+    workspace: string,
+    connection: string,
+    metricKey: string,
+  ) =>
+    call("POST", `/v1/workspaces/${workspace}/metrics/resources`, cookie, {
+      connectionId: connection,
+      metricKey,
+    });
+
+  const tile = (dimensions: Record<string, string>, title?: string) => ({
+    connectionId: apps,
+    metricKey: "apps.downloads",
+    period: "last_7_days",
+    dimensions,
+    ...(title ? { title } : {}),
+  });
+
+  const createDashboard = (tiles: unknown[]) =>
+    call("POST", `/v1/workspaces/${appsWorkspace}/dashboards`, owner, {
+      name: "Apps",
+      tiles,
+    });
+
+  beforeAll(async () => {
+    appsWorkspace = (await createWorkspace(owner)).id;
+    await admin`
+      insert into connectors (id, version, manifest)
+      values ('test-apps', '1.0.0', '{"id":"test-apps"}'::jsonb)`;
+    await admin`
+      insert into metric_definitions (connector_id, key, name, description,
+        kind, unit, granularity, dimensions, aggregations)
+      values
+        ('test-apps', 'apps.downloads', 'Downloads', 'Downloads per day',
+         'delta', 'count', 'day', '["resource"]', '["sum"]'),
+        ('test-apps', 'apps.crashes', 'Crashes', 'Crashes per day',
+         'delta', 'count', 'day', '["build"]', '["sum"]')`;
+    const [row] = await admin`
+      insert into connections (workspace_id, connector_id, name)
+      values (${appsWorkspace}, 'test-apps', 'App Store') returning id`;
+    apps = row!.id as string;
+    const [other] = await admin`
+      insert into connections (workspace_id, connector_id, name)
+      values (${appsWorkspace}, 'test-apps', 'Other account') returning id`;
+    otherApps = other!.id as string;
+
+    // Today and the previous period (a week before) per app; app-9 has no
+    // name yet, app-3 a name but no data. "other-app" is another
+    // connection's.
+    await downloads(apps, today, 10, "app-1");
+    await downloads(apps, today, 5, "app-2");
+    await downloads(apps, today, 1, "app-9");
+    await downloads(apps, addDays(today, -7), 4, "app-1");
+    await downloads(apps, addDays(today, -7), 6, "app-2");
+    await downloads(otherApps, today, 100, "other-app");
+    await admin`
+      insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values
+        (${apps}, ${appsWorkspace}, 'app-1', 'Wurfel', 'app'),
+        (${apps}, ${appsWorkspace}, 'app-2', 'Dicey', 'app'),
+        (${apps}, ${appsWorkspace}, 'app-3', 'Quiet', 'app'),
+        (${otherApps}, ${appsWorkspace}, 'other-app', 'Elsewhere', 'app')`;
+  });
+
+  it("filters the value and the previous period by resource", async () => {
+    const all = metricQueryResponseSchema.parse((await ask()).json());
+    expect(all).toMatchObject({ value: 16, previousValue: 10 });
+    const one = metricQueryResponseSchema.parse(
+      (await ask({ resource: "app-1" })).json(),
+    );
+    expect(one).toMatchObject({ value: 10, previousValue: 4, delta: 6 });
+    expect(one.series.at(-1)?.value).toBe(10);
+  });
+
+  it("lists the connection's resources with names, named first", async () => {
+    const response = await resourcesOf(
+      owner,
+      appsWorkspace,
+      apps,
+      "apps.downloads",
+    );
+    expect(response.statusCode).toBe(200);
+    expect(metricResourcesResponseSchema.parse(response.json())).toEqual({
+      resources: [
+        { id: "app-2", name: "Dicey" },
+        { id: "app-3", name: "Quiet" },
+        { id: "app-1", name: "Wurfel" },
+        { id: "app-9", name: null },
+      ],
+    });
+  });
+
+  it("lists no resources for a metric without them, and stays in its workspace", async () => {
+    const none = await resourcesOf(owner, appsWorkspace, apps, "apps.crashes");
+    expect(metricResourcesResponseSchema.parse(none.json())).toEqual({
+      resources: [],
+    });
+    const foreign = await resourcesOf(
+      stranger,
+      appsWorkspace,
+      apps,
+      "apps.downloads",
+    );
+    // Not a member: the workspace does not exist for them.
+    expect(foreign.statusCode).toBe(404);
+    const elsewhere = await resourcesOf(
+      stranger,
+      otherWorkspaceId,
+      apps,
+      "apps.downloads",
+    );
+    expect(elsewhere.statusCode).toBe(404);
+  });
+
+  it("saves a tile only with a resource of its connection", async () => {
+    for (const resource of ["nope", "other-app"]) {
+      const response = await createDashboard([tile({ resource })]);
+      expect(response.statusCode).toBe(400);
+      expect(errorResponseSchema.parse(response.json()).error).toBe(
+        "unknown_resource",
+      );
+    }
+  });
+
+  it("names the resource of saved tiles and keeps tiles of all resources", async () => {
+    const saved = await createDashboard([
+      tile({}),
+      tile({ resource: "app-1" }),
+      tile({ resource: "app-9" }),
+      tile({ resource: "app-2" }, "Dice installs"),
+    ]);
+    expect(saved.statusCode).toBe(200);
+    const { dashboard } = dashboardResponseSchema.parse(saved.json());
+    const shape = (tiles: typeof dashboard.tiles) =>
+      tiles.map(({ dimensions, title, resourceName }) => ({
+        dimensions,
+        title,
+        resourceName,
+      }));
+    const expected = [
+      { dimensions: {}, title: null, resourceName: null },
+      {
+        dimensions: { resource: "app-1" },
+        title: null,
+        resourceName: "Wurfel",
+      },
+      { dimensions: { resource: "app-9" }, title: null, resourceName: null },
+      {
+        dimensions: { resource: "app-2" },
+        title: "Dice installs",
+        resourceName: "Dicey",
+      },
+    ];
+    expect(shape(dashboard.tiles)).toEqual(expected);
+
+    const loaded = await call(
+      "GET",
+      `/v1/workspaces/${appsWorkspace}/dashboards/${dashboard.id}`,
+      owner,
+    );
+    expect(
+      shape(dashboardResponseSchema.parse(loaded.json()).dashboard.tiles),
+    ).toEqual(expected);
+
+    // Screens: the resource's name in the label, its own numbers.
+    const device = await withWorkspace(
+      db,
+      { workspaceId: appsWorkspace },
+      (tx) =>
+        buildDeviceDashboard(tx, appsWorkspace, dashboard.id, { now: NOW }),
+    );
+    expect(
+      device.tiles.map(({ label, value, change }) => ({
+        label,
+        value,
+        previousValue: change.previousValue,
+      })),
+    ).toEqual([
+      { label: "Downloads", value: 16, previousValue: 10 },
+      { label: "Downloads · Wurfel", value: 10, previousValue: 4 },
+      { label: "Downloads · app-9", value: 1, previousValue: null },
+      { label: "Dice installs", value: 5, previousValue: 6 },
+    ]);
   });
 });

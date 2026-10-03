@@ -9,6 +9,7 @@ import type {
   MetricQueryResponse,
   WorkspaceMetric,
 } from "@netrics/contracts";
+import { tileLabel } from "@netrics/domain";
 
 import { TileNotice, TileView } from "@/components/tile-view";
 import { apiErrorMessage, queryMetric } from "@/lib/api";
@@ -104,7 +105,13 @@ export function MetricTile({
     return () => clearInterval(timer);
   }, [load, refreshMs]);
 
-  const label = tile.title ?? metric?.name ?? tile.metricKey;
+  // "Downloads · Wurfel" for a tile of one resource (#194).
+  const label = tileLabel({
+    title: tile.title,
+    metricName: metric?.name ?? tile.metricKey,
+    dimensions: tile.dimensions,
+    resourceName: tile.resourceName,
+  });
   // A per-currency amount formats in the currency the tile shows.
   const unit = displayUnit(
     data?.metric.unit ?? metric?.unit ?? "",

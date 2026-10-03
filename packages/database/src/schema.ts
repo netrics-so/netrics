@@ -380,6 +380,34 @@ export const connectionState = pgTable(
   ],
 );
 
+// What a connection's provider calls its resources (#194): the names of the
+// apps, projects or properties that observations carry in their `resource`
+// dimension, from the connector's discover. Refreshed by the sync engine at
+// most daily; a resource that disappears keeps its last name, since its
+// history stays. Only names are kept, never credentials or metadata.
+export const connectionResources = pgTable(
+  "connection_resources",
+  {
+    connectionId: uuid("connection_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    resourceId: text("resource_id").notNull(),
+    name: text("name").notNull(),
+    kind: text("kind").notNull(),
+    discoveredAt: timestamp("discovered_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.connectionId, table.resourceId] }),
+    foreignKey({
+      name: "connection_resources_connection_fk",
+      columns: [table.connectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("cascade"),
+    index("connection_resources_workspace_idx").on(table.workspaceId),
+  ],
+);
+
 // (connection_id, source_identity) is the idempotency key: re-ingesting the
 // same source observation is a no-op (ON CONFLICT DO NOTHING).
 // One value of one series at one time (ADR 0008). The key (connection,

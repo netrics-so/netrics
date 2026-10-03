@@ -846,10 +846,15 @@ describe("device dashboard", () => {
       await observe(connectionId, addDays(today, -i), 14 - i);
     }
     await observe(brokenConnectionId, today, 5);
+    // A resource the connector named that has no data yet (#194).
+    await admin`
+      insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values (${connectionId}, ${workspaceId}, 'site-2', 'Quiet site', 'site')`;
     const signups = { metricKey: "demo.signups", period: "last_7_days" };
     salesId = await tileDashboard("Sales wall", [
       { ...signups, connectionId, title: "Sign-ups" },
-      { ...signups, connectionId, dimensions: { resource: "nowhere" } },
+      { ...signups, connectionId, dimensions: { resource: "site-2" } },
     ]);
     brokenId = await tileDashboard("Broken", [
       { ...signups, connectionId: brokenConnectionId },
@@ -879,9 +884,10 @@ describe("device dashboard", () => {
       status: "ok",
     });
     expect(body.tiles[0]!.updatedAt).not.toBeNull();
-    // No title: the metric name. A filter that matches nothing: no data.
+    // No title: the metric name with the resource's (#194). A resource
+    // without data: no data.
     expect(body.tiles[1]).toMatchObject({
-      label: "Signups",
+      label: "Signups · Quiet site",
       value: null,
       unit: "signups",
       change: { previousValue: null, delta: null, ratio: null },
