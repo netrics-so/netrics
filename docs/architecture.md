@@ -342,7 +342,15 @@ A manifest declares one or more of these strategies:
   The strategy takes no other fields: the credential fields, token claims
   and lifetime belong to the provider, which is trusted host code. A server
   without that provider lists the connector as unavailable
-  (`signed_key_provider_unsupported`).
+  (`signed_key_provider_unsupported`). The providers live in
+  `apps/server/src/signed-keys/providers/`. Before a key is stored (create,
+  preview, rotation through the credential update), the host checks the
+  fields, parses the key as PEM PKCS#8 EC P-256, runs the provider's probes
+  with a fresh token, and then the connector check. The catalog exposes the
+  provider's field labels and setup steps for the wizard. A 401 or 403 from
+  the provider during a connector call puts the connection in `auth_failed`
+  with the provider's "upload a new key" message; there is nothing to
+  refresh.
 
 A provider id is lowercase words joined by hyphens (`google`,
 `app-store-connect`). Connectors may name a provider but never define one.

@@ -300,6 +300,27 @@ export const connectorAuthStrategySchema = z.object({
   /** Label and help text for the token field. */
   tokenLabel: z.string().min(1).optional(),
   tokenDescription: z.string().min(1).optional(),
+  /**
+   * For "signed-key": the provider's display name and the credential
+   * fields the wizard asks for, in order (ADR 0014). They are sent as
+   * `credentials: { [key]: value }`. A "file" field is chosen with a file
+   * picker or pasted; a secret field is never shown again after upload.
+   */
+  providerName: z.string().min(1).optional(),
+  fields: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        label: z.string().min(1),
+        description: z.string().min(1),
+        input: z.enum(["text", "file"]),
+        secret: z.boolean(),
+        placeholder: z.string().min(1).optional(),
+        /** Upper bound of the value in UTF-8 bytes. */
+        maxBytes: z.number().int().positive(),
+      }),
+    )
+    .optional(),
   /** Steps to create the credential, and the provider page for it. */
   setup: z
     .object({
@@ -316,8 +337,9 @@ export type ConnectorAuthStrategy = z.infer<typeof connectorAuthStrategySchema>;
  *   provider's NETRICS_OAUTH_<PROVIDER>_CLIENT_ID/_CLIENT_SECRET;
  * - oauth_provider_unsupported: this server has no definition for the
  *   provider the connector names;
- * - signed_key_provider_unsupported: this server cannot sign tokens for the
- *   signed-key provider the connector names (ADR 0014).
+ * - signed_key_provider_unsupported: this server has no definition for the
+ *   signed-key provider the connector names, so it cannot sign its tokens
+ *   (ADR 0014).
  */
 export const connectorUnavailableReasonSchema = z.enum([
   "oauth_provider_not_configured",

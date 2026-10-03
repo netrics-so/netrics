@@ -35,6 +35,15 @@ import {
   oauthStrategyFor,
 } from "../oauth/connector-auth.js";
 import { OAuthTokenError, type OAuthTokenService } from "../oauth/tokens.js";
+import {
+  callWithSignedKey,
+  SignedKeyRejectedError,
+} from "../signed-keys/connector-auth.js";
+import {
+  createSignedKeyProviders,
+  type SignedKey,
+  type SignedKeyProviders,
+} from "../signed-keys/registry.js";
 
 /** First-ever incremental sync with no cursor and no last success. */
 const INITIAL_INCREMENTAL_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -53,6 +62,8 @@ export interface SyncEngineDeps {
   now?: () => Date;
   /** Access tokens for OAuth connections (ADR 0012). */
   oauthTokens?: OAuthTokenService;
+  /** Default: the signed-key providers of this server (ADR 0014). */
+  signedKeys?: SignedKeyProviders;
   /** Tests only: options for every connector call (e.g. local egress). */
   executeOptions?: ExecuteOptions;
 }
@@ -424,6 +435,27 @@ async function runSync(
     throw new NonRetryableJobError(safeMessage(error));
   }
 
+  // Signed-key connections (ADR 0014): the stored key is read here and
+  // each connector call gets a freshly signed token; the key never reaches
+  // the connector. A stored key that no longer parses needs a new upload.
+  let signedKey: SignedKey | undefined;
+  const signedKeys = deps.signedKeys ?? createSignedKeyProviders();
+  const signedKeyProvider = oauthStrategy
+    ? undefined
+    : signedKeys.providerFor(manifest, credentials);
+  if (signedKeyProvider) {
+    const parsed = signedKeys.parse(signedKeyProvider, credentials);
+    if (!parsed.ok) {
+      const error = new Error(
+        `The stored ${signedKeyProvider.name} key cannot be used: ${parsed.message}`,
+      );
+      await recordFailure("auth", error);
+      throw new TerminalJobError(safeMessage(error));
+    }
+    signedKey = parsed.value;
+    credentials = {};
+  }
+
   const context = {
     connectionId,
     config: connection.config,
@@ -433,30 +465,48 @@ async function runSync(
 
   /**
    * Runs one connector call with this connection's credentials: stored
-   * credentials, or for OAuth a valid access token (one retry with a
-   * refreshed token after a provider 401).
+   * credentials, for OAuth a valid access token (one retry with a refreshed
+   * token after a provider 401), or for a signed key a freshly signed token
+   * (no retry: a refusal means the key must be replaced).
    */
   const callConnector = <T>(
     call: (context: ConnectionContext, options: ExecuteOptions) => Promise<T>,
     rejected?: (value: T) => boolean,
   ): Promise<T> =>
-    oauthStrategy
-      ? callWithAccessToken({
-          tokens: deps.oauthTokens,
-          binding,
-          requiredScopes: oauthStrategy.scopes,
+    signedKey
+      ? callWithSignedKey({
+          key: signedKey,
           ...(deps.executeOptions ? { options: deps.executeOptions } : {}),
-          call: (oauthCredentials, options) =>
-            call({ ...context, credentials: { ...oauthCredentials } }, options),
+          call: (tokenCredentials, options) =>
+            call({ ...context, credentials: { ...tokenCredentials } }, options),
           ...(rejected ? { rejected } : {}),
         })
-      : call(context, deps.executeOptions ?? {});
+      : oauthStrategy
+        ? callWithAccessToken({
+            tokens: deps.oauthTokens,
+            binding,
+            requiredScopes: oauthStrategy.scopes,
+            ...(deps.executeOptions ? { options: deps.executeOptions } : {}),
+            call: (oauthCredentials, options) =>
+              call(
+                { ...context, credentials: { ...oauthCredentials } },
+                options,
+              ),
+            ...(rejected ? { rejected } : {}),
+          })
+        : call(context, deps.executeOptions ?? {});
 
   /**
-   * Records an OAuth token failure; returns the error to throw, or null
-   * when the error is not one.
+   * Records an OAuth token failure or a refused signed key; returns the
+   * error to throw, or null when the error is not one.
    */
-  const oauthFailure = async (error: unknown): Promise<Error | null> => {
+  const authFailure = async (error: unknown): Promise<Error | null> => {
+    if (error instanceof SignedKeyRejectedError) {
+      // auth_failed with the provider's "upload a new key" message; the
+      // scheduler skips the connection until new credentials arrive.
+      await recordFailure("auth", error);
+      return new TerminalJobError(error.message);
+    }
     if (error instanceof NeedsReauthorizationError) {
       await recordFailure("auth", error, error.reason);
       return new TerminalJobError(error.message);
@@ -483,9 +533,9 @@ async function runSync(
       (result) => !result.ok,
     );
   } catch (error) {
-    const oauthError = await oauthFailure(error);
-    if (oauthError) {
-      throw oauthError;
+    const authError = await authFailure(error);
+    if (authError) {
+      throw authError;
     }
     await recordFailure("transient", error);
     throw error;
@@ -645,9 +695,9 @@ async function runSync(
       });
     });
   } catch (error) {
-    const oauthError = await oauthFailure(error);
-    if (oauthError) {
-      throw oauthError;
+    const authError = await authFailure(error);
+    if (authError) {
+      throw authError;
     }
     const errorClass: ErrorClass =
       error instanceof ContractViolationError ? "contract" : "transient";

@@ -45,12 +45,14 @@ function variant(
   };
 }
 
-// ADR 0014: a signed-key connector (SDK 0.2.2). This server has no
-// signed-key providers yet (#170), so it must not take the key itself.
+// ADR 0014: signed-key connectors (SDK 0.2.2). This server has the
+// app-store-connect provider (#170) but none named "acme-ads", so it must not
+// take a key for that one (it would have to hand it to the connector).
 const appStoreKey = {
   strategy: "signed-key" as const,
   provider: "app-store-connect",
 };
+const unknownKey = { strategy: "signed-key" as const, provider: "acme-ads" };
 
 const googleOAuth = {
   strategy: "oauth2" as const,
@@ -69,8 +71,9 @@ function registry(): ConnectorRegistry {
     variant("unknown-provider", [{ ...googleOAuth, provider: "acme" }]),
   );
   registry.register(variant("signed-key-only", [appStoreKey]));
+  registry.register(variant("unknown-signed-key", [unknownKey]));
   registry.register(
-    variant("signed-key-or-token", [appStoreKey, { strategy: "token" }]),
+    variant("unknown-signed-key-or-token", [unknownKey, { strategy: "token" }]),
   );
   return registry;
 }
@@ -200,18 +203,29 @@ describe("connector catalog", () => {
       available: false,
       unavailable: { reason: "oauth_provider_unsupported", provider: "acme" },
     });
-    expect(entries.get("signed-key-only")).toMatchObject({
+    expect(entries.get("unknown-signed-key")).toMatchObject({
       available: false,
       unavailable: {
         reason: "signed_key_provider_unsupported",
-        provider: "app-store-connect",
+        provider: "acme-ads",
       },
-      authStrategies: [appStoreKey],
+      authStrategies: [unknownKey],
     });
-    expect(entries.get("signed-key-or-token")).toMatchObject({
+    expect(entries.get("unknown-signed-key-or-token")).toMatchObject({
       available: true,
       unavailable: null,
-      authStrategies: [appStoreKey, { strategy: "token" }],
+      authStrategies: [unknownKey, { strategy: "token" }],
+    });
+    // A provider this server has needs no configuration (ADR 0014).
+    expect(entries.get("signed-key-only")).toMatchObject({
+      available: true,
+      unavailable: null,
+      authStrategies: [
+        expect.objectContaining({
+          ...appStoreKey,
+          providerName: "App Store Connect",
+        }),
+      ],
     });
     // A token alternative keeps a connector usable; others are unaffected.
     expect(entries.get("google-or-token")).toMatchObject({
@@ -263,8 +277,8 @@ describe("creating connections", () => {
     for (const [world, connectorId] of [
       [unconfigured, "google-only"],
       [unconfigured, "unknown-provider"],
-      [unconfigured, "signed-key-only"],
-      [configured, "signed-key-only"],
+      [unconfigured, "unknown-signed-key"],
+      [configured, "unknown-signed-key"],
     ] as const) {
       for (const response of [
         await create(world, connectorId),
