@@ -230,6 +230,83 @@ describe("search console connector against recorded responses", () => {
     }
   });
 
+  it("writes no position or click-through rate on days without impressions", async () => {
+    // 09-14 and 09-17 have impressions, 09-15 is a row of zeros, 09-16 has
+    // no row at all (#165).
+    const result = await connector(recordedNow).sync(
+      context({ siteUrl: SITE, dimensions: "query,device" }),
+      request,
+      recordedRuntime((url, body) =>
+        url.pathname.endsWith("/query") &&
+        (body.dimensions as string[] | undefined)?.join(",") === "date"
+          ? reply(200, fixture("analytics-by-date-zero-impressions"))
+          : undefined,
+      ),
+    );
+    const days = (metric: string) =>
+      of(result.observations, metric)
+        .map((o) => [o.sourceTimestamp.slice(0, 10), o.value])
+        .sort();
+    expect(days("clicks")).toEqual([
+      ["2026-09-14", 1],
+      ["2026-09-15", 0],
+      ["2026-09-17", 3],
+    ]);
+    expect(days("impressions")).toEqual([
+      ["2026-09-14", 24],
+      ["2026-09-15", 0],
+      ["2026-09-17", 61],
+    ]);
+    expect(days("position")).toEqual([
+      ["2026-09-14", 14.375],
+      ["2026-09-17", 11.065574],
+    ]);
+    expect(days("ctr").map(([date]) => date)).toEqual([
+      "2026-09-14",
+      "2026-09-17",
+    ]);
+    const positionSums = days("position_sum");
+    expect(positionSums.map(([date]) => date)).toEqual([
+      "2026-09-14",
+      "2026-09-15",
+      "2026-09-17",
+    ]);
+    expect(positionSums[1]![1]).toBe(0);
+    // The impression-weighted position over the window ignores the empty day.
+    const sum = (rows: Array<(string | number)[]>) =>
+      rows.reduce((total, row) => total + Number(row[1]), 0);
+    expect(sum(positionSums) / sum(days("impressions"))).toBeCloseTo(
+      (14.375 * 24 + 11.065574 * 61) / 85,
+      9,
+    );
+  });
+
+  it("writes a zero position sum for a breakdown row without impressions", async () => {
+    const result = await connector(recordedNow).sync(
+      context({ siteUrl: SITE, dimensions: "query,device" }),
+      request,
+      recordedRuntime((url, body) =>
+        url.pathname.endsWith("/query") &&
+        (body.dimensions as string[] | undefined)?.join(",") === "query,device"
+          ? reply(200, {
+              rows: [
+                {
+                  keys: ["example", "MOBILE"],
+                  clicks: 0,
+                  impressions: 0,
+                  ctr: 0,
+                  position: 0,
+                },
+              ],
+            })
+          : undefined,
+      ),
+    );
+    const sums = of(result.observations, "breakdown_position_sum");
+    expect(sums).toHaveLength(7);
+    for (const observation of sums) expect(observation.value).toBe(0);
+  });
+
   it("reads an empty answer (no final data yet) as no observations", async () => {
     const result = await connector(recordedNow).sync(
       context({ siteUrl: SITE, dimensions: "query,device" }),

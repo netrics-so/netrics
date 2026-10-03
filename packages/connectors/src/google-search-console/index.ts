@@ -129,7 +129,7 @@ export const searchConsoleManifest: ConnectorManifest = {
       key: `${PREFIX}.ctr`,
       name: "Click-through rate",
       description:
-        "Clicks divided by impressions for one day (0–1). Over several days the rate is total clicks over total impressions, not the average of daily rates.",
+        "Clicks divided by impressions for one day (0–1); no value on days without impressions. Over several days the rate is total clicks over total impressions, not the average of daily rates.",
       kind: "gauge",
       unit: "ratio",
       granularity: "day",
@@ -140,7 +140,7 @@ export const searchConsoleManifest: ConnectorManifest = {
       key: `${PREFIX}.position`,
       name: "Average position",
       description:
-        "Average topmost position in Google Search results for one day (1 is the top). Over several days it is weighted by impressions: position sum over impressions.",
+        "Average topmost position in Google Search results for one day (1 is the top); no value on days without impressions. Over several days it is weighted by impressions: position sum over impressions.",
       kind: "gauge",
       unit: "position",
       granularity: "day",
@@ -370,6 +370,14 @@ function stamp(date: string): string {
   return `${date}T00:00:00.000Z`;
 }
 
+/**
+ * Average position × impressions: 0 without impressions, whatever position
+ * Google reports for such a row.
+ */
+function positionSum(row: AnalyticsRow): number {
+  return row.impressions > 0 ? row.position * row.impressions : 0;
+}
+
 // ─── Connector ──────────────────────────────────────────────────────────────
 
 export type SearchConsoleConnectorOptions = ClientOptions;
@@ -595,24 +603,32 @@ export function createSearchConsoleConnector(
             dimensions: resource,
           },
           {
-            metricKey: `${PREFIX}.ctr`,
-            sourceTimestamp,
-            value: row.ctr,
-            dimensions: resource,
-          },
-          {
-            metricKey: `${PREFIX}.position`,
-            sourceTimestamp,
-            value: row.position,
-            dimensions: resource,
-          },
-          {
             metricKey: `${PREFIX}.position_sum`,
             sourceTimestamp,
-            value: row.position * row.impressions,
+            value: positionSum(row),
             dimensions: resource,
           },
         );
+        // Without impressions a day has no position and no click-through
+        // rate (Google reports 0 for both; position 0 would read as better
+        // than rank 1). Sums and impression-weighted averages are unchanged:
+        // the day adds 0 clicks, 0 impressions and 0 position sum.
+        if (row.impressions > 0) {
+          observations.push(
+            {
+              metricKey: `${PREFIX}.ctr`,
+              sourceTimestamp,
+              value: row.ctr,
+              dimensions: resource,
+            },
+            {
+              metricKey: `${PREFIX}.position`,
+              sourceTimestamp,
+              value: row.position,
+              dimensions: resource,
+            },
+          );
+        }
       }
 
       // Breakdowns only for days that have (final) data.
@@ -649,7 +665,7 @@ export function createSearchConsoleConnector(
               {
                 metricKey: `${PREFIX}.breakdown_position_sum`,
                 sourceTimestamp,
-                value: row.position * row.impressions,
+                value: positionSum(row),
                 dimensions,
               },
             );

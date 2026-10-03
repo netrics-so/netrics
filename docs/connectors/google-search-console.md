@@ -74,6 +74,12 @@ position sum by impressions. Breakdowns store only values that add up
 (clicks, impressions, position sum); a rate or position per page, query,
 country or device is derived the same way.
 
+A day without impressions has no click-through rate and no average position:
+netrics stores clicks, impressions and position sum as 0 for it and skips the
+two readings, so "Latest day" is the latest day with impressions and "Lowest
+day" never reads a position of 0. Weighted values are unaffected, since the
+day adds 0 to both sums.
+
 ### Why breakdowns add up to less than the totals
 
 - Search Console hides rare queries to protect searchers' privacy
