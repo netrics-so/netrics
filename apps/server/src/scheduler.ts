@@ -12,9 +12,12 @@ import {
   listDueConnections,
   pruneHistory,
   pruneOAuthAuthorizations,
+  pruneSecurityRecords,
+  SECURITY_RETENTION,
   setConnectionNextDue,
   type Database,
   type RetentionPolicy,
+  type SecurityRetentionPolicy,
 } from "@netrics/database";
 
 import type { Config } from "./env.js";
@@ -121,6 +124,10 @@ export interface SchedulerDeps {
   /** How often to prune finished jobs and sync runs (default: hourly). */
   maintenanceEveryMs?: number;
   retention?: RetentionPolicy;
+  /** Retention of audit events, sessions and rate-limit rows (IPs). */
+  securityRetention?: SecurityRetentionPolicy;
+  /** Clock for security-record retention (tests pin it). */
+  now?: () => Date;
   schedulerId?: string;
   logger?: Logger;
 }
@@ -139,6 +146,7 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
   const { schedulerDb } = deps;
 
   const maintenanceEveryMs = deps.maintenanceEveryMs ?? 60 * 60 * 1000;
+  const now = deps.now ?? (() => new Date());
 
   let running = false;
   let loopPromise: Promise<void> | null = null;
@@ -166,6 +174,16 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
         { oauthAuthorizationsDeleted },
         "pruned finished oauth authorizations",
       );
+    }
+    // Audit events after 12 months; expired sessions, rate-limit counters and
+    // pairings soon after (privacy policy; SECURITY_RETENTION).
+    const security = await pruneSecurityRecords(
+      schedulerDb,
+      now(),
+      deps.securityRetention ?? SECURITY_RETENTION,
+    );
+    if (Object.values(security).some((count) => count > 0)) {
+      logger.info(security, "pruned security records");
     }
   }
 

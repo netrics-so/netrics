@@ -457,6 +457,23 @@ Observations stay unpruned until rollups exist: dashboards read raw values, and
 deleting them would change historical charts. Their retention is decided
 together with rollups.
 
+Security records hold IP addresses, browser user agents or hashes of them.
+Their retention follows the privacy policy and is fixed in code
+(`SECURITY_RETENTION` in `packages/database/src/security-retention.ts`), not
+configuration; the same hourly maintenance applies it through the owner-role
+`prune_security_records` function, at most one batch per table per run:
+
+| Data                                          | Kept                                                                        |
+| --------------------------------------------- | --------------------------------------------------------------------------- |
+| Audit events (workspace and `auth.login`)     | 12 months after creation                                                    |
+| Sign-in sessions                              | Until 24 hours after expiry; IP and browser cleared 12 months after sign-in |
+| Auth rate-limit counters (keyed by client IP) | 24 hours after the last request                                             |
+| Device pairings (hashed client IP)            | 24 hours after expiry                                                       |
+
+Process logs go to stdout and are not stored in the database; their retention
+is set where they are collected (the hosting platform, or a self-hoster's log
+driver).
+
 ### Derived metrics
 
 Derived metrics use a restricted expression and query model rather than user

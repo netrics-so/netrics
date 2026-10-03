@@ -217,20 +217,26 @@ export const projects = pgTable("projects", {
 });
 
 // audit_events is append-only: netrics_app gets SELECT/INSERT only, and the
-// RLS policies (migration 0001) grant no UPDATE/DELETE path.
-export const auditEvents = pgTable("audit_events", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  workspaceId: uuid("workspace_id").references(() => workspaces.id, {
-    onDelete: "cascade",
-  }),
-  actorUserId: uuid("actor_user_id").references(() => users.id),
-  action: text("action").notNull(),
-  target: text("target").notNull().default(""),
-  metadata: jsonb("metadata").notNull().default({}),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+// RLS policies (migration 0001) grant no UPDATE/DELETE path. Events older
+// than AUDIT_EVENT_RETENTION_MONTHS are deleted by the scheduler through the
+// owner-role prune_security_records (migration 0030).
+export const auditEvents = pgTable(
+  "audit_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").references(() => workspaces.id, {
+      onDelete: "cascade",
+    }),
+    actorUserId: uuid("actor_user_id").references(() => users.id),
+    action: text("action").notNull(),
+    target: text("target").notNull().default(""),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("audit_events_created_at_idx").on(table.createdAt)],
+);
 
 // Installation-level connector catalog (synced from the bundle at boot): no
 // tenant RLS.
