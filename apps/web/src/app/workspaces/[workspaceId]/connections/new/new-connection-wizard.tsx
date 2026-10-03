@@ -9,6 +9,7 @@ import type {
 } from "@netrics/contracts";
 
 import { ConfigFields } from "../config-fields";
+import { ConnectOAuthButton } from "../connect-oauth-button";
 import { TokenField } from "../token-field";
 import {
   apiErrorMessage,
@@ -20,6 +21,11 @@ import {
   initialConfigValues,
   parseConfigSchema,
 } from "@/lib/config-schema";
+import {
+  oauthProviderOf,
+  providerName,
+  unavailableCopy,
+} from "@/lib/oauth-connection";
 
 interface NewConnectionWizardProps {
   workspaceId: string;
@@ -53,6 +59,12 @@ export function NewConnectionWizard({
     (strategy) => strategy.strategy === "token",
   );
   const wantsToken = tokenStrategy !== undefined;
+  // OAuth-only connectors connect at the provider; the callback creates the
+  // connection and setup continues on the return (ADR 0012).
+  const oauthProvider =
+    connector && !connector.authStrategies.some((s) => s.strategy !== "oauth2")
+      ? oauthProviderOf(connector)
+      : null;
 
   function selectConnector(entry: ConnectorCatalogEntry) {
     setConnector(entry);
@@ -155,21 +167,44 @@ export function NewConnectionWizard({
             <button
               key={entry.id}
               type="button"
-              className={`connector-card ${connector?.id === entry.id ? "selected" : ""}`}
+              className={`connector-card ${connector?.id === entry.id ? "selected" : ""} ${entry.available ? "" : "unavailable"}`}
               onClick={() => selectConnector(entry)}
             >
               <h3>{entry.name}</h3>
               <p>{entry.description}</p>
               <p className="meta">
-                v{entry.version} · {entry.metricsCount} metrics
-                {entry.supportsBackfill ? " · backfill" : ""}
+                {entry.unavailable
+                  ? unavailableCopy(entry.unavailable).summary
+                  : `v${entry.version} · ${entry.metricsCount} metrics${entry.supportsBackfill ? " · backfill" : ""}`}
               </p>
             </button>
           ))}
         </div>
       </div>
 
-      {connector ? (
+      {connector && connector.unavailable ? (
+        <UnavailableConnector connector={connector} />
+      ) : null}
+
+      {connector && connector.available && oauthProvider ? (
+        <div className="card">
+          <h2>2. Connect with {providerName(oauthProvider)}</h2>
+          <p>
+            You sign in at {providerName(oauthProvider)} and allow netrics
+            read-only access to your {connector.name} data. netrics never sees
+            your {providerName(oauthProvider)} password. Afterwards you choose
+            what this connection reads.
+          </p>
+          <ConnectOAuthButton
+            workspaceId={workspaceId}
+            connectorId={connector.id}
+            provider={oauthProvider}
+            returnPath={`/workspaces/${workspaceId}/connections/new`}
+          />
+        </div>
+      ) : null}
+
+      {connector && connector.available && !oauthProvider ? (
         <div className="card">
           <h2>2. Configure</h2>
           <form className="stack" onSubmit={(event) => event.preventDefault()}>
@@ -266,5 +301,28 @@ export function NewConnectionWizard({
 
       {error ? <div className="error">{error}</div> : null}
     </>
+  );
+}
+
+function UnavailableConnector({
+  connector,
+}: {
+  connector: ConnectorCatalogEntry;
+}) {
+  const copy = unavailableCopy(connector.unavailable!);
+  return (
+    <div className="card">
+      <h2>{connector.name} is not available here</h2>
+      <p className="break-anywhere">{copy.detail}</p>
+      {copy.guideUrl ? (
+        <p className="muted">
+          Running netrics yourself?{" "}
+          <a href={copy.guideUrl} target="_blank" rel="noreferrer">
+            Read the setup guide
+          </a>
+          .
+        </p>
+      ) : null}
+    </div>
   );
 }

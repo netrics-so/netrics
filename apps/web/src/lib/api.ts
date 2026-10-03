@@ -30,12 +30,14 @@ import {
   connectionDetailResponseSchema,
   connectionListResponseSchema,
   connectionPreviewResponseSchema,
+  connectionResourcesResponseSchema,
   connectionResponseSchema,
   connectorListResponseSchema,
   createConnectionRequestSchema,
   createInvitationRequestSchema,
   createProjectRequestSchema,
   createWorkspaceRequestSchema,
+  deleteConnectionResponseSchema,
   enqueueSyncResponseSchema,
   errorResponseSchema,
   healthLiveResponseSchema,
@@ -52,6 +54,8 @@ import {
   projectResponseSchema,
   renameWorkspaceRequestSchema,
   setupStatusResponseSchema,
+  startOAuthAuthorizationRequestSchema,
+  startOAuthAuthorizationResponseSchema,
   timeZoneSchema,
   updateConnectionRequestSchema,
   updateMemberRoleRequestSchema,
@@ -60,9 +64,11 @@ import {
   type ConnectionDetailResponse,
   type ConnectionListResponse,
   type ConnectionPreviewResponse,
+  type ConnectionResourcesResponse,
   type ConnectionResponse,
   type ConnectorListResponse,
   type CreateConnectionRequest,
+  type DeleteConnectionResponse,
   type EnqueueSyncResponse,
   type HealthLiveResponse,
   type HealthReadyResponse,
@@ -77,6 +83,8 @@ import {
   type ProjectListResponse,
   type ProjectResponse,
   type SetupStatusResponse,
+  type StartOAuthAuthorizationRequest,
+  type StartOAuthAuthorizationResponse,
   type UpdateConnectionRequest,
   type WorkspaceListResponse,
   type WorkspaceResponse,
@@ -151,6 +159,14 @@ export function apiErrorMessage(error: unknown): string {
         return "That aggregation does not fit the metric.";
       case "unknown_dimension":
         return "A tile filters on a dimension the metric does not have.";
+      case "oauth_reauthorization_required":
+        return "The authorization at the provider stopped working. Reconnect it from the connection page.";
+      case "connection_setup_pending":
+        return "Finish setting up this connection first.";
+      case "connector_unavailable":
+        return "This connector is not available on this instance.";
+      case "connection_busy":
+        return "The connection is changing right now. Try again in a moment.";
       default:
         // Connector check/preview failures arrive as human-readable,
         // already-redacted messages rather than snake_case codes.
@@ -553,17 +569,48 @@ export function updateConnection(
   );
 }
 
-export async function deleteConnection(
+/**
+ * Deletes a connection. For an OAuth connection the answer says what
+ * happened to the access at the provider (ADR 0012).
+ */
+export function deleteConnection(
   workspaceId: string,
   connectionId: string,
-): Promise<void> {
-  const response = await fetch(
+): Promise<DeleteConnectionResponse> {
+  return browserSend(
+    deleteConnectionResponseSchema,
+    "DELETE",
     `/v1/workspaces/${workspaceId}/connections/${connectionId}`,
-    { method: "DELETE" },
   );
-  if (!response.ok && response.status !== 204) {
-    throw new ApiError(response.status, await readErrorCode(response));
-  }
+}
+
+/**
+ * Starts an OAuth authorization; the caller sends the browser to the
+ * returned URL with window.location (a form post would hit the CSP's
+ * form-action, ADR 0012).
+ */
+export function startOAuthAuthorization(
+  workspaceId: string,
+  input: StartOAuthAuthorizationRequest,
+): Promise<StartOAuthAuthorizationResponse> {
+  return browserSend(
+    startOAuthAuthorizationResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/oauth/authorizations`,
+    startOAuthAuthorizationRequestSchema.parse(input),
+  );
+}
+
+/** What an OAuth connection's account can read (e.g. its properties). */
+export function listConnectionResources(
+  workspaceId: string,
+  connectionId: string,
+): Promise<ConnectionResourcesResponse> {
+  return browserSend(
+    connectionResourcesResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/resources`,
+  );
 }
 
 export function triggerConnectionSync(

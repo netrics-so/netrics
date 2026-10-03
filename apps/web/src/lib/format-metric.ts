@@ -33,6 +33,17 @@ export function formatValue(value: number | null, unit: string): string {
   if (unit === "percent") {
     return `${new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 }).format(value)}%`;
   }
+  // A share from 0 to 1 (Search Console's click-through rate).
+  if (unit === "ratio") {
+    return `${new Intl.NumberFormat(LOCALE, { maximumFractionDigits: Math.abs(value) < 0.1 ? 2 : 1 }).format(value * 100)}%`;
+  }
+  // A rank where 1 is the top (Search Console's average position).
+  if (unit === "position") {
+    return new Intl.NumberFormat(LOCALE, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }).format(value);
+  }
   const compact = Math.abs(value) >= 10_000;
   return new Intl.NumberFormat(LOCALE, {
     notation: compact ? "compact" : "standard",
@@ -60,7 +71,8 @@ export function formatChange(
   const direction: ChangeDirection =
     delta > 0 ? "up" : delta < 0 ? "down" : "flat";
   const sign = delta > 0 ? "+" : delta < 0 ? "−" : "±";
-  if (ratio !== null) {
+  // A change of rank reads in places, not as a percentage of the rank.
+  if (ratio !== null && unit !== "position") {
     const percent = new Intl.NumberFormat(LOCALE, {
       maximumFractionDigits: Math.abs(ratio) < 0.1 ? 1 : 0,
     }).format(Math.abs(ratio) * 100);
@@ -94,3 +106,20 @@ export const AGGREGATION_LABELS: Record<MetricAggregation, string> = {
   max: "Maximum",
   last: "Latest",
 };
+
+/**
+ * The editor's name for an aggregation. A daily gauge (e.g. click-through
+ * rate, average position) is one reading per day, so its latest, lowest or
+ * highest value is a day's, never a sum over the period.
+ */
+export function aggregationLabel(
+  aggregation: MetricAggregation,
+  metric: { kind: string; granularity: string },
+): string {
+  if (metric.kind === "gauge" && metric.granularity === "day") {
+    if (aggregation === "last") return "Latest day";
+    if (aggregation === "min") return "Lowest day";
+    if (aggregation === "max") return "Highest day";
+  }
+  return AGGREGATION_LABELS[aggregation];
+}

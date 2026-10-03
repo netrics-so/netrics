@@ -4,6 +4,10 @@ import { notFound } from "next/navigation";
 import { can } from "@netrics/domain";
 
 import { HealthBadge } from "../../health-badge";
+import { FinishSetup } from "../finish-setup";
+import { OAuthOutcomeBanner } from "../oauth-outcome";
+import { ReconnectBanner } from "../reconnect-banner";
+import { SearchConsoleSettings } from "../search-console-settings";
 import { ConnectionActions } from "./connection-actions";
 import { EditConnectionForm } from "./edit-connection-form";
 import {
@@ -13,6 +17,11 @@ import {
   listObservations,
   listWorkspaces,
 } from "@/lib/api";
+import {
+  parseOAuthOutcome,
+  providerName,
+  SEARCH_CONSOLE_CONNECTOR_ID,
+} from "@/lib/oauth-connection";
 import { relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
 
@@ -20,6 +29,7 @@ export const dynamic = "force-dynamic";
 
 interface ConnectionDetailPageProps {
   params: Promise<{ workspaceId: string; connectionId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 function shortWindow(from: string, to: string): string {
@@ -28,8 +38,10 @@ function shortWindow(from: string, to: string): string {
 
 export default async function ConnectionDetailPage({
   params,
+  searchParams,
 }: ConnectionDetailPageProps) {
   const { workspaceId, connectionId } = await params;
+  const query = await searchParams;
   const { cookieHeader } = await requireSession();
 
   const [{ workspaces }, workspaceResult, detail] = await Promise.all([
@@ -54,6 +66,9 @@ export default async function ConnectionDetailPage({
   const authMessage = syncRuns.find(
     (run) => run.errorClass === "auth",
   )?.errorMessage;
+  const oauth = connection.oauth;
+  const searchConsole = connection.connectorId === SEARCH_CONSOLE_CONNECTOR_ID;
+  const returnPath = `/workspaces/${workspaceId}/connections/${connection.id}`;
 
   return (
     <>
@@ -66,6 +81,34 @@ export default async function ConnectionDetailPage({
         <Link href={`/workspaces/${workspaceId}`}>Back to workspace</Link>
       </p>
 
+      <OAuthOutcomeBanner
+        outcome={parseOAuthOutcome(query.oauth)}
+        {...(oauth ? { provider: oauth.provider } : {})}
+      />
+      {query.setup === "finished" && !connection.setupPending ? (
+        <div className="notice page-alert" role="status">
+          Setup finished. The first sync is queued and reads up to 16 months
+          back; new data then arrives every few hours.
+        </div>
+      ) : null}
+
+      {connection.setupPending ? (
+        <FinishSetup
+          workspaceId={workspaceId}
+          connection={connection}
+          connector={connector}
+          canUpdate={canUpdate}
+          returnPath={returnPath}
+        />
+      ) : (
+        <ReconnectBanner
+          workspaceId={workspaceId}
+          connection={connection}
+          canUpdate={canUpdate}
+          returnPath={returnPath}
+        />
+      )}
+
       {authFailed ? (
         <div className="error page-alert" role="alert">
           <p>
@@ -75,7 +118,13 @@ export default async function ConnectionDetailPage({
             {authMessage ?? ""}
           </p>
           <p>
-            {canUpdate ? (
+            {oauth ? (
+              searchConsole ? (
+                "Restore the account's permission for the property in Search Console, or choose another property below."
+              ) : (
+                "Check the account's permissions at the provider, or change the settings below."
+              )
+            ) : canUpdate ? (
               <>
                 <a href="#edit-connection">Enter a new token below</a>. Saving
                 it restarts syncing right away; the data collected so far is
@@ -116,29 +165,77 @@ export default async function ConnectionDetailPage({
             every {connection.state.pollIntervalSeconds} seconds
           </span>
         </div>
-        <div className="row">
-          <span className="label">Credentials</span>
-          <span className="value">
-            {connection.hasCredentials ? "stored" : "none"}
-          </span>
-        </div>
+        {oauth ? (
+          <div className="row">
+            <span className="label">
+              {providerName(oauth.provider)} account
+            </span>
+            <span className="value">
+              {oauth.accountEmail
+                ? `Connected as ${oauth.accountEmail}`
+                : "Connected"}
+            </span>
+          </div>
+        ) : (
+          <div className="row">
+            <span className="label">Credentials</span>
+            <span className="value">
+              {connection.hasCredentials ? "stored" : "none"}
+            </span>
+          </div>
+        )}
         <ConnectionActions
           workspaceId={workspaceId}
           connectionId={connection.id}
           connectionName={connection.name}
-          canUpdate={can(role, "connections:update")}
+          oauthProvider={oauth?.provider ?? null}
+          canSync={!connection.setupPending}
+          canUpdate={canUpdate}
           canDelete={can(role, "connections:delete")}
         />
       </div>
 
-      {canUpdate ? (
+      {searchConsole ? (
+        <div className="card">
+          <h2>About Search Console data</h2>
+          <p className="muted">
+            Search Console data appears with a 2–3 day delay; the newest days
+            are filled in once Google finalises them, so today and yesterday are
+            usually empty. Click-through rate and average position are daily
+            values: over several days they are not added up.
+          </p>
+          <p className="muted">
+            Search Console leaves out rare queries to protect searchers&apos;
+            privacy (anonymized queries), and a breakdown keeps only its top
+            rows per day, so breakdowns add up to less than the totals.{" "}
+            <a
+              href="https://github.com/netrics-so/netrics/blob/main/docs/connectors/google-search-console.md"
+              target="_blank"
+              rel="noreferrer"
+            >
+              More about the connector
+            </a>
+          </p>
+        </div>
+      ) : null}
+
+      {canUpdate && !connection.setupPending ? (
         <div className="card" id="edit-connection">
           <h2>Edit connection</h2>
-          <EditConnectionForm
-            workspaceId={workspaceId}
-            connection={connection}
-            connector={connector}
-          />
+          {searchConsole ? (
+            <SearchConsoleSettings
+              workspaceId={workspaceId}
+              connection={connection}
+              connectorName={connector?.name ?? connection.connectorName}
+              mode="edit"
+            />
+          ) : (
+            <EditConnectionForm
+              workspaceId={workspaceId}
+              connection={connection}
+              connector={connector}
+            />
+          )}
         </div>
       ) : null}
 
@@ -146,7 +243,9 @@ export default async function ConnectionDetailPage({
         <h2>Sync runs</h2>
         {syncRuns.length === 0 ? (
           <p className="muted">
-            No sync runs yet — the initial backfill is queued.
+            {connection.setupPending
+              ? "Nothing syncs until the setup is finished."
+              : "No sync runs yet — the initial backfill is queued."}
           </p>
         ) : (
           <table className="table">

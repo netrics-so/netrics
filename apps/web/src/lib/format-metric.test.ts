@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatChange, formatValue } from "./format-metric";
+import { aggregationLabel, formatChange, formatValue } from "./format-metric";
 
 describe("formatValue", () => {
   it.each([
@@ -11,6 +11,10 @@ describe("formatValue", () => {
     [123_456, "EUR_minor", "€1,234.56"],
     [420_000_000, "USD_minor", "$4.2M"],
     [42.25, "percent", "42.3%"],
+    [0.0353, "ratio", "3.53%"],
+    [0.125, "ratio", "12.5%"],
+    [4.5, "position", "4.5"],
+    [12, "position", "12.0"],
     [null, "visitors", "—"],
   ])("%s %s → %s", (value, unit, expected) => {
     expect(formatValue(value, unit)).toBe(expected);
@@ -42,5 +46,24 @@ describe("formatChange", () => {
 
   it("has nothing to show without a previous value", () => {
     expect(formatChange(null, null, "signups")).toBeNull();
+  });
+});
+
+describe("Search Console readings", () => {
+  it("shows a change of average position in places, not percent", () => {
+    expect(formatChange(0.4, 0.1, "position")).toEqual({
+      direction: "up",
+      text: "+0.4",
+    });
+  });
+
+  it("names a daily gauge's aggregations by day", () => {
+    const gauge = { kind: "gauge", granularity: "day" };
+    expect(aggregationLabel("last", gauge)).toBe("Latest day");
+    expect(aggregationLabel("min", gauge)).toBe("Lowest day");
+    expect(aggregationLabel("max", gauge)).toBe("Highest day");
+    expect(aggregationLabel("sum", { kind: "delta", granularity: "day" })).toBe(
+      "Total",
+    );
   });
 });
