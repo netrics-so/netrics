@@ -337,6 +337,14 @@ Use a deterministic series identity derived from metric definition and
 dimensions. Inserts are idempotent for a source identity or deterministic time
 bucket. Historical backfills and current syncs can overlap safely.
 
+A sync run ingests page by page: each page the connector returns commits in its
+own short transaction together with its `nextCursor` as the connection's
+checkpoint, so a run holds one page in memory and the cursor never passes data
+that is not committed. The last page commits with the run's success. A failed
+run keeps the pages it committed and reports them on its `sync_run`; the retry,
+or the next run, continues from the checkpoint. A connector's non-final cursor
+must therefore stay valid when sent back in a later run with a later `to`.
+
 Partition observations by time when necessary. Index workspace, metric, series,
 and timestamp query paths. Retention and rollups run as ordinary maintenance
 jobs until TimescaleDB or another analytical store becomes justified.

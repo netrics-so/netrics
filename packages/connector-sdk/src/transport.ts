@@ -71,6 +71,11 @@ export function observationKey(observation: Observation): string {
 
 export const syncResultSchema = z.object({
   observations: z.array(observationSchema),
+  /**
+   * Where the next request continues. The host commits each page with its
+   * cursor as a checkpoint, so a cursor returned with done=false may come
+   * back in a later run (after a failure) with a later `to`.
+   */
   nextCursor: z.string().min(1).optional(),
   done: z.boolean(),
 });
