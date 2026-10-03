@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
 
 import type {
@@ -18,8 +19,11 @@ export interface FakeAscTeam {
   key: TestKeyPair;
   apps: Array<{ id: string; name: string; bundleId: string }>;
   vendorNumbers: string[];
-  /** "developer" keys cannot read sales reports (403). */
-  role?: "sales" | "developer";
+  /**
+   * "developer" keys cannot read sales reports (403); only "admin" keys
+   * may request analytics reports.
+   */
+  role?: "sales" | "admin" | "developer";
   /** A revoked key answers 401 everywhere. */
   revoked?: boolean;
   /**
@@ -27,11 +31,68 @@ export interface FakeAscTeam {
    * other days answer 404 "no sales".
    */
   reports?: Record<string, string>;
+  /**
+   * The team's Analytics Reports API (#174). Keys of one team share it:
+   * give every key entry of a team the same object.
+   */
+  analytics?: FakeAscAnalytics;
+}
+
+/** The pinned production bucket host of analytics segment links. */
+export const FAKE_SEGMENT_HOST = "asp-us-west-2.s3.us-west-2.amazonaws.com";
+
+export interface FakeAscInstance {
+  /** YYYY-MM-DD */
+  processingDate: string;
+  /** The segment's tab-separated text, served gzipped. */
+  content: string;
+}
+
+export interface FakeAscAnalytics {
+  /** ONGOING report requests per app ID. */
+  requests: Record<string, Array<{ id: string; stopped?: boolean }>>;
+  /** DAILY instances per app ID and report. */
+  instances?: Record<
+    string,
+    { discovery?: FakeAscInstance[]; downloads?: FakeAscInstance[] }
+  >;
+}
+
+const REPORT_NAMES = {
+  discovery: "App Store Discovery and Engagement Standard",
+  downloads: "App Downloads Standard",
+} as const;
+type ReportKind = keyof typeof REPORT_NAMES;
+
+function gzipReply(bytes: Uint8Array, contentType: string): ConnectorResponse {
+  return {
+    status: 200,
+    headers: {
+      "content-type": contentType,
+      "x-rate-limit": "user-hour-lim:3500;user-hour-rem:3400;",
+    },
+    text: () => new TextDecoder().decode(bytes),
+    json: () => {
+      throw new Error("not JSON");
+    },
+    bytes: () => new Uint8Array(bytes),
+  };
+}
+
+/** The gzip file of one segment, and its MD5 (as Apple lists it). */
+function segmentFile(content: string): { bytes: Uint8Array; md5: string } {
+  const bytes = new Uint8Array(gzipSync(content));
+  return { bytes, md5: createHash("md5").update(bytes).digest("hex") };
 }
 
 export interface FakeAsc {
   fetch(url: string, init?: ConnectorFetchInit): Promise<ConnectorResponse>;
-  requests: Array<{ url: URL; issuerId: string | undefined }>;
+  requests: Array<{
+    url: URL;
+    issuerId: string | undefined;
+    method?: string;
+    authorization?: string | undefined;
+  }>;
   /** The next answers, ahead of the normal ones. */
   failures: number[];
 }
@@ -85,11 +146,40 @@ export function createFakeAsc(teams: FakeAscTeam[]): FakeAsc {
     failures,
     async fetch(raw, init) {
       const url = new URL(raw);
+      if (url.hostname === FAKE_SEGMENT_HOST) {
+        requests.push({
+          url,
+          issuerId: undefined,
+          method: init?.method ?? "GET",
+          authorization: init?.headers?.authorization,
+        });
+        // /reports/<app>/<kind>/<index>.csv.gz
+        const [, , appId, kind, file] = url.pathname.split("/");
+        const instance = teams
+          .map(
+            (candidate) =>
+              candidate.analytics?.instances?.[appId ?? ""]?.[
+                kind as ReportKind
+              ]?.[Number.parseInt(file ?? "", 10)],
+          )
+          .find((entry) => entry !== undefined);
+        if (!instance || init?.headers?.authorization !== undefined) {
+          return reply(403, { error: "AccessDenied" });
+        }
+        return gzipReply(
+          segmentFile(instance.content).bytes,
+          "application/octet-stream",
+        );
+      }
       if (url.hostname !== "api.appstoreconnect.apple.com") {
         throw new Error(`fake App Store Connect refuses ${raw}`);
       }
       const team = teamOf(init?.headers?.authorization);
-      requests.push({ url, issuerId: team?.issuerId });
+      requests.push({
+        url,
+        issuerId: team?.issuerId,
+        method: init?.method ?? "GET",
+      });
       if (!team) {
         return error(
           401,
@@ -114,6 +204,8 @@ export function createFakeAsc(teams: FakeAscTeam[]): FakeAsc {
               "An unexpected error occurred on the server side.",
             );
       }
+      const analytics = analyticsReply(team, url, init);
+      if (analytics) return analytics;
       if (url.pathname === "/v1/apps") {
         const limit = Number(url.searchParams.get("limit") ?? 50);
         return reply(200, {
@@ -126,7 +218,7 @@ export function createFakeAsc(teams: FakeAscTeam[]): FakeAsc {
         });
       }
       if (url.pathname === "/v1/salesReports") {
-        if ((team.role ?? "sales") !== "sales") {
+        if (team.role === "developer") {
           return error(
             403,
             "FORBIDDEN_ERROR",
@@ -184,4 +276,132 @@ export function createFakeAsc(teams: FakeAscTeam[]): FakeAsc {
       );
     },
   };
+}
+
+/** The Analytics Reports endpoints, or undefined for other paths. */
+function analyticsReply(
+  team: FakeAscTeam,
+  url: URL,
+  init: ConnectorFetchInit | undefined,
+): ConnectorResponse | undefined {
+  const state = team.analytics;
+  if (!state) return undefined;
+  const path = url.pathname;
+  const forbidden = () =>
+    error(
+      403,
+      "FORBIDDEN_ERROR",
+      "This request is forbidden for security reasons",
+      "The API key in use does not allow this request",
+    );
+  if (path === "/v1/analyticsReportRequests" && init?.method === "POST") {
+    if (team.role !== "admin") return forbidden();
+    const body = JSON.parse(init.body ?? "{}") as {
+      data?: { relationships?: { app?: { data?: { id?: string } } } };
+    };
+    const appId = body.data?.relationships?.app?.data?.id ?? "";
+    if (!team.apps.some((app) => app.id === appId)) {
+      return error(
+        404,
+        "NOT_FOUND",
+        "The specified resource does not exist",
+        "There is no resource of type 'apps' with id",
+      );
+    }
+    const list = (state.requests[appId] ??= []);
+    if (list.some((entry) => !entry.stopped)) {
+      return error(
+        409,
+        "ENTITY_ERROR",
+        "The request entity is not valid.",
+        "You already have such an entity",
+      );
+    }
+    const id = randomUUID();
+    list.push({ id });
+    return reply(201, {
+      data: {
+        type: "analyticsReportRequests",
+        id,
+        attributes: { accessType: "ONGOING", stoppedDueToInactivity: false },
+      },
+    });
+  }
+  if (init?.method === "POST") return undefined;
+  const apps = /^\/v1\/apps\/(\d+)\/analyticsReportRequests$/.exec(path);
+  if (apps) {
+    if (team.role === "developer") return forbidden();
+    return reply(200, {
+      data: (state.requests[apps[1]!] ?? []).map((entry) => ({
+        type: "analyticsReportRequests",
+        id: entry.id,
+        attributes: {
+          accessType: "ONGOING",
+          stoppedDueToInactivity: entry.stopped === true,
+        },
+      })),
+      links: {},
+    });
+  }
+  const reports = /^\/v1\/analyticsReportRequests\/([^/]+)\/reports$/.exec(
+    path,
+  );
+  if (reports) {
+    const appId = Object.entries(state.requests).find(([, list]) =>
+      list.some((entry) => entry.id === reports[1]),
+    )?.[0];
+    if (!appId) return undefined;
+    return reply(200, {
+      data: (Object.keys(REPORT_NAMES) as ReportKind[]).map((kind) => ({
+        type: "analyticsReports",
+        id: `rpt-${appId}-${kind}`,
+        attributes: { name: REPORT_NAMES[kind], category: "X" },
+      })),
+      links: {},
+    });
+  }
+  const instances = /^\/v1\/analyticsReports\/rpt-(\d+)-(\w+)\/instances$/.exec(
+    path,
+  );
+  if (instances) {
+    const list =
+      state.instances?.[instances[1]!]?.[instances[2] as ReportKind] ?? [];
+    return reply(200, {
+      data: list.map((entry, index) => ({
+        type: "analyticsReportInstances",
+        id: `inst-${instances[1]}-${instances[2]}-${index}`,
+        attributes: {
+          granularity: "DAILY",
+          processingDate: entry.processingDate,
+        },
+      })),
+      links: {},
+    });
+  }
+  const segments =
+    /^\/v1\/analyticsReportInstances\/inst-(\d+)-(\w+)-(\d+)\/segments$/.exec(
+      path,
+    );
+  if (segments) {
+    const [, appId, kind, index] = segments;
+    const instance =
+      state.instances?.[appId!]?.[kind as ReportKind]?.[Number(index)];
+    if (!instance) return undefined;
+    const file = segmentFile(instance.content);
+    return reply(200, {
+      data: [
+        {
+          type: "analyticsReportSegments",
+          id: `seg-${appId}-${kind}-${index}`,
+          attributes: {
+            checksum: file.md5,
+            sizeInBytes: file.bytes.length,
+            url: `https://${FAKE_SEGMENT_HOST}/reports/${appId}/${kind}/${index}.csv.gz?X-Amz-Expires=300&X-Amz-Signature=fake-presigned-signature`,
+          },
+        },
+      ],
+      links: {},
+    });
+  }
+  return undefined;
 }

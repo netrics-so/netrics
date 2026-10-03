@@ -70,9 +70,11 @@ function fake(
 }
 
 function connector(now = NOW, log: string[] = []) {
+  // Sales pages alone; analytics.test.ts covers the analytics pages.
   return createAppStoreConnectConnector({
     now: () => now,
     log: (message) => log.push(message),
+    analytics: false,
   });
 }
 
@@ -172,7 +174,7 @@ runConnectorContractTests(
 // ─── Manifest ───────────────────────────────────────────────────────────────
 
 describe("sales manifest", () => {
-  it("declares the ADR 0014 sales metrics, daily deltas", () => {
+  it("declares the ADR 0014 sales and analytics metrics, daily deltas", () => {
     const metrics = Object.fromEntries(
       appStoreConnectManifest.metrics.map((metric) => [
         metric.key,
@@ -214,6 +216,25 @@ describe("sales manifest", () => {
       "app_store_connect.proceeds": [
         "currency_minor",
         ["resource", "currency"],
+        "delta",
+        "day",
+      ],
+      // Analytics (#174), see analytics.test.ts.
+      "app_store_connect.impressions": [
+        "impressions",
+        ["resource"],
+        "delta",
+        "day",
+      ],
+      "app_store_connect.product_page_views": [
+        "views",
+        ["resource"],
+        "delta",
+        "day",
+      ],
+      "app_store_connect.store_downloads": [
+        "downloads",
+        ["resource", "source"],
         "delta",
         "day",
       ],

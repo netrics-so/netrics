@@ -31,6 +31,12 @@ import {
   type UpdateDeviceRequest,
   type WorkspaceMetricListResponse,
   acceptInvitationResponseSchema,
+  appStoreAnalyticsStatusResponseSchema,
+  enableAppStoreAnalyticsRequestSchema,
+  enableAppStoreAnalyticsResponseSchema,
+  type AppStoreAnalyticsStatusResponse,
+  type EnableAppStoreAnalyticsRequest,
+  type EnableAppStoreAnalyticsResponse,
   connectionDetailResponseSchema,
   connectionListResponseSchema,
   connectionPreviewResponseSchema,
@@ -175,6 +181,8 @@ export function apiErrorMessage(error: unknown): string {
         return "This connector is not available on this instance.";
       case "connection_busy":
         return "The connection is changing right now. Try again in a moment.";
+      case "analytics_unsupported":
+        return "App Store analytics are only available for App Store Connect connections with an uploaded key.";
       default:
         // Connector check/preview failures arrive as human-readable,
         // already-redacted messages rather than snake_case codes.
@@ -613,6 +621,35 @@ export function listConnectionResources(
     connectionResourcesResponseSchema,
     "GET",
     `/v1/workspaces/${workspaceId}/connections/${connectionId}/resources`,
+  );
+}
+
+/** App Store analytics per app (#174), read with the stored key. */
+export function getAppStoreAnalytics(
+  workspaceId: string,
+  connectionId: string,
+): Promise<AppStoreAnalyticsStatusResponse> {
+  return browserSend(
+    appStoreAnalyticsStatusResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/app-store-analytics`,
+  );
+}
+
+/**
+ * Enables App Store analytics with a temporary Admin key, which the API
+ * uses once in memory and never stores (ADR 0014, #174).
+ */
+export function enableAppStoreAnalytics(
+  workspaceId: string,
+  connectionId: string,
+  input: EnableAppStoreAnalyticsRequest,
+): Promise<EnableAppStoreAnalyticsResponse> {
+  return browserSend(
+    enableAppStoreAnalyticsResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/app-store-analytics`,
+    enableAppStoreAnalyticsRequestSchema.parse(input),
   );
 }
 

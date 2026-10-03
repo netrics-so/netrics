@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, max, sql } from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import * as schema from "./schema.js";
@@ -340,4 +340,45 @@ export async function listObservations(
     )
     .orderBy(desc(schema.observations.sourceTimestamp))
     .limit(filter.limit);
+}
+
+/**
+ * The newest observation day per `resource` dimension of the given metrics
+ * of one connection (e.g. which App Store apps have analytics data, #174).
+ */
+export async function latestObservationByResource(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+  metricKeys: readonly string[],
+): Promise<Map<string, Date>> {
+  if (metricKeys.length === 0) {
+    return new Map();
+  }
+  const resource = sql<
+    string | null
+  >`${schema.observations.dimensions} ->> 'resource'`;
+  const rows = await tx
+    .select({
+      resource,
+      latest: max(schema.observations.sourceTimestamp),
+    })
+    .from(schema.observations)
+    .innerJoin(
+      schema.metricDefinitions,
+      eq(schema.observations.metricDefinitionId, schema.metricDefinitions.id),
+    )
+    .where(
+      and(
+        eq(schema.observations.workspaceId, workspaceId),
+        eq(schema.observations.connectionId, connectionId),
+        inArray(schema.metricDefinitions.key, [...metricKeys]),
+      ),
+    )
+    .groupBy(resource);
+  return new Map(
+    rows.flatMap((row) =>
+      row.resource && row.latest ? [[row.resource, row.latest] as const] : [],
+    ),
+  );
 }

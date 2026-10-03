@@ -10,6 +10,7 @@ import { ReconnectBanner } from "../reconnect-banner";
 import { SearchConsoleSettings } from "../search-console-settings";
 import { ConnectionActions } from "./connection-actions";
 import { EditConnectionForm } from "./edit-connection-form";
+import { AppStoreAnalyticsPanel } from "./app-store-analytics-panel";
 import { SignedKeyPanel } from "./signed-key-panel";
 import {
   getConnection,
@@ -250,6 +251,21 @@ export default async function ConnectionDetailPage({
           hasCredentials={connection.hasCredentials}
           authFailed={authFailed}
           canUpdate={canUpdate}
+        />
+      ) : null}
+
+      {appStore && keyStrategy && !connection.setupPending ? (
+        <AppStoreAnalyticsPanel
+          workspaceId={workspaceId}
+          connectionId={connection.id}
+          strategy={keyStrategy}
+          issuerId={
+            connection.signedKey?.fields.find(
+              (field) => field.key === "issuerId",
+            )?.value ?? null
+          }
+          canUpdate={canUpdate}
+          authFailed={authFailed}
         />
       ) : null}
 

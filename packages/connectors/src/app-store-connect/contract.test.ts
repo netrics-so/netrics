@@ -78,12 +78,19 @@ describe("manifest", () => {
     expect(() => assertManifestCompatible(manifest)).not.toThrow();
   });
 
-  it("signs with the host's App Store Connect key and reaches only Apple's API", () => {
+  it("signs with the host's App Store Connect key and reaches only Apple's API and the pinned segment bucket", () => {
     expect(manifest.id).toBe("app-store-connect");
     expect(manifest.authStrategies).toEqual([
       { strategy: "signed-key", provider: "app-store-connect" },
     ]);
-    expect(manifest.outboundDomains).toEqual(["api.appstoreconnect.apple.com"]);
+    // Exact hosts only: no wildcard, never *.amazonaws.com (ADR 0014).
+    expect(manifest.outboundDomains).toEqual([
+      "api.appstoreconnect.apple.com",
+      "asp-us-west-2.s3.us-west-2.amazonaws.com",
+    ]);
+    expect(manifest.outboundDomains.some((host) => host.includes("*"))).toBe(
+      false,
+    );
     expect(manifest.rateLimit).toEqual({
       maxRequests: 3500,
       windowSeconds: 3600,

@@ -127,7 +127,7 @@ async function readDay(
 }
 
 /** Runs `task` for every item, at most `limit` at a time, in input order. */
-async function mapLimited<T, R>(
+export async function mapLimited<T, R>(
   items: T[],
   limit: number,
   task: (item: T) => Promise<R>,

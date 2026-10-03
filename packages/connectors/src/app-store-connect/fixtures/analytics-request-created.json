@@ -1,0 +1,16 @@
+{
+  "data": {
+    "type": "analyticsReportRequests",
+    "id": "d48c69c5-9bcb-4592-abbd-000000000002",
+    "attributes": {
+      "accessType": "ONGOING",
+      "stoppedDueToInactivity": false
+    },
+    "links": {
+      "self": "https://api.appstoreconnect.apple.com/v1/analyticsReportRequests/d48c69c5-9bcb-4592-abbd-000000000002"
+    }
+  },
+  "links": {
+    "self": "https://api.appstoreconnect.apple.com/v1/analyticsReportRequests"
+  }
+}

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 
 import {
+  appStoreAnalyticsStatusResponseSchema,
   connectionDetailResponseSchema,
   connectionListResponseSchema,
   connectionPreviewResponseSchema,
@@ -10,6 +11,8 @@ import {
   connectorListResponseSchema,
   createConnectionRequestSchema,
   deleteConnectionResponseSchema,
+  enableAppStoreAnalyticsRequestSchema,
+  enableAppStoreAnalyticsResponseSchema,
   enqueueSyncResponseSchema,
   observationListQuerySchema,
   observationListResponseSchema,
@@ -253,6 +256,95 @@ export function registerConnectionRoutes(
           }
           reply.header("cache-control", "no-store");
           return connectionResourcesResponseSchema.parse(resources);
+        },
+      );
+
+      // App Store analytics (ADR 0014, #174): the status per app, read with
+      // the connection's stored key, and the one-time enablement with a
+      // temporary Admin key that is used in memory only. Both need
+      // connections:update; the body is never logged.
+      scope.get(
+        "/workspaces/:workspaceId/connections/:connectionId/app-store-analytics",
+        {
+          schema: routeSchema({
+            summary: "App Store analytics status per app",
+            tags: ["connections"],
+            response: appStoreAnalyticsStatusResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:update")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const status = unwrap(
+            await connections.appStoreAnalytics(
+              access,
+              params.data.connectionId,
+            ),
+            reply,
+          );
+          if (!status) {
+            return;
+          }
+          reply.header("cache-control", "no-store");
+          return appStoreAnalyticsStatusResponseSchema.parse(status);
+        },
+      );
+
+      scope.post(
+        "/workspaces/:workspaceId/connections/:connectionId/app-store-analytics",
+        {
+          schema: routeSchema({
+            summary:
+              "Enable App Store analytics with a temporary Admin key (not stored)",
+            tags: ["connections"],
+            body: enableAppStoreAnalyticsRequestSchema,
+            response: enableAppStoreAnalyticsResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:update")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const body = parseBody(
+            enableAppStoreAnalyticsRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) {
+            return;
+          }
+          const enabled = unwrap(
+            await connections.enableAppStoreAnalytics(
+              access,
+              params.data.connectionId,
+              body,
+            ),
+            reply,
+          );
+          if (!enabled) {
+            return;
+          }
+          reply.header("cache-control", "no-store");
+          return enableAppStoreAnalyticsResponseSchema.parse(enabled);
         },
       );
 

@@ -183,6 +183,11 @@ export interface AppStoreConnectClient {
   ): Promise<ConnectorResponse>;
   /** A JSON GET: 2xx gives the body, anything else throws. */
   getJson(pathOrUrl: string, query?: Query): Promise<unknown>;
+  /**
+   * A JSON:API POST (creating a resource, e.g. an analytics report
+   * request). Any status comes back as the response.
+   */
+  postJson(path: string, body: unknown): Promise<ConnectorResponse>;
 }
 
 function urlOf(pathOrUrl: string, query: Query = {}): string {
@@ -212,25 +217,43 @@ export function createAppStoreConnectClient(
   const minRemaining = options.minRemaining ?? MIN_REMAINING_REQUESTS;
   let remaining: number | undefined;
 
-  async function request(
-    pathOrUrl: string,
-    query?: Query,
-    accept = "application/json",
+  async function send(
+    url: string,
+    init: ConnectorFetchInit,
   ): Promise<ConnectorResponse> {
     if (remaining !== undefined && remaining < minRemaining) {
       throw new AppStoreConnectRateBudgetError(remaining);
     }
-    const response = await fetch(urlOf(pathOrUrl, query), {
-      method: "GET",
-      headers: { authorization: `Bearer ${accessToken}`, accept },
-    });
+    const response = await fetch(url, init);
     const budget = parseRateLimit(headerOf(response, "x-rate-limit"));
     if (budget.remaining !== undefined) remaining = budget.remaining;
     return response;
   }
 
+  function request(
+    pathOrUrl: string,
+    query?: Query,
+    accept = "application/json",
+  ): Promise<ConnectorResponse> {
+    return send(urlOf(pathOrUrl, query), {
+      method: "GET",
+      headers: { authorization: `Bearer ${accessToken}`, accept },
+    });
+  }
+
   return {
     request,
+    postJson(path, body) {
+      return send(urlOf(path), {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    },
     async getJson(pathOrUrl, query) {
       const response = await request(pathOrUrl, query);
       if (response.status >= 200 && response.status < 300) {

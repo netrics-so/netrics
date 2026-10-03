@@ -139,6 +139,15 @@ export class SignedKeyProviders {
     this.#now = options.now ?? Date.now;
   }
 
+  /**
+   * Host-side HTTP to the provider's server domains (guarded egress, short
+   * timeout), for provider steps outside connector calls such as enabling
+   * App Store analytics (#174).
+   */
+  httpFor(provider: SignedKeyProviderDefinition): SignedKeyHttp {
+    return this.#http(provider);
+  }
+
   has(providerId: string): boolean {
     return this.#definitions.has(providerId);
   }

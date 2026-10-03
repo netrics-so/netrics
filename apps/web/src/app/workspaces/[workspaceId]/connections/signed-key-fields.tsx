@@ -19,6 +19,17 @@ interface SignedKeyFieldsProps {
   disabled?: boolean;
   /** Show the setup steps open (new connection, or a refused key). */
   guideOpen?: boolean;
+  /**
+   * Other setup steps than the provider's (e.g. for a temporary Admin key),
+   * with their own summary line.
+   */
+  guide?: {
+    summary: string;
+    steps: readonly string[];
+    links?: readonly { step: number; label: string; url: string }[];
+  };
+  /** Prefix of the field ids, when two key forms share a page. */
+  idPrefix?: string;
 }
 
 /**
@@ -33,14 +44,16 @@ export function SignedKeyFields({
   errors = {},
   disabled,
   guideOpen,
+  guide,
+  idPrefix = "",
 }: SignedKeyFieldsProps) {
-  const setup = strategy.setup;
+  const setup = guide ?? strategy.setup;
   const name = strategy.providerName ?? "the provider";
   return (
     <>
       {setup ? (
         <details className="setup-guide" open={guideOpen}>
-          <summary>How to create the {name} key</summary>
+          <summary>{guide?.summary ?? `How to create the ${name} key`}</summary>
           <ol>
             {setup.steps.map((step, index) => {
               const links = (setup.links ?? []).filter(
@@ -92,6 +105,7 @@ export function SignedKeyFields({
         ) : (
           <KeyTextField
             key={field.key}
+            idPrefix={idPrefix}
             provider={strategy.provider}
             field={field}
             value={values[field.key] ?? ""}
@@ -106,6 +120,7 @@ export function SignedKeyFields({
 }
 
 function KeyTextField({
+  idPrefix,
   provider,
   field,
   value,
@@ -113,6 +128,7 @@ function KeyTextField({
   disabled,
   onChange,
 }: {
+  idPrefix: string;
   provider: string;
   field: SignedKeyField;
   value: string;
@@ -120,7 +136,7 @@ function KeyTextField({
   disabled: boolean | undefined;
   onChange: (value: string) => void;
 }) {
-  const id = `key-${field.key}`;
+  const id = `${idPrefix}key-${field.key}`;
   const [touched, setTouched] = useState(false);
   const hint = touched ? keyFieldHint(provider, field.key, value) : null;
   const problem = error ?? hint;

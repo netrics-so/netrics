@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 
 import type {
+  AppStoreAnalyticsStatusResponse,
   ConnectionPreviewResponse,
   ConnectionResourcesResponse,
   ConnectionSignedKeyView,
   ConnectorAuthStrategy,
   CreateConnectionRequest,
   DeleteConnectionResponse,
+  EnableAppStoreAnalyticsRequest,
+  EnableAppStoreAnalyticsResponse,
   ObservationListQuery,
   PreviewConnectionRequest,
   UpdateConnectionRequest,
@@ -18,6 +21,7 @@ import {
   type ConnectorRegistry,
 } from "@netrics/connector-runtime";
 import type { Connector, ConnectorManifest } from "@netrics/connector-sdk";
+import { ANALYTICS_METRIC_KEYS } from "@netrics/connectors";
 import {
   deleteConnection as deleteConnectionRow,
   enqueueJob,
@@ -27,6 +31,7 @@ import {
   findProject,
   insertAuditEvent,
   insertConnection,
+  latestObservationByResource,
   listConnections as listConnectionRows,
   listObservations as listObservationRows,
   listRecentSyncRuns,
@@ -64,6 +69,11 @@ import {
   callWithSignedKey,
   SignedKeyRejectedError,
 } from "../signed-keys/connector-auth.js";
+import {
+  APP_STORE_CONNECT_KEYS_URL,
+  appStoreAnalyticsStatus,
+  enableAppStoreAnalytics,
+} from "../signed-keys/app-store-analytics.js";
 import type { SignedKeyProviderDefinition } from "../signed-keys/providers/index.js";
 import {
   createSignedKeyProviders,
@@ -590,6 +600,69 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     } catch (error) {
       return signedKeyCallFailure(error);
     }
+  }
+
+  /**
+   * An App Store Connect connection with its stored key, for the analytics
+   * steps (#174). Other connections answer "analytics_unsupported".
+   */
+  async function appStoreConnection(
+    actor: Actor,
+    connectionId: string,
+  ): Promise<
+    Result<{
+      existing: ConnectionWithState;
+      key: SignedKey;
+      selection: string[] | undefined;
+    }>
+  > {
+    const existing = await inWorkspace(actor, (tx) =>
+      findConnection(tx, actor.workspaceId, connectionId),
+    );
+    if (!existing) {
+      return fail(404, NOT_FOUND);
+    }
+    const registered = registry.get(existing.row.connectorId);
+    const strategy = registered?.manifest.authStrategies.find(
+      (entry) => entry.strategy === "signed-key",
+    );
+    if (
+      !registered ||
+      existing.oauth ||
+      strategy?.strategy !== "signed-key" ||
+      strategy.provider !== "app-store-connect" ||
+      !existing.row.credentialsEncrypted
+    ) {
+      return fail(400, "analytics_unsupported");
+    }
+    let credentials: Record<string, unknown>;
+    try {
+      credentials = JSON.parse(
+        decryptCredentials(
+          existing.row.credentialsEncrypted.toString("utf8"),
+          credentialKeyring,
+          { workspaceId: actor.workspaceId, connectionId },
+        ),
+      ) as Record<string, unknown>;
+    } catch (error) {
+      return fail(400, safeMessage(error));
+    }
+    const key = storedSignedKey(registered.manifest, credentials);
+    if (!key) {
+      return fail(400, "analytics_unsupported");
+    }
+    if (!key.ok) {
+      return key;
+    }
+    const selection = (existing.row.config as Record<string, unknown>)
+      .resourceSelection;
+    return ok({
+      existing,
+      key: key.value,
+      selection: Array.isArray(selection)
+        ? selection.filter((id): id is string => typeof id === "string")
+        : undefined,
+    });
   }
 
   /** Maps a failed OAuth connector call to a 400 the web app can explain. */
@@ -1263,6 +1336,99 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         });
         return ok(jobId);
       });
+    },
+
+    /**
+     * App Store analytics per app (#174), read with the connection's stored
+     * key: requested or not, stopped, and whether analytics data arrived.
+     */
+    async appStoreAnalytics(
+      actor: Actor,
+      connectionId: string,
+    ): Promise<Result<AppStoreAnalyticsStatusResponse>> {
+      const loaded = await appStoreConnection(actor, connectionId);
+      if (!loaded.ok) {
+        return loaded;
+      }
+      const { key, selection } = loaded.value;
+      const latest = await inWorkspace(actor, (tx) =>
+        latestObservationByResource(tx, actor.workspaceId, connectionId, [
+          ANALYTICS_METRIC_KEYS.impressions,
+          ANALYTICS_METRIC_KEYS.productPageViews,
+          ANALYTICS_METRIC_KEYS.storeDownloads,
+        ]),
+      );
+      const status = await appStoreAnalyticsStatus({
+        key,
+        http: signedKeys.httpFor(key.provider),
+        selection,
+        latest,
+      });
+      if (!status.ok) {
+        return fail(400, status.message);
+      }
+      return ok({ apps: status.value, keysUrl: APP_STORE_CONNECT_KEYS_URL });
+    },
+
+    /**
+     * "Enable App Store analytics" (ADR 0014, #174): the temporary Admin
+     * key in the body is checked like any App Store Connect key (format,
+     * P-256), used in memory to create the missing ONGOING report requests
+     * of the connection's apps, and dropped. It is never stored, enqueued
+     * or logged; the audit event names the apps only.
+     */
+    async enableAppStoreAnalytics(
+      actor: Actor,
+      connectionId: string,
+      body: EnableAppStoreAnalyticsRequest,
+    ): Promise<Result<EnableAppStoreAnalyticsResponse>> {
+      const loaded = await appStoreConnection(actor, connectionId);
+      if (!loaded.ok) {
+        return loaded;
+      }
+      const { existing, key: storedKey, selection } = loaded.value;
+      const provider = storedKey.provider;
+      const adminKey = signedKeys.parse(provider, body.credentials);
+      if (!adminKey.ok) {
+        return fail(400, adminKey.message);
+      }
+      const storedIssuer = storedKey.publicFields.issuerId;
+      if (
+        storedIssuer !== undefined &&
+        adminKey.value.publicFields.issuerId !== storedIssuer
+      ) {
+        return fail(
+          400,
+          `This key belongs to another App Store Connect team. Use an Admin key of the team with issuer ID ${storedIssuer}.`,
+        );
+      }
+      const enabled = await enableAppStoreAnalytics({
+        adminKey: adminKey.value,
+        http: signedKeys.httpFor(provider),
+        selection,
+      });
+      if (!enabled.ok) {
+        return fail(400, enabled.message);
+      }
+      const ids = (outcome: string) =>
+        enabled.value
+          .filter((app) => app.outcome === outcome)
+          .map((app) => app.appId);
+      await inWorkspace(actor, (tx) =>
+        insertAuditEvent(tx, {
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.callerId,
+          action: "connection.analytics_enabled",
+          target: connectionId,
+          metadata: {
+            connectorId: existing.row.connectorId,
+            created: ids("created"),
+            existing: ids("existing"),
+            failed: ids("failed"),
+          },
+        }),
+      );
+      return ok({ apps: enabled.value, keysUrl: APP_STORE_CONNECT_KEYS_URL });
     },
 
     async listObservations(

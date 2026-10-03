@@ -1,5 +1,12 @@
 export {
   AGREEMENTS_MESSAGE,
+  ANALYTICS_METRIC_KEYS,
+  ANALYTICS_SEGMENT_HOSTS,
+  activeRequest,
+  ensureAnalyticsRequest,
+  listAnalyticsRequests,
+  listApps,
+  type AppStoreApp,
   AppStoreConnectApiError,
   AppStoreConnectRateBudgetError,
   appStoreConnectManifest,

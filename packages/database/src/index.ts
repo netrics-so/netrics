@@ -166,6 +166,7 @@ export {
   finishConnectionSetup,
   insertConnection,
   listConnections,
+  latestObservationByResource,
   listObservations,
   listRecentSyncRuns,
   resetConnectionAuth,
