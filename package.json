@@ -22,7 +22,8 @@
     "db:generate": "pnpm --filter @netrics/database generate",
     "setup": "pnpm install && pnpm db:up && pnpm build && pnpm db:migrate",
     "openapi": "pnpm --filter @netrics/server openapi",
-    "openapi:check": "pnpm --filter @netrics/server openapi:check"
+    "openapi:check": "pnpm --filter @netrics/server openapi:check",
+    "vectors:studio": "UPDATE_STUDIO_VECTORS=1 vitest run packages/domain/src/studio-layout.test.ts -t \"test vectors\""
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

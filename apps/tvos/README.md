@@ -28,6 +28,13 @@ xcodebuild -project apps/tvos/NetricsTV.xcodeproj -scheme NetricsTV \
   build CODE_SIGNING_ALLOWED=NO
 ```
 
+`StudioLayout.swift` ports the slide layout and readability rules of
+`packages/domain/src/studio-layout.ts` (ADR 0015, section 8). Its tests read
+the shared vectors in `packages/domain/test-vectors/studio-layout.json`
+straight from the repository, so a change on either side must keep both
+suites green; `pnpm vectors:studio` regenerates the vectors from the
+TypeScript.
+
 To run it, open `NetricsTV.xcodeproj` in Xcode and pick an Apple TV
 simulator. Simulator builds need no signing team.
 
