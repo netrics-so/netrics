@@ -96,6 +96,13 @@ describe("providers", () => {
         provider: "acme",
       }).guideUrl,
     ).toBeNull();
+    const signedKey = unavailableCopy({
+      reason: "signed_key_provider_unsupported",
+      provider: "app-store-connect",
+    });
+    expect(signedKey.detail).toContain("App Store Connect keys");
+    expect(signedKey.detail).not.toContain("OAuth");
+    expect(signedKey.guideUrl).toBeNull();
   });
 });
 

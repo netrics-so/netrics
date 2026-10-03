@@ -12,6 +12,7 @@ import type {
 
 import { TileNotice, TileView } from "@/components/tile-view";
 import { apiErrorMessage, queryMetric } from "@/lib/api";
+import { displayUnit } from "@/lib/format-metric";
 import { TILE_NOTICES, lastSyncNotice } from "@/lib/tile-status";
 
 export interface TileConnection {
@@ -104,7 +105,11 @@ export function MetricTile({
   }, [load, refreshMs]);
 
   const label = tile.title ?? metric?.name ?? tile.metricKey;
-  const unit = data?.metric.unit ?? metric?.unit ?? "";
+  // A per-currency amount formats in the currency the tile shows.
+  const unit = displayUnit(
+    data?.metric.unit ?? metric?.unit ?? "",
+    data?.currency ?? tile.dimensions.currency,
+  );
   const stale = staleness(connection);
 
   return (

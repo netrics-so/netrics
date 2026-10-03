@@ -34,6 +34,14 @@ export type CredentialAuthStrategy = z.infer<
 >;
 
 /**
+ * Id of a host-defined auth provider ("google", "app-store-connect"):
+ * lowercase words joined by single hyphens.
+ */
+export const authProviderIdSchema = z
+  .string()
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+
+/**
  * The user authorizes netrics at an OAuth provider (ADR 0012). A connector
  * only names the provider and the scopes it needs; endpoints and client
  * secrets are trusted host code and instance configuration. The host hands
@@ -42,7 +50,7 @@ export type CredentialAuthStrategy = z.infer<
  */
 export const oauth2AuthStrategySchema = z.object({
   strategy: z.literal("oauth2"),
-  provider: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  provider: authProviderIdSchema,
   scopes: z
     .array(z.string().min(1))
     .min(1)
@@ -52,9 +60,34 @@ export const oauth2AuthStrategySchema = z.object({
 });
 export type OAuth2AuthStrategy = z.infer<typeof oauth2AuthStrategySchema>;
 
+/**
+ * The user uploads key material (an App Store Connect API key) and the host
+ * signs short-lived tokens with it (ADR 0014). A connector only names the
+ * provider: the credential fields, token claims and lifetime are trusted host
+ * code. The host hands the connector `credentials: { accessToken }` (a fresh
+ * token per call, see SignedKeyCredentials) and never the key. Unknown fields
+ * are rejected, so a connector cannot smuggle claims or key settings in.
+ * Since SDK 0.2.2.
+ */
+export const signedKeyAuthStrategySchema = z.strictObject({
+  strategy: z.literal("signed-key"),
+  provider: authProviderIdSchema,
+});
+export type SignedKeyAuthStrategy = z.infer<typeof signedKeyAuthStrategySchema>;
+
+/**
+ * What an "oauth2" or "signed-key" connector finds in
+ * `ConnectionContext.credentials`: a short-lived bearer token minted by the
+ * host for this one call. Refresh tokens and private keys stay with the host.
+ */
+export interface AccessTokenCredentials {
+  accessToken: string;
+}
+
 export const authStrategySchema = z.union([
   credentialAuthStrategySchema,
   oauth2AuthStrategySchema,
+  signedKeyAuthStrategySchema,
 ]);
 export type AuthStrategy = z.infer<typeof authStrategySchema>;
 
@@ -72,35 +105,58 @@ export const granularitySchema = z.enum(["day", "hour", "instant"]);
 export type Granularity = z.infer<typeof granularitySchema>;
 export type Aggregation = z.infer<typeof aggregationSchema>;
 
-export const metricDefinitionSchema = z.object({
-  key: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string().min(1),
-  kind: metricKindSchema,
-  /**
-   * Unit of the value. Currency amounts are integer minor units named by
-   * ISO 4217 code plus "_minor" (e.g. "EUR_minor" for cents), so values stay
-   * exact in double precision.
-   */
-  unit: z.string().min(1),
-  granularity: granularitySchema,
-  dimensions: z.array(z.string().min(1)),
-  aggregations: z.array(aggregationSchema).min(1),
-  /**
-   * Which way is good: "higher" (default; more clicks, more revenue) or
-   * "lower" (a rank such as average position, an error rate). Dashboards
-   * colour a change by it.
-   */
-  better: z.enum(["higher", "lower"]).optional(),
-  /**
-   * "primary" (default) metrics are shown on their own; a "helper" is an
-   * input for derived values (e.g. a position sum divided by impressions).
-   * Helpers are stored and queryable like any metric, but tile pickers do
-   * not offer them. Presentation only: a runtime that does not know the
-   * field ignores it.
-   */
-  role: z.enum(["primary", "helper"]).optional(),
-});
+/**
+ * Unit of a currency amount whose currency varies per observation (ADR
+ * 0014): integer minor units, with the ISO 4217 code in the observation's
+ * `currency` dimension (e.g. App Store proceeds per currency of proceeds).
+ * Since SDK 0.2.3.
+ */
+export const CURRENCY_MINOR_UNIT = "currency_minor";
+/** The dimension that holds a `currency_minor` value's ISO 4217 code. */
+export const CURRENCY_DIMENSION = "currency";
+
+export const metricDefinitionSchema = z
+  .object({
+    key: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string().min(1),
+    kind: metricKindSchema,
+    /**
+     * Unit of the value. Currency amounts are integer minor units named by
+     * ISO 4217 code plus "_minor" (e.g. "EUR_minor" for cents), so values stay
+     * exact in double precision. When the currency varies per observation, the
+     * unit is "currency_minor" and the metric declares a "currency" dimension
+     * holding the ISO 4217 code; amounts in different currencies are never
+     * added up.
+     */
+    unit: z.string().min(1),
+    granularity: granularitySchema,
+    dimensions: z.array(z.string().min(1)),
+    aggregations: z.array(aggregationSchema).min(1),
+    /**
+     * Which way is good: "higher" (default; more clicks, more revenue) or
+     * "lower" (a rank such as average position, an error rate). Dashboards
+     * colour a change by it.
+     */
+    better: z.enum(["higher", "lower"]).optional(),
+    /**
+     * "primary" (default) metrics are shown on their own; a "helper" is an
+     * input for derived values (e.g. a position sum divided by impressions).
+     * Helpers are stored and queryable like any metric, but tile pickers do
+     * not offer them. Presentation only: a runtime that does not know the
+     * field ignores it.
+     */
+    role: z.enum(["primary", "helper"]).optional(),
+  })
+  .refine(
+    (metric) =>
+      metric.unit !== CURRENCY_MINOR_UNIT ||
+      metric.dimensions.includes(CURRENCY_DIMENSION),
+    {
+      message: `a "${CURRENCY_MINOR_UNIT}" metric needs a "${CURRENCY_DIMENSION}" dimension`,
+      path: ["dimensions"],
+    },
+  );
 export type MetricDefinition = z.infer<typeof metricDefinitionSchema>;
 
 export const rateLimitHintSchema = z.object({

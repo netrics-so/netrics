@@ -10,6 +10,8 @@ import {
   deviceListResponseSchema,
   deviceResponseSchema,
   duplicateDashboardRequestSchema,
+  metricCurrenciesRequestSchema,
+  metricCurrenciesResponseSchema,
   metricQueryRequestSchema,
   metricQueryResponseSchema,
   replaceDashboardRequestSchema,
@@ -21,6 +23,8 @@ import {
   type DashboardResponse,
   type DeviceListResponse,
   type DeviceResponse,
+  type MetricCurrenciesRequest,
+  type MetricCurrenciesResponse,
   type MetricQueryRequest,
   type MetricQueryResponse,
   type ReplaceDashboardRequest,
@@ -157,6 +161,10 @@ export function apiErrorMessage(error: unknown): string {
         return "A tile's metric is no longer available from its connection.";
       case "aggregation_not_supported":
         return "That aggregation does not fit the metric.";
+      case "currency_required":
+        return "Pick a currency for this amount: amounts in different currencies are not added up.";
+      case "metric_not_per_currency":
+        return "This metric is not an amount in several currencies.";
       case "unknown_dimension":
         return "A tile filters on a dimension the metric does not have.";
       case "oauth_reauthorization_required":
@@ -722,6 +730,19 @@ export function queryMetric(
     "POST",
     `/v1/workspaces/${workspaceId}/metrics/query`,
     metricQueryRequestSchema.parse(body),
+  );
+}
+
+/** A per-currency metric's currencies, largest total first (ADR 0014). */
+export function listMetricCurrencies(
+  workspaceId: string,
+  body: MetricCurrenciesRequest,
+): Promise<MetricCurrenciesResponse> {
+  return browserSend(
+    metricCurrenciesResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/metrics/currencies`,
+    metricCurrenciesRequestSchema.parse(body),
   );
 }
 

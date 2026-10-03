@@ -160,3 +160,82 @@ export async function queryMetricBuckets(
     value: Number(row.value),
   }));
 }
+
+export interface MetricCurrencyQuery {
+  workspaceId: string;
+  connectionId: string;
+  metricKey: string;
+  /** Only series whose dimensions contain these values. */
+  dimensions?: Record<string, string>;
+  /** The window the totals cover; inclusive. */
+  from: Date;
+  /** Exclusive. */
+  to: Date;
+  /** As in MetricBucketQuery: deltas add up, levels add each series' last. */
+  combination: "sum" | "sum_of_last";
+}
+
+export interface MetricCurrencyTotal {
+  /** ISO 4217 code from the observations' `currency` dimension. */
+  currency: string;
+  /** Minor units over the window; 0 for a currency seen only outside it. */
+  total: number;
+}
+
+/**
+ * The currencies of a "currency_minor" metric (ADR 0014), each with its own
+ * total over the window: amounts are grouped by currency, never added
+ * across currencies. Currencies seen only outside the window are listed with
+ * a total of 0. Largest total first.
+ */
+export async function queryMetricCurrencyTotals(
+  tx: Transaction,
+  query: MetricCurrencyQuery,
+): Promise<MetricCurrencyTotal[]> {
+  const span = query.to.getTime() - query.from.getTime();
+  if (!(span > 0) || span > MAX_WINDOW_MS) {
+    throw new RangeError("metric window must be positive and at most 63 days");
+  }
+  const dimensions = query.dimensions ?? {};
+  if (Object.keys(dimensions).length > MAX_DIMENSION_FILTERS) {
+    throw new RangeError("at most 10 dimension filters");
+  }
+  const series = sql`
+    select o.series_key, o.dimensions ->> 'currency' as currency,
+           o.source_timestamp, o.value
+    from observations o
+    join connections c on c.id = o.connection_id
+    join metric_definitions m
+      on m.id = o.metric_definition_id and m.connector_id = c.connector_id
+    where o.workspace_id = ${query.workspaceId}
+      and c.workspace_id = ${query.workspaceId}
+      and o.connection_id = ${query.connectionId}
+      and m.key = ${query.metricKey}
+      and o.dimensions ->> 'currency' is not null
+      and o.dimensions @> ${JSON.stringify(dimensions)}::jsonb`;
+  const inWindow = sql`
+    source_timestamp >= ${query.from.toISOString()}::timestamptz
+    and source_timestamp < ${query.to.toISOString()}::timestamptz`;
+  const totals =
+    query.combination === "sum"
+      ? sql`select currency, sum(value) as total
+            from points where ${inWindow} group by currency`
+      : sql`select currency, sum(value) as total
+            from (
+              select distinct on (series_key) currency, value
+              from points where ${inWindow}
+              order by series_key, source_timestamp desc
+            ) last_per_series
+            group by currency`;
+  const rows = await tx.execute(sql`
+    with points as (${series}),
+    totals as (${totals})
+    select seen.currency, coalesce(totals.total, 0) as total
+    from (select distinct currency from points) seen
+    left join totals on totals.currency = seen.currency
+    order by total desc, seen.currency`);
+  return rows.map((row) => ({
+    currency: row.currency as string,
+    total: Number(row.total),
+  }));
+}

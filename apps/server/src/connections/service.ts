@@ -196,11 +196,14 @@ function encrypt(
 
 /**
  * The wizard's view of an auth strategy: token field labels and setup
- * steps, or the OAuth provider and scopes.
+ * steps, the OAuth provider and scopes, or the signed-key provider.
  */
 function presentAuthStrategy(
   strategy: ConnectorManifest["authStrategies"][number],
 ): ConnectorAuthStrategy {
+  if (strategy.strategy === "signed-key") {
+    return { strategy: "signed-key", provider: strategy.provider };
+  }
   if (strategy.strategy === "oauth2") {
     return {
       strategy: "oauth2",

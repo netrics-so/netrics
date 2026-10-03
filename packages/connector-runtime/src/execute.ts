@@ -1,4 +1,6 @@
 import {
+  CURRENCY_DIMENSION,
+  CURRENCY_MINOR_UNIT,
   checkResultSchema,
   resourceSchema,
   syncRequestSchema,
@@ -183,6 +185,21 @@ function validateSyncResult(
       if (!metric.dimensions.includes(dimension)) {
         throw new ContractViolationError(
           `connector "${manifest.id}" returned undeclared dimension "${dimension}" for metric "${observation.metricKey}"`,
+        );
+      }
+    }
+    if (metric.unit === CURRENCY_MINOR_UNIT) {
+      // Amounts are added up per currency only, so each one names its
+      // currency (ISO 4217) and is a whole number of minor units.
+      const currency = observation.dimensions[CURRENCY_DIMENSION];
+      if (currency === undefined || !/^[A-Z]{3}$/.test(currency)) {
+        throw new ContractViolationError(
+          `connector "${manifest.id}" returned a "${observation.metricKey}" amount without an ISO 4217 "${CURRENCY_DIMENSION}" dimension`,
+        );
+      }
+      if (!Number.isInteger(observation.value)) {
+        throw new ContractViolationError(
+          `connector "${manifest.id}" returned a "${observation.metricKey}" amount that is not in integer minor units`,
         );
       }
     }

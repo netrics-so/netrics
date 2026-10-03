@@ -9,6 +9,7 @@ import type {
 } from "@netrics/connector-sdk";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import { describe, expect, it } from "vitest";
 
@@ -109,6 +110,56 @@ describe("executeSync", () => {
     await expect(executeSync(connector, baseContext, request)).rejects.toThrow(
       /undeclared dimension "country"/,
     );
+  });
+
+  describe("currency_minor amounts", () => {
+    const manifest: ConnectorManifest = {
+      ...demoManifest,
+      metrics: [
+        {
+          key: "demo.proceeds",
+          name: "Proceeds",
+          description: "Proceeds per currency.",
+          kind: "delta",
+          unit: "currency_minor",
+          granularity: "day",
+          dimensions: ["resource", "currency"],
+          aggregations: ["sum"],
+        },
+      ],
+    };
+    const amount = (dimensions: Record<string, string>, value = 1234) =>
+      observation({ metricKey: "demo.proceeds", dimensions, value });
+    const run = (observations: Observation[]) =>
+      executeSync(
+        connectorWith(manifest, () => ({ observations, done: true })),
+        baseContext,
+        request,
+      );
+
+    it("accepts integer minor units with an ISO 4217 currency", async () => {
+      const result = await run([
+        amount({ resource: "app-1", currency: "EUR" }),
+        amount({ resource: "app-1", currency: "JPY" }, 500),
+      ]);
+      expect(result.observations).toHaveLength(2);
+    });
+
+    it.each([
+      ["no currency", { resource: "app-1" }],
+      ["a lowercase code", { resource: "app-1", currency: "eur" }],
+      ["a name", { resource: "app-1", currency: "Euro" }],
+    ])("rejects an amount with %s", async (_label, dimensions) => {
+      await expect(run([amount(dimensions)])).rejects.toThrow(
+        /without an ISO 4217 "currency" dimension/,
+      );
+    });
+
+    it("rejects fractional minor units", async () => {
+      await expect(
+        run([amount({ resource: "app-1", currency: "EUR" }, 12.5)]),
+      ).rejects.toThrow(/not in integer minor units/);
+    });
   });
 
   it("rejects malformed transport objects", async () => {
@@ -312,5 +363,100 @@ describe("runtime capabilities", () => {
     } finally {
       server.close();
     }
+  });
+});
+
+describe("binary bodies (SDK 0.2.2)", () => {
+  // The bounded-gunzip pattern from the connector docs: the response cap
+  // bounds the compressed bytes, and maxOutputLength bounds what they
+  // inflate to.
+  const MAX_INFLATED_BYTES = 1024 * 1024;
+  function inflate(bytes: Uint8Array): string {
+    try {
+      return gunzipSync(bytes, {
+        maxOutputLength: MAX_INFLATED_BYTES,
+      }).toString("utf8");
+    } catch (error) {
+      if ((error as { code?: string }).code === "ERR_BUFFER_TOO_LARGE") {
+        throw new Error(
+          `report exceeds ${MAX_INFLATED_BYTES} bytes when decompressed`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+  }
+
+  async function withGzipServer(
+    bodies: Record<string, Buffer>,
+    run: (port: number) => Promise<void>,
+  ) {
+    const server = createServer((req, res) => {
+      const body = bodies[req.url ?? ""];
+      res.writeHead(body ? 200 : 404, { "content-type": "application/a-gzip" });
+      res.end(body);
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    try {
+      await run((server.address() as AddressInfo).port);
+    } finally {
+      server.close();
+    }
+  }
+
+  function gzipReader(port: number, path: string): Connector {
+    return {
+      ...connectorWith({ ...demoManifest, outboundDomains: ["127.0.0.1"] }),
+      sync: async (_context, _request, runtime) => {
+        const response = await runtime.fetch(`http://127.0.0.1:${port}${path}`);
+        const units = Number(inflate(response.bytes()).split("\t")[1]);
+        return {
+          observations: [observation({ value: units })],
+          done: true,
+        };
+      },
+    };
+  }
+
+  const egress = { allowInsecureHttp: true, allowPrivateAddresses: true };
+
+  it("lets a connector inflate a gzip report it fetched", async () => {
+    await withGzipServer(
+      { "/report.gz": gzipSync("units\t42\n") },
+      async (port) => {
+        const result = await executeSync(
+          gzipReader(port, "/report.gz"),
+          baseContext,
+          request,
+          { egress },
+        );
+        expect(result.observations[0]?.value).toBe(42);
+      },
+    );
+  });
+
+  it("fails a gzip bomb as a provider error, not a crash or contract violation", async () => {
+    // About 16 KiB on the wire, well under the response cap, but 16 MiB
+    // once inflated.
+    const bomb = gzipSync(Buffer.alloc(16 * 1024 * 1024));
+    expect(bomb.byteLength).toBeLessThan(64 * 1024);
+    await withGzipServer({ "/bomb.gz": bomb }, async (port) => {
+      const failure = await executeSync(
+        gzipReader(port, "/bomb.gz"),
+        baseContext,
+        request,
+        { egress },
+      ).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure).not.toBeInstanceOf(ContractViolationError);
+      expect((failure as Error).message).toMatch(
+        /exceeds 1048576 bytes when decompressed/,
+      );
+    });
   });
 });

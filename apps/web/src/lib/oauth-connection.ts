@@ -18,7 +18,10 @@ import type {
 export const GOOGLE_OAUTH_SETUP_GUIDE =
   "https://github.com/netrics-so/netrics/blob/main/deploy/compose/google-oauth.md";
 
-const PROVIDER_NAMES: Record<string, string> = { google: "Google" };
+const PROVIDER_NAMES: Record<string, string> = {
+  google: "Google",
+  "app-store-connect": "App Store Connect",
+};
 
 /** "Google" for "google"; unknown providers keep their id, capitalized. */
 export function providerName(provider: string): string {
@@ -48,6 +51,13 @@ export function unavailableCopy(unavailable: ConnectorUnavailable): {
   guideUrl: string | null;
 } {
   const name = providerName(unavailable.provider);
+  if (unavailable.reason === "signed_key_provider_unsupported") {
+    return {
+      summary: "Not available on this instance",
+      detail: `This netrics server cannot use ${name} keys yet. An administrator has to update netrics.`,
+      guideUrl: null,
+    };
+  }
   if (unavailable.reason === "oauth_provider_unsupported") {
     return {
       summary: "Not available on this instance",
