@@ -54,7 +54,7 @@ results.
 
 The two position sums are helper metrics: they are stored and queryable, but
 the tile editor does not offer them, since they only mean something divided
-by impressions (derived metrics, milestone 10).
+by impressions (derived metrics, milestone 11).
 
 Breakdown rows carry the dimensions `page` (URL), `query` (search text),
 `country` (ISO 3166-1 alpha-3, lower case, e.g. `usa`) and `device`
@@ -73,7 +73,7 @@ average position do not:
 So click-through rate and average position are stored as daily readings
 (tiles show the latest day, or the lowest or highest day) and are never
 summed or plainly averaged. The weighted values over any period come with
-derived metrics (milestone 10), which divide clicks by impressions and
+derived metrics (milestone 11), which divide clicks by impressions and
 position sum by impressions. Breakdowns store only values that add up
 (clicks, impressions, position sum); a rate or position per page, query,
 country or device is derived the same way.

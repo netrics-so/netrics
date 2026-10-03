@@ -6,7 +6,7 @@ Status: accepted (2026-10-03, milestone 08)
 
 App Store Connect (milestone 08) is the first connector whose credential is a
 private key the user uploads. netrics signs short-lived tokens with it. Apple
-Ads (milestone 09) signs its client secret with a private key in the same
+Ads (milestone 10) signs its client secret with a private key in the same
 way, so whatever we build here gets used again.
 
 Product rules:
@@ -29,7 +29,7 @@ Product rules:
   ([Creating API keys](https://developer.apple.com/documentation/appstoreconnectapi/creating-api-keys-for-app-store-connect-api),
   [Downloading Analytics Reports](https://developer.apple.com/documentation/appstoreconnectapi/downloading-analytics-reports)).
   We found no announcement of a third-party authorization flow. Re-check
-  this before milestone 16.
+  this before milestone 17.
 - **Keys.** There are two kinds:
   - _Team keys_ cover every app of the team and carry the role chosen at
     creation.
@@ -91,8 +91,8 @@ providers (ADR 0012), a _signed-key provider_ is trusted host code in
 The connector never sees the private key. Before each check, discovery or
 sync call, the host signs a fresh JWT and hands the connector
 `credentials: { accessToken }`, the same shape as OAuth. Community connectors
-(milestone 11) may name a provider but never define one. `SDK_VERSION`
-becomes 0.2.2, and `^0.2.0` connectors keep loading. Apple Ads (milestone 09) adds a provider that signs a client-secret JWT and exchanges it for an
+(milestone 12) may name a provider but never define one. `SDK_VERSION`
+becomes 0.2.2, and `^0.2.0` connectors keep loading. Apple Ads (milestone 10) adds a provider that signs a client-secret JWT and exchanges it for an
 access token; no new strategy is needed.
 
 **Fields.** The form has three fields:
@@ -276,7 +276,7 @@ gate; #190 tracks them as an optional stretch. Sales never require this key.
   only the review metrics ("App Store reviews paused — upload a new
   reviews key"). The connection does not become `auth_failed`.
 - **Data.** Review counts and the sum of star ratings per app and day; the
-  average is derived (milestone 10) or computed by the tile. Review text
+  average is derived (milestone 11) or computed by the tile. Review text
   and nicknames are not stored. The API has no aggregate store rating, so
   the UI does not present these numbers as the App Store's star rating.
 - **Implementation (#190).** The provider declares the reviews key as an
@@ -332,11 +332,11 @@ resources, as projects are for Vercel:
 | `app_store_connect.store_downloads`        | `downloads`      | resource, source    | (b)    |
 
 All of them are `delta` metrics at `day` granularity, summed. Conversion
-(downloads ÷ product page views) is a derived metric (milestone 10), like
+(downloads ÷ product page views) is a derived metric (milestone 11), like
 Search Console's weighted CTR. It is not stored as a daily ratio here.
 
 **Currency.** Proceeds stay in their currency of proceeds. There is no FX
-conversion; Apple Ads takes the same position (milestone 09). Apple's own
+conversion; Apple Ads takes the same position (milestone 10). Apple's own
 UI converts with "a rolling average of the previous month's exchange
 rates", which the API does not provide
 ([Sales and Trends metrics](https://developer.apple.com/help/app-store-connect/reference/reporting/sales-and-trends-metrics-and-dimensions)).
@@ -531,7 +531,7 @@ tests assert that the connector cannot reach any other host.
 3. **Currency.** The user chooses per workspace or per tile: amounts per
    currency (default, exact), or converted into a display currency with
    daily ECB reference rates, labelled approximate, and switchable off for
-   self-hosters. #191, no milestone yet (milestone 10 lists currency
+   self-hosters. #191, no milestone yet (milestone 11 lists currency
    exchange as out of scope).
 4. **Role names and sales report version.** Confirmed with a real account
    at the exit gate (#176), which records them.

@@ -14,7 +14,7 @@ display downloads, proceeds and store-reach metrics on dashboards and TVs.
 
 This milestone proves that a connector can authenticate with an uploaded
 private key: the host signs short-lived tokens for each call, and the
-connector never sees the key. Apple Ads (milestone 09) reuses this. The
+connector never sees the key. Apple Ads (milestone 10) reuses this. The
 design is in
 [ADR 0014](../decisions/0014-app-store-connect-signed-keys.md).
 

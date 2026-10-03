@@ -1,4 +1,4 @@
-# Milestone 16 — Production hardening and v1 release
+# Milestone 17 — Production hardening and v1 release
 
 ## Outcome
 
@@ -7,7 +7,7 @@ released as version 1 for both SaaS and self-hosted customers.
 
 ## Dependencies
 
-- Milestones 00–15
+- Milestones 00–16
 
 ## In scope
 

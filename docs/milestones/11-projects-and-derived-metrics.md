@@ -1,4 +1,4 @@
-# Milestone 10 — Projects and derived metrics
+# Milestone 11 — Projects and derived metrics
 
 ## Outcome
 
@@ -7,7 +7,7 @@ cross-source metrics without writing code.
 
 ## Dependencies
 
-- Milestones 04–09
+- Milestones 04–10 (09: Dashboard Studio widget model)
 
 ## In scope
 
@@ -20,7 +20,8 @@ cross-source metrics without writing code.
 - Unit, currency, dimension, time-window, and aggregation validation
 - Missing-value, zero-division, and stale-input behavior
 - Preview with sample and historical data
-- Additional bar, table, gauge, and health widgets
+- Additional table, gauge, and health widgets on the Dashboard Studio widget
+  model (milestone 09 ships the bar chart)
 
 ## Out of scope
 

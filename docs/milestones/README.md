@@ -59,14 +59,15 @@ distribution runs the signed images.
 | [06 — Screens and Apple TV](./06-screens-and-apple-tv.md)                 | Paired Apple TV displays a managed playlist        |
 | [07 — Google Search Console](./07-google-search-console.md)               | Reusable user OAuth and Google metrics             |
 | [08 — App Store Connect](./08-app-store-connect.md)                       | Signed-key auth and app-store metrics              |
-| [09 — Apple Ads](./09-apple-ads.md)                                       | Client-credential auth and advertising metrics     |
-| [10 — Projects and derived metrics](./10-projects-and-derived-metrics.md) | Cross-connection analysis and organization         |
-| [11 — Community connector system](./11-community-connectors.md)           | Public SDK, template, catalog, and review pipeline |
-| [12 — Custom API connector](./12-custom-api-connector.md)                 | Safe declarative connection builder                |
-| [13 — Alerts and notifications](./13-alerts-and-notifications.md)         | Stateful rules deliver email and webhooks          |
-| [14 — Collaboration and access](./14-collaboration-and-access.md)         | Complete sharing, identity, and administration     |
-| [15 — SaaS control plane](./15-saas-control-plane.md)                     | Billing, provisioning, limits, and operations      |
-| [16 — Production hardening and v1](./16-production-hardening.md)          | Tested self-host and SaaS v1 release               |
+| [09 — Dashboard Studio](./09-dashboard-studio.md)                         | Slides, widgets, themes and images on every screen |
+| [10 — Apple Ads](./10-apple-ads.md)                                       | Client-credential auth and advertising metrics     |
+| [11 — Projects and derived metrics](./11-projects-and-derived-metrics.md) | Cross-connection analysis and organization         |
+| [12 — Community connector system](./12-community-connectors.md)           | Public SDK, template, catalog, and review pipeline |
+| [13 — Custom API connector](./13-custom-api-connector.md)                 | Safe declarative connection builder                |
+| [14 — Alerts and notifications](./14-alerts-and-notifications.md)         | Stateful rules deliver email and webhooks          |
+| [15 — Collaboration and access](./15-collaboration-and-access.md)         | Complete sharing, identity, and administration     |
+| [16 — SaaS control plane](./16-saas-control-plane.md)                     | Billing, provisioning, limits, and operations      |
+| [17 — Production hardening and v1](./17-production-hardening.md)          | Tested self-host and SaaS v1 release               |
 
 ## Dependency map
 
@@ -83,14 +84,15 @@ distribution runs the signed images.
                     └── 06 screens and Apple TV
                         └── 07 Google Search Console
                             └── 08 App Store Connect
-                                └── 09 Apple Ads
-                                    └── 10 projects and derived metrics
-                                        └── 11 community connectors
-                                            └── 12 custom API
-                                                └── 13 alerts
-                                                    └── 14 collaboration
-                                                        └── 15 SaaS control plane
-                                                            └── 16 v1 hardening
+                                └── 09 Dashboard Studio
+                                    └── 10 Apple Ads
+                                        └── 11 projects and derived metrics
+                                            └── 12 community connectors
+                                                └── 13 custom API
+                                                    └── 14 alerts
+                                                        └── 15 collaboration
+                                                            └── 16 SaaS control plane
+                                                                └── 17 v1 hardening
 ```
 
 The ordering is intentionally strict for a solo implementation. Later, a larger
@@ -113,6 +115,9 @@ team could parallelize independent connectors after milestone 07.
   sources proposed in
   [ADR 0014](../decisions/0014-app-store-connect-signed-keys.md); issues
   #170–#177.
+- Planned: 09 (Dashboard Studio). Slides, widgets, themes and images
+  decided in [ADR 0015](../decisions/0015-dashboard-studio.md); issues
+  #213–#227. Milestones after it moved up by one (Apple Ads is now 10).
 - Later: the web frontend on Vercel (#123).
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository

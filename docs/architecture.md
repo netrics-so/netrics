@@ -543,7 +543,8 @@ authorization out of the core.
 > Update (2026-09): the MVP renders native SwiftUI tiles from a JSON device
 > endpoint instead of snapshots; see
 > [ADR 0007](./decisions/0007-native-tvos-tiles.md). The snapshot design below
-> is deferred, not removed.
+> is deferred, not removed. Slides, widgets, themes and images on devices
+> follow [ADR 0015](./decisions/0015-dashboard-studio.md).
 
 The initial tvOS application is a thin native client:
 
@@ -723,24 +724,25 @@ and community decision.
 
 ## Deliberate trade-offs
 
-| Decision               | Chosen now                           | Revisit when                                            |
-| ---------------------- | ------------------------------------ | ------------------------------------------------------- |
-| Repository model       | Public monorepo + private cloud repo | Independent teams need independent ownership            |
-| Backend shape          | Modular monolith with process roles  | A module needs separate scaling, security, or ownership |
-| Queue                  | PostgreSQL-backed                    | Measured contention or latency requires Redis           |
-| Metrics store          | PostgreSQL                           | Volume or query cost exceeds practical partitioning     |
-| Connector distribution | Reviewed bundle                      | Release cadence or connector count becomes limiting     |
-| Community execution    | Reviewed code only in SaaS           | Arbitrary tenant code becomes a validated market need   |
-| TV rendering           | Native tiles from JSON (ADR 0007)    | Customers need arbitrary layouts on devices             |
-| Self-host deployment   | Docker Compose                       | Sustained customer demand justifies Helm/Kubernetes     |
-| Authentication         | Embedded                             | External identity operation becomes simpler overall     |
+| Decision               | Chosen now                                           | Revisit when                                            |
+| ---------------------- | ---------------------------------------------------- | ------------------------------------------------------- |
+| Repository model       | Public monorepo + private cloud repo                 | Independent teams need independent ownership            |
+| Backend shape          | Modular monolith with process roles                  | A module needs separate scaling, security, or ownership |
+| Queue                  | PostgreSQL-backed                                    | Measured contention or latency requires Redis           |
+| Metrics store          | PostgreSQL                                           | Volume or query cost exceeds practical partitioning     |
+| Connector distribution | Reviewed bundle                                      | Release cadence or connector count becomes limiting     |
+| Community execution    | Reviewed code only in SaaS                           | Arbitrary tenant code becomes a validated market need   |
+| TV rendering           | Native slides and widgets from JSON (ADR 0007, 0015) | Customers need layouts the widget set cannot express    |
+| Self-host deployment   | Docker Compose                                       | Sustained customer demand justifies Helm/Kubernetes     |
+| Authentication         | Embedded                                             | External identity operation becomes simpler overall     |
 
 ## Implementation decisions still to make
 
 - Select and validate the PostgreSQL job library.
 - Select database query and migration tooling with first-class SQL and RLS
   support.
-- Choose the initial SaaS S3-compatible storage provider.
+- Choose the initial SaaS S3-compatible storage provider (dashboard images
+  live in PostgreSQL, ADR 0015; object storage waits for snapshots or exports).
 - Define the first connector SDK compatibility and deprecation policy.
 - Validate the pinned Railway Terraform provider against a disposable project.
 - Decide whether production deploys immediately after every green main merge or
