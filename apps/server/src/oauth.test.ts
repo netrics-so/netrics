@@ -41,9 +41,16 @@ function variant(
 ) {
   return {
     ...createDemoConnector(),
-    manifest: { ...demoManifest, id, sdkVersion: "^0.2.1", authStrategies },
+    manifest: { ...demoManifest, id, sdkVersion: "^0.2.2", authStrategies },
   };
 }
+
+// ADR 0014: a signed-key connector (SDK 0.2.2). This server has no
+// signed-key providers yet (#170), so it must not take the key itself.
+const appStoreKey = {
+  strategy: "signed-key" as const,
+  provider: "app-store-connect",
+};
 
 const googleOAuth = {
   strategy: "oauth2" as const,
@@ -60,6 +67,10 @@ function registry(): ConnectorRegistry {
   );
   registry.register(
     variant("unknown-provider", [{ ...googleOAuth, provider: "acme" }]),
+  );
+  registry.register(variant("signed-key-only", [appStoreKey]));
+  registry.register(
+    variant("signed-key-or-token", [appStoreKey, { strategy: "token" }]),
   );
   return registry;
 }
@@ -189,6 +200,19 @@ describe("connector catalog", () => {
       available: false,
       unavailable: { reason: "oauth_provider_unsupported", provider: "acme" },
     });
+    expect(entries.get("signed-key-only")).toMatchObject({
+      available: false,
+      unavailable: {
+        reason: "signed_key_provider_unsupported",
+        provider: "app-store-connect",
+      },
+      authStrategies: [appStoreKey],
+    });
+    expect(entries.get("signed-key-or-token")).toMatchObject({
+      available: true,
+      unavailable: null,
+      authStrategies: [appStoreKey, { strategy: "token" }],
+    });
     // A token alternative keeps a connector usable; others are unaffected.
     expect(entries.get("google-or-token")).toMatchObject({
       available: true,
@@ -236,10 +260,15 @@ describe("creating connections", () => {
 
   it("refuses a connector whose provider is not configured", async () => {
     const before = await connectionCount();
-    for (const connectorId of ["google-only", "unknown-provider"]) {
+    for (const [world, connectorId] of [
+      [unconfigured, "google-only"],
+      [unconfigured, "unknown-provider"],
+      [unconfigured, "signed-key-only"],
+      [configured, "signed-key-only"],
+    ] as const) {
       for (const response of [
-        await create(unconfigured, connectorId),
-        await preview(unconfigured, connectorId),
+        await create(world, connectorId),
+        await preview(world, connectorId),
       ]) {
         expect(response.statusCode).toBe(400);
         expect(errorResponseSchema.parse(response.json())).toEqual({

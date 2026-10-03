@@ -7130,7 +7130,8 @@
                                   "enum": [
                                     "token",
                                     "none",
-                                    "oauth2"
+                                    "oauth2",
+                                    "signed-key"
                                   ]
                                 },
                                 "provider": {
@@ -7191,7 +7192,8 @@
                                     "type": "string",
                                     "enum": [
                                       "oauth_provider_not_configured",
-                                      "oauth_provider_unsupported"
+                                      "oauth_provider_unsupported",
+                                      "signed_key_provider_unsupported"
                                     ]
                                   },
                                   "provider": {

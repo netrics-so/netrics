@@ -104,6 +104,7 @@ function response(
     headers: { "content-type": "application/json", ...headers },
     text: () => text,
     json: () => JSON.parse(text) as unknown,
+    bytes: () => new TextEncoder().encode(text),
   };
 }
 

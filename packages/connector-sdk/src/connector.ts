@@ -55,10 +55,25 @@ export interface ConnectorFetchInit {
   body?: string;
 }
 
-/** A fully buffered response (the body is read within the size limit). */
+/**
+ * A fully buffered response. The whole body is read within the host's size
+ * limit (10 MiB by default) before the connector sees it; a larger body
+ * fails the fetch.
+ */
 export interface ConnectorResponse {
   status: number;
   headers: Record<string, string>;
+  /** The body decoded as UTF-8. */
   text(): string;
+  /** The body parsed as JSON (throws on invalid JSON). */
   json(): unknown;
+  /**
+   * The exact body bytes, for binary payloads such as gzip report files.
+   * Each call returns a fresh copy. The size limit applies to these bytes,
+   * not to anything the connector inflates from them: decompress with a
+   * bound of your own, e.g. `gunzipSync(bytes, { maxOutputLength })` from
+   * `node:zlib`, so an oversized or hostile archive fails the call instead
+   * of exhausting memory. Since SDK 0.2.2.
+   */
+  bytes(): Uint8Array;
 }

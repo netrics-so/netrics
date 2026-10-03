@@ -56,11 +56,60 @@ describe("assertManifestCompatible", () => {
     ).toThrow();
   });
 
-  it("keeps loading connectors written for SDK ^0.2.0", () => {
-    expect(SDK_VERSION).toBe("0.2.1");
-    expect(
-      assertManifestCompatible({ ...validManifest(), sdkVersion: "^0.2.0" }).id,
-    ).toBe("acme-analytics");
+  it("keeps loading connectors written for SDK ^0.2.0 and ^0.2.1", () => {
+    expect(SDK_VERSION).toBe("0.2.2");
+    for (const sdkVersion of ["^0.2.0", "^0.2.1", "^0.2.2"]) {
+      expect(
+        assertManifestCompatible({ ...validManifest(), sdkVersion }).id,
+      ).toBe("acme-analytics");
+    }
+  });
+
+  it("accepts a signed-key strategy that names only its provider", () => {
+    const manifest = assertManifestCompatible({
+      ...validManifest(),
+      sdkVersion: "^0.2.2",
+      authStrategies: [
+        { strategy: "signed-key", provider: "app-store-connect" },
+      ],
+    });
+    expect(manifest.authStrategies).toEqual([
+      { strategy: "signed-key", provider: "app-store-connect" },
+    ]);
+  });
+
+  it("rejects signed-key strategies with unknown fields or bad provider ids", () => {
+    const withStrategy = (strategy: unknown) => ({
+      ...validManifest(),
+      authStrategies: [strategy],
+    });
+    for (const strategy of [
+      { strategy: "signed-key" },
+      { strategy: "signed-key", provider: "" },
+      { strategy: "signed-key", provider: "App-Store-Connect" },
+      { strategy: "signed-key", provider: "app store connect" },
+      { strategy: "signed-key", provider: "-app-store" },
+      { strategy: "signed-key", provider: "app--store" },
+      { strategy: "signed-key", provider: 7 },
+      // The host owns the key fields, claims and lifetime (ADR 0014).
+      { strategy: "signed-key", provider: "app-store-connect", scopes: ["a"] },
+      {
+        strategy: "signed-key",
+        provider: "app-store-connect",
+        claims: { aud: "x" },
+      },
+      {
+        strategy: "signed-key",
+        provider: "app-store-connect",
+        credentialsSchema: { type: "object" },
+      },
+      { strategy: "signed-keys", provider: "app-store-connect" },
+    ]) {
+      expect(
+        () => assertManifestCompatible(withStrategy(strategy)),
+        JSON.stringify(strategy),
+      ).toThrow();
+    }
   });
 
   it("accepts an oauth2 strategy naming a provider and its scopes", () => {

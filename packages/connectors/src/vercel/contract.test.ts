@@ -83,6 +83,7 @@ function reply(status: number, body: unknown): ConnectorResponse {
     headers: {},
     text: () => text,
     json: () => JSON.parse(text) as unknown,
+    bytes: () => new TextEncoder().encode(text),
   };
 }
 

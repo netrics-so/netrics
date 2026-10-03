@@ -119,6 +119,7 @@ function json(status: number, body: unknown): ConnectorResponse {
     headers: { "content-type": "application/json" },
     text: () => text,
     json: () => JSON.parse(text) as unknown,
+    bytes: () => new TextEncoder().encode(text),
   };
 }
 

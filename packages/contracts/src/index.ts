@@ -288,8 +288,12 @@ export type AuditEventListResponse = z.infer<
 // ---------------------------------------------------------------------------
 
 export const connectorAuthStrategySchema = z.object({
-  strategy: z.enum(["token", "none", "oauth2"]),
-  /** For "oauth2": the provider the user authorizes at (ADR 0012). */
+  strategy: z.enum(["token", "none", "oauth2", "signed-key"]),
+  /**
+   * For "oauth2": the provider the user authorizes at (ADR 0012). For
+   * "signed-key": the provider whose key the user uploads and the host signs
+   * tokens with (ADR 0014).
+   */
   provider: z.string().min(1).optional(),
   /** For "oauth2": the scopes the connector needs, besides identity scopes. */
   scopes: z.array(z.string().min(1)).optional(),
@@ -311,11 +315,14 @@ export type ConnectorAuthStrategy = z.infer<typeof connectorAuthStrategySchema>;
  * - oauth_provider_not_configured: the administrator has not set the
  *   provider's NETRICS_OAUTH_<PROVIDER>_CLIENT_ID/_CLIENT_SECRET;
  * - oauth_provider_unsupported: this server has no definition for the
- *   provider the connector names.
+ *   provider the connector names;
+ * - signed_key_provider_unsupported: this server cannot sign tokens for the
+ *   signed-key provider the connector names (ADR 0014).
  */
 export const connectorUnavailableReasonSchema = z.enum([
   "oauth_provider_not_configured",
   "oauth_provider_unsupported",
+  "signed_key_provider_unsupported",
 ]);
 export type ConnectorUnavailableReason = z.infer<
   typeof connectorUnavailableReasonSchema
@@ -323,7 +330,7 @@ export type ConnectorUnavailableReason = z.infer<
 
 export const connectorUnavailableSchema = z.object({
   reason: connectorUnavailableReasonSchema,
-  /** The OAuth provider concerned. */
+  /** The OAuth or signed-key provider concerned. */
   provider: z.string().min(1),
 });
 export type ConnectorUnavailable = z.infer<typeof connectorUnavailableSchema>;

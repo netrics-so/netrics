@@ -1,6 +1,12 @@
+import { gzipSync } from "node:zlib";
+
 import { describe, expect, it } from "vitest";
 
-import type { Connector, ConnectorRuntime } from "../connector.js";
+import type {
+  Connector,
+  ConnectorResponse,
+  ConnectorRuntime,
+} from "../connector.js";
 import { connectorManifestSchema } from "../manifest.js";
 import type {
   ConnectionContext,
@@ -61,6 +67,46 @@ export const offlineRuntime: ConnectorRuntime = {
   },
   signal: new AbortController().signal,
 };
+
+/**
+ * A buffered ConnectorResponse for fixture-backed runtimes, shaped like the
+ * host's: text() decodes the body as UTF-8, json() parses it, and bytes()
+ * returns a copy of the exact body bytes.
+ */
+export function fixtureResponse(
+  status: number,
+  body: string | Uint8Array,
+  headers: Record<string, string> = {},
+): ConnectorResponse {
+  const bytes =
+    typeof body === "string"
+      ? new TextEncoder().encode(body)
+      : new Uint8Array(body);
+  const text = new TextDecoder().decode(bytes);
+  return {
+    status,
+    headers: { ...headers },
+    text: () => text,
+    json: () => JSON.parse(text) as unknown,
+    bytes: () => new Uint8Array(bytes),
+  };
+}
+
+/**
+ * A fixture response whose body is a gzip file of `content` (a report as a
+ * provider such as App Store Connect serves it, `application/a-gzip`). The
+ * connector reads it with bytes() and inflates it itself, with a bound.
+ */
+export function gzipFixtureResponse(
+  status: number,
+  content: string | Uint8Array,
+  headers: Record<string, string> = {},
+): ConnectorResponse {
+  return fixtureResponse(status, gzipSync(content), {
+    "content-type": "application/a-gzip",
+    ...headers,
+  });
+}
 
 function indexByIdentity(observations: Observation[]) {
   return new Map(

@@ -34,6 +34,14 @@ export type CredentialAuthStrategy = z.infer<
 >;
 
 /**
+ * Id of a host-defined auth provider ("google", "app-store-connect"):
+ * lowercase words joined by single hyphens.
+ */
+export const authProviderIdSchema = z
+  .string()
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+
+/**
  * The user authorizes netrics at an OAuth provider (ADR 0012). A connector
  * only names the provider and the scopes it needs; endpoints and client
  * secrets are trusted host code and instance configuration. The host hands
@@ -42,7 +50,7 @@ export type CredentialAuthStrategy = z.infer<
  */
 export const oauth2AuthStrategySchema = z.object({
   strategy: z.literal("oauth2"),
-  provider: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  provider: authProviderIdSchema,
   scopes: z
     .array(z.string().min(1))
     .min(1)
@@ -52,9 +60,34 @@ export const oauth2AuthStrategySchema = z.object({
 });
 export type OAuth2AuthStrategy = z.infer<typeof oauth2AuthStrategySchema>;
 
+/**
+ * The user uploads key material (an App Store Connect API key) and the host
+ * signs short-lived tokens with it (ADR 0014). A connector only names the
+ * provider: the credential fields, token claims and lifetime are trusted host
+ * code. The host hands the connector `credentials: { accessToken }` (a fresh
+ * token per call, see SignedKeyCredentials) and never the key. Unknown fields
+ * are rejected, so a connector cannot smuggle claims or key settings in.
+ * Since SDK 0.2.2.
+ */
+export const signedKeyAuthStrategySchema = z.strictObject({
+  strategy: z.literal("signed-key"),
+  provider: authProviderIdSchema,
+});
+export type SignedKeyAuthStrategy = z.infer<typeof signedKeyAuthStrategySchema>;
+
+/**
+ * What an "oauth2" or "signed-key" connector finds in
+ * `ConnectionContext.credentials`: a short-lived bearer token minted by the
+ * host for this one call. Refresh tokens and private keys stay with the host.
+ */
+export interface AccessTokenCredentials {
+  accessToken: string;
+}
+
 export const authStrategySchema = z.union([
   credentialAuthStrategySchema,
   oauth2AuthStrategySchema,
+  signedKeyAuthStrategySchema,
 ]);
 export type AuthStrategy = z.infer<typeof authStrategySchema>;
 
