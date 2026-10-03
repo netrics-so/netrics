@@ -78,11 +78,21 @@ export class OAuthProviders {
   /**
    * A connector is available when at least one of its auth strategies can
    * be used: token and none always, oauth2 when its provider is configured.
-   * Otherwise the first oauth2 strategy says why.
+   * signed-key never yet: this server signs no tokens until its signed-key
+   * providers exist (ADR 0014, #170), and it must not hand the uploaded key
+   * to the connector instead. Otherwise the first unusable strategy says
+   * why.
    */
   connectorAvailability(manifest: ConnectorManifest): ConnectorAvailability {
     let unavailable: ConnectorUnavailable | null = null;
     for (const strategy of manifest.authStrategies) {
+      if (strategy.strategy === "signed-key") {
+        unavailable ??= {
+          reason: "signed_key_provider_unsupported",
+          provider: strategy.provider,
+        };
+        continue;
+      }
       if (strategy.strategy !== "oauth2") {
         return { available: true, unavailable: null };
       }

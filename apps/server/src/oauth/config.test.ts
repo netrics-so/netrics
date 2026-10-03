@@ -164,6 +164,29 @@ describe("connector availability", () => {
     });
   });
 
+  it("does not offer signed-key connectors before this server can sign for them", () => {
+    // ADR 0014: the host signs tokens; until a signed-key provider exists
+    // (#170) the uploaded key must not reach the connector instead.
+    const appStoreKey = {
+      strategy: "signed-key" as const,
+      provider: "app-store-connect",
+    };
+    expect(
+      configured().connectorAvailability(manifestWith([appStoreKey])),
+    ).toEqual({
+      available: false,
+      unavailable: {
+        reason: "signed_key_provider_unsupported",
+        provider: "app-store-connect",
+      },
+    });
+    expect(
+      configured().connectorAvailability(
+        manifestWith([appStoreKey, googleOAuth]),
+      ),
+    ).toEqual({ available: true, unavailable: null });
+  });
+
   it("keeps a connector with a token alternative available", () => {
     expect(
       unconfigured.connectorAvailability(

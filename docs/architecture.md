@@ -265,6 +265,57 @@ access.
 Use JSON-compatible transport objects even inside TypeScript. A future isolated
 runner can then use the same contract over JSON-RPC or another process boundary.
 
+Connector code reaches the network only through `runtime.fetch`. It allows
+https hosts from `outboundDomains`, refuses private and metadata addresses,
+re-checks redirects and buffers the whole body within a size cap (10 MiB by
+default) before the connector sees it. A `ConnectorResponse` offers the body
+three ways:
+
+- `text()`: decoded as UTF-8;
+- `json()`: parsed as JSON;
+- `bytes()`: the exact bytes as a `Uint8Array`, a fresh copy per call, for
+  binary payloads such as gzip report files (since SDK 0.2.2). Over a future
+  process boundary they travel as base64.
+
+The cap bounds the compressed bytes, not what a connector inflates from them,
+so a connector that decompresses sets its own bound. Use `node:zlib`
+`gunzipSync` with `maxOutputLength` and turn the overflow into an error, which
+fails the call as a retryable provider error (ADR 0014 uses 64 MiB):
+
+```ts
+import { gunzipSync } from "node:zlib";
+
+const MAX_REPORT_BYTES = 64 * 1024 * 1024;
+
+function inflateReport(bytes: Uint8Array): string {
+  try {
+    return gunzipSync(bytes, { maxOutputLength: MAX_REPORT_BYTES }).toString(
+      "utf8",
+    );
+  } catch (error) {
+    if ((error as { code?: string }).code === "ERR_BUFFER_TOO_LARGE") {
+      throw new Error(`report exceeds ${MAX_REPORT_BYTES} bytes inflated`);
+    }
+    throw error;
+  }
+}
+
+const report = inflateReport((await runtime.fetch(url)).bytes());
+```
+
+The testing kit (`@netrics/connector-sdk/testing`) builds fixture responses:
+`fixtureResponse(status, body, headers)` for text or bytes and
+`gzipFixtureResponse(status, content, headers)` for a gzip file of `content`.
+
+SDK versions are additive within 0.2: a connector that declares `^0.2.0`
+keeps loading on every 0.2.x runtime.
+
+| SDK   | Adds                                                    |
+| ----- | ------------------------------------------------------- |
+| 0.2.0 | The contract above; `token` and `none` auth strategies  |
+| 0.2.1 | The `oauth2` auth strategy (ADR 0012)                   |
+| 0.2.2 | The `signed-key` auth strategy and `bytes()` (ADR 0014) |
+
 ### Authentication strategies
 
 The runtime must support at least:
@@ -274,6 +325,26 @@ The runtime must support at least:
 - OAuth 2.0 client credentials
 - Signed JWT client credentials
 - Uploaded private key material
+
+A manifest declares one or more of these strategies:
+
+- `{ strategy: "token", credentialsSchema?, setup? }` or
+  `{ strategy: "none" }`: the user pastes a token (or nothing), and the
+  connector receives the stored credentials.
+- `{ strategy: "oauth2", provider, scopes }` (ADR 0012): the user authorizes
+  at the provider, and the connector receives `credentials: { accessToken }`
+  and never the refresh token.
+- `{ strategy: "signed-key", provider }` (ADR 0014, SDK 0.2.2): the user
+  uploads key material, such as an App Store Connect API key, and the host
+  signs a short-lived token with it for each call. The connector receives
+  `credentials: { accessToken }` (`AccessTokenCredentials`) and never the key.
+  The strategy takes no other fields: the credential fields, token claims
+  and lifetime belong to the provider, which is trusted host code. A server
+  without that provider lists the connector as unavailable
+  (`signed_key_provider_unsupported`).
+
+A provider id is lowercase words joined by hyphens (`google`,
+`app-store-connect`). Connectors may name a provider but never define one.
 
 The credential service owns encrypted storage, standard OAuth callbacks, token
 refresh, and audit events. A connector receives only the credentials required
