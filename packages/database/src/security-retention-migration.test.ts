@@ -18,7 +18,7 @@ import { migrationsFolder, runMigrations } from "./index.js";
 
 const NOW = new Date("2031-03-15T12:00:00.000Z");
 
-// Migration 0030 (#163) on security records in the previous shape: existing
+// Migration 0029 (#163) on security records in the previous shape: existing
 // audit events, sessions and rate-limit rows survive it, and the first prune
 // removes only what is past retention.
 
@@ -70,7 +70,7 @@ afterAll(async () => {
   await server.end({ timeout: 5 });
 });
 
-describe("migration 0030 on stored security records", () => {
+describe("migration 0029 on stored security records", () => {
   it("keeps existing rows and prunes only those past retention", async () => {
     const owner = postgres(adminUrl, { max: 1, onnotice: () => undefined });
     try {

@@ -41,7 +41,7 @@ export interface SecurityPruneResult {
 
 /**
  * Applies SecurityRetentionPolicy as of `now` (scheduler role;
- * prune_security_records is SECURITY DEFINER, migration 0030). A count equal
+ * prune_security_records is SECURITY DEFINER, migration 0029). A count equal
  * to `batch` means more rows remain for the next call.
  */
 export async function pruneSecurityRecords(

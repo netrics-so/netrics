@@ -219,7 +219,7 @@ export const projects = pgTable("projects", {
 // audit_events is append-only: netrics_app gets SELECT/INSERT only, and the
 // RLS policies (migration 0001) grant no UPDATE/DELETE path. Events older
 // than AUDIT_EVENT_RETENTION_MONTHS are deleted by the scheduler through the
-// owner-role prune_security_records (migration 0030).
+// owner-role prune_security_records (migration 0029).
 export const auditEvents = pgTable(
   "audit_events",
   {
