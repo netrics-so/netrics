@@ -76,6 +76,27 @@ Set both or neither; the API refuses to start with only one. Its startup log
 redirect URIs. While the app is External and in Testing, Google expires
 refresh tokens after 7 days; publish it or use an Internal app.
 
+### Web app and API on separate hosts
+
+Not needed for this install: here the web app reaches the API over the
+Compose network, and the API trusts that hop's forwarded client address.
+If you run the web app somewhere the API sees as a public address (another
+host or platform), the API would see that address for every visitor, and its
+sign-in and pairing rate limits would apply to everyone together. Set the
+same `NETRICS_PROXY_SECRET` on both (32 characters or more, for example
+`openssl rand -base64 32`):
+
+```sh
+NETRICS_PROXY_SECRET=...
+```
+
+The web app then marks its requests with the secret, and the API believes the
+client address they carry. Requests without the secret are still served and
+authenticated by session or token, but the API accepts session cookies only
+on requests carrying it (browsers always come through the web app). To
+rotate, set `new,old` on the API, then `new` on the web app, then `new` on
+the API.
+
 ### Another port
 
 If the host already serves 443, install with `--https-port 8443`. This sets

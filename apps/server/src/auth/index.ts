@@ -212,9 +212,10 @@ export function createAuthService(
       // Never derive the URL from the client-controlled Host header.
       const url = new URL(request.url, config.betterAuthUrl);
       const headers = fromNodeHeaders(request.headers);
-      // request.ip honours only trusted proxy hops; a client-sent value of
-      // this header is replaced.
-      headers.set(CLIENT_IP_HEADER, request.ip);
+      // request.clientIp honours only trusted proxy hops and, with a valid
+      // proxy secret, the frontend's forwarded address (client-address.ts);
+      // a client-sent value of this header is replaced.
+      headers.set(CLIENT_IP_HEADER, request.clientIp);
       const req = new Request(url.toString(), {
         method: request.method,
         headers,

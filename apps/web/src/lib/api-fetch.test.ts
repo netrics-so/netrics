@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { apiFetch, apiUrl, outboundHeaders } from "./api-fetch";
+import {
+  apiFetch,
+  apiUrl,
+  isSingleIp,
+  outboundHeaders,
+  proxySecret,
+} from "./api-fetch";
 
 // The one web→API fetch (#155): every call site relies on these defaults.
 
@@ -122,5 +128,110 @@ describe("outbound headers", () => {
     const headers = outboundHeaders(undefined, new Headers());
     expect(headers.get("x-forwarded-for")).toBeNull();
     expect(headers.get("x-real-ip")).toBeNull();
+  });
+});
+
+describe("proxy secret (ADR 0013, #156)", () => {
+  const SECRET = "proxy-secret-current-0123456789abcdef";
+
+  it("sends neither header without NETRICS_PROXY_SECRET, and drops forged ones", () => {
+    vi.stubEnv("NETRICS_PROXY_SECRET", undefined);
+    const headers = outboundHeaders(
+      {
+        "x-netrics-proxy-secret": "forged",
+        "X-Netrics-Client-Ip": "192.0.2.1",
+      },
+      new Headers({ "x-forwarded-for": "198.51.100.7" }),
+    );
+    expect(headers.get("x-netrics-proxy-secret")).toBeNull();
+    expect(headers.get("x-netrics-client-ip")).toBeNull();
+    expect(headers.get("x-real-ip")).toBe("198.51.100.7");
+  });
+
+  it("sends the secret and the resolved client address", () => {
+    vi.stubEnv("NETRICS_PROXY_SECRET", SECRET);
+    vi.stubEnv("NETRICS_CLIENT_IP_HEADER", "x-vercel-forwarded-for");
+    const headers = outboundHeaders(
+      {
+        "x-netrics-proxy-secret": "forged",
+        "x-netrics-client-ip": "192.0.2.1",
+      },
+      new Headers({
+        "x-vercel-forwarded-for": "2001:db8::7",
+        "x-netrics-client-ip": "192.0.2.2",
+      }),
+    );
+    expect(headers.get("x-netrics-proxy-secret")).toBe(SECRET);
+    expect(headers.get("x-netrics-client-ip")).toBe("2001:db8::7");
+  });
+
+  it("sends the secret without an address on calls with no client request", () => {
+    vi.stubEnv("NETRICS_PROXY_SECRET", SECRET);
+    const headers = outboundHeaders({ cookie: "a=1" }, undefined);
+    expect(Object.fromEntries(headers)).toEqual({
+      cookie: "a=1",
+      "x-netrics-proxy-secret": SECRET,
+    });
+  });
+
+  it.each(["198.51.100.1, 198.51.100.2", "198.51.100.1:443", "unknown"])(
+    "sends no client address for %j",
+    (value) => {
+      vi.stubEnv("NETRICS_PROXY_SECRET", SECRET);
+      vi.stubEnv("NETRICS_CLIENT_IP_HEADER", "x-vercel-forwarded-for");
+      const headers = outboundHeaders(
+        undefined,
+        new Headers({ "x-vercel-forwarded-for": value }),
+      );
+      expect(headers.get("x-netrics-proxy-secret")).toBe(SECRET);
+      expect(headers.get("x-netrics-client-ip")).toBeNull();
+    },
+  );
+
+  it("sends the first value of a rotation list", () => {
+    vi.stubEnv("NETRICS_PROXY_SECRET", ` ${SECRET} , previous-value`);
+    expect(proxySecret()).toBe(SECRET);
+    vi.stubEnv("NETRICS_PROXY_SECRET", " ");
+    expect(proxySecret()).toBeNull();
+  });
+
+  it("carries the headers on every apiFetch call", async () => {
+    const upstream = stubFetch();
+    vi.stubEnv("NETRICS_PROXY_SECRET", SECRET);
+    await apiFetch("/v1/me", {
+      client: new Headers({ "x-forwarded-for": "198.51.100.8" }),
+    });
+    const sent = new Headers(upstream.mock.calls[0]![1]!.headers);
+    expect(sent.get("x-netrics-proxy-secret")).toBe(SECRET);
+    expect(sent.get("x-netrics-client-ip")).toBe("198.51.100.8");
+  });
+});
+
+describe("isSingleIp", () => {
+  it.each([
+    "192.0.2.1",
+    "0.0.0.0",
+    "255.255.255.255",
+    "2001:db8::1",
+    "::1",
+    "::ffff:192.0.2.1",
+  ])("accepts %j", (value) => {
+    expect(isSingleIp(value)).toBe(true);
+  });
+
+  it.each([
+    "",
+    "256.0.0.1",
+    "192.0.2",
+    "01.2.3.4",
+    "192.0.2.1,192.0.2.2",
+    "192.0.2.1:80",
+    "[2001:db8::1]",
+    "fe80::1%eth0",
+    "2001:db8::1::2",
+    "example.com",
+    "gggg::1",
+  ])("refuses %j", (value) => {
+    expect(isSingleIp(value)).toBe(false);
   });
 });

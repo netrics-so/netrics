@@ -42,6 +42,11 @@ and a self-hosted web app served from a different origin than the API.
   flags. Server-side fetches and the rewrites read `NETRICS_API_URL`, which
   the web Dockerfile bakes as a build-time `ARG` (Next inlines it into the
   standalone output).
+  _Note (ADR 0013, #156):_ the proxy now reads `NETRICS_API_URL` per request
+  through one fetch helper. With `NETRICS_PROXY_SECRET` set on both sides, the
+  web app marks its API calls with the secret and the forwarded client
+  address, and the API accepts session cookies only on requests carrying it;
+  bearer tokens are unaffected.
 - **Dev mailer until milestone 13.** Verification and password-reset emails
   are logged by a logging mailer (`requireEmailVerification: false`) until
   real SMTP/alerting infrastructure arrives in milestone 13.

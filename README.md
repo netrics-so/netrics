@@ -184,6 +184,19 @@ Relevant environment variables (see `.env.example`):
   drops every client-supplied forwarding header. Alternatively,
   `NETRICS_CLIENT_IP_HEADER` (for example `x-real-ip`) names one header in
   which the edge states the client address.
+- `NETRICS_PROXY_SECRET` — unset by default. Set the same value (at least 32
+  characters) on the web app and the api when the api cannot tell the web
+  app's requests from others by network hop, for example a frontend on
+  another platform (ADR 0013). The web app sends it in
+  `x-netrics-proxy-secret` on every api call, with the client address in
+  `x-netrics-client-ip` when that is a single valid IP. On requests carrying
+  a valid secret (timing-safe comparison), the api keys its auth and pairing
+  rate limits on that address; on every other request it uses its own
+  trusted-proxy logic as before. The secret never gates access: requests
+  without it are served and authenticated by session or token, except that
+  the api then accepts session cookies only on requests carrying the secret.
+  The api takes two comma-separated values during a rotation (`new,old`); the
+  web app sends the first. It is never logged.
 
 In production, the api also rejects the public development values of
 `BETTER_AUTH_SECRET` and `APP_ENCRYPTION_KEY`. Session cookies have a 7-day
