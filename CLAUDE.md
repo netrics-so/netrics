@@ -56,8 +56,11 @@ Tests need a PostgreSQL server they can create databases on:
   Credentials are AES-GCM envelopes bound to their connection.
 - Connector code only reaches the network through `runtime.fetch`
   (allowlisted egress). Contract tests run offline.
-- One image for SaaS and self-hosting: nothing environment-specific at build
-  time.
+- One source, same commit: nothing environment-specific at build time.
+  Self-hosters run the signed images. The hosted service runs the same server
+  image and builds the web frontend on Vercel from the same commit and
+  lockfile, with configuration read at request time (ADR 0013; a CI build
+  guard checks the web build).
 - Packages depend inward only (`PACKAGE_LAYERS` in `eslint.config.mjs`, enforced
   by lint): `domain` imports nothing, and apps compose the concrete connectors.
 - Pin dependencies exactly, and avoid releases younger than a few days.

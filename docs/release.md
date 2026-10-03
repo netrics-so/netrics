@@ -24,7 +24,11 @@ does (see `docs/architecture.md`, "Application release").
    running API reports them on `/health/live` and `/health/ready` and the web
    status page displays them. Nothing environment-specific is baked into any
    image: the web image reads `NETRICS_API_URL` at request time, so the same
-   image runs in SaaS and self-hosted installations.
+   image runs against any API. Self-hosters run these images. The hosted
+   service runs the server image and, per ADR 0013, builds the web frontend
+   on Vercel from the same commit and lockfile with no environment-specific
+   build inputs (one source, same commit). Until that cut-over (#161) the
+   hosted web still runs the web image on Railway.
 4. **Record digests.** The index digest of each image
    (`ghcr.io/netrics-so/server@sha256:…`) goes to the job summary and to the
    dispatch below. Runtimes resolve the platform they need from the index.
