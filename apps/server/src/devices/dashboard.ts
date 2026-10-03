@@ -127,6 +127,9 @@ export async function buildDeviceDashboard(
           ratio: query?.ratio ?? null,
         },
         spark: query?.series.map((point) => point.value) ?? [],
+        kind: query?.metric.kind ?? null,
+        granularity: query?.metric.granularity ?? null,
+        better: query?.metric.better ?? "higher",
         status: tileStatus(state, value, now),
         updatedAt: state?.lastSuccessAt ?? null,
       });

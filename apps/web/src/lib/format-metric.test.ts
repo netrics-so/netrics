@@ -25,14 +25,17 @@ describe("formatChange", () => {
   it("shows the relative change with a sign", () => {
     expect(formatChange(50, 0.5, "signups")).toEqual({
       direction: "up",
+      tone: "good",
       text: "+50%",
     });
     expect(formatChange(-3, -0.034, "signups")).toEqual({
       direction: "down",
+      tone: "bad",
       text: "−3.4%",
     });
     expect(formatChange(0, 0, "signups")).toEqual({
       direction: "flat",
+      tone: "neutral",
       text: "±0%",
     });
   });
@@ -40,6 +43,7 @@ describe("formatChange", () => {
   it("falls back to the absolute change without a ratio", () => {
     expect(formatChange(1500, null, "EUR_minor")).toEqual({
       direction: "up",
+      tone: "good",
       text: "+€15",
     });
   });
@@ -51,9 +55,15 @@ describe("formatChange", () => {
 
 describe("Search Console readings", () => {
   it("shows a change of average position in places, not percent", () => {
-    expect(formatChange(0.4, 0.1, "position")).toEqual({
+    expect(formatChange(0.4, 0.1, "position", "lower")).toEqual({
       direction: "up",
+      tone: "bad",
       text: "+0.4",
+    });
+    expect(formatChange(-1.2, -0.2, "position", "lower")).toMatchObject({
+      direction: "down",
+      tone: "good",
+      text: "−1.2",
     });
   });
 

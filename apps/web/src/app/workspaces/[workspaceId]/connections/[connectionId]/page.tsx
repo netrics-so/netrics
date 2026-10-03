@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { can } from "@netrics/domain";
 
-import { HealthBadge } from "../../health-badge";
+import { AUTH_STATE_LABELS, HealthBadge } from "../../health-badge";
 import { FinishSetup } from "../finish-setup";
 import { OAuthOutcomeBanner } from "../oauth-outcome";
 import { ReconnectBanner } from "../reconnect-banner";
@@ -22,7 +22,7 @@ import {
   providerName,
   SEARCH_CONSOLE_CONNECTOR_ID,
 } from "@/lib/oauth-connection";
-import { relativeTime } from "@/lib/relative-time";
+import { intervalLabel, relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -141,7 +141,9 @@ export default async function ConnectionDetailPage({
         <h2>Health</h2>
         <div className="row">
           <span className="label">Auth state</span>
-          <span className="value">{connection.state.authState}</span>
+          <span className="value">
+            {AUTH_STATE_LABELS[connection.state.authState]}
+          </span>
         </div>
         <div className="row">
           <span className="label">Consecutive failures</span>
@@ -162,7 +164,7 @@ export default async function ConnectionDetailPage({
         <div className="row">
           <span className="label">Poll interval</span>
           <span className="value">
-            every {connection.state.pollIntervalSeconds} seconds
+            {intervalLabel(connection.state.pollIntervalSeconds)}
           </span>
         </div>
         {oauth ? (

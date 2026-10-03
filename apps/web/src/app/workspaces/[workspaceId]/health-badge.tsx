@@ -1,4 +1,4 @@
-import type { ConnectionHealth } from "@netrics/contracts";
+import type { ConnectionAuthState, ConnectionHealth } from "@netrics/contracts";
 
 const LABELS: Record<ConnectionHealth, string> = {
   ok: "Healthy",
@@ -18,3 +18,11 @@ export function HealthBadge({ health }: { health: ConnectionHealth }) {
     </span>
   );
 }
+
+/** The auth state in words, matching the health badge. */
+export const AUTH_STATE_LABELS: Record<ConnectionAuthState, string> = {
+  ok: "OK",
+  auth_failed: "Auth failed",
+  needs_reauthorization: "Needs reconnect",
+  outage: "Outage",
+};

@@ -86,6 +86,12 @@ export const metricDefinitionSchema = z.object({
   granularity: granularitySchema,
   dimensions: z.array(z.string().min(1)),
   aggregations: z.array(aggregationSchema).min(1),
+  /**
+   * Which way is good: "higher" (default; more clicks, more revenue) or
+   * "lower" (a rank such as average position, an error rate). Dashboards
+   * colour a change by it.
+   */
+  better: z.enum(["higher", "lower"]).optional(),
 });
 export type MetricDefinition = z.infer<typeof metricDefinitionSchema>;
 

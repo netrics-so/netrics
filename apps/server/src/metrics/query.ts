@@ -43,6 +43,7 @@ function present(metric: ConnectionMetric): WorkspaceMetric {
       metric.kind as MetricKind,
       metric.aggregations as Aggregation[],
     ),
+    better: metric.better === "lower" ? "lower" : "higher",
   };
 }
 

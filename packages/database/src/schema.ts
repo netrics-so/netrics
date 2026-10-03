@@ -264,9 +264,15 @@ export const metricDefinitions = pgTable(
     granularity: text("granularity").notNull(),
     dimensions: jsonb("dimensions").notNull(),
     aggregations: jsonb("aggregations").notNull(),
+    // Which way is good for the metric: "higher" or "lower" (#136).
+    better: text("better").notNull().default("higher"),
   },
   (table) => [
     unique().on(table.connectorId, table.key),
+    check(
+      "metric_definitions_better_valid",
+      sql`${table.better} in ('higher', 'lower')`,
+    ),
     check(
       "metric_definitions_kind_valid",
       sql`${table.kind} in ('gauge', 'delta', 'counter')`,

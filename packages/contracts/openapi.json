@@ -3707,6 +3707,13 @@
                                 "last"
                               ]
                             }
+                          },
+                          "better": {
+                            "type": "string",
+                            "enum": [
+                              "higher",
+                              "lower"
+                            ]
                           }
                         },
                         "required": [
@@ -3719,7 +3726,8 @@
                           "unit",
                           "granularity",
                           "dimensions",
-                          "aggregations"
+                          "aggregations",
+                          "better"
                         ],
                         "additionalProperties": false
                       }
@@ -3946,6 +3954,13 @@
                               "last"
                             ]
                           }
+                        },
+                        "better": {
+                          "type": "string",
+                          "enum": [
+                            "higher",
+                            "lower"
+                          ]
                         }
                       },
                       "required": [
@@ -3958,7 +3973,8 @@
                         "unit",
                         "granularity",
                         "dimensions",
-                        "aggregations"
+                        "aggregations",
+                        "better"
                       ],
                       "additionalProperties": false
                     },
@@ -5851,6 +5867,43 @@
                               ]
                             }
                           },
+                          "kind": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "gauge",
+                                  "delta",
+                                  "counter"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "granularity": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "day",
+                                  "hour",
+                                  "instant"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "better": {
+                            "type": "string",
+                            "enum": [
+                              "higher",
+                              "lower"
+                            ]
+                          },
                           "status": {
                             "type": "string",
                             "enum": [
@@ -5883,6 +5936,9 @@
                           "unit",
                           "change",
                           "spark",
+                          "kind",
+                          "granularity",
+                          "better",
                           "status",
                           "updatedAt"
                         ],

@@ -113,6 +113,7 @@ export function MetricTile({
       label={label}
       period={tile.period}
       aggregation={tile.aggregation}
+      metric={data?.metric ?? metric ?? null}
       busy={loading}
       reading={
         data

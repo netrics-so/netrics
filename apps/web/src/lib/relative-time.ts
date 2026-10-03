@@ -28,3 +28,19 @@ export function relativeTime(iso: string | null): string {
   }
   return future ? `in ${text}` : `${text} ago`;
 }
+
+/** "every 5 minutes", "every 6 hours" — a poll interval in words. */
+export function intervalLabel(seconds: number): string {
+  const units: Array<[number, string]> = [
+    [DAY, "day"],
+    [HOUR, "hour"],
+    [MINUTE, "minute"],
+  ];
+  for (const [size, name] of units) {
+    if (seconds >= size && seconds % size === 0) {
+      const count = seconds / size;
+      return count === 1 ? `every ${name}` : `every ${count} ${name}s`;
+    }
+  }
+  return `every ${seconds} seconds`;
+}

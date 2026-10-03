@@ -503,11 +503,13 @@ button.danger:hover:not(:disabled) {
   color: #8a919c;
 }
 
-.tile-change.up {
+/* Coloured by whether the change is an improvement (a lower average
+   position is good), not by its direction. */
+.tile-change.good {
   color: #9fd6a8;
 }
 
-.tile-change.down {
+.tile-change.bad {
   color: #f0a3a3;
 }
 

@@ -2,11 +2,16 @@
 
 import type { ReactNode } from "react";
 
-import type { MetricAggregation, MetricPeriod } from "@netrics/contracts";
+import type {
+  MetricAggregation,
+  MetricPeriod,
+  WorkspaceMetric,
+} from "@netrics/contracts";
 
 import {
   AGGREGATION_LABELS,
   COMPARISON_LABELS,
+  aggregationLabel,
   PERIOD_LABELS,
   formatChange,
   formatValue,
@@ -26,6 +31,12 @@ export interface TileReading {
   timeZone: string;
 }
 
+/** What the tile needs to know about its metric, when known. */
+export type TileMetric = Pick<
+  WorkspaceMetric,
+  "kind" | "granularity" | "better"
+>;
+
 /**
  * How a tile looks, given numbers someone else computed: the web dashboard
  * and its TV layout query them per tile, the kiosk gets them from the
@@ -35,6 +46,7 @@ export function TileView({
   label,
   period,
   aggregation,
+  metric = null,
   reading,
   fallback,
   footer,
@@ -44,6 +56,8 @@ export function TileView({
   label: string;
   period: MetricPeriod;
   aggregation: MetricAggregation;
+  /** Names a daily gauge's aggregation by day and colours a change. */
+  metric?: TileMetric | null;
   reading: TileReading | null;
   /** Shown instead of the numbers while there are none. */
   fallback: ReactNode;
@@ -53,7 +67,12 @@ export function TileView({
   variant?: "default" | "tv";
 }) {
   const change = reading
-    ? formatChange(reading.delta, reading.ratio, reading.unit)
+    ? formatChange(
+        reading.delta,
+        reading.ratio,
+        reading.unit,
+        metric?.better ?? "higher",
+      )
     : null;
 
   return (
@@ -64,7 +83,10 @@ export function TileView({
       <header className="tile-header">
         <h3 className="tile-label">{label}</h3>
         <span className="tile-period">
-          {PERIOD_LABELS[period]} · {AGGREGATION_LABELS[aggregation]}
+          {PERIOD_LABELS[period]} ·{" "}
+          {metric
+            ? aggregationLabel(aggregation, metric)
+            : AGGREGATION_LABELS[aggregation]}
         </span>
       </header>
 
@@ -74,7 +96,7 @@ export function TileView({
             {formatValue(reading.value, reading.unit)}
           </div>
           {change ? (
-            <div className={`tile-change ${change.direction}`}>
+            <div className={`tile-change ${change.tone}`}>
               <span aria-hidden="true">{ARROWS[change.direction]}</span>{" "}
               {change.text}{" "}
               <span className="tile-comparison">

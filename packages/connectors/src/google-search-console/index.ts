@@ -146,6 +146,8 @@ export const searchConsoleManifest: ConnectorManifest = {
       granularity: "day",
       dimensions: ["resource"],
       aggregations: ["last", "min", "max"],
+      // 1 is the top: a falling average position is an improvement.
+      better: "lower",
     },
     {
       key: `${PREFIX}.position_sum`,
