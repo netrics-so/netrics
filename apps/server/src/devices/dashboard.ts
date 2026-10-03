@@ -20,7 +20,11 @@ import {
 import { RESOURCE_DIMENSION, tileLabel } from "@netrics/domain";
 
 import { toStateView } from "../connections/present.js";
-import { queryMetric } from "../metrics/query.js";
+import {
+  findAllResourcesNames,
+  queryMetric,
+  tileAllResourcesName,
+} from "../metrics/query.js";
 
 // The device dashboard read model (ADR 0007, #57): the assigned dashboard's
 // tiles, computed by the same metric query service as the web dashboard.
@@ -108,6 +112,16 @@ export async function buildDeviceDashboard(
           : [{ connectionId: tile.connectionId, resourceId }];
       }),
     );
+    // Tiles of several resources added up say so: "All apps" (#208).
+    const scopes = await findAllResourcesNames(
+      tx,
+      workspaceId,
+      dashboard.tiles.map((tile) => ({
+        connectionId: tile.connectionId,
+        metricKey: tile.metricKey,
+        dimensions: tile.dimensions as Record<string, string>,
+      })),
+    );
     for (const tile of dashboard.tiles) {
       const dimensions = tile.dimensions as Record<string, string>;
       const resourceId = dimensions[RESOURCE_DIMENSION];
@@ -142,6 +156,11 @@ export async function buildDeviceDashboard(
               : (resourceNames.get(
                   resourceNameKey(tile.connectionId, resourceId),
                 ) ?? null),
+          allResourcesName: tileAllResourcesName(scopes, {
+            connectionId: tile.connectionId,
+            metricKey: tile.metricKey,
+            dimensions,
+          }),
         }),
         period: request.period,
         aggregation: query?.aggregation ?? request.aggregation,

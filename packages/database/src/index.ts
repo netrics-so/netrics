@@ -177,6 +177,7 @@ export {
   connectionResourcesDiscoveredAt,
   findResourceNames,
   listMetricResources,
+  findConnectionResourceNoun,
   resourceNameKey,
   upsertConnectionResources,
 } from "./resources.js";

@@ -316,6 +316,7 @@ keeps loading on every 0.2.x runtime.
 | 0.2.1 | The `oauth2` auth strategy (ADR 0012)                            |
 | 0.2.2 | The `signed-key` auth strategy and `bytes()` (ADR 0014)          |
 | 0.2.3 | The `currency_minor` unit with a `currency` dimension (ADR 0014) |
+| 0.2.4 | `resourceNoun`: what the connector calls its resources (#208)    |
 
 ### Authentication strategies
 

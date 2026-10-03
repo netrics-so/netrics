@@ -133,6 +133,7 @@ export const vercelManifest: ConnectorManifest = {
   // Pro plans keep 366 days; smaller plans are clamped at sync time.
   backfillDays: 366,
   outboundDomains: ["api.vercel.com"],
+  resourceNoun: { singular: "project", plural: "projects" },
   rateLimit: { maxRequests: 400, windowSeconds: 60 },
 };
 

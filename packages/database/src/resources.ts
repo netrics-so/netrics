@@ -207,6 +207,31 @@ export async function findResourceNames(
   );
 }
 
+/**
+ * What the connection's connector calls its resources (its manifest's
+ * `resourceNoun`, SDK 0.2.4), or null when it does not say (#208).
+ */
+export async function findConnectionResourceNoun(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+): Promise<{ singular: string; plural: string } | null> {
+  const rows = await tx.execute(sql`
+    select k.manifest -> 'resourceNoun' ->> 'singular' as singular,
+           k.manifest -> 'resourceNoun' ->> 'plural' as plural
+    from connections c
+    join connectors k on k.id = c.connector_id
+    where c.workspace_id = ${workspaceId} and c.id = ${connectionId}`);
+  const singular = rows[0]?.singular;
+  const plural = rows[0]?.plural;
+  return typeof singular === "string" &&
+    singular !== "" &&
+    typeof plural === "string" &&
+    plural !== ""
+    ? { singular, plural }
+    : null;
+}
+
 /** The key of a resource in `findResourceNames`' result. */
 export function resourceNameKey(
   connectionId: string,

@@ -999,15 +999,20 @@ describe("device dashboard", () => {
       where dashboard_id = ${id} and period = 'today'`;
     const { accessToken } = await pair("Partial TV", id);
     const { body } = await read(accessToken);
+    // Still says it adds up all sites of the connection (#208).
     expect(body.tiles[0]).toMatchObject({
-      label: "demo.signups",
+      label: "demo.signups · All sites",
       aggregation: "avg",
       value: null,
       unit: null,
       spark: [],
       status: "no_data",
     });
-    expect(body.tiles[1]).toMatchObject({ value: 77, status: "ok" });
+    expect(body.tiles[1]).toMatchObject({
+      label: "Signups · All sites",
+      value: 77,
+      status: "ok",
+    });
   });
 
   it("accepts only the device's access token", async () => {

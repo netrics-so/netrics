@@ -4447,10 +4447,29 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "resourceNoun": {
+                      "type": "object",
+                      "properties": {
+                        "singular": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "plural": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "singular",
+                        "plural"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "resources"
+                    "resources",
+                    "resourceNoun"
                   ],
                   "additionalProperties": false
                 }
@@ -4929,6 +4948,12 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "allResourcesName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -4940,7 +4965,8 @@
                               "period",
                               "dimensions",
                               "title",
-                              "resourceName"
+                              "resourceName",
+                              "allResourcesName"
                             ],
                             "additionalProperties": false
                           }
@@ -5192,6 +5218,12 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "allResourcesName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -5203,7 +5235,8 @@
                               "period",
                               "dimensions",
                               "title",
-                              "resourceName"
+                              "resourceName",
+                              "allResourcesName"
                             ],
                             "additionalProperties": false
                           }
@@ -5539,6 +5572,12 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "allResourcesName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -5550,7 +5589,8 @@
                               "period",
                               "dimensions",
                               "title",
-                              "resourceName"
+                              "resourceName",
+                              "allResourcesName"
                             ],
                             "additionalProperties": false
                           }
@@ -5937,6 +5977,12 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "allResourcesName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -5948,7 +5994,8 @@
                               "period",
                               "dimensions",
                               "title",
-                              "resourceName"
+                              "resourceName",
+                              "allResourcesName"
                             ],
                             "additionalProperties": false
                           }

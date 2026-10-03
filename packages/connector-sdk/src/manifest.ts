@@ -166,6 +166,18 @@ export const rateLimitHintSchema = z.object({
 });
 export type RateLimitHint = z.infer<typeof rateLimitHintSchema>;
 
+/**
+ * What a connector calls the resources its observations name in their
+ * "resource" dimension: { singular: "app", plural: "apps" }. Dashboards say
+ * "Downloads · All apps" for a tile of all of them. Presentation only: a
+ * runtime that does not know the field ignores it. Since SDK 0.2.4.
+ */
+export const resourceNounSchema = z.object({
+  singular: z.string().min(1).max(40),
+  plural: z.string().min(1).max(40),
+});
+export type ResourceNoun = z.infer<typeof resourceNounSchema>;
+
 export const connectorManifestSchema = z
   .object({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -197,6 +209,7 @@ export const connectorManifestSchema = z
     backfillDays: z.number().int().positive().max(3650).optional(),
     outboundDomains: z.array(z.string().min(1)),
     rateLimit: rateLimitHintSchema.optional(),
+    resourceNoun: resourceNounSchema.optional(),
   })
   .refine(
     (manifest) =>

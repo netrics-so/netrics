@@ -11,7 +11,12 @@ import {
   type MetricPeriod,
   type WorkspaceMetric,
 } from "@netrics/contracts";
-import { RESOURCE_DIMENSION, tileLabel } from "@netrics/domain";
+import {
+  DEFAULT_RESOURCE_NOUN,
+  RESOURCE_DIMENSION,
+  tileLabel,
+  type ResourceNoun,
+} from "@netrics/domain";
 
 import {
   ApiError,
@@ -38,9 +43,12 @@ import {
   type CurrencyTotals,
 } from "@/lib/tile-currency";
 import {
+  allResourcesOption,
   effectiveResource,
   hasResources,
+  newTileScope,
   offersResourceChoice,
+  resourceFieldLabel,
   resourceOptionLabel,
   withResource,
   type TileResources,
@@ -60,6 +68,8 @@ interface DraftTile {
   title: string | null;
   /** Name of the resource the tile shows, if it shows one (#194). */
   resourceName: string | null;
+  /** "All apps" for a tile of several resources added up (#208). */
+  allResourcesName: string | null;
 }
 
 const PERIODS = Object.keys(PERIOD_LABELS) as MetricPeriod[];
@@ -146,7 +156,12 @@ export function DashboardView({
         name,
         projectId: dashboard.projectId,
         tiles: tiles.map(
-          ({ key: _key, resourceName: _resourceName, ...tile }) => tile,
+          ({
+            key: _key,
+            resourceName: _resourceName,
+            allResourcesName: _allResourcesName,
+            ...tile
+          }) => tile,
         ),
       });
       setDashboard(saved.dashboard);
@@ -313,6 +328,7 @@ export function DashboardView({
                           metricName: metric?.name ?? tile.metricKey,
                           dimensions: tile.dimensions,
                           resourceName: tile.resourceName,
+                          allResourcesName: tile.allResourcesName,
                         })}
                       </strong>{" "}
                       <span className="muted">
@@ -449,12 +465,17 @@ function useCurrencies(
 function useResources(
   workspaceId: string,
   metric: WorkspaceMetric | undefined,
-): { resources: TileResources | null; error: string | null } {
+): {
+  resources: TileResources | null;
+  noun: ResourceNoun | null;
+  error: string | null;
+} {
   const [state, setState] = useState<{
     key: string;
     resources: TileResources | null;
+    noun: ResourceNoun | null;
     error: string | null;
-  }>({ key: "", resources: null, error: null });
+  }>({ key: "", resources: null, noun: null, error: null });
   const applies = hasResources(metric);
   const key = metric && applies ? metricId(metric) : "";
 
@@ -469,12 +490,22 @@ function useResources(
     })
       .then((response) => {
         if (current) {
-          setState({ key, resources: response.resources, error: null });
+          setState({
+            key,
+            resources: response.resources,
+            noun: response.resourceNoun,
+            error: null,
+          });
         }
       })
       .catch((cause: unknown) => {
         if (current) {
-          setState({ key, resources: null, error: apiErrorMessage(cause) });
+          setState({
+            key,
+            resources: null,
+            noun: null,
+            error: apiErrorMessage(cause),
+          });
         }
       });
     return () => {
@@ -483,8 +514,8 @@ function useResources(
   }, [workspaceId, metric, applies, key]);
 
   return state.key === key && key !== ""
-    ? { resources: state.resources, error: state.error }
-    : { resources: null, error: null };
+    ? { resources: state.resources, noun: state.noun, error: state.error }
+    : { resources: null, noun: null, error: null };
 }
 
 function AddTileForm({
@@ -507,6 +538,9 @@ function AddTileForm({
   const resources = useResources(workspaceId, metric);
   const [pickedResource, setPickedResource] = useState("");
   const resource = effectiveResource(resources.resources, pickedResource);
+  // "Downloads · All apps" when the tile adds up several (#208).
+  const scope = newTileScope(resources.resources, resource, resources.noun);
+  const noun = resources.noun ?? DEFAULT_RESOURCE_NOUN;
   // Amounts in several currencies: the tile shows one (ADR 0014).
   const perCurrency = needsCurrency(metric);
   const currencies = useCurrencies(
@@ -556,6 +590,7 @@ function AddTileForm({
       dimensions: withResource(tileDimensions(metric, currency), resource),
       title: title.trim() === "" ? null : title.trim(),
       resourceName: resource?.name ?? null,
+      allResourcesName: scope,
     });
     setTitle("");
   }
@@ -619,14 +654,14 @@ function AddTileForm({
       </div>
       {offersResourceChoice(resources.resources) || resources.error ? (
         <div className="field">
-          <label htmlFor="tile-resource">Resource</label>
+          <label htmlFor="tile-resource">{resourceFieldLabel(noun)}</label>
           <select
             id="tile-resource"
             value={resource?.id ?? ""}
             disabled={!resources.resources}
             onChange={(event) => setPickedResource(event.target.value)}
           >
-            <option value="">All resources</option>
+            <option value="">{allResourcesOption(noun)}</option>
             {(resources.resources ?? []).map((option) => (
               <option key={option.id} value={option.id}>
                 {resourceOptionLabel(option)}
@@ -635,7 +670,7 @@ function AddTileForm({
           </select>
           <p className="help">
             {resources.error ??
-              `All ${resources.resources?.length ?? 0} of ${metric?.connectionName ?? "the connection"} added up, or one of them.`}
+              `All ${resources.resources?.length ?? 0} ${noun.plural} of ${metric?.connectionName ?? "the connection"} added up, or one of them.`}
           </p>
         </div>
       ) : null}
@@ -678,6 +713,7 @@ function AddTileForm({
                   metricName: metric.name,
                   dimensions: withResource({}, resource),
                   resourceName: resource?.name ?? null,
+                  allResourcesName: scope,
                 })
               : undefined
           }

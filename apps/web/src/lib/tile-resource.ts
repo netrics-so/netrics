@@ -1,5 +1,9 @@
 import type { MetricResourcesResponse } from "@netrics/contracts";
-import { RESOURCE_DIMENSION } from "@netrics/domain";
+import {
+  RESOURCE_DIMENSION,
+  allResourcesName,
+  type ResourceNoun,
+} from "@netrics/domain";
 
 /**
  * The tile editor's resource choice (#194): a tile shows all of a
@@ -38,6 +42,28 @@ export function effectiveResource(
   picked: string,
 ): TileResources[number] | null {
   return resources?.find((resource) => resource.id === picked) ?? null;
+}
+
+/** The picker's label: what the connector calls a resource ("App"). */
+export function resourceFieldLabel(noun: ResourceNoun): string {
+  return noun.singular.charAt(0).toUpperCase() + noun.singular.slice(1);
+}
+
+/** The picker's choice of all resources added up: "All apps". */
+export function allResourcesOption(noun: ResourceNoun): string {
+  return `All ${noun.plural}`;
+}
+
+/**
+ * The scope a new tile names after the metric (#208): "All apps" for all of
+ * several resources, null for one resource or a single one.
+ */
+export function newTileScope(
+  resources: TileResources | null,
+  resource: TileResources[number] | null,
+  noun: ResourceNoun | null,
+): string | null {
+  return resource ? null : allResourcesName(noun, resources?.length ?? 0);
 }
 
 /** The dimension filter with the tile's resource, when it shows one. */

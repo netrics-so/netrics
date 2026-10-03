@@ -264,6 +264,7 @@ export const appStoreConnectManifest: ConnectorManifest = {
   // The API, and the bucket host of the presigned analytics segment URLs,
   // exactly (ADR 0014: never *.amazonaws.com).
   outboundDomains: [APP_STORE_CONNECT_HOST, ...ANALYTICS_SEGMENT_HOSTS],
+  resourceNoun: { singular: "app", plural: "apps" },
   // Apple's limit is per key and rolling hour; connections sharing a key
   // share it (ADR 0014).
   rateLimit: { maxRequests: 3500, windowSeconds: 3600, scope: "key" },
