@@ -39,6 +39,8 @@ export interface DeviceRouteDeps {
   db: Database;
   pairingUrl: string;
   version: string;
+  /** NETRICS_EXCHANGE_RATES: display-currency conversion (#191). */
+  exchangeRates?: boolean;
 }
 
 const deviceParamsSchema = z.object({ deviceId: z.uuid() });

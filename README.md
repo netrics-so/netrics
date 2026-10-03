@@ -169,6 +169,11 @@ Relevant environment variables (see `.env.example`):
   atomically. Every later account needs an invitation (#27).
   `NETRICS_SETUP_TOKEN` fixes the token instead of logging a generated one.
   `GET /v1/setup-status` (public) tells the web app whether setup is pending.
+- `NETRICS_EXCHANGE_RATES` — `ecb` (default) or `off`, read by the api and
+  the scheduler (#191). With `ecb` the scheduler fetches the ECB euro
+  reference rates (egress to `www.ecb.europa.eu` only) and workspaces or
+  tiles may show amounts converted into a display currency, marked
+  approximate. With `off` nothing is fetched and amounts stay per currency.
 - `NETRICS_AUTH_RATE_LIMIT` — `on` (default in production) or `off`.
   Sign-in, sign-up, password reset and verification mail are limited per
   client IP (`apps/server/src/auth/rate-limit.ts`). The counters live in

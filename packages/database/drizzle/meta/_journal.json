@@ -218,6 +218,13 @@
       "when": 1791039782230,
       "tag": "0030_connection_resources",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791060521872,
+      "tag": "0031_display_currency",
+      "breakpoints": true
     }
   ]
 }

@@ -97,6 +97,22 @@ on requests carrying it (browsers always come through the web app). To
 rotate, set `new,old` on the API, then `new` on the web app, then `new` on
 the API.
 
+### Exchange rates (display currency)
+
+Amounts in several currencies (App Store proceeds, Apple Ads) are shown per
+currency by default. A workspace or a tile can instead convert them into one
+display currency, approximately, with the
+[ECB euro reference rates](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html)
+of each day. For that, the `scheduler` fetches
+`https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml` every six
+hours (the 90-day file once to backfill), through the same guarded egress as
+connectors. This is on by default (`NETRICS_EXCHANGE_RATES=ecb`).
+
+To run without it, for example offline, set `NETRICS_EXCHANGE_RATES=off` in
+`.env` (it applies to the `api` and the `scheduler`): no request goes to the
+ECB, the option is hidden, and tiles show amounts per currency. Stored rates
+are kept; turning it back on resumes the daily fetch.
+
 ### Another port
 
 If the host already serves 443, install with `--https-port 8443`. This sets
@@ -112,7 +128,7 @@ Caddy's DNS challenge or your own proxy in front.
 | `migrate`   | Runs on every `up`: migrations, role passwords, connector catalog, then exits                       |
 | `api`       | REST API as the RLS-enforced `netrics_app` role; refuses privileged database roles                  |
 | `worker`    | Connector syncs                                                                                     |
-| `scheduler` | Plans due syncs                                                                                     |
+| `scheduler` | Plans due syncs; fetches ECB exchange rates unless `NETRICS_EXCHANGE_RATES=off`                     |
 | `web`       | Web app; proxies the API                                                                            |
 | `caddy`     | HTTPS termination; the only published ports                                                         |
 | `backup`    | Optional nightly `pg_dump` into `./backups`, 14 days kept (`docker compose --profile backup up -d`) |

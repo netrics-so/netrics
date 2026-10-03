@@ -25,6 +25,8 @@ import {
   type DashboardResponse,
   type DeviceListResponse,
   type DeviceResponse,
+  type CurrencyConversionOptionsResponse,
+  currencyConversionOptionsResponseSchema,
   type MetricCurrenciesRequest,
   type MetricCurrenciesResponse,
   type MetricResourcesRequest,
@@ -175,6 +177,12 @@ export function apiErrorMessage(error: unknown): string {
         return "Pick a currency for this amount: amounts in different currencies are not added up.";
       case "metric_not_per_currency":
         return "This metric is not an amount in several currencies.";
+      case "currency_choice_conflict":
+        return "A tile shows one currency exactly or converts into a display currency, not both.";
+      case "currency_not_covered":
+        return "The ECB publishes no reference rate for that currency. Pick EUR or another listed currency.";
+      case "currency_conversion_off":
+        return "This instance does not fetch exchange rates, so amounts stay per currency.";
       case "unknown_dimension":
         return "A tile filters on a dimension the metric does not have.";
       case "oauth_reauthorization_required":
@@ -295,6 +303,18 @@ export async function getWorkspace(
     return null;
   }
   return parseResponse(workspaceResponseSchema, response);
+}
+
+/** Whether amounts can be converted, and into which currencies (#191). */
+export function getCurrencyConversion(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<CurrencyConversionOptionsResponse> {
+  return serverGet(
+    currencyConversionOptionsResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/currency-conversion`,
+  );
 }
 
 export function listMembers(
@@ -458,6 +478,19 @@ export function setWorkspaceTimeZone(
     "PATCH",
     `/v1/workspaces/${workspaceId}`,
     renameWorkspaceRequestSchema.parse({ timeZone }),
+  );
+}
+
+/** null: amounts per currency, exact (#191). */
+export function setWorkspaceDisplayCurrency(
+  workspaceId: string,
+  displayCurrency: string | null,
+): Promise<WorkspaceResponse> {
+  return browserSend(
+    workspaceResponseSchema,
+    "PATCH",
+    `/v1/workspaces/${workspaceId}`,
+    renameWorkspaceRequestSchema.parse({ displayCurrency }),
   );
 }
 

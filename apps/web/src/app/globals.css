@@ -614,6 +614,27 @@ button.danger:hover:not(:disabled) {
   color: #f0a3a3;
 }
 
+/* Converted amounts (#191): approximate, with their source. */
+.tile-approx {
+  color: #8a919c;
+  font-weight: 400;
+}
+
+.tile-conversion {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #8a919c;
+}
+
+.tile-conversion a {
+  color: inherit;
+}
+
+.tile-unconverted {
+  display: block;
+  color: #d4a72c;
+}
+
 .tile-comparison {
   color: #8a919c;
 }
@@ -813,6 +834,10 @@ a.tile-stale:hover {
 
 .tile--tv .tile-change {
   font-size: min(8cqh, 5.4cqw);
+}
+
+.tile--tv .tile-conversion {
+  font-size: min(5.5cqh, 3.6cqw);
 }
 
 /* The trend takes the rest of the tile. */

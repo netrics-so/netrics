@@ -123,6 +123,7 @@ export async function presentDashboard(
       period: tile.period as DashboardView["tiles"][number]["period"],
       dimensions: tile.dimensions as Record<string, string>,
       title: tile.title,
+      displayCurrency: tile.displayCurrency,
       resourceName: resourceName(names, tile),
       allResourcesName: tileAllResourcesName(scopes, {
         connectionId: tile.connectionId,
@@ -163,13 +164,17 @@ async function validateTiles(
     ) {
       return fail(400, "unknown_dimension");
     }
-    // A tile of a per-currency amount shows one currency (ADR 0014).
+    // A tile of a per-currency amount shows one currency exactly (ADR
+    // 0014), or is converted into its own display currency, or follows the
+    // workspace's (#191): never two of these at once.
     const currency = dimensions[CURRENCY_DIMENSION];
-    if (
-      isPerCurrencyUnit(metric.unit) &&
-      (currency === undefined || !isCurrencyCode(currency))
-    ) {
+    const perCurrency = isPerCurrencyUnit(metric.unit);
+    if (perCurrency && currency !== undefined && !isCurrencyCode(currency)) {
       return fail(400, "currency_required");
+    }
+    const displayCurrency = tile.displayCurrency ?? null;
+    if (displayCurrency !== null && (!perCurrency || currency !== undefined)) {
+      return fail(400, "currency_choice_conflict");
     }
     // A tile of one resource shows a resource of its own connection (#194).
     const resource = dimensions[RESOURCE_DIMENSION];
@@ -191,6 +196,7 @@ async function validateTiles(
       period: tile.period,
       dimensions,
       title: tile.title ?? null,
+      displayCurrency,
     });
   }
   return ok(valid);
@@ -324,6 +330,7 @@ export function createDashboardService(deps: { db: Database }) {
             period: tile.period,
             dimensions: tile.dimensions as Record<string, string>,
             title: tile.title,
+            displayCurrency: tile.displayCurrency,
           })),
         });
         await insertAuditEvent(tx, {

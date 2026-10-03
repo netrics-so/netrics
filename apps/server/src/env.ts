@@ -197,6 +197,11 @@ const envSchema = z
     // register is <WEB_ORIGIN>/oauth/google/callback.
     NETRICS_OAUTH_GOOGLE_CLIENT_ID: z.string().min(1).optional(),
     NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+    // Display currency (#191): "ecb" lets the scheduler fetch the ECB euro
+    // reference rates daily (egress to www.ecb.europa.eu only) and offers
+    // converted amounts; "off" fetches nothing and keeps every amount per
+    // currency. Read at runtime by the scheduler and the API alike.
+    NETRICS_EXCHANGE_RATES: z.enum(["ecb", "off"]).default("ecb"),
     APP_VERSION: z.string().min(1).default("0.0.0-dev"),
     GIT_SHA: z.string().min(1).default("dev"),
   })
@@ -345,6 +350,7 @@ const envSchema = z
             }
           : null,
     } satisfies Record<string, OAuthClientConfig | null>,
+    exchangeRates: env.NETRICS_EXCHANGE_RATES === "ecb",
     version: env.APP_VERSION,
     commit: env.GIT_SHA,
   }));

@@ -17,7 +17,12 @@ import {
   resourceNameKey,
   type Transaction,
 } from "@netrics/database";
-import { RESOURCE_DIMENSION, tileLabel } from "@netrics/domain";
+import {
+  EXCHANGE_RATE_SOURCE,
+  RESOURCE_DIMENSION,
+  conversionNote,
+  tileLabel,
+} from "@netrics/domain";
 
 import { toStateView } from "../connections/present.js";
 import {
@@ -84,7 +89,12 @@ export async function buildDeviceDashboard(
   tx: Transaction,
   workspaceId: string,
   dashboardId: string | null,
-  options: { now: Date; log?: TileErrorLogger },
+  options: {
+    now: Date;
+    log?: TileErrorLogger;
+    /** NETRICS_EXCHANGE_RATES: display-currency conversion (#191). */
+    exchangeRates?: boolean;
+  },
 ): Promise<DeviceDashboardResponse> {
   const { now } = options;
   const workspace = await findWorkspace(tx, workspaceId);
@@ -131,11 +141,16 @@ export async function buildDeviceDashboard(
         period: tile.period as MetricPeriod,
         aggregation: tile.aggregation as MetricAggregation,
         ...(Object.keys(dimensions).length > 0 ? { dimensions } : {}),
+        ...(tile.displayCurrency
+          ? { displayCurrency: tile.displayCurrency }
+          : {}),
       };
       // A savepoint per tile: a failing query must not abort the others.
       const result = await tx
         .transaction((savepoint) =>
-          queryMetric(savepoint, workspaceId, request, now),
+          queryMetric(savepoint, workspaceId, request, now, {
+            exchangeRates: options.exchangeRates ?? false,
+          }),
         )
         .catch((err: unknown) => {
           options.log?.warn({ tileId: tile.id, err }, "device tile failed");
@@ -144,24 +159,34 @@ export async function buildDeviceDashboard(
       const query = result?.ok ? result.value : null;
       const state = states.get(tile.connectionId) ?? null;
       const value = query?.value ?? null;
+      const conversion = query?.conversion ?? null;
+      const label = tileLabel({
+        title: tile.title,
+        metricName: query?.metric.name ?? tile.metricKey,
+        dimensions,
+        resourceName:
+          resourceId === undefined
+            ? null
+            : (resourceNames.get(
+                resourceNameKey(tile.connectionId, resourceId),
+              ) ?? null),
+        allResourcesName: tileAllResourcesName(scopes, {
+          connectionId: tile.connectionId,
+          metricKey: tile.metricKey,
+          dimensions,
+        }),
+      });
       tiles.push({
         id: tile.id,
-        label: tileLabel({
-          title: tile.title,
-          metricName: query?.metric.name ?? tile.metricKey,
-          dimensions,
-          resourceName:
-            resourceId === undefined
-              ? null
-              : (resourceNames.get(
-                  resourceNameKey(tile.connectionId, resourceId),
-                ) ?? null),
-          allResourcesName: tileAllResourcesName(scopes, {
-            connectionId: tile.connectionId,
-            metricKey: tile.metricKey,
-            dimensions,
-          }),
-        }),
+        // Converted amounts say so in the label, which every screen shows
+        // (tvOS reads no other field for it): "Proceeds · All apps · ≈ EUR,
+        // ECB reference rates".
+        label: conversion
+          ? `${label} · ${conversionNote(
+              conversion.displayCurrency,
+              conversion.unconverted.map((entry) => entry.currency),
+            )}`
+          : label,
         period: request.period,
         aggregation: query?.aggregation ?? request.aggregation,
         value,
@@ -171,6 +196,16 @@ export async function buildDeviceDashboard(
           ? query.currency
             ? `${query.currency}_minor`
             : query.metric.unit
+          : null,
+        conversion: conversion
+          ? {
+              displayCurrency: conversion.displayCurrency,
+              source: EXCHANGE_RATE_SOURCE.name,
+              unconverted: conversion.unconverted.map((entry) => ({
+                currency: entry.currency,
+                value: entry.value,
+              })),
+            }
           : null,
         change: {
           previousValue: query?.previousValue ?? null,

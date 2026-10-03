@@ -21,6 +21,11 @@ import {
 } from "@netrics/database";
 
 import type { Config } from "./env.js";
+import { ecbHttp, type RatesHttp } from "./exchange-rates/ecb.js";
+import {
+  createExchangeRateJob,
+  type ExchangeRateJob,
+} from "./exchange-rates/job.js";
 
 /**
  * Advisory lock taken for the duration of each planning tick. It is
@@ -130,6 +135,11 @@ export interface SchedulerDeps {
   now?: () => Date;
   schedulerId?: string;
   logger?: Logger;
+  /**
+   * The ECB rate job (#191); absent with NETRICS_EXCHANGE_RATES=off, and
+   * then the scheduler makes no request to the ECB.
+   */
+  exchangeRates?: ExchangeRateJob;
 }
 
 export interface SchedulerHandle {
@@ -196,6 +206,8 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
           logger.info(result, "scheduler tick");
         }
         await maintain();
+        // Starts a fetch in the background when one is due.
+        deps.exchangeRates?.tick();
       } catch (error) {
         logger.error(
           { err: error instanceof Error ? error.message : String(error) },
@@ -218,8 +230,26 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
     async stop() {
       running = false;
       await loopPromise;
+      await deps.exchangeRates?.idle();
     },
   };
+}
+
+/**
+ * The rate job for this configuration: none with
+ * NETRICS_EXCHANGE_RATES=off, so the scheduler never contacts the ECB.
+ */
+export function exchangeRateJobFor(
+  config: Pick<Config, "exchangeRates">,
+  schedulerDb: Database,
+  logger: Logger,
+  http: RatesHttp = ecbHttp,
+): { exchangeRates?: ExchangeRateJob } {
+  return config.exchangeRates
+    ? {
+        exchangeRates: createExchangeRateJob({ db: schedulerDb, http, logger }),
+      }
+    : {};
 }
 
 /** Process entry for NETRICS_ROLE=scheduler (called from src/index.ts). */
@@ -233,12 +263,14 @@ export async function startScheduler(config: Config): Promise<void> {
     schedulerDb,
     pollMs: config.schedulerPollMs,
     logger,
+    ...exchangeRateJobFor(config, schedulerDb, logger),
   });
   scheduler.start();
   logger.info(
     {
       schedulerId: scheduler.schedulerId,
       pollMs: config.schedulerPollMs,
+      exchangeRates: config.exchangeRates ? "ecb" : "off",
       version: config.version,
       commit: config.commit,
     },

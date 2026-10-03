@@ -967,6 +967,18 @@
                           "type": "string",
                           "minLength": 1
                         },
+                        "displayCurrency": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "createdAt": {
                           "type": "string",
                           "format": "date-time",
@@ -977,6 +989,7 @@
                         "id",
                         "name",
                         "timeZone",
+                        "displayCurrency",
                         "createdAt"
                       ],
                       "additionalProperties": false
@@ -1188,6 +1201,18 @@
                           "type": "string",
                           "minLength": 1
                         },
+                        "displayCurrency": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "createdAt": {
                           "type": "string",
                           "format": "date-time",
@@ -1198,6 +1223,7 @@
                         "id",
                         "name",
                         "timeZone",
+                        "displayCurrency",
                         "createdAt"
                       ],
                       "additionalProperties": false
@@ -1256,7 +1282,7 @@
         }
       },
       "patch": {
-        "summary": "Rename a workspace or change its time zone",
+        "summary": "Rename a workspace, or change its time zone or display currency",
         "tags": [
           "workspaces"
         ],
@@ -1276,6 +1302,17 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 64
+                  },
+                  "displayCurrency": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 }
               }
@@ -1321,6 +1358,18 @@
                           "type": "string",
                           "minLength": 1
                         },
+                        "displayCurrency": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "createdAt": {
                           "type": "string",
                           "format": "date-time",
@@ -1331,6 +1380,7 @@
                         "id",
                         "name",
                         "timeZone",
+                        "displayCurrency",
                         "createdAt"
                       ],
                       "additionalProperties": false
@@ -3868,6 +3918,10 @@
                       "type": "string",
                       "maxLength": 200
                     }
+                  },
+                  "displayCurrency": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{3}$"
                   }
                 },
                 "required": [
@@ -4023,6 +4077,85 @@
                         "null"
                       ]
                     },
+                    "conversion": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "displayCurrency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3
+                            },
+                            "approximate": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "source": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "url": {
+                                  "type": "string",
+                                  "format": "uri"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "url"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "unconverted": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "currency": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 3
+                                  },
+                                  "value": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "previousValue": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "currency",
+                                  "value",
+                                  "previousValue"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "displayCurrency",
+                            "approximate",
+                            "source",
+                            "unconverted"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "value": {
                       "type": [
                         "number",
@@ -4078,6 +4211,7 @@
                     "timeZone",
                     "aggregation",
                     "currency",
+                    "conversion",
                     "value",
                     "previousValue",
                     "delta",
@@ -4106,6 +4240,154 @@
                   ],
                   "additionalProperties": false,
                   "description": "Invalid request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/currency-conversion": {
+      "get": {
+        "summary": "Whether amounts can be converted into a display currency, and into which",
+        "tags": [
+          "metrics"
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "currencies": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 3
+                      }
+                    },
+                    "latestRateDate": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "source": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "url"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "currencies",
+                    "latestRateDate",
+                    "source"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -4806,6 +5088,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "displayCurrency": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[A-Z]{3}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -4943,6 +5236,12 @@
                                   "null"
                                 ]
                               },
+                              "displayCurrency": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
                               "resourceName": {
                                 "type": [
                                   "string",
@@ -4965,6 +5264,7 @@
                               "period",
                               "dimensions",
                               "title",
+                              "displayCurrency",
                               "resourceName",
                               "allResourcesName"
                             ],
@@ -5213,6 +5513,12 @@
                                   "null"
                                 ]
                               },
+                              "displayCurrency": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
                               "resourceName": {
                                 "type": [
                                   "string",
@@ -5235,6 +5541,7 @@
                               "period",
                               "dimensions",
                               "title",
+                              "displayCurrency",
                               "resourceName",
                               "allResourcesName"
                             ],
@@ -5419,6 +5726,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "displayCurrency": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[A-Z]{3}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -5567,6 +5885,12 @@
                                   "null"
                                 ]
                               },
+                              "displayCurrency": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
                               "resourceName": {
                                 "type": [
                                   "string",
@@ -5589,6 +5913,7 @@
                               "period",
                               "dimensions",
                               "title",
+                              "displayCurrency",
                               "resourceName",
                               "allResourcesName"
                             ],
@@ -5972,6 +6297,12 @@
                                   "null"
                                 ]
                               },
+                              "displayCurrency": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
                               "resourceName": {
                                 "type": [
                                   "string",
@@ -5994,6 +6325,7 @@
                               "period",
                               "dimensions",
                               "title",
+                              "displayCurrency",
                               "resourceName",
                               "allResourcesName"
                             ],
@@ -6295,6 +6627,57 @@
                               "null"
                             ]
                           },
+                          "conversion": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "displayCurrency": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 3
+                                  },
+                                  "source": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "unconverted": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "currency": {
+                                          "type": "string",
+                                          "minLength": 3,
+                                          "maxLength": 3
+                                        },
+                                        "value": {
+                                          "type": [
+                                            "number",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "currency",
+                                        "value"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "displayCurrency",
+                                  "source",
+                                  "unconverted"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "change": {
                             "type": "object",
                             "properties": {
@@ -6400,6 +6783,7 @@
                           "aggregation",
                           "value",
                           "unit",
+                          "conversion",
                           "change",
                           "spark",
                           "kind",

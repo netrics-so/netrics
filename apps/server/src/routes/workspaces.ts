@@ -46,6 +46,7 @@ import {
 import { can, canManageMember } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
+import { conversionOptions } from "../metrics/query.js";
 import type { AddDemoContent } from "../onboarding.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { routeSchema } from "./openapi.js";
@@ -56,6 +57,8 @@ export interface WorkspaceRouteDeps {
   db: Database;
   /** Demo connection and dashboard for new workspaces (#51). */
   addDemoContent?: AddDemoContent;
+  /** NETRICS_EXCHANGE_RATES: whether a display currency can be set (#191). */
+  exchangeRates?: boolean;
 }
 
 const memberParamsSchema = z.object({ userId: z.uuid() });
@@ -66,6 +69,7 @@ function toWorkspace(workspace: Workspace) {
     id: workspace.id,
     name: workspace.name,
     timeZone: workspace.timeZone,
+    displayCurrency: workspace.displayCurrency,
     createdAt: workspace.createdAt.toISOString(),
   };
 }
@@ -200,11 +204,12 @@ export function registerWorkspaceRoutes(
         "/workspaces/:workspaceId",
         {
           schema: routeSchema({
-            summary: "Rename a workspace or change its time zone",
+            summary:
+              "Rename a workspace, or change its time zone or display currency",
             tags: ["workspaces"],
             body: renameWorkspaceRequestSchema,
             response: workspaceResponseSchema,
-            errors: [403, 404],
+            errors: [400, 403, 404],
           }),
         },
         async (request, reply) => {
@@ -219,19 +224,37 @@ export function registerWorkspaceRoutes(
           if (!body) {
             return;
           }
-          const workspace = await withWorkspace(
+          const displayCurrency = body.displayCurrency;
+          const outcome = await withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            async (tx) => {
+            async (
+              tx,
+            ): Promise<{
+              error?: 404 | "currency_conversion_off" | "currency_not_covered";
+              workspace?: Workspace | null;
+            }> => {
               const current = await findWorkspace(tx, access.workspaceId);
               if (!current) {
-                return null;
+                return { error: 404 };
+              }
+              // EUR or a currency with ECB rates, on an instance that
+              // fetches them (#191).
+              if (displayCurrency) {
+                if (!deps.exchangeRates) {
+                  return { error: "currency_conversion_off" };
+                }
+                const options = await conversionOptions(tx, true);
+                if (!options.currencies.includes(displayCurrency)) {
+                  return { error: "currency_not_covered" };
+                }
               }
               const updated = await updateWorkspace(tx, access.workspaceId, {
                 ...(body.name !== undefined ? { name: body.name } : {}),
                 ...(body.timeZone !== undefined
                   ? { timeZone: body.timeZone }
                   : {}),
+                ...(displayCurrency !== undefined ? { displayCurrency } : {}),
               });
               if (body.name !== undefined) {
                 await insertAuditEvent(tx, {
@@ -254,9 +277,31 @@ export function registerWorkspaceRoutes(
                   },
                 });
               }
-              return updated;
+              if (
+                displayCurrency !== undefined &&
+                displayCurrency !== current.displayCurrency
+              ) {
+                await insertAuditEvent(tx, {
+                  workspaceId: access.workspaceId,
+                  actorUserId: access.callerId,
+                  action: "workspace.display_currency_changed",
+                  target: access.workspaceId,
+                  metadata: {
+                    oldDisplayCurrency: current.displayCurrency,
+                    newDisplayCurrency: displayCurrency,
+                  },
+                });
+              }
+              return { workspace: updated };
             },
           );
+          if (outcome.error === 404) {
+            return sendError(reply, 404, "workspace_not_found");
+          }
+          if (outcome.error) {
+            return sendError(reply, 400, outcome.error);
+          }
+          const { workspace } = outcome;
           if (!workspace) {
             return sendError(reply, 404, "workspace_not_found");
           }

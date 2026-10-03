@@ -59,6 +59,7 @@ function dashboard(version: string, value = 42): DeviceDashboardResponse {
         aggregation: "sum",
         value,
         unit: "count",
+        conversion: null,
         change: { previousValue: 40, delta: value - 40, ratio: 0.05 },
         spark: [1, 2, null, 4],
         kind: "delta",

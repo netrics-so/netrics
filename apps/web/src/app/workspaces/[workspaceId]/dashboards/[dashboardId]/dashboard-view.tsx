@@ -35,11 +35,13 @@ import {
   pickableMetrics,
 } from "@/lib/format-metric";
 import {
+  choiceValue,
   currencyOptionLabel,
-  effectiveCurrency,
+  effectiveChoice,
   needsCurrency,
-  tileCurrency,
-  tileDimensions,
+  tileCurrencyFields,
+  tileCurrencySummary,
+  workspaceChoiceLabel,
   type CurrencyTotals,
 } from "@/lib/tile-currency";
 import {
@@ -66,6 +68,8 @@ interface DraftTile {
   period: MetricPeriod;
   dimensions: Record<string, string>;
   title: string | null;
+  /** The tile's own display currency (#191). */
+  displayCurrency: string | null;
   /** Name of the resource the tile shows, if it shows one (#194). */
   resourceName: string | null;
   /** "All apps" for a tile of several resources added up (#208). */
@@ -95,11 +99,17 @@ export function DashboardView({
   canEdit,
   canDuplicate,
   canDelete,
+  currency,
 }: {
   workspaceId: string;
   dashboard: Dashboard;
   metrics: WorkspaceMetric[];
   connections: Record<string, TileConnection>;
+  /**
+   * The workspace's display currency and the currencies a tile can be
+   * converted into (none when the instance fetches no rates, #191).
+   */
+  currency: { displayCurrency: string | null; convertible: string[] };
   canEdit: boolean;
   canDuplicate: boolean;
   canDelete: boolean;
@@ -318,7 +328,7 @@ export function DashboardView({
             <ol className="tile-edit-list">
               {tiles.map((tile, index) => {
                 const metric = metricsById.get(tileMetricId(tile));
-                const currency = tileCurrency(tile.dimensions);
+                const currencySummary = tileCurrencySummary(tile);
                 return (
                   <li key={tile.key}>
                     <span>
@@ -336,7 +346,7 @@ export function DashboardView({
                         {metric
                           ? aggregationLabel(tile.aggregation, metric)
                           : AGGREGATION_LABELS[tile.aggregation]}{" "}
-                        {currency ? `· ${currency} ` : null}·{" "}
+                        {currencySummary ? `· ${currencySummary} ` : null}·{" "}
                         {metric?.connectionName ?? "removed connection"}
                       </span>
                     </span>
@@ -378,6 +388,7 @@ export function DashboardView({
             <AddTileForm
               workspaceId={workspaceId}
               metrics={pickable}
+              currency={currency}
               onAdd={(tile) => setTiles((current) => [...current, tile])}
             />
           ) : (
@@ -521,10 +532,12 @@ function useResources(
 function AddTileForm({
   workspaceId,
   metrics,
+  currency: conversion,
   onAdd,
 }: {
   workspaceId: string;
   metrics: WorkspaceMetric[];
+  currency: { displayCurrency: string | null; convertible: string[] };
   onAdd: (tile: DraftTile) => void;
 }) {
   const [selected, setSelected] = useState(
@@ -541,7 +554,8 @@ function AddTileForm({
   // "Downloads · All apps" when the tile adds up several (#208).
   const scope = newTileScope(resources.resources, resource, resources.noun);
   const noun = resources.noun ?? DEFAULT_RESOURCE_NOUN;
-  // Amounts in several currencies: the tile shows one (ADR 0014).
+  // Amounts in several currencies: the tile follows the workspace, converts
+  // into a display currency, or shows one currency exactly (#191).
   const perCurrency = needsCurrency(metric);
   const currencies = useCurrencies(
     workspaceId,
@@ -550,9 +564,14 @@ function AddTileForm({
     resource?.id ?? null,
   );
   const [pickedCurrency, setPickedCurrency] = useState("");
-  const currency = currencies.totals
-    ? effectiveCurrency(currencies.totals, pickedCurrency)
-    : null;
+  const choice = effectiveChoice(
+    pickedCurrency,
+    currencies.totals ?? [],
+    conversion.convertible,
+  );
+  // The workspace's display currency applies only where rates are fetched.
+  const workspaceCurrency =
+    conversion.convertible.length > 0 ? conversion.displayCurrency : null;
 
   if (metrics.length === 0) {
     return (
@@ -578,17 +597,19 @@ function AddTileForm({
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!metric || !effectiveAggregation || (perCurrency && !currency)) {
+    if (!metric || !effectiveAggregation) {
       return;
     }
+    const currencyFields = tileCurrencyFields(metric, choice);
     onAdd({
       key: crypto.randomUUID(),
       connectionId: metric.connectionId,
       metricKey: metric.key,
       aggregation: effectiveAggregation,
       period,
-      dimensions: withResource(tileDimensions(metric, currency), resource),
+      dimensions: withResource(currencyFields.dimensions, resource),
       title: title.trim() === "" ? null : title.trim(),
+      displayCurrency: currencyFields.displayCurrency,
       resourceName: resource?.name ?? null,
       allResourcesName: scope,
     });
@@ -679,24 +700,47 @@ function AddTileForm({
           <label htmlFor="tile-currency">Currency</label>
           <select
             id="tile-currency"
-            value={currency ?? ""}
-            disabled={!currencies.totals || currencies.totals.length === 0}
+            value={choiceValue(choice)}
             onChange={(event) => setPickedCurrency(event.target.value)}
           >
-            {(currencies.totals ?? []).map((option) => (
-              <option key={option.currency} value={option.currency}>
-                {currencyOptionLabel(option)}
-              </option>
-            ))}
+            <option value="">
+              {workspaceChoiceLabel(workspaceCurrency, currencies.totals)}
+            </option>
+            {conversion.convertible.length > 0 ? (
+              <optgroup label="Converted with ECB reference rates (≈)">
+                {conversion.convertible.map((code) => (
+                  <option key={code} value={`convert:${code}`}>
+                    Converted to {code}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            {(currencies.totals ?? []).length > 0 ? (
+              <optgroup label="One currency, exact">
+                {(currencies.totals ?? []).map((option) => (
+                  <option
+                    key={option.currency}
+                    value={`only:${option.currency}`}
+                  >
+                    {currencyOptionLabel(option)}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
           </select>
           <p className="help">
             {currencies.error
               ? currencies.error
               : !currencies.totals
                 ? "Loading currencies…"
-                : currencies.totals.length === 0
-                  ? "No amounts yet. Pick a currency once the connection has synced."
-                  : `Amounts are not converted: a tile shows one currency. Totals for ${PERIOD_LABELS[period].toLowerCase()}.`}
+                : choice.kind === "only"
+                  ? `Only amounts in ${choice.currency}, exact. Totals for ${PERIOD_LABELS[period].toLowerCase()}.`
+                  : choice.kind === "convert" ||
+                      (choice.kind === "workspace" && workspaceCurrency)
+                    ? "Approximate: each day converted at that day's ECB reference rate. Currencies without a rate are shown apart."
+                    : conversion.convertible.length > 0
+                      ? "Amounts are not added up across currencies. Set a display currency in the workspace settings, or convert this tile."
+                      : "Amounts are not added up across currencies: the tile shows the largest one."}
           </p>
         </div>
       ) : null}
@@ -720,9 +764,7 @@ function AddTileForm({
           onChange={(event) => setTitle(event.target.value)}
         />
       </div>
-      <button type="submit" disabled={perCurrency && !currency}>
-        Add tile
-      </button>
+      <button type="submit">Add tile</button>
     </form>
   );
 }

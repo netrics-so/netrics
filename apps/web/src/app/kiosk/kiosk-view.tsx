@@ -182,6 +182,8 @@ function KioskDashboard({
                     ratio: tile.change.ratio,
                     series: tile.spark.map((value) => ({ value })),
                     timeZone: dashboard.timeZone,
+                    // The label already cites the ECB (#191).
+                    approximate: tile.conversion !== null,
                   }
             }
             fallback={

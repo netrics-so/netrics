@@ -87,6 +87,11 @@ export type MeResponse = z.infer<typeof meResponseSchema>;
 
 const nameSchema = z.string().trim().min(1).max(100);
 
+/** An ISO 4217 currency code, e.g. EUR. */
+export const currencyCodeSchema = z
+  .string()
+  .regex(/^[A-Z]{3}$/, { message: "expected an ISO 4217 code such as EUR" });
+
 /** An IANA time zone name, e.g. Europe/Berlin. */
 export const timeZoneSchema = z
   .string()
@@ -99,6 +104,12 @@ export const workspaceSchema = z.object({
   name: z.string().min(1),
   /** "today" and daily buckets follow this zone. */
   timeZone: z.string().min(1),
+  /**
+   * Amounts in several currencies are converted into this currency with
+   * ECB reference rates, approximately (#191). Null: amounts per currency,
+   * exact (the default).
+   */
+  displayCurrency: z.string().length(3).nullable(),
   createdAt: z.iso.datetime(),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
@@ -115,10 +126,23 @@ export type CreateWorkspaceRequest = z.infer<
 >;
 
 export const renameWorkspaceRequestSchema = z
-  .object({ name: nameSchema.optional(), timeZone: timeZoneSchema.optional() })
-  .refine((body) => body.name !== undefined || body.timeZone !== undefined, {
-    message: "nothing to update",
-  });
+  .object({
+    name: nameSchema.optional(),
+    timeZone: timeZoneSchema.optional(),
+    /**
+     * EUR or a currency the ECB publishes (400 currency_not_covered); null
+     * goes back to amounts per currency. 400 currency_conversion_off when
+     * the instance does not fetch rates.
+     */
+    displayCurrency: currencyCodeSchema.nullable().optional(),
+  })
+  .refine(
+    (body) =>
+      body.name !== undefined ||
+      body.timeZone !== undefined ||
+      body.displayCurrency !== undefined,
+    { message: "nothing to update" },
+  );
 export type RenameWorkspaceRequest = z.infer<
   typeof renameWorkspaceRequestSchema
 >;
@@ -917,15 +941,48 @@ export const metricQueryRequestSchema = z.object({
   /** Defaults to the metric's first compatible aggregation. */
   aggregation: metricAggregationSchema.optional(),
   /**
-   * Only series with these dimension values (at most 10). A "currency_minor"
-   * metric needs a "currency" filter (an ISO 4217 code): amounts in
-   * different currencies are never added up (400 currency_required).
+   * Only series with these dimension values (at most 10). For a
+   * "currency_minor" metric, a "currency" filter (an ISO 4217 code) shows
+   * that currency alone, exactly; anything else is 400 currency_required.
+   * Without one, the amounts are converted into `displayCurrency` or the
+   * workspace's display currency (#191), else the currency with the largest
+   * total over the period is shown: amounts in different currencies are
+   * never added up unconverted.
    */
   dimensions: z
     .record(z.string().min(1).max(100), z.string().max(200))
     .optional(),
+  /**
+   * Convert a "currency_minor" metric into this currency instead of the
+   * workspace's display currency (#191). Ignored with a "currency" filter,
+   * and when the instance does not fetch rates.
+   */
+  displayCurrency: currencyCodeSchema.optional(),
 });
 export type MetricQueryRequest = z.infer<typeof metricQueryRequestSchema>;
+
+/** How a converted amount came about (#191); its values are approximate. */
+export const currencyConversionSchema = z.object({
+  /** The amounts are in this currency, converted. */
+  displayCurrency: z.string().length(3),
+  /** Always true: show converted values as approximate ("≈"). */
+  approximate: z.literal(true),
+  /** Cite it next to the values. */
+  source: z.object({ name: z.string().min(1), url: z.url() }),
+  /**
+   * Amounts in currencies without a rate for their day (the ECB does not
+   * publish TWD, for example), per currency in its own minor units with the
+   * tile's aggregation. They are not part of `value`; show them apart.
+   */
+  unconverted: z.array(
+    z.object({
+      currency: z.string().length(3),
+      value: z.number().nullable(),
+      previousValue: z.number().nullable(),
+    }),
+  ),
+});
+export type CurrencyConversion = z.infer<typeof currencyConversionSchema>;
 
 export const metricQueryResponseSchema = z.object({
   metric: workspaceMetricSchema,
@@ -934,10 +991,16 @@ export const metricQueryResponseSchema = z.object({
   aggregation: metricAggregationSchema,
   /**
    * ISO 4217 code of the amounts (in minor units) when the metric is an
-   * amount: from a "<ISO>_minor" unit or the "currency" filter. Null
-   * otherwise.
+   * amount: from a "<ISO>_minor" unit, the "currency" filter, the display
+   * currency converted into, or the largest currency shown. Null otherwise.
    */
   currency: z.string().nullable(),
+  /**
+   * Set when a "currency_minor" amount was converted into a display
+   * currency (#191): value, previousValue and series are then approximate.
+   * Null for exact values.
+   */
+  conversion: currencyConversionSchema.nullable(),
   /** Null when the window has no data. */
   value: z.number().nullable(),
   previousValue: z.number().nullable(),
@@ -980,6 +1043,23 @@ export const metricCurrenciesResponseSchema = z.object({
 });
 export type MetricCurrenciesResponse = z.infer<
   typeof metricCurrenciesResponseSchema
+>;
+
+/**
+ * Whether amounts can be converted into a display currency on this
+ * instance, and into which currencies (#191).
+ */
+export const currencyConversionOptionsResponseSchema = z.object({
+  /** False when the instance does not fetch ECB rates; tiles stay exact. */
+  enabled: z.boolean(),
+  /** EUR and the currencies with recent rates, alphabetical. */
+  currencies: z.array(z.string().length(3)),
+  /** The last publication day stored; null before the first fetch. */
+  latestRateDate: z.iso.date().nullable(),
+  source: z.object({ name: z.string().min(1), url: z.url() }),
+});
+export type CurrencyConversionOptionsResponse = z.infer<
+  typeof currencyConversionOptionsResponseSchema
 >;
 
 /** The resources a tile of a metric can show (#194). */
@@ -1048,6 +1128,13 @@ export const dashboardTileInputSchema = z.object({
    * one resource).
    */
   title: z.string().trim().min(1).max(100).nullable().optional(),
+  /**
+   * A "currency_minor" tile converted into this currency instead of the
+   * workspace's display currency (#191). Not with a "currency" filter (400
+   * currency_choice_conflict). Null or missing: a "currency" filter shows
+   * one currency exactly; without one, the tile follows the workspace.
+   */
+  displayCurrency: currencyCodeSchema.nullable().optional(),
 });
 export type DashboardTileInput = z.infer<typeof dashboardTileInputSchema>;
 
@@ -1060,6 +1147,8 @@ export const dashboardTileSchema = z.object({
   period: metricPeriodSchema,
   dimensions: z.record(z.string(), z.string()),
   title: z.string().nullable(),
+  /** The tile's own display currency (#191), else null. */
+  displayCurrency: z.string().nullable(),
   /**
    * Name of the resource the tile shows (its "resource" dimension filter,
    * #194), as the connector reported it. Null for a tile of all resources
@@ -1301,6 +1390,25 @@ export const deviceTileSchema = z.object({
    * need nothing new. Null when the tile could not load.
    */
   unit: z.string().nullable(),
+  /**
+   * Set when the amounts were converted into a display currency (#191).
+   * The label then also ends in a note such as "≈ EUR, ECB reference
+   * rates", so screens that only show the label mark the value as
+   * approximate and cite the source.
+   */
+  conversion: z
+    .object({
+      displayCurrency: z.string().length(3),
+      source: z.string().min(1),
+      /** Amounts left unconverted, in their own minor units. */
+      unconverted: z.array(
+        z.object({
+          currency: z.string().length(3),
+          value: z.number().nullable(),
+        }),
+      ),
+    })
+    .nullable(),
   /** Against the previous period of the same length. */
   change: z.object({
     previousValue: z.number().nullable(),

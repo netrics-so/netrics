@@ -61,6 +61,9 @@ services:
       NETRICS_OAUTH_GOOGLE_CLIENT_ID: ${NETRICS_OAUTH_GOOGLE_CLIENT_ID:-}
       NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: ${NETRICS_OAUTH_GOOGLE_CLIENT_SECRET:-}
       NETRICS_PROXY_SECRET: ${NETRICS_PROXY_SECRET:-}
+      # Display currency (#191): "ecb" (default) or "off". Set the same on
+      # the scheduler.
+      NETRICS_EXCHANGE_RATES: ${NETRICS_EXCHANGE_RATES:-ecb}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   worker:
@@ -81,6 +84,9 @@ services:
     environment:
       NETRICS_ROLE: scheduler
       DATABASE_SCHEDULER_URL: postgres://netrics_scheduler:${NETRICS_SCHEDULER_DB_PASSWORD}@postgres:5432/netrics
+      # Fetches the ECB reference rates daily unless "off" (no request to
+      # the ECB then).
+      NETRICS_EXCHANGE_RATES: ${NETRICS_EXCHANGE_RATES:-ecb}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   web:

@@ -3,10 +3,12 @@ import { notFound } from "next/navigation";
 
 import { can } from "@netrics/domain";
 
+import { DisplayCurrencyForm } from "./display-currency-form";
 import { MembersManager } from "./members-manager";
 import { RenameWorkspaceForm } from "./rename-workspace-form";
 import { TimeZoneForm } from "./time-zone-form";
 import {
+  getCurrencyConversion,
   getMe,
   getWorkspace,
   listInvitations,
@@ -40,11 +42,12 @@ export default async function WorkspaceSettingsPage({
   const role = membership.role;
   const canRename = can(role, "workspace:rename");
   const canAddMembers = can(role, "members:add");
-  const [{ members }, { invitations }] = await Promise.all([
+  const [{ members }, { invitations }, conversion] = await Promise.all([
     listMembers(cookieHeader, workspaceId),
     canAddMembers
       ? listInvitations(cookieHeader, workspaceId)
       : Promise.resolve({ invitations: [] }),
+    canRename ? getCurrencyConversion(cookieHeader, workspaceId) : null,
   ]);
 
   return (
@@ -72,6 +75,17 @@ export default async function WorkspaceSettingsPage({
             Dashboards count &ldquo;today&rdquo; and daily numbers in this time
             zone.
           </p>
+        </div>
+      ) : null}
+
+      {canRename && conversion ? (
+        <div className="card">
+          <h2>Currency</h2>
+          <DisplayCurrencyForm
+            workspaceId={workspaceId}
+            currentDisplayCurrency={workspaceResult.workspace.displayCurrency}
+            options={conversion}
+          />
         </div>
       ) : null}
 

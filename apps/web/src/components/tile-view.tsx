@@ -29,6 +29,8 @@ export interface TileReading {
   ratio: number | null;
   series: SparkPoint[];
   timeZone: string;
+  /** Converted into a display currency (#191): shown with "≈". */
+  approximate?: boolean;
 }
 
 /** What the tile needs to know about its metric, when known. */
@@ -50,6 +52,7 @@ export function TileView({
   reading,
   fallback,
   footer,
+  note = null,
   busy = false,
   variant = "default",
 }: {
@@ -62,6 +65,8 @@ export function TileView({
   /** Shown instead of the numbers while there are none. */
   fallback: ReactNode;
   footer: ReactNode;
+  /** Under the value, e.g. where converted amounts come from (#191). */
+  note?: ReactNode;
   busy?: boolean;
   /** "tv": sized by its grid cell for reading at a distance (#52). */
   variant?: "default" | "tv";
@@ -93,8 +98,14 @@ export function TileView({
       {reading ? (
         <>
           <div className="tile-value">
+            {reading.approximate && reading.value !== null ? (
+              <span className="tile-approx" title="Approximate">
+                ≈{" "}
+              </span>
+            ) : null}
             {formatValue(reading.value, reading.unit)}
           </div>
+          {note}
           {change ? (
             <div className={`tile-change ${change.tone}`}>
               <span aria-hidden="true">{ARROWS[change.direction]}</span>{" "}
