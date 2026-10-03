@@ -17,19 +17,38 @@ public enum MetricFormat {
     }
 
     /**
+     * ISO 4217 minor-unit exponents other than 2 (ISO, not CLDR), as in
+     * packages/domain/src/currency.ts. A per-currency amount (ADR 0014)
+     * arrives as its currency's "<ISO>_minor" unit.
+     */
+    static let exponents: [String: Int] = [
+        "BIF": 0, "CLP": 0, "DJF": 0, "GNF": 0, "ISK": 0, "JPY": 0, "KMF": 0,
+        "KRW": 0, "PYG": 0, "RWF": 0, "UGX": 0, "UYI": 0, "VND": 0, "VUV": 0,
+        "XAF": 0, "XOF": 0, "XPF": 0,
+        "BHD": 3, "IQD": 3, "JOD": 3, "KWD": 3, "LYD": 3, "OMR": 3, "TND": 3,
+        "CLF": 4, "UYW": 4,
+    ]
+
+    /** Decimal places of the currency's minor unit: JPY 0, EUR 2, BHD 3. */
+    static func exponent(of code: String) -> Int {
+        exponents[code] ?? 2
+    }
+
+    /**
      * 1,284 · 12.9K · 4.2M · 3.14; currency in minor units shown in the
      * major unit (€1,234.56, $4.2M); percent as 42.3%; "—" without a value.
      */
     public static func value(_ value: Double?, unit: String) -> String {
         guard let value else { return "—" }
         if let code = currency(of: unit) {
-            let major = value / 100
+            let exponent = exponent(of: code)
+            let major = value / pow(10, Double(exponent))
             let base = FloatingPointFormatStyle<Double>.Currency(code: code, locale: locale).rounded(rule: rounding)
             if abs(major) >= 10_000 {
                 return major.formatted(base.notation(.compactName).precision(.fractionLength(0...1)))
             }
-            // Whole amounts without ".00".
-            let digits = major.rounded() == major ? 0 : 2
+            // Whole amounts without decimals.
+            let digits = major.rounded() == major ? 0 : exponent
             return major.formatted(base.precision(.fractionLength(digits)))
         }
         let number = FloatingPointFormatStyle<Double>(locale: locale).rounded(rule: rounding)

@@ -120,7 +120,13 @@ export async function buildDeviceDashboard(
         period: request.period,
         aggregation: query?.aggregation ?? request.aggregation,
         value,
-        unit: query?.metric.unit ?? null,
+        // A per-currency amount as its currency's "<ISO>_minor" unit
+        // (ADR 0008), which screens already format.
+        unit: query
+          ? query.currency
+            ? `${query.currency}_minor`
+            : query.metric.unit
+          : null,
         change: {
           previousValue: query?.previousValue ?? null,
           delta: query?.delta ?? null,

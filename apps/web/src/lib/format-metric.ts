@@ -3,35 +3,50 @@ import type {
   MetricBetter,
   MetricPeriod,
 } from "@netrics/contracts";
+import {
+  amountCurrency,
+  currencyExponent,
+  isPerCurrencyUnit,
+  toMajorUnits,
+} from "@netrics/domain";
 
 /**
  * Number formatting for dashboard tiles. Values are compacted (12.9K, 4.2M);
  * currency metrics arrive in integer minor units named "<ISO 4217>_minor"
- * (ADR 0008) and are shown in the major unit.
+ * (ADR 0008) and are shown in the major unit, with the currency's ISO 4217
+ * exponent (JPY 0, EUR 2, BHD 3).
  */
 
 const LOCALE = "en-US";
 
-function currencyOf(unit: string): string | null {
-  const match = /^([A-Z]{3})_minor$/.exec(unit);
-  return match ? match[1]! : null;
+/**
+ * The unit a tile formats with. A "currency_minor" amount (ADR 0014) becomes
+ * its currency's "<ISO 4217>_minor"; other units stay as they are.
+ */
+export function displayUnit(unit: string, currency?: string | null): string {
+  if (isPerCurrencyUnit(unit)) {
+    const code = amountCurrency(unit, currency);
+    return code ? `${code}_minor` : unit;
+  }
+  return unit;
 }
 
 export function formatValue(value: number | null, unit: string): string {
   if (value === null) {
     return "—";
   }
-  const currency = currencyOf(unit);
+  const currency = amountCurrency(unit);
   if (currency) {
-    const major = value / 100;
+    const major = toMajorUnits(value, currency);
+    const digits = currencyExponent(currency);
     const compact = Math.abs(major) >= 10_000;
     return new Intl.NumberFormat(LOCALE, {
       style: "currency",
       currency,
       notation: compact ? "compact" : "standard",
-      // Whole amounts without ".00"; compact values keep one decimal.
-      minimumFractionDigits: compact || Number.isInteger(major) ? 0 : 2,
-      maximumFractionDigits: compact ? 1 : 2,
+      // Whole amounts without decimals; compact values keep one decimal.
+      minimumFractionDigits: compact || Number.isInteger(major) ? 0 : digits,
+      maximumFractionDigits: compact ? 1 : digits,
     }).format(major);
   }
   if (unit === "percent") {

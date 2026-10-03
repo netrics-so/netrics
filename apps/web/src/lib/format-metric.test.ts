@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { aggregationLabel, formatChange, formatValue } from "./format-metric";
+import {
+  aggregationLabel,
+  displayUnit,
+  formatChange,
+  formatValue,
+} from "./format-metric";
 
 describe("formatValue", () => {
   it.each([
@@ -18,6 +23,43 @@ describe("formatValue", () => {
     [null, "visitors", "—"],
   ])("%s %s → %s", (value, unit, expected) => {
     expect(formatValue(value, unit)).toBe(expected);
+  });
+});
+
+describe("currency amounts in minor units", () => {
+  it.each([
+    // EUR and USD have two decimals; whole amounts drop ".00".
+    [123_456, "EUR", "€1,234.56"],
+    [150, "EUR", "€1.50"],
+    [1_500, "EUR", "€15"],
+    [99, "USD", "$0.99"],
+    [420_000_000, "USD", "$4.2M"],
+    // JPY has no minor unit: 1234 minor units are ¥1,234, not ¥12.34.
+    [1_234, "JPY", "¥1,234"],
+    [12_345_678, "JPY", "¥12.3M"],
+    // BHD has three decimals.
+    [1_234, "BHD", "BHD\u00a01.234"],
+  ])("%s %s → %s", (value, currency, expected) => {
+    expect(formatValue(value, `${currency}_minor`)).toBe(expected);
+    expect(formatValue(value, displayUnit("currency_minor", currency))).toBe(
+      expected,
+    );
+  });
+
+  it("resolves a per-currency unit with the tile's currency", () => {
+    expect(displayUnit("currency_minor", "JPY")).toBe("JPY_minor");
+    expect(displayUnit("currency_minor", null)).toBe("currency_minor");
+    expect(displayUnit("EUR_minor", null)).toBe("EUR_minor");
+    expect(displayUnit("visitors", "EUR")).toBe("visitors");
+  });
+
+  it("shows an amount without a currency as a plain number", () => {
+    expect(formatValue(1_234, "currency_minor")).toBe("1,234");
+  });
+
+  it("formats an absolute change in the currency", () => {
+    expect(formatChange(-500, null, "JPY_minor")?.text).toBe("−¥500");
+    expect(formatChange(250, null, "EUR_minor")?.text).toBe("+€2.50");
   });
 });
 
