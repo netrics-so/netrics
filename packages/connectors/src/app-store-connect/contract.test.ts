@@ -1,13 +1,9 @@
-import type {
-  ConnectionContext,
-  ConnectorRuntime,
-} from "@netrics/connector-sdk";
+import type { ConnectionContext } from "@netrics/connector-sdk";
 import {
   assertManifestCompatible,
   checkResultSchema,
   connectorManifestSchema,
   resourceSchema,
-  syncResultSchema,
 } from "@netrics/connector-sdk";
 import { describe, expect, it } from "vitest";
 
@@ -458,35 +454,5 @@ describe("egress", () => {
       expect(request.url.protocol).toBe("https:");
       expect(request.url.hostname).toBe("api.appstoreconnect.apple.com");
     }
-  });
-});
-
-describe("sync before the sales sync (#172)", () => {
-  it("reads nothing and keeps its cursor where it started", async () => {
-    const offline: ConnectorRuntime = {
-      signal: new AbortController().signal,
-      fetch: async (url) => {
-        throw new Error(`sync must not fetch ${url}`);
-      },
-    };
-    const request = {
-      mode: "incremental" as const,
-      from: "2026-09-01T00:00:00.000Z",
-      to: "2026-10-01T00:00:00.000Z",
-    };
-    const fresh = syncResultSchema.parse(
-      await connector().sync(context(), request, offline),
-    );
-    expect(fresh).toEqual({
-      observations: [],
-      nextCursor: request.from,
-      done: true,
-    });
-    const resumed = await connector().sync(
-      context(),
-      { ...request, cursor: "2026-08-01T00:00:00.000Z" },
-      offline,
-    );
-    expect(resumed.nextCursor).toBe("2026-08-01T00:00:00.000Z");
   });
 });

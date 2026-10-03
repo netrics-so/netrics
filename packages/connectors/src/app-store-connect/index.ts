@@ -10,11 +10,23 @@ import type {
 import { z } from "zod";
 
 import {
+  CURRENCY_DIMENSION,
+  CURRENCY_MINOR_UNIT,
+} from "@netrics/connector-sdk";
+
+import {
   APP_STORE_CONNECT_HOST,
   createAppStoreConnectClient,
   type AppStoreConnectClient,
 } from "./api.js";
 import { checkKey, vendorNumberOf } from "./probes.js";
+import {
+  BACKFILL_DAYS,
+  OTHERS,
+  SALES_METRIC_KEYS,
+  TOP_TERRITORIES,
+  syncSalesPage,
+} from "./sales-sync.js";
 
 export {
   APP_STORE_CONNECT_API,
@@ -34,14 +46,36 @@ export {
   VENDOR_NUMBER_FORMAT_MESSAGE,
   checkKey,
   latestReportDate,
+  latestReportDay,
+  pacificToday,
   probeApps,
   probeSalesReport,
   vendorNumberMessage,
   vendorNumberOf,
   type ProbeResult,
 } from "./probes.js";
-
-const PREFIX = "app_store_connect";
+export {
+  MAX_REPORT_BYTES,
+  PRODUCT_TYPES,
+  SALES_REPORT_VERSION,
+  currencyExponent,
+  inflateReport,
+  parseSalesReport,
+  productCategory,
+  rowProceeds,
+  toMinorUnits,
+  type ProductCategory,
+  type SalesRow,
+} from "./sales-report.js";
+export {
+  BACKFILL_DAYS,
+  INCREMENTAL_LOOKBACK_DAYS,
+  OTHERS,
+  REPORT_CONCURRENCY,
+  SALES_METRIC_KEYS,
+  TOP_TERRITORIES,
+  UNKNOWN,
+} from "./sales-sync.js";
 
 /** Apps per page of `GET /v1/apps` (Apple allows up to 200). */
 export const APPS_PAGE_SIZE = 100;
@@ -72,27 +106,89 @@ export const appStoreConnectManifest: ConnectorManifest = {
     required: ["vendorNumber"],
     additionalProperties: false,
   },
-  // The sales metrics arrive with the sales sync (#172, ADR 0014); the
-  // manifest needs at least one metric, and this is the first of them.
   metrics: [
     {
-      key: `${PREFIX}.downloads`,
+      key: SALES_METRIC_KEYS.downloads,
       name: "Downloads",
       description:
-        "First-time downloads per day and app, from the daily App Store sales report (reporting days are Pacific Time).",
+        "First-time downloads per day and app (free, paid, bundle and custom apps), from the daily App Store sales report. Reporting days are Pacific Time; refunds count negative.",
       kind: "delta",
       unit: "downloads",
       granularity: "day",
       dimensions: ["resource"],
       aggregations: ["sum", "avg", "min", "max"],
     },
+    {
+      key: SALES_METRIC_KEYS.downloadsByTerritory,
+      name: "Downloads by territory",
+      description: `First-time downloads per day for the ${TOP_TERRITORIES} largest App Store territories of each app and calendar month (ISO country codes); other territories are grouped as "${OTHERS}".`,
+      kind: "delta",
+      unit: "downloads",
+      granularity: "day",
+      dimensions: ["resource", "territory"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
+    {
+      key: SALES_METRIC_KEYS.downloadsByDevice,
+      name: "Downloads by device",
+      description:
+        "First-time downloads per day and device (iPhone, iPad, Desktop, Apple TV, Apple Vision, …).",
+      kind: "delta",
+      unit: "downloads",
+      granularity: "day",
+      dimensions: ["resource", "device"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
+    {
+      key: SALES_METRIC_KEYS.redownloads,
+      name: "Redownloads",
+      description:
+        "Downloads of an app by people who downloaded it before, per day and app.",
+      kind: "delta",
+      unit: "downloads",
+      granularity: "day",
+      dimensions: ["resource"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
+    {
+      key: SALES_METRIC_KEYS.updates,
+      name: "Updates",
+      description: "App updates installed per day and app.",
+      kind: "delta",
+      unit: "updates",
+      granularity: "day",
+      dimensions: ["resource"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
+    {
+      key: SALES_METRIC_KEYS.iapUnits,
+      name: "In-app purchases",
+      description:
+        "In-app purchases and subscription purchases per day, counted for their app; restored purchases are not counted, refunds count negative.",
+      kind: "delta",
+      unit: "purchases",
+      granularity: "day",
+      dimensions: ["resource"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
+    {
+      key: SALES_METRIC_KEYS.proceeds,
+      name: "Proceeds",
+      description:
+        "What Apple pays you (units × developer proceeds) per day and app, in each currency of proceeds, without conversion. Refunds count negative.",
+      kind: "delta",
+      unit: CURRENCY_MINOR_UNIT,
+      granularity: "day",
+      dimensions: ["resource", CURRENCY_DIMENSION],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
   ],
   // Daily reports arrive once a day, the next morning Pacific Time.
   minRefreshIntervalSeconds: 6 * 60 * 60,
-  // TODO(#172): the sales sync backfills 365 days (supportsBackfill: true,
-  // backfillDays: 365). Until then no backfill runs, so none is marked done
-  // without data.
-  supportsBackfill: false,
+  // Apple keeps daily sales reports for a year; one request per day, a
+  // tenth of the hourly limit (ADR 0014).
+  supportsBackfill: true,
+  backfillDays: BACKFILL_DAYS,
   // The analytics segment host joins with the analytics issue (#174).
   outboundDomains: [APP_STORE_CONNECT_HOST],
   // Apple's limit is per key and rolling hour; connections sharing a key
@@ -241,6 +337,11 @@ function accessTokenOf(context: ConnectionContext): string | undefined {
 
 export interface AppStoreConnectConnectorOptions {
   now?: () => number;
+  /**
+   * Notes that carry no data (unknown product type codes). Default:
+   * console.warn.
+   */
+  log?: (message: string) => void;
 }
 
 /**
@@ -256,6 +357,7 @@ export function createAppStoreConnectConnector(
   options: AppStoreConnectConnectorOptions = {},
 ): Connector {
   const now = options.now ?? Date.now;
+  const log = options.log ?? ((message: string) => console.warn(message));
 
   function token(context: ConnectionContext): string {
     const value = accessTokenOf(context);
@@ -307,15 +409,25 @@ export function createAppStoreConnectConnector(
       }));
     },
 
-    // TODO(#172): the daily sales sync. Until then a sync reads nothing and
-    // keeps its cursor where it started, so the sales sync later begins
-    // from there instead of a window that was never read.
-    async sync(_context, request: SyncRequest): Promise<SyncResult> {
-      return {
-        observations: [],
-        nextCursor: request.cursor ?? request.from,
-        done: true,
-      };
+    async sync(context, request: SyncRequest, runtime): Promise<SyncResult> {
+      const vendorNumber = vendorNumberOf(context.config);
+      if (!vendorNumber) {
+        throw new Error(
+          "Enter the vendor number from Payments and Financial Reports (digits only) to finish setup.",
+        );
+      }
+      const client = createAppStoreConnectClient(runtime.fetch, token(context));
+      return syncSalesPage(client, request, {
+        now: now(),
+        vendorNumber,
+        log,
+        listAppSkus: async () =>
+          new Map(
+            (await listApps(client)).flatMap((app) =>
+              app.sku ? [[app.sku, app.id] as const] : [],
+            ),
+          ),
+      });
     },
   };
 }

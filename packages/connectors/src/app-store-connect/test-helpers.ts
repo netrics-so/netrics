@@ -22,8 +22,12 @@ export interface FakeTeam {
   role?: "sales" | "developer";
   /** The Account Holder has not accepted the current agreements. */
   agreementsMissing?: boolean;
-  /** Days (YYYY-MM-DD) with sales; other days answer 404. */
+  /** Days (YYYY-MM-DD) with sales (SALES_REPORT_TSV); other days answer 404. */
   salesDays?: string[];
+  /** Reports per day (YYYY-MM-DD): TSV text served gzipped, or raw bytes. */
+  reports?: Record<string, string | Uint8Array>;
+  /** Days whose report is not published yet (404 "not available yet"). */
+  pendingDays?: string[];
 }
 
 export interface FakeAppStoreConnectOptions {
@@ -65,13 +69,38 @@ export function jsonResponse(
   };
 }
 
-export const SALES_REPORT_TSV = [
-  "Provider\tProvider Country\tSKU\tDeveloper\tTitle\tVersion\tProduct Type Identifier\tUnits\tDeveloper Proceeds\tBegin Date\tEnd Date\tCustomer Currency\tCountry Code\tCurrency of Proceeds\tApple Identifier",
-  "APPLE\tUS\tEXFIELDNOTES\tExample Developer\tExample Field Notes\t2.1\t1F\t12\t0\t09/30/2026\t09/30/2026\tUSD\tUS\tUSD\t1000000001",
-].join("\n");
+/** A synthetic sales report (tab-separated text) from fixtures/. */
+export function reportFixture(name: string): string {
+  return readFileSync(
+    new URL(`./fixtures/${name}.tsv`, import.meta.url),
+    "utf8",
+  );
+}
 
-function gzipResponse(content: string, headers: Record<string, string>) {
-  const bytes = gzipSync(content);
+export const SALES_REPORT_TSV = reportFixture("sales-2026-09-28");
+
+/** Column names of the synthetic reports, in Apple's file order. */
+export const REPORT_HEADER = SALES_REPORT_TSV.split("\n")[0]!.split("\t");
+
+/**
+ * A report of the given rows: each row names the columns it fills, every
+ * other column stays empty.
+ */
+export function buildReport(rows: Array<Record<string, string>>): string {
+  return [
+    REPORT_HEADER.join("\t"),
+    ...rows.map((row) =>
+      REPORT_HEADER.map((column) => row[column] ?? "").join("\t"),
+    ),
+  ].join("\n");
+}
+
+function gzipResponse(
+  content: string | Uint8Array,
+  headers: Record<string, string>,
+) {
+  // Text is gzipped here; bytes are served as given (a prepared archive).
+  const bytes = typeof content === "string" ? gzipSync(content) : content;
   return {
     status: 200,
     headers: { "content-type": "application/a-gzip", ...headers },
@@ -144,6 +173,15 @@ export function createFakeAppStoreConnect(
         return jsonResponse(400, fixture("error-invalid-vendor"), rate());
       }
       const date = url.searchParams.get("filter[reportDate]") ?? "";
+      if ((team.pendingDays ?? []).includes(date)) {
+        return jsonResponse(
+          404,
+          fixture("error-not-found-not-available"),
+          rate(),
+        );
+      }
+      const report = team.reports?.[date];
+      if (report !== undefined) return gzipResponse(report, rate());
       if (!(team.salesDays ?? []).includes(date)) {
         return jsonResponse(404, fixture("error-not-found-no-sales"), rate());
       }

@@ -53,6 +53,85 @@ const ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const KEYRING = createCredentialKeyring(ENCRYPTION_KEY);
 const CONNECTOR_ID = "app-store-connect";
 
+// 13:00 PDT on Oct 1: Sept 30 is the latest published reporting day.
+const NOW = Date.parse("2026-10-01T20:00:00.000Z");
+
+const REPORT_HEADER = [
+  "Provider",
+  "SKU",
+  "Title",
+  "Product Type Identifier",
+  "Units",
+  "Developer Proceeds",
+  "Country Code",
+  "Currency of Proceeds",
+  "Apple Identifier",
+  "Parent Identifier",
+  "Device",
+];
+
+/** A daily sales report of Alpha Notes: downloads and two currencies. */
+function alphaReport(downloads: number): string {
+  return [
+    REPORT_HEADER,
+    [
+      "APPLE",
+      "ALPHANOTES",
+      "Alpha Notes",
+      "1F",
+      String(downloads),
+      "0",
+      "US",
+      "USD",
+      "1000000001",
+      "",
+      "iPhone",
+    ],
+    [
+      "APPLE",
+      "ALPHANOTES.PRO",
+      "pro",
+      "IA1",
+      "2",
+      "0.70",
+      "US",
+      "USD",
+      "1100000001",
+      "ALPHANOTES",
+      "iPhone",
+    ],
+    [
+      "APPLE",
+      "ALPHANOTES.PRO",
+      "pro",
+      "IA1",
+      "1",
+      "84",
+      "JP",
+      "JPY",
+      "1100000001",
+      "ALPHANOTES",
+      "iPad",
+    ],
+    // Alpha Ledger is not selected.
+    [
+      "APPLE",
+      "ALPHALEDGER",
+      "Alpha Ledger",
+      "1F",
+      "7",
+      "0",
+      "US",
+      "USD",
+      "1000000002",
+      "",
+      "iPhone",
+    ],
+  ]
+    .map((row) => row.join("\t"))
+    .join("\n");
+}
+
 const TEAM_A: FakeAscTeam = {
   issuerId: "57246542-96fe-1a63-e053-0824d011072a",
   keyId: "2X9R4HXF34",
@@ -62,6 +141,7 @@ const TEAM_A: FakeAscTeam = {
     { id: "1000000002", name: "Alpha Ledger", bundleId: "com.alpha.ledger" },
   ],
   vendorNumbers: ["85012345"],
+  reports: { "2026-09-30": alphaReport(10) },
 };
 const TEAM_B: FakeAscTeam = {
   issuerId: "69a6de7f-1c2d-47e3-e053-5b8c7c11a4d1",
@@ -92,7 +172,11 @@ function towardsFake(connector: Connector): Connector {
 function registry(): ConnectorRegistry {
   const registry = new ConnectorRegistry();
   registry.register(createDemoConnector());
-  registry.register(towardsFake(createAppStoreConnectConnector()));
+  registry.register(
+    towardsFake(
+      createAppStoreConnectConnector({ now: () => NOW, log: () => {} }),
+    ),
+  );
   return registry;
 }
 
@@ -203,6 +287,7 @@ async function runSync(connectionId: string) {
     registry: registry(),
     credentialKeyring: KEYRING,
     signedKeys,
+    now: () => new Date(NOW),
   });
   return handlers["connection.sync"]!({
     job: {
@@ -306,7 +391,7 @@ describe("App Store Connect connections", () => {
     expect(issuers).toEqual([TEAM_A.issuerId, TEAM_B.issuerId]);
   });
 
-  it("syncs both through the engine without data until the sales sync (#172)", async () => {
+  it("syncs each team's sales through the engine; a replay adds nothing and a revision updates", async () => {
     for (const id of [ids.a, ids.b]) {
       await runSync(id);
       const [state] = await admin`
@@ -318,11 +403,56 @@ describe("App Store Connect connections", () => {
         consecutive_failures: 0,
       });
     }
-    const [observations] = await admin`
-      select count(*)::int as count from observations
-      where connection_id in ${admin([ids.a, ids.b])}
-    `;
-    expect(observations!.count).toBe(0);
+    const sept30 = async () =>
+      (
+        await admin`
+          select d.key as metric_key, o.dimensions, o.value
+          from observations o
+          join metric_definitions d on d.id = o.metric_definition_id
+          where o.connection_id = ${ids.a}
+            and o.source_timestamp = '2026-09-30T00:00:00Z'
+          order by d.key, o.dimensions::text
+        `
+      ).map((row) => ({
+        metric: row.metric_key as string,
+        dimensions: row.dimensions as Record<string, string>,
+        value: row.value as number,
+      }));
+    const first = await sept30();
+    const value = (metric: string, extra: Record<string, string> = {}) =>
+      first.find(
+        (row) =>
+          row.metric === `app_store_connect.${metric}` &&
+          JSON.stringify(Object.entries(row.dimensions).sort()) ===
+            JSON.stringify(
+              Object.entries({ resource: "1000000001", ...extra }).sort(),
+            ),
+      )?.value;
+    expect(value("downloads")).toBe(10);
+    expect(value("iap_units")).toBe(3);
+    // Proceeds of two currencies stay separate series.
+    expect(value("proceeds", { currency: "USD" })).toBe(140);
+    expect(value("proceeds", { currency: "JPY" })).toBe(84);
+    expect(first.every((row) => row.dimensions.resource === "1000000001")).toBe(
+      true,
+    );
+
+    // The next sync re-reads Sept 30: nothing is added.
+    await runSync(ids.a);
+    expect(await sept30()).toEqual(first);
+
+    // Apple revises the day: the stored values change in place.
+    TEAM_A.reports!["2026-09-30"] = alphaReport(12);
+    await runSync(ids.a);
+    const revised = await sept30();
+    expect(revised).toHaveLength(first.length);
+    expect(
+      revised.find(
+        (row) =>
+          row.metric === "app_store_connect.downloads" &&
+          row.dimensions.resource === "1000000001",
+      )?.value,
+    ).toBe(12);
   });
 
   it("puts no key material or token in responses or logs", () => {
