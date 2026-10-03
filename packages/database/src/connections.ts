@@ -120,9 +120,17 @@ export interface NewConnection {
   projectId: string | null;
   /** Initial poll interval (the connector's minimum refresh interval). */
   pollIntervalSeconds: number;
+  /**
+   * A connection created by an OAuth callback that still needs its config
+   * (ADR 0012): not scheduled until setup is finished.
+   */
+  setupPending?: boolean;
 }
 
-/** Inserts the connection and its state row, due immediately. */
+/**
+ * Inserts the connection and its state row, due immediately (or never, while
+ * setup is pending).
+ */
 export async function insertConnection(
   tx: Transaction,
   input: NewConnection,
@@ -137,6 +145,7 @@ export async function insertConnection(
       config: input.config,
       credentialsEncrypted: input.credentialsEncrypted,
       projectId: input.projectId,
+      setupPending: input.setupPending ?? false,
     })
     .returning();
   if (!row) {
@@ -147,7 +156,7 @@ export async function insertConnection(
     .values({
       connectionId: input.id,
       workspaceId: input.workspaceId,
-      nextDueAt: new Date(),
+      nextDueAt: input.setupPending ? null : new Date(),
       pollIntervalSeconds: input.pollIntervalSeconds,
     })
     .returning();
@@ -178,12 +187,14 @@ export async function updateConnection(
 
 /**
  * Recovery after new credentials: the connection is healthy again, due
- * immediately, and its failure streak starts over.
+ * immediately, and its failure streak starts over. With `schedule: false`
+ * (a connection whose setup is pending) it stays unscheduled.
  */
 export async function resetConnectionAuth(
   tx: Transaction,
   workspaceId: string,
   connectionId: string,
+  options: { schedule?: boolean } = {},
 ): Promise<ConnectionStateRow | null> {
   const [state] = await tx
     .update(schema.connectionState)
@@ -191,7 +202,7 @@ export async function resetConnectionAuth(
       authState: "ok",
       authReason: null,
       consecutiveFailures: 0,
-      nextDueAt: new Date(),
+      ...(options.schedule === false ? {} : { nextDueAt: new Date() }),
     })
     .where(stateScope(workspaceId, connectionId))
     .returning();

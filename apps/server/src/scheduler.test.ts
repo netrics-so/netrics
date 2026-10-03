@@ -327,12 +327,21 @@ describe("createScheduler loop", () => {
     }
   });
 
-  it("prunes finished history", async () => {
+  it("prunes finished history and OAuth authorizations", async () => {
     const admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
     try {
       const [old] = await admin`
         insert into jobs (kind, status, created_at)
         values ('maintenance.test', 'succeeded', now() - interval '30 days')
+        returning id`;
+      // An authorization nobody completed (ADR 0012: 10 minutes, then gone).
+      const [expired] = await admin`
+        insert into oauth_authorizations
+          (workspace_id, user_id, provider, connector_id, purpose,
+           return_path, state_hash, nonce, code_verifier_encrypted, expires_at)
+        select ${workspaceId}, id, 'google', 'demo', 'connect', '/', 'h', 'n',
+               '\\x00'::bytea, now() - interval '1 minute'
+        from users limit 1
         returning id`;
       const scheduler = createScheduler({
         schedulerDb,
@@ -342,8 +351,10 @@ describe("createScheduler loop", () => {
       scheduler.start();
       try {
         await waitFor(async () => {
-          const rows = await admin`select 1 from jobs where id = ${old!.id}`;
-          return rows.length === 0;
+          const jobs = await admin`select 1 from jobs where id = ${old!.id}`;
+          const authorizations = await admin`
+            select 1 from oauth_authorizations where id = ${expired!.id}`;
+          return jobs.length === 0 && authorizations.length === 0;
         });
       } finally {
         await scheduler.stop();

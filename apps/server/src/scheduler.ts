@@ -6,10 +6,12 @@ import { sql } from "drizzle-orm";
 
 import {
   createDatabase,
+  DEFAULT_RETENTION,
   enqueueSyncJob,
   heartbeat,
   listDueConnections,
   pruneHistory,
+  pruneOAuthAuthorizations,
   setConnectionNextDue,
   type Database,
   type RetentionPolicy,
@@ -153,6 +155,17 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
     const result = await pruneHistory(schedulerDb, deps.retention);
     if (result.jobsDeleted > 0 || result.syncRunsDeleted > 0) {
       logger.info(result, "pruned finished history");
+    }
+    // OAuth authorizations live 10 minutes and work once (ADR 0012).
+    const oauthAuthorizationsDeleted = await pruneOAuthAuthorizations(
+      schedulerDb,
+      (deps.retention ?? DEFAULT_RETENTION).batch,
+    );
+    if (oauthAuthorizationsDeleted > 0) {
+      logger.info(
+        { oauthAuthorizationsDeleted },
+        "pruned finished oauth authorizations",
+      );
     }
   }
 

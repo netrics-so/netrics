@@ -1,5 +1,5 @@
 import cors from "@fastify/cors";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 
 import {
   healthLiveResponseSchema,
@@ -24,14 +24,20 @@ import {
   requestIdFromHeader,
 } from "./http-hardening.js";
 import { createMailer, type Mailer } from "./mail/mailer.js";
+import { providerHttp, type OAuthHttpFactory } from "./oauth/client.js";
 import { createOAuthProviders, type OAuthProviders } from "./oauth/config.js";
-import type { OAuthTokenService } from "./oauth/tokens.js";
+import {
+  createOAuthTokenService,
+  type OAuthTokenService,
+} from "./oauth/tokens.js";
+import { createOAuthFlow } from "./oauth/flow.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerConnectionRoutes } from "./routes/connections.js";
 import { registerDashboardRoutes } from "./routes/dashboards.js";
 import { registerDeviceRoutes } from "./routes/devices.js";
 import { registerInvitationRoutes } from "./routes/invitations.js";
 import { registerMetricRoutes } from "./routes/metrics.js";
+import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerOpenApi, routeSchema } from "./routes/openapi.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerWorkspaceRoutes } from "./routes/workspaces.js";
@@ -48,6 +54,10 @@ export interface AppDeps {
   oauthProviders?: OAuthProviders;
   /** Default: a token service over the app's db and providers. */
   oauthTokens?: OAuthTokenService;
+  /** Default: guarded fetch to each provider's server domains. */
+  oauthHttp?: OAuthHttpFactory;
+  /** Tests: capture the app's logs. */
+  logger?: FastifyBaseLogger;
 }
 
 export async function buildApp(
@@ -58,10 +68,14 @@ export async function buildApp(
     deps.checkDb ?? (() => checkDatabaseConnection(config.databaseUrl));
 
   const app = Fastify({
-    logger: {
-      level: config.logLevel,
-      base: { service: "netrics-server", role: config.role },
-    },
+    ...(deps.logger
+      ? { loggerInstance: deps.logger }
+      : {
+          logger: {
+            level: config.logLevel,
+            base: { service: "netrics-server", role: config.role },
+          },
+        }),
     genReqId: requestIdFromHeader,
     // Which X-Forwarded-For hops request.ip may believe; see
     // NETRICS_TRUSTED_PROXIES in env.ts and auth/rate-limit.ts.
@@ -147,13 +161,34 @@ export async function buildApp(
     pairingUrl: config.pairingUrl,
     version: config.version,
   });
+  const oauthTokens =
+    deps.oauthTokens ??
+    createOAuthTokenService({
+      db,
+      credentialKeyring,
+      providers: oauthProviders,
+      ...(deps.oauthHttp ? { http: deps.oauthHttp } : {}),
+    });
   registerConnectionRoutes(app, {
     authService,
     db,
     registry,
     credentialKeyring,
     oauthProviders,
-    ...(deps.oauthTokens ? { oauthTokens: deps.oauthTokens } : {}),
+    oauthTokens,
+  });
+  registerOAuthRoutes(app, {
+    authService,
+    db,
+    flow: createOAuthFlow({
+      db,
+      registry,
+      credentialKeyring,
+      oauthProviders,
+      oauthHttp: deps.oauthHttp ?? providerHttp,
+      oauthTokens,
+      logger: app.log,
+    }),
   });
 
   app.get(

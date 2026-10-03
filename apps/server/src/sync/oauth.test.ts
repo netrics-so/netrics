@@ -337,6 +337,40 @@ describe("oauth2 connectors in the sync engine", () => {
     });
   });
 
+  it("never syncs a connection whose setup is pending (ADR 0012)", async () => {
+    const { connectionId } = await seed("oauth-fixture", { expired: true });
+    await withWorkspace(appDb, { workspaceId }, async (tx) => {
+      await tx
+        .update(schema.connections)
+        .set({ setupPending: true })
+        .where(eq(schema.connections.id, connectionId));
+      await tx
+        .update(schema.connectionState)
+        .set({ nextDueAt: null })
+        .where(eq(schema.connectionState.connectionId, connectionId));
+    });
+    const tick = await runSchedulerTick(schedulerDb, new Date());
+    const [queued] = await schedulerRaw<{ count: number }[]>`
+      select count(*)::int as count from jobs
+      where connection_id = ${connectionId}::uuid`;
+    expect(tick.ran).toBe(true);
+    expect(queued!.count).toBe(0);
+    // A job that reaches it anyway (queued before, or by hand) does nothing.
+    received.length = 0;
+    const before = provider.refreshRequests;
+    for (const kind of ["connection.sync", "connection.backfill"]) {
+      expect((await runJob(connectionId, kind)).status).toBe("succeeded");
+    }
+    expect(received).toEqual([]);
+    expect(provider.refreshRequests).toBe(before);
+    expect(await runsOf(connectionId)).toHaveLength(0);
+    expect(await stateOf(connectionId)).toMatchObject({
+      nextDueAt: null,
+      authState: "ok",
+      consecutiveFailures: 0,
+    });
+  });
+
   it("refreshes once more after a provider 401 and retries the call", async () => {
     const { connectionId } = await seed("oauth-fixture");
     // Warm the cache with a valid token.

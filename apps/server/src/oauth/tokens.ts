@@ -26,6 +26,7 @@ import {
   type CredentialBinding,
   type CredentialKeyring,
 } from "../credentials.js";
+import type { OAuthHttpFactory } from "./client.js";
 import type { ConfiguredOAuthProvider, OAuthProviders } from "./config.js";
 
 // The host-side token lifecycle of OAuth connections (ADR 0012). Connector
@@ -142,6 +143,12 @@ export interface OAuthTokenServiceDeps {
   now?: () => Date;
   refreshTimeoutMs?: number;
   revokeTimeoutMs?: number;
+  /**
+   * Tests only: the provider HTTP of the authorization flow (OAuthHttp),
+   * so one in-process fixture provider serves both. Replaces the guarded
+   * fetch (and its timeouts).
+   */
+  http?: OAuthHttpFactory;
   /** Tests only: reach a local fixture provider (see EgressOptions). */
   egress?: Pick<
     EgressOptions,
@@ -173,6 +180,10 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
 
   /** The guarded egress fetch, limited to the provider's server domains. */
   function providerFetch(provider: ConfiguredOAuthProvider): TokenFetch {
+    const injected = deps.http?.(provider.definition);
+    if (injected) {
+      return (url, init) => injected(url, init);
+    }
     return (url, init, timeoutMs) =>
       createEgressFetch({
         ...deps.egress,

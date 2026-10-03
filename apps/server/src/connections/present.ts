@@ -62,6 +62,7 @@ export function presentConnection(
           grantedScopes: [...oauth.grantedScopes],
         }
       : null,
+    setupPending: row.setupPending,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     state: toStateView(state),

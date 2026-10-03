@@ -472,6 +472,86 @@ export type OAuthAuthorizationPurpose = z.infer<
   typeof oauthAuthorizationPurposeSchema
 >;
 
+/**
+ * Where an OAuth flow may return to (ADR 0012): a path of the web app, never
+ * a URL. The API also checks it against its allowlist of app routes.
+ */
+export const oauthReturnPathSchema = z
+  .string()
+  .min(1)
+  .max(512)
+  .regex(/^\/(?!\/)[^\\?#]*$/, "a relative path inside the app");
+
+/**
+ * Starts an OAuth authorization (ADR 0012). Without `connectionId` it
+ * connects a new connection (role: connections:create); with it, it
+ * reauthorizes that connection (connections:update).
+ * `allowAccountChange` (reauthorization only) accepts a grant from a
+ * different provider account than the linked one.
+ */
+export const startOAuthAuthorizationRequestSchema = z.object({
+  connectorId: z.string().min(1).max(200),
+  connectionId: z.uuid().optional(),
+  allowAccountChange: z.boolean().optional(),
+  returnPath: oauthReturnPathSchema.optional(),
+});
+export type StartOAuthAuthorizationRequest = z.infer<
+  typeof startOAuthAuthorizationRequestSchema
+>;
+
+export const startOAuthAuthorizationResponseSchema = z.object({
+  /** Where the browser goes next (window.location; not a form post). */
+  authorizationUrl: z.url(),
+  purpose: oauthAuthorizationPurposeSchema,
+  expiresAt: z.iso.datetime(),
+});
+export type StartOAuthAuthorizationResponse = z.infer<
+  typeof startOAuthAuthorizationResponseSchema
+>;
+
+/**
+ * The provider's redirect query, forwarded by the web app's callback route.
+ * Single-use values; the API never echoes or logs them.
+ */
+export const oauthCallbackRequestSchema = z.object({
+  state: z.string().min(1).max(512).optional(),
+  code: z.string().min(1).max(4096).optional(),
+  error: z.string().min(1).max(256).optional(),
+});
+export type OAuthCallbackRequest = z.infer<typeof oauthCallbackRequestSchema>;
+
+/**
+ * How an OAuth callback ended. The web app shows a message for each:
+ * - connected / reauthorized: the grant is stored;
+ * - denied: consent was refused at the provider (nothing stored);
+ * - invalid_state: unknown, expired or already used (start again);
+ * - forbidden: started by another user, or the role is gone;
+ * - scope_missing: not every required permission was granted;
+ * - account_mismatch: a different provider account than the linked one;
+ * - failed: the provider exchange or its ID token was refused.
+ */
+export const oauthCallbackOutcomeSchema = z.enum([
+  "connected",
+  "reauthorized",
+  "denied",
+  "invalid_state",
+  "forbidden",
+  "scope_missing",
+  "account_mismatch",
+  "failed",
+]);
+export type OAuthCallbackOutcome = z.infer<typeof oauthCallbackOutcomeSchema>;
+
+export const oauthCallbackResponseSchema = z.object({
+  outcome: oauthCallbackOutcomeSchema,
+  /**
+   * Relative path in the web app to answer 303 with; carries `oauth=<outcome>`
+   * (and `connection=<id>` after connecting) in its query.
+   */
+  redirectTo: z.string().regex(/^\/(?!\/)[^\\]*$/),
+});
+export type OAuthCallbackResponse = z.infer<typeof oauthCallbackResponseSchema>;
+
 export const connectionSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
@@ -482,6 +562,12 @@ export const connectionSchema = z.object({
   hasCredentials: z.boolean(),
   /** The linked OAuth account, for connections authorized at a provider. */
   oauth: connectionOAuthViewSchema.nullable(),
+  /**
+   * Created by an OAuth authorization and not finished yet (ADR 0012): it
+   * holds the grant, but its config (e.g. the property) is still to be
+   * chosen. Not scheduled until then; the web app shows "Finish setup".
+   */
+  setupPending: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   state: connectionStateViewSchema,

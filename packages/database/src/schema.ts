@@ -296,6 +296,10 @@ export const connections = pgTable(
     // AES-256-GCM envelope (apps/server/src/credentials.ts). Only code paths
     // that decrypt may read this; never select it into API responses.
     credentialsEncrypted: bytea("credentials_encrypted"),
+    // Created by an OAuth callback and not finished yet (ADR 0012): it holds
+    // the grant but not the connector config (e.g. the property), so it is
+    // not scheduled and the web app shows "Finish setup".
+    setupPending: boolean("setup_pending").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

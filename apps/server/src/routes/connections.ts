@@ -288,7 +288,7 @@ export function registerConnectionRoutes(
             summary: "Request a sync",
             tags: ["connections"],
             response: enqueueSyncResponseSchema,
-            errors: [403, 404],
+            errors: [400, 403, 404],
           }),
         },
         async (request, reply) => {
