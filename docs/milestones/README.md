@@ -109,6 +109,10 @@ team could parallelize independent connectors after milestone 07.
 - Planned: 07 (Google Search Console). OAuth platform decided in
   [ADR 0012](../decisions/0012-oauth-authorization-code-platform.md); issues
   #131–#138.
+- Planned: 08 (App Store Connect). Signed-key credentials and report
+  sources proposed in
+  [ADR 0014](../decisions/0014-app-store-connect-signed-keys.md); issues
+  #170–#177.
 - Later: the web frontend on Vercel (#123).
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
