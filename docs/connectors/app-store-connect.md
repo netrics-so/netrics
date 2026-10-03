@@ -284,7 +284,11 @@ How report rows become values:
   currency (cents for USD, yen for JPY, which has no minor unit). Amounts in
   different currencies are separate series and are never added up; netrics
   does not convert currencies. Apple's own Sales and Trends view converts at
-  a monthly average rate, so its totals differ.
+  a monthly average rate, so its totals differ. Every currency an app had
+  proceeds in during a calendar month gets a value on each day of that
+  month, 0 on days without sales in it, so its daily series has no gaps
+  (zeros change no total). An app without any proceeds in a month has no
+  currency to fill and no proceeds values for that month.
 - **Territories.** `downloads_by_territory` keeps the 10 territories with
   the most first-time downloads per app and calendar month, and adds up the
   rest as "Others", so a month has about 11 series per app. While a month is

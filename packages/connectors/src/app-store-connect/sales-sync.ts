@@ -216,6 +216,10 @@ function topTerritories(
  * counted twice. Only territories that led some earlier part of the month
  * (a ranking an earlier sync could have used) get these zeros, so the
  * series count stays bounded.
+ *
+ * Proceeds work the same way per currency: every currency of proceeds the
+ * app had in the month gets a value on each emitted day, 0 on days without
+ * sales in it, like the counts. Zeros change no sum.
  */
 export async function syncSalesPage(
   client: AppStoreConnectClient,
@@ -384,10 +388,18 @@ export async function syncSalesPage(
     // used (the month up to each of its days).
     const monthTotals = new Map<string, number>();
     const earlierLeaders = new Set<string>();
+    // Every currency the app had proceeds in this month: each gets a value
+    // on every emitted day (0 without sales), so its daily series has no
+    // gaps. An app without proceeds this month has no currency to fill.
+    const monthCurrencies = new Set<string>();
     let top = new Set<string>();
     for (const dayMs of [...byDay.keys()].sort((a, b) => a - b)) {
-      for (const [territory, value] of byDay.get(dayMs)!.territories) {
+      const dayTotals = byDay.get(dayMs)!;
+      for (const [territory, value] of dayTotals.territories) {
         add(monthTotals, territory, value);
+      }
+      for (const currency of dayTotals.proceeds.keys()) {
+        monthCurrencies.add(currency);
       }
       top = topTerritories(monthTotals, TOP_TERRITORIES);
       for (const territory of top) earlierLeaders.add(territory);
@@ -439,9 +451,8 @@ export async function syncSalesPage(
       )) {
         push(SALES_METRIC_KEYS.downloadsByDevice, units(value), { device });
       }
-      for (const [currency, amount] of [...entry.proceeds].sort((a, b) =>
-        a[0].localeCompare(b[0]),
-      )) {
+      for (const currency of [...monthCurrencies].sort()) {
+        const amount = entry.proceeds.get(currency) ?? 0n;
         push(SALES_METRIC_KEYS.proceeds, toMinorUnits(amount, currency), {
           currency,
         });
