@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 
 import {
   currencyConversionOptionsResponseSchema,
+  metricBreakdownRequestSchema,
+  metricBreakdownResponseSchema,
   metricCurrenciesRequestSchema,
   metricCurrenciesResponseSchema,
   metricQueryRequestSchema,
@@ -20,6 +22,7 @@ import {
   listMetrics,
   listResourcesOfMetric,
   queryMetric,
+  queryMetricBreakdown,
 } from "../metrics/query.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { routeSchema } from "./openapi.js";
@@ -108,6 +111,46 @@ export function registerMetricRoutes(
             return sendError(reply, result.status, result.error);
           }
           return metricQueryResponseSchema.parse(result.value);
+        },
+      );
+
+      // POST like the metric query; it reads only.
+      scope.post(
+        "/workspaces/:workspaceId/metrics/breakdown",
+        {
+          schema: routeSchema({
+            summary:
+              "A metric by one of its dimensions over a period, largest first, plus Others",
+            tags: ["metrics"],
+            body: metricBreakdownRequestSchema,
+            response: metricBreakdownResponseSchema,
+            errors: [403, 404, 503],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:view")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const body = parseBody(metricBreakdownRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const result = await withWorkspace(
+            deps.db,
+            { workspaceId: access.workspaceId, userId: access.callerId },
+            (tx) =>
+              queryMetricBreakdown(tx, access.workspaceId, body, now(), {
+                exchangeRates: deps.exchangeRates ?? false,
+              }),
+          );
+          if (!result.ok) {
+            return sendError(reply, result.status, result.error);
+          }
+          return metricBreakdownResponseSchema.parse(result.value);
         },
       );
 

@@ -124,6 +124,7 @@ async function bucketRows(
   tx: Transaction,
   query: MetricBucketQuery,
   byCurrency: boolean,
+  groupBy: string | null = null,
 ) {
   checkBucketQuery(query);
   const dimensions = query.dimensions ?? {};
@@ -131,9 +132,11 @@ async function bucketRows(
   const currency = byCurrency
     ? sql`o.dimensions ->> 'currency'`
     : sql`null::text`;
+  const group =
+    groupBy === null ? sql`null::text` : sql`o.dimensions ->> ${groupBy}`;
   const points = sql`
     select o.series_key, ${bucket} as bucket, ${currency} as currency,
-           o.source_timestamp, o.value
+           ${group} as grp, o.source_timestamp, o.value
     from observations o
     join connections c on c.id = o.connection_id
     join metric_definitions m
@@ -151,19 +154,21 @@ async function bucketRows(
     query.combination === "sum"
       ? await tx.execute(sql`
           with points as (${points})
-          select bucket, currency, sum(value) as value
-          from points group by bucket, currency order by bucket, currency`)
+          select grp, bucket, currency, sum(value) as value
+          from points group by grp, bucket, currency
+          order by grp, bucket, currency`)
       : await tx.execute(sql`
           with points as (${points}),
           last_per_series as (
-            select distinct on (series_key, bucket) bucket, currency, value
+            select distinct on (series_key, bucket) grp, bucket, currency, value
             from points
             order by series_key, bucket, source_timestamp desc
           )
-          select bucket, currency, sum(value) as value
-          from last_per_series group by bucket, currency
-          order by bucket, currency`);
+          select grp, bucket, currency, sum(value) as value
+          from last_per_series group by grp, bucket, currency
+          order by grp, bucket, currency`);
   return rows.map((row) => ({
+    group: row.grp as string | null,
     bucket: new Date(row.bucket as string | Date).toISOString(),
     currency: row.currency as string | null,
     value: Number(row.value),
@@ -204,6 +209,48 @@ export async function queryMetricCurrencyBuckets(
     currency: row.currency!,
     value: row.value,
   }));
+}
+
+/** Longest a breakdown query may run (ADR 0015 §2: a query time budget). */
+export const BREAKDOWN_TIMEOUT_MS = 5_000;
+
+export interface MetricGroupBucket extends MetricBucket {
+  /** The `groupBy` dimension's value; null for series without it. */
+  group: string | null;
+  /** ISO 4217 code with `byCurrency`, else null. */
+  currency: string | null;
+}
+
+/**
+ * Like queryMetricBuckets, with one row per value of the `groupBy`
+ * dimension and bucket (and currency with `byCurrency`): the rows of a bar
+ * chart's breakdown. It runs in a savepoint under a statement timeout of
+ * BREAKDOWN_TIMEOUT_MS; a query that takes longer fails with Postgres error
+ * 57014 and leaves the caller's transaction usable.
+ */
+export async function queryMetricGroupBuckets(
+  tx: Transaction,
+  query: MetricBucketQuery & { groupBy: string; byCurrency: boolean },
+): Promise<MetricGroupBucket[]> {
+  checkBucketQuery(query);
+  return tx.transaction(async (savepoint) => {
+    const [setting] = await savepoint.execute(
+      sql`select current_setting('statement_timeout') as value`,
+    );
+    await savepoint.execute(
+      sql`select set_config('statement_timeout', ${String(BREAKDOWN_TIMEOUT_MS)}, true)`,
+    );
+    const rows = await bucketRows(
+      savepoint,
+      query,
+      query.byCurrency,
+      query.groupBy,
+    );
+    await savepoint.execute(
+      sql`select set_config('statement_timeout', ${setting!.value as string}, true)`,
+    );
+    return rows;
+  });
 }
 
 export interface MetricCurrencyQuery {

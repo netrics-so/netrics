@@ -1033,8 +1033,93 @@ export const metricQueryResponseSchema = z.object({
   series: z.array(
     z.object({ bucket: z.iso.datetime(), value: z.number().nullable() }),
   ),
+  /**
+   * The previous window's points aligned to `series` (a line chart's dashed
+   * comparison, ADR 0015): point i is the same hour, day, week or month of
+   * the previous window, formed and converted like `series`, and carries
+   * the bucket of `series[i]`. Null where empty.
+   */
+  previousSeries: z.array(
+    z.object({ bucket: z.iso.datetime(), value: z.number().nullable() }),
+  ),
 });
 export type MetricQueryResponse = z.infer<typeof metricQueryResponseSchema>;
+
+/**
+ * A metric by one of its dimensions over a period (a bar chart, ADR 0015):
+ * one value per dimension value, the largest `limit` of them plus "Others".
+ */
+export const metricBreakdownRequestSchema = z.object({
+  connectionId: z.uuid(),
+  metricKey: z.string().min(1).max(200),
+  period: metricPeriodSchema,
+  /** Defaults to the metric's first compatible aggregation. */
+  aggregation: metricAggregationSchema.optional(),
+  /**
+   * The dimension to group by, one the metric declares (e.g. "resource",
+   * "territory", "device"); anything else is 400 unknown_dimension. Not
+   * "currency": amounts are grouped within one currency or converted.
+   */
+  groupBy: z.string().min(1).max(100),
+  /** Groups shown before "Others", 3–10. */
+  limit: z.number().int().min(3).max(10).default(5),
+  /**
+   * Only series with these dimension values (at most 10), as in a metric
+   * query. For a "currency_minor" metric a "currency" filter shows that
+   * currency exactly; without one the amounts are converted into
+   * `displayCurrency` or the workspace's display currency (#191), and
+   * amounts in more than one currency without either are 400
+   * currency_required.
+   */
+  dimensions: z
+    .record(z.string().min(1).max(100), z.string().max(200))
+    .optional(),
+  displayCurrency: currencyCodeSchema.optional(),
+});
+export type MetricBreakdownRequest = z.infer<
+  typeof metricBreakdownRequestSchema
+>;
+
+export const metricBreakdownResponseSchema = z.object({
+  metric: workspaceMetricSchema,
+  period: metricPeriodSchema,
+  timeZone: z.string().min(1),
+  aggregation: metricAggregationSchema,
+  groupBy: z.string().min(1),
+  /** As in a metric query: the amounts' ISO 4217 code, else null. */
+  currency: z.string().nullable(),
+  /** As in a metric query; `previousValue` of `unconverted` is null. */
+  conversion: currencyConversionSchema.nullable(),
+  /**
+   * The largest groups over the period's current window, largest first,
+   * each the metric's aggregation over its own buckets (a total, an
+   * average day, the latest reading). Empty without data.
+   */
+  groups: z.array(
+    z.object({
+      /** The dimension value (e.g. a resource id, "DE"). */
+      key: z.string(),
+      /** A resource's name, a territory's name ("Germany"), else the key. */
+      label: z.string().min(1),
+      value: z.number(),
+    }),
+  ),
+  /**
+   * The rest added up: smaller groups, series without the dimension and
+   * what the connector already folded into "Others". Null when empty.
+   */
+  others: z
+    .object({
+      label: z.string().min(1),
+      value: z.number(),
+      /** Dimension values it holds (the connector's "Others" counts as one). */
+      groups: z.number().int().nonnegative(),
+    })
+    .nullable(),
+});
+export type MetricBreakdownResponse = z.infer<
+  typeof metricBreakdownResponseSchema
+>;
 
 /** The currencies of a "currency_minor" metric, for picking one (ADR 0014). */
 export const metricCurrenciesRequestSchema = z.object({

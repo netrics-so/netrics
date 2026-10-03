@@ -1,5 +1,7 @@
 import type {
   CurrencyConversionOptionsResponse,
+  MetricBreakdownRequest,
+  MetricBreakdownResponse,
   MetricCurrenciesRequest,
   MetricCurrenciesResponse,
   MetricQueryRequest,
@@ -11,6 +13,7 @@ import type {
 import {
   findConnectionMetric,
   findConnectionResourceNoun,
+  findResourceNames,
   findWorkspace,
   listMetricResources,
   listWorkspaceMetrics,
@@ -19,6 +22,8 @@ import {
   queryMetricBuckets,
   queryMetricCurrencyBuckets,
   queryMetricCurrencyTotals,
+  queryMetricGroupBuckets,
+  resourceNameKey,
   type ConnectionMetric,
   type MetricCurrencyBucket,
   type MetricCurrencyTotal,
@@ -35,15 +40,19 @@ import {
   addDays,
   allResourcesName,
   amountCurrency,
+  addUpBuckets,
   aggregateBuckets,
+  alignedPreviousSeries,
   bucketCombination,
   civilDate,
   compare,
   convertBuckets,
   compatibleAggregations,
+  dimensionValueLabel,
   isCurrencyCode,
   isPerCurrencyUnit,
   planBuckets,
+  rankBreakdown,
   resolvePeriod,
   seriesPoints,
   type Aggregation,
@@ -60,7 +69,8 @@ import {
  */
 
 export type MetricResult<T> =
-  { ok: true; value: T } | { ok: false; status: 400 | 404; error: string };
+  | { ok: true; value: T }
+  | { ok: false; status: 400 | 404 | 503; error: string };
 
 function present(metric: ConnectionMetric): WorkspaceMetric {
   return {
@@ -224,6 +234,12 @@ export async function queryMetric(
         delta: change.delta,
         ratio: change.ratio,
         series: series(currentBuckets),
+        previousSeries: alignedPreviousSeries(
+          window,
+          plan,
+          aggregation,
+          previousBuckets,
+        ),
       },
     };
   };
@@ -305,6 +321,207 @@ export async function queryMetric(
     amountCurrency(metric.unit, dimensions?.[CURRENCY_DIMENSION]),
     null,
   );
+}
+
+/** The label of a breakdown's remainder. */
+export const OTHERS_LABEL = "Others";
+
+/** Postgres: canceling statement due to statement timeout. */
+const QUERY_CANCELED = "57014";
+
+function isQueryCanceled(err: unknown): boolean {
+  let e: unknown = err;
+  for (let depth = 0; depth < 5 && e && typeof e === "object"; depth++) {
+    if ((e as { code?: unknown }).code === QUERY_CANCELED) {
+      return true;
+    }
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
+ * A metric by one of its dimensions over a period (a bar chart, ADR 0015
+ * §2): one value per dimension value, formed like a tile's number over that
+ * value's buckets, the largest `limit` plus "Others". Amounts follow the
+ * tile rules of #191, except that amounts in several currencies are refused
+ * (400 currency_required) when nothing converts them: picking the largest
+ * currency would silently drop groups.
+ */
+export async function queryMetricBreakdown(
+  tx: Transaction,
+  workspaceId: string,
+  request: MetricBreakdownRequest,
+  now: Date = new Date(),
+  options: QueryOptions = {},
+): Promise<MetricResult<MetricBreakdownResponse>> {
+  const workspace = await findWorkspace(tx, workspaceId);
+  const found = await findConnectionMetric(
+    tx,
+    workspaceId,
+    request.connectionId,
+    request.metricKey,
+  );
+  if (!workspace || !found) {
+    return { ok: false, status: 404, error: "metric_not_found" };
+  }
+  const metric = present(found);
+  const aggregation = request.aggregation ?? metric.aggregations[0];
+  if (!aggregation || !metric.aggregations.includes(aggregation)) {
+    return { ok: false, status: 400, error: "aggregation_not_supported" };
+  }
+  if (
+    !metric.dimensions.includes(request.groupBy) ||
+    request.groupBy === CURRENCY_DIMENSION
+  ) {
+    return { ok: false, status: 400, error: "unknown_dimension" };
+  }
+  if (Object.keys(request.dimensions ?? {}).length > 10) {
+    return { ok: false, status: 400, error: "too_many_dimension_filters" };
+  }
+  const limit = request.limit;
+  const perCurrency = isPerCurrencyUnit(metric.unit);
+  const filtered = request.dimensions?.[CURRENCY_DIMENSION];
+  if (perCurrency && filtered !== undefined && !isCurrencyCode(filtered)) {
+    return { ok: false, status: 400, error: "currency_required" };
+  }
+
+  const window = resolvePeriod(request.period, now, workspace.timeZone);
+  const plan = planBuckets(window, metric.granularity);
+  const current =
+    plan.selection === "dates" ? datesToRange(window.dates) : window.current;
+  const timeZone = plan.selection === "dates" ? "UTC" : workspace.timeZone;
+  const byCurrency = perCurrency && filtered === undefined;
+  const displayCurrency =
+    byCurrency && options.exchangeRates
+      ? (request.displayCurrency ?? workspace.displayCurrency ?? null)
+      : null;
+
+  let rows: Awaited<ReturnType<typeof queryMetricGroupBuckets>> = [];
+  if (current.end > current.start) {
+    try {
+      rows = await queryMetricGroupBuckets(tx, {
+        workspaceId,
+        connectionId: metric.connectionId,
+        metricKey: metric.key,
+        ...(request.dimensions ? { dimensions: request.dimensions } : {}),
+        from: current.start,
+        to: current.end,
+        unit: plan.unit,
+        timeZone,
+        combination: bucketCombination(metric.kind),
+        groupBy: request.groupBy,
+        byCurrency,
+      });
+    } catch (err) {
+      if (isQueryCanceled(err)) {
+        return { ok: false, status: 503, error: "query_timeout" };
+      }
+      throw err;
+    }
+  }
+
+  let currency = amountCurrency(metric.unit, filtered);
+  let conversion: MetricBreakdownResponse["conversion"] = null;
+  let values: { key: string | null; bucket: string; value: number }[] =
+    rows.map(({ group, bucket, value }) => ({ key: group, bucket, value }));
+  if (byCurrency && displayCurrency === null) {
+    const currencies = [...new Set(rows.map((row) => row.currency!))];
+    if (currencies.length > 1) {
+      return { ok: false, status: 400, error: "currency_required" };
+    }
+    currency = currencies[0] ?? null;
+  } else if (displayCurrency !== null) {
+    const dated = rows.map((row) => ({
+      ...row,
+      currency: row.currency!,
+      date: civilDate(new Date(row.bucket), timeZone),
+    }));
+    const currencies = [
+      ...new Set([displayCurrency, ...dated.map((row) => row.currency)]),
+    ].filter((code) => code !== RATE_BASE_CURRENCY);
+    const dates = dated.map((row) => row.date).sort();
+    const rates = new RateTable(
+      dates.length > 0
+        ? await findExchangeRates(tx, {
+            currencies,
+            from: addDays(dates[0]!, -RATE_LOOKBACK_DAYS),
+            to: dates.at(-1)!,
+          })
+        : [],
+    );
+    const byGroup = new Map<string | null, typeof dated>();
+    for (const row of dated) {
+      const members = byGroup.get(row.group) ?? [];
+      members.push(row);
+      byGroup.set(row.group, members);
+    }
+    values = [];
+    const unconverted = new Map<string, BucketValue[]>();
+    for (const [key, members] of byGroup) {
+      const result = convertBuckets(members, displayCurrency, rates);
+      values.push(...result.converted.map((b) => ({ key, ...b })));
+      for (const [code, buckets] of result.unconverted) {
+        unconverted.set(code, (unconverted.get(code) ?? []).concat(buckets));
+      }
+    }
+    currency = displayCurrency;
+    conversion = {
+      displayCurrency,
+      approximate: true,
+      source: {
+        name: EXCHANGE_RATE_SOURCE.name,
+        url: EXCHANGE_RATE_SOURCE.url,
+      },
+      unconverted: [...unconverted.keys()].sort().map((code) => ({
+        currency: code,
+        value: aggregateBuckets(
+          aggregation,
+          addUpBuckets(unconverted.get(code) ?? []),
+        ),
+        previousValue: null,
+      })),
+    };
+  }
+
+  const breakdown = rankBreakdown(aggregation, values, limit);
+  const resourceNames =
+    request.groupBy === RESOURCE_DIMENSION
+      ? await findResourceNames(
+          tx,
+          workspaceId,
+          breakdown.groups.map((group) => ({
+            connectionId: metric.connectionId,
+            resourceId: group.key,
+          })),
+        )
+      : new Map<string, string>();
+  return {
+    ok: true,
+    value: {
+      metric,
+      period: request.period,
+      timeZone: workspace.timeZone,
+      aggregation,
+      groupBy: request.groupBy,
+      currency,
+      conversion,
+      groups: breakdown.groups.map((group) => ({
+        key: group.key,
+        label: dimensionValueLabel(
+          request.groupBy,
+          group.key,
+          resourceNames.get(resourceNameKey(metric.connectionId, group.key)),
+        ),
+        value: group.value,
+      })),
+      others: breakdown.others && {
+        label: OTHERS_LABEL,
+        value: breakdown.others.value,
+        groups: breakdown.others.groups,
+      },
+    },
+  };
 }
 
 /**

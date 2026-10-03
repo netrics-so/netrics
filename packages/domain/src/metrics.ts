@@ -511,3 +511,209 @@ export function seriesPoints(
     }))
     .sort((a, b) => (a.bucket < b.bucket ? -1 : 1));
 }
+
+// ─── Previous period (line charts, ADR 0015 §2) ─────────────────────────────
+
+/** Calendar months a period's previous window lies before its current one. */
+const PREVIOUS_MONTHS: Partial<Record<Period, number>> = {
+  this_month: 1,
+  last_12_months: 12,
+};
+
+function daysBetween(from: CivilDate, to: CivilDate): number {
+  const [y1, m1, d1] = parseCivil(from);
+  const [y2, m2, d2] = parseCivil(to);
+  return Math.round(
+    (Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) /
+      (24 * 60 * 60 * 1000),
+  );
+}
+
+/**
+ * The current window's date at the same position as `date` of the previous
+ * window: the same day of the month for monthly periods (capped at the
+ * month's end), else the same number of days from the window's start.
+ */
+function samePositionDate(window: PeriodWindow, date: CivilDate): CivilDate {
+  const months = PREVIOUS_MONTHS[window.period];
+  if (months !== undefined) {
+    return sameDayIn(addMonths(date, months), parseCivil(date)[2]);
+  }
+  return addDays(
+    date,
+    daysBetween(window.previousDates.from, window.dates.from),
+  );
+}
+
+/**
+ * The previous window's points aligned to the current window's (the dashed
+ * line of a line chart): point i is the same hour, day, week or month of the
+ * previous window as point i of `plan.starts`, formed with the tile's
+ * aggregation like seriesPoints, and stamped with the current point's
+ * start. Null where the previous window has no data.
+ */
+export function alignedPreviousSeries(
+  window: PeriodWindow,
+  plan: BucketPlan,
+  aggregation: Aggregation,
+  previousBuckets: readonly BucketValue[],
+): { bucket: string; value: number | null }[] {
+  const shift =
+    window.current.start.getTime() - window.previous.start.getTime();
+  const moved = previousBuckets.flatMap((bucket) => {
+    if (plan.unit === "hour") {
+      const instant = new Date(new Date(bucket.bucket).getTime() + shift);
+      return [{ bucket: instant.toISOString(), value: bucket.value }];
+    }
+    const date = samePositionDate(
+      window,
+      civilDate(new Date(bucket.bucket), plan.timeZone),
+    );
+    if (date < window.dates.from || date > window.dates.to) {
+      return [];
+    }
+    const instant =
+      plan.selection === "dates"
+        ? new Date(`${date}T00:00:00Z`)
+        : startOfDay(date, plan.timeZone);
+    return [{ bucket: instant.toISOString(), value: bucket.value }];
+  });
+  const values = new Map(
+    seriesPoints(plan, aggregation, moved).map((b) => [b.bucket, b.value]),
+  );
+  return plan.starts.map((bucket) => ({
+    bucket,
+    value: values.get(bucket) ?? null,
+  }));
+}
+
+// ─── Breakdown by dimension (bar charts, ADR 0015 §2) ───────────────────────
+
+/** Fewest and most groups a breakdown shows before "Others". */
+export const MIN_BREAKDOWN_GROUPS = 3;
+export const MAX_BREAKDOWN_GROUPS = 10;
+
+/**
+ * The dimension value connectors use for what they already folded together
+ * (App Store territories beyond the top 10); a breakdown adds it to its own
+ * "Others" group.
+ */
+export const OTHERS_DIMENSION_VALUE = "Others";
+
+export interface BreakdownGroup {
+  /** The dimension value. */
+  key: string;
+  value: number;
+}
+
+export interface Breakdown {
+  /** The largest groups, largest first (ties by key). */
+  groups: BreakdownGroup[];
+  /**
+   * Everything else added up per bucket, then aggregated like a group:
+   * the remaining groups, series without the dimension and the
+   * connector's own "Others". Null when there is nothing else.
+   */
+  others: { value: number; groups: number } | null;
+}
+
+/** Buckets of several series added up per bucket, in bucket order. */
+export function addUpBuckets(buckets: readonly BucketValue[]): BucketValue[] {
+  const totals = new Map<string, number>();
+  for (const { bucket, value } of buckets) {
+    totals.set(bucket, (totals.get(bucket) ?? 0) + value);
+  }
+  return [...totals]
+    .map(([bucket, value]) => ({ bucket, value }))
+    .sort((a, b) => (a.bucket < b.bucket ? -1 : 1));
+}
+
+/**
+ * One value per dimension value over a window: each group is the tile's
+ * aggregation over its buckets (a total, an average day, the latest
+ * reading), so a bar means what a tile of that one value would show. The
+ * `limit` largest are kept; the rest form "Others", whose buckets add up
+ * across groups before they are aggregated (as series do within a tile).
+ * Rows with a null key (series without the dimension) count as "Others".
+ */
+export function rankBreakdown(
+  aggregation: Aggregation,
+  rows: readonly (BucketValue & { key: string | null })[],
+  limit: number,
+): Breakdown {
+  const byKey = new Map<string, BucketValue[]>();
+  const rest: BucketValue[] = [];
+  let restGroups = 0;
+  for (const { key, bucket, value } of rows) {
+    if (key === null || key === OTHERS_DIMENSION_VALUE) {
+      rest.push({ bucket, value });
+      continue;
+    }
+    const members = byKey.get(key) ?? [];
+    members.push({ bucket, value });
+    byKey.set(key, members);
+  }
+  const ranked = [...byKey]
+    .map(([key, buckets]) => ({
+      key,
+      buckets,
+      value: aggregateBuckets(aggregation, buckets)!,
+    }))
+    .sort((a, b) =>
+      b.value !== a.value ? b.value - a.value : a.key < b.key ? -1 : 1,
+    );
+  const kept = ranked.slice(0, limit);
+  for (const group of ranked.slice(limit)) {
+    rest.push(...group.buckets);
+    restGroups += 1;
+  }
+  if (rows.some((row) => row.key === OTHERS_DIMENSION_VALUE)) {
+    restGroups += 1;
+  }
+  const othersValue =
+    rest.length > 0 ? aggregateBuckets(aggregation, addUpBuckets(rest)) : null;
+  return {
+    groups: kept.map(({ key, value }) => ({ key, value })),
+    others:
+      othersValue === null ? null : { value: othersValue, groups: restGroups },
+  };
+}
+
+/** Dimensions whose values are ISO 3166-1 alpha-2 region codes. */
+const REGION_DIMENSIONS = new Set(["territory", "country"]);
+let regionNames: Intl.DisplayNames | null | undefined;
+
+/**
+ * A breakdown group's label: a resource's discovered name, a territory's or
+ * country's English name ("DE" → "Germany"), else the value itself.
+ */
+export function dimensionValueLabel(
+  dimension: string,
+  value: string,
+  resourceName?: string | null,
+): string {
+  if (resourceName) {
+    return resourceName;
+  }
+  if (value === "") {
+    return "(none)";
+  }
+  if (REGION_DIMENSIONS.has(dimension) && /^[A-Z]{2}$/.test(value)) {
+    if (regionNames === undefined) {
+      try {
+        regionNames = new Intl.DisplayNames(["en"], {
+          type: "region",
+          fallback: "none",
+        });
+      } catch {
+        regionNames = null;
+      }
+    }
+    try {
+      return regionNames?.of(value) ?? value;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
