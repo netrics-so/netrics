@@ -351,3 +351,132 @@ describe("validation probes", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+describe("an additional key (#190, the App Store reviews key)", () => {
+  const REVIEWS_KEY_ID = "CS5UPP0RT1";
+
+  it("parses a reviews key next to the main key and signs a token for each", () => {
+    const main = p256KeyPair();
+    const support = p256KeyPair();
+    const key = parsed(providers(), {
+      ...credentials(main.privateKeyPem),
+      reviews: { keyId: REVIEWS_KEY_ID, privateKey: support.privateKeyPem },
+    });
+    expect(key.additionalIds).toEqual(["reviews"]);
+    expect(key.stored()).toEqual({
+      ...credentials(main.privateKeyPem),
+      reviews: { keyId: REVIEWS_KEY_ID, privateKey: support.privateKeyPem },
+    });
+    const tokens = key.mintTokens();
+    expect(Object.keys(tokens).sort()).toEqual([
+      "accessToken",
+      "reviewsAccessToken",
+    ]);
+    const mainToken = decodeJwt(tokens.accessToken, main.publicKey);
+    const reviewsToken = decodeJwt(
+      tokens.reviewsAccessToken!,
+      support.publicKey,
+    );
+    expect(mainToken.verifies).toBe(true);
+    expect(mainToken.header.kid).toBe(TEST_KEY_ID);
+    expect(reviewsToken.verifies).toBe(true);
+    expect(reviewsToken.header.kid).toBe(REVIEWS_KEY_ID);
+    // The issuer ID is team-wide: the reviews key shares it.
+    expect(reviewsToken.claims).toMatchObject({
+      iss: TEST_ISSUER_ID,
+      aud: "appstoreconnect-v1",
+      iat: NOW_SECONDS - 60,
+      exp: NOW_SECONDS + 540,
+    });
+    expect(inspect(key)).not.toContain(pemBody(support.privateKeyPem));
+    expect(JSON.stringify(key)).toBe('"[signed key]"');
+  });
+
+  it("without a reviews key, hands the connector the main token only", () => {
+    const key = parsed(providers(), credentials());
+    expect(Object.keys(key.mintTokens())).toEqual(["accessToken"]);
+    expect(
+      parsed(providers(), { ...credentials(), reviews: null }).additionalIds,
+    ).toEqual([]);
+  });
+
+  it("checks the reviews key's fields like the main key's", () => {
+    const registry = providers();
+    const check = (reviews: unknown) => {
+      const result = registry.parse(appStoreConnectProvider, {
+        ...credentials(),
+        reviews,
+      });
+      return result.ok ? "ok" : result.message;
+    };
+    expect(
+      check({ keyId: "short", privateKey: p256KeyPair().privateKeyPem }),
+    ).toMatch(/^Key ID must be 10 uppercase letters/);
+    expect(check({ keyId: REVIEWS_KEY_ID, privateKey: "nope" })).toMatch(
+      /^Private key: /,
+    );
+    expect(check({ keyId: REVIEWS_KEY_ID })).toBe("Private key is required.");
+    expect(check("AuthKey")).toMatch(/^The Customer Support key takes/);
+    expect(
+      check({
+        keyId: REVIEWS_KEY_ID,
+        privateKey: p256KeyPair().privateKeyPem,
+        role: "ADMIN",
+      }),
+    ).toMatch(/remove the unknown field "role"/);
+    expect(
+      check({ keyId: TEST_KEY_ID, privateKey: p256KeyPair().privateKeyPem }),
+    ).toMatch(/must be a separate key/);
+  });
+
+  it("runs only the reviews key's probes for it, with its own tokens", async () => {
+    const seen: Array<{ name: string; token: string }> = [];
+    const definition: SignedKeyProviderDefinition = {
+      ...appStoreConnectProvider,
+      probes: [],
+      additionalKeys: [
+        {
+          ...appStoreConnectProvider.additionalKeys![0]!,
+          probes: [
+            {
+              name: "reviews",
+              run: async (context) => {
+                seen.push({ name: "reviews", token: context.accessToken() });
+                return { ok: false, message: "role missing" };
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const registry = providers(definition);
+    const support = p256KeyPair();
+    const result = registry.parse(definition, {
+      ...credentials(),
+      reviews: { keyId: REVIEWS_KEY_ID, privateKey: support.privateKeyPem },
+    });
+    if (!result.ok) throw new Error(result.message);
+    expect(await registry.probeAdditional(result.value, "reviews", {})).toEqual(
+      {
+        ok: false,
+        message: "role missing",
+      },
+    );
+    expect(decodeJwt(seen[0]!.token, support.publicKey).header.kid).toBe(
+      REVIEWS_KEY_ID,
+    );
+    // A config change re-checks the main key only.
+    seen.length = 0;
+    const validated = await registry.validate(
+      definition,
+      {
+        ...credentials(),
+        reviews: { keyId: REVIEWS_KEY_ID, privateKey: support.privateKeyPem },
+      },
+      {},
+      { probeAdditional: false },
+    );
+    expect(validated.ok).toBe(true);
+    expect(seen).toEqual([]);
+  });
+});

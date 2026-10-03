@@ -172,15 +172,20 @@ export function keyCredentials(
 }
 
 /**
- * The newest reporting day among a connection's observations, as
+ * The newest reporting day among a connection's report observations, as
  * YYYY-MM-DD, or null without any. App Store reporting days are days in
  * Pacific Time, stored as that day's date.
  */
 export function latestReportingDay(
-  observations: readonly { sourceTimestamp: string }[],
+  observations: readonly { sourceTimestamp: string; metricKey?: string }[],
 ): string | null {
   let latest: string | null = null;
   for (const observation of observations) {
+    // Review metrics (#190) run through today and say nothing about when
+    // Apple's reports arrived.
+    if (/^app_store_connect\.review/.test(observation.metricKey ?? "")) {
+      continue;
+    }
     const day = observation.sourceTimestamp.slice(0, 10);
     if (latest === null || day > latest) {
       latest = day;

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   AppStoreAnalyticsStatusResponse,
+  AppStoreReviewsStatusResponse,
   ConnectionPreviewResponse,
   ConnectionResourcesResponse,
   ConnectionSignedKeyView,
@@ -76,6 +77,7 @@ import {
   appStoreAnalyticsStatus,
   enableAppStoreAnalytics,
 } from "../signed-keys/app-store-analytics.js";
+import { appStoreReviewsStatus } from "../signed-keys/app-store-reviews.js";
 import type { SignedKeyProviderDefinition } from "../signed-keys/providers/index.js";
 import {
   createSignedKeyProviders,
@@ -417,10 +419,16 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     connectionId: string,
     config: Record<string, unknown>,
     credentials: Record<string, unknown>,
+    options: { probeAdditional?: boolean } = {},
   ): Promise<Result<Record<string, unknown>>> {
     const provider = signedKeys.providerFor(manifest, credentials);
     if (provider) {
-      const key = await signedKeys.validate(provider, credentials, config);
+      const key = await signedKeys.validate(
+        provider,
+        credentials,
+        config,
+        options,
+      );
       if (!key.ok) {
         return fail(400, key.message);
       }
@@ -508,6 +516,154 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     }
     const key = signedKeys.parse(provider, credentials);
     return key.ok ? ok(key.value) : fail(400, key.message);
+  }
+
+  /** The decrypted credentials envelope of a connection, or a 400. */
+  function openEnvelope(
+    workspaceId: string,
+    row: ConnectionWithState["row"],
+  ): Result<Record<string, unknown>> {
+    if (!row.credentialsEncrypted) {
+      return ok({});
+    }
+    try {
+      return ok(
+        JSON.parse(
+          decryptCredentials(
+            row.credentialsEncrypted.toString("utf8"),
+            credentialKeyring,
+            { workspaceId, connectionId: row.id },
+          ),
+        ) as Record<string, unknown>,
+      );
+    } catch (error) {
+      return fail(400, safeMessage(error));
+    }
+  }
+
+  /**
+   * Whether a credential update names only additional keys of the
+   * connector's signed-key provider (#190, `{ reviews: … }`): it then adds,
+   * replaces or removes that key and leaves the main key as it is.
+   */
+  function additionalKeyUpdate(
+    manifest: ConnectorManifest,
+    credentials: Record<string, unknown>,
+  ): SignedKeyProviderDefinition | null {
+    const strategy = manifest.authStrategies.find(
+      (entry) => entry.strategy === "signed-key",
+    );
+    const provider =
+      strategy?.strategy === "signed-key"
+        ? signedKeys.get(strategy.provider)
+        : undefined;
+    const ids = new Set((provider?.additionalKeys ?? []).map((key) => key.id));
+    const keys = Object.keys(credentials);
+    return provider && keys.length > 0 && keys.every((key) => ids.has(key))
+      ? provider
+      : null;
+  }
+
+  /**
+   * Adds, replaces (`{ [id]: { …fields } }`) or removes (`{ [id]: null }`)
+   * additional keys of a stored signed key (#190). A new key is checked in
+   * full first (fields, P-256, its own probes against Apple), so a refused
+   * key changes nothing. Returns the envelope to store and what changed.
+   */
+  async function changeAdditionalKeys(
+    workspaceId: string,
+    existing: ConnectionWithState,
+    manifest: ConnectorManifest,
+    provider: SignedKeyProviderDefinition,
+    credentials: Record<string, unknown>,
+  ): Promise<
+    Result<{
+      stored: Record<string, unknown>;
+      changes: Array<{ key: string; change: "added" | "replaced" | "removed" }>;
+    }>
+  > {
+    const envelope = openEnvelope(workspaceId, existing.row);
+    if (!envelope.ok) {
+      return envelope;
+    }
+    if (signedKeys.providerFor(manifest, envelope.value) !== provider) {
+      return fail(
+        400,
+        `Upload a ${provider.name} key for this connection first.`,
+      );
+    }
+    const stored = signedKeys.parse(provider, envelope.value);
+    if (!stored.ok) {
+      return fail(400, stored.message);
+    }
+    const config = existing.row.config as Record<string, unknown>;
+    let key = stored.value;
+    const changes: Array<{
+      key: string;
+      change: "added" | "replaced" | "removed";
+    }> = [];
+    for (const [id, raw] of Object.entries(credentials)) {
+      const had = key.additional(id) !== undefined;
+      if (raw === null) {
+        key = key.withAdditional(id, null);
+        if (had) {
+          changes.push({ key: id, change: "removed" });
+        }
+        continue;
+      }
+      const additional = signedKeys.parseAdditional(key, id, raw);
+      if (!additional.ok) {
+        return fail(400, additional.message);
+      }
+      key = key.withAdditional(id, additional.value);
+      const probed = await signedKeys.probeAdditional(key, id, config);
+      if (!probed.ok) {
+        return fail(400, probed.message);
+      }
+      changes.push({ key: id, change: had ? "replaced" : "added" });
+    }
+    return ok({ stored: key.stored(), changes });
+  }
+
+  /**
+   * After a main-key rotation: the stored additional keys (#190) that the
+   * new credentials do not mention are kept when the new key belongs to the
+   * same team (same non-secret shared fields, the issuer ID); a key of
+   * another team drops them, since they would not work with it.
+   */
+  function carryAdditionalKeys(
+    manifest: ConnectorManifest,
+    existing: ConnectionWithState,
+    workspaceId: string,
+    requested: Record<string, unknown>,
+    next: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const provider = signedKeys.providerFor(manifest, next);
+    const additionalKeys = provider?.additionalKeys ?? [];
+    if (!provider || additionalKeys.length === 0) {
+      return next;
+    }
+    const envelope = openEnvelope(workspaceId, existing.row);
+    if (!envelope.ok) {
+      return next;
+    }
+    const previous = envelope.value;
+    const ownKeys = new Set(
+      additionalKeys.flatMap((key) => key.fields.map((field) => field.key)),
+    );
+    const sameTeam = provider.fields
+      .filter((field) => !field.secret && !ownKeys.has(field.key))
+      .every((field) => previous[field.key] === next[field.key]);
+    if (!sameTeam) {
+      return next;
+    }
+    const carried = { ...next };
+    for (const key of additionalKeys) {
+      if (!(key.id in requested) && previous[key.id] !== undefined) {
+        carried[key.id] = previous[key.id];
+      }
+    }
+    return carried;
   }
 
   /**
@@ -1112,7 +1268,37 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       // Config or credential changes are re-checked against the connector
       // before they persist (same rule as creation).
       let storedCredentials: Record<string, unknown> | undefined;
-      if (
+      // An optional additional key (#190, the App Store reviews key) is
+      // added, replaced or removed on its own: the main key and the
+      // connection's auth state stay as they are.
+      const additionalProvider =
+        !existing.oauth && body.credentials !== undefined
+          ? additionalKeyUpdate(registered.manifest, body.credentials)
+          : null;
+      let additionalChanges: Array<{
+        key: string;
+        change: "added" | "replaced" | "removed";
+      }> | null = null;
+      if (additionalProvider && body.credentials !== undefined) {
+        if (body.config !== undefined) {
+          return fail(
+            400,
+            "Change the configuration and the reviews key in separate requests.",
+          );
+        }
+        const changed = await changeAdditionalKeys(
+          actor.workspaceId,
+          existing,
+          registered.manifest,
+          additionalProvider,
+          body.credentials,
+        );
+        if (!changed.ok) {
+          return changed;
+        }
+        storedCredentials = changed.value.stored;
+        additionalChanges = changed.value.changes;
+      } else if (
         !existing.oauth &&
         (body.config !== undefined || body.credentials !== undefined)
       ) {
@@ -1135,17 +1321,32 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           credentials = {};
         }
         // Rotation (ADR 0014): a new key is validated in full before it
-        // replaces the envelope; a failure keeps the old one untouched.
+        // replaces the envelope; a failure keeps the old one untouched. A
+        // config change re-checks the stored main key only, so a paused
+        // reviews key (#190) never blocks it.
         const check = await checkCandidate(
           registered.manifest,
           connectionId,
           nextConfig ?? existingConfig,
           credentials,
+          { probeAdditional: body.credentials !== undefined },
         );
         if (!check.ok) {
           return check;
         }
         storedCredentials = check.value;
+        if (body.credentials !== undefined) {
+          // A rotated main key keeps the stored additional keys it does not
+          // name, as long as it is a key of the same team (issuer).
+          const carried = carryAdditionalKeys(
+            registered.manifest,
+            existing,
+            actor.workspaceId,
+            body.credentials,
+            check.value,
+          );
+          storedCredentials = carried;
+        }
       }
 
       const changes: ConnectionChanges = {
@@ -1211,16 +1412,37 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         // reauthorization keep the history and continue from the cursor.
         const refetch =
           !existing.row.setupPending &&
-          nextConfig !== undefined &&
           registered.manifest.supportsBackfill &&
-          configChanged(registered.manifest, existingConfig, nextConfig);
+          ((nextConfig !== undefined &&
+            configChanged(registered.manifest, existingConfig, nextConfig)) ||
+            // A new reviews key (#190) reads the review history of the
+            // backfill window.
+            (additionalChanges ?? []).some(
+              (entry) => entry.change !== "removed",
+            ));
         if (refetch) {
           await requestConnectionBackfill(tx, {
             workspaceId: actor.workspaceId,
             connectionId,
           });
         }
-        if (body.credentials !== undefined) {
+        if (additionalChanges !== null) {
+          // The main key is unchanged: its auth state stays as it is.
+          for (const entry of additionalChanges) {
+            await insertAuditEvent(tx, {
+              workspaceId: actor.workspaceId,
+              actorUserId: actor.callerId,
+              action: "connection.credentials_updated",
+              target: connectionId,
+              metadata: {
+                connectorId: row.connectorId,
+                key: entry.key,
+                change: entry.change,
+                ...(refetch ? { backfillRequested: true } : {}),
+              },
+            });
+          }
+        } else if (body.credentials !== undefined) {
           // Recovery path for auth_failed/outage: fresh credentials make the
           // connection due immediately and reset the failure streak.
           state =
@@ -1370,6 +1592,28 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return fail(400, status.message);
       }
       return ok({ apps: status.value, keysUrl: APP_STORE_CONNECT_KEYS_URL });
+    },
+
+    /**
+     * The optional reviews key (#190): stored or not, and whether Apple
+     * still accepts it, asked live with its own freshly signed token.
+     */
+    async appStoreReviews(
+      actor: Actor,
+      connectionId: string,
+    ): Promise<Result<AppStoreReviewsStatusResponse>> {
+      const loaded = await appStoreConnection(actor, connectionId);
+      if (!loaded.ok) {
+        return loaded;
+      }
+      const { existing, key } = loaded.value;
+      return ok(
+        await appStoreReviewsStatus({
+          key,
+          http: signedKeys.httpFor(key.provider),
+          config: existing.row.config as Record<string, unknown>,
+        }),
+      );
     },
 
     /**

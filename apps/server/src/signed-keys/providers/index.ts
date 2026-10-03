@@ -4,6 +4,7 @@ import type { SignedKeyProviderDefinition } from "./types.js";
 export type {
   SignedKeyField,
   SignedKeyFieldValues,
+  SignedKeyAdditionalKey,
   SignedKeyProbe,
   SignedKeyProbeContext,
   SignedKeyProbeResult,

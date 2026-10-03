@@ -11,6 +11,7 @@ import { SearchConsoleSettings } from "../search-console-settings";
 import { ConnectionActions } from "./connection-actions";
 import { EditConnectionForm } from "./edit-connection-form";
 import { AppStoreAnalyticsPanel } from "./app-store-analytics-panel";
+import { AppStoreReviewsPanel } from "./app-store-reviews-panel";
 import { SignedKeyPanel } from "./signed-key-panel";
 import {
   getConnection,
@@ -266,6 +267,15 @@ export default async function ConnectionDetailPage({
           }
           canUpdate={canUpdate}
           authFailed={authFailed}
+        />
+      ) : null}
+
+      {appStore && keyStrategy && !connection.setupPending ? (
+        <AppStoreReviewsPanel
+          workspaceId={workspaceId}
+          connectionId={connection.id}
+          strategy={keyStrategy}
+          canUpdate={canUpdate}
         />
       ) : null}
 

@@ -68,6 +68,37 @@ export interface SignedKeyProviderDefinition {
     readonly unauthorized: string;
     readonly forbidden: string;
   };
+  /**
+   * Optional further keys of the same connection (#190: App Store Connect's
+   * reviews key), stored in the same envelope under their `id`. Each is
+   * validated with its own probes, signed into its own token and handed to
+   * the connector as `credentials[tokenField]`. A refusal of such a token
+   * never puts the connection in auth_failed: the connector pauses what
+   * the key reads.
+   */
+  readonly additionalKeys?: readonly SignedKeyAdditionalKey[];
+}
+
+/**
+ * An optional additional key of a signed-key provider. Its fields replace
+ * the main key's fields of the same name (key ID, private key); the main
+ * key's other fields (the team-wide issuer ID) are shared, and the
+ * provider's `token()` signs it with the merged values.
+ */
+export interface SignedKeyAdditionalKey {
+  /** Envelope and request member ("reviews"). */
+  readonly id: string;
+  /** Display name ("Customer Support key"). */
+  readonly name: string;
+  /** The connector's credential field for its token ("reviewsAccessToken"). */
+  readonly tokenField: string;
+  /** Its own fields, in order; exactly one is the private key. */
+  readonly fields: readonly SignedKeyField[];
+  /**
+   * Checks with a freshly signed token of this key (and the connection's
+   * config) before it is stored; the first failure answers.
+   */
+  readonly probes: readonly SignedKeyProbe[];
 }
 
 /** One credential field of a signed-key provider. */

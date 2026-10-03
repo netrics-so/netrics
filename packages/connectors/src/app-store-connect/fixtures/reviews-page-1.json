@@ -1,0 +1,50 @@
+{
+  "data": [
+    {
+      "type": "customerReviews",
+      "id": "00000000-0000-4000-8000-0000000a0001",
+      "attributes": {
+        "rating": 5,
+        "createdDate": "2026-10-01T09:12:00-07:00",
+        "territory": "USA"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/customerReviews/00000000-0000-4000-8000-0000000a0001"
+      }
+    },
+    {
+      "type": "customerReviews",
+      "id": "00000000-0000-4000-8000-0000000a0002",
+      "attributes": {
+        "rating": 4,
+        "createdDate": "2026-09-30T23:30:00-07:00",
+        "territory": "DEU"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/customerReviews/00000000-0000-4000-8000-0000000a0002"
+      }
+    },
+    {
+      "type": "customerReviews",
+      "id": "00000000-0000-4000-8000-0000000a0003",
+      "attributes": {
+        "rating": 1,
+        "createdDate": "2026-09-30T08:00:00-07:00",
+        "territory": "USA"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/customerReviews/00000000-0000-4000-8000-0000000a0003"
+      }
+    }
+  ],
+  "links": {
+    "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000001/customerReviews?sort=-createdDate&limit=200&fields%5BcustomerReviews%5D=rating%2CcreatedDate%2Cterritory",
+    "next": "https://api.appstoreconnect.apple.com/v1/apps/1000000001/customerReviews?cursor=Mw.AJ5kVmQ&sort=-createdDate&limit=200&fields%5BcustomerReviews%5D=rating%2CcreatedDate%2Cterritory"
+  },
+  "meta": {
+    "paging": {
+      "total": 5,
+      "limit": 200
+    }
+  }
+}

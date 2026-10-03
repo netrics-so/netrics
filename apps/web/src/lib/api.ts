@@ -39,6 +39,8 @@ import {
   enableAppStoreAnalyticsRequestSchema,
   enableAppStoreAnalyticsResponseSchema,
   type AppStoreAnalyticsStatusResponse,
+  appStoreReviewsStatusResponseSchema,
+  type AppStoreReviewsStatusResponse,
   type EnableAppStoreAnalyticsRequest,
   type EnableAppStoreAnalyticsResponse,
   connectionDetailResponseSchema,
@@ -637,6 +639,22 @@ export function getAppStoreAnalytics(
     appStoreAnalyticsStatusResponseSchema,
     "GET",
     `/v1/workspaces/${workspaceId}/connections/${connectionId}/app-store-analytics`,
+  );
+}
+
+/**
+ * The optional App Store reviews key (#190): stored or not, and whether
+ * Apple still accepts it. Added, replaced and removed with updateConnection
+ * (`credentials: { reviews }`).
+ */
+export function getAppStoreReviews(
+  workspaceId: string,
+  connectionId: string,
+): Promise<AppStoreReviewsStatusResponse> {
+  return browserSend(
+    appStoreReviewsStatusResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/app-store-reviews`,
   );
 }
 
