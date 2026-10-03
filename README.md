@@ -280,7 +280,8 @@ Session-protected API routes live under `/v1`:
 Non-members always get 404 for workspace routes (existence is never leaked),
 and every mutation writes an audit event in the same transaction. Sign-ins
 additionally write an installation-level `auth.login` audit row
-(`workspace_id` NULL) that tenants cannot see.
+(`workspace_id` NULL) that tenants cannot see. Audit events are kept for 12
+months (see "Retention defaults" in `docs/architecture.md`).
 
 ### Web app and the API proxy
 

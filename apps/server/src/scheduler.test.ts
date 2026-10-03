@@ -363,4 +363,40 @@ describe("createScheduler loop", () => {
       await admin.end({ timeout: 5 }).catch(() => undefined);
     }
   });
+
+  it("prunes audit events older than 12 months by its clock (#163)", async () => {
+    const now = new Date("2031-03-15T12:00:00.000Z");
+    const admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+    try {
+      const [old] = await admin`
+        insert into audit_events (workspace_id, action, created_at)
+        values (${workspaceId}, 'auth.login', '2030-03-01T00:00:00Z')
+        returning id`;
+      const [recent] = await admin`
+        insert into audit_events (workspace_id, action, created_at)
+        values (${workspaceId}, 'auth.login', '2030-04-01T00:00:00Z')
+        returning id`;
+      const scheduler = createScheduler({
+        schedulerDb,
+        pollMs: 50,
+        schedulerId: "scheduler-audit-prune-test",
+        now: () => now,
+      });
+      scheduler.start();
+      try {
+        await waitFor(async () => {
+          const rows = await admin`
+            select 1 from audit_events where id = ${old!.id}`;
+          return rows.length === 0;
+        });
+      } finally {
+        await scheduler.stop();
+      }
+      const kept = await admin`
+        select 1 from audit_events where id = ${recent!.id}`;
+      expect(kept).toHaveLength(1);
+    } finally {
+      await admin.end({ timeout: 5 }).catch(() => undefined);
+    }
+  });
 });

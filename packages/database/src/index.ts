@@ -51,6 +51,16 @@ export type {
   RetentionPolicy,
 } from "./jobs.js";
 export {
+  AUDIT_EVENT_RETENTION_MONTHS,
+  EXPIRED_AUTH_RECORD_HOURS,
+  pruneSecurityRecords,
+  SECURITY_RETENTION,
+} from "./security-retention.js";
+export type {
+  SecurityPruneResult,
+  SecurityRetentionPolicy,
+} from "./security-retention.js";
+export {
   AcceptInvitationFailure,
   acceptInvitation,
   createInvitation,
