@@ -87,6 +87,11 @@ country or device is derived the same way.
 ## History, latency and refresh
 
 - The first sync reads 16 months back, as far as Search Console keeps data.
+- Changing the property, the breakdown or the rows per day reads the 16
+  months again with the new settings. Data collected with the earlier
+  settings stays: the series of a removed breakdown keep their past values
+  but are no longer updated. Renaming the connection or reconnecting Google
+  reads nothing again.
 - Search Console publishes final data about 2–3 days after the day ends.
   netrics reads final data only (`dataState: final`): a stored value does not
   shrink or jump later, and the newest two or three days appear only once

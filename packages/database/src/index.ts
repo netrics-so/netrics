@@ -39,6 +39,7 @@ export {
   listDueConnections,
   pruneHistory,
   renewJobLease,
+  requestConnectionBackfill,
   requestConnectionSync,
   setConnectionNextDue,
 } from "./jobs.js";

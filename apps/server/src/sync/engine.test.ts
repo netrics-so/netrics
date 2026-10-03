@@ -263,6 +263,8 @@ const largePagerConnector = pagerConnector(
   () => largePager,
 );
 let resumePager: PagerControl = { resources: 0, requests: [] };
+let freshPager: PagerControl = { resources: 0, requests: [] };
+const freshPagerConnector = pagerConnector("pager-fresh", 70, () => freshPager);
 const resumePagerConnector = pagerConnector(
   "pager-resume",
   70,
@@ -445,6 +447,7 @@ beforeAll(async () => {
   registry.register(flakyConnector);
   registry.register(largePagerConnector);
   registry.register(resumePagerConnector);
+  registry.register(freshPagerConnector);
   registry.register(endlessConnector);
   registry.register(widePageConnector);
   registry.register(brokenConnector);
@@ -502,6 +505,7 @@ describe("catalog sync", () => {
       "flaky-pages",
       "google-search-console",
       "leaky",
+      "pager-fresh",
       "pager-large",
       "pager-resume",
       "probe",
@@ -818,18 +822,20 @@ describe("sync engine", () => {
 /**
  * Runs one attempt of a sync job in-process, the way the worker would after
  * claiming it, so a test can abandon an attempt mid-run (a crashed worker).
+ * Attempts of the same job share its id; without one, it is a new job.
  */
 function runAttempt(
   kind: "connection.sync" | "connection.backfill",
   workspaceId: string,
   connectionId: string,
   attempts: number,
+  jobId: string = randomUUID(),
 ): Promise<void> {
   const handler = createJobHandlers({ registry, credentialKeyring: KEYRING })[
     kind
   ]!;
   const job = {
-    id: randomUUID(),
+    id: jobId,
     kind,
     workspaceId,
     connectionId,
@@ -936,11 +942,13 @@ describe("page-wise ingest (#145)", () => {
         }
       },
     };
+    const jobId = randomUUID();
     const zombie = runAttempt(
       "connection.backfill",
       workspaceA,
       connectionId,
       0,
+      jobId,
     );
     await atPage4;
     const crashed = await committed(connectionId);
@@ -952,7 +960,7 @@ describe("page-wise ingest (#145)", () => {
 
     // Attempt 2 (the reclaimed job) continues from the checkpoint.
     resumePager = { resources, requests: [] };
-    await runAttempt("connection.backfill", workspaceA, connectionId, 1);
+    await runAttempt("connection.backfill", workspaceA, connectionId, 1, jobId);
     expect(resumePager.requests[0]!.cursor).toBe(checkpoint);
     expect(
       resumePager.requests.every(
@@ -1020,6 +1028,123 @@ describe("page-wise ingest (#145)", () => {
     expect((await committed(connectionId)).observations).toBe(WIDE_PAGE_ROWS);
     const runs = await syncRunsFor(workspaceA, connectionId);
     expect(runs[0]!.observations_written).toBe(WIDE_PAGE_ROWS);
+  });
+});
+
+describe("fresh and resumed backfills (#153)", () => {
+  it("a new backfill after a successful sync reads the whole window; its retry resumes from its checkpoint", async () => {
+    const connectionId = await seedConnection(workspaceA, "pager-fresh");
+    const resources = 2;
+    freshPager = { resources, requests: [] };
+    await runAttempt("connection.backfill", workspaceA, connectionId, 0);
+    const windowDays = freshPager.requests.length;
+    expect(windowDays).toBeGreaterThanOrEqual(10);
+
+    // An incremental sync succeeds: the cursor now sits near "now".
+    freshPager = { resources, requests: [] };
+    await runAttempt("connection.sync", workspaceA, connectionId, 0);
+    const incrementalCursor = (await committed(connectionId)).cursor!;
+    expect(Date.parse(incrementalCursor)).toBeGreaterThan(
+      Date.now() - 2 * DAY_MS,
+    );
+
+    // A new backfill (e.g. after a config change) starts at the window
+    // start, not at the stored cursor; its worker dies on page 4.
+    const jobId = randomUUID();
+    let releaseZombie: (error: Error) => void = () => {};
+    let reachedPage4: () => void = () => {};
+    const atPage4 = new Promise<void>((resolve) => {
+      reachedPage4 = resolve;
+    });
+    freshPager = {
+      resources,
+      requests: [],
+      onPage: () => {
+        if (freshPager.requests.length === 4) {
+          reachedPage4();
+          return new Promise<void>((_, reject) => {
+            releaseZombie = reject;
+          });
+        }
+      },
+    };
+    const zombie = runAttempt(
+      "connection.backfill",
+      workspaceA,
+      connectionId,
+      0,
+      jobId,
+    );
+    await atPage4;
+    const first = freshPager.requests[0]!;
+    expect(first.cursor).toBeUndefined();
+    expect(Date.parse(first.from)).toBeLessThan(Date.now() - 69 * DAY_MS);
+    const checkpoint = freshPager.requests[3]!.cursor!;
+    expect((await committed(connectionId)).cursor).toBe(checkpoint);
+
+    // The reclaimed attempt of the same job resumes from the checkpoint and
+    // fetches none of the pages that committed.
+    freshPager = { resources, requests: [] };
+    await runAttempt("connection.backfill", workspaceA, connectionId, 1, jobId);
+    expect(freshPager.requests[0]!.cursor).toBe(checkpoint);
+    expect(
+      freshPager.requests.every(
+        (request) =>
+          request.cursor !== undefined && request.cursor >= checkpoint,
+      ),
+    ).toBe(true);
+    expect(freshPager.requests.length).toBe(windowDays - 3);
+    releaseZombie(new Error("worker gone"));
+    await expect(zombie).rejects.toThrow("worker gone");
+
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    const resumed = runs.find(
+      (row) => row.mode === "backfill" && row.attempt === 2,
+    )!;
+    expect(resumed.status).toBe("succeeded");
+    expect(resumed.cursor_before).toBe(checkpoint);
+    // One row per day and resource: re-read days were idempotent upserts.
+    const final = await committed(connectionId);
+    expect(final.observations).toBe(final.days * resources);
+
+    // Yet another backfill is a new job again: whole window.
+    freshPager = { resources, requests: [] };
+    await runAttempt("connection.backfill", workspaceA, connectionId, 0);
+    expect(freshPager.requests[0]!.cursor).toBeUndefined();
+    expect(freshPager.requests.length).toBe(windowDays);
+    const last = (await syncRunsFor(workspaceA, connectionId)).at(-1)!;
+    expect(last.cursor_before).toBeNull();
+  });
+
+  it("an incremental sync continues from a backfill's checkpoint", async () => {
+    const connectionId = await seedConnection(workspaceA, "pager-fresh");
+    freshPager = {
+      resources: 1,
+      requests: [],
+      onPage: () => {
+        if (freshPager.requests.length === 3) {
+          throw new Error("provider exploded mid-stream");
+        }
+      },
+    };
+    await expect(
+      runAttempt("connection.backfill", workspaceA, connectionId, 0),
+    ).rejects.toThrow("provider exploded");
+    const checkpoint = (await committed(connectionId)).cursor!;
+    expect(checkpoint).toBe(freshPager.requests[2]!.cursor);
+
+    // E.g. the job died for good and the connection was reauthorized: the
+    // next scheduled sync finishes the window from the checkpoint.
+    freshPager = { resources: 1, requests: [] };
+    await runAttempt("connection.sync", workspaceA, connectionId, 0);
+    expect(freshPager.requests[0]!.cursor).toBe(checkpoint);
+    expect(freshPager.requests[0]!.from).toBe(checkpoint);
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs.at(-1)).toMatchObject({
+      mode: "incremental",
+      status: "succeeded",
+      cursor_before: checkpoint,
+    });
   });
 });
 

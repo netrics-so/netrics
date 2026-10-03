@@ -345,6 +345,19 @@ run keeps the pages it committed and reports them on its `sync_run`; the retry,
 or the next run, continues from the checkpoint. A connector's non-final cursor
 must therefore stay valid when sent back in a later run with a later `to`.
 
+A backfill job reads the connector's whole backfill window. A new backfill job
+ignores the stored cursor, which may be an incremental sync's position or the
+checkpoint of an earlier backfill. Each of its checkpoints records the job's
+id (`connection_state.backfill_job_id`), so a retried or reclaimed attempt of
+the same job resumes from its own checkpoint instead of starting over. A
+backfill is queued when a connection is created or its setup finished, and
+when a config change alters what the connection collects (any config
+property, compared with defaults applied). A newly requested backfill
+supersedes one that is still waiting; a running one finishes first. Renames,
+new credentials and reauthorization queue none: the next sync continues from
+the cursor. Observations collected under an earlier config stay (their series
+identity is their dimensions); they are not deleted.
+
 Partition observations by time when necessary. Index workspace, metric, series,
 and timestamp query paths. Retention and rollups run as ordinary maintenance
 jobs until TimescaleDB or another analytical store becomes justified.

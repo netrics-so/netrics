@@ -29,6 +29,7 @@ import {
   listObservations as listObservationRows,
   listRecentSyncRuns,
   releaseOAuthGrant,
+  requestConnectionBackfill,
   requestConnectionSync,
   resetConnectionAuth,
   updateConnection as updateConnectionRow,
@@ -111,6 +112,43 @@ function validateConfig(
 ): Result<Record<string, unknown>> {
   const validated = validateConnectionConfig(manifest.configSchema, config);
   return validated.ok ? ok(validated.config) : fail(400, validated.message);
+}
+
+/** JSON with sorted object keys, so equal configs serialize equally. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * Whether a config change alters what the connection collects, so the
+ * stored history no longer matches it (#153). Every config property of a
+ * connector selects or shapes its data (the Search Console property,
+ * breakdown and rows per day; the Vercel team), so any change counts;
+ * defaults are applied to both sides first, so an omitted default is no
+ * change. The resource selection is not part of a PATCH and is ignored.
+ */
+function configChanged(
+  manifest: ConnectorManifest,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): boolean {
+  const normalize = (config: Record<string, unknown>): string => {
+    const { resourceSelection: _selection, ...rest } = config;
+    const validated = validateConnectionConfig(manifest.configSchema, rest);
+    return canonicalJson(validated.ok ? validated.config : rest);
+  };
+  return normalize(before) !== normalize(after);
 }
 
 /**
@@ -766,6 +804,23 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             });
           }
         }
+        // A config change that alters what the connection collects reads the
+        // connector's whole backfill window again with the new config (#153).
+        // Observations collected under the old config stay (ADR 0008: a
+        // series is its dimensions; e.g. an earlier breakdown's series are
+        // kept, not deleted). Renames, project moves and new credentials or
+        // reauthorization keep the history and continue from the cursor.
+        const refetch =
+          !existing.row.setupPending &&
+          nextConfig !== undefined &&
+          registered.manifest.supportsBackfill &&
+          configChanged(registered.manifest, existingConfig, nextConfig);
+        if (refetch) {
+          await requestConnectionBackfill(tx, {
+            workspaceId: actor.workspaceId,
+            connectionId,
+          });
+        }
         if (body.credentials !== undefined) {
           // Recovery path for auth_failed/outage: fresh credentials make the
           // connection due immediately and reset the failure streak.
@@ -797,6 +852,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
                 ...(nextConfig !== undefined ? ["config"] : []),
                 ...(body.projectId !== undefined ? ["projectId"] : []),
               ],
+              ...(refetch ? { backfillRequested: true } : {}),
             },
           });
         }

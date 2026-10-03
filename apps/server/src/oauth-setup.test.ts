@@ -412,12 +412,13 @@ describe("finishing setup", () => {
       idempotency_key: `backfill:${id}`,
     });
 
-    // A later config change is an ordinary edit: no second backfill.
+    // A later config change does not finish the setup again; it replaces
+    // the waiting backfill with a fresh one for the new config (#153).
     const again = await inject("PATCH", connectionUrl(id), cookies.owner, {
       config: { siteUrl: "https://example.org/" },
     });
     expect(again.statusCode, again.body).toBe(200);
-    expect(await setupState(id)).toMatchObject({ jobs: 1, finished: 1 });
+    expect(await setupState(id)).toMatchObject({ jobs: 2, finished: 1 });
 
     const sync = await inject(
       "POST",
@@ -508,5 +509,171 @@ describe("finishing setup", () => {
       jobs: 1,
       finished: 1,
     });
+  });
+});
+
+describe("changing the settings of a connection (#153)", () => {
+  const settings = { siteUrl: SITE, dimensions: "query", rowLimit: 500 };
+  const patch = (id: string, body: Record<string, unknown>) =>
+    inject("PATCH", connectionUrl(id), cookies.editor, body);
+
+  async function backfills(id: string) {
+    return admin<{ id: string; status: string; last_error: string | null }[]>`
+      select id, status, last_error from jobs
+      where connection_id = ${id} and kind = 'connection.backfill'
+      order by created_at, id`;
+  }
+
+  /** A connection whose setup finished and whose first backfill ran. */
+  async function syncedConnection() {
+    const connected = await connect();
+    const finished = await patch(connected.id, { config: settings });
+    expect(finished.statusCode, finished.body).toBe(200);
+    await admin`
+      update jobs set status = 'succeeded'
+      where connection_id = ${connected.id} and kind = 'connection.backfill'`;
+    return connected;
+  }
+
+  it("queues a fresh backfill when the property, breakdown or rows per day change", async () => {
+    const { id } = await syncedConnection();
+    expect(await backfills(id)).toHaveLength(1);
+
+    const changes = [
+      { ...settings, dimensions: "none" },
+      { ...settings, dimensions: "none", rowLimit: 200 },
+      {
+        ...settings,
+        dimensions: "none",
+        rowLimit: 200,
+        siteUrl: "https://example.org/",
+      },
+    ];
+    for (const [index, config] of changes.entries()) {
+      const response = await patch(id, { config });
+      expect(response.statusCode, response.body).toBe(200);
+      const jobs = await backfills(id);
+      expect(jobs).toHaveLength(index + 2);
+      // A plain job: no idempotency key that a later change would collide
+      // with, and the engine starts it at the window start.
+      expect(jobs.at(-1)!.status).toBe("pending");
+      // The one waiting before is replaced, not run as well.
+      if (index > 0) {
+        expect(jobs.at(-2)).toMatchObject({
+          status: "failed",
+          last_error: "superseded by a newer backfill",
+        });
+      }
+    }
+    const [{ count }] = (await admin`
+      select count(*)::int as count from jobs
+      where connection_id = ${id} and kind = 'connection.backfill'
+        and status = 'pending'`) as unknown as [{ count: number }];
+    expect(count).toBe(1);
+    const [audit] = await admin`
+      select metadata from audit_events
+      where target = ${id} and action = 'connection.updated'
+      order by created_at desc limit 1`;
+    expect(audit!.metadata).toMatchObject({ backfillRequested: true });
+  });
+
+  it("queues none for a rename or an unchanged config", async () => {
+    const { id } = await syncedConnection();
+    const renamed = await patch(id, { name: "Search Console: renamed" });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    // The same settings again, saved with a new name.
+    const same = await patch(id, {
+      name: "Search Console: renamed again",
+      config: settings,
+    });
+    expect(same.statusCode, same.body).toBe(200);
+    expect(await backfills(id)).toHaveLength(1);
+    // A change (no breakdown), then the same settings with the default rows
+    // per day left out: defaults apply to both sides, so no change.
+    const withDefault = await patch(id, {
+      config: { ...settings, dimensions: "none", rowLimit: 1000 },
+    });
+    expect(withDefault.statusCode).toBe(200);
+    expect(await backfills(id)).toHaveLength(2);
+    const omittedDefault = await patch(id, {
+      config: { siteUrl: SITE, dimensions: "none" },
+    });
+    expect(omittedDefault.statusCode).toBe(200);
+    expect(await backfills(id)).toHaveLength(2);
+    const [audit] = await admin`
+      select metadata from audit_events
+      where target = ${id} and action = 'connection.updated'
+      order by created_at desc limit 1`;
+    expect(audit!.metadata).not.toHaveProperty("backfillRequested");
+  });
+
+  it("leaves a running backfill alone and queues the fresh one after it", async () => {
+    const { id } = await syncedConnection();
+    const [first] = await backfills(id);
+    await admin`
+      update jobs set status = 'running', locked_by = 'worker-test',
+        locked_at = now()
+      where id = ${first!.id}`;
+    const response = await patch(id, {
+      config: { ...settings, dimensions: "none" },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const jobs = await backfills(id);
+    expect(jobs.map((job) => job.status)).toEqual(["running", "pending"]);
+  });
+
+  it("keeps one waiting backfill when two changes race", async () => {
+    for (let round = 0; round < 5; round += 1) {
+      const { id } = await syncedConnection();
+      const responses = await Promise.all([
+        patch(id, { config: { ...settings, dimensions: "none" } }),
+        patch(id, { config: { ...settings, rowLimit: 100 } }),
+      ]);
+      for (const response of responses) {
+        expect(response.statusCode, response.body).toBe(200);
+      }
+      const waiting = (await backfills(id)).filter(
+        (job) => job.status === "pending",
+      );
+      expect(waiting).toHaveLength(1);
+    }
+  });
+
+  it("does not queue a backfill when the connection is reauthorized", async () => {
+    const { id, account } = await syncedConnection();
+    await admin`
+      update connection_state
+      set auth_state = 'needs_reauthorization', auth_reason = 'invalid_grant',
+          next_due_at = null
+      where connection_id = ${id}`;
+    const started = await inject(
+      "POST",
+      `/v1/workspaces/${workspaceId}/oauth/authorizations`,
+      cookies.owner,
+      { connectorId: CONNECTOR_ID, connectionId: id },
+    );
+    expect(started.statusCode, started.body).toBe(200);
+    const { authorizationUrl } = startOAuthAuthorizationResponseSchema.parse(
+      started.json(),
+    );
+    const done = await inject(
+      "POST",
+      "/v1/oauth/google/callback",
+      cookies.owner,
+      fixture.consent(authorizationUrl, { account }),
+    );
+    expect(oauthCallbackResponseSchema.parse(done.json()).outcome).toBe(
+      "reauthorized",
+    );
+    // The connection is due again and its next sync continues from the
+    // cursor; nothing reads the whole window again.
+    const [state] = await admin`
+      select auth_state, next_due_at from connection_state
+      where connection_id = ${id}`;
+    expect(state!.auth_state).toBe("ok");
+    expect(state!.next_due_at).not.toBeNull();
+    expect((await backfills(id)).map((job) => job.status)).toEqual([
+      "succeeded",
+    ]);
   });
 });
