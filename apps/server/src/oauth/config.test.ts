@@ -3,6 +3,7 @@ import { demoManifest } from "@netrics/connectors";
 import { describe, expect, it } from "vitest";
 
 import { loadConfig } from "../env.js";
+import { SignedKeyProviders } from "../signed-keys/registry.js";
 import {
   createOAuthProviders,
   describeOAuthProviders,
@@ -129,31 +130,36 @@ describe("instance configuration", () => {
 
 describe("connector availability", () => {
   const unconfigured = createOAuthProviders(loadConfig({}));
+  const signedKeys = new SignedKeyProviders();
 
   it("always allows token and none strategies", () => {
     for (const providers of [unconfigured, configured()]) {
       expect(
-        providers.connectorAvailability(manifestWith([{ strategy: "none" }])),
+        providers.connectorAvailability(
+          manifestWith([{ strategy: "none" }]),
+          signedKeys,
+        ),
       ).toEqual({ available: true, unavailable: null });
     }
   });
 
   it("needs the provider of an OAuth-only connector to be configured", () => {
     const manifest = manifestWith([googleOAuth]);
-    expect(unconfigured.connectorAvailability(manifest)).toEqual({
+    expect(unconfigured.connectorAvailability(manifest, signedKeys)).toEqual({
       available: false,
       unavailable: {
         reason: "oauth_provider_not_configured",
         provider: "google",
       },
     });
-    expect(configured().connectorAvailability(manifest)).toEqual({
+    expect(configured().connectorAvailability(manifest, signedKeys)).toEqual({
       available: true,
       unavailable: null,
     });
     expect(
       configured().connectorAvailability(
         manifestWith([{ ...googleOAuth, provider: "facebook" }]),
+        signedKeys,
       ),
     ).toEqual({
       available: false,
@@ -164,15 +170,24 @@ describe("connector availability", () => {
     });
   });
 
-  it("does not offer signed-key connectors before this server can sign for them", () => {
-    // ADR 0014: the host signs tokens; until a signed-key provider exists
-    // (#170) the uploaded key must not reach the connector instead.
+  it("offers a signed-key connector exactly when this server has its provider", () => {
+    // ADR 0014: the host signs tokens. A provider it does not know must not
+    // get the uploaded key handed to the connector instead (#170 replaced
+    // the "never available" guard of #180 with the registry lookup).
     const appStoreKey = {
       strategy: "signed-key" as const,
       provider: "app-store-connect",
     };
     expect(
-      configured().connectorAvailability(manifestWith([appStoreKey])),
+      unconfigured.connectorAvailability(
+        manifestWith([appStoreKey]),
+        signedKeys,
+      ),
+    ).toEqual({ available: true, unavailable: null });
+    expect(
+      unconfigured.connectorAvailability(manifestWith([appStoreKey]), {
+        has: () => false,
+      }),
     ).toEqual({
       available: false,
       unavailable: {
@@ -182,7 +197,20 @@ describe("connector availability", () => {
     });
     expect(
       configured().connectorAvailability(
-        manifestWith([appStoreKey, googleOAuth]),
+        manifestWith([{ ...appStoreKey, provider: "acme-ads" }]),
+        signedKeys,
+      ),
+    ).toEqual({
+      available: false,
+      unavailable: {
+        reason: "signed_key_provider_unsupported",
+        provider: "acme-ads",
+      },
+    });
+    expect(
+      configured().connectorAvailability(
+        manifestWith([{ ...appStoreKey, provider: "acme-ads" }, googleOAuth]),
+        signedKeys,
       ),
     ).toEqual({ available: true, unavailable: null });
   });
@@ -191,6 +219,7 @@ describe("connector availability", () => {
     expect(
       unconfigured.connectorAvailability(
         manifestWith([googleOAuth, { strategy: "token" }]),
+        signedKeys,
       ),
     ).toEqual({ available: true, unavailable: null });
   });

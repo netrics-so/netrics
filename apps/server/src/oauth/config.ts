@@ -6,6 +6,7 @@ import type { ConnectorManifest } from "@netrics/connector-sdk";
 
 import type { Config } from "../env.js";
 import type { Secret } from "../secret.js";
+import type { SignedKeyProviders } from "../signed-keys/registry.js";
 import {
   OAUTH_PROVIDER_DEFINITIONS,
   type OAuthProviderDefinition,
@@ -77,16 +78,22 @@ export class OAuthProviders {
 
   /**
    * A connector is available when at least one of its auth strategies can
-   * be used: token and none always, oauth2 when its provider is configured.
-   * signed-key never yet: this server signs no tokens until its signed-key
-   * providers exist (ADR 0014, #170), and it must not hand the uploaded key
-   * to the connector instead. Otherwise the first unusable strategy says
+   * be used: token and none always, oauth2 when its provider is configured,
+   * signed-key when this server has the provider (ADR 0014: the host signs
+   * the tokens, so a provider it does not know must not get the key handed
+   * to the connector instead). Otherwise the first unusable strategy says
    * why.
    */
-  connectorAvailability(manifest: ConnectorManifest): ConnectorAvailability {
+  connectorAvailability(
+    manifest: ConnectorManifest,
+    signedKeys: Pick<SignedKeyProviders, "has">,
+  ): ConnectorAvailability {
     let unavailable: ConnectorUnavailable | null = null;
     for (const strategy of manifest.authStrategies) {
       if (strategy.strategy === "signed-key") {
+        if (signedKeys.has(strategy.provider)) {
+          return { available: true, unavailable: null };
+        }
         unavailable ??= {
           reason: "signed_key_provider_unsupported",
           provider: strategy.provider,

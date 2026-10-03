@@ -28,6 +28,7 @@ import {
 import type { CredentialKeyring } from "../credentials.js";
 import type { OAuthProviders } from "../oauth/config.js";
 import type { OAuthTokenService } from "../oauth/tokens.js";
+import type { SignedKeyProviders } from "../signed-keys/registry.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
@@ -42,6 +43,7 @@ export interface ConnectionRouteDeps {
   credentialKeyring: CredentialKeyring;
   oauthProviders: OAuthProviders;
   oauthTokens?: OAuthTokenService;
+  signedKeys?: SignedKeyProviders;
 }
 
 const connectionParamsSchema = z.object({ connectionId: z.uuid() });
@@ -213,13 +215,15 @@ export function registerConnectionRoutes(
 
       // Discovery for an existing OAuth connection (ADR 0012): the
       // connector lists what the linked account can read, with an access
-      // token from the token service. Needs connections:update, because it
+      // token from the token service. A signed-key connection (ADR 0014)
+      // gets a freshly signed token from its stored key. Needs
+      // connections:update, because it
       // serves finishing setup and changing the chosen resource.
       scope.get(
         "/workspaces/:workspaceId/connections/:connectionId/resources",
         {
           schema: routeSchema({
-            summary: "Discover resources of an OAuth connection",
+            summary: "Discover resources of an OAuth or signed-key connection",
             tags: ["connections"],
             response: connectionResourcesResponseSchema,
             errors: [400, 403, 404],
