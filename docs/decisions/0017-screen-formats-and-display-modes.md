@@ -37,16 +37,26 @@ The owner decided on 2026-10-04 (recorded here in substance):
    layouts: widgets added later are placed automatically into custom formats
    and flagged.
 3. **Two display modes.**
-   - **Glance** scrolls: on a phone one column, slides become sections; quick
-     numbers on the go.
-   - **Display** fits the screen, rotates slides and never scrolls: a
-     standby tablet or desktop, or a TV.
+   - **Scroll view** (German "Scroll-Ansicht") scrolls: on a phone one
+     column, slides become sections; quick numbers on the go. It shows
+     everything the dashboard has, clocks and slide backgrounds included.
+   - **Screen view** (German "Bildschirm-Ansicht") fits the screen, rotates
+     slides and never scrolls: a standby tablet or desktop, or a TV.
 
-   TVs are always Display. Phones and tablets default to Glance and can
-   switch to Display. Desktop and the web kiosk are Display. In the owner's
-   words: "some would love to have this on their go… scrolling would be
-   fine. Some will use it on desktop as standby mode device and don't want
-   to scroll."
+   TVs are always screen view. Phones and tablets default to scroll view
+   and can switch to screen view. Desktop and the web kiosk are screen
+   view. In the owner's words: "some would love to have this on their
+   go… scrolling would be fine. Some will use it on desktop as standby
+   mode device and don't want to scroll."
+
+Follow-up answers of the same day: each continuation page shows for the
+full slide duration; scroll view shows every widget and slide background;
+the signed-in dashboard page on a desktop defaults to screen view; scroll
+view is automatic only for now (order from the primary layout), custom
+order or hiding in scroll view is possible future work; and the
+user-facing names are "Scroll view" / "Screen view" (an earlier working
+name, "Glance" / "Display", was not understood). Code uses the same words:
+`displayMode: "scroll" | "screen"`.
 
 Constraints from earlier decisions: TV readability first (ADR 0015
 section 8: minimum text sizes, labels never cut silently, values scale then
@@ -110,17 +120,17 @@ So 16:10 (1.6) and 3:2 (1.5, just below) fall on either side of the 16:9 /
 4:3 boundary, a square screen is `4x3`, and a phone in portrait (about
 0.46) is `9x16`.
 
-**Size classes.** Size decides the default mode and the Glance columns,
-never the Display layout: **compact** (short edge < 600 px/pt: phones),
+**Size classes.** Size decides the default mode and the scroll view columns,
+never the screen view layout: **compact** (short edge < 600 px/pt: phones),
 **regular** (600–1099: tablets, small windows) and **large** (≥ 1100:
 desktops, TVs). The unit already scales text with the screen, and handhelds
 are viewed from much closer than TVs (a 30-unit title is about 0.4° of view
-on a 55" TV at 3 m and about 0.5° on a phone at 35 cm), so Display needs no
+on a 55" TV at 3 m and about 0.5° on a phone at 35 cm), so screen view needs no
 separate scale per size class.
 
-### 2. Display on any aspect ratio: fill, then letterbox
+### 2. Screen view on any aspect ratio: fill, then letterbox
 
-A screen in Display mode renders its format's grid over the **whole
+A screen in screen view renders its format's grid over the **whole
 screen**, not a fixed-aspect canvas:
 
 - `u = min(width / refWidth, height / refHeight)` of its format's reference
@@ -165,7 +175,7 @@ one page.
    form one stack; the chart another. Widgets in a stack are ordered by
    `(y, x)`.
 3. **Reading order** is band by band, stack by stack, top to bottom within a
-   stack (`studioReadingOrder`). Glance (section 5), the Studio's keyboard
+   stack (`studioReadingOrder`). Scroll view (section 5), the Studio's keyboard
    order in non-primary formats and screen readers use the same order.
    Schema 1's tile order (ADR 0015 section 7) is unchanged.
 4. **Stack size.** With `s = to.columns / from.columns`, a stack spanning
@@ -247,23 +257,24 @@ custom) becomes the primary. This is lossless. A format whose layout has
 continuation pages cannot become primary until it fits one page per slide;
 the Studio says why and offers to move the overflow to new slides.
 
-### 5. Display modes
+### 5. Display modes: screen view and scroll view
 
-| Mode        | Behaviour                                                                                                                                                                                                                         | Used by                                                                                                                                                 |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Display** | The screen's format (section 1), its auto or custom layout, the whole screen (section 2), slides and continuation pages rotate, no scrolling, the TV type scale.                                                                  | Apple TV (always), browser kiosk devices (default), `/tv`, Play, the dashboard page on large screens, and on phones and tablets when the user switches. |
-| **Glance**  | One scrolling page: the dashboard header, then each enabled slide as a **section** (its name as a heading), its widgets in reading order in a responsive column layout, with the platform's type scale. No rotation, no canvases. | The dashboard page on phones and tablets (default), kiosk devices set to Glance, later the native mobile apps.                                          |
+| Mode            | Behaviour                                                                                                                                                                                                                         | Used by                                                                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Screen view** | The screen's format (section 1), its auto or custom layout, the whole screen (section 2), slides and continuation pages rotate, no scrolling, the TV type scale.                                                                  | Apple TV (always), browser kiosk devices (default), `/tv`, Play, the dashboard page on large screens, and on phones and tablets when the user switches. |
+| **Scroll view** | One scrolling page: the dashboard header, then each enabled slide as a **section** (its name as a heading), its widgets in reading order in a responsive column layout, with the platform's type scale. No rotation, no canvases. | The dashboard page on phones and tablets (default), kiosk devices set to scroll view, later the native mobile apps.                                     |
 
 **Default and switching.** `defaultDisplayMode(screen)` in the domain: an
-Apple TV is Display and cannot switch; a paired kiosk follows its device
-setting (section 7, default Display); a signed-in browser uses Glance when
+Apple TV is screen view and cannot switch; a paired kiosk follows its device
+setting (section 7, default screen view); a signed-in browser uses scroll view when
 the size class is compact or regular **and** the primary pointer is coarse
-(phones, tablets), else Display. On the dashboard page a "Glance / Display"
-switch overrides the default, remembered per browser (local storage). Display
+(phones, tablets), else screen view (so a desktop defaults to screen view).
+On the dashboard page a "Scroll view / Screen view" switch overrides the
+default, remembered per browser (local storage). Screen view
 on a phone or tablet offers full screen and keeps the screen awake (Wake
 Lock API) where the browser allows it.
 
-**Glance layout** (`glanceLayout(widgets, width)` in the domain, so the
+**Scroll view layout** (`scrollLayout(widgets, width)` in the domain, so the
 future apps share it; vectors like section 3):
 
 - Columns by width: 1 below 600 px, 2 below 1024, else 3 (content at most
@@ -275,15 +286,21 @@ future apps share it; vectors like section 3):
 - Heights by type: metric cards fit their content; charts are 16:9 of their
   width, at least 200 px; images keep their aspect, at most 50 % of the
   viewport height; text fits its content.
-- **Clock widgets are omitted** (the device shows the time), and slide
-  background images are not shown (scrolling text over images cannot keep
-  contrast). Disabled slides are skipped, as on screens.
+- **Everything is shown.** Clock widgets are compact cards (one column)
+  ticking locally in the workspace time zone, as on screens. A slide's
+  background image is the backdrop of its section (covering the section,
+  scrolling with it, `cover`), under the slide's dim; widgets keep their
+  theme `surface` cards and the section heading sits on a `surface` band,
+  so text contrast never depends on the image. Disabled slides are
+  skipped, as on screens.
 - Type scale: the web app's own sizes in `rem` (they follow the browser's
   text size and zoom; Dynamic Type in the later apps), with the same rules
   as section 8 of ADR 0015: titles and resource lines wrap and are never
   truncated, values shrink to a minimum and then switch to the compact form.
-- Glance is always automatic in this milestone; there is no custom Glance
-  order. Hiding a widget in Glance or reordering it is a possible follow-up.
+- Scroll view is always automatic in this milestone: the order comes from
+  the primary layout (`studioReadingOrder`). A custom scroll-view order or
+  hiding a widget only in scroll view is possible future work, not part of
+  this milestone.
 
 ### 6. Readability per format
 
@@ -331,15 +348,15 @@ turns simply changes the format, live and without a reload. The same
 output (some smart-TV browsers and signage sticks): the kiosk then rotates
 its root with a CSS transform.
 
-**Mode per device.** `devices.display_mode`: `display` (default) or
-`glance`, for kiosk devices; tvOS ignores it (always Display). A tablet on a
+**Mode per device.** `devices.display_mode`: `screen` (default) or
+`scroll`, for kiosk devices; tvOS ignores it (always screen view). A tablet on a
 desk paired as a kiosk is a standby screen, hence the default.
 
 **Screen reporting.** The heartbeat gains an optional `screen` object:
 `width`, `height` (CSS px or points after rotation, integers 1–16384),
 `scale` (device pixel ratio, 0.5–8), `format` and `mode`. The server stores
 the latest report on the device (`devices.screen` jsonb, validated by zod)
-and shows it in the TV list ("4K · 16:9 · Display", "1080 × 1920 · 9:16").
+and shows it in the TV list ("4K · 16:9 · Screen view", "1080 × 1920 · 9:16").
 The Studio uses it to mark the formats that screens of the workspace
 actually use. Older apps send no `screen`; nothing changes for them.
 
@@ -365,7 +382,7 @@ Migration (the next free number when it is written; 0037 is expected):
   FK `(widget_id, workspace_id)` and `(slide_id, format, workspace_id)` on
   delete cascade.
 - `devices.rotation smallint not null default 0` (check in 0, 90, 180,
-  270), `devices.display_mode text not null default 'display'`,
+  270), `devices.display_mode text not null default 'screen'`,
   `devices.screen jsonb null`.
 
 All new tables are under RLS with the usual policies and every query has
@@ -416,7 +433,7 @@ runs `formatFor` and `reflowSlide` for its own screen. Reasons:
   "formats": {                       // every format's grid, so clients need no table
     "16x9": { "columns": 12, "rows": 8, "reference": [1920, 1080] }, …
   },
-  "device": { "rotation": 90, "displayMode": "display" },
+  "device": { "rotation": 90, "displayMode": "screen" },
   "slides": [{
     "id": "…", …,                    // widgets carry their primary x, y, w, h
     "layouts": [{ "format": "9x16", "pages": 2,
@@ -448,14 +465,14 @@ within one poll.
 ### 10. Studio preview and custom editing
 
 - **Format switcher** above the canvas: one chip per format plus "Phone
-  (Glance)", in this order: the primary first, then 16:9, 9:16, 21:9, 4:3,
-  3:4, Phone (Glance). Each chip shows its state: _Primary_, _Auto_,
+  (Scroll view)", in this order: the primary first, then 16:9, 9:16, 21:9, 4:3,
+  3:4, Phone (Scroll view). Each chip shows its state: _Primary_, _Auto_,
   _Custom_, "_n_ to review" and a warning count; formats used by a paired
   screen (section 7) carry a screen marker.
 - **Device frames.** The selected format renders inside a simple CSS frame
-  (TV bezel, rotated TV, monitor, tablet, phone) with the real Display or
-  Glance renderer and live data, so the preview is what the screen shows.
-  Phone also has a Display preview (the `9x16` layout in a phone frame).
+  (TV bezel, rotated TV, monitor, tablet, phone) with the real screen view or
+  scroll view renderer and live data, so the preview is what the screen shows.
+  Phone also has a screen view preview (the `9x16` layout in a phone frame).
   "All formats" shows every frame side by side as thumbnails.
 - **Auto formats are read-only** with a "Customize" button; pages appear as
   tabs ("Page 1 of 2").
@@ -473,13 +490,13 @@ within one poll.
 
 | Surface                           | Mode                                 | Format source                       |
 | --------------------------------- | ------------------------------------ | ----------------------------------- |
-| `/kiosk` (paired device)          | device setting, default Display      | real viewport, plus device rotation |
-| `/workspaces/…/dashboards/:id/tv` | Display                              | real viewport                       |
-| Studio Play                       | Display                              | real viewport                       |
-| Dashboard page                    | default by section 5, user switch    | real viewport (Display)             |
+| `/kiosk` (paired device)          | device setting, default screen view  | real viewport, plus device rotation |
+| `/workspaces/…/dashboards/:id/tv` | Screen view                          | real viewport                       |
+| Studio Play                       | Screen view                          | real viewport                       |
+| Dashboard page                    | default by section 5, user switch    | real viewport (Screen view)         |
 | Studio canvas and preview         | the chosen format, in a device frame | the switcher                        |
 
-The dashboard page's current slide tabs become the Display mode of the
+The dashboard page's current slide tabs become the screen view of the
 page; the full-screen rotation stays `/tv`.
 
 ### 12. Performance and security
@@ -497,8 +514,8 @@ Wake Lock and `ResizeObserver` are platform APIs.
 
 - **One canvas, letterboxed everywhere (today).** Simple, but portrait TVs
   and phones show an unreadable band. Rejected by the owner's decision.
-- **Free responsive layout everywhere (CSS grid breakpoints, no Display
-  grid).** Fine for Glance, but Display on TVs needs deterministic placement
+- **Free responsive layout everywhere (CSS grid breakpoints, no screen view
+  grid).** Fine for scroll view, but screen view on TVs needs deterministic placement
   identical on web and tvOS and the readability floor at distance.
 - **A continuous unit-based grid** (columns = screen width / cell pitch, so
   every aspect ratio gets its own column count). It would avoid stretch, but
@@ -530,9 +547,9 @@ Wake Lock and `ResizeObserver` are platform APIs.
   in the database, like the rest of the Studio model.
 - **Detecting rotation on tvOS.** There is no API for it; the HDMI signal
   is landscape. A per-device setting is the only reliable source.
-- **Swipeable pages for Glance.** Gesture conflicts in mobile browsers and
+- **Swipeable pages for scroll view.** Gesture conflicts in mobile browsers and
   worse accessibility than one scroll page with section headings; the native
-  apps can add paging later on the same `glanceLayout`.
+  apps can add paging later on the same `scrollLayout`.
 - **A new `DEVICE_API_VERSION`.** Released apps would refuse the server;
   schema negotiation already solves this (ADR 0015).
 
@@ -540,8 +557,8 @@ Wake Lock and `ResizeObserver` are platform APIs.
 
 - `studioLayout` grows from one grid to five; every function that takes a
   canvas gets a format. The 16:9 vectors stay valid and a second vector
-  file covers formats, reflow and Glance. Each new widget type must state
-  its behaviour in Glance.
+  file covers formats, reflow and scroll view. Each new widget type must state
+  its behaviour in scroll view.
 - The Swift port gains `formatFor`, `screenFrame`, `reflowSlide` and
   rotation; schema 3 support ships in a tvOS update. Released builds stay
   on schema 2 with the `16x9` layout.
@@ -550,7 +567,7 @@ Wake Lock and `ResizeObserver` are platform APIs.
 - The device contract gains schema 3; schema 2 is now a server-side
   projection to `16x9`. Removing schema 1 and 2 later is tracked with the
   tvOS release notes, as before.
-- The web dashboard page becomes usable on phones (Glance), which also
+- The web dashboard page becomes usable on phones (scroll view), which also
   prepares the native mobile apps (a later milestone): they need only
   renderers, not layout decisions.
 - Device settings grow (rotation, mode) and the TV list shows each

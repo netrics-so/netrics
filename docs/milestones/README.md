@@ -126,8 +126,8 @@ team could parallelize independent connectors after milestone 07.
   [ADR 0016](../decisions/0016-internationalisation.md); umbrella #162,
   issues #250–#257. Cross-cutting, runs alongside the next milestones.
 - Planned: 09.2 (screen formats and display modes: any aspect ratio,
-  portrait TVs, auto and custom layouts per format, Glance on phones,
-  Display on standby screens, Studio previews). Decided by the owner and
+  portrait TVs, auto and custom layouts per format, scroll view on phones,
+  screen view on standby screens, Studio previews). Decided by the owner and
   recorded in [ADR 0017](../decisions/0017-screen-formats-and-display-modes.md);
   issues #273–#285. Builds on 09; no renumbering of later milestones.
 - Later: the web frontend on Vercel (#123).
