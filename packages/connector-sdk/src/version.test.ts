@@ -56,8 +56,8 @@ describe("assertManifestCompatible", () => {
     ).toThrow();
   });
 
-  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.6", () => {
-    expect(SDK_VERSION).toBe("0.2.6");
+  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.7", () => {
+    expect(SDK_VERSION).toBe("0.2.7");
     for (const sdkVersion of [
       "^0.2.0",
       "^0.2.1",
@@ -66,10 +66,37 @@ describe("assertManifestCompatible", () => {
       "^0.2.4",
       "^0.2.5",
       "^0.2.6",
+      "^0.2.7",
     ]) {
       expect(
         assertManifestCompatible({ ...validManifest(), sdkVersion }).id,
       ).toBe("acme-analytics");
+    }
+  });
+
+  it("keeps an optional catalogue category and brand colour (0.2.7)", () => {
+    const manifest = assertManifestCompatible({
+      ...validManifest(),
+      category: "seo",
+      brandColor: "#4285f4",
+    });
+    expect(manifest.category).toBe("seo");
+    expect(manifest.brandColor).toBe("#4285f4");
+    const plain = assertManifestCompatible(validManifest());
+    expect(plain.category).toBe(undefined);
+    expect(plain.brandColor).toBe(undefined);
+    for (const category of ["seo", "web", "apps", "ads", "revenue", "other"]) {
+      expect(
+        assertManifestCompatible({ ...validManifest(), category }).category,
+      ).toBe(category);
+    }
+    expect(() =>
+      assertManifestCompatible({ ...validManifest(), category: "games" }),
+    ).toThrow();
+    for (const brandColor of ["4285f4", "#428", "#4285f4ff", "blue", ""]) {
+      expect(() =>
+        assertManifestCompatible({ ...validManifest(), brandColor }),
+      ).toThrow();
     }
   });
 

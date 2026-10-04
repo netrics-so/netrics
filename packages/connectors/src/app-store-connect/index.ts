@@ -267,7 +267,9 @@ const appStoreConnectDe: ManifestTranslation = {
 export const appStoreConnectManifest: ConnectorManifest = {
   id: "app-store-connect",
   version: "0.1.2",
-  sdkVersion: "^0.2.6",
+  sdkVersion: "^0.2.7",
+  category: "apps",
+  brandColor: "#0d84ff",
   name: "App Store Connect",
   description:
     "Downloads, in-app purchases and proceeds of your apps from App Store Connect sales reports, per app; impressions, product page views and downloads by source once App Store analytics are enabled; ratings and reviews with an optional Customer Support key.",

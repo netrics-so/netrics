@@ -11,6 +11,7 @@ import { screenDe } from "./screen/de";
 import { screensDe } from "./screens/de";
 import { settingsDe } from "./settings/de";
 import { shellDe } from "./shell/de";
+import { sourcesDe } from "./sources/de";
 import { studioDe } from "./studio/de";
 import { workspaceDe } from "./workspace/de";
 
@@ -37,4 +38,5 @@ export const de: Catalog<WebMessages> = {
   ...screenDe,
   ...screensDe,
   ...shellDe,
+  ...sourcesDe,
 };

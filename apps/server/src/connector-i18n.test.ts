@@ -131,7 +131,7 @@ describe("connector catalog sync", () => {
     ]);
     const demo = rows.find((row) => row.id === "demo")!;
     expect(demo.translations).toEqual(demoManifest.translations);
-    expect(demo.sdk_version).toBe("^0.2.6");
+    expect(demo.sdk_version).toBe("^0.2.7");
     for (const row of rows) {
       expect(row.translations, row.id as string).toHaveProperty("de.name");
     }
@@ -199,6 +199,10 @@ describe("the API in the caller's language", () => {
     const demo = connectors.find((entry) => entry.id === "demo")!;
     expect(demo.name).toBe("Demo-Connector");
     expect(demo.description).toBe(demoManifest.translations!.de!.description);
+    expect(demo.metrics.map((metric) => metric.name)).toEqual([
+      "Besucher",
+      "Registrierungen",
+    ]);
 
     // Field titles, descriptions and setup steps of the wizard.
     const vercel = connectors.find((entry) => entry.id === "vercel")!;

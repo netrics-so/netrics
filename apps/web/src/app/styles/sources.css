@@ -1,0 +1,359 @@
+/* ─── Sources: connected strip and connector catalogue (design 3c, #306) ── */
+
+.sources-section {
+  margin-bottom: 24px;
+}
+
+.sources-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-size: var(--size-15);
+  font-weight: 700;
+}
+
+.sources-count {
+  color: var(--muted);
+  font-size: var(--size-12);
+  font-weight: 600;
+}
+
+.sources-hint {
+  margin: -6px 0 12px;
+}
+
+/* Icon tiles: the connector's initials on its brand colour. */
+.connector-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  user-select: none;
+}
+
+.connector-icon--small {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  font-size: var(--size-11);
+}
+
+.connector-icon--large {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  font-size: var(--size-13);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+/* Connected strip: compact cards that wrap. */
+.source-strip {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.source-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  text-decoration: none;
+  min-width: 0;
+  height: 100%;
+}
+
+.source-chip:hover {
+  border-color: var(--border-strong);
+  background: var(--raised);
+}
+
+.source-chip-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.source-chip-name {
+  font-size: var(--size-13);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-chip-meta {
+  font-size: var(--size-11);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-chip .dot {
+  flex: none;
+}
+
+.source-chip--attention {
+  background: var(--warning-wash);
+  border-color: var(--warning-border);
+}
+
+.source-chip--attention:hover {
+  background: var(--warning-tint);
+  border-color: var(--warning);
+}
+
+.source-chip--attention .source-chip-meta {
+  color: var(--warning-text);
+  font-weight: 600;
+}
+
+/* Catalogue: category pills, then three columns of cards. */
+.catalogue-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+button.catalogue-pill {
+  padding: 6px 11px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--size-12);
+  font-weight: 700;
+}
+
+button.catalogue-pill:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--raised);
+}
+
+button.catalogue-pill[aria-pressed="true"],
+button.catalogue-pill[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--text);
+  border-color: var(--text);
+  color: #fff;
+}
+
+.catalogue-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.catalogue-grid > li {
+  display: flex;
+  min-width: 0;
+}
+
+.catalogue-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.catalogue-card--selected {
+  border: var(--selection-border);
+  box-shadow: var(--selection-ring);
+}
+
+.catalogue-card--planned {
+  background: var(--raised);
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+
+.catalogue-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.catalogue-card-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.catalogue-card-title h3 {
+  margin: 0;
+  font-size: var(--size-14);
+  font-weight: 700;
+}
+
+.catalogue-tag {
+  font-size: var(--size-11);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.catalogue-description {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.catalogue-unavailable {
+  margin: 0;
+  font-size: var(--size-12);
+  color: var(--warning-text);
+}
+
+.catalogue-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.catalogue-chips li {
+  font-size: var(--size-11);
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--chip);
+  color: var(--text-2);
+}
+
+.catalogue-card-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.catalogue-facts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: var(--size-11);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+a.catalogue-facts {
+  color: var(--accent-text);
+  text-decoration: none;
+}
+
+a.catalogue-facts:hover {
+  text-decoration: underline;
+}
+
+.catalogue-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* The card's call to action: Connect (primary), Add another, Fix. */
+.catalogue-cta,
+button.catalogue-cta {
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  font-size: var(--size-12);
+  font-weight: 700;
+  padding: 6px 11px;
+  border-radius: var(--radius-nav);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+a.catalogue-cta:hover,
+button.catalogue-cta:hover:not(:disabled) {
+  background: var(--raised);
+  border-color: var(--faint);
+}
+
+.catalogue-cta.primary,
+button.catalogue-cta.primary {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: #fff;
+}
+
+a.catalogue-cta.primary:hover,
+button.catalogue-cta.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-fill) 88%, black);
+  border-color: color-mix(in srgb, var(--accent-fill) 88%, black);
+}
+
+button.catalogue-cta[aria-pressed="true"] {
+  border: var(--selection-border);
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+
+.catalogue-cta--fix,
+a.catalogue-cta--fix {
+  border-color: var(--warning);
+  color: var(--warning-text);
+  background: var(--surface);
+}
+
+a.catalogue-cta--fix:hover {
+  background: var(--warning-wash);
+  border-color: var(--warning);
+}
+
+.catalogue-cta--disabled {
+  cursor: default;
+  color: var(--muted);
+  background: transparent;
+  border-style: dashed;
+}
+
+.sources-table {
+  margin-top: 8px;
+}
+
+@media (max-width: 1100px) {
+  .catalogue-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .catalogue-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .source-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

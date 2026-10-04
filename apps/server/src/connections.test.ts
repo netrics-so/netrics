@@ -276,6 +276,33 @@ describe("GET /v1/connectors", () => {
     expect(demo!.configSchema).toMatchObject({ type: "object" });
   });
 
+  it("files connectors by category with their tile colour and metrics (#306)", async () => {
+    const response = await call(world.app, {
+      method: "GET",
+      url: "/v1/connectors",
+      cookie: cookies.viewer,
+    });
+    const { connectors } = connectorListResponseSchema.parse(response.json());
+    const byId = new Map(connectors.map((entry) => [entry.id, entry]));
+    expect(byId.get("demo")).toMatchObject({
+      category: "other",
+      brandColor: null,
+      metrics: [
+        { key: "demo.visitors", name: "Visitors" },
+        { key: "demo.signups", name: "Signups" },
+      ],
+    });
+    expect(byId.get("google-search-console")).toMatchObject({
+      category: "seo",
+      brandColor: "#4285f4",
+    });
+    expect(byId.get("vercel")?.category).toBe("web");
+    expect(byId.get("app-store-connect")?.category).toBe("apps");
+    // Helper metrics (inputs for derived values) are not offered as chips.
+    const gsc = byId.get("google-search-console")!;
+    expect(gsc.metrics.length).toBeLessThan(gsc.metricsCount);
+  });
+
   it("carries the token field's label, help and setup steps", async () => {
     const response = await call(world.app, {
       method: "GET",

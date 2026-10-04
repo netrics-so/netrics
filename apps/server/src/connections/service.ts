@@ -995,6 +995,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           version: manifest.version,
           description: manifest.description,
           metricsCount: manifest.metrics.length,
+          category: manifest.category ?? "other",
+          brandColor: manifest.brandColor ?? null,
+          metrics: manifest.metrics
+            .filter((metric) => metric.role !== "helper")
+            .map((metric) => ({ key: metric.key, name: metric.name })),
           minRefreshIntervalSeconds: manifest.minRefreshIntervalSeconds,
           supportsBackfill: manifest.supportsBackfill,
           configSchema: { ...manifest.configSchema },

@@ -439,6 +439,20 @@ export type ConnectorUnavailable = z.infer<typeof connectorUnavailableSchema>;
 /** The JSON-Schema subset manifests use travels as an opaque record. */
 const jsonSchemaObjectSchema = z.record(z.string(), z.unknown());
 
+/**
+ * Where the catalogue files a connector (the manifest's `category`, SDK
+ * 0.2.7, #306); connectors that do not say are "other".
+ */
+export const connectorCategorySchema = z.enum([
+  "seo",
+  "web",
+  "apps",
+  "ads",
+  "revenue",
+  "other",
+]);
+export type ConnectorCategory = z.infer<typeof connectorCategorySchema>;
+
 export const connectorCatalogEntrySchema = z.object({
   id: z.string().min(1),
   /**
@@ -449,6 +463,20 @@ export const connectorCatalogEntrySchema = z.object({
   version: z.string().min(1),
   description: z.string().min(1),
   metricsCount: z.number().int().nonnegative(),
+  /** Catalogue category; "other" when the manifest does not say (#306). */
+  category: connectorCategorySchema,
+  /** The icon tile's colour, "#rrggbb", or null for a neutral tile. */
+  brandColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .nullable(),
+  /**
+   * The metrics a dashboard can show (helpers left out), in manifest order,
+   * named in the caller's language: the catalogue's metric chips.
+   */
+  metrics: z.array(
+    z.object({ key: z.string().min(1), name: z.string().min(1) }),
+  ),
   minRefreshIntervalSeconds: z.number().int().positive(),
   supportsBackfill: z.boolean(),
   configSchema: jsonSchemaObjectSchema,

@@ -37,11 +37,15 @@ function textKeys(schema: unknown, text: "title" | "description"): string[] {
 describe.each(FIRST_PARTY.map((manifest) => [manifest.id, manifest] as const))(
   "%s translations",
   (_id, manifest) => {
-    it("validate against SDK 0.2.6", () => {
-      expect(manifest.sdkVersion).toBe("^0.2.6");
+    it("validate against SDK 0.2.7", () => {
+      expect(manifest.sdkVersion).toBe("^0.2.7");
       expect(assertManifestCompatible(manifest).translations).toEqual(
         manifest.translations,
       );
+    });
+
+    it("is filed under a catalogue category (#306)", () => {
+      expect(assertManifestCompatible(manifest).category).toBeDefined();
     });
 
     describe.each(LOCALES)("%s", (locale) => {

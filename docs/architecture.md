@@ -258,6 +258,8 @@ The manifest declares:
 - Declared outbound domains
 - Expected quota and rate-limit behavior
 - Optionally, translations of its texts (SDK 0.2.6, see below)
+- Optionally, a catalogue `category` (`seo`, `web`, `apps`, `ads`, `revenue`
+  or `other`) and a `brandColor` (`#rrggbb`) for its icon tile (SDK 0.2.7)
 
 `sync` receives a time range or cursor and returns normalized observations plus
 the next cursor. Connectors receive no direct database, queue, or internal API
@@ -320,6 +322,7 @@ keeps loading on every 0.2.x runtime.
 | 0.2.4 | `resourceNoun`: what the connector calls its resources (#208)    |
 | 0.2.5 | Optional `resourceIcons` capability (resource icons, #226)       |
 | 0.2.6 | Optional `translations` of the manifest's texts (ADR 0016, #257) |
+| 0.2.7 | Optional `category` and `brandColor` for the catalogue (#306)    |
 
 ### Connector translations
 

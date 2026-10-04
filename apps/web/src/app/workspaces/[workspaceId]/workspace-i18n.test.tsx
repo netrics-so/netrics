@@ -25,6 +25,9 @@ const CONNECTORS: ConnectorCatalogEntry[] = [
     version: "0.1.0",
     description: "Sample numbers.",
     metricsCount: 3,
+    category: "other",
+    brandColor: null,
+    metrics: [{ key: "demo.visitors", name: "Visitors" }],
     minRefreshIntervalSeconds: 300,
     supportsBackfill: true,
     configSchema: { type: "object", properties: {} },
@@ -38,6 +41,9 @@ const CONNECTORS: ConnectorCatalogEntry[] = [
     version: "0.1.0",
     description: "Clicks and impressions.",
     metricsCount: 1,
+    category: "seo",
+    brandColor: "#4285f4",
+    metrics: [{ key: "gsc.clicks", name: "Clicks" }],
     minRefreshIntervalSeconds: 300,
     supportsBackfill: false,
     configSchema: { type: "object", properties: {} },
@@ -147,7 +153,9 @@ describe("workspace, connections and devices", () => {
     expect(html).toContain("Needs reconnect");
     expect(html).toContain("No dashboard");
     expect(html).toContain("1. Choose a connector");
-    expect(html).toContain("v0.1.0 · 3 metrics · backfill");
+    expect(html).toContain(
+      'No sign-in<span aria-hidden="true">·</span>every 5 min',
+    );
     expect(html).toContain("Needs Google sign-in set up by an administrator");
     expect(html).toContain("Sync now");
     expect(html).toContain("Disconnect");
@@ -188,7 +196,9 @@ describe("workspace, connections and devices", () => {
     expect(html).toContain("Kein Dashboard");
     expect(html).toContain("Widerrufen");
     expect(html).toContain("1. Connector auswählen");
-    expect(html).toContain("v0.1.0 · 3 Metriken · mit Historie");
+    expect(html).toContain(
+      'Ohne Anmeldung<span aria-hidden="true">·</span>alle 5 Min.',
+    );
     expect(html).toContain(
       "Die Anmeldung mit Google muss erst ein Administrator einrichten",
     );
