@@ -83,4 +83,11 @@ describe("connectionStatus (the server's rule for screens)", () => {
     expect(connectionStatus(state(), false, now)).toBe("no_data");
     expect(connectionStatus(undefined, true, now)).toBe("no_data");
   });
+
+  it("is backfilling without data until the first sync succeeds (#311)", () => {
+    const pending = state({ health: "pending", lastSuccessAt: null });
+    expect(connectionStatus(pending, false, now)).toBe("backfilling");
+    // With data it is waiting for its first sync: stale.
+    expect(connectionStatus(pending, true, now)).toBe("stale");
+  });
 });

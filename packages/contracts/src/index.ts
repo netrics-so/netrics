@@ -2206,7 +2206,14 @@ export const DEVICE_REFRESH_AFTER_SECONDS = 60;
 /**
  * How a tile's numbers can be trusted:
  * ok (fresh), stale (last sync too long ago, or none yet), auth_failed and
- * outage (the connection is failing), no_data (nothing to show).
+ * outage (the connection is failing), no_data (nothing to show),
+ * backfilling (nothing to show yet: the connection's first sync or a
+ * backfill of its history is queued or running; #311).
+ *
+ * `backfilling` is newer than the first screens. Clients decode a status
+ * they do not know without failing (tvOS since its first release, #120:
+ * OpenAPIEnum falls back to `ok`, which renders exactly as `no_data`: no
+ * notice, no value), so every schema carries it.
  */
 export const deviceTileStatusSchema = z.enum([
   "ok",
@@ -2214,6 +2221,7 @@ export const deviceTileStatusSchema = z.enum([
   "auth_failed",
   "outage",
   "no_data",
+  "backfilling",
 ]);
 export type DeviceTileStatus = z.infer<typeof deviceTileStatusSchema>;
 

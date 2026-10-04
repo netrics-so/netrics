@@ -187,6 +187,22 @@ import Testing
         #expect(payload.tiles[0].status == .ok)
     }
 
+    // #311: a server that knows backfilling sends it in every schema. A
+    // build that knows it decodes it; one that does not falls back to ok
+    // (above), and both show it as no_data: no notice.
+    @Test func decodesBackfillingWithoutANotice() throws {
+        let body = """
+            {"version":"abc","refreshAfterSec":60,"timeZone":"UTC","dashboard":null,
+             "tiles":[{"id":"x","label":"L","period":"today","aggregation":"sum","value":null,
+               "unit":null,"change":{"previousValue":null,"delta":null,"ratio":null},
+               "spark":[],"status":"backfilling","updatedAt":null}]}
+            """
+        let payload = try JSONDecoder().decode(DeviceDashboard.self, from: Data(body.utf8))
+        #expect(payload.tiles[0].status == .backfilling)
+        #expect(TileNotices.notice(status: .backfilling, updatedAt: nil) == nil)
+        #expect(TileNotices.notice(status: .ok, updatedAt: nil) == nil)
+    }
+
     @Test(arguments: [
         ("last_90_days", MetricPeriod.last90Days),
         ("last_12_months", .last12Months),

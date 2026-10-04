@@ -213,13 +213,16 @@ public enum MetricAggregation: String, OpenAPIEnum {
 
 /**
  * How a tile's numbers can be trusted: ok (fresh), stale, auth_failed and
- * outage (the connection is failing), no_data (nothing to show).
+ * outage (the connection is failing), no_data (nothing to show),
+ * backfilling (nothing yet, its history is loading; #311). Builds before
+ * backfilling decode it as the fallback, which renders as no_data does.
  */
 public enum DeviceTileStatus: String, OpenAPIEnum {
     case ok, stale
     case authFailed = "auth_failed"
     case outage
     case noData = "no_data"
+    case backfilling
 
     // An unknown status shows the numbers without a notice.
     public static var fallback: DeviceTileStatus { .ok }

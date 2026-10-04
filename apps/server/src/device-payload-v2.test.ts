@@ -1157,3 +1157,82 @@ describe("payload memo", () => {
     expect(crossed).toEqual({ ok: false, status: 401, error: "unauthorized" });
   });
 });
+
+describe("data status backfilling (#311)", () => {
+  const BACKFILL = id(8, 0);
+  const slideId = id(8, 100);
+  let fresh: string;
+  let refetching: string;
+
+  beforeAll(async () => {
+    // A connection whose first sync has not succeeded yet (its backfill
+    // was queued on creation), and one that synced before and now
+    // backfills its history again after a config change (#153).
+    const [first] = await owner`
+      insert into connections (workspace_id, connector_id, name)
+      values (${workspaceId}, 'snap', 'Fresh') returning id`;
+    fresh = first!.id as string;
+    const [second] = await owner`
+      insert into connections (workspace_id, connector_id, name)
+      values (${workspaceId}, 'snap', 'Refetching') returning id`;
+    refetching = second!.id as string;
+    await owner`
+      insert into connection_state (connection_id, workspace_id,
+        last_success_at, poll_interval_seconds)
+      values (${refetching}, ${workspaceId}, '2026-10-04T09:55:00Z', 300)`;
+    await owner`
+      insert into jobs (kind, workspace_id, connection_id, status)
+      values ('connection.backfill', ${workspaceId}, ${refetching},
+              'running')`;
+    await insertDashboard(BACKFILL, "Backfill");
+    await insertSlide(slideId, BACKFILL, 0);
+    for (const [n, connection, type] of [
+      [101, fresh, "metric"],
+      [102, refetching, "line"],
+      [103, refetching, "bar"],
+      [104, connectionId, "metric"],
+    ] as const) {
+      await insertWidget(id(8, n), slideId, BACKFILL, {
+        type,
+        x: (n - 101) * 3,
+        y: 0,
+        w: 3,
+        h: 3,
+        ...downloads({ connection_id: connection }),
+        // The synced connection's widget asks for a resource without data.
+        ...(n === 104 ? { dimensions: { resource: "app-9" } } : {}),
+        options: type === "bar" ? { groupBy: "resource" } : {},
+      });
+    }
+  });
+
+  const statuses = async () =>
+    widgetsOf(await v2(BACKFILL)).map((widget) =>
+      "data" in widget ? widget.data.status : null,
+    );
+
+  it("reports a widget without data as backfilling while its history loads", async () => {
+    expect(await statuses()).toEqual([
+      "backfilling",
+      "backfilling",
+      "backfilling",
+      "no_data",
+    ]);
+    const tiles = (await v1(BACKFILL)).tiles.map((tile) => tile.status);
+    expect(tiles).toEqual(["backfilling", "no_data"]);
+    const payload = await v2(BACKFILL);
+    expect(deviceDashboardV2ResponseSchema.parse(payload)).toEqual(payload);
+  });
+
+  it("reports no_data again once the backfill is done", async () => {
+    await owner`
+      update jobs set status = 'succeeded'
+      where connection_id = ${refetching}`;
+    expect(await statuses()).toEqual([
+      "backfilling",
+      "no_data",
+      "no_data",
+      "no_data",
+    ]);
+  });
+});

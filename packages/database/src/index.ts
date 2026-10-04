@@ -222,6 +222,7 @@ export type {
 } from "./metrics.js";
 export {
   deleteConnection,
+  findBackfillingConnectionIds,
   findConnection,
   finishConnectionSetup,
   insertConnection,

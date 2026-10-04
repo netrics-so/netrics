@@ -26,6 +26,7 @@ import {
   type MetricQueryResponse,
 } from "@netrics/contracts";
 import {
+  findBackfillingConnectionIds,
   findDashboard,
   findImages,
   findResourceNames,
@@ -105,10 +106,12 @@ export interface BuildOptions {
   locale?: Locale;
 }
 
-function tileStatus(
+export function tileStatus(
   state: ConnectionStateView | null,
   hasData: boolean,
   now: Date,
+  /** A backfill of the connection's history is queued or running. */
+  backfilling = false,
 ): DeviceTileStatus {
   if (state?.health === "auth_failed" || state?.health === "outage") {
     return state.health;
@@ -119,7 +122,11 @@ function tileStatus(
     return "auth_failed";
   }
   if (!state || !hasData) {
-    return "no_data";
+    // Nothing yet while the history loads: the first sync has not
+    // succeeded (pending), or a backfill is queued or running (#311).
+    return state && (state.health === "pending" || backfilling)
+      ? "backfilling"
+      : "no_data";
   }
   if (!state.lastSuccessAt) {
     return "stale";
@@ -170,6 +177,8 @@ interface DataContext {
   workspaceId: string;
   options: BuildOptions;
   states: Map<string, ConnectionStateView>;
+  /** Connections with a backfill queued or running. */
+  backfilling: Set<string>;
   label(widget: DataWidget, metricName: string | undefined): string;
 }
 
@@ -185,6 +194,7 @@ async function loadDataContext(
       toStateView(state),
     ]),
   );
+  const backfilling = await findBackfillingConnectionIds(tx, workspaceId);
   // Widgets of one resource are labelled with its name (#194).
   const resourceNames = await findResourceNames(
     tx,
@@ -211,6 +221,7 @@ async function loadDataContext(
     workspaceId,
     options,
     states,
+    backfilling,
     label(widget, metricName) {
       const dimensions = dimensionsOf(widget);
       const resourceId = dimensions[RESOURCE_DIMENSION];
@@ -356,7 +367,12 @@ function tileOf(
     kind: query?.metric.kind ?? null,
     granularity: query?.metric.granularity ?? null,
     better: query?.metric.better ?? "higher",
-    status: tileStatus(state, value !== null, context.options.now),
+    status: tileStatus(
+      state,
+      value !== null,
+      context.options.now,
+      context.backfilling.has(widget.connectionId),
+    ),
     updatedAt: state?.lastSuccessAt ?? null,
   };
 }
@@ -487,7 +503,12 @@ async function dataWidgetOf(
         kind: breakdown?.metric.kind ?? null,
         granularity: breakdown?.metric.granularity ?? null,
         better: breakdown?.metric.better ?? "higher",
-        status: tileStatus(state, hasData, context.options.now),
+        status: tileStatus(
+          state,
+          hasData,
+          context.options.now,
+          context.backfilling.has(widget.connectionId),
+        ),
         updatedAt: state?.lastSuccessAt ?? null,
         groupBy: options.groupBy,
         bars: breakdown?.groups ?? [],

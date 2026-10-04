@@ -2580,6 +2580,134 @@ a.health-badge:hover {
   }
 }
 
+/* ─── TV data states (ADR 0018 §5, design 4b) ─────────────────────────── */
+
+/* Derived from the theme, never new tokens: the danger hue leans the
+   theme's `down` towards red, so it reads as an alarm on any theme. */
+.sw {
+  --sw-danger: color-mix(in srgb, var(--t-down) 40%, #f85149);
+}
+
+/* Stale: a warning border and the value dimmed; the notice's dot blinks. */
+.sw.sw--stale {
+  border-color: color-mix(in srgb, var(--t-warning) 35%, transparent);
+}
+
+.sw--stale .sw-value {
+  color: var(--t-muted);
+}
+
+/* Auth failed: a surface tinted towards the danger hue, its border, and
+   "Reconnect …" in the theme's down colour instead of the numbers. */
+.sw.sw--auth {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--t-surface) 94%, var(--sw-danger)),
+    color-mix(
+      in srgb,
+      color-mix(in srgb, var(--t-surface) 80%, var(--t-background)) 96%,
+      var(--sw-danger)
+    )
+  );
+  border-color: color-mix(in srgb, var(--sw-danger) 35%, transparent);
+}
+
+/* No data and backfilling: a dashed border and a skeleton block. */
+.sw.sw--empty {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--t-text) 14%, transparent);
+  box-shadow: none;
+}
+
+/* The state's lines sit at the bottom, as the numbers would. */
+.sw-state {
+  margin-top: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 6);
+}
+
+.sw--auth .sw-footer {
+  margin-top: calc(var(--u) * 12);
+}
+
+.sw-reconnect {
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--t-down);
+  overflow-wrap: anywhere;
+}
+
+.sw-state-hint {
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.sw-skeleton {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 60%;
+  overflow: hidden;
+  border-radius: calc(var(--u) * 12);
+  background: color-mix(in srgb, var(--t-surface), var(--t-text) 6%);
+}
+
+.sw-skeleton-sweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--t-text) 6%, transparent),
+    transparent
+  );
+  transform: translateX(-100%);
+}
+
+.slide-player-slide .sw-skeleton-sweep {
+  animation: sw-sweep 1.6s linear infinite;
+}
+
+/* Flat themes (light, paper, high contrast): plain surfaces with strong
+   borders, so each state still reads without depth. */
+[data-surface="flat"] .sw.sw--stale {
+  border-color: var(--t-warning);
+}
+
+[data-surface="flat"] .sw.sw--auth {
+  background: color-mix(in srgb, var(--t-surface) 94%, var(--sw-danger));
+  border-color: var(--t-down);
+}
+
+[data-surface="flat"] .sw.sw--empty {
+  border-color: color-mix(in srgb, var(--t-text) 45%, transparent);
+}
+
+[data-surface="flat"] .sw-skeleton {
+  background: color-mix(in srgb, var(--t-surface), var(--t-text) 10%);
+}
+
+[data-surface="flat"] .sw-skeleton-sweep {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--t-text) 10%, transparent),
+    transparent
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide-player-slide .sw-skeleton-sweep {
+    animation: none;
+  }
+}
+
 /* A screen playing slides: the slides over the whole screen, in its
    format (ADR 0017); the player letterboxes only extreme shapes. */
 .slide-screen {

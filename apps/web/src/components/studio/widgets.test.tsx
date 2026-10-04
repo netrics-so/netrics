@@ -15,7 +15,7 @@ import { BarWidgetView } from "./bar-widget";
 import { ClockWidgetView } from "./clock-widget";
 import { ImageWidgetView } from "./image-widget";
 import { LineWidgetView } from "./line-widget";
-import { MetricWidgetView } from "./metric-widget";
+import { MetricWidgetView, liveDataState } from "./metric-widget";
 import { LiveWidget, SlideCanvas, WidgetBoundary } from "./slide-canvas";
 import { TextWidgetView } from "./text-widget";
 import { renderI18n } from "@/lib/i18n/test-render";
@@ -689,5 +689,47 @@ describe("slide canvas", () => {
     expect(html).not.toContain("studio-background");
     const box = widgetBoxStyle(widgets[0]!, false);
     expect(html).toContain(`left:${box.left};top:${box.top}`);
+  });
+});
+
+describe("liveDataState (#311)", () => {
+  const connection = {
+    state: {
+      health: "pending" as const,
+      authState: "ok" as const,
+      authReason: null,
+      lastSuccessAt: null,
+      nextDueAt: null,
+      consecutiveFailures: 0,
+      pollIntervalSeconds: 300,
+    },
+  };
+  const query = { error: null, loading: false, loaded: true, hasData: false };
+
+  it("is backfilling while a new connection loads its history", () => {
+    expect(liveDataState(query, connection, "en").status).toBe("backfilling");
+  });
+
+  it("is not a data state during the first load", () => {
+    expect(
+      liveDataState(
+        { ...query, loading: true, loaded: false },
+        connection,
+        "en",
+      ).status,
+    ).toBe("ok");
+  });
+
+  it("keeps the notice of a failed query or a removed connection", () => {
+    expect(
+      liveDataState({ ...query, error: "boom" }, connection, "en"),
+    ).toEqual({
+      notice: "Refresh failed",
+      status: "outage",
+    });
+    expect(liveDataState(query, undefined, "en")).toEqual({
+      notice: "Connection removed",
+      status: "outage",
+    });
   });
 });
