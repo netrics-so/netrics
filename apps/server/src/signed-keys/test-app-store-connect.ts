@@ -391,6 +391,16 @@ function analyticsReply(
     });
   }
   if (init?.method === "POST") return undefined;
+  if (path === "/v1/builds") {
+    // Builds (app icons, #226): Sales and Customer Support keys may not.
+    if (
+      (team.role ?? "sales") === "sales" ||
+      team.role === "customer-support"
+    ) {
+      return forbidden();
+    }
+    return reply(200, { data: [], links: {} });
+  }
   const apps = /^\/v1\/apps\/(\d+)\/analyticsReportRequests$/.exec(path);
   if (apps) {
     if (team.role === "developer") return forbidden();

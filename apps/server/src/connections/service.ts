@@ -20,8 +20,13 @@ import {
   executeCheck,
   executeDiscover,
   type ConnectorRegistry,
+  type ExecuteOptions,
 } from "@netrics/connector-runtime";
-import type { Connector, ConnectorManifest } from "@netrics/connector-sdk";
+import type {
+  ConnectionContext,
+  Connector,
+  ConnectorManifest,
+} from "@netrics/connector-sdk";
 import { ANALYTICS_METRIC_KEYS } from "@netrics/connectors";
 import {
   deleteConnection as deleteConnectionRow,
@@ -77,7 +82,10 @@ import {
   appStoreAnalyticsStatus,
   enableAppStoreAnalytics,
 } from "../signed-keys/app-store-analytics.js";
-import { appStoreReviewsStatus } from "../signed-keys/app-store-reviews.js";
+import {
+  REVIEWS_KEY_ID,
+  appStoreReviewsStatus,
+} from "../signed-keys/app-store-reviews.js";
 import type { SignedKeyProviderDefinition } from "../signed-keys/providers/index.js";
 import {
   createSignedKeyProviders,
@@ -1164,6 +1172,98 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       } catch (error) {
         return oauthCallFailure(error);
       }
+    },
+
+    /**
+     * Runs one connector call for an existing connection with its stored
+     * credentials: a freshly signed token for a signed key (ADR 0014), a
+     * valid access token for OAuth (ADR 0012), or the stored credentials.
+     * Setup problems are results; a failed call throws (redacted by the
+     * runtime), for the caller to classify. Used for resource icons
+     * (#226).
+     */
+    async callConnection<T>(
+      actor: Actor,
+      connectionId: string,
+      call: (
+        connector: Connector,
+        context: ConnectionContext,
+        options: ExecuteOptions,
+      ) => Promise<T>,
+    ): Promise<Result<T>> {
+      const existing = await inWorkspace(actor, (tx) =>
+        findConnection(tx, actor.workspaceId, connectionId),
+      );
+      if (!existing) {
+        return fail(404, NOT_FOUND);
+      }
+      const registered = registry.get(existing.row.connectorId);
+      if (!registered) {
+        return fail(400, "connector_unavailable");
+      }
+      const config = existing.row.config as Record<string, unknown>;
+      const connector = registered.connector;
+      if (existing.oauth) {
+        const strategy = oauthStrategyFor(
+          registered.manifest,
+          existing.oauth.provider,
+        );
+        if (!strategy) {
+          return fail(400, "connector_unavailable");
+        }
+        return ok(
+          await callWithAccessToken({
+            tokens: oauthTokens,
+            binding: { workspaceId: actor.workspaceId, connectionId },
+            requiredScopes: strategy.scopes,
+            call: (credentials, options) =>
+              call(
+                connector,
+                { connectionId, config, credentials: { ...credentials } },
+                options,
+              ),
+          }),
+        );
+      }
+      const envelope = openEnvelope(actor.workspaceId, existing.row);
+      if (!envelope.ok) {
+        return envelope;
+      }
+      const key = storedSignedKey(registered.manifest, envelope.value);
+      if (key && !key.ok) {
+        return key;
+      }
+      if (key) {
+        return ok(
+          await callWithSignedKey({
+            key: key.value,
+            call: (tokenCredentials, options) =>
+              call(
+                connector,
+                { connectionId, config, credentials: { ...tokenCredentials } },
+                options,
+              ),
+          }),
+        );
+      }
+      return ok(
+        await call(
+          connector,
+          { connectionId, config, credentials: envelope.value },
+          {},
+        ),
+      );
+    },
+
+    /**
+     * Whether an App Store Connect connection holds the optional reviews
+     * key (#190), read from its stored envelope without any provider call.
+     */
+    async hasReviewsKey(actor: Actor, connectionId: string): Promise<boolean> {
+      const loaded = await appStoreConnection(actor, connectionId);
+      return (
+        loaded.ok && loaded.value.key.additional(REVIEWS_KEY_ID) !== undefined
+      );
     },
 
     async list(actor: Actor) {

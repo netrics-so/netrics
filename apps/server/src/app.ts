@@ -39,6 +39,7 @@ import { registerConnectionRoutes } from "./routes/connections.js";
 import { registerDashboardRoutes } from "./routes/dashboards.js";
 import { registerDeviceRoutes } from "./routes/devices.js";
 import { registerImageRoutes } from "./routes/images.js";
+import { registerTemplateRoutes } from "./routes/templates.js";
 import { registerInvitationRoutes } from "./routes/invitations.js";
 import { registerMetricRoutes } from "./routes/metrics.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
@@ -202,6 +203,16 @@ export async function buildApp(
     credentialKeyring,
     oauthProviders,
     oauthTokens,
+    ...(deps.signedKeys ? { signedKeys: deps.signedKeys } : {}),
+  });
+  registerTemplateRoutes(app, {
+    authService,
+    db,
+    registry,
+    credentialKeyring,
+    oauthProviders,
+    oauthTokens,
+    quota: config.imageQuota,
     ...(deps.signedKeys ? { signedKeys: deps.signedKeys } : {}),
   });
   registerOAuthRoutes(app, {

@@ -303,6 +303,7 @@ export async function startWorker(config: Config): Promise<void> {
     handlers: createJobHandlers({
       registry,
       credentialKeyring,
+      imageQuota: config.imageQuota,
       oauthTokens: createOAuthTokenService({
         db: appDb,
         credentialKeyring,

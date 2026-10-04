@@ -1,7 +1,10 @@
 import {
   CURRENCY_DIMENSION,
   CURRENCY_MINOR_UNIT,
+  RESOURCE_ICON_MAX_BYTES,
   checkResultSchema,
+  resourceIconsRequestSchema,
+  resourceIconsResultSchema,
   resourceSchema,
   syncRequestSchema,
   syncResultSchema,
@@ -11,6 +14,7 @@ import {
   type ConnectorManifest,
   type ConnectorRuntime,
   type Resource,
+  type ResourceIconsRequest,
   type SyncRequest,
   type SyncResult,
 } from "@netrics/connector-sdk";
@@ -307,4 +311,79 @@ export async function executeDiscover(
     );
   }
   return parsed.data;
+}
+
+/** An icon a connector returned, decoded; the host still validates it. */
+export interface FetchedResourceIcon {
+  resourceId: string;
+  contentType: "image/png" | "image/jpeg" | "image/webp";
+  bytes: Buffer;
+}
+
+/** Whether the connector implements the optional icon capability. */
+export function supportsResourceIcons(connector: Connector): boolean {
+  return typeof connector.resourceIcons === "function";
+}
+
+/**
+ * Runs the optional resourceIcons capability (SDK 0.2.5, #226) inside the
+ * same boundary as sync: egress-controlled fetch, time budget, redacted
+ * errors. An icon for a resource that was not asked for, a malformed
+ * result or an icon above RESOURCE_ICON_MAX_BYTES is a contract
+ * violation. A connector without the capability returns no icons.
+ */
+export async function executeResourceIcons(
+  connector: Connector,
+  context: ConnectionContext,
+  request: ResourceIconsRequest,
+  options: ExecuteOptions = {},
+): Promise<FetchedResourceIcon[]> {
+  const resourceIcons = connector.resourceIcons?.bind(connector);
+  if (!resourceIcons) {
+    return [];
+  }
+  const parsedRequest = resourceIconsRequestSchema.safeParse(request);
+  if (!parsedRequest.success) {
+    throw new ContractViolationError(
+      `invalid resource icons request: ${formatIssues(parsedRequest.error.issues)}`,
+    );
+  }
+  assertContextIsPlain(context);
+  let raw: unknown;
+  try {
+    raw = await withRuntime(
+      connector,
+      { timeoutMs: 30_000, ...options },
+      (runtime) => resourceIcons(context, parsedRequest.data, runtime),
+    );
+  } catch (error) {
+    throw classifyConnectorError(connector, error, context);
+  }
+  const parsed = resourceIconsResultSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new ContractViolationError(
+      `connector "${connector.manifest.id}" returned invalid resource icons: ${formatIssues(parsed.error.issues)}`,
+    );
+  }
+  const asked = new Set(parsedRequest.data.resources.map((entry) => entry.id));
+  const icons = new Map<string, FetchedResourceIcon>();
+  for (const icon of parsed.data.icons) {
+    if (!asked.has(icon.resourceId)) {
+      throw new ContractViolationError(
+        `connector "${connector.manifest.id}" returned an icon for a resource it was not asked for`,
+      );
+    }
+    const bytes = Buffer.from(icon.data, "base64");
+    if (bytes.length === 0 || bytes.length > RESOURCE_ICON_MAX_BYTES) {
+      throw new ContractViolationError(
+        `connector "${connector.manifest.id}" returned an icon of ${bytes.length} bytes (at most ${RESOURCE_ICON_MAX_BYTES})`,
+      );
+    }
+    icons.set(icon.resourceId, {
+      resourceId: icon.resourceId,
+      contentType: icon.contentType,
+      bytes,
+    });
+  }
+  return [...icons.values()];
 }
