@@ -276,6 +276,71 @@ export const studioDe: Catalog<typeof studioEn> = {
       formatsAttentionTitle:
         "Im gespeicherten Stand, in {formats}: Eine Beschriftung oder ein Text wird abgeschnitten, der Name passt nicht in die Kopfzeile oder Widgets warten auf deine Prüfung.",
     },
+    formats: {
+      switcher: "Bildschirmformate",
+      names: {
+        "16x9": "TV",
+        "21x9": "Ultrabreit",
+        "4x3": "Klassisch",
+        "3x4": "Tablet hochkant",
+        "9x16": "Hochformat",
+        scroll: "Smartphone",
+      },
+      scrollRatio: "Scroll-Ansicht",
+      layout: {
+        primary: "Primär",
+        auto: "Automatisch",
+        custom: "Angepasst",
+      },
+      attention: "{count, plural, one {# Warnung} other {# Warnungen}}",
+      toReview: "{count} zu prüfen",
+      screens:
+        "{count, plural, one {Von # verbundenen Bildschirm genutzt} other {Von # verbundenen Bildschirmen genutzt}}",
+      chipLabel:
+        "{name} {ratio}, {layout}{attention, plural, =0 {} one {, # Warnung} other {, # Warnungen}}{review, plural, =0 {} other {, # zu prüfen}}{screens, plural, =0 {} one {, von # Bildschirm genutzt} other {, von # Bildschirmen genutzt}}",
+      allFormats: "Alle Formate",
+      devices: "Vorschau auf",
+      device: {
+        tv: "TV",
+        "tv-portrait": "TV hochkant",
+        "monitor-wide": "Ultrabreiter Monitor",
+        monitor: "Monitor",
+        "monitor-portrait": "Monitor hochkant",
+        "tablet-landscape": "Tablet",
+        "tablet-portrait": "Tablet",
+        phone: "Smartphone",
+      },
+      frameLabel: "Vorschau: {name} {ratio}, {device}",
+      scrollFrameLabel: "Vorschau: Scroll-Ansicht, {device}",
+      autoNote:
+        "Automatisch aus dem Layout in {primary} angeordnet. Bearbeite in {primary}: Deine ungespeicherten Änderungen erscheinen hier sofort.",
+      customNote:
+        "{count, plural, one {# Folie ist} other {# Folien sind}} in diesem Format von Hand angeordnet, die anderen automatisch. Ungespeicherte Änderungen in {primary} erscheinen hier sofort.",
+      scrollNote:
+        "Die Dashboard-Seite auf Smartphones und Tablets: jede Folie als Abschnitt, in Lesereihenfolge.",
+      pages: "Seiten",
+      page: "Seite {page} von {pages}",
+      announce:
+        "{name} {ratio}{pages, plural, =1 {} other {, Seite {page} von {pages}}}",
+      announceScroll: "Scroll-Ansicht, {device}",
+      announceOverview: "Alle Formate nebeneinander",
+      warningsTitle: "Lesbarkeit in {ratio}",
+      noWarnings: "In diesem Format ist alles gut lesbar.",
+      warning: {
+        label_cut: "{widget}: Die Beschriftung wird abgeschnitten.",
+        text_cut: "{widget}: Der Text wird abgeschnitten.",
+        continues: "Geht auf {pages} Seiten weiter.",
+        widget_hidden: "{widget} ist in diesem Format ausgeblendet.",
+        widget_to_review: "{widget} wurde automatisch platziert: Prüf es.",
+        widget_too_small: "{widget} ist kleiner als seine Mindestgröße.",
+        header_name_cut:
+          "Der Name des Dashboards passt nicht in die Kopfzeile.",
+      },
+      showInEditor: "In {primary} auswählen",
+      openFormat: "{name} {ratio} öffnen",
+      overviewHelp:
+        "Jedes Format mit dieser Folie; wähl eins, um es genauer anzusehen.",
+    },
     document: {
       noSpace: "Auf dieser Folie ist kein Platz mehr dafür.",
       spotTaken: "Dieser Platz ist belegt; das Widget wurde nicht hinzugefügt.",

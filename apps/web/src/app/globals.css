@@ -2660,6 +2660,278 @@ body:has(.dashboard-page) .nav {
   touch-action: none;
 }
 
+/* The format switcher (ADR 0017 section 10, #283): one tab per format
+   above the canvas, each with its layout state and readability warnings. */
+.format-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.format-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.format-chip,
+.format-overview-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.format-overview-toggle {
+  align-self: flex-start;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.format-chip[aria-selected="true"],
+.format-overview-toggle[aria-pressed="true"],
+.format-devices button[aria-pressed="true"],
+.format-pages [aria-selected="true"] {
+  border-color: #7aa2f7;
+  background: #1a2233;
+}
+
+.format-chip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #e6e9ed;
+}
+
+.format-chip-ratio {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.format-chip-name {
+  color: #b4bac3;
+}
+
+.format-glyph {
+  flex: none;
+  color: #8a919c;
+}
+
+.format-chip-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: #8a919c;
+}
+
+.format-chip--primary .format-chip-layout {
+  color: #7aa2f7;
+}
+
+.format-chip--custom .format-chip-layout {
+  color: #9ece6a;
+}
+
+.format-chip-badge--attention {
+  color: #e3b341;
+}
+
+.format-chip-badge--review {
+  color: #7dcfff;
+}
+
+.format-chip-screens {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.format-preview,
+.format-editor,
+.format-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.format-preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.format-preview-bar:empty {
+  display: none;
+}
+
+.format-devices,
+.format-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.format-devices button,
+.format-pages button {
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+.format-preview-stage {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 40%, #1a1f27, #0e1116 70%);
+}
+
+/* Device frames: CSS only (no images), the screen inside at its real size,
+   scaled (format-preview.tsx). */
+.device-frame {
+  position: relative;
+  flex: none;
+  background: #050608;
+  box-shadow:
+    0 0 0 1px #3a414c,
+    0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+.device-frame--tv {
+  background: linear-gradient(#2a2f37, #16191e);
+}
+
+.device-frame--monitor {
+  background: linear-gradient(#262a31, #1a1d22);
+}
+
+.device-frame--tablet,
+.device-frame--phone {
+  background: #0c0d10;
+  box-shadow:
+    0 0 0 1px #3a414c,
+    inset 0 0 0 2px #1f242b,
+    0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+.device-screen {
+  position: relative;
+  overflow: hidden;
+  background: #000;
+}
+
+.device-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  overflow: hidden;
+}
+
+.device-viewport--scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.device-viewport--scroll .scroll-view {
+  min-height: 100%;
+  border-radius: 0;
+}
+
+.format-warnings {
+  border: 1px solid #23272e;
+  border-radius: 8px;
+  background: #11141a;
+  padding: 10px 12px;
+}
+
+.format-warnings h3 {
+  font-size: 14px;
+  margin: 0 0 6px;
+}
+
+.format-warnings h4 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 8px 0 4px;
+  color: #b4bac3;
+}
+
+.format-warnings p {
+  margin: 0;
+}
+
+.format-warnings ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.format-warning {
+  display: flex;
+  gap: 6px;
+}
+
+.format-warning--attention .format-warning-mark {
+  color: #e3b341;
+}
+
+.format-warning--info .format-warning-mark {
+  color: #7dcfff;
+}
+
+.format-warning button.link-button {
+  text-align: left;
+}
+
+.format-overview-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.format-overview-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #23272e;
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 40%, #1a1f27, #0e1116 70%);
+}
+
+.format-overview-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 230px;
+  cursor: pointer;
+}
+
+.format-overview-open {
+  font-size: 13px;
+  padding: 5px 10px;
+}
+
 .stage-toolbar {
   display: flex;
   flex-wrap: wrap;

@@ -77,24 +77,11 @@ function layoutType(type: string): StudioWidgetType {
     : "image";
 }
 
-/**
- * The pages of a slide on a screen of `format` (ADR 0017, sections 3 and
- * 4): one page in the primary format; else the slide's custom layout for
- * the format, completed against its current widgets as the server would
- * (a draft in Play may have widgets the stored layout does not know), or
- * the auto reflow. Hidden widgets are left out; every page has at least
- * nothing, so a slide always has one page.
- */
-export function slidePages(
+/** The widgets as the layout functions take them. */
+export function layoutWidgets(
   widgets: readonly ScreenWidget[],
-  options: {
-    primaryFormat: ScreenFormat;
-    format: ScreenFormat;
-    layouts?: SlideLayouts | null;
-  },
-): LayoutPlacement[][] {
-  const { primaryFormat, format } = options;
-  const primary: LayoutWidget[] = widgets.map(({ id, type, x, y, w, h }) => ({
+): LayoutWidget[] {
+  return widgets.map(({ id, type, x, y, w, h }) => ({
     id,
     type: layoutType(type),
     x,
@@ -102,11 +89,28 @@ export function slidePages(
     w,
     h,
   }));
+}
+
+/**
+ * The slide's stored custom layout for `format`, completed against its
+ * current widgets as the server would on save (a draft may have widgets
+ * the stored layout does not know: they are placed and flagged for
+ * review); null in the primary format or without a custom layout.
+ */
+export function completedLayout(
+  primary: readonly LayoutWidget[],
+  options: {
+    primaryFormat: ScreenFormat;
+    format: ScreenFormat;
+    layouts?: SlideLayouts | null;
+  },
+): CustomLayout | null {
+  const { primaryFormat, format } = options;
   const stored =
     format === primaryFormat
       ? undefined
       : options.layouts?.find((layout) => layout.format === format);
-  const custom: CustomLayout | null = stored
+  return stored
     ? completeCustomLayout(
         {
           pages: stored.pages,
@@ -125,11 +129,31 @@ export function slidePages(
         format,
       )
     : null;
+}
+
+/**
+ * The pages of a slide on a screen of `format` (ADR 0017, sections 3 and
+ * 4): one page in the primary format; else the slide's custom layout for
+ * the format, completed against its current widgets as the server would
+ * (a draft in Play may have widgets the stored layout does not know), or
+ * the auto reflow. Hidden widgets are left out; every page has at least
+ * nothing, so a slide always has one page.
+ */
+export function slidePages(
+  widgets: readonly ScreenWidget[],
+  options: {
+    primaryFormat: ScreenFormat;
+    format: ScreenFormat;
+    layouts?: SlideLayouts | null;
+  },
+): LayoutPlacement[][] {
+  const { primaryFormat, format } = options;
+  const primary = layoutWidgets(widgets);
   const pages = slideLayoutFor({
     widgets: primary,
     primaryFormat,
     format,
-    custom,
+    custom: completedLayout(primary, options),
   });
   return pages.length > 0 ? pages : [[]];
 }

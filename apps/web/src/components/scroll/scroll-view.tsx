@@ -48,7 +48,9 @@ function useScrollSize(initialWidth: number) {
         Number.parseFloat(
           getComputedStyle(document.documentElement).fontSize,
         ) || 16;
-      const width = Math.round(element.getBoundingClientRect().width);
+      // The layout width: a preview scaled into a device frame (#283)
+      // lays out as the real screen does.
+      const width = Math.round(element.offsetWidth);
       setSize((previous) =>
         previous.width === width && previous.rootPx === rootPx
           ? previous
