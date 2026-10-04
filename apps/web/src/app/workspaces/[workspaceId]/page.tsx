@@ -18,7 +18,12 @@ import {
   listProjects,
   listWorkspaces,
 } from "@/lib/api";
-import { summarizeHeartbeat } from "@/lib/device-heartbeat";
+import {
+  isAppleTv,
+  rotationKey,
+  summarizeHeartbeat,
+  summarizeScreen,
+} from "@/lib/device-heartbeat";
 import { parseDisconnected, parseOAuthOutcome } from "@/lib/oauth-connection";
 import { getLocale, getT } from "@/lib/i18n/server";
 import { relativeTime } from "@/lib/relative-time";
@@ -46,6 +51,7 @@ export default async function WorkspacePage({
   const locale = await getLocale();
   const t = await getT("workspace");
   const roles = await getT("common.roles");
+  const deviceT = await getT("devices");
 
   const [{ workspaces }, workspaceResult] = await Promise.all([
     listWorkspaces(cookieHeader),
@@ -186,6 +192,24 @@ export default async function WorkspacePage({
             <ul className="workspace-list device-list">
               {devices.map((device) => {
                 const heartbeat = summarizeHeartbeat(device.heartbeat, locale);
+                const screen = summarizeScreen(device.screen);
+                // "3840 × 2160 · 16:9 · Screen view", plus the orientation
+                // when the TV is turned (#276).
+                const screenLine = [
+                  ...(screen
+                    ? [
+                        t("screenSize", {
+                          width: screen.width,
+                          height: screen.height,
+                        }),
+                        ...(screen.format ? [screen.format] : []),
+                        deviceT(`modes.${screen.mode}`),
+                      ]
+                    : []),
+                  ...(device.rotation !== 0
+                    ? [deviceT(`rotations.${rotationKey(device.rotation)}`)]
+                    : []),
+                ].join(" · ");
                 return (
                   <li key={device.id}>
                     <strong>{device.name}</strong>{" "}
@@ -215,10 +239,14 @@ export default async function WorkspacePage({
                         {t("lastError", { error: heartbeat.lastError })}
                       </p>
                     ) : null}
+                    {screenLine && !device.revokedAt ? (
+                      <p className="muted device-screen">{screenLine}</p>
+                    ) : null}
                     {can(role, "devices:manage") && !device.revokedAt ? (
                       <DeviceControls
                         workspaceId={workspaceId}
                         device={device}
+                        appleTv={isAppleTv(device.heartbeat)}
                         dashboards={dashboards}
                       />
                     ) : null}

@@ -14,6 +14,7 @@ import {
   createKioskClient,
   isSlidesDashboard,
   kioskAppVersion,
+  kioskScreen,
   serverDashboardSchemas,
   type KioskBlobUrls,
   type KioskClient,
@@ -501,6 +502,83 @@ describe("kiosk dashboard loop", () => {
 
     await vi.advanceTimersByTimeAsync(5 * 60_000);
     expect(api.callsTo("POST /v1/device/heartbeat")).toHaveLength(2);
+  });
+
+  it("reports the screen with each heartbeat, measured when sent (#276)", async () => {
+    const { storage } = memoryStorage({
+      [CREDENTIALS_KEY]: JSON.stringify(credentialsFor("a", 24 * 3600 * 1000)),
+    });
+    const api = fakeApi({
+      "GET /v1/device/dashboard": () =>
+        json({ error: "internal" }, { status: 500 }),
+      "POST /v1/device/heartbeat": () => reply(204, null),
+    });
+    let viewport: [number, number] = [1920, 1080];
+    client = createKioskClient({
+      fetch: api.fetch,
+      storage,
+      appVersion: "1.2.3",
+      screen: () => kioskScreen(viewport[0], viewport[1], 2),
+    });
+    client.start();
+    await vi.advanceTimersByTimeAsync(10_000);
+    // The window turned to portrait between two heartbeats.
+    viewport = [1080, 1920];
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    const beats = api.callsTo("POST /v1/device/heartbeat");
+    expect(
+      beats.map((beat) => (beat.body as { screen: unknown }).screen),
+    ).toEqual([
+      { width: 1920, height: 1080, scale: 2, mode: "screen" },
+      { width: 1080, height: 1920, scale: 2, mode: "screen" },
+    ]);
+  });
+
+  it("sends no screen when it cannot be measured", async () => {
+    const { storage } = memoryStorage({
+      [CREDENTIALS_KEY]: JSON.stringify(credentialsFor("a", 24 * 3600 * 1000)),
+    });
+    const api = fakeApi({
+      "GET /v1/device/dashboard": () =>
+        json({ error: "internal" }, { status: 500 }),
+      "POST /v1/device/heartbeat": () => reply(204, null),
+    });
+    client = createKioskClient({
+      fetch: api.fetch,
+      storage,
+      appVersion: "1.2.3",
+      screen: () => {
+        throw new Error("no window");
+      },
+    });
+    client.start();
+    await vi.advanceTimersByTimeAsync(10_000);
+    const [beat] = api.callsTo("POST /v1/device/heartbeat");
+    expect(beat!.body).not.toHaveProperty("screen");
+  });
+});
+
+describe("kioskScreen", () => {
+  it("rounds the viewport and keeps it inside the API's bounds", () => {
+    expect(kioskScreen(1366.4, 767.6, 1.25)).toEqual({
+      width: 1366,
+      height: 768,
+      scale: 1.25,
+      mode: "screen",
+    });
+    expect(kioskScreen(40_000, 0.2, 12)).toEqual({
+      width: 16_384,
+      height: 1,
+      scale: 8,
+      mode: "screen",
+    });
+    expect(kioskScreen(800, 600, 0.25)).toMatchObject({ scale: 0.5 });
+    expect(kioskScreen(800, 600, Number.NaN)).toMatchObject({ scale: 1 });
+  });
+
+  it("is null for a viewport without size", () => {
+    expect(kioskScreen(0, 1080, 1)).toBeNull();
+    expect(kioskScreen(1920, Number.NaN, 1)).toBeNull();
   });
 });
 

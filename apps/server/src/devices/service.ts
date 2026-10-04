@@ -13,6 +13,11 @@ import type {
   UpdateDeviceRequest,
 } from "@netrics/contracts";
 import {
+  deviceRotationSchema,
+  deviceScreenSchema,
+  displayModeSchema,
+} from "@netrics/contracts";
+import {
   approvePairing,
   claimPairing,
   countPairingFailures,
@@ -114,11 +119,31 @@ export function approveUrlFor(pairingUrl: string, code: string): string {
   return url.toString();
 }
 
+/**
+ * A device's screen settings as the API shows them. The database checks
+ * both columns; the fallbacks only guard against a value a later migration
+ * might add before this code knows it.
+ */
+export function deviceSettings(
+  row: DeviceRow,
+): Pick<Device, "rotation" | "displayMode"> {
+  const rotation = deviceRotationSchema.safeParse(row.rotation);
+  const displayMode = displayModeSchema.safeParse(row.displayMode);
+  return {
+    rotation: rotation.success ? rotation.data : 0,
+    displayMode: displayMode.success ? displayMode.data : "screen",
+  };
+}
+
 export function presentDevice(row: DeviceRow): Device {
+  const screen =
+    row.screen === null ? null : deviceScreenSchema.safeParse(row.screen);
   return {
     id: row.id,
     name: row.name,
     dashboardId: row.dashboardId,
+    ...deviceSettings(row),
+    screen: screen?.success ? screen.data : null,
     createdAt: row.createdAt.toISOString(),
     lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
     revokedAt: row.revokedAt?.toISOString() ?? null,
@@ -448,6 +473,7 @@ export function createDeviceService(deps: DeviceServiceDeps) {
         id: device.id,
         name: device.name,
         dashboardId: device.dashboardId,
+        ...deviceSettings(device),
       });
     },
 
@@ -511,7 +537,10 @@ export function createDeviceService(deps: DeviceServiceDeps) {
       });
     },
 
-    /** Stores the device's heartbeat. The error text is kept short. */
+    /**
+     * Stores the device's heartbeat. The error text is kept short. A
+     * heartbeat without `screen` (older apps) keeps the last reported one.
+     */
     async heartbeat(
       principal: { workspaceId: string; deviceId: string },
       body: DeviceHeartbeatRequest,
@@ -526,12 +555,17 @@ export function createDeviceService(deps: DeviceServiceDeps) {
             appVersion: body.appVersion,
             uptimeSeconds: body.uptimeSeconds,
             lastError,
+            // Parsed and bounded by the contract; unknown keys are gone.
+            ...(body.screen ? { screen: body.screen } : {}),
           }),
       );
       return stored ? ok(null) : fail(401, "unauthorized");
     },
 
-    /** Renames a device or assigns another dashboard. */
+    /**
+     * Renames a device, assigns another dashboard or changes its screen
+     * settings (rotation, display mode).
+     */
     async update(
       actor: { workspaceId: string; userId: string },
       deviceId: string,
@@ -547,12 +581,22 @@ export function createDeviceService(deps: DeviceServiceDeps) {
           ) {
             return fail<Device>(404, "dashboard_not_found");
           }
-          const device = await updateDevice(tx, actor.workspaceId, deviceId, {
+          const changes = {
             ...(body.name !== undefined ? { name: body.name } : {}),
             ...(body.dashboardId !== undefined
               ? { dashboardId: body.dashboardId }
               : {}),
-          });
+            ...(body.rotation !== undefined ? { rotation: body.rotation } : {}),
+            ...(body.displayMode !== undefined
+              ? { displayMode: body.displayMode }
+              : {}),
+          };
+          const device = await updateDevice(
+            tx,
+            actor.workspaceId,
+            deviceId,
+            changes,
+          );
           if (!device) {
             return fail<Device>(404, "device_not_found");
           }
@@ -561,12 +605,7 @@ export function createDeviceService(deps: DeviceServiceDeps) {
             actorUserId: actor.userId,
             action: "device.updated",
             target: deviceId,
-            metadata: {
-              ...(body.name !== undefined ? { name: body.name } : {}),
-              ...(body.dashboardId !== undefined
-                ? { dashboardId: body.dashboardId }
-                : {}),
-            },
+            metadata: changes,
           });
           return ok(presentDevice(device));
         },

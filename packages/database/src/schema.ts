@@ -1167,6 +1167,15 @@ export const dashboardTiles = pgTable(
 
 // A paired screen (ADR 0011). Workspace table under RLS; its credentials are
 // principal_tokens rows of kind "device".
+/** `devices.screen` as stored: a heartbeat's validated `screen` object. */
+export interface DeviceScreenColumn {
+  width: number;
+  height: number;
+  scale: number;
+  format?: string;
+  mode: string;
+}
+
 export const devices = pgTable(
   "devices",
   {
@@ -1192,10 +1201,30 @@ export const devices = pgTable(
     uptimeSeconds: integer("uptime_seconds"),
     lastError: text("last_error"),
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+    // Screen settings (ADR 0017 section 7, #276): the whole rendering turns
+    // by this many degrees (an Apple TV cannot know its TV is mounted on
+    // its side), and the display mode a browser kiosk uses.
+    rotation: smallint("rotation").notNull().default(0),
+    displayMode: text("display_mode").notNull().default("screen"),
+    // The screen the device last reported in a heartbeat (validated by the
+    // contracts' deviceScreenSchema before it is stored); null until then.
+    screen: jsonb("screen").$type<DeviceScreenColumn>(),
   },
   (table) => [
     unique("devices_id_workspace_unique").on(table.id, table.workspaceId),
     index("devices_workspace_idx").on(table.workspaceId),
+    check(
+      "devices_rotation_valid",
+      sql`${table.rotation} in (0, 90, 180, 270)`,
+    ),
+    check(
+      "devices_display_mode_valid",
+      sql`${table.displayMode} in ('screen', 'scroll')`,
+    ),
+    check(
+      "devices_screen_object",
+      sql`${table.screen} is null or jsonb_typeof(${table.screen}) = 'object'`,
+    ),
   ],
 );
 

@@ -44,6 +44,7 @@ export const workspaceEn = {
     lastSeen: "last seen {time}",
     heartbeat: "{version}, heartbeat {time}",
     lastError: "Last error: {error}",
+    screenSize: "{width} × {height}",
     connections: "Connections",
     noConnections: "No connections yet.",
     table: {
@@ -106,6 +107,19 @@ export const workspaceEn = {
     confirmRevoke: "Revoke {name}? It stops showing data immediately.",
     confirm: "Confirm",
     revoke: "Revoke",
+    orientation: "Orientation",
+    rotations: {
+      r0: "Landscape",
+      r90: "Portrait 90°",
+      r180: "Upside down",
+      r270: "Portrait 270°",
+    },
+    mode: "Mode",
+    modes: {
+      screen: "Screen view",
+      scroll: "Scroll view",
+    },
+    appleTvMode: "Apple TV always uses Screen view.",
   },
   deviceApproval: {
     pageTitle: "Connect a TV · netrics",
