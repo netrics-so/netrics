@@ -65,6 +65,8 @@ export interface AppDeps {
   signedKeys?: SignedKeyProviders;
   /** Tests: capture the app's logs. */
   logger?: FastifyBaseLogger;
+  /** Reuse of computed device payloads (default 30 s); tests pass 0. */
+  devicePayloadCacheMs?: number;
 }
 
 export async function buildApp(
@@ -181,6 +183,9 @@ export async function buildApp(
     pairingUrl: config.pairingUrl,
     version: config.version,
     exchangeRates: config.exchangeRates,
+    ...(deps.devicePayloadCacheMs !== undefined
+      ? { payloadCacheMs: deps.devicePayloadCacheMs }
+      : {}),
   });
   const oauthTokens =
     deps.oauthTokens ??

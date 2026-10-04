@@ -201,6 +201,23 @@ export async function findDashboard(
   return { ...row, slides: await loadSlides(tx, workspaceId, dashboardId) };
 }
 
+/**
+ * The dashboard's version, or null when it is not in the workspace: a cheap
+ * key for caching what is computed from it.
+ */
+export async function findDashboardVersion(
+  tx: Transaction,
+  workspaceId: string,
+  dashboardId: string,
+): Promise<number | null> {
+  const [row] = await tx
+    .select({ version: schema.dashboards.version })
+    .from(schema.dashboards)
+    .where(dashboardScope(workspaceId, dashboardId))
+    .limit(1);
+  return row?.version ?? null;
+}
+
 /** `id` when it is one of `existing` and not taken yet; otherwise none. */
 function keepId(
   id: string | null | undefined,

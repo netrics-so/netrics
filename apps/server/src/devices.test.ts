@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import type { FastifyInstance, InjectOptions } from "fastify";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -6,7 +9,9 @@ import {
   createPairingResponseSchema,
   dashboardResponseSchema,
   deviceDashboardResponseSchema,
+  deviceDashboardV2ResponseSchema,
   deviceListResponseSchema,
+  imageResponseSchema,
   deviceResponseSchema,
   deviceSelfResponseSchema,
   errorResponseSchema,
@@ -177,7 +182,13 @@ beforeAll(async () => {
   const authService = createAuthService(config, db, {
     logger: pino({ level: "silent" }),
   });
-  app = await buildApp(config, { db, authService, checkDb: async () => true });
+  app = await buildApp(config, {
+    db,
+    authService,
+    checkDb: async () => true,
+    // Tests change data between reads; the memo has its own tests.
+    devicePayloadCacheMs: 0,
+  });
   admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
   owner = await signUp("tv-owner@example.com");
   editor = await signUp("tv-editor@example.com");
@@ -214,6 +225,9 @@ describe("server identification", () => {
       deviceApiVersion: 1,
       version: "0.0.0-dev",
       pairingUrl: "http://localhost:3000/devices/approve",
+      // Released apps keep working: the API version stays 1, and new apps
+      // ask for schema 2 only when it is listed (ADR 0015 section 7).
+      dashboardSchemas: [1, 2],
     });
   });
 
@@ -802,9 +816,9 @@ describe("device dashboard", () => {
 
   function getDashboard(
     token: string | null,
-    options: { cookie?: string; etag?: string } = {},
+    options: { cookie?: string; etag?: string; query?: string } = {},
   ) {
-    return call("GET", "/v1/device/dashboard", {
+    return call("GET", `/v1/device/dashboard${options.query ?? ""}`, {
       ...(options.cookie ? { cookie: options.cookie } : {}),
       headers: {
         ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -1013,6 +1027,167 @@ describe("device dashboard", () => {
       value: 77,
       status: "ok",
     });
+  });
+
+  it("answers schema 2 with ?schema=2 and schema 1 otherwise", async () => {
+    const { accessToken } = await pair("Studio TV", salesId);
+    const v1 = await read(accessToken);
+    expect(v1.body).not.toHaveProperty("schema");
+    // ?schema=1 is the same payload as no parameter, byte for byte.
+    const explicit = await getDashboard(accessToken, { query: "?schema=1" });
+    expect(explicit.body).toBe(v1.response.body);
+    expect(explicit.headers.etag).toBe(v1.response.headers.etag);
+
+    const response = await getDashboard(accessToken, { query: "?schema=2" });
+    expect(response.statusCode).toBe(200);
+    const v2 = deviceDashboardV2ResponseSchema.parse(response.json());
+    expect(response.headers.etag).toBe(`"${v2.version}"`);
+    expect(response.headers["cache-control"]).toBe("no-cache");
+    expect(v2.version).not.toBe(v1.body.version);
+    expect(v2).toMatchObject({
+      schema: 2,
+      refreshAfterSec: 60,
+      timeZone: "UTC",
+      dashboard: { id: salesId, name: "Sales wall", showHeader: true },
+      rotation: { autoAdvance: true, transition: "fade" },
+      grid: { columns: 12, rows: 8 },
+      theme: { name: "netrics Dark" },
+      images: [],
+    });
+    // A migrated tile dashboard: its tiles as metric widgets, same data.
+    const widgets = v2.slides.flatMap((slide) => slide.widgets);
+    expect(widgets).toHaveLength(v1.body.tiles.length);
+    for (const [index, tile] of v1.body.tiles.entries()) {
+      const { id, label, ...data } = tile;
+      expect(widgets[index]).toMatchObject({ type: "metric", id, label, data });
+    }
+
+    // Each schema answers 304 on its own ETag only.
+    const v1Etag = v1.response.headers.etag as string;
+    const v2Etag = response.headers.etag as string;
+    const conditional = (query: string, etag: string) =>
+      getDashboard(accessToken, { query, etag });
+    expect((await conditional("?schema=2", v2Etag)).statusCode).toBe(304);
+    expect((await conditional("", v1Etag)).statusCode).toBe(304);
+    expect((await conditional("?schema=2", v1Etag)).statusCode).toBe(200);
+    expect((await conditional("", v2Etag)).statusCode).toBe(200);
+  });
+
+  it("refuses an unknown schema", async () => {
+    const { accessToken } = await pair("Future TV", salesId);
+    for (const query of ["?schema=3", "?schema=two", "?schema="]) {
+      const response = await getDashboard(accessToken, { query });
+      expect(response.statusCode).toBe(400);
+    }
+  });
+
+  it("references the dashboard's images, which the device can fetch", async () => {
+    const png = readFileSync(
+      path.join(import.meta.dirname, "images", "fixtures", "plain.png"),
+    );
+    const upload = async () => {
+      const response = await app.inject({
+        method: "POST",
+        url: `/v1/workspaces/${workspaceId}/images`,
+        headers: { cookie: owner, "content-type": "image/png" },
+        payload: png,
+      });
+      expect(response.statusCode).toBe(200);
+      return imageResponseSchema.parse(response.json()).image;
+    };
+    const logo = await upload();
+    const unused = await upload();
+    const created = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/dashboards`,
+      {
+        cookie: owner,
+        payload: {
+          name: "Brand",
+          settings: { logoImageId: logo.id, accentColor: "#C2410C" },
+          slides: [
+            {
+              name: "Welcome",
+              widgets: [
+                { type: "text", x: 0, y: 0, w: 4, h: 2, text: "# Hello" },
+                { type: "clock", x: 4, y: 0, w: 2, h: 1 },
+              ],
+            },
+          ],
+        },
+      },
+    );
+    expect(created.statusCode).toBe(200);
+    const brandId = dashboardResponseSchema.parse(created.json()).dashboard.id;
+    const { accessToken } = await pair("Brand TV", brandId);
+    const response = await getDashboard(accessToken, { query: "?schema=2" });
+    const body = deviceDashboardV2ResponseSchema.parse(response.json());
+    expect(body.dashboard?.logo).toEqual({ imageId: logo.id });
+    expect(body.theme.tokens.accent).toBe("#c2410c");
+    expect(body.images).toEqual([
+      {
+        id: logo.id,
+        sha256: logo.sha256,
+        contentType: "image/png",
+        width: logo.width,
+        height: logo.height,
+        bytes: logo.bytes,
+        url: `/v1/device/images/${logo.id}?v=${logo.sha256}`,
+      },
+    ]);
+    expect(body.slides[0]!.widgets.map((widget) => widget.type)).toEqual([
+      "text",
+      "clock",
+    ]);
+    const auth = { authorization: `Bearer ${accessToken}` };
+    const image = await call("GET", body.images[0]!.url, { headers: auth });
+    expect(image.statusCode).toBe(200);
+    expect(image.rawPayload.equals(png)).toBe(true);
+    // An image of the workspace the dashboard does not show: 404.
+    const other = await call(
+      "GET",
+      `/v1/device/images/${unused.id}?v=${unused.sha256}`,
+      { headers: auth },
+    );
+    expect(other.statusCode).toBe(404);
+  });
+
+  it("keeps another workspace's device on its own dashboard", async () => {
+    const { accessToken } = await pair("Sales TV 2", salesId);
+    const strangerWorkspace = await newWorkspace(stranger);
+    const strangerDashboard = await newDashboard(stranger, strangerWorkspace);
+    const pairing = await startPairing();
+    const approved = await approve(
+      stranger,
+      {
+        code: pairing.code,
+        name: "Stranger TV",
+        dashboardId: strangerDashboard,
+      },
+      strangerWorkspace,
+    );
+    expect(approved.statusCode).toBe(200);
+    const result = pollPairingResponseSchema.parse(
+      (await poll(pairing)).json(),
+    );
+    if (result.status !== "approved") throw new Error("not approved");
+    const theirs = deviceDashboardV2ResponseSchema.parse(
+      (
+        await getDashboard(result.credentials.accessToken, {
+          query: "?schema=2",
+        })
+      ).json(),
+    );
+    expect(theirs.dashboard).toMatchObject({ id: strangerDashboard });
+    expect(theirs.slides.flatMap((slide) => slide.widgets)).toEqual([]);
+    const ours = deviceDashboardV2ResponseSchema.parse(
+      (await getDashboard(accessToken, { query: "?schema=2" })).json(),
+    );
+    expect(ours.dashboard).toMatchObject({ id: salesId });
+    expect(ours.version).not.toBe(theirs.version);
+    // Reassigning to the other workspace's dashboard is refused.
+    const device = deviceResponseSchema.parse(approved.json()).device;
+    expect((await reassign(device.id, salesId)).statusCode).toBe(404);
   });
 
   it("accepts only the device's access token", async () => {

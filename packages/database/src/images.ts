@@ -201,6 +201,26 @@ export async function findImageIds(
   return new Set(rows.map((row) => row.id));
 }
 
+/** The metadata of those of `imageIds` that are images of the workspace. */
+export async function findImages(
+  tx: Transaction,
+  workspaceId: string,
+  imageIds: readonly string[],
+): Promise<ImageRow[]> {
+  if (imageIds.length === 0) {
+    return [];
+  }
+  return tx
+    .select(metadata)
+    .from(schema.workspaceImages)
+    .where(
+      and(
+        eq(schema.workspaceImages.workspaceId, workspaceId),
+        inArray(schema.workspaceImages.id, [...imageIds]),
+      ),
+    );
+}
+
 /**
  * The dashboards that use an image: as logo, slide background or in an
  * image widget, on any slide.

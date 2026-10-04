@@ -6,6 +6,7 @@ import type {
   Device,
   DeviceCredentials,
   DeviceDashboardResponse,
+  DeviceDashboardV2Response,
   DeviceHeartbeatRequest,
   DeviceSelfResponse,
   PollPairingResponse,
@@ -17,6 +18,7 @@ import {
   countPairingFailures,
   countRecentPairings,
   findDashboard,
+  findDashboardVersion,
   findDevice,
   findPendingPairing,
   insertAuditEvent,
@@ -37,7 +39,15 @@ import {
 } from "@netrics/database";
 
 import { generatePrincipalToken, generateToken, hashToken } from "../tokens.js";
-import { buildDeviceDashboard, type TileErrorLogger } from "./dashboard.js";
+import {
+  buildDeviceDashboard,
+  buildDeviceDashboardV2,
+  type TileErrorLogger,
+} from "./dashboard.js";
+import {
+  createPayloadCache,
+  DEVICE_PAYLOAD_CACHE_MS,
+} from "./payload-cache.js";
 
 // Device pairing and credentials (ADR 0011).
 
@@ -131,11 +141,24 @@ export interface DeviceServiceDeps {
   now?: () => Date;
   /** NETRICS_EXCHANGE_RATES: display-currency conversion (#191). */
   exchangeRates?: boolean;
+  /**
+   * How long a computed dashboard payload is reused by every screen that
+   * shows it (default 30 s); 0 computes it on every request.
+   */
+  payloadCacheMs?: number;
 }
+
+/** The device dashboard payload in schema 1 or 2 (ADR 0015 section 7). */
+export type DeviceDashboardPayload =
+  DeviceDashboardResponse | DeviceDashboardV2Response;
 
 export function createDeviceService(deps: DeviceServiceDeps) {
   const { db } = deps;
   const now = deps.now ?? (() => new Date());
+  const payloads = createPayloadCache({
+    ttlMs: deps.payloadCacheMs ?? DEVICE_PAYLOAD_CACHE_MS,
+    now: () => now().getTime(),
+  });
 
   return {
     /** A new pairing for an unauthenticated device, rate-limited per IP. */
@@ -421,37 +444,53 @@ export function createDeviceService(deps: DeviceServiceDeps) {
       });
     },
 
-    /** The read model of the calling device's dashboard (ADR 0007). */
+    /**
+     * The read model of the calling device's dashboard (ADR 0007), in
+     * schema 1 or 2 (ADR 0015 section 7). Computed inside the device's
+     * workspace transaction, and reused for up to 30 s per (workspace,
+     * dashboard, dashboard version, schema).
+     */
     async dashboard(
       principal: { workspaceId: string; deviceId: string },
       log?: TileErrorLogger,
-    ): Promise<Result<DeviceDashboardResponse>> {
-      return withWorkspace(
-        db,
-        { workspaceId: principal.workspaceId },
-        async (tx) => {
-          const device = await findDevice(
-            tx,
-            principal.workspaceId,
-            principal.deviceId,
-          );
-          if (!device || device.revokedAt) {
-            return fail<DeviceDashboardResponse>(401, "unauthorized");
-          }
-          return ok(
-            await buildDeviceDashboard(
-              tx,
-              principal.workspaceId,
-              device.dashboardId,
-              {
-                now: now(),
-                exchangeRates: deps.exchangeRates ?? false,
-                ...(log ? { log } : {}),
-              },
-            ),
-          );
-        },
-      );
+      schema: 1 | 2 = 1,
+    ): Promise<Result<DeviceDashboardPayload>> {
+      const { workspaceId } = principal;
+      return withWorkspace(db, { workspaceId }, async (tx) => {
+        const device = await findDevice(tx, workspaceId, principal.deviceId);
+        if (!device || device.revokedAt) {
+          return fail<DeviceDashboardPayload>(401, "unauthorized");
+        }
+        const options = {
+          now: now(),
+          exchangeRates: deps.exchangeRates ?? false,
+          ...(log ? { log } : {}),
+        };
+        const build = (): Promise<DeviceDashboardPayload> =>
+          schema === 2
+            ? buildDeviceDashboardV2(
+                tx,
+                workspaceId,
+                device.dashboardId,
+                options,
+              )
+            : buildDeviceDashboard(
+                tx,
+                workspaceId,
+                device.dashboardId,
+                options,
+              );
+        const version = device.dashboardId
+          ? await findDashboardVersion(tx, workspaceId, device.dashboardId)
+          : null;
+        if (version === null) {
+          return ok<DeviceDashboardPayload>(await build());
+        }
+        const key = [workspaceId, device.dashboardId, version, schema].join(
+          ":",
+        );
+        return ok<DeviceDashboardPayload>(await payloads.get(key, build));
+      });
     },
 
     /** Stores the device's heartbeat. The error text is kept short. */
