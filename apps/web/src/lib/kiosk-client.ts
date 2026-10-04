@@ -2,6 +2,8 @@ import type {
   CreatePairingResponse,
   DeviceCredentials,
   DeviceDashboardResponse,
+  DeviceDashboardV2Response,
+  DeviceImage,
   PollPairingResponse,
 } from "@netrics/contracts";
 
@@ -15,6 +17,13 @@ import type {
  * A wall screen must never go blank because the API is away: the last
  * dashboard stays on screen (and in storage, for a reload while the API is
  * down), marked offline, until a request succeeds again.
+ *
+ * Slides (#221, ADR 0015 section 7): the kiosk asks for payload schema 2
+ * when the server lists it in `/v1/server` (`dashboardSchemas`), else it
+ * keeps schema 1. A schema 2 payload references images; they are fetched
+ * with the device token, kept in Cache Storage by sha256 (only missing
+ * hashes are downloaded) and handed to the page as `blob:` URLs, which are
+ * revoked when no payload references them any more.
  */
 
 export const CREDENTIALS_KEY = "netrics.kiosk.credentials";
@@ -30,6 +39,8 @@ export const BACKOFF_MAX_MS = 60 * 1000;
 /** A hanging request counts as a failure after this long. */
 export const REQUEST_TIMEOUT_MS = 15 * 1000;
 const DEFAULT_REFRESH_AFTER_SECONDS = 60;
+/** The payload schema with slides; 1 is the tile list. */
+export const SLIDES_SCHEMA = 2;
 const MAX_ERROR_LENGTH = 500;
 
 export interface KioskStorage {
@@ -51,12 +62,42 @@ export interface KioskPairing {
   expiresAt: string;
 }
 
+/** Either payload schema: tiles (1) or slides (2). */
+export type KioskDashboard =
+  DeviceDashboardResponse | DeviceDashboardV2Response;
+
+/** An image of the payload, ready to show: `url` is a `blob:` URL. */
+export interface KioskImage {
+  id: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * Where image bytes are kept between page loads, by sha256: Cache Storage
+ * in the browser (see `browserImageCache`), memory in tests.
+ */
+export interface KioskImageCache {
+  get(sha256: string): Promise<Blob | null>;
+  put(sha256: string, blob: Blob): Promise<void>;
+  /** Drops every entry whose hash is not in `keep`. */
+  prune(keep: ReadonlySet<string>): Promise<void>;
+}
+
+export interface KioskBlobUrls {
+  create(blob: Blob): string;
+  revoke(url: string): void;
+}
+
 export interface KioskState {
   /** starting: reading storage; pairing: showing a code; paired: dashboard. */
   phase: "starting" | "pairing" | "paired";
   pairing: KioskPairing | null;
   /** The last dashboard the API returned; kept through outages. */
-  dashboard: DeviceDashboardResponse | null;
+  dashboard: KioskDashboard | null;
+  /** The payload's images that are loaded, by image id (schema 2). */
+  images: ReadonlyMap<string, KioskImage>;
   /** When the API last confirmed the dashboard (200 or 304), epoch ms. */
   updatedAt: number | null;
   /** The latest request failed; the screen shows the last known state. */
@@ -73,6 +114,10 @@ export interface KioskClientOptions {
   /** The web app's version; reported as "web <version>". */
   appVersion: string;
   onChange?: (state: KioskState) => void;
+  /** Keeps image bytes across reloads; memory only without it. */
+  imageCache?: KioskImageCache | null;
+  /** Defaults to URL.createObjectURL / revokeObjectURL. */
+  blobUrls?: KioskBlobUrls;
 }
 
 export interface KioskClient {
@@ -83,7 +128,7 @@ export interface KioskClient {
 
 interface CachedDashboard {
   etag: string | null;
-  payload: DeviceDashboardResponse;
+  payload: KioskDashboard;
   updatedAt: number;
 }
 
@@ -144,16 +189,70 @@ function parseCredentials(raw: string | null): DeviceCredentials | null {
   return null;
 }
 
-function isDashboard(value: unknown): value is DeviceDashboardResponse {
-  const candidate = value as Partial<DeviceDashboardResponse> | null;
+/** Whether a payload is schema 2 (slides) rather than schema 1 (tiles). */
+export function isSlidesDashboard(
+  dashboard: KioskDashboard,
+): dashboard is DeviceDashboardV2Response {
+  return (dashboard as { schema?: unknown }).schema === SLIDES_SCHEMA;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * A light shape check, not the contract's full parse: a newer server may
+ * add widget types, which the canvas shows as a notice in their box.
+ */
+function isDashboard(value: unknown): value is KioskDashboard {
+  if (!isRecord(value) || !isString(value.version)) {
+    return false;
+  }
+  if (!isString(value.timeZone)) {
+    return false;
+  }
+  if (value.schema === SLIDES_SCHEMA) {
+    return (
+      Array.isArray(value.slides) &&
+      Array.isArray(value.images) &&
+      isRecord(value.theme) &&
+      isRecord(value.theme.tokens) &&
+      isRecord(value.rotation)
+    );
+  }
+  return Array.isArray(value.tiles);
+}
+
+/** The only image URLs the kiosk sends its token to: the device API's. */
+const DEVICE_IMAGE_URL =
+  /^\/v1\/device\/images\/[0-9a-f-]{36}\?v=[0-9a-f]{64}$/;
+const SHA256 = /^[0-9a-f]{64}$/;
+
+function usableImage(image: DeviceImage): boolean {
   return (
-    typeof candidate === "object" &&
-    candidate !== null &&
-    isString(candidate.version) &&
-    isString(candidate.timeZone) &&
-    Array.isArray(candidate.tiles)
+    isRecord(image) &&
+    isString(image.id) &&
+    typeof image.sha256 === "string" &&
+    SHA256.test(image.sha256) &&
+    typeof image.url === "string" &&
+    DEVICE_IMAGE_URL.test(image.url)
   );
 }
+
+/** The schemas a `/v1/server` body lists; [] when it lists none. */
+export function serverDashboardSchemas(body: unknown): number[] {
+  if (!isRecord(body) || !Array.isArray(body.dashboardSchemas)) {
+    return [];
+  }
+  return body.dashboardSchemas.filter(
+    (schema): schema is number => typeof schema === "number",
+  );
+}
+
+const defaultBlobUrls: KioskBlobUrls = {
+  create: (blob) => URL.createObjectURL(blob),
+  revoke: (url) => URL.revokeObjectURL(url),
+};
 
 function parseCachedDashboard(raw: string | null): CachedDashboard | null {
   if (!raw) {
@@ -192,10 +291,14 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
   const baseUrl = options.baseUrl ?? "";
   const { storage } = options;
 
+  const imageCache = options.imageCache ?? null;
+  const blobUrls = options.blobUrls ?? defaultBlobUrls;
+
   let state: KioskState = {
     phase: "starting",
     pairing: null,
     dashboard: null,
+    images: new Map(),
     updatedAt: null,
     offline: false,
     lastError: null,
@@ -213,6 +316,12 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
   let loopTimer: unknown = null;
   let heartbeatTimer: unknown = null;
   let refreshing: Promise<RefreshOutcome> | null = null;
+  /** The schema to ask for; null until `/v1/server` has answered. */
+  let schema: 1 | 2 | null = null;
+  /** Blob URLs of loaded images, by sha256. */
+  const loaded = new Map<string, string>();
+  /** Image syncs run one after another; a newer payload ends an older one. */
+  let imageQueue: Promise<void> = Promise.resolve();
 
   function update(patch: Partial<KioskState>) {
     state = { ...state, ...patch };
@@ -300,10 +409,13 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
     remove(CREDENTIALS_KEY);
     remove(DASHBOARD_KEY);
     failures = 0;
+    releaseImages();
+    void imageCache?.prune(new Set()).catch(() => undefined);
     update({
       phase: "pairing",
       pairing: null,
       dashboard: null,
+      images: new Map(),
       updatedAt: null,
       offline: false,
     });
@@ -417,6 +529,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
       phase: "paired",
       pairing: null,
       dashboard: null,
+      images: new Map(),
       updatedAt: null,
       offline: false,
       lastError: null,
@@ -499,7 +612,11 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
           return enterPairing();
         }
       }
-      let response = await getDashboard();
+      const wanted = await dashboardSchema();
+      if (at !== epoch) {
+        return;
+      }
+      let response = await getDashboard(wanted);
       if (at !== epoch) {
         return;
       }
@@ -512,7 +629,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
         if (outcome === "revoked") {
           return enterPairing();
         }
-        response = await getDashboard();
+        response = await getDashboard(wanted);
         if (at !== epoch) {
           return;
         }
@@ -527,6 +644,10 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
         update({ updatedAt: now, offline: false, lastError: null });
         cache(state.dashboard, now);
         schedule(refreshAfterMs(state.dashboard), fetchDashboard);
+        // Images that could not be loaded before are tried again.
+        if (missingImages(state.dashboard)) {
+          syncImages(state.dashboard, { download: true, prune: false });
+        }
         return;
       }
       if (!response.ok) {
@@ -549,6 +670,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
         lastError: null,
       });
       schedule(refreshAfterMs(payload), fetchDashboard);
+      syncImages(payload, { download: true, prune: true });
     } catch (cause) {
       if (at !== epoch) {
         return;
@@ -559,16 +681,152 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
     }
   }
 
-  function getDashboard(): Promise<Response> {
-    return request("/v1/device/dashboard", {
-      headers: {
-        authorization: `Bearer ${credentials?.accessToken ?? ""}`,
-        ...(etag && state.dashboard ? { "if-none-match": etag } : {}),
+  /**
+   * The payload schema to ask for: 2 when `/v1/server` lists it, else 1
+   * (a server from before slides). The answer is kept for this page load
+   * (a deploy reloads the kiosk). When the server info cannot be read, the
+   * schema of the payload on screen is kept, so an outage never switches a
+   * slide screen back to tiles.
+   */
+  async function dashboardSchema(): Promise<1 | 2> {
+    if (schema !== null) {
+      return schema;
+    }
+    try {
+      const response = await request("/v1/server", {});
+      if (!response.ok) {
+        throw new HttpError(response.status);
+      }
+      const body: unknown = await response.json();
+      schema = serverDashboardSchemas(body).includes(SLIDES_SCHEMA) ? 2 : 1;
+      return schema;
+    } catch {
+      return state.dashboard && isSlidesDashboard(state.dashboard) ? 2 : 1;
+    }
+  }
+
+  function getDashboard(wanted: 1 | 2): Promise<Response> {
+    // ETags are per schema: only offer one for the schema asked for.
+    const current = state.dashboard;
+    const sameSchema =
+      current !== null && isSlidesDashboard(current) === (wanted === 2);
+    return request(
+      wanted === 2
+        ? `/v1/device/dashboard?schema=${SLIDES_SCHEMA}`
+        : "/v1/device/dashboard",
+      {
+        headers: {
+          authorization: `Bearer ${credentials?.accessToken ?? ""}`,
+          ...(etag && sameSchema ? { "if-none-match": etag } : {}),
+        },
       },
+    );
+  }
+
+  // ── Images (schema 2) ──────────────────────────────────────────────────
+
+  function payloadImages(dashboard: KioskDashboard | null): DeviceImage[] {
+    return dashboard && isSlidesDashboard(dashboard)
+      ? dashboard.images.filter(usableImage)
+      : [];
+  }
+
+  function missingImages(dashboard: KioskDashboard): boolean {
+    return payloadImages(dashboard).some((image) => !loaded.has(image.sha256));
+  }
+
+  function releaseImages(keep: ReadonlySet<string> = new Set()) {
+    for (const [sha256, url] of loaded) {
+      if (!keep.has(sha256)) {
+        blobUrls.revoke(url);
+        loaded.delete(sha256);
+      }
+    }
+  }
+
+  function publishImages(images: readonly DeviceImage[]) {
+    const ready = new Map<string, KioskImage>();
+    for (const image of images) {
+      const url = loaded.get(image.sha256);
+      if (url) {
+        ready.set(image.id, {
+          id: image.id,
+          url,
+          width: image.width,
+          height: image.height,
+        });
+      }
+    }
+    update({ images: ready });
+  }
+
+  async function downloadImage(image: DeviceImage): Promise<Blob | null> {
+    if (!credentials) {
+      return null;
+    }
+    try {
+      const response = await request(image.url, {
+        headers: {
+          accept: image.contentType,
+          authorization: `Bearer ${credentials.accessToken}`,
+        },
+      });
+      // A refused or missing image stays missing until the next poll.
+      return response.ok ? await response.blob() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Makes the payload's images showable: blob URLs already made are kept,
+   * then Cache Storage, then (when `download`) the device API, one image
+   * at a time. URLs of images the payload no longer references are
+   * revoked; with `prune`, so are their cache entries.
+   */
+  function syncImages(
+    dashboard: KioskDashboard,
+    mode: { download: boolean; prune: boolean },
+  ) {
+    const at = epoch;
+    const current = () => at === epoch && state.dashboard === dashboard;
+    imageQueue = imageQueue.then(async () => {
+      if (!current()) {
+        return;
+      }
+      const images = payloadImages(dashboard);
+      const hashes = new Set(images.map((image) => image.sha256));
+      releaseImages(hashes);
+      publishImages(images);
+      for (const image of images) {
+        if (loaded.has(image.sha256)) {
+          continue;
+        }
+        let blob = await imageCache?.get(image.sha256).catch(() => null);
+        let fresh = false;
+        if (!blob && mode.download) {
+          blob = await downloadImage(image);
+          fresh = blob !== null;
+        }
+        if (!current()) {
+          return;
+        }
+        if (!blob || loaded.has(image.sha256)) {
+          continue;
+        }
+        if (fresh) {
+          await imageCache?.put(image.sha256, blob).catch(() => undefined);
+        }
+        loaded.set(image.sha256, blobUrls.create(blob));
+        publishImages(images);
+      }
+      if (mode.prune && current()) {
+        await imageCache?.prune(hashes).catch(() => undefined);
+      }
     });
   }
 
-  function refreshAfterMs(dashboard: DeviceDashboardResponse): number {
+  function refreshAfterMs(dashboard: KioskDashboard): number {
     const seconds =
       dashboard.refreshAfterSec > 0
         ? dashboard.refreshAfterSec
@@ -576,7 +834,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
     return seconds * 1000;
   }
 
-  function cache(payload: DeviceDashboardResponse, updatedAt: number) {
+  function cache(payload: KioskDashboard, updatedAt: number) {
     const entry: CachedDashboard = { etag, payload, updatedAt };
     write(DASHBOARD_KEY, JSON.stringify(entry));
   }
@@ -637,16 +895,23 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
         phase: "paired",
         pairing: null,
         dashboard: cached?.payload ?? null,
+        images: new Map(),
         updatedAt: cached?.updatedAt ?? null,
         offline: false,
         lastError: null,
       });
+      // Offline start: the cached payload with its cached images. The
+      // first poll downloads whatever is missing.
+      if (cached) {
+        syncImages(cached.payload, { download: false, prune: false });
+      }
       startPairedLoops();
     },
     stop() {
       running = false;
       epoch += 1;
       stopTimers();
+      releaseImages();
     },
     getState() {
       return state;

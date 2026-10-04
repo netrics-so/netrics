@@ -109,7 +109,7 @@ export function PlayMode({
                 ? "studio-slide-enter"
                 : undefined
             }
-            slide={{ ...current.slide, position: index }}
+            slide={current.slide}
             tokens={tokens}
             showHeader={document.settings.showHeader}
             header={{
