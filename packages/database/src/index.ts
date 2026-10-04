@@ -134,6 +134,7 @@ export type {
 export {
   deleteDashboard,
   findDashboard,
+  findDashboardVersion,
   insertDashboard,
   listDashboards,
   metricWidgets,
@@ -175,6 +176,7 @@ export {
   findImage,
   findImageIds,
   findImageUsers,
+  findImages,
   imageUsage,
   insertImageWithinQuota,
   listImages,

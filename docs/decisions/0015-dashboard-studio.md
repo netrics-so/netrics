@@ -369,6 +369,16 @@ server.
 }
 ```
 
+The sketch above is abridged; `deviceDashboardV2ResponseSchema` in
+`packages/contracts` (and `openapi.json`) is the contract (#219). Every
+widget carries `label` (null for image, text and clock without a title). A
+line widget's points are aligned arrays, `buckets`, `values` and `previous`,
+rather than pairs, and a bar widget's are `bars` plus `others`. A clock's
+`options.timeZone` is resolved to the workspace's when unset. Measured: the
+brand dashboard of the tests (seven widgets on two slides) is about 5 KB;
+the largest dashboard the limits allow (48 line charts of 30 points and 144
+texts of 500 characters) is about 185 KiB.
+
 Only enabled slides are sent. Labels are resolved on the server
 (`tileLabel`, #194/#208), as today. A data widget that fails reports
 `no_data` and never fails the dashboard.

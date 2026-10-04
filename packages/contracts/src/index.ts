@@ -19,6 +19,8 @@ import {
   type ThemeColorToken,
 } from "@netrics/domain";
 
+import { imageContentTypeSchema } from "./images.js";
+
 export const processRoleSchema = z.enum(["api", "worker", "scheduler"]);
 export type ProcessRole = z.infer<typeof processRoleSchema>;
 
@@ -1784,6 +1786,12 @@ export const serverInfoResponseSchema = z.object({
   version: z.string().min(1),
   /** Where a signed-in user approves a pairing code. */
   pairingUrl: z.url(),
+  /**
+   * Device dashboard payload schemas this server answers (ADR 0015 section
+   * 7). An app asks for `?schema=2` only when 2 is listed; servers before
+   * it omit the field and answer schema 1.
+   */
+  dashboardSchemas: z.array(z.number().int().positive()),
 });
 export type ServerInfoResponse = z.infer<typeof serverInfoResponseSchema>;
 
@@ -1989,6 +1997,231 @@ export const deviceDashboardResponseSchema = z.object({
 });
 export type DeviceDashboardResponse = z.infer<
   typeof deviceDashboardResponseSchema
+>;
+
+// ─── Device payload schema 2 (ADR 0015, section 7; #219) ────────────────────
+//
+// GET /v1/device/dashboard?schema=2. Everything a screen needs to render the
+// dashboard's enabled slides without further calls, except the image bytes
+// (GET /v1/device/images/:id?v=<sha256>). Without the parameter the endpoint
+// answers schema 1 (`deviceDashboardResponseSchema`), unchanged.
+
+/** The payload schemas this server answers (`dashboardSchemas` in server info). */
+export const DEVICE_DASHBOARD_SCHEMAS = [1, 2] as const;
+
+export const deviceDashboardQuerySchema = z.object({
+  /** "2" for schema 2; missing or "1" for schema 1. */
+  schema: z.enum(["1", "2"]).optional(),
+});
+export type DeviceDashboardQuery = z.infer<typeof deviceDashboardQuerySchema>;
+
+/** As a tile's `conversion` (#191). */
+const deviceConversionSchema = deviceTileSchema.shape.conversion;
+
+/** What every data widget reports about its metric, as a tile does. */
+const deviceWidgetDataShape = {
+  period: metricPeriodSchema,
+  aggregation: metricAggregationSchema,
+  /** As a tile's: "count", "<ISO 4217>_minor", …; null when it failed. */
+  unit: z.string().nullable(),
+  conversion: deviceConversionSchema,
+  kind: z.enum(METRIC_KINDS).nullable(),
+  granularity: z.enum(GRANULARITIES).nullable(),
+  better: metricBetterSchema,
+  /**
+   * As a tile's. A widget whose query failed is `no_data` (or its
+   * connection's failure) and never fails the payload.
+   */
+  status: deviceTileStatusSchema,
+  /** The connection's last successful sync. */
+  updatedAt: z.iso.datetime().nullable(),
+};
+
+/** A metric widget's data: a schema 1 tile without id and label. */
+export const deviceMetricDataSchema = z.object({
+  ...deviceWidgetDataShape,
+  value: z.number().nullable(),
+  change: deviceTileSchema.shape.change,
+  /** One point per bucket of the current period, oldest first; null = gap. */
+  spark: z.array(z.number().nullable()),
+});
+export type DeviceMetricData = z.infer<typeof deviceMetricDataSchema>;
+
+/**
+ * A line widget's data: the period's points and the previous period's,
+ * aligned. `buckets[i]` starts point i (hour, day, week or month, at most
+ * 31 points); `values[i]` is its value and `previous[i]` the same bucket of
+ * the previous period (empty when the widget hides it). Null is a gap.
+ */
+export const deviceLineDataSchema = z.object({
+  ...deviceWidgetDataShape,
+  value: z.number().nullable(),
+  change: deviceTileSchema.shape.change,
+  buckets: z.array(z.iso.datetime()),
+  values: z.array(z.number().nullable()),
+  previous: z.array(z.number().nullable()),
+});
+export type DeviceLineData = z.infer<typeof deviceLineDataSchema>;
+
+/** A bar widget's data: the largest groups, largest first, and the rest. */
+export const deviceBarDataSchema = z.object({
+  ...deviceWidgetDataShape,
+  /** The dimension grouped by (e.g. "resource", "territory"). */
+  groupBy: z.string().min(1),
+  bars: z.array(
+    z.object({
+      /** The dimension value. */
+      key: z.string(),
+      /** A resource's or territory's name, else the key. */
+      label: z.string().min(1),
+      value: z.number(),
+    }),
+  ),
+  /** The rest added up ("Others"); null when there is none. */
+  others: z
+    .object({
+      label: z.string().min(1),
+      value: z.number(),
+      groups: z.number().int().nonnegative(),
+    })
+    .nullable(),
+});
+export type DeviceBarData = z.infer<typeof deviceBarDataSchema>;
+
+const deviceWidgetShape = {
+  id: z.uuid(),
+  /** Grid cell of the top left corner and size in cells (12 × 8 grid). */
+  ...widgetPlacementShape,
+};
+
+/**
+ * A data widget's label: its title, else the metric name with the
+ * resource ("Downloads · Wurfel", #194) or scope ("Downloads · All apps",
+ * #208), exactly as a schema 1 tile's.
+ */
+const deviceDataLabelSchema = z.string().min(1);
+
+export const deviceWidgetSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("metric"),
+    ...deviceWidgetShape,
+    label: deviceDataLabelSchema,
+    options: metricWidgetOptionsSchema,
+    data: deviceMetricDataSchema,
+  }),
+  z.object({
+    type: z.literal("line"),
+    ...deviceWidgetShape,
+    label: deviceDataLabelSchema,
+    options: lineWidgetOptionsSchema,
+    data: deviceLineDataSchema,
+  }),
+  z.object({
+    type: z.literal("bar"),
+    ...deviceWidgetShape,
+    label: deviceDataLabelSchema,
+    options: barWidgetOptionsSchema,
+    data: deviceBarDataSchema,
+  }),
+  z.object({
+    type: z.literal("image"),
+    ...deviceWidgetShape,
+    /** The widget's title (alternative text), else null. */
+    label: z.string().nullable(),
+    /** One of the payload's `images`. */
+    imageId: z.uuid(),
+    options: imageWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("text"),
+    ...deviceWidgetShape,
+    label: z.string().nullable(),
+    /** Markdown-lite (ADR 0015 section 2); never interpreted as HTML. */
+    text: z.string(),
+    options: textWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("clock"),
+    ...deviceWidgetShape,
+    label: z.string().nullable(),
+    /** `timeZone` resolved: the widget's, else the workspace's. */
+    options: clockWidgetOptionsSchema.extend({ timeZone: z.string().min(1) }),
+  }),
+]);
+export type DeviceWidget = z.infer<typeof deviceWidgetSchema>;
+
+export const deviceSlideSchema = z.object({
+  /** Stable across saves: keep showing it when a new payload still has it. */
+  id: z.uuid(),
+  /** Shown in the header; null for none. */
+  name: z.string().nullable(),
+  /** The slide's duration, else the dashboard default. */
+  durationSec: z.number().int().positive(),
+  /** One of the payload's `images`, dimmed by `dim` % of `background`. */
+  background: z
+    .object({
+      imageId: z.uuid(),
+      dim: z.number().int().min(BACKGROUND_DIM.min).max(BACKGROUND_DIM.max),
+    })
+    .nullable(),
+  /** In reading order: top to bottom, then left to right. */
+  widgets: z.array(deviceWidgetSchema),
+});
+export type DeviceSlide = z.infer<typeof deviceSlideSchema>;
+
+/** An image the payload references; fetch `url` with the device token. */
+export const deviceImageSchema = z.object({
+  id: z.uuid(),
+  /** Cache key: the bytes never change under one hash. */
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  contentType: imageContentTypeSchema,
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  bytes: z.number().int().positive(),
+  /** Relative: /v1/device/images/:id?v=<sha256>. */
+  url: z.string().min(1),
+});
+export type DeviceImage = z.infer<typeof deviceImageSchema>;
+
+export const deviceDashboardV2ResponseSchema = z.object({
+  /** Hash of the content below (schema included); also the ETag. */
+  version: z.string().min(1),
+  schema: z.literal(2),
+  refreshAfterSec: z.number().int().positive(),
+  /** The workspace's time zone, which the buckets follow. */
+  timeZone: z.string().min(1),
+  /** Null when no dashboard is assigned; `slides` is then empty. */
+  dashboard: z
+    .object({
+      id: z.uuid(),
+      name: z.string().min(1),
+      /** The band with name, slide name and clock above the grid. */
+      showHeader: z.boolean(),
+      /** Shown in the header before the name; one of `images`. */
+      logo: z.object({ imageId: z.uuid() }).nullable(),
+    })
+    .nullable(),
+  /**
+   * The resolved theme (built-in or custom), with a brand accent already
+   * applied to `accent`. Screens draw with these tokens only.
+   */
+  theme: z.object({ name: z.string().min(1), tokens: themeTokensSchema }),
+  rotation: z.object({
+    /** False: show only the first slide. */
+    autoAdvance: z.boolean(),
+    transition: slideTransitionSchema,
+  }),
+  grid: z.object({
+    columns: z.literal(STUDIO_GRID.columns),
+    rows: z.literal(STUDIO_GRID.rows),
+  }),
+  /** Enabled slides only, in order. */
+  slides: z.array(deviceSlideSchema),
+  /** Exactly the images the dashboard, its slides and widgets reference. */
+  images: z.array(deviceImageSchema),
+});
+export type DeviceDashboardV2Response = z.infer<
+  typeof deviceDashboardV2ResponseSchema
 >;
 
 export const deviceHeartbeatRequestSchema = z.object({
