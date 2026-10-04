@@ -6,6 +6,8 @@ import {
   documentRotation,
   keptSlideId,
   nextSlideId,
+  pageEntryId,
+  parsePageEntryId,
   type SlideRotation,
 } from "./slide-rotation";
 
@@ -312,5 +314,78 @@ describe("documentRotation", () => {
       ["a", 30],
       ["c", 15],
     ]);
+  });
+});
+
+describe("continuation pages (ADR 0017, #281)", () => {
+  const page = (id: string, n: number, durationSec: number) => ({
+    id: pageEntryId(id, n),
+    durationSec,
+  });
+
+  it("gives later pages ids of their own and parses them back", () => {
+    expect(pageEntryId("a", 0)).toBe("a");
+    expect(pageEntryId("a", 1)).toBe("a#2");
+    expect(parsePageEntryId("a#2")).toEqual({ slideId: "a", page: 1 });
+    expect(parsePageEntryId("a")).toEqual({ slideId: "a", page: 0 });
+    expect(parsePageEntryId("a#x")).toEqual({ slideId: "a#x", page: 0 });
+  });
+
+  it("falls back to the slide when its page is gone", () => {
+    const two = [page("a", 0, 10), page("b", 0, 10)];
+    // The screen turned: b fits on one page now.
+    expect(keptSlideId(two, "b#2", true)).toBe("b");
+    // Three pages became two: the last one there.
+    expect(keptSlideId([page("b", 0, 10), page("b", 1, 10)], "b#3", true)).toBe(
+      "b#2",
+    );
+    // A slide that is gone altogether: the first.
+    expect(keptSlideId(two, "c#2", true)).toBe("a");
+  });
+
+  it("shows each page for the slide's full duration", () => {
+    const { rotation, seen } = rotate();
+    rotation.update(
+      [page("a", 0, 10), page("a", 1, 10), page("b", 0, 20)],
+      true,
+    );
+    expect(rotation.current()).toBe("a");
+    vi.advanceTimersByTime(9_999);
+    expect(rotation.current()).toBe("a");
+    vi.advanceTimersByTime(1);
+    expect(rotation.current()).toBe("a#2");
+    vi.advanceTimersByTime(10_000);
+    expect(rotation.current()).toBe("b");
+    vi.advanceTimersByTime(20_000);
+    expect(rotation.current()).toBe("a");
+    expect(seen).toEqual(["a", "a#2", "b", "a"]);
+  });
+
+  it("keeps the slide on screen when a resize changes the pages", () => {
+    const { rotation } = rotate();
+    // Portrait: a on two pages.
+    rotation.update(
+      [page("a", 0, 10), page("a", 1, 10), page("b", 0, 10)],
+      true,
+    );
+    vi.advanceTimersByTime(10_000);
+    expect(rotation.current()).toBe("a#2");
+    // Landscape again: a on one page. Still a, not the first slide's
+    // restart elsewhere; then on to b after a full duration.
+    rotation.update([page("a", 0, 10), page("b", 0, 10)], true);
+    expect(rotation.current()).toBe("a");
+    vi.advanceTimersByTime(9_999);
+    expect(rotation.current()).toBe("a");
+    vi.advanceTimersByTime(1);
+    expect(rotation.current()).toBe("b");
+    // Portrait again while b shows: b keeps its time.
+    vi.advanceTimersByTime(4_000);
+    rotation.update(
+      [page("a", 0, 10), page("a", 1, 10), page("b", 0, 10)],
+      true,
+    );
+    expect(rotation.current()).toBe("b");
+    vi.advanceTimersByTime(6_000);
+    expect(rotation.current()).toBe("a");
   });
 });

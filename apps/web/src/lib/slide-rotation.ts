@@ -33,8 +33,36 @@ const systemClock: RotationClock = {
 };
 
 /**
+ * Continuation pages (ADR 0017, section 3 step 7) rotate as entries of
+ * their own: the first page keeps the slide's id, later pages get
+ * `<slide id>#<page number>`, so a screen that changes format (a resize, a
+ * rotation) can find the slide again when the page is gone.
+ */
+const PAGE_SEPARATOR = "#";
+
+/** The rotation id of a slide's page (0-based); page 0 is the slide's id. */
+export function pageEntryId(slideId: string, page: number): string {
+  return page > 0 ? `${slideId}${PAGE_SEPARATOR}${page + 1}` : slideId;
+}
+
+/** The slide and 0-based page of a rotation id from `pageEntryId`. */
+export function parsePageEntryId(id: string): {
+  slideId: string;
+  page: number;
+} {
+  const at = id.lastIndexOf(PAGE_SEPARATOR);
+  if (at < 0) return { slideId: id, page: 0 };
+  const page = Number(id.slice(at + 1)) - 1;
+  return Number.isInteger(page) && page > 0
+    ? { slideId: id.slice(0, at), page }
+    : { slideId: id, page: 0 };
+}
+
+/**
  * The slide to show for `slides` when `currentId` was on screen: the same
- * slide while it exists, else the first; null without slides. Without
+ * slide (or page) while it exists; a page that is gone (the screen now
+ * fits the slide on fewer pages) falls back to the slide's last page
+ * before it; else the first slide; null without slides. Without
  * auto-advance always the first.
  */
 export function keptSlideId(
@@ -46,7 +74,18 @@ export function keptSlideId(
   if (!autoAdvance || currentId === null) {
     return first;
   }
-  return slides.some((slide) => slide.id === currentId) ? currentId : first;
+  if (slides.some((slide) => slide.id === currentId)) {
+    return currentId;
+  }
+  const current = parsePageEntryId(currentId);
+  let kept: string | null = null;
+  for (const slide of slides) {
+    const entry = parsePageEntryId(slide.id);
+    if (entry.slideId === current.slideId && entry.page <= current.page) {
+      kept = slide.id;
+    }
+  }
+  return kept ?? first;
 }
 
 /** The slide after `currentId`, wrapping round; the first when unknown. */

@@ -3,6 +3,7 @@
 import {
   Component,
   useEffect,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -10,15 +11,26 @@ import {
 
 import type { DashboardSlide } from "@netrics/contracts";
 import {
-  STUDIO_HEADER_BAND,
   STUDIO_TEXT_MINIMUMS,
+  headerFit,
+  type LayoutPlacement,
+  type ScreenFormat,
   type StudioPlacement,
   type ThemeTokens,
 } from "@netrics/domain";
 
 import { useLocale, useT } from "@/lib/i18n/client";
+import {
+  canvasGeometry,
+  screenFormatOf,
+  slidePages,
+  type CanvasGeometry,
+  type ScreenSize,
+  type SlideLayouts,
+} from "@/lib/screen-view";
 import { clockText } from "@/lib/studio-clock";
-import { u, widgetBoxStyle } from "@/lib/studio-render";
+import { u, type ScreenPlacement } from "@/lib/studio-render";
+import { useElementSize } from "@/lib/use-screen";
 import { themeStyle } from "@/lib/studio-theme";
 import {
   slideBackground,
@@ -125,6 +137,8 @@ export interface SlideHeaderInfo {
   /** The dashboard's name. */
   name: string;
   slideName: string | null;
+  /** The page of a slide on several pages ("1/2"), never cut off. */
+  pageLabel?: string | null;
   logoImageId: string | null;
   timeZone: string;
   /** Shown when the screen has lost its connection. */
@@ -157,20 +171,38 @@ function HeaderClock({ timeZone }: { timeZone: string }) {
   );
 }
 
+/**
+ * The header band: logo, dashboard name, slide name (and page), clock. The
+ * format's header rule (`headerFit`, ADR 0017 section 6) decides: in narrow
+ * formats (3:4, 9:16) the dashboard name wraps to two lines before it is
+ * cut, and the slide name is shown only when it fits beside a one-line
+ * name, so it is dropped before the dashboard name is cut.
+ */
 function SlideHeader({
   header,
+  box,
   images,
+  format,
 }: {
   header: SlideHeaderInfo;
+  box: NonNullable<CanvasGeometry["header"]>;
   images: StudioImages;
+  format: ScreenFormat;
 }) {
   const logo = header.logoImageId ? images.get(header.logoImageId) : null;
   const t = useT("screen.widget");
+  const fit = headerFit({
+    name: header.name,
+    slideName: header.slideName,
+    format,
+    logoAspect: logo && logo.height > 0 ? logo.width / logo.height : null,
+  });
+  const wrap = fit.maxNameLines > 1;
   return (
     <header
       className="studio-header"
       style={{
-        height: `${STUDIO_HEADER_BAND * 100}%`,
+        ...("left" in box ? { ...box, right: "auto" } : box),
         padding: `0 ${u(32)}`,
         gap: u(20),
       }}
@@ -186,19 +218,31 @@ function SlideHeader({
         />
       ) : null}
       <span
-        className="studio-header-name"
+        className={
+          wrap
+            ? "studio-header-name studio-header-name--wrap"
+            : "studio-header-name"
+        }
         style={{ fontSize: u(HEADER_NAME) }}
         title={header.name}
       >
         {header.name}
       </span>
-      {header.slideName ? (
+      {header.slideName && fit.showSlideName ? (
         <span
           className="studio-header-slide"
           style={{ fontSize: u(HEADER_META) }}
           title={header.slideName}
         >
           {header.slideName}
+        </span>
+      ) : null}
+      {header.pageLabel ? (
+        <span
+          className="studio-header-page"
+          style={{ fontSize: u(HEADER_META) }}
+        >
+          {header.pageLabel}
         </span>
       ) : null}
       <span
@@ -216,7 +260,7 @@ function SlideHeader({
   );
 }
 
-/** A layer over the whole 16:9 canvas (no reliance on `inset`). */
+/** A layer over the whole screen, bars included (no reliance on `inset`). */
 const BACKGROUND_LAYER: CSSProperties = {
   position: "absolute",
   top: 0,
@@ -255,15 +299,27 @@ export interface CanvasWidget extends StudioPlacement {
 export interface CanvasSlide<W extends CanvasWidget> {
   background: DashboardSlide["background"];
   widgets: readonly W[];
+  /** Custom layouts per format (ADR 0017); none: every format is auto. */
+  layouts?: SlideLayouts | null;
 }
 
 /**
- * One slide on a 16:9 canvas (ADR 0015): the optional header band, the
- * slide's background image under a dim of the theme background, and its
- * widgets on the 12 × 8 grid. Positions and text sizes come from
- * studioLayout; colours from the theme's tokens as CSS variables. The
- * canvas fills its container's width; `renderWidget` supplies the content
- * (live queries on signed-in pages, the device payload on screens).
+ * What `renderWidget` gets: the widget at its placement in the screen's
+ * format, with its box in units off the classic 16:9 canvas.
+ */
+export type PlacedWidget<W extends CanvasWidget> = W & ScreenPlacement;
+
+/**
+ * One slide in screen view (ADR 0015, ADR 0017 sections 2 and 11): the
+ * optional header band, the slide's background image under a dim of the
+ * theme background (both over the whole screen, bars included), and its
+ * widgets on the grid of the screen's format. The format comes from the
+ * canvas's measured size (`ResizeObserver`), or `format`; the layout is
+ * the primary, the slide's custom layout or the auto reflow, one page of
+ * it. A 16:9 screen in a `16x9` dashboard renders exactly as before.
+ * Positions and text sizes come from studioLayout; colours from the theme
+ * tokens as CSS variables; `renderWidget` supplies the content (live
+ * queries on signed-in pages, the device payload on screens).
  */
 export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
   slide,
@@ -274,23 +330,69 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
   renderWidget,
   className,
   style,
+  primaryFormat = "16x9",
+  format: forcedFormat,
+  page = 0,
+  placements,
+  screen: assumedScreen = null,
+  fill = false,
 }: {
   slide: CanvasSlide<W>;
   tokens: ThemeTokens;
   showHeader: boolean;
   header: SlideHeaderInfo;
   images: StudioImages;
-  renderWidget: (widget: W) => ReactNode;
+  renderWidget: (widget: PlacedWidget<W>) => ReactNode;
   className?: string;
   style?: CSSProperties;
+  /** The format the slide's widgets are placed in. */
+  primaryFormat?: ScreenFormat;
+  /** The format to show; default: the measured size's. */
+  format?: ScreenFormat;
+  /** The page to show (0-based) when the layout has several. */
+  page?: number;
+  /** The page's placements, when the caller has them (the player). */
+  placements?: readonly LayoutPlacement[];
+  /** The screen size assumed until measured (server render, tests). */
+  screen?: ScreenSize | null;
+  /** Fill the container instead of a 16:9 box of its width. */
+  fill?: boolean;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const measured = useElementSize(ref);
+  const screen = measured ?? assumedScreen;
+  const format = forcedFormat ?? screenFormatOf(screen);
   const background = slideBackground(slide);
   const backgroundImage = background ? images.get(background.imageId) : null;
-  const { widgets } = slide;
+  const shown =
+    placements ??
+    slidePages(slide.widgets, {
+      primaryFormat,
+      format,
+      layouts: slide.layouts,
+    })[page] ??
+    [];
+  const byId = new Map(shown.map((placement) => [placement.id, placement]));
+  const geometry = canvasGeometry(screen, format, showHeader);
+  const classes = [
+    "studio-canvas",
+    fill ? "studio-canvas--fill" : "",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
     <div
-      className={className ? `studio-canvas ${className}` : "studio-canvas"}
-      style={{ ...themeStyle(tokens), ...style }}
+      ref={ref}
+      className={classes}
+      data-format={format}
+      style={{
+        ...themeStyle(tokens),
+        ...(geometry.unit === null
+          ? {}
+          : ({ "--u": `${geometry.unit}px` } as CSSProperties)),
+        ...style,
+      }}
     >
       {background && backgroundImage ? (
         <>
@@ -308,17 +410,43 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
           />
         </>
       ) : null}
-      {showHeader ? <SlideHeader header={header} images={images} /> : null}
-      {widgets.map((widget) => (
-        <div
-          key={widget.id}
-          className={`studio-widget studio-widget--${widget.type}`}
-          style={widgetBoxStyle(widget, showHeader)}
-          data-widget-id={widget.id}
-        >
-          <WidgetBoundary>{renderWidget(widget)}</WidgetBoundary>
-        </div>
-      ))}
+      {geometry.header ? (
+        <SlideHeader
+          header={header}
+          box={geometry.header}
+          images={images}
+          format={format}
+        />
+      ) : null}
+      {slide.widgets.map((widget) => {
+        const placement = byId.get(widget.id);
+        if (!placement) return null;
+        const { box, unitBox } = geometry.widget(placement);
+        // The classic canvas in the primary format passes the widget
+        // itself, so it renders exactly as before.
+        const placed: PlacedWidget<W> =
+          geometry.classic && format === primaryFormat
+            ? widget
+            : {
+                ...widget,
+                x: placement.x,
+                y: placement.y,
+                w: placement.w,
+                h: placement.h,
+                unitBox,
+                format,
+              };
+        return (
+          <div
+            key={widget.id}
+            className={`studio-widget studio-widget--${widget.type}`}
+            style={box}
+            data-widget-id={widget.id}
+          >
+            <WidgetBoundary>{renderWidget(placed)}</WidgetBoundary>
+          </div>
+        );
+      })}
     </div>
   );
 }

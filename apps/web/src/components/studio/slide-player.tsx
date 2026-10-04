@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -9,21 +10,35 @@ import {
 } from "react";
 
 import type { DeviceDashboardV2Response } from "@netrics/contracts";
-import type { ThemeTokens } from "@netrics/domain";
+import type {
+  LayoutPlacement,
+  ScreenFormat,
+  ThemeTokens,
+} from "@netrics/domain";
 
+import {
+  pageLabel,
+  screenFormatOf,
+  slidePages,
+  type ScreenSize,
+} from "@/lib/screen-view";
 import {
   createSlideRotation,
   keptSlideId,
+  pageEntryId,
+  parsePageEntryId,
   type SlideRotation,
 } from "@/lib/slide-rotation";
 import { useT } from "@/lib/i18n/client";
 import { themeStyle } from "@/lib/studio-theme";
 import type { StudioImages } from "@/lib/studio-widgets";
+import { useElementSize } from "@/lib/use-screen";
 
 import {
   SlideCanvas,
   type CanvasSlide,
   type CanvasWidget,
+  type PlacedWidget,
   type SlideHeaderInfo,
 } from "./slide-canvas";
 
@@ -38,9 +53,50 @@ export interface PlayerSlide<W extends CanvasWidget> extends CanvasSlide<W> {
   durationSec: number;
 }
 
+/**
+ * One entry of the rotation: a page of a slide in the screen's format
+ * (ADR 0017, section 3 step 7). Each page shows for the slide's full
+ * duration; a slide on one page is one entry with the slide's id.
+ */
+export interface PlayerEntry<W extends CanvasWidget, S extends PlayerSlide<W>> {
+  /** `pageEntryId(slide.id, page)`. */
+  id: string;
+  slide: S;
+  page: number;
+  pages: number;
+  placements: LayoutPlacement[];
+  durationSec: number;
+}
+
+/** The rotation of `slides` on a screen of `format`: every slide's pages. */
+export function playerEntries<W extends CanvasWidget, S extends PlayerSlide<W>>(
+  slides: readonly S[],
+  primaryFormat: ScreenFormat,
+  format: ScreenFormat,
+): Array<PlayerEntry<W, S>> {
+  return slides.flatMap((slide) => {
+    const pages = slidePages(slide.widgets, {
+      primaryFormat,
+      format,
+      layouts: slide.layouts,
+    });
+    return pages.map((placements, page) => ({
+      id: pageEntryId(slide.id, page),
+      slide,
+      page,
+      pages: pages.length,
+      placements,
+      durationSec: slide.durationSec,
+    }));
+  });
+}
+
 /** Steps a playing rotation from outside (the Studio's Play controls). */
 export interface SlidePlayerControls {
-  /** Moves `by` slides, wrapping round; the new slide's time starts now. */
+  /**
+   * Moves `by` slides (pages of a slide on several pages count as
+   * slides), wrapping round; the new slide's time starts now.
+   */
   step(by: number): void;
 }
 
@@ -57,7 +113,13 @@ export interface SlidePlayerProps<W extends CanvasWidget> {
   header: Omit<SlideHeaderInfo, "slideName">;
   images: StudioImages;
   /** A widget's content: payload data on screens, live queries signed in. */
-  renderWidget: (widget: W) => ReactNode;
+  renderWidget: (widget: PlacedWidget<W>) => ReactNode;
+  /** The format the slides' widgets are placed in (default 16x9). */
+  primaryFormat?: ScreenFormat;
+  /** The format to show; default: the player's measured size's. */
+  format?: ScreenFormat;
+  /** The screen size assumed until measured (server render, tests). */
+  screen?: ScreenSize | null;
   /** Shown when there is no slide. */
   empty?: ReactNode;
   className?: string;
@@ -67,18 +129,22 @@ export interface SlidePlayerProps<W extends CanvasWidget> {
   paused?: boolean;
   /** Filled with the player's controls while it is mounted. */
   controlsRef?: RefObject<SlidePlayerControls | null>;
-  /** The slide on screen changed (or was first shown). */
+  /** The slide on screen changed (or was first shown): the slide's id. */
   onSlideChange?: (slideId: string | null) => void;
 }
 
 /**
- * Plays a dashboard's slides as a screen does (ADR 0015, section 7): each
- * for its `durationSec`, then the next, with a fade or a cut. The rotation
- * state lives here; new `slides` (a refreshed payload) keep the slide on
- * screen when its id still exists. Every slide stays mounted, stacked, so
- * widgets keep their data and the fade is a cross-fade; hidden slides are
- * inert. Used by the kiosk (payload schema 2), the signed-in TV mode and
- * the Studio's Play preview, so all three rotate alike.
+ * Plays a dashboard's slides as a screen does (ADR 0015 section 7, ADR 0017
+ * sections 2 and 3): each for its `durationSec`, then the next, with a fade
+ * or a cut, in screen view on the player's measured size. A slide that
+ * needs several pages in the screen's format rotates as several slides
+ * ("Sales 1/2", "Sales 2/2"), each for the slide's full duration. The
+ * rotation state lives here; new `slides` (a refreshed payload) or a new
+ * size (a resize, a turned tablet) keep the slide on screen when it still
+ * exists, and a page that is gone falls back to its slide. Every page stays
+ * mounted, stacked, so widgets keep their data and the fade is a
+ * cross-fade; hidden pages are inert. Used by the kiosk, the signed-in TV
+ * mode and the Studio's Play preview, so all three rotate alike.
  */
 export function SlidePlayer<W extends CanvasWidget>({
   slides,
@@ -95,10 +161,21 @@ export function SlidePlayer<W extends CanvasWidget>({
   paused = false,
   controlsRef,
   onSlideChange,
+  primaryFormat = "16x9",
+  format: forcedFormat,
+  screen: assumedScreen = null,
 }: SlidePlayerProps<W>) {
   const t = useT("dashboard");
+  const root = useRef<HTMLDivElement>(null);
+  const measured = useElementSize(root);
+  const screen = measured ?? assumedScreen;
+  const format = forcedFormat ?? screenFormatOf(screen);
+  const entries = useMemo(
+    () => playerEntries(slides, primaryFormat, format),
+    [slides, primaryFormat, format],
+  );
   const [currentId, setCurrentId] = useState<string | null>(() =>
-    keptSlideId(slides, startSlideId, autoAdvance),
+    keptSlideId(entries, startSlideId, autoAdvance),
   );
   const rotation = useRef<SlideRotation | null>(null);
   // The first slide's id: where the rotation starts (read once).
@@ -129,7 +206,7 @@ export function SlidePlayer<W extends CanvasWidget>({
   // Rotation only needs ids and durations: a payload with new numbers but
   // the same slides does not restart the slide on screen.
   const timing = JSON.stringify(
-    slides.map((slide) => [slide.id, slide.durationSec]),
+    entries.map((entry) => [entry.id, entry.durationSec]),
   );
   useEffect(() => {
     const parsed = JSON.parse(timing) as Array<[string, number]>;
@@ -144,12 +221,14 @@ export function SlidePlayer<W extends CanvasWidget>({
   }, [paused, timing, autoAdvance]);
 
   // Until the rotation has caught up with new slides, show what it will.
-  const shownId = keptSlideId(slides, currentId, autoAdvance);
+  const shownId = keptSlideId(entries, currentId, autoAdvance);
+  const shownSlideId =
+    shownId === null ? null : parsePageEntryId(shownId).slideId;
   const reported = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (reported.current !== shownId) {
-      reported.current = shownId;
-      onSlideChange?.(shownId);
+    if (reported.current !== shownSlideId) {
+      reported.current = shownSlideId;
+      onSlideChange?.(shownSlideId);
     }
   });
 
@@ -157,33 +236,45 @@ export function SlidePlayer<W extends CanvasWidget>({
 
   return (
     <div
+      ref={root}
       className={["slide-player", fade ? "slide-player--fade" : "", className]
         .filter(Boolean)
         .join(" ")}
       style={themeStyle(tokens)}
       aria-roledescription={t("slideShow")}
+      data-format={format}
     >
-      {slides.length === 0
-        ? (empty ?? null)
-        : slides.map((slide) => {
-            const active = slide.id === shownId;
+      {entries.length === 0
+        ? empty && <div className="slide-player-empty">{empty}</div>
+        : entries.map((entry) => {
+            const active = entry.id === shownId;
             return (
               <div
-                key={slide.id}
+                key={entry.id}
                 className={
                   active ? "slide-player-slide active" : "slide-player-slide"
                 }
                 aria-hidden={active ? undefined : true}
                 inert={!active}
-                data-slide-id={slide.id}
+                data-slide-id={entry.slide.id}
+                data-page={entry.pages > 1 ? entry.page + 1 : undefined}
               >
                 <SlideCanvas
-                  slide={slide}
+                  slide={entry.slide}
                   tokens={tokens}
                   showHeader={showHeader}
-                  header={{ ...header, slideName: slide.name }}
+                  header={{
+                    ...header,
+                    slideName: entry.slide.name,
+                    pageLabel: pageLabel(entry.page, entry.pages),
+                  }}
                   images={images}
                   renderWidget={renderWidget}
+                  primaryFormat={primaryFormat}
+                  format={format}
+                  placements={entry.placements}
+                  screen={screen}
+                  fill
                 />
               </div>
             );

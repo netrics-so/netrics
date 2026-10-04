@@ -351,6 +351,8 @@ export const studioEn = {
     breadcrumb: "Dashboards",
     slides: "Slides",
     slideOff: "off",
+    fullScreen: "Full screen",
+    exitFullScreen: "Exit full screen",
     slideEmpty: "This slide has no widgets yet.",
     tvPageTitle: "TV mode · netrics",
     source: "source",

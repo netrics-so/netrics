@@ -9,6 +9,7 @@ import {
   widgetTypeScale,
   wrappedLineCount,
   type StudioFontWeight,
+  type ScreenFormat,
   type StudioPlacement,
   type StudioTypeScale,
   type StudioWidgetType,
@@ -58,11 +59,28 @@ export function widgetBoxStyle(
   };
 }
 
+/**
+ * A placement as a slide renders it. On a screen other than the classic
+ * 16:9 canvas (ADR 0017) the canvas adds the widget's box in units, since
+ * the format's grid and a stretched screen give it other proportions.
+ */
+export interface ScreenPlacement extends StudioPlacement {
+  unitBox?: { width: number; height: number } | null;
+  /** The format the placement is in (absent: `16x9`). */
+  format?: ScreenFormat;
+}
+
 /** A widget's content box in units: its rect less the widget padding. */
 export function contentBox(
-  placement: StudioPlacement,
+  placement: ScreenPlacement,
   showHeader: boolean,
 ): { width: number; height: number } {
+  if (placement.unitBox) {
+    return {
+      width: placement.unitBox.width - 2 * STUDIO_SPACING.widgetPadding,
+      height: placement.unitBox.height - 2 * STUDIO_SPACING.widgetPadding,
+    };
+  }
   const rect = widgetRect(placement, STUDIO_REFERENCE_CANVAS, showHeader);
   return {
     width: rect.width - 2 * STUDIO_SPACING.widgetPadding,

@@ -536,8 +536,8 @@ describe("kiosk dashboard loop", () => {
     expect(
       beats.map((beat) => (beat.body as { screen: unknown }).screen),
     ).toEqual([
-      { width: 1920, height: 1080, scale: 2, mode: "screen" },
-      { width: 1080, height: 1920, scale: 2, mode: "screen" },
+      { width: 1920, height: 1080, scale: 2, format: "16x9", mode: "screen" },
+      { width: 1080, height: 1920, scale: 2, format: "9x16", mode: "screen" },
     ]);
   });
 
@@ -571,16 +571,39 @@ describe("kioskScreen", () => {
       width: 1366,
       height: 768,
       scale: 1.25,
+      format: "16x9",
       mode: "screen",
     });
     expect(kioskScreen(40_000, 0.2, 12)).toEqual({
       width: 16_384,
       height: 1,
       scale: 8,
+      format: "21x9",
       mode: "screen",
     });
     expect(kioskScreen(800, 600, 0.25)).toMatchObject({ scale: 0.5 });
     expect(kioskScreen(800, 600, Number.NaN)).toMatchObject({ scale: 1 });
+  });
+
+  it("reports the rotated sides, their format and the mode", () => {
+    expect(
+      kioskScreen(1920, 1080, 1, { rotation: 90, mode: "screen" }),
+    ).toEqual({
+      width: 1080,
+      height: 1920,
+      scale: 1,
+      format: "9x16",
+      mode: "screen",
+    });
+    expect(
+      kioskScreen(1920, 1080, 1, { rotation: 180, mode: "scroll" }),
+    ).toEqual({
+      width: 1920,
+      height: 1080,
+      scale: 1,
+      format: "16x9",
+      mode: "scroll",
+    });
   });
 
   it("is null for a viewport without size", () => {

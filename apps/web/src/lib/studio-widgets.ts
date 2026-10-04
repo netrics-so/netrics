@@ -8,12 +8,12 @@ import type {
 import {
   textWidgetFit,
   type Locale,
-  type StudioPlacement,
   type StudioTextSize,
   type TextWidgetFit,
 } from "@netrics/domain";
 
 import { webTranslator } from "./i18n/catalogs";
+import type { ScreenPlacement } from "./studio-render";
 
 // The studio's widgets as the web renders them (ADR 0015, sections 1–2).
 
@@ -155,11 +155,13 @@ export type TextWidgetLayout = TextWidgetFit;
 export function textWidgetLayout(input: {
   text: string;
   size: StudioTextSize;
-  placement: StudioPlacement;
+  placement: ScreenPlacement;
   fontScale: number;
   showHeader: boolean;
 }): TextWidgetLayout {
-  return textWidgetFit(input);
+  // Measured at the reference canvas of the placement's format, as the
+  // Studio's readability check (ADR 0017 section 6).
+  return textWidgetFit({ ...input, format: input.placement.format });
 }
 
 /** A connection as a widget's footer and status notice need it. */

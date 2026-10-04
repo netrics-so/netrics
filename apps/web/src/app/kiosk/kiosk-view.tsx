@@ -1,13 +1,21 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
   DeviceDashboardResponse,
   DeviceDashboardV2Response,
+  DeviceDashboardV3Response,
 } from "@netrics/contracts";
 import { conversionNote, matchLocale, type Locale } from "@netrics/domain";
 
+import {
+  RotatedScreen,
+  screenRotationOf,
+  type ScreenRotation,
+} from "@/components/screen-rotation";
+import { DeviceScrollWidget } from "@/components/scroll/device-scroll-widget";
+import { ScrollView } from "@/components/scroll/scroll-view";
 import { DeviceWidgetView } from "@/components/studio/device-widget";
 import { SlidePlayer } from "@/components/studio/slide-player";
 import { TileNotice, TileView } from "@/components/tile-view";
@@ -16,15 +24,18 @@ import { WEB_CATALOGS } from "@/lib/i18n/catalogs";
 import { I18nProvider, useLocale, useT } from "@/lib/i18n/client";
 import {
   createKioskClient,
+  isFormatsDashboard,
   isSlidesDashboard,
   isTilesDashboard,
   kioskScreen,
+  type KioskDashboard as KioskPayload,
   type KioskState,
 } from "@/lib/kiosk-client";
 import { browserImageCache } from "@/lib/kiosk-image-cache";
 import { themeStyle } from "@/lib/studio-theme";
 import { pairingAddress } from "@/lib/pairing-address";
 import { deviceTileNotice } from "@/lib/tile-status";
+import { useWakeLock } from "@/lib/use-screen";
 
 /** The product name, the same in every language. */
 const BRAND = "netrics";
@@ -74,6 +85,11 @@ export function KioskView({ appVersion }: { appVersion: string }) {
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
+  // A wall screen: kept awake where the browser allows (ADR 0017).
+  useWakeLock(true);
+  // What the heartbeat reports: the screen as rendered (rotated) and mode.
+  const shown = useRef(kioskShown(state.dashboard));
+  shown.current = kioskShown(state.dashboard);
 
   useEffect(() => {
     const client = createKioskClient({
@@ -82,11 +98,14 @@ export function KioskView({ appVersion }: { appVersion: string }) {
       appVersion,
       onChange: setState,
       imageCache: browserImageCache(),
+      // Schema 3: formats, custom layouts and device settings (#277).
+      schemas: [1, 2, 3],
       screen: () =>
         kioskScreen(
           window.innerWidth,
           window.innerHeight,
           window.devicePixelRatio,
+          shown.current,
         ),
     });
     client.start();
@@ -108,22 +127,34 @@ export function KioskScreen({ state }: { state: KioskState }) {
   }
   if (state.phase === "paired" && state.dashboard) {
     const payload = state.dashboard;
-    if (payload.dashboard && isSlidesDashboard(payload)) {
-      return (
-        <KioskSlides
-          state={state}
-          payload={payload}
-          dashboard={payload.dashboard}
-        />
-      );
-    }
-    return payload.dashboard && isTilesDashboard(payload) ? (
-      <KioskDashboard state={state} dashboard={payload} />
-    ) : (
-      <Message title={t("noDashboardTitle")}>
-        {t("noDashboardText")}
-        <OfflineMarker state={state} timeZone={state.dashboard.timeZone} />
-      </Message>
+    // Every screen after pairing follows the device's rotation (ADR 0017
+    // section 7); only schema 3 carries it.
+    return (
+      <RotatedScreen rotation={payloadRotation(payload)}>
+        {payload.dashboard &&
+        isFormatsDashboard(payload) &&
+        payload.device.displayMode === "scroll" ? (
+          <KioskScroll
+            state={state}
+            payload={payload}
+            dashboard={payload.dashboard}
+          />
+        ) : payload.dashboard &&
+          (isFormatsDashboard(payload) || isSlidesDashboard(payload)) ? (
+          <KioskSlides
+            state={state}
+            payload={payload}
+            dashboard={payload.dashboard}
+          />
+        ) : payload.dashboard && isTilesDashboard(payload) ? (
+          <KioskDashboard state={state} dashboard={payload} />
+        ) : (
+          <Message title={t("noDashboardTitle")}>
+            {t("noDashboardText")}
+            <OfflineMarker state={state} timeZone={state.dashboard.timeZone} />
+          </Message>
+        )}
+      </RotatedScreen>
     );
   }
   return (
@@ -207,8 +238,39 @@ function OfflineMarker({
 }
 
 /**
- * A schema 2 payload (#221): the dashboard's slides on the studio canvas,
- * rotating by each slide's duration, drawn from the payload alone.
+ * The device's rotation setting (ADR 0017 section 7): payload schema 3
+ * carries it as `device.rotation`; earlier schemas are upright.
+ */
+export function payloadRotation(payload: object): ScreenRotation {
+  const device = (payload as { device?: { rotation?: unknown } }).device;
+  return screenRotationOf(device?.rotation);
+}
+
+/** The rotation and mode the kiosk renders a payload with. */
+export function kioskShown(payload: KioskPayload | null): {
+  rotation: ScreenRotation;
+  mode: "screen" | "scroll";
+} {
+  if (!payload) return { rotation: 0, mode: "screen" };
+  return {
+    rotation: payloadRotation(payload),
+    mode:
+      isFormatsDashboard(payload) && payload.device.displayMode === "scroll"
+        ? "scroll"
+        : "screen",
+  };
+}
+
+type SlidesPayload = DeviceDashboardV2Response | DeviceDashboardV3Response;
+
+/**
+ * A slides payload (#221) in screen view: the dashboard's slides rotating
+ * by each slide's duration, drawn from the payload alone, in the format of
+ * the real (rotated) viewport, live (ADR 0017 sections 2, 7 and 9). Schema
+ * 3 brings the primary format and each slide's custom layouts; other
+ * formats are reflowed here with the domain's functions (`slideLayoutFor`,
+ * whose format table is the payload's `formats`: one source, the same
+ * commit). Schema 2 always carries the `16x9` layout, reflowed from it.
  */
 function KioskSlides({
   state,
@@ -216,8 +278,8 @@ function KioskSlides({
   dashboard,
 }: {
   state: KioskState;
-  payload: DeviceDashboardV2Response;
-  dashboard: NonNullable<DeviceDashboardV2Response["dashboard"]>;
+  payload: SlidesPayload;
+  dashboard: NonNullable<SlidesPayload["dashboard"]>;
 }) {
   const idle = useIdle();
   const t = useT("screen.kiosk");
@@ -228,13 +290,15 @@ function KioskSlides({
     showHeader: dashboard.showHeader,
     images: state.images,
   };
+  const formats = isFormatsDashboard(payload) ? payload : null;
   return (
     <div
       className={idle ? "slide-screen slide-screen--idle" : "slide-screen"}
       style={themeStyle(theme.tokens)}
     >
       <SlidePlayer
-        slides={payload.slides}
+        slides={formats ? formats.slides : payload.slides}
+        primaryFormat={formats ? formats.primaryFormat : "16x9"}
         autoAdvance={payload.rotation.autoAdvance}
         transition={payload.rotation.transition}
         tokens={theme.tokens}
@@ -257,6 +321,44 @@ function KioskSlides({
           <OfflineMarker state={state} timeZone={timeZone} />
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * A kiosk set to scroll view (ADR 0017 sections 5 and 7): the scroll view
+ * of the signed-in page, fed by the payload: every slide a section, its
+ * widgets in the primary layout's reading order.
+ */
+function KioskScroll({
+  state,
+  payload,
+  dashboard,
+}: {
+  state: KioskState;
+  payload: DeviceDashboardV3Response;
+  dashboard: NonNullable<DeviceDashboardV3Response["dashboard"]>;
+}) {
+  const { theme, timeZone } = payload;
+  const env = {
+    timeZone,
+    fontScale: theme.tokens.fontScale,
+    showHeader: dashboard.showHeader,
+    images: state.images,
+  };
+  return (
+    <div className="kiosk-scroll" style={themeStyle(theme.tokens)}>
+      <ScrollView
+        name={dashboard.name}
+        logoImageId={dashboard.logo?.imageId ?? null}
+        slides={payload.slides.map((slide) => ({ ...slide, enabled: true }))}
+        tokens={theme.tokens}
+        images={state.images}
+        toolbar={<OfflineMarker state={state} timeZone={timeZone} />}
+        renderWidget={(widget, size) => (
+          <DeviceScrollWidget widget={widget} env={env} size={size} />
+        )}
+      />
     </div>
   );
 }

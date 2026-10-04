@@ -4,14 +4,21 @@ import { describe, expect, it } from "vitest";
 import type {
   DeviceDashboardResponse,
   DeviceDashboardV2Response,
+  DeviceDashboardV3Response,
 } from "@netrics/contracts";
-import { BUILTIN_THEMES, type Locale } from "@netrics/domain";
+import { BUILTIN_THEMES, SCREEN_FORMATS, type Locale } from "@netrics/domain";
 
 import { WEB_CATALOGS } from "@/lib/i18n/catalogs";
 import { I18nProvider } from "@/lib/i18n/client";
 import type { KioskState } from "@/lib/kiosk-client";
+import { widgetBoxStyle } from "@/lib/studio-render";
 
-import { KioskScreen, kioskLocale } from "./kiosk-view";
+import {
+  KioskScreen,
+  kioskLocale,
+  kioskShown,
+  payloadRotation,
+} from "./kiosk-view";
 
 // The kiosk in the workspace's screen language (ADR 0016, #256): labels
 // arrive finished in the payload; chrome, periods, comparisons, notices and
@@ -112,7 +119,10 @@ function slides(locale?: string): DeviceDashboardV2Response {
 }
 
 function paired(
-  dashboard: DeviceDashboardV2Response | DeviceDashboardResponse,
+  dashboard:
+    | DeviceDashboardV3Response
+    | DeviceDashboardV2Response
+    | DeviceDashboardResponse,
   offline = false,
 ): KioskState {
   return {
@@ -237,5 +247,110 @@ describe("kiosk language", () => {
     expect(html).toContain("vs. gestern");
     expect(html).toContain("1.500");
     expect(html).toContain("Zuletzt synchronisiert");
+  });
+});
+
+/** Schema 3: the v2 content with formats, layouts and device settings. */
+function formats(
+  device: DeviceDashboardV3Response["device"],
+  primaryFormat: DeviceDashboardV3Response["primaryFormat"] = "16x9",
+): DeviceDashboardV3Response {
+  const v2 = slides("en");
+  const table = Object.fromEntries(
+    Object.values(SCREEN_FORMATS).map((spec) => [
+      spec.key,
+      {
+        columns: spec.columns,
+        rows: spec.rows,
+        reference: [spec.reference.width, spec.reference.height],
+      },
+    ]),
+  ) as DeviceDashboardV3Response["formats"];
+  const { grid: _grid, ...rest } = v2;
+  return {
+    ...rest,
+    schema: 3,
+    locale: "en",
+    primaryFormat,
+    formats: table,
+    device,
+    slides: v2.slides.map((slide) => ({ ...slide, layouts: [] })),
+  } as DeviceDashboardV3Response;
+}
+
+describe("kiosk screen view (ADR 0017, #281)", () => {
+  it("renders the slides in screen view, upright on schema 2", () => {
+    const html = render(paired(slides("en")));
+    expect(html).toContain('data-rotation="0"');
+    // Until measured, the 16:9 canvas as before; the real viewport then
+    // picks the format (the player measures itself).
+    expect(html).toContain('data-format="16x9"');
+    expect(html).not.toContain("rotate(");
+  });
+
+  it("reads the device rotation of a schema 3 payload (#277)", () => {
+    expect(payloadRotation(slides("en"))).toBe(0);
+    expect(payloadRotation({ device: { rotation: 90 } })).toBe(90);
+    expect(payloadRotation({ device: { rotation: 270 } })).toBe(270);
+    expect(payloadRotation({ device: { rotation: 45 } })).toBe(0);
+    expect(payloadRotation({ device: null })).toBe(0);
+  });
+});
+
+describe("kiosk on payload schema 3 (#277, #281)", () => {
+  it("turns the whole screen by the device's rotation", () => {
+    const html = render(
+      paired(formats({ rotation: 90, displayMode: "screen" })),
+    );
+    expect(html).toContain('data-rotation="90"');
+    expect(html).toContain("rotate(90deg)");
+    expect(html).toContain("width:100vh;height:100vw");
+    expect(html).toContain("slide-player");
+    expect(
+      kioskShown(formats({ rotation: 270, displayMode: "screen" })),
+    ).toEqual({ rotation: 270, mode: "screen" });
+  });
+
+  it("uses the slide's custom layout for the screen's format", () => {
+    // Designed for portrait (9x16); a custom 16x9 layout for landscape.
+    const payload = formats({ rotation: 0, displayMode: "screen" }, "9x16");
+    const [a, b, chart] = payload.slides[0]!.widgets;
+    payload.slides[0]!.widgets = [
+      { ...a!, x: 0, y: 0, w: 6, h: 4 },
+      { ...b!, x: 0, y: 4, w: 6, h: 4 },
+      { ...chart!, x: 0, y: 8, w: 6, h: 4 },
+    ];
+    const custom = [
+      { widgetId: a!.id, page: 0, x: 0, y: 0, w: 4, h: 4, hidden: false },
+      { widgetId: b!.id, page: 0, x: 4, y: 0, w: 4, h: 4, hidden: false },
+      { widgetId: chart!.id, page: 0, x: 8, y: 0, w: 4, h: 8, hidden: false },
+    ];
+    payload.slides[0]!.layouts = [
+      { format: "16x9", pages: 1, placements: custom },
+    ];
+    // Unmeasured, the kiosk lays out as 16:9: the custom placements.
+    const html = render(paired(payload));
+    expect(html).toContain('data-format="16x9"');
+    for (const placement of custom) {
+      const box = widgetBoxStyle(placement, true);
+      expect(html).toContain(
+        `style="left:${box.left};top:${box.top};width:${box.width};height:${box.height}" data-widget-id="${placement.widgetId}"`,
+      );
+    }
+  });
+
+  it("shows the scroll view when the device is set to it", () => {
+    const payload = formats({ rotation: 0, displayMode: "scroll" });
+    const html = render(paired(payload));
+    expect(html).toContain('class="kiosk-scroll"');
+    expect(html).toContain("scroll-view");
+    expect(html).not.toContain("slide-player");
+    expect(html).toContain("Deutschland");
+    expect(kioskShown(payload)).toEqual({ rotation: 0, mode: "scroll" });
+  });
+
+  it("keeps schema 2 upright in screen view", () => {
+    expect(kioskShown(slides("en"))).toEqual({ rotation: 0, mode: "screen" });
+    expect(kioskShown(null)).toEqual({ rotation: 0, mode: "screen" });
   });
 });

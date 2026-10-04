@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { ThemeTokens } from "@netrics/domain";
+import type { ScreenFormat, ThemeTokens } from "@netrics/domain";
 
 import { LiveWidget } from "@/components/studio/slide-canvas";
 import {
@@ -11,15 +11,19 @@ import {
 } from "@/components/studio/slide-player";
 import { documentRotation } from "@/lib/slide-rotation";
 import type { StudioDocument } from "@/lib/studio-document";
+import type { SlideLayouts } from "@/lib/screen-view";
 import type { StudioEnv } from "@/lib/studio-widgets";
 import { useT } from "@/lib/i18n/client";
+import { useWakeLock } from "@/lib/use-screen";
 
 /**
  * "Play" (ADR 0015, section 9): the draft's rotation full-screen, as a
  * screen would run it: the same SlidePlayer as the kiosk and the TV mode,
  * so visible slides only, each for its duration, with the dashboard's
  * transition (none with reduced motion). Arrow keys step, Space pauses,
- * Escape ends.
+ * Escape ends. Screen view on the whole window in its format (ADR 0017):
+ * the draft's slides, laid out from the primary format, with the saved
+ * custom layouts completed against the draft as a save would.
  */
 export function PlayMode({
   document,
@@ -27,20 +31,30 @@ export function PlayMode({
   env,
   startSlideId,
   onClose,
+  primaryFormat = "16x9",
+  layouts,
 }: {
   document: StudioDocument;
   tokens: ThemeTokens;
   env: StudioEnv;
   startSlideId: string;
   onClose: () => void;
+  /** The dashboard's primary format. */
+  primaryFormat?: ScreenFormat;
+  /** The saved custom layouts by slide id. */
+  layouts?: ReadonlyMap<string, SlideLayouts>;
 }) {
   const t = useT("studio.play");
   const root = useRef<HTMLDivElement>(null);
   const controls = useRef<SlidePlayerControls | null>(null);
   const { settings } = document;
   const slides = useMemo(
-    () => documentRotation(document.slides, settings),
-    [document.slides, settings],
+    () =>
+      documentRotation(document.slides, settings).map((slide) => ({
+        ...slide,
+        layouts: layouts?.get(slide.id) ?? null,
+      })),
+    [document.slides, settings, layouts],
   );
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
@@ -53,6 +67,7 @@ export function PlayMode({
     slides.findIndex((slide) => slide.id === currentId),
   );
   const step = (by: number) => controls.current?.step(by);
+  useWakeLock(true);
 
   // Full screen when the browser allows it; leaving it ends Play.
   useEffect(() => {
@@ -117,6 +132,7 @@ export function PlayMode({
           }}
           images={env.images}
           renderWidget={(widget) => <LiveWidget widget={widget} env={env} />}
+          primaryFormat={primaryFormat}
           startSlideId={startSlideId}
           paused={paused}
           controlsRef={controls}
