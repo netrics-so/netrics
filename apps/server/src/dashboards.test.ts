@@ -447,6 +447,48 @@ describe("dashboard studio API", () => {
       on conflict do nothing`;
   });
 
+  it("stores a table with its defaults and warns when its rows do not fit (ADR 0019)", async () => {
+    const table = metricWidget({
+      type: "table",
+      w: 4,
+      h: 4,
+      title: "Signups",
+      options: { groupBy: "resource", limit: 8 },
+    });
+    const response = await createDashboard(owner, {
+      name: "Table",
+      slides: [{ widgets: [table] }],
+    });
+    expect(response.statusCode).toBe(200);
+    const dashboard = dashboardResponseSchema.parse(response.json()).dashboard;
+    const [widget] = dashboard.slides[0]!.widgets;
+    expect(widget).toMatchObject({
+      type: "table",
+      aggregation: "sum",
+      options: {
+        groupBy: "resource",
+        limit: 8,
+        showChange: true,
+        showOthers: false,
+      },
+    });
+    // Eight rows on a 4 × 4 table: six fit at font scale 1 in 16:9.
+    expect(
+      dashboard.slides[0]!.formatWarnings.find(
+        (warning) => warning.format === "16x9" && warning.code === "rows_cut",
+      ),
+    ).toEqual({
+      format: "16x9",
+      code: "rows_cut",
+      severity: "attention",
+      widgetId: widget!.id,
+      pages: null,
+      rows: { shown: 6, limit: 8 },
+    });
+    // A table is not a tile, and counts as one data widget.
+    expect(dashboard.tiles).toEqual([]);
+  });
+
   it("stores a document of slides and widgets and reads it back", async () => {
     const dashboard = await studio({
       settings: { autoAdvance: false, defaultSlideSeconds: 45 },
@@ -669,6 +711,57 @@ describe("dashboard studio API", () => {
       "unknown_dimension",
     ],
     [
+      "a table below its 4 × 4 minimum",
+      [
+        {
+          widgets: [
+            metricWidget({
+              type: "table",
+              w: 4,
+              h: 3,
+              options: { groupBy: "resource" },
+            }),
+          ],
+        },
+      ],
+      400,
+      "widget_too_small",
+    ],
+    [
+      "a table grouped by an unknown dimension",
+      [
+        {
+          widgets: [
+            metricWidget({
+              type: "table",
+              w: 4,
+              h: 4,
+              options: { groupBy: "country" },
+            }),
+          ],
+        },
+      ],
+      400,
+      "unknown_dimension",
+    ],
+    [
+      "a table with more than 10 rows",
+      [
+        {
+          widgets: [
+            metricWidget({
+              type: "table",
+              w: 4,
+              h: 4,
+              options: { groupBy: "resource", limit: 11 },
+            }),
+          ],
+        },
+      ],
+      400,
+      "invalid_request",
+    ],
+    [
       "a bar without grouping",
       [{ widgets: [metricWidget({ type: "bar", w: 4, h: 3 })] }],
       400,
@@ -688,7 +781,7 @@ describe("dashboard studio API", () => {
     ],
     [
       "an unknown widget type",
-      [{ widgets: [{ type: "table", x: 0, y: 0, w: 3, h: 2 }] }],
+      [{ widgets: [{ type: "gauge", x: 0, y: 0, w: 3, h: 3 }] }],
       400,
       "invalid_request",
     ],

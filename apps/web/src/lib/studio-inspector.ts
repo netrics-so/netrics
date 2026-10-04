@@ -66,13 +66,20 @@ export function groupByOptions(metric: {
   );
 }
 
-/** Metrics a data widget of `type` can show: bars need a dimension. */
+/** A widget that groups its metric by a dimension: a bar or a table. */
+export type GroupedWidget = Extract<DataWidget, { type: "bar" | "table" }>;
+
+export function isGroupedType(type: string): type is "bar" | "table" {
+  return type === "bar" || type === "table";
+}
+
+/** Metrics a data widget of `type` can show: bars and tables need a dimension. */
 export function metricsForType(
   metrics: readonly WorkspaceMetric[],
   type: WidgetType,
 ): WorkspaceMetric[] {
   const pickable = pickableMetrics(metrics);
-  return type === "bar"
+  return isGroupedType(type)
     ? pickable.filter((metric) => groupByOptions(metric).length > 0)
     : pickable;
 }
@@ -100,7 +107,9 @@ export function filterDimensions(
   metric: { dimensions: readonly string[] },
   widget: DataWidget,
 ): string[] {
-  const groupBy = widget.type === "bar" ? widget.options.groupBy : null;
+  const groupBy = isGroupedType(widget.type)
+    ? (widget as GroupedWidget).options.groupBy
+    : null;
   return metric.dimensions.filter(
     (dimension) =>
       dimension !== RESOURCE_DIMENSION &&
@@ -170,7 +179,7 @@ export function bindMetricPatch(
         ? widget.allResourcesName
         : null,
   };
-  if (widget.type !== "bar") {
+  if (widget.type !== "bar" && widget.type !== "table") {
     return base;
   }
   const grouped = startingGroupBy(metric, dimensions, widget.options.groupBy);
@@ -182,9 +191,9 @@ export function bindMetricPatch(
   } as WidgetPatch;
 }
 
-/** A bar's patch for another groupBy: no filter on what it groups by. */
+/** A bar's or table's patch for another groupBy: no filter on it. */
 export function groupByPatch(
-  widget: Extract<DataWidget, { type: "bar" }>,
+  widget: GroupedWidget,
   groupBy: string,
 ): WidgetPatch {
   const { [groupBy]: _grouped, ...dimensions } = widget.dimensions;
@@ -346,8 +355,11 @@ export function convertWidget(
       };
     }
     const metric = findMetric(context.metrics, data);
+    const previous = isGroupedType(widget.type)
+      ? (widget as GroupedWidget).options
+      : null;
     const grouped = metric
-      ? startingGroupBy(metric, data.dimensions, null)
+      ? startingGroupBy(metric, data.dimensions, previous?.groupBy ?? null)
       : null;
     if (!grouped) {
       return {
@@ -364,7 +376,15 @@ export function convertWidget(
         ...(grouped.groupBy === RESOURCE_DIMENSION
           ? { resourceName: null }
           : {}),
-        options: { groupBy: grouped.groupBy, limit: 5 },
+        options:
+          to === "table"
+            ? {
+                groupBy: grouped.groupBy,
+                limit: previous?.limit ?? 5,
+                showChange: true,
+                showOthers: false,
+              }
+            : { groupBy: grouped.groupBy, limit: previous?.limit ?? 5 },
       } as WidgetFields,
     };
   }

@@ -2004,6 +2004,7 @@ a.health-badge:hover {
 .sw-metric,
 .sw-line,
 .sw-bar,
+.sw-table,
 .sw-clock,
 .sw-failed {
   background: var(--sw-surface, var(--t-surface));
@@ -2094,6 +2095,8 @@ a.health-badge:hover {
 .sw-metric > .sw-notice,
 .sw-line > .sw-notice,
 .sw-bar > .sw-notice,
+.sw-table > .sw-notice,
+.sw-table > .sw-footer,
 .sw-footer {
   margin-top: auto;
 }
@@ -2271,6 +2274,108 @@ a.health-badge:hover {
   opacity: 0.5;
 }
 
+/* Tables (ADR 0019 section 6): sizes and column widths come from the
+   domain's tableLayout. The subtitle says how many rows show; the heads
+   are small caps in muted; each row is a line plus a 12 unit gap above. */
+.sw-table-subtitle {
+  margin-bottom: calc(var(--u) * 8);
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-table-head {
+  display: grid;
+  align-items: end;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--t-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.sw-table-head > span {
+  white-space: nowrap;
+}
+
+.sw-table-head-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A head wider than its column reaches into the label column's room. */
+.sw-table-head-value {
+  justify-self: end;
+  text-align: right;
+}
+
+.sw-table-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sw-table-row {
+  display: grid;
+  align-items: baseline;
+  box-sizing: border-box;
+  flex: none;
+}
+
+/* Row labels are data: shrunk to 24 units first, then an ellipsis. */
+.sw-table-label {
+  min-width: 0;
+  color: var(--t-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-table-value,
+.sw-table-change {
+  text-align: right;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.sw-table-value {
+  color: var(--t-text);
+}
+
+.sw-table-row.others .sw-table-label,
+.sw-table-row.others .sw-table-value {
+  color: var(--t-muted);
+}
+
+/* The scroll view's card: every row, labels wrapped in full, in one grid
+   with the heads. */
+.scroll-table {
+  display: grid;
+  align-items: baseline;
+  row-gap: calc(var(--u) * 12);
+}
+
+.scroll-table > .sw-table-head,
+.scroll-table > .scroll-table-rows,
+.scroll-table .sw-table-row {
+  display: contents;
+}
+
+.scroll-table .sw-table-head > span {
+  align-self: end;
+}
+
+.scroll-table-label {
+  min-width: 0;
+  color: var(--t-label);
+  overflow-wrap: anywhere;
+}
+
 /* Images and text sit on the slide itself, without a box. */
 .sw-image {
   padding: 0;
@@ -2440,6 +2545,13 @@ a.health-badge:hover {
   transform-origin: left center;
 }
 
+/* Table rows rise 14 units and fade in, 90 ms apart (each row's eased
+   progress is --rise-p, set by useRowRise). */
+.slide-player-slide[data-entering] [data-rise] {
+  opacity: var(--rise-p, 1);
+  transform: translateY(calc(var(--u) * 14 * (1 - var(--rise-p, 1))));
+}
+
 .slide-player-slide[data-entering] .sw-line-last,
 .slide-player-slide[data-entering] .sw-line-pulse,
 .slide-player-slide[data-entering] .sw .sparkline-last {
@@ -2529,6 +2641,10 @@ a.health-badge:hover {
     --enter-p: 1 !important;
   }
 
+  .slide-player-slide [data-rise] {
+    --rise-p: 1 !important;
+  }
+
   .slide-player-slide .sw-line-pulse,
   .slide-player-slide .sw .sparkline-last,
   .slide-player-slide .sw-stale-dot {
@@ -2549,7 +2665,9 @@ a.health-badge:hover {
   border-color: color-mix(in srgb, var(--t-warning) 35%, transparent);
 }
 
-.sw--stale .sw-value {
+.sw--stale .sw-value,
+.sw--stale .sw-table-value,
+.sw--stale .sw-table-change {
   color: var(--t-muted);
 }
 

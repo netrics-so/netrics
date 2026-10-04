@@ -53,6 +53,7 @@ export const studioEn = {
         "{name}, column {column}, row {row}, {w} by {h} cells{problem, select, yes {, has a problem} other {}}",
       textCut: "Text cut off",
       labelCut: "Label cut off",
+      rowsCut: "Rows cut off",
       keyboardHelp:
         "Arrow keys move the widget by one cell, Shift and arrow keys resize it, Delete removes it, Escape goes back to the slide. Control or Command with D duplicates it, with C copies it, and with V pastes a copy.",
       empty: "This slide is empty. Add a widget from “Add widget”.",
@@ -72,7 +73,7 @@ export const studioEn = {
       add: "Add widget",
       hint: "Click to add it in the first free spot, or drag it onto the slide",
       addType:
-        "Add {type, select, metric {metric} line {line chart} bar {bar chart} image {image} text {text} clock {clock} other {widget}}",
+        "Add {type, select, metric {metric} line {line chart} bar {bar chart} table {table} image {image} text {text} clock {clock} other {widget}}",
     },
     assignTvs: {
       title: "Show “{name}” on TVs",
@@ -204,6 +205,7 @@ export const studioEn = {
       metric: "Metric",
       notAvailable: "{name} (not available)",
       barMetrics: "Bar charts list metrics that can be broken down.",
+      tableMetrics: "Tables list metrics that can be broken down.",
       show: "Show",
       period: "Period",
       resourceHelp:
@@ -223,6 +225,11 @@ export const studioEn = {
       groupBy: "Group by",
       barsShown: "Bars shown: {count}",
       barsHelp: "The largest groups, the rest added up as “Others”.",
+      rows: "Rows",
+      rowsShown: "Rows: {count}",
+      rowsHelp:
+        "The largest groups. A screen shows the rows that fit and says how many.",
+      showOthers: "“Others” row with the rest added up",
       all: "All",
       filter: "Filter",
       filterChip: "{name} = {value}",
@@ -316,6 +323,8 @@ export const studioEn = {
       textCutResize:
         "The text is cut off on TVs. Make it {w} × {h} cells or shorten the text.",
       textCut: "The text is cut off on TVs. Shorten the text.",
+      rowsCut:
+        "Shows {shown} of {limit} rows on TVs. Make it taller or show fewer rows.",
       labelWarning:
         "On a TV this label needs {lines} lines at this width and would be cut (at most {max}). Shorten the title or make the widget wider.",
       formatsAttention:
@@ -383,6 +392,7 @@ export const studioEn = {
         header_name_cut: "The dashboard name does not fit the header.",
         clock_parts_hidden:
           "{widget}: the date or time zone does not fit, so only part of the clock shows.",
+        rows_cut: "{widget}: shows {shown} of {limit} rows.",
       },
       showInEditor: "Select in {primary}",
       openFormat: "Open {name} {ratio}",
@@ -447,9 +457,9 @@ export const studioEn = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} image {Image} text {Text} clock {Clock} other {Widget}}",
+        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} table {Table} image {Image} text {Text} clock {Clock} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} image {image} text {text} clock {clock} other {widget}})",
+        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} image {image} text {text} clock {clock} other {widget}})",
       copyOf: "{name} (copy)",
       slide: "Slide {number}",
       quoted: "“{name}”",
@@ -461,9 +471,9 @@ export const studioEn = {
         widgetPlaced:
           "{name} {verb, select, duplicated {duplicated} pasted {pasted} other {added}} at column {column}, row {row}.",
         typeNoRoom:
-          "{type, select, metric {A metric} line {A line chart} bar {A bar chart} image {An image} text {A text} clock {A clock} other {A widget}} needs at least {w} × {h} cells; there is no room for it here.",
+          "{type, select, metric {A metric} line {A line chart} bar {A bar chart} table {A table} image {An image} text {A text} clock {A clock} other {A widget}} needs at least {w} × {h} cells; there is no room for it here.",
         typeChanged:
-          "{name} is now {type, select, metric {a metric} line {a line chart} bar {a bar chart} image {an image} text {a text} clock {a clock} other {a widget}}.",
+          "{name} is now {type, select, metric {a metric} line {a line chart} bar {a bar chart} table {a table} image {an image} text {a text} clock {a clock} other {a widget}}.",
         undone: "Undone.",
         redone: "Redone.",
         discarded: "Changes discarded.",

@@ -28,7 +28,7 @@ import {
   type Database,
   type Sql,
 } from "@netrics/database";
-import { addDays, civilDate } from "@netrics/domain";
+import { STUDIO_MIN_WIDGET_SIZE, addDays, civilDate } from "@netrics/domain";
 
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
@@ -1188,7 +1188,14 @@ describe("device dashboard", () => {
       dashboard: v2.dashboard,
     });
     expect(v3.slides).toEqual(
-      v2.slides.map((slide) => ({ ...slide, layouts: [] })),
+      v2.slides.map((slide) => ({
+        ...slide,
+        widgets: slide.widgets.map((widget) => ({
+          ...widget,
+          min: STUDIO_MIN_WIDGET_SIZE[widget.type],
+        })),
+        layouts: [],
+      })),
     );
 
     // Each schema answers 304 on its own ETag only.

@@ -531,7 +531,9 @@ export function EditorCanvas({
                     ? cut.hint
                     : cut.kind === "text"
                       ? t("textCut")
-                      : t("labelCut")}
+                      : cut.kind === "rows"
+                        ? t("rowsCut")
+                        : t("labelCut")}
                 </span>
               ) : null}
               {toReview ? (

@@ -175,12 +175,32 @@ public struct LayoutWidget: StudioPlaced, Sendable, Equatable {
     public var y: Int
     public var w: Int
     public var h: Int
+    /**
+     * The type's minimum size as a schema 3 payload carries it (ADR 0019
+     * section 2): a type this build does not know is laid out with it. Nil:
+     * the type's own minimum.
+     */
+    public var minimum: StudioMinimum?
 
-    public init(id: String, type: StudioWidgetType, x: Int, y: Int, w: Int, h: Int) {
+    public init(
+        id: String, type: StudioWidgetType, x: Int, y: Int, w: Int, h: Int, minimum: StudioMinimum? = nil
+    ) {
         self.id = id
         self.type = type
         self.x = x
         self.y = y
+        self.w = w
+        self.h = h
+        self.minimum = minimum
+    }
+}
+
+/** A widget type's minimum size in cells. */
+public struct StudioMinimum: Sendable, Equatable, Codable {
+    public var w: Int
+    public var h: Int
+
+    public init(w: Int, h: Int) {
         self.w = w
         self.h = h
     }
@@ -333,8 +353,9 @@ public enum ScreenLayout {
         return (a % b != 0 && (a < 0) != (b < 0)) ? q - 1 : q
     }
 
-    static func minimumOf(_ type: StudioWidgetType) -> (w: Int, h: Int) {
-        StudioLayout.minimumSize(type)
+    static func minimumOf(_ widget: LayoutWidget) -> (w: Int, h: Int) {
+        if let minimum = widget.minimum { return (minimum.w, minimum.h) }
+        return StudioLayout.minimumSize(widget.type)
     }
 
     // MARK: Bands, stacks and reading order (section 3, steps 1–3)
@@ -447,13 +468,13 @@ public enum ScreenLayout {
         let right = scaleEdge(stack.right, from: source.columns, to: target.columns)
         var width = right - left
         for member in stack.members {
-            width = Swift.max(width, minimumOf(member.item.type).w)
+            width = Swift.max(width, minimumOf(member.item).w)
         }
         width = Swift.min(width, target.columns)
         var blocks: [Block] = []
         var used = 0
         for member in stack.members {
-            let h = Swift.min(Swift.max(member.item.h, minimumOf(member.item.type).h), target.rows)
+            let h = Swift.min(Swift.max(member.item.h, minimumOf(member.item).h), target.rows)
             if blocks.isEmpty || used + h > target.rows {
                 blocks.append(Block(left: left, width: width, members: []))
                 used = 0
@@ -650,13 +671,13 @@ public enum ScreenLayout {
         if !pagesValid {
             problems.append(CustomLayoutProblem(code: .invalidPageCount, widgetId: nil))
         }
-        var types: [String: StudioWidgetType] = [:]
+        var byId: [String: LayoutWidget] = [:]
         // new Map(entries) keeps the last value per key.
-        for widget in widgets { types[widget.id] = widget.type }
+        for widget in widgets { byId[widget.id] = widget }
         var seen = Set<String>()
         var visible: [CustomPlacement] = []
         for placement in custom.placements {
-            guard let type = types[placement.id] else {
+            guard let widget = byId[placement.id] else {
                 problems.append(CustomLayoutProblem(code: .unknownWidget, widgetId: placement.id))
                 continue
             }
@@ -674,7 +695,7 @@ public enum ScreenLayout {
                 problems.append(CustomLayoutProblem(code: .widgetOutOfBounds, widgetId: placement.id))
                 continue
             }
-            let minimum = minimumOf(type)
+            let minimum = minimumOf(widget)
             if placement.w < minimum.w || placement.h < minimum.h {
                 problems.append(CustomLayoutProblem(code: .widgetTooSmall, widgetId: placement.id))
                 continue
@@ -755,7 +776,7 @@ public enum ScreenLayout {
                 kept[widget.id] = hidden
                 continue
             }
-            let minimum = minimumOf(widget.type)
+            let minimum = minimumOf(widget)
             let valid =
                 pageValid
                 && StudioLayout.isInsideFormatGrid(placement.cells, format: format)
@@ -779,7 +800,7 @@ public enum ScreenLayout {
         for (index, widget) in order.enumerated() {
             if kept[widget.id] != nil { continue }
             let reflowed = auto[widget.id]!
-            let minimum = minimumOf(widget.type)
+            let minimum = minimumOf(widget)
             let preferred = (
                 w: Swift.min(Swift.max(reflowed.w, minimum.w), spec.columns),
                 h: Swift.min(Swift.max(reflowed.h, minimum.h), spec.rows)
@@ -844,8 +865,8 @@ public enum ScreenLayout {
      * One slide's section in scroll view, for a viewport `width` points
      * wide: every widget (clocks included), in the primary layout's reading
      * order, flowing over the columns without reordering. Line and bar
-     * charts, and text and image widgets at least 6 columns wide in the
-     * primary, span the row (after a half-filled row, which keeps its gap);
+     * charts, and text, image and table widgets at least 6 columns wide in
+     * the primary (ADR 0019 section 2), span the row (after a half-filled row, which keeps its gap);
      * everything else takes one column.
      */
     public static func scrollLayout(_ widgets: [LayoutWidget], width: Double) -> ScrollLayout {
@@ -856,7 +877,7 @@ public enum ScreenLayout {
         for widget in studioReadingOrder(widgets) {
             let full =
                 widget.type == .line || widget.type == .bar
-                || ((widget.type == .text || widget.type == .image) && widget.w >= 6)
+                || ((widget.type == .text || widget.type == .image || widget.type == .table) && widget.w >= 6)
             let span = full ? columns : 1
             if column > 0 && column + span > columns {
                 row += 1

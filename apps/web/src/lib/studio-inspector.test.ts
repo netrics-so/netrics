@@ -354,6 +354,33 @@ describe("changing the type", () => {
         options: { groupBy: "territory", limit: 5 },
       },
     });
+    // A bar becomes a table with its grouping and rows, change on.
+    if (!("widget" in bar)) throw new Error("expected a bar");
+    const table = convertWidget(
+      {
+        ...(bar.widget as Extract<DashboardWidget, { type: "bar" }>),
+        id: ID(20),
+        x: 0,
+        y: 0,
+        w: 4,
+        h: 4,
+        options: { groupBy: "territory", limit: 8 },
+      },
+      "table",
+      context,
+    );
+    expect(table).toMatchObject({
+      widget: {
+        type: "table",
+        metricKey: "downloads",
+        options: {
+          groupBy: "territory",
+          limit: 8,
+          showChange: true,
+          showOthers: false,
+        },
+      },
+    });
     // Filtered on every dimension: it groups by resource, for all of them.
     expect(convertWidget(metricWidget, "bar", context)).toMatchObject({
       widget: {

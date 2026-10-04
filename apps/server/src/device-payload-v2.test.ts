@@ -16,7 +16,11 @@ import {
   type Database,
   type Sql,
 } from "@netrics/database";
-import { BUILTIN_THEMES, type Locale } from "@netrics/domain";
+import {
+  BUILTIN_THEMES,
+  STUDIO_MIN_WIDGET_SIZE,
+  type Locale,
+} from "@netrics/domain";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -58,6 +62,7 @@ const IMAGES = {
   disabledOnly: id(6, 5),
 };
 const THEME = id(7, 1);
+const TABLES = id(9, 0);
 
 const fixture = (name: string) =>
   readFileSync(path.join(import.meta.dirname, "images", "fixtures", name));
@@ -365,6 +370,29 @@ beforeAll(async () => {
       });
     }
   }
+
+  // Tables (ADR 0019 section 6): with change and Others, and without.
+  await insertDashboard(TABLES, "Tables");
+  await insertSlide(id(9, 100), TABLES, 0);
+  await insertWidget(id(9, 101), id(9, 100), TABLES, {
+    type: "table",
+    x: 0,
+    y: 0,
+    w: 6,
+    h: 6,
+    ...downloads(),
+    options: { groupBy: "resource", limit: 3, showOthers: true },
+  });
+  await insertWidget(id(9, 102), id(9, 100), TABLES, {
+    type: "table",
+    x: 6,
+    y: 0,
+    w: 4,
+    h: 4,
+    title: "Top apps",
+    ...downloads(),
+    options: { groupBy: "resource", limit: 3, showChange: false },
+  });
 
   await insertDashboard(OTHER, "Other", {}, otherWorkspaceId);
   await insertSlide(id(5, 100), OTHER, 0, {}, otherWorkspaceId);
@@ -891,6 +919,58 @@ describe("device payload schema 2", () => {
     );
   });
 
+  it("carries a table's rows with their previous window (ADR 0019 §6)", async () => {
+    const payload = deviceDashboardV2ResponseSchema.parse(await v2(TABLES));
+    const [ranked, plain] = widgetsOf(payload);
+    expect(ranked).toMatchObject({
+      type: "table",
+      label: "Downloads · All resources",
+      options: {
+        groupBy: "resource",
+        limit: 3,
+        showChange: true,
+        showOthers: true,
+      },
+      data: {
+        status: "ok",
+        unit: "count",
+        better: "higher",
+        groupBy: "resource",
+        columns: { label: "Resource", value: "Downloads" },
+        others: null,
+      },
+    });
+    if (ranked?.type !== "table" || plain?.type !== "table") {
+      throw new Error("expected two tables");
+    }
+    expect(ranked.data.columns.label).not.toBe("");
+    expect(ranked.data.rows.map((row) => [row.key, row.label])).toEqual([
+      ["app-1", "Wurfel"],
+      ["app-2", "voilà"],
+      ["app-3", "paperstand"],
+    ]);
+    // The previous week of each app; values rise every day, so each row
+    // grew, by the same ratio for every app (factors 10, 3 and 1).
+    for (const row of ranked.data.rows) {
+      expect(row.previousValue).toBeGreaterThan(0);
+      expect(row.ratio).toBeCloseTo(
+        (row.value - row.previousValue!) / row.previousValue!,
+        12,
+      );
+    }
+    expect(ranked.data.rows[0]!.value).toBe(ranked.data.rows[2]!.value * 10);
+    // Without the Δ column no previous window is read; Others only with
+    // showOthers (three apps, three rows: there is no rest).
+    expect(plain).toMatchObject({ label: "Top apps", data: { others: null } });
+    expect(
+      plain.data.rows.map((row) => [row.previousValue, row.ratio]),
+    ).toEqual([
+      [null, null],
+      [null, null],
+      [null, null],
+    ]);
+  });
+
   it("hashes the schema: versions differ between schema 1 and 2", async () => {
     expect((await v2(EMPTY)).version).not.toBe((await v1(EMPTY)).version);
     expect((await v2(null)).version).not.toBe((await v1(null)).version);
@@ -923,9 +1003,16 @@ describe("device payload schema 3 (#277)", () => {
         device: { rotation: 180, displayMode: "screen" },
       });
       // A 16x9 dashboard: schema 2's slides, widgets, data and background,
-      // with no custom layouts.
+      // with no custom layouts; each widget with its type's minimum.
       expect(payload.slides).toEqual(
-        slides.map((slide) => ({ ...slide, layouts: [] })),
+        slides.map((slide) => ({
+          ...slide,
+          widgets: slide.widgets.map((widget) => ({
+            ...widget,
+            min: STUDIO_MIN_WIDGET_SIZE[widget.type],
+          })),
+          layouts: [],
+        })),
       );
     }
     const studio = await v3(STUDIO);

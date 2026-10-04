@@ -175,6 +175,7 @@ async function bucketRows(
   query: MetricBucketQuery,
   byCurrency: boolean,
   groupBy: string | null = null,
+  groups: readonly string[] | null = null,
 ) {
   checkBucketQuery(query);
   const dimensions = query.dimensions ?? {};
@@ -198,7 +199,15 @@ async function bucketRows(
       and o.source_timestamp >= ${query.from.toISOString()}::timestamptz
       and o.source_timestamp < ${query.to.toISOString()}::timestamptz
       and o.dimensions @> ${JSON.stringify(dimensions)}::jsonb
-      ${byCurrency ? sql`and o.dimensions ->> 'currency' is not null` : sql``}`;
+      ${byCurrency ? sql`and o.dimensions ->> 'currency' is not null` : sql``}
+      ${
+        groupBy !== null && groups !== null
+          ? sql`and o.dimensions ->> ${groupBy} in (${sql.join(
+              groups.map((value) => sql`${value}`),
+              sql`, `,
+            )})`
+          : sql``
+      }`;
 
   const rows =
     query.combination === "sum"
@@ -280,9 +289,20 @@ export interface MetricGroupBucket extends MetricBucket {
  */
 export async function queryMetricGroupBuckets(
   tx: Transaction,
-  query: MetricBucketQuery & { groupBy: string; byCurrency: boolean },
+  query: MetricBucketQuery & {
+    groupBy: string;
+    byCurrency: boolean;
+    /**
+     * Only these values of `groupBy` (at least one): a table's previous
+     * window, restricted to the groups the current one returned.
+     */
+    groups?: readonly string[];
+  },
 ): Promise<MetricGroupBucket[]> {
   checkBucketQuery(query);
+  if (query.groups !== undefined && query.groups.length === 0) {
+    return [];
+  }
   return tx.transaction(async (savepoint) => {
     const [setting] = await savepoint.execute(
       sql`select current_setting('statement_timeout') as value`,
@@ -295,6 +315,7 @@ export async function queryMetricGroupBuckets(
       query,
       query.byCurrency,
       query.groupBy,
+      query.groups ?? null,
     );
     await savepoint.execute(
       sql`select set_config('statement_timeout', ${setting!.value as string}, true)`,

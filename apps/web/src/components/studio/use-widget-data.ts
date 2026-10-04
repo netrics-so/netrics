@@ -180,16 +180,22 @@ export function useMetricData(
   return usePolled(load, refreshMs, `metric|${workspaceId}|${key}`);
 }
 
-/** A bar widget's groups. */
+/**
+ * A bar widget's groups, or a table's rows: with the Δ column, each with
+ * its value over the previous window (ADR 0019 section 6).
+ */
 export function useBreakdownData(
   workspaceId: string,
-  widget: Extract<DataWidget, { type: "bar" }>,
+  widget: Extract<DataWidget, { type: "bar" | "table" }>,
   refreshMs = WIDGET_REFRESH_MS,
 ): WidgetData<MetricBreakdownResponse> {
   const key = JSON.stringify({
     ...metricRequest(widget),
     groupBy: widget.options.groupBy,
     limit: widget.options.limit,
+    ...(widget.type === "table" && widget.options.showChange
+      ? { withPrevious: true }
+      : {}),
   });
   const load = useCallback(
     () => queryMetricBreakdown(workspaceId, JSON.parse(key)),

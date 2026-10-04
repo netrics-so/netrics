@@ -198,6 +198,28 @@ export const SLIDE_FIXTURES: SlideFixture[] = [
       widget("bar", "bar", 0, 6, 6, 4),
     ],
   },
+  {
+    name: "tables beside metrics",
+    format: "16x9",
+    widgets: [
+      widget("routes", "table", 0, 0, 6, 5),
+      widget("m1", "metric", 6, 0, 3, 2),
+      widget("m2", "metric", 9, 0, 3, 2),
+      widget("countries", "table", 6, 2, 4, 4),
+      widget("note", "text", 0, 5, 6, 3),
+    ],
+  },
+  {
+    // A type this screen does not know arrives as an image (tvOS's
+    // `layoutType`) with its minimum from the schema 3 `min` (ADR 0019 §2).
+    name: "a later type with its minimum",
+    format: "16x9",
+    widgets: [
+      { ...widget("later", "image", 0, 0, 6, 4), min: { w: 4, h: 3 } },
+      widget("m1", "metric", 6, 0, 3, 2),
+      widget("chart", "line", 6, 2, 6, 6),
+    ],
+  },
 ];
 
 /** Screen sizes: every format boundary, common screens and edge cases. */

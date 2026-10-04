@@ -256,6 +256,8 @@ export function FormatWarningsList({
                   const text = t(`warning.${warning.code}`, {
                     widget: widget ? widgetName(widget, locale) : "",
                     pages: warning.pages ?? 0,
+                    shown: warning.rows?.shown ?? 0,
+                    limit: warning.rows?.limit ?? 0,
                   });
                   const clickable =
                     warning.code !== "continues" &&

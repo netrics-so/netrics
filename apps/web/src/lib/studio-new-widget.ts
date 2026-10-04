@@ -78,28 +78,45 @@ export function newWidget(
             },
           };
     }
-    case "bar": {
+    case "bar":
+    case "table": {
       const metric = startingMetrics(input.metrics).find(
         (candidate) => groupBy(candidate) !== null,
       );
       if (!metric) {
         return { reason: t("noBreakdown") };
       }
-      return {
-        widget: {
-          type,
-          title: null,
-          connectionId: metric.connectionId,
-          metricKey: metric.key,
-          aggregation: metric.aggregations[0]!,
-          period: "last_30_days",
-          dimensions: {},
-          displayCurrency: null,
-          resourceName: null,
-          allResourcesName: null,
-          options: { groupBy: groupBy(metric)!, limit: 5 },
-        },
+      const binding = {
+        title: null,
+        connectionId: metric.connectionId,
+        metricKey: metric.key,
+        aggregation: metric.aggregations[0]!,
+        period: "last_30_days" as const,
+        dimensions: {},
+        displayCurrency: null,
+        resourceName: null,
+        allResourcesName: null,
       };
+      return type === "bar"
+        ? {
+            widget: {
+              type,
+              ...binding,
+              options: { groupBy: groupBy(metric)!, limit: 5 },
+            },
+          }
+        : {
+            widget: {
+              type,
+              ...binding,
+              options: {
+                groupBy: groupBy(metric)!,
+                limit: 5,
+                showChange: true,
+                showOthers: false,
+              },
+            },
+          };
     }
     case "image": {
       const imageId = input.imageIds[0];

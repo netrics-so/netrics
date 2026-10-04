@@ -6,7 +6,7 @@ import type {
   DeviceDashboardV2Response,
   DeviceDashboardV3Response,
 } from "@netrics/contracts";
-import { BUILTIN_THEMES } from "@netrics/domain";
+import { BUILTIN_THEMES, STUDIO_MIN_WIDGET_SIZE } from "@netrics/domain";
 
 import {
   CREDENTIALS_KEY,
@@ -693,7 +693,14 @@ function formatsPayload(
       "9x16": format(6, 14, 1080, 1920),
     },
     device: { rotation: 90, displayMode: "screen" },
-    slides: slides.map((slide) => ({ ...slide, layouts: [] })),
+    slides: slides.map((slide) => ({
+      ...slide,
+      widgets: slide.widgets.map((widget) => ({
+        ...widget,
+        min: STUDIO_MIN_WIDGET_SIZE[widget.type],
+      })),
+      layouts: [],
+    })),
   };
 }
 

@@ -56,6 +56,7 @@ public enum KitText: String, Sendable, CaseIterable {
     case offline, offlineLastUpdate
     case conversionSource, conversionNotConverted
     case weekOf, others
+    case tableTop, tableNew
     case updated, updatedFrom, reconnect, reconnectSource, reconnectHint, loadingHistory
     case nextRefresh, slidePosition, nextSlide
     case serverInvalidAddress, serverPlainHTTPToPublicHost, serverPlainHTTPNeedsSetting, serverUnreachable
@@ -116,6 +117,8 @@ public enum KitStrings {
         .conversionNotConverted: "%@ · %@ not converted",
         .weekOf: "Week of %@",
         .others: "Others",
+        .tableTop: "Top %d",
+        .tableNew: "new",
         .updated: "updated %@",
         .updatedFrom: "updated %@ · %@",
         .reconnect: "Reconnect %@",
@@ -197,6 +200,8 @@ public enum KitStrings {
         .conversionNotConverted: "%@ · %@ nicht umgerechnet",
         .weekOf: "Woche vom %@",
         .others: "Andere",
+        .tableTop: "Top %d",
+        .tableNew: "neu",
         .updated: "aktualisiert %@",
         .updatedFrom: "aktualisiert %@ · %@",
         .reconnect: "%@ neu verbinden",

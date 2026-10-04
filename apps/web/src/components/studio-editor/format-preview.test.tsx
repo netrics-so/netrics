@@ -104,6 +104,7 @@ const warnings: FormatWarningItem[] = [
     severity: "attention",
     widgetId: ID(100),
     pages: null,
+    rows: null,
   },
   {
     format: "9x16",
@@ -111,6 +112,7 @@ const warnings: FormatWarningItem[] = [
     severity: "info",
     widgetId: null,
     pages: 2,
+    rows: null,
   },
   {
     format: "9x16",
@@ -118,6 +120,7 @@ const warnings: FormatWarningItem[] = [
     severity: "attention",
     widgetId: null,
     pages: null,
+    rows: null,
   },
 ];
 
@@ -199,6 +202,7 @@ describe("FormatSwitcher", () => {
           severity: "attention",
           widgetId: ID(100),
           pages: null,
+          rows: null,
         },
       ],
     });

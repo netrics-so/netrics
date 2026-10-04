@@ -30,6 +30,10 @@ export const screenDe: Catalog<typeof screenEn> = {
     },
     widget: {
       approximate: "Ungefähr",
+      tableTop: "Top {count}",
+      tableNew: "neu",
+      tableNoChange: "–",
+      tableChangeHead: "Δ",
       noDataYet: "Noch keine Daten für diesen Zeitraum",
       noDataShort: "Noch keine Daten",
       noComparison: "Keine Daten zum Vergleich ({comparison})",

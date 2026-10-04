@@ -18,7 +18,7 @@ import {
   type Database,
   type Sql,
 } from "@netrics/database";
-import { slideLayoutFor } from "@netrics/domain";
+import { STUDIO_MIN_WIDGET_SIZE, slideLayoutFor } from "@netrics/domain";
 
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
@@ -378,9 +378,17 @@ describe("device payload schema 3", () => {
       }
     `);
     // A 16x9 dashboard without custom layouts: schema 2's slides, each with
-    // no layouts (every other format is auto).
+    // no layouts (every other format is auto), every widget with its
+    // type's minimum size (ADR 0019 section 2).
     expect(slides).toEqual(
-      legacy.slides.map((slide) => ({ ...slide, layouts: [] })),
+      legacy.slides.map((slide) => ({
+        ...slide,
+        widgets: slide.widgets.map((widget) => ({
+          ...widget,
+          min: STUDIO_MIN_WIDGET_SIZE[widget.type],
+        })),
+        layouts: [],
+      })),
     );
     expect(payload.version).not.toBe(legacy.version);
   });

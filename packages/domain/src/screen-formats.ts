@@ -29,6 +29,12 @@ import {
 export interface LayoutWidget extends StudioPlacement {
   id: string;
   type: StudioWidgetType;
+  /**
+   * The type's minimum size as a schema 3 payload carries it (ADR 0019
+   * section 2): a screen that does not know the type lays it out with this
+   * one. Absent: the type's own `STUDIO_MIN_WIDGET_SIZE`.
+   */
+  min?: { w: number; h: number } | null;
 }
 
 /** A widget's placement in a format, by id. */
@@ -66,8 +72,11 @@ function scaleEdge(edge: number, from: number, to: number): number {
   return roundHalfUp((edge * to) / from);
 }
 
-function minimumOf(type: StudioWidgetType): { w: number; h: number } {
-  return STUDIO_MIN_WIDGET_SIZE[type];
+function minimumOf(widget: {
+  type: StudioWidgetType;
+  min?: { w: number; h: number } | null;
+}): { w: number; h: number } {
+  return widget.min ?? STUDIO_MIN_WIDGET_SIZE[widget.type];
 }
 
 // ---------------------------------------------------------------------------
@@ -195,7 +204,7 @@ function stackBlocks(
   const right = scaleEdge(stack.right, source.columns, target.columns);
   let width = right - left;
   for (const member of stack.members) {
-    width = Math.max(width, minimumOf(member.item.type).w);
+    width = Math.max(width, minimumOf(member.item).w);
   }
   width = Math.min(width, target.columns);
   const blocks: Block[] = [];
@@ -203,7 +212,7 @@ function stackBlocks(
   let used = 0;
   for (const member of stack.members) {
     const h = Math.min(
-      Math.max(member.item.h, minimumOf(member.item.type).h),
+      Math.max(member.item.h, minimumOf(member.item).h),
       target.rows,
     );
     if (current === null || used + h > target.rows) {
@@ -478,12 +487,12 @@ export function validateCustomLayout(
   if (!pagesValid) {
     problems.push({ code: "invalid_page_count", widgetId: null });
   }
-  const types = new Map(widgets.map((widget) => [widget.id, widget.type]));
+  const byId = new Map(widgets.map((widget) => [widget.id, widget]));
   const seen = new Set<string>();
   const visible: CustomPlacement[] = [];
   for (const placement of custom.placements) {
-    const type = types.get(placement.id);
-    if (type === undefined) {
+    const widget = byId.get(placement.id);
+    if (widget === undefined) {
       problems.push({ code: "unknown_widget", widgetId: placement.id });
       continue;
     }
@@ -505,7 +514,7 @@ export function validateCustomLayout(
       problems.push({ code: "widget_out_of_bounds", widgetId: placement.id });
       continue;
     }
-    const minimum = minimumOf(type);
+    const minimum = minimumOf(widget);
     if (placement.w < minimum.w || placement.h < minimum.h) {
       problems.push({ code: "widget_too_small", widgetId: placement.id });
       continue;
@@ -602,7 +611,7 @@ export function completeCustomLayout(
       });
       continue;
     }
-    const minimum = minimumOf(widget.type);
+    const minimum = minimumOf(widget);
     const valid =
       pageValid &&
       isInsideFormatGrid(placement, format) &&
@@ -629,7 +638,7 @@ export function completeCustomLayout(
   order.forEach((widget, index) => {
     if (kept.has(widget.id)) return;
     const reflowed = auto.get(widget.id)!;
-    const minimum = minimumOf(widget.type);
+    const minimum = minimumOf(widget);
     const { columns, rows } = SCREEN_FORMATS[format];
     const preferred = {
       w: Math.min(Math.max(reflowed.w, minimum.w), columns),
@@ -772,9 +781,10 @@ export function scrollColumns(width: number): number {
  * One slide's section in scroll view, for a viewport `width` CSS px wide:
  * every widget (clocks included), in the primary layout's reading order,
  * flowing over the columns without reordering. Line and bar charts, and
- * text and image widgets at least 6 columns wide in the primary, span the
- * row (after a half-filled row, which keeps its gap); everything else takes
- * one column.
+ * text, image and table widgets at least 6 columns wide in the primary
+ * (ADR 0019 section 2), span the row (after a half-filled row, which keeps
+ * its gap); everything else takes one column. A table's height fits all
+ * its `limit` rows.
  */
 export function scrollLayout(
   widgets: readonly LayoutWidget[],
@@ -788,7 +798,10 @@ export function scrollLayout(
     const full =
       widget.type === "line" ||
       widget.type === "bar" ||
-      ((widget.type === "text" || widget.type === "image") && widget.w >= 6);
+      ((widget.type === "text" ||
+        widget.type === "image" ||
+        widget.type === "table") &&
+        widget.w >= 6);
     const span = full ? columns : 1;
     if (column > 0 && column + span > columns) {
       row += 1;

@@ -18,11 +18,12 @@ export const WIDGET_TYPES = [
   "image",
   "text",
   "clock",
+  "table",
 ] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 
 /** Widgets that show a metric of a connection. */
-export const DATA_WIDGET_TYPES = ["metric", "line", "bar"] as const;
+export const DATA_WIDGET_TYPES = ["metric", "line", "bar", "table"] as const;
 export type DataWidgetType = (typeof DATA_WIDGET_TYPES)[number];
 
 export function isDataWidgetType(type: string): type is DataWidgetType {

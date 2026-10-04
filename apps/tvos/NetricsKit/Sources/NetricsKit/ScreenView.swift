@@ -122,6 +122,15 @@ public enum ScreenView {
     }
 
     /**
+     * The minimum a widget is laid out with: its type's own when this build
+     * knows the type, else the schema 3 `min` it carries (ADR 0019 section
+     * 2), which keeps the reflow of a later type exact.
+     */
+    static func layoutMinimum(_ widget: DeviceWidget) -> StudioMinimum? {
+        StudioWidgetType(rawValue: widget.type) == nil ? widget.minimum : nil
+    }
+
+    /**
      * The pages of a slide on a screen of `format` (ADR 0017, sections 3
      * and 4): the primary layout in the primary format; else the slide's
      * custom layout for the format, completed against the widgets in this
@@ -135,7 +144,7 @@ public enum ScreenView {
         let widgets = slide.widgets.map {
             LayoutWidget(
                 id: $0.id, type: layoutType($0.type), x: $0.placement.x, y: $0.placement.y, w: $0.placement.w,
-                h: $0.placement.h)
+                h: $0.placement.h, minimum: layoutMinimum($0))
         }
         let custom = format == primaryFormat
             ? nil

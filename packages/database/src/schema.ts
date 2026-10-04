@@ -1018,7 +1018,7 @@ export const dashboardWidgets = pgTable(
     index("dashboard_widgets_image_idx").on(table.imageId),
     check(
       "dashboard_widgets_type_valid",
-      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock')`,
+      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table')`,
     ),
     // An image widget names its image; no other widget does.
     check(
@@ -1050,7 +1050,7 @@ export const dashboardWidgets = pgTable(
     // Data widgets have a metric binding and no text; the others neither.
     check(
       "dashboard_widgets_type_columns",
-      sql`case when ${table.type} in ('metric', 'line', 'bar') then ${table.connectionId} is not null and ${table.metricKey} is not null and ${table.aggregation} is not null and ${table.period} is not null and ${table.text} is null else ${table.connectionId} is null and ${table.metricKey} is null and ${table.aggregation} is null and ${table.period} is null and ${table.displayCurrency} is null and ${table.dimensions} = '{}'::jsonb and (${table.text} is not null) = (${table.type} = 'text') end`,
+      sql`case when ${table.type} in ('metric', 'line', 'bar', 'table') then ${table.connectionId} is not null and ${table.metricKey} is not null and ${table.aggregation} is not null and ${table.period} is not null and ${table.text} is null else ${table.connectionId} is null and ${table.metricKey} is null and ${table.aggregation} is null and ${table.period} is null and ${table.displayCurrency} is null and ${table.dimensions} = '{}'::jsonb and (${table.text} is not null) = (${table.type} = 'text') end`,
     ),
   ],
 );

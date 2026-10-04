@@ -2,8 +2,10 @@ import type { DashboardWidget } from "@netrics/contracts";
 import {
   STUDIO_GRID,
   STUDIO_LABEL_MAX_LINES,
+  contentBoxIn,
   isDataWidget,
   studioLayout,
+  tableLayout,
   type Locale,
   type StudioLabelFit,
 } from "@netrics/domain";
@@ -24,8 +26,11 @@ import { textWidgetLayout } from "./studio-widgets";
 // and the tvOS TextLayout computes the same way.
 
 export interface UnreadableLabel {
-  /** A data widget's title or resource line, or a text widget's text. */
-  kind: "label" | "text";
+  /**
+   * A data widget's title or resource line, a text widget's text, or a
+   * table's rows (more asked for than fit, ADR 0019 section 6).
+   */
+  kind: "label" | "text" | "rows";
   slideId: string;
   widgetId: string;
   label: string;
@@ -166,6 +171,29 @@ export function unreadableLabels(
       const label = labelOf(widget);
       const fit = studioLayout.labelFit(label, widget, { fontScale });
       if (fit.fits) {
+        if (widget.type === "table") {
+          const rows = tableRowsCut(
+            label,
+            widget,
+            widget.options.limit,
+            fontScale,
+            document.settings.showHeader,
+          );
+          if (rows) {
+            found.push({
+              kind: "rows",
+              slideId: slide.id,
+              widgetId: widget.id,
+              label,
+              fit,
+              fitsAtWidth: null,
+              hint: webTranslator(locale, "studio.readability")(
+                "rowsCut",
+                rows,
+              ),
+            });
+          }
+        }
         continue;
       }
       const fitsAtWidth = widthToFit(label, widget, fontScale);
@@ -181,6 +209,27 @@ export function unreadableLabels(
     }
   }
   return found;
+}
+
+/**
+ * The rows a table shows at 1080p in the 16:9 grid and the rows it asks
+ * for, when fewer fit (`rows_cut`); else null.
+ */
+export function tableRowsCut(
+  label: string,
+  size: { w: number; h: number },
+  limit: number,
+  fontScale: number,
+  showHeader: boolean,
+): { shown: number; limit: number } | null {
+  const box = contentBoxIn({ x: 0, y: 0, ...size }, "16x9", showHeader);
+  const { rowCapacity } = tableLayout({
+    label,
+    width: box.width,
+    height: box.height,
+    fontScale,
+  });
+  return limit > rowCapacity ? { shown: rowCapacity, limit } : null;
 }
 
 /** Cut-off labels and texts per slide id, for the slide rail. */

@@ -288,6 +288,13 @@
       "when": 1791128148742,
       "tag": "0040_app_reviews",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791129644821,
+      "tag": "0041_table_widget",
+      "breakpoints": true
     }
   ]
 }
