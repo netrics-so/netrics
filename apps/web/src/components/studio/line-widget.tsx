@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 import type { MetricPeriod } from "@netrics/contracts";
 import type { StudioPlacement } from "@netrics/domain";
 
@@ -11,8 +13,16 @@ import {
   formatValue,
   sparkBucketLabel,
 } from "@/lib/format-metric";
-import { lineChartGeometry, type ChartPoint } from "@/lib/studio-chart";
-import { chartWidgetLayout, u } from "@/lib/studio-render";
+import {
+  lineChartGeometry,
+  type ChartPoint,
+  type LineChartGeometry,
+} from "@/lib/studio-chart";
+import {
+  chartWidgetLayoutWithFooter,
+  footerLine,
+  u,
+} from "@/lib/studio-render";
 import {
   metricKeyOf,
   type DataWidget,
@@ -22,7 +32,12 @@ import { connectionNotice } from "@/lib/tile-status";
 
 import { dataNotice, dataWidgetLabel } from "./metric-widget";
 import { useMetricData } from "./use-widget-data";
-import { WidgetLabel, WidgetNotice } from "./widget-parts";
+import {
+  WidgetFooter,
+  WidgetLabel,
+  WidgetNotice,
+  useFooterCandidates,
+} from "./widget-parts";
 
 export interface LineReading {
   value: number | null;
@@ -39,6 +54,10 @@ export interface LineWidgetViewProps {
   period: MetricPeriod;
   reading: LineReading | null;
   notice: string | null;
+  /** The connection's name, for the footer; null: none to show. */
+  source?: string | null;
+  /** The data's last successful sync, for the footer; null: unknown. */
+  updatedAt?: string | null;
   placement: StudioPlacement;
   showHeader: boolean;
   fontScale: number;
@@ -61,20 +80,30 @@ export function LineWidgetView(props: LineWidgetViewProps) {
     : props.loading
       ? "…"
       : "—";
-  const layout = chartWidgetLayout({
-    type: "line",
-    label: props.label,
-    value: {
-      full,
-      compact: reading
-        ? `${approx}${formatCompactValue(reading.value, reading.unit, locale)}`
-        : full,
+  const candidates = useFooterCandidates(props.updatedAt, props.source);
+  const fitted = chartWidgetLayoutWithFooter(
+    {
+      type: "line",
+      label: props.label,
+      value: {
+        full,
+        compact: reading
+          ? `${approx}${formatCompactValue(reading.value, reading.unit, locale)}`
+          : full,
+      },
+      noticeText: props.notice,
+      placement: props.placement,
+      showHeader: props.showHeader,
+      fontScale: props.fontScale,
     },
-    noticeText: props.notice,
-    placement: props.placement,
-    showHeader: props.showHeader,
-    fontScale: props.fontScale,
-  });
+    footerLine(candidates, {
+      type: "line",
+      placement: props.placement,
+      showHeader: props.showHeader,
+      fontScale: props.fontScale,
+    }),
+  );
+  const { layout, footer } = fitted;
   const { width, height } = layout.chart;
   const geometry = reading
     ? lineChartGeometry({
@@ -113,63 +142,13 @@ export function LineWidgetView(props: LineWidgetViewProps) {
       ) : null}
       <div className="sw-chart" style={{ height: u(height) }}>
         {geometry ? (
-          <svg
-            viewBox={`0 0 ${width.toFixed(1)} ${height.toFixed(1)}`}
-            role="img"
-            aria-label={summary}
-          >
-            {geometry.area.map((d) => (
-              <path key={`a${d}`} className="sw-line-area" d={d} />
-            ))}
-            {geometry.previous.map((d) => (
-              <path key={`p${d}`} className="sw-line-previous" d={d} />
-            ))}
-            {geometry.current.map((d) => (
-              <path key={`c${d}`} className="sw-line-current" d={d} />
-            ))}
-            {props.options.showAxis ? (
-              <line
-                className="sw-axis"
-                x1={geometry.plot.x}
-                x2={geometry.plot.x + geometry.plot.width}
-                y1={geometry.plot.y + geometry.plot.height}
-                y2={geometry.plot.y + geometry.plot.height}
-              />
-            ) : null}
-            {geometry.last ? (
-              <circle
-                className="sw-line-last"
-                cx={geometry.last.x}
-                cy={geometry.last.y}
-                r={Math.max(6, geometry.axisSize * 0.3)}
-              />
-            ) : null}
-            {geometry.yLabels.map((label) => (
-              <text
-                key={`y${label.y}`}
-                className="sw-axis-label"
-                x={geometry.plot.x - 12}
-                y={label.y}
-                textAnchor="end"
-                dominantBaseline="middle"
-                fontSize={geometry.axisSize}
-              >
-                {label.text}
-              </text>
-            ))}
-            {geometry.xLabels.map((label) => (
-              <text
-                key={`x${label.anchor}`}
-                className="sw-axis-label"
-                x={label.x}
-                y={height - 4}
-                textAnchor={label.anchor}
-                fontSize={geometry.axisSize}
-              >
-                {label.text}
-              </text>
-            ))}
-          </svg>
+          <LineChartSvg
+            geometry={geometry}
+            width={width}
+            height={height}
+            summary={summary}
+            showAxis={props.options.showAxis}
+          />
         ) : reading ? (
           <p className="sw-muted" style={{ fontSize: u(layout.sizes.small) }}>
             {t("notEnoughData")}
@@ -178,8 +157,102 @@ export function LineWidgetView(props: LineWidgetViewProps) {
       </div>
       {props.notice ? (
         <WidgetNotice size={layout.sizes.small}>{props.notice}</WidgetNotice>
+      ) : footer ? (
+        <WidgetFooter size={layout.sizes.small}>{footer}</WidgetFooter>
       ) : null}
     </article>
+  );
+}
+
+/**
+ * A line chart in units (the slide's widget and the scroll view's card):
+ * the area under the line fading from the chart fill to nothing, the
+ * previous period dashed, the current line on top with a dot at its end,
+ * and the axis labels.
+ */
+export function LineChartSvg({
+  geometry,
+  width,
+  height,
+  summary,
+  showAxis,
+}: {
+  geometry: LineChartGeometry;
+  width: number;
+  height: number;
+  summary: string;
+  showAxis: boolean;
+}) {
+  const gradient = `sw-area-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  return (
+    <svg
+      viewBox={`0 0 ${width.toFixed(1)} ${height.toFixed(1)}`}
+      role="img"
+      aria-label={summary}
+    >
+      <defs>
+        <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" className="sw-line-area-from" />
+          <stop offset="1" className="sw-line-area-to" />
+        </linearGradient>
+      </defs>
+      {geometry.area.map((d) => (
+        <path
+          key={`a${d}`}
+          className="sw-line-area"
+          d={d}
+          style={{ fill: `url(#${gradient})` }}
+        />
+      ))}
+      {geometry.previous.map((d) => (
+        <path key={`p${d}`} className="sw-line-previous" d={d} />
+      ))}
+      {geometry.current.map((d) => (
+        <path key={`c${d}`} className="sw-line-current" d={d} />
+      ))}
+      {showAxis ? (
+        <line
+          className="sw-axis"
+          x1={geometry.plot.x}
+          x2={geometry.plot.x + geometry.plot.width}
+          y1={geometry.plot.y + geometry.plot.height}
+          y2={geometry.plot.y + geometry.plot.height}
+        />
+      ) : null}
+      {geometry.last ? (
+        <circle
+          className="sw-line-last"
+          cx={geometry.last.x}
+          cy={geometry.last.y}
+          r={Math.max(9, geometry.axisSize * 0.3)}
+        />
+      ) : null}
+      {geometry.yLabels.map((label) => (
+        <text
+          key={`y${label.y}`}
+          className="sw-axis-label"
+          x={geometry.plot.x - 12}
+          y={label.y}
+          textAnchor="end"
+          dominantBaseline="middle"
+          fontSize={geometry.axisSize}
+        >
+          {label.text}
+        </text>
+      ))}
+      {geometry.xLabels.map((label) => (
+        <text
+          key={`x${label.anchor}`}
+          className="sw-axis-label"
+          x={label.x}
+          y={height - 4}
+          textAnchor={label.anchor}
+          fontSize={geometry.axisSize}
+        >
+          {label.text}
+        </text>
+      ))}
+    </svg>
   );
 }
 
@@ -224,6 +297,9 @@ export function useLiveLine(
       ),
       locale,
     ),
+    source: env.connections[widget.connectionId]?.name ?? null,
+    updatedAt:
+      env.connections[widget.connectionId]?.state.lastSuccessAt ?? null,
     options: widget.options,
     loading,
   };

@@ -43,6 +43,13 @@ export const screenDe: Catalog<typeof screenEn> = {
       lineSummaryPrevious: "{label}: {value}, gestrichelt {comparison}.",
       trend: "Verlauf von {min} bis {max}, zuletzt {latest}.",
       trendAt: "Verlauf von {min} bis {max}, zuletzt {latest} ({date}).",
+      updated: "aktualisiert {time}",
+      updatedFrom: "aktualisiert {time} · {source}",
+    },
+    player: {
+      nextRefresh: "nächste Aktualisierung in {seconds} s",
+      position: "{number} / {count}",
+      next: "als Nächstes: {name}",
     },
     notices: {
       removed: "Verbindung entfernt",

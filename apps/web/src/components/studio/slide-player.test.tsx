@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DeviceSlide, DeviceWidget } from "@netrics/contracts";
-import { BUILTIN_THEMES } from "@netrics/domain";
+import { BUILTIN_THEMES, type ThemeTokens } from "@netrics/domain";
 
 import { RotatedScreen } from "@/components/screen-rotation";
 import { renderI18n } from "@/lib/i18n/test-render";
@@ -9,6 +9,7 @@ import { slidePages, type ScreenSize } from "@/lib/screen-view";
 import { widgetBoxStyle } from "@/lib/studio-render";
 
 import { DeviceWidgetView, type DeviceWidgetEnv } from "./device-widget";
+import type { SlideHeaderInfo } from "./slide-canvas";
 import { SlidePlayer } from "./slide-player";
 
 const ID = (n: number) =>
@@ -428,5 +429,132 @@ describe("DeviceWidgetView", () => {
     expect(html(failed)).toContain("—");
     const unknown = { ...widgets[5]!, type: "map" } as unknown as DeviceWidget;
     expect(html(unknown)).toContain("This widget could not be shown");
+  });
+
+  it("says how fresh the payload's numbers are in the footer", () => {
+    const updatedAt = new Date(Date.now() - 5 * 60_000).toISOString();
+    const metric = {
+      ...widgets[0]!,
+      data: { ...(widgets[0] as { data: object }).data, updatedAt },
+    } as DeviceWidget;
+    expect(html(metric)).toContain(">updated 5 min. ago</p>");
+  });
+});
+
+describe("SlidePlayer polish (ADR 0018 section 5, #309)", () => {
+  const three = () => [
+    slide(1, "Office wall", widgets.slice(0, 1)),
+    slide(2, "Store", []),
+    slide(3, "Team", []),
+  ];
+
+  it("shows the slide footer on the slide on screen: position, name, next", () => {
+    const html = render(three());
+    const footers = [
+      ...html.matchAll(/<p class="studio-slide-footer-text"[^>]*>([^<]*)</g),
+    ].map((match) => match[1]);
+    expect(footers).toEqual(["1 / 3 · Office wall · next: Store"]);
+    // In the bottom padding: 24 units of text over a 4.5 unit bar.
+    expect(html).toContain(
+      'class="studio-slide-footer" style="height:calc(var(--u) * 32);padding:0 calc(var(--u) * 32);gap:calc(var(--u) * 3)"',
+    );
+    expect(html).toContain(
+      'class="studio-slide-footer-text" style="font-size:calc(var(--u) * 24)"',
+    );
+    expect(html).toContain(
+      'class="studio-slide-footer-bar" style="height:calc(var(--u) * 4.5)"',
+    );
+    // The bar fills over the slide's duration.
+    expect(html).toContain("animation-duration:10s");
+    expect(html).toContain("animation-play-state:running");
+  });
+
+  it("starts the footer on the slide shown, and wraps to the first", () => {
+    const html = render(three(), "fade", true, ID(103));
+    expect(html).toContain(">3 / 3 · Team · next: Office wall<");
+  });
+
+  it("has no slide footer without a rotation", () => {
+    expect(render(three(), "fade", false)).not.toContain("studio-slide-footer");
+    expect(render([slide(1, "Only", [])])).not.toContain("studio-slide-footer");
+  });
+
+  const player = (
+    header: Partial<SlideHeaderInfo>,
+    options: {
+      locale?: "en" | "de";
+      screen?: ScreenSize | null;
+      theme?: ThemeTokens;
+    } = {},
+  ) =>
+    renderI18n(
+      <SlidePlayer
+        slides={three()}
+        autoAdvance
+        transition="fade"
+        tokens={options.theme ?? tokens}
+        showHeader
+        header={{
+          name: "Wurfel",
+          logoImageId: null,
+          timeZone: "UTC",
+          ...header,
+        }}
+        images={images}
+        renderWidget={() => null}
+        screen={options.screen ?? null}
+      />,
+      options.locale ?? "en",
+    );
+
+  it("words the slide footer and the countdown in German", () => {
+    const html = player(
+      { refresh: { since: Date.now(), everyMs: 30_000 } },
+      { locale: "de" },
+    );
+    expect(html).toContain(">1 / 3 · Office wall · als Nächstes: Store<");
+    expect(html).toContain(">nächste Aktualisierung in 30 s</span>");
+  });
+
+  it("counts down to the next refresh in the header when it has a cadence", () => {
+    const html = player({ refresh: { since: Date.now(), everyMs: 60_000 } });
+    expect(html).toContain(">next refresh in 60 s</span>");
+    expect(html).toContain(
+      'class="studio-refresh" style="font-size:calc(var(--u) * 24);gap:calc(var(--u) * 12)"',
+    );
+    expect(html).toContain(
+      'class="studio-refresh-bar" style="width:calc(var(--u) * 210);height:calc(var(--u) * 4.5)"',
+    );
+    expect(html).toContain('class="studio-refresh-fill" style="width:0.00%"');
+    // No cadence (the Studio canvas, the dashboard page): no countdown.
+    expect(player({})).not.toContain("studio-refresh");
+    // Offline: the marker instead.
+    expect(
+      player({
+        refresh: { since: Date.now(), everyMs: 60_000 },
+        offline: true,
+      }),
+    ).not.toContain("studio-refresh");
+  });
+
+  it("leaves the countdown out before a name would be cut, and in narrow formats", () => {
+    const refresh = { since: Date.now(), everyMs: 60_000 };
+    expect(
+      player({
+        refresh,
+        name: "Weekly revenue and downloads for every app we sell in Europe",
+      }),
+    ).not.toContain("studio-refresh");
+    expect(
+      player({ refresh }, { screen: { width: 1080, height: 1920 } }),
+    ).not.toContain("studio-refresh");
+  });
+
+  it("marks the theme's surface treatment for the CSS", () => {
+    const html = render(three());
+    expect(html).toContain('data-surface="layered"');
+    const paper = player({}, { theme: BUILTIN_THEMES.paper.tokens });
+    expect(paper).toContain('data-surface="flat"');
+    expect(paper).not.toContain('data-surface="layered"');
   });
 });

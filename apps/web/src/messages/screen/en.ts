@@ -48,6 +48,14 @@ export const screenEn = {
       lineSummaryPrevious: "{label}: {value}, dashed line {comparison}.",
       trend: "Trend from {min} to {max}, latest {latest}.",
       trendAt: "Trend from {min} to {max}, latest {latest} ({date}).",
+      updated: "updated {time}",
+      updatedFrom: "updated {time} · {source}",
+    },
+    /** What a playing screen shows around its slides (ADR 0018, section 5). */
+    player: {
+      nextRefresh: "next refresh in {seconds} s",
+      position: "{number} / {count}",
+      next: "next: {name}",
     },
     /** Why a tile's numbers may be out of date (#52, #59). */
     notices: {

@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import type {
-  DeviceDashboardResponse,
-  DeviceDashboardV2Response,
-  DeviceDashboardV3Response,
+import {
+  DEVICE_REFRESH_AFTER_SECONDS,
+  type DeviceDashboardResponse,
+  type DeviceDashboardV2Response,
+  type DeviceDashboardV3Response,
 } from "@netrics/contracts";
 import { conversionNote, matchLocale, type Locale } from "@netrics/domain";
 
@@ -34,6 +35,7 @@ import {
 import { browserImageCache } from "@/lib/kiosk-image-cache";
 import { themeStyle } from "@/lib/studio-theme";
 import { pairingAddress } from "@/lib/pairing-address";
+import type { RefreshCycle } from "@/lib/refresh-countdown";
 import { deviceTileNotice } from "@/lib/tile-status";
 import { useWakeLock } from "@/lib/use-screen";
 
@@ -264,6 +266,23 @@ export function kioskShown(payload: KioskPayload | null): {
 type SlidesPayload = DeviceDashboardV2Response | DeviceDashboardV3Response;
 
 /**
+ * The kiosk's refresh cadence for the header countdown: the payload's
+ * `refreshAfterSec` after the API last answered; none before the first
+ * answer or while offline (the header shows the offline marker then).
+ */
+export function kioskRefreshCycle(
+  state: Pick<KioskState, "updatedAt" | "offline">,
+  payload: { refreshAfterSec: number },
+): RefreshCycle | null {
+  if (state.updatedAt === null || state.offline) return null;
+  const seconds =
+    payload.refreshAfterSec > 0
+      ? payload.refreshAfterSec
+      : DEVICE_REFRESH_AFTER_SECONDS;
+  return { since: state.updatedAt, everyMs: seconds * 1000 };
+}
+
+/**
  * A slides payload (#221) in screen view: the dashboard's slides rotating
  * by each slide's duration, drawn from the payload alone, in the format of
  * the real (rotated) viewport, live (ADR 0017 sections 2, 7 and 9). Schema
@@ -308,6 +327,7 @@ function KioskSlides({
           logoImageId: dashboard.logo?.imageId ?? null,
           timeZone,
           offline: dashboard.showHeader && state.offline,
+          refresh: kioskRefreshCycle(state, payload),
         }}
         images={state.images}
         renderWidget={(widget) => (

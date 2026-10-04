@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { intervalLabel, relativeTime } from "./relative-time";
+import { intervalLabel, relativeTime, relativeTimeIn } from "./relative-time";
 
 describe("intervalLabel", () => {
   it.each([
@@ -34,5 +34,22 @@ describe("relativeTime", () => {
   it("says never without a time", () => {
     expect(relativeTime(null, "en")).toBe("never");
     expect(relativeTime(null, "de")).toBe("nie");
+  });
+});
+
+describe("relativeTimeIn, short (widget footers)", () => {
+  const now = Date.parse("2026-10-04T12:00:00.000Z");
+  it.each([
+    ["2026-10-04T11:55:00.000Z", "5 min. ago", "vor 5 Min."],
+    ["2026-10-04T09:00:00.000Z", "3 hr. ago", "vor 3 Std."],
+    ["2026-10-04T11:59:40.000Z", "now", "jetzt"],
+  ])("%s", (iso, en, de) => {
+    expect(relativeTimeIn(iso, "en", now, "short")).toBe(en);
+    expect(relativeTimeIn(iso, "de", now, "short")).toBe(de);
+  });
+
+  it("is null without a time or one that does not parse", () => {
+    expect(relativeTimeIn(null, "en", now, "short")).toBeNull();
+    expect(relativeTimeIn("soon", "en", now, "short")).toBeNull();
   });
 });

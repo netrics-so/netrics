@@ -9,6 +9,7 @@ import {
   SlidePlayer,
   type SlidePlayerControls,
 } from "@/components/studio/slide-player";
+import { useWidgetRefreshCycle } from "@/components/studio/use-widget-data";
 import { documentRotation } from "@/lib/slide-rotation";
 import type { StudioDocument } from "@/lib/studio-document";
 import type { SlideLayouts } from "@/lib/screen-view";
@@ -58,6 +59,7 @@ export function PlayMode({
   );
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
+  const refresh = useWidgetRefreshCycle();
   // Without auto-advance a screen shows only the first slide.
   const count = settings.autoAdvance
     ? slides.length
@@ -129,6 +131,7 @@ export function PlayMode({
             name: document.name.trim() || t("untitled"),
             logoImageId: settings.logoImageId,
             timeZone: env.timeZone,
+            refresh,
           }}
           images={env.images}
           renderWidget={(widget) => <LiveWidget widget={widget} env={env} />}

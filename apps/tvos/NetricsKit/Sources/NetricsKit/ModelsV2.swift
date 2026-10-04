@@ -90,7 +90,7 @@ public struct ThemeTokens: Codable, Sendable, Equatable {
     public static let netricsDark = ThemeTokens(
         background: "#07090c", surface: "#11141a", border: "#23272e", text: "#e6e9ed",
         label: "#c5cad3", muted: "#8a919c", accent: "#7aa2f7", up: "#9fd6a8", down: "#f0a3a3",
-        warning: "#e3b341", chartLine: "#5c6470", chartFill: "#2f5fd0", fontScale: 1)
+        warning: "#e3b341", chartLine: "#7aa2f7", chartFill: "#7aa2f7", fontScale: 1)
 
     public init(
         background: String, surface: String, border: String, text: String, label: String, muted: String,

@@ -1,10 +1,17 @@
 import type { ReactNode } from "react";
 
+import type { Locale } from "@netrics/domain";
+
+import type { WebTranslator } from "@/lib/i18n/catalogs";
+import { useLocale, useT } from "@/lib/i18n/client";
+import { relativeTimeIn } from "@/lib/relative-time";
 import {
   u,
   type FittedLabel,
   type WidgetLabelLayout,
 } from "@/lib/studio-render";
+
+import { useNow } from "./clock-widget";
 
 /**
  * A title or resource line: wrapped to at most two lines at its fitted
@@ -41,6 +48,57 @@ export function WidgetLabel({ layout }: { layout: WidgetLabelLayout }) {
         <LabelLine fitted={layout.resource} className="sw-resource" as="p" />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The footer's candidates, longest first: "updated 2 min. ago · Stripe",
+ * "updated 2 min. ago", "Stripe" (ADR 0018 section 5). The time is the
+ * data's last successful sync, worded by Intl in the viewer's language.
+ */
+export function footerCandidates(
+  updatedAt: string | null | undefined,
+  source: string | null | undefined,
+  locale: Locale,
+  t: WebTranslator<"screen.widget">,
+  now: number = Date.now(),
+): string[] {
+  const time = relativeTimeIn(updatedAt ?? null, locale, now, "short");
+  const name = source?.trim() || null;
+  const candidates: string[] = [];
+  if (time && name) candidates.push(t("updatedFrom", { time, source: name }));
+  if (time) candidates.push(t("updated", { time }));
+  if (name) candidates.push(name);
+  return candidates;
+}
+
+/** `footerCandidates` for the viewer, worded anew every minute. */
+export function useFooterCandidates(
+  updatedAt: string | null | undefined,
+  source: string | null | undefined,
+): string[] {
+  const locale = useLocale();
+  const t = useT("screen.widget");
+  const now = useNow();
+  return footerCandidates(updatedAt, source, locale, t, now.getTime());
+}
+
+/** The freshness footer: one muted line at the bottom of the widget. */
+export function WidgetFooter({
+  size,
+  children,
+}: {
+  size: number;
+  children: ReactNode;
+}) {
+  return (
+    <p
+      className="sw-muted sw-source sw-footer"
+      style={{ fontSize: u(size) }}
+      suppressHydrationWarning
+    >
+      {children}
+    </p>
   );
 }
 

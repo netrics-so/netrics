@@ -422,3 +422,56 @@ export function chartWidgetLayout(input: {
     chart: { width: box.width, height: Math.max(0, box.height - used) },
   };
 }
+
+/**
+ * The freshness footer of a data widget ("updated 2 min. ago · Stripe",
+ * ADR 0018 section 5): the first candidate that fits on one line of the
+ * widget at the smallest readable size, so it never wraps; null when none
+ * does (or there is none). It takes the slot the layout already has for
+ * a secondary line (a metric's source line, a chart's notice line), so
+ * the shared layout math is unchanged.
+ */
+export function footerLine(
+  candidates: ReadonlyArray<string | null>,
+  input: {
+    type: "metric" | "line" | "bar";
+    placement: ScreenPlacement;
+    showHeader: boolean;
+    fontScale: number;
+  },
+): string | null {
+  const box = contentBox(input.placement, input.showHeader);
+  const size =
+    typeScaleFor(input.type, input.placement, input.fontScale, input.showHeader)
+      .any ?? STUDIO_TEXT_MINIMUMS.any;
+  return (
+    candidates.find(
+      (text): text is string =>
+        text !== null &&
+        text !== "" &&
+        wrappedLineCount(text, box.width, size) <= 1,
+    ) ?? null
+  );
+}
+
+/** A chart keeps at least this height in units when a footer is added. */
+export const MIN_CHART_WITH_FOOTER = 120;
+
+/**
+ * A line or bar widget with its footer: the footer goes in the notice
+ * line (a notice, when there is one, takes it instead), and only while
+ * the chart keeps `MIN_CHART_WITH_FOOTER` units; else the widget shows no
+ * footer.
+ */
+export function chartWidgetLayoutWithFooter(
+  input: Parameters<typeof chartWidgetLayout>[0],
+  footer: string | null,
+): { layout: ChartWidgetLayout; footer: string | null } {
+  if (input.noticeText || !footer) {
+    return { layout: chartWidgetLayout(input), footer: null };
+  }
+  const layout = chartWidgetLayout({ ...input, noticeText: footer });
+  return layout.chart.height >= MIN_CHART_WITH_FOOTER
+    ? { layout, footer }
+    : { layout: chartWidgetLayout(input), footer: null };
+}

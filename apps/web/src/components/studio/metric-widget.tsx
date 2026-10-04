@@ -24,7 +24,7 @@ import {
   formatCompactValue,
   formatValue,
 } from "@/lib/format-metric";
-import { metricWidgetLayout, u } from "@/lib/studio-render";
+import { footerLine, metricWidgetLayout, u } from "@/lib/studio-render";
 import {
   metricKeyOf,
   type DataWidget,
@@ -34,7 +34,12 @@ import { webTranslator, type WebTranslator } from "@/lib/i18n/catalogs";
 import { connectionNotice } from "@/lib/tile-status";
 
 import { useMetricData } from "./use-widget-data";
-import { WidgetLabel, WidgetNotice } from "./widget-parts";
+import {
+  WidgetFooter,
+  WidgetLabel,
+  WidgetNotice,
+  useFooterCandidates,
+} from "./widget-parts";
 
 const ARROWS = { up: "▲", down: "▼", flat: "■" } as const;
 
@@ -49,6 +54,8 @@ export interface MetricWidgetViewProps {
   notice: string | null;
   /** The connection's name, under the numbers when there is room. */
   source: string | null;
+  /** The data's last successful sync, for the footer; null: unknown. */
+  updatedAt?: string | null;
   placement: StudioPlacement;
   showHeader: boolean;
   fontScale: number;
@@ -145,13 +152,23 @@ export function MetricWidgetView(props: MetricWidgetViewProps) {
   const t = useT("screen.widget");
   const { change, changeLine, comparison, periodText, full, compact } =
     metricTexts(props, locale, t);
+  const candidates = useFooterCandidates(props.updatedAt, props.source);
+  // The footer takes the source line's slot; a notice replaces it.
+  const footer = props.notice
+    ? null
+    : footerLine(candidates, {
+        type: "metric",
+        placement: props.placement,
+        showHeader: props.showHeader,
+        fontScale: props.fontScale,
+      });
   const layout = metricWidgetLayout({
     label: props.label,
     value: { full, compact },
     periodText,
     change: changeLine,
     noticeText: props.notice,
-    sourceText: props.source,
+    sourceText: footer,
     placement: props.placement,
     showHeader: props.showHeader,
     fontScale: props.fontScale,
@@ -165,6 +182,18 @@ export function MetricWidgetView(props: MetricWidgetViewProps) {
         <p className="sw-muted" style={{ fontSize: u(layout.sizes.small) }}>
           {periodText}
         </p>
+      ) : null}
+      {/* Between the label and the value (design 4a): only the order
+          changes, the heights are the layout's. */}
+      {layout.sparkline > 0 && reading ? (
+        <div className="sw-spark" style={{ height: u(layout.sparkline) }}>
+          <Sparkline
+            series={reading.series}
+            unit={reading.unit}
+            period={period}
+            timeZone={reading.timeZone}
+          />
+        </div>
       ) : null}
       <p
         className={reading ? "sw-value" : "sw-value sw-placeholder"}
@@ -197,26 +226,11 @@ export function MetricWidgetView(props: MetricWidgetViewProps) {
           {layout.comparisonText}
         </p>
       ) : null}
-      {layout.sparkline > 0 && reading ? (
-        <div className="sw-spark" style={{ height: u(layout.sparkline) }}>
-          <Sparkline
-            series={reading.series}
-            unit={reading.unit}
-            period={period}
-            timeZone={reading.timeZone}
-          />
-        </div>
-      ) : null}
       {props.notice ? (
         <WidgetNotice size={layout.sizes.small}>{props.notice}</WidgetNotice>
       ) : null}
-      {layout.showSource && props.source ? (
-        <p
-          className="sw-muted sw-source"
-          style={{ fontSize: u(layout.sizes.small) }}
-        >
-          {props.source}
-        </p>
+      {layout.showSource && footer ? (
+        <WidgetFooter size={layout.sizes.small}>{footer}</WidgetFooter>
       ) : null}
     </article>
   );
@@ -295,6 +309,7 @@ export function useLiveMetric(
       locale,
     ),
     source: connection?.name ?? null,
+    updatedAt: connection?.state.lastSuccessAt ?? null,
     options: widget.options,
     loading,
   };

@@ -14,12 +14,17 @@ import {
   type BarReadingProps,
 } from "@/components/studio/bar-widget";
 import {
+  LineChartSvg,
   useLiveLine,
   type LineReadingProps,
 } from "@/components/studio/line-widget";
 import { WidgetFailed } from "@/components/studio/slide-canvas";
 import { Spans } from "@/components/studio/text-widget";
-import { WidgetNotice } from "@/components/studio/widget-parts";
+import {
+  WidgetFooter,
+  WidgetNotice,
+  useFooterCandidates,
+} from "@/components/studio/widget-parts";
 import {
   comparisonLabel,
   formatCompactValue,
@@ -108,6 +113,7 @@ export function ScrollMetricCard(props: MetricReadingProps & ScrollCardSize) {
   const t = useT("screen.widget");
   const texts = metricTexts(props, locale, t);
   const units = cardUnits(props.width, props.rootPx);
+  const [footer] = useFooterCandidates(props.updatedAt, props.source);
   return (
     <article
       className="sw scroll-card scroll-card--metric"
@@ -150,13 +156,8 @@ export function ScrollMetricCard(props: MetricReadingProps & ScrollCardSize) {
       ) : null}
       {props.notice ? (
         <WidgetNotice size={SCROLL_TYPE.small}>{props.notice}</WidgetNotice>
-      ) : props.source ? (
-        <p
-          className="sw-muted sw-source"
-          style={{ fontSize: u(SCROLL_TYPE.small) }}
-        >
-          {props.source}
-        </p>
+      ) : footer ? (
+        <WidgetFooter size={SCROLL_TYPE.small}>{footer}</WidgetFooter>
       ) : null}
     </article>
   );
@@ -168,6 +169,7 @@ export function ScrollLineCard(props: LineReadingProps & ScrollCardSize) {
   const locale = useLocale();
   const t = useT("screen.widget");
   const units = cardUnits(props.width, props.rootPx);
+  const [footer] = useFooterCandidates(props.updatedAt, props.source);
   const approx = reading?.approximate && reading.value !== null ? "≈ " : "";
   const full = reading
     ? `${approx}${formatValue(reading.value, reading.unit, locale)}`
@@ -218,63 +220,13 @@ export function ScrollLineCard(props: LineReadingProps & ScrollCardSize) {
       />
       <div className="sw-chart scroll-chart" style={{ height: u(chartHeight) }}>
         {geometry ? (
-          <svg
-            viewBox={`0 0 ${chartWidth.toFixed(1)} ${chartHeight.toFixed(1)}`}
-            role="img"
-            aria-label={summary}
-          >
-            {geometry.area.map((d) => (
-              <path key={`a${d}`} className="sw-line-area" d={d} />
-            ))}
-            {geometry.previous.map((d) => (
-              <path key={`p${d}`} className="sw-line-previous" d={d} />
-            ))}
-            {geometry.current.map((d) => (
-              <path key={`c${d}`} className="sw-line-current" d={d} />
-            ))}
-            {props.options.showAxis ? (
-              <line
-                className="sw-axis"
-                x1={geometry.plot.x}
-                x2={geometry.plot.x + geometry.plot.width}
-                y1={geometry.plot.y + geometry.plot.height}
-                y2={geometry.plot.y + geometry.plot.height}
-              />
-            ) : null}
-            {geometry.last ? (
-              <circle
-                className="sw-line-last"
-                cx={geometry.last.x}
-                cy={geometry.last.y}
-                r={Math.max(6, geometry.axisSize * 0.3)}
-              />
-            ) : null}
-            {geometry.yLabels.map((label) => (
-              <text
-                key={`y${label.y}`}
-                className="sw-axis-label"
-                x={geometry.plot.x - 12}
-                y={label.y}
-                textAnchor="end"
-                dominantBaseline="middle"
-                fontSize={geometry.axisSize}
-              >
-                {label.text}
-              </text>
-            ))}
-            {geometry.xLabels.map((label) => (
-              <text
-                key={`x${label.anchor}`}
-                className="sw-axis-label"
-                x={label.x}
-                y={chartHeight - 4}
-                textAnchor={label.anchor}
-                fontSize={geometry.axisSize}
-              >
-                {label.text}
-              </text>
-            ))}
-          </svg>
+          <LineChartSvg
+            geometry={geometry}
+            width={chartWidth}
+            height={chartHeight}
+            summary={summary}
+            showAxis={props.options.showAxis}
+          />
         ) : reading ? (
           <p className="sw-muted" style={{ fontSize: u(SCROLL_TYPE.small) }}>
             {t("notEnoughData")}
@@ -283,6 +235,8 @@ export function ScrollLineCard(props: LineReadingProps & ScrollCardSize) {
       </div>
       {props.notice ? (
         <WidgetNotice size={SCROLL_TYPE.small}>{props.notice}</WidgetNotice>
+      ) : footer ? (
+        <WidgetFooter size={SCROLL_TYPE.small}>{footer}</WidgetFooter>
       ) : null}
     </article>
   );
@@ -297,6 +251,7 @@ export function ScrollBarCard(props: BarReadingProps & ScrollCardSize) {
   const { reading } = props;
   const locale = useLocale();
   const t = useT("screen.widget");
+  const [footer] = useFooterCandidates(props.updatedAt, props.source);
   const approx = reading?.approximate ? "≈ " : "";
   const rows = reading
     ? [
@@ -360,6 +315,8 @@ export function ScrollBarCard(props: BarReadingProps & ScrollCardSize) {
       )}
       {props.notice ? (
         <WidgetNotice size={SCROLL_TYPE.small}>{props.notice}</WidgetNotice>
+      ) : footer ? (
+        <WidgetFooter size={SCROLL_TYPE.small}>{footer}</WidgetFooter>
       ) : null}
     </article>
   );

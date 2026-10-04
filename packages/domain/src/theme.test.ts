@@ -136,8 +136,8 @@ describe("built-in themes", () => {
         up: "#9fd6a8",
         down: "#f0a3a3",
         warning: "#e3b341",
-        chartLine: "#5c6470",
-        chartFill: "#2f5fd0",
+        chartLine: "#7aa2f7",
+        chartFill: "#7aa2f7",
         fontScale: 1,
       },
     });
