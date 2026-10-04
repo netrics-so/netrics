@@ -6,6 +6,7 @@ import {
   executeDiscover,
   executeSync,
   redactSecrets,
+  supportsResourceIcons,
   type ConnectorRegistry,
   type ExecuteOptions,
 } from "@netrics/connector-runtime";
@@ -21,11 +22,17 @@ import {
   schema,
   upsertConnectionResources,
   withWorkspace,
+  type ImageQuota,
   type OAuthAuthReason,
   type Transaction,
 } from "@netrics/database";
+import {
+  IMAGE_QUOTA_DEFAULT_BYTES,
+  IMAGE_QUOTA_DEFAULT_COUNT,
+} from "@netrics/contracts";
 
 import { decryptCredentials, type CredentialKeyring } from "../credentials.js";
+import { refreshConnectionIcons } from "../images/resource-icons.js";
 import {
   NonRetryableJobError,
   TerminalJobError,
@@ -59,6 +66,11 @@ const MAX_PAGES = 100;
 const INSERT_BATCH_ROWS = 5_000;
 /** How often a successful sync refreshes the resource names (#194). */
 const RESOURCE_NAMES_REFRESH_MS = 24 * 60 * 60 * 1000;
+/** The image quota when the host passes none (the contract's defaults). */
+const DEFAULT_IMAGE_QUOTA: ImageQuota = {
+  maxCount: IMAGE_QUOTA_DEFAULT_COUNT,
+  maxBytes: IMAGE_QUOTA_DEFAULT_BYTES,
+};
 
 export interface SyncEngineDeps {
   registry: ConnectorRegistry;
@@ -71,6 +83,8 @@ export interface SyncEngineDeps {
   signedKeys?: SignedKeyProviders;
   /** Tests only: options for every connector call (e.g. local egress). */
   executeOptions?: ExecuteOptions;
+  /** The workspace image quota icons count against (#226). */
+  imageQuota?: ImageQuota;
 }
 
 type ErrorClass = "auth" | "transient" | "contract";
@@ -722,6 +736,7 @@ async function runSync(
   // projects, properties), so a tile of one resource can show its name.
   // At most daily, after the data is committed, and best effort: a failed
   // discover is logged and never fails the run.
+  let refreshIcons = false;
   try {
     const discoveredAt = await withWorkspace(appDb, { workspaceId }, (tx) =>
       connectionResourcesDiscoveredAt(tx, workspaceId, connectionId),
@@ -741,9 +756,29 @@ async function runSync(
           now,
         }),
       );
+      refreshIcons = true;
     }
   } catch (error) {
     log.warn({ err: safeMessage(error) }, "resource names not refreshed");
+  }
+
+  // Step 5 (#226): the resource icons the workspace uses (app icons), with
+  // the names, so at most daily. Best effort as well.
+  if (refreshIcons && supportsResourceIcons(connector)) {
+    try {
+      await refreshConnectionIcons({
+        db: appDb,
+        quota: deps.imageQuota ?? DEFAULT_IMAGE_QUOTA,
+        workspaceId,
+        connectionId,
+        connector,
+        run: (call) => callConnector(call),
+        now,
+        log: (message) => log.warn(message),
+      });
+    } catch (error) {
+      log.warn({ err: safeMessage(error) }, "resource icons not refreshed");
+    }
   }
 }
 

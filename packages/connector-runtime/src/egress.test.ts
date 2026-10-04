@@ -4,6 +4,8 @@ import { gunzipSync, gzipSync } from "node:zlib";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { appStoreConnectManifest } from "@netrics/connectors";
+
 import {
   EgressDeniedError,
   createEgressFetch,
@@ -80,6 +82,18 @@ beforeAll(async () => {
     } else if (request.url === "/redirect-out") {
       response.statusCode = 302;
       response.setHeader("location", "http://evil.test/steal");
+      response.end();
+    } else if (request.url === "/icon-to-sibling") {
+      // A CDN redirect to a host outside the pinned five (#226).
+      response.statusCode = 302;
+      response.setHeader(
+        "location",
+        `http://is6-ssl.mzstatic.com:${port}/icon.png`,
+      );
+      response.end();
+    } else if (request.url === "/icon-to-pinned") {
+      response.statusCode = 302;
+      response.setHeader("location", `http://is2-ssl.mzstatic.com:${port}/ok`);
       response.end();
     } else if (request.url === "/loop") {
       response.statusCode = 302;
@@ -170,6 +184,36 @@ describe("createEgressFetch", () => {
     await expect(
       fixtureFetch()(`http://api.fixture.test:${port}/loop`),
     ).rejects.toThrow(/too many redirects/);
+  });
+
+  it("keeps App Store icon requests on the exact pinned hosts, on every hop (#226)", async () => {
+    const icons = fixtureFetch({
+      allowedDomains: appStoreConnectManifest.outboundDomains,
+    });
+    // A pinned CDN host may redirect to another pinned one.
+    const pinned = await icons(
+      `http://is1-ssl.mzstatic.com:${port}/icon-to-pinned`,
+    );
+    expect(pinned.status).toBe(200);
+    // Anything else is refused, before it is requested.
+    await expect(
+      icons(`http://is1-ssl.mzstatic.com:${port}/icon-to-sibling`),
+    ).rejects.toThrow(
+      /is6-ssl\.mzstatic\.com is not in the connector's outboundDomains/,
+    );
+    await expect(
+      icons(`http://itunes.apple.com:${port}/redirect-out`),
+    ).rejects.toThrow(/evil\.test is not in the connector's outboundDomains/);
+    for (const host of [
+      "mzstatic.com",
+      "a.mzstatic.com",
+      "apple.com",
+      "is1-ssl.mzstatic.com.evil.test",
+    ]) {
+      await expect(icons(`http://${host}:${port}/ok`)).rejects.toThrow(
+        EgressDeniedError,
+      );
+    }
   });
 
   it("bounds the response size", async () => {

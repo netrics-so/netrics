@@ -3,6 +3,8 @@ import type {
   CheckResult,
   ConnectionContext,
   Resource,
+  ResourceIconsRequest,
+  ResourceIconsResult,
   SyncRequest,
   SyncResult,
 } from "./transport.js";
@@ -30,6 +32,19 @@ export interface Connector {
     request: SyncRequest,
     runtime: ConnectorRuntime,
   ): Promise<SyncResult>;
+  /**
+   * Optional (SDK 0.2.5, #226): icons of the given resources, for example
+   * an app's App Store icon, fetched through runtime.fetch like everything
+   * else. Resources without an icon are left out of the result; a thrown
+   * error is a retryable provider failure. The host validates and stores
+   * the bytes (raster only, metadata stripped) and refreshes them at most
+   * daily, so implementations need no cache of their own.
+   */
+  resourceIcons?(
+    context: ConnectionContext,
+    request: ResourceIconsRequest,
+    runtime: ConnectorRuntime,
+  ): Promise<ResourceIconsResult>;
 }
 
 /**

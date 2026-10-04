@@ -8,6 +8,8 @@ import type { CredentialKeyring } from "../credentials.js";
 import type { SignedKeyProviders } from "../signed-keys/registry.js";
 import type { OAuthTokenService } from "../oauth/tokens.js";
 
+import type { ImageQuota } from "@netrics/database";
+
 import { createSyncJobHandlers } from "../sync/engine.js";
 
 export interface JobHandlerContext {
@@ -73,6 +75,8 @@ export interface JobHandlerDeps {
   signedKeys?: SignedKeyProviders;
   /** Tests only: options for every connector call (e.g. local egress). */
   executeOptions?: ExecuteOptions;
+  /** The workspace image quota icons count against (#226). */
+  imageQuota?: ImageQuota;
 }
 
 /**

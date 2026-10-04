@@ -26,6 +26,7 @@ import {
   syncAnalyticsApps,
 } from "./analytics-sync.js";
 import { ANALYTICS_SOURCE_TYPES, OTHER_SOURCE } from "./analytics-report.js";
+import { ARTWORK_HOSTS, ITUNES_LOOKUP_HOST, appIcons } from "./icons.js";
 import { checkKey, vendorNumberOf } from "./probes.js";
 import {
   RATINGS,
@@ -124,6 +125,22 @@ export {
   type AppReviewsResult,
   type ReviewEntry,
 } from "./reviews.js";
+export {
+  ARTWORK_HOSTS,
+  ArtworkHostError,
+  ICON_SIZE,
+  ITUNES_LOOKUP_HOST,
+  ITUNES_LOOKUP_URL,
+  LOOKUP_BATCH_SIZE,
+  MAX_LOOKUP_REQUESTS,
+  appIcons,
+  buildIconTemplate,
+  checkArtworkUrl,
+  fillIconTemplate,
+  findArtwork,
+  lookupArtwork,
+  resizeArtworkUrl,
+} from "./icons.js";
 export { territoryAlpha2 } from "./territories.js";
 export {
   MAX_REPORT_BYTES,
@@ -155,7 +172,7 @@ const MAX_APP_PAGES = 50;
 
 export const appStoreConnectManifest: ConnectorManifest = {
   id: "app-store-connect",
-  version: "0.1.0",
+  version: "0.1.1",
   sdkVersion: "^0.2.3",
   name: "App Store Connect",
   description:
@@ -334,9 +351,15 @@ export const appStoreConnectManifest: ConnectorManifest = {
   // tenth of the hourly limit (ADR 0014).
   supportsBackfill: true,
   backfillDays: BACKFILL_DAYS,
-  // The API, and the bucket host of the presigned analytics segment URLs,
-  // exactly (ADR 0014: never *.amazonaws.com).
-  outboundDomains: [APP_STORE_CONNECT_HOST, ...ANALYTICS_SEGMENT_HOSTS],
+  // The API, the bucket host of the presigned analytics segment URLs, and
+  // for app icons (#226) the public App Store lookup and Apple's image CDN,
+  // all exactly (ADR 0014: never *.amazonaws.com; never *.mzstatic.com).
+  outboundDomains: [
+    APP_STORE_CONNECT_HOST,
+    ...ANALYTICS_SEGMENT_HOSTS,
+    ITUNES_LOOKUP_HOST,
+    ...ARTWORK_HOSTS,
+  ],
   resourceNoun: { singular: "app", plural: "apps" },
   // Apple's limit is per key and rolling hour; connections sharing a key
   // share it (ADR 0014).
@@ -593,6 +616,25 @@ export function createAppStoreConnectConnector(
           platforms: app.platforms,
         },
       }));
+    },
+
+    /**
+     * App icons (#226): the App Store artwork from the public lookup, else
+     * the newest build's icon when the key may read builds. The signed
+     * token goes to the App Store Connect API only, never to the lookup or
+     * the image CDN.
+     */
+    async resourceIcons(context, request, runtime) {
+      const accessToken = accessTokenOf(context);
+      return {
+        icons: await appIcons(
+          runtime.fetch,
+          request.resources,
+          accessToken
+            ? createAppStoreConnectClient(runtime.fetch, accessToken)
+            : undefined,
+        ),
+      };
     },
 
     async sync(context, request: SyncRequest, runtime): Promise<SyncResult> {

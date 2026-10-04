@@ -78,7 +78,7 @@ describe("manifest", () => {
     expect(() => assertManifestCompatible(manifest)).not.toThrow();
   });
 
-  it("signs with the host's App Store Connect key and reaches only Apple's API and the pinned segment bucket", () => {
+  it("signs with the host's App Store Connect key and reaches only Apple's API, the pinned segment bucket, the App Store lookup and the pinned icon hosts", () => {
     expect(manifest.id).toBe("app-store-connect");
     expect(manifest.authStrategies).toEqual([
       { strategy: "signed-key", provider: "app-store-connect" },
@@ -87,6 +87,12 @@ describe("manifest", () => {
     expect(manifest.outboundDomains).toEqual([
       "api.appstoreconnect.apple.com",
       "asp-us-west-2.s3.us-west-2.amazonaws.com",
+      "itunes.apple.com",
+      "is1-ssl.mzstatic.com",
+      "is2-ssl.mzstatic.com",
+      "is3-ssl.mzstatic.com",
+      "is4-ssl.mzstatic.com",
+      "is5-ssl.mzstatic.com",
     ]);
     expect(manifest.outboundDomains.some((host) => host.includes("*"))).toBe(
       false,

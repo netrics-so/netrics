@@ -1,0 +1,35 @@
+{
+  "resultCount": 3,
+  "results": [
+    {
+      "wrapperType": "software",
+      "kind": "software",
+      "trackId": 6767935139,
+      "trackName": "Wurfel – Cube Solver",
+      "bundleId": "app.wurfel.mobile",
+      "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/01/08/4f/01084f70-dba1-7257-b9af-b5ae642a8c77/AppIcon-0-0-1x_U007epad-0-1-85-220.png/60x60bb.jpg",
+      "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/01/08/4f/01084f70-dba1-7257-b9af-b5ae642a8c77/AppIcon-0-0-1x_U007epad-0-1-85-220.png/100x100bb.jpg",
+      "artworkUrl512": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/01/08/4f/01084f70-dba1-7257-b9af-b5ae642a8c77/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg"
+    },
+    {
+      "wrapperType": "software",
+      "kind": "software",
+      "trackId": 6758914712,
+      "trackName": "voilà kids: color & create",
+      "bundleId": "art.voila.kids",
+      "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/ae/d3/c6/aed3c675-8278-75c2-a850-562bf2173e6d/AppIcon-0-0-1x_U007epad-0-1-85-220.png/60x60bb.jpg",
+      "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/ae/d3/c6/aed3c675-8278-75c2-a850-562bf2173e6d/AppIcon-0-0-1x_U007epad-0-1-85-220.png/100x100bb.jpg",
+      "artworkUrl512": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/ae/d3/c6/aed3c675-8278-75c2-a850-562bf2173e6d/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg"
+    },
+    {
+      "wrapperType": "software",
+      "kind": "software",
+      "trackId": 6788250340,
+      "trackName": "Paperstand",
+      "bundleId": "paperstand.app",
+      "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/8c/6a/57/8c6a57db-059e-a448-ad3a-e21be2caf8a3/paperstand-0-0-1x_U007epad-0-1-sRGB-85-220.png/60x60bb.jpg",
+      "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/8c/6a/57/8c6a57db-059e-a448-ad3a-e21be2caf8a3/paperstand-0-0-1x_U007epad-0-1-sRGB-85-220.png/100x100bb.jpg",
+      "artworkUrl512": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/8c/6a/57/8c6a57db-059e-a448-ad3a-e21be2caf8a3/paperstand-0-0-1x_U007epad-0-1-sRGB-85-220.png/512x512bb.jpg"
+    }
+  ]
+}

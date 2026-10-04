@@ -80,3 +80,52 @@ export const syncResultSchema = z.object({
   done: z.boolean(),
 });
 export type SyncResult = z.infer<typeof syncResultSchema>;
+
+// ─── Resource icons (optional capability, since SDK 0.2.5; #226) ──────────
+
+/** Raster types an icon may have; the host validates the bytes strictly. */
+export const RESOURCE_ICON_CONTENT_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
+/** Largest icon a connector may return (the host's image limit, 1 MiB). */
+export const RESOURCE_ICON_MAX_BYTES = 1_048_576;
+/** Resources per resourceIcons call. */
+export const RESOURCE_ICONS_MAX_RESOURCES = 50;
+
+export const resourceIconsRequestSchema = z.object({
+  resources: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        /**
+         * Hints from the host: the territories (ISO 3166-1 alpha-2,
+         * uppercase) the resource has the most data for, most first. A
+         * store-based connector may look the resource up there when its
+         * default storefront does not list it.
+         */
+        territories: z
+          .array(z.string().regex(/^[A-Z]{2}$/))
+          .max(5)
+          .optional(),
+      }),
+    )
+    .min(1)
+    .max(RESOURCE_ICONS_MAX_RESOURCES),
+});
+export type ResourceIconsRequest = z.infer<typeof resourceIconsRequestSchema>;
+
+export const resourceIconSchema = z.object({
+  resourceId: z.string().min(1),
+  contentType: z.enum(RESOURCE_ICON_CONTENT_TYPES),
+  /** The image bytes, base64 (transport objects stay JSON). */
+  data: z.base64().min(1),
+});
+export type ResourceIcon = z.infer<typeof resourceIconSchema>;
+
+export const resourceIconsResultSchema = z.object({
+  /** One icon per resource that has one; resources without are left out. */
+  icons: z.array(resourceIconSchema),
+});
+export type ResourceIconsResult = z.infer<typeof resourceIconsResultSchema>;
