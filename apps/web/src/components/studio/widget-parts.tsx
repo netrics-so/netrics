@@ -193,7 +193,7 @@ export function DataStateWidget({
   showHeader,
   fontScale,
 }: {
-  type: "metric" | "line" | "bar" | "table";
+  type: "metric" | "line" | "bar" | "table" | "compare";
   surface: DataSurface;
   label: WidgetLabelLayout;
   /** The layout's smallest text size (at least 24 units). */

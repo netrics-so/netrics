@@ -102,6 +102,8 @@ export const apiErrorsEn = {
       "Pick a currency for this amount: amounts in different currencies are not added up.",
     metric_not_per_currency:
       "This metric is not an amount in several currencies.",
+    compare_units_incompatible:
+      "These two metrics cannot form this ratio: a currency is divided only by the same currency, and a percentage needs two sides without currency.",
     currency_choice_conflict:
       "A tile shows one currency exactly or converts into a display currency, not both.",
     currency_not_covered:

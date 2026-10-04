@@ -10,6 +10,7 @@ import { STUDIO_LIMITS, WIDGET_TYPES } from "@netrics/domain";
 
 import {
   createStudioReducer,
+  dataWidgetCount,
   documentProblems,
   grownPlacement,
   initialStudioState,
@@ -24,6 +25,8 @@ import {
   convertWidget,
   currencyChoiceOf,
   currencyPatch,
+  denominatorPatch,
+  denominatorView,
   dimensionLabel,
   dimensionPatch,
   filterDimensions,
@@ -35,6 +38,7 @@ import {
   scopePatch,
   widgetInputProblem,
 } from "./studio-inspector";
+import { newWidget } from "./studio-new-widget";
 import type { DataWidget } from "./studio-widgets";
 
 const ID = (n: number) =>
@@ -669,5 +673,95 @@ describe("inspector reducer actions", () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatchObject({ widgetId: ID(11) });
     expect(problems[0]!.message).toMatch(/options\.limit/);
+  });
+});
+
+describe("compare widget (ADR 0019 section 10)", () => {
+  const made = convertWidget(metricWidget, "compare", context);
+  if (!("widget" in made) || made.widget.type !== "compare") {
+    throw new Error("expected a compare widget");
+  }
+  const compare = {
+    ...made.widget,
+    id: ID(30),
+    x: 0,
+    y: 0,
+    w: 4,
+    h: 3,
+  } as Extract<DashboardWidget, { type: "compare" }>;
+
+  it("keeps the binding as the numerator and adds a denominator", () => {
+    expect(made.widget).toMatchObject({
+      type: "compare",
+      metricKey: "downloads",
+      aggregation: "avg",
+      dimensions: { resource: "app-1", territory: "DE" },
+      // A second metric without currency, so the percent format fits.
+      denominator: { metricKey: "rating", dimensions: {} },
+      options: { format: "percent", ratioLabel: null, showChange: true },
+    });
+    // Back to a metric: the denominator goes.
+    const metric = convertWidget(compare, "metric", context);
+    expect(metric).toMatchObject({ widget: { type: "metric" } });
+    expect("widget" in metric && "denominator" in metric.widget).toBe(false);
+    // The API takes it once the read-only names are dropped.
+    const request = toReplaceRequest(
+      initialStudioState(dashboard([compare]), "en"),
+    );
+    const sent = request.slides![0]!.widgets[0]!;
+    expect(sent).toMatchObject({
+      type: "compare",
+      denominator: { metricKey: "rating" },
+    });
+    expect(dashboardWidgetInputSchema.safeParse(sent).success).toBe(true);
+    expect(JSON.stringify(sent)).not.toContain("resourceName");
+  });
+
+  it("edits the denominator through its own view", () => {
+    const view = denominatorView(compare);
+    expect(view).toMatchObject({ metricKey: "rating", period: "last_7_days" });
+    const bound = bindMetricPatch(view, visitors)!;
+    expect(denominatorPatch(compare, bound)).toEqual({
+      denominator: {
+        ...compare.denominator,
+        connectionId: ID(8),
+        metricKey: "visitors",
+        aggregation: "sum",
+        dimensions: {},
+        resourceName: null,
+        allResourcesName: null,
+      },
+    });
+    // The period and a display currency are shared by both sides.
+    expect(denominatorPatch(compare, { period: "this_month" })).toEqual({
+      period: "this_month",
+    });
+    expect(
+      denominatorPatch(
+        compare,
+        currencyPatch(view, { kind: "convert", currency: "EUR" }),
+      ),
+    ).toMatchObject({
+      displayCurrency: "EUR",
+      denominator: { dimensions: {} },
+    });
+  });
+
+  it("counts twice toward the data widget limit", () => {
+    const state = initialStudioState(dashboard([compare, metricWidget]), "en");
+    expect(dataWidgetCount(state.draft)).toBe(3);
+  });
+
+  it("is made with two metrics without currency, or says why not", () => {
+    expect(newWidget("compare", { ...context, imageIds: [] })).toMatchObject({
+      widget: {
+        type: "compare",
+        metricKey: "downloads",
+        denominator: { metricKey: "rating" },
+      },
+    });
+    expect(
+      newWidget("compare", { metrics: [proceeds], imageIds: [], locale: "en" }),
+    ).toMatchObject({ reason: expect.any(String) });
   });
 });

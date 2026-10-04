@@ -9,10 +9,12 @@ import Foundation
 // canvas answer in canvas points; the type scale answers in units.
 
 public enum StudioWidgetType: String, Sendable, Equatable, CaseIterable, Codable {
-    case metric, line, bar, image, text, clock, table, status
+    case metric, line, bar, image, text, clock, table, status, compare
 
     /** Widgets with a title and resource line (bound to a metric). */
-    public var isData: Bool { self == .metric || self == .line || self == .bar || self == .table }
+    public var isData: Bool {
+        self == .metric || self == .line || self == .bar || self == .table || self == .compare
+    }
 
     /**
      * Widgets that show a label, which labelFit checks (ADR 0019 section 2);
@@ -73,7 +75,7 @@ public struct StudioFrame: Sendable, Equatable {
 public enum StudioTextRole: String, Sendable, CaseIterable, Codable {
     case any, title, resource, change, axis, body, heading, display
     case valueMin, valueMax, clockMin, clockMax, date, zone
-    case cell, columnHead
+    case cell, columnHead, operand
 }
 
 public enum StudioFontWeight: String, Sendable, Codable {
@@ -147,6 +149,7 @@ public enum StudioLayout {
         case .text, .clock: return (2, 1)
         case .table: return (4, 4)
         case .status: return (3, 3)
+        case .compare: return (4, 3)
         }
     }
 
@@ -230,6 +233,8 @@ public enum StudioLayout {
         public static let cell = 28.0
         /** Table column heads, in caps. */
         public static let columnHead = 24.0
+        /** A compare widget's two numbers (ADR 0019 section 10). */
+        public static let operand = 48.0
     }
 
     /** A font scale never lowers a minimum: anything below 1 is 1. */
@@ -277,6 +282,18 @@ public enum StudioLayout {
             return [
                 .any: any, .title: Minimum.title * scale, .resource: Minimum.resource * scale,
                 .cell: Minimum.cell * scale,
+            ]
+        case .compare:
+            // The ratio is the value (ADR 0019 section 10).
+            let valueMin = Minimum.value * scale
+            return [
+                .any: any,
+                .title: Minimum.title * scale,
+                .resource: Minimum.resource * scale,
+                .change: Minimum.change * scale,
+                .operand: Minimum.operand * scale,
+                .valueMin: valueMin,
+                .valueMax: max(valueMin, contentHeight(placement, showHeader: showHeader) * 0.3),
             ]
         case .image:
             return [.any: any]

@@ -46,6 +46,7 @@ import {
   type StudioPlacement,
   type StudioTextSize,
 } from "./studio-layout.js";
+import { compareChange, compareLayout, ratioOf } from "./compare.js";
 
 const CANVASES: StudioCanvas[] = [
   { width: 1920, height: 1080 },
@@ -365,6 +366,7 @@ export function buildStudioLayoutVectors() {
         { type: "line", w: 6, h: 4 },
         { type: "bar", w: 12, h: 8 },
         { type: "table", w: 4, h: 4 },
+        { type: "compare", w: 4, h: 3 },
         { type: "text", w: 2, h: 1 },
         { type: "clock", w: 2, h: 1 },
       ] as const
@@ -532,6 +534,94 @@ export function buildStudioLayoutVectors() {
     age: statusAge(lastSuccessAt, STATUS_NOW),
   }));
 
+  // Compare (ADR 0019 section 10): A ÷ B, its change, and the layout at
+  // 4 × 3 (the minimum), 6 × 4 and 12 × 8 at 16:9 with the header, and
+  // odd boxes.
+  const ratios = [
+    [12_500, 38_200],
+    [4_620, 1_000],
+    [1, 3],
+    [0, 5],
+    [5, 0],
+    [0, 0],
+    [null, 5],
+    [5, null],
+    [-12, 4],
+    [1e300, 1e-300],
+  ].map(([numerator, denominator]) => ({
+    numerator: numerator!,
+    denominator: denominator!,
+    ratio: ratioOf(numerator!, denominator!),
+  }));
+  const compareChanges = (
+    [
+      [0.327, 0.308, "percent"],
+      [0.308, 0.327, "percent"],
+      [0.5, 0.5, "percent"],
+      [4.62, 4.4, "ratio"],
+      [3, 0, "ratio"],
+      [0, 0, "percent"],
+      [null, 0.3, "percent"],
+      [0.3, null, "ratio"],
+      [-2, 4, "ratio"],
+    ] as const
+  ).map(([value, previousValue, format]) => ({
+    value,
+    previousValue,
+    format,
+    change: compareChange({ value, previousValue, format }),
+  }));
+  const compareBoxes = [
+    { width: 560, height: 294.65 },
+    { width: 872, height: 414.2 },
+    { width: 1808, height: 892.4 },
+    { width: 404, height: 175.1 },
+    { width: 0, height: 0 },
+  ];
+  const compareTexts = [
+    {
+      numerator: { full: "12,500", compact: "12.5K" },
+      denominator: { full: "38,200", compact: "38.2K" },
+      ratio: "32.7%",
+      ratioLabel: "conversion",
+      change: "▲ 1.9 pt",
+    },
+    {
+      numerator: { full: "$1,234,567.89", compact: "$1.2M" },
+      denominator: { full: "$98,765.43", compact: "$98.8K" },
+      ratio: "12.5",
+      ratioLabel: "ROAS",
+      change: null,
+    },
+    {
+      numerator: { full: "2,310", compact: "2.3K" },
+      denominator: { full: "500", compact: "500" },
+      ratio: "4.62",
+      ratioLabel: "average rating of the last thirty d",
+      change: "▼ −3.1%",
+    },
+  ];
+  const compareLayouts = compareBoxes.flatMap((box) =>
+    ["Conversion", "Downloads · Wurfel", LABELS[5]!].flatMap((label) =>
+      FONT_SCALES.flatMap((fontScale) =>
+        compareTexts.map((texts) => ({
+          label,
+          width: box.width,
+          height: box.height,
+          fontScale,
+          ...texts,
+          layout: compareLayout({
+            label,
+            width: box.width,
+            height: box.height,
+            fontScale,
+            ...texts,
+          }),
+        })),
+      ),
+    ),
+  );
+
   const legacy = Array.from({ length: 41 }, (_, tiles) => ({
     tiles,
     grid: legacyGrid(tiles),
@@ -607,6 +697,9 @@ export function buildStudioLayoutVectors() {
     statusLayouts,
     statusRowsShown: statusRowsShownCases,
     statusAges,
+    ratios,
+    compareChanges,
+    compareLayouts,
     legacy,
     markdown,
     compact,

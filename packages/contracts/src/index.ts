@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   AGGREGATIONS,
   BUILTIN_THEME_KEYS,
+  COMPARE_FORMATS,
   GRANULARITIES,
   METRIC_KINDS,
   PERIODS,
@@ -1693,6 +1694,18 @@ export const tableWidgetOptionsSchema = z.object({
   /** A last, dimmed "Others" row with the rest added up. */
   showOthers: z.boolean().default(false),
 });
+/**
+ * A compare widget (ADR 0019 section 10): two metrics and their ratio.
+ * `format` percent shows "32.7%" (two sides without currency); ratio a
+ * plain number ("4.62") or an amount per unit ("€0.42").
+ */
+export const compareWidgetOptionsSchema = z.object({
+  format: z.enum(COMPARE_FORMATS).default("percent"),
+  /** Beside the ratio ("conversion"); null shows "ratio". */
+  ratioLabel: z.string().trim().min(1).max(30).nullable().default(null),
+  /** The ratio's change: points for percent, relative for ratio. */
+  showChange: z.boolean().default(true),
+});
 export const textWidgetOptionsSchema = z.object({
   size: z.enum(["body", "heading", "display"]).default("body"),
   align: alignSchema.default("start"),
@@ -1740,6 +1753,19 @@ const dataBindingInputShape = {
   displayCurrency: currencyCodeSchema.nullable().optional(),
 };
 
+/**
+ * A compare widget's second metric, the denominator (ADR 0019 section 10):
+ * validated like the numerator, with the widget's period and display
+ * currency.
+ */
+export const compareDenominatorInputSchema = z.object({
+  connectionId: z.uuid(),
+  metricKey: z.string().min(1).max(200),
+  /** Defaults to the metric's first compatible aggregation. */
+  aggregation: metricAggregationSchema.optional(),
+  dimensions: dimensionFilterSchema.optional(),
+});
+
 const widgetInputShape = {
   /**
    * A widget of this dashboard keeps its id; a missing or unknown id gets
@@ -1775,6 +1801,14 @@ export const dashboardWidgetInputSchema = z.discriminatedUnion("type", [
     ...widgetInputShape,
     ...dataBindingInputShape,
     options: tableWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("compare"),
+    ...widgetInputShape,
+    /** The numerator (A); its period and display currency are shared. */
+    ...dataBindingInputShape,
+    denominator: compareDenominatorInputSchema,
+    options: compareWidgetOptionsSchema.prefault({}),
   }),
   z.object({
     type: z.literal("image"),
@@ -1896,6 +1930,24 @@ export const dashboardWidgetSchema = z.discriminatedUnion("type", [
     ...widgetShape,
     ...dataBindingShape,
     options: tableWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("compare"),
+    ...widgetShape,
+    /** The numerator (A). */
+    ...dataBindingShape,
+    /** The denominator (B), over the numerator's period and currency. */
+    denominator: z.object({
+      connectionId: z.uuid(),
+      metricKey: z.string().min(1),
+      aggregation: metricAggregationSchema,
+      dimensions: z.record(z.string(), z.string()),
+      /** As on a tile (#194). Read-only. */
+      resourceName: z.string().nullable(),
+      /** As on a tile (#208). Read-only. */
+      allResourcesName: z.string().nullable(),
+    }),
+    options: compareWidgetOptionsSchema,
   }),
   z.object({
     type: z.literal("image"),
@@ -2623,6 +2675,35 @@ export const deviceStatusDataSchema = z.object({
   ),
 });
 export type DeviceStatusData = z.infer<typeof deviceStatusDataSchema>;
+/** One side of a compare widget: its metric's name, value and unit. */
+const deviceCompareOperandSchema = z.object({
+  /** The metric's name in the payload's language ("Downloads"). */
+  label: z.string().min(1),
+  /** Over the period; null without data. */
+  value: z.number().nullable(),
+  /** As a tile's ("count", "EUR_minor"); null when its query failed. */
+  unit: z.string().nullable(),
+});
+
+/**
+ * A compare widget's data (ADR 0019 section 10). The shared fields
+ * describe the ratio: `unit` is null (unitless) or the currency of an
+ * amount per unit ("EUR_minor"); `status` is the worse of the two sides
+ * and `updatedAt` the older.
+ */
+export const deviceCompareDataSchema = z.object({
+  ...deviceWidgetDataShape,
+  numerator: deviceCompareOperandSchema,
+  denominator: deviceCompareOperandSchema,
+  ratio: z.object({
+    /** A ÷ B (`ratioOf`): null when B is zero or a side has no data. */
+    value: z.number().nullable(),
+    /** The same over the previous period. */
+    previousValue: z.number().nullable(),
+    format: z.enum(COMPARE_FORMATS),
+  }),
+});
+export type DeviceCompareData = z.infer<typeof deviceCompareDataSchema>;
 
 /** A widget's id and placement in a grid of `columns` × `rows`. */
 function deviceWidgetPlacementShape(grid: { columns: number; rows: number }) {
@@ -2692,6 +2773,13 @@ function deviceWidgetUnion<E extends z.ZodRawShape>(
       label: deviceDataLabelSchema,
       options: tableWidgetOptionsSchema,
       data: deviceTableDataSchema,
+    }),
+    z.object({
+      type: z.literal("compare"),
+      ...deviceWidgetShape,
+      label: deviceDataLabelSchema,
+      options: compareWidgetOptionsSchema,
+      data: deviceCompareDataSchema,
     }),
     z.object({
       type: z.literal("image"),

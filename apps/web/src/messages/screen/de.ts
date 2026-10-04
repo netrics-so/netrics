@@ -44,6 +44,10 @@ export const screenDe: Catalog<typeof screenEn> = {
       statusNever: "nie",
       statusItem:
         "{name}: {status, select, ok {aktuell} stale {verzögert} backfilling {lädt Verlauf} auth_failed {braucht Aufmerksamkeit} outage {nicht erreichbar} other {unbekannt}}",
+      compareRatio: "Verhältnis",
+      comparePoints: "{value} Pp.",
+      compareDerived: "abgeleitet",
+      compareNoRatio: "–",
       noDataYet: "Noch keine Daten für diesen Zeitraum",
       noDataShort: "Noch keine Daten",
       noComparison: "Keine Daten zum Vergleich ({comparison})",

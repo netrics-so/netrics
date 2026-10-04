@@ -59,6 +59,7 @@ public enum KitText: String, Sendable, CaseIterable {
     case tableTop, tableNew
     case statusEmpty, statusMore, statusConnected, statusDelayed, statusFailing
     case statusAgeMinutes, statusAgeHours, statusAgeDays, statusNever
+    case compareRatio, comparePoints, compareDerived
     case updated, updatedFrom, reconnect, reconnectSource, reconnectHint, loadingHistory
     case nextRefresh, slidePosition, nextSlide
     case serverInvalidAddress, serverPlainHTTPToPublicHost, serverPlainHTTPNeedsSetting, serverUnreachable
@@ -130,6 +131,9 @@ public enum KitStrings {
         .statusAgeHours: "%d h",
         .statusAgeDays: "%d d",
         .statusNever: "never",
+        .compareRatio: "ratio",
+        .comparePoints: "%@ pt",
+        .compareDerived: "derived",
         .updated: "updated %@",
         .updatedFrom: "updated %@ · %@",
         .reconnect: "Reconnect %@",
@@ -222,6 +226,9 @@ public enum KitStrings {
         .statusAgeHours: "%d h",
         .statusAgeDays: "%d T",
         .statusNever: "nie",
+        .compareRatio: "Verhältnis",
+        .comparePoints: "%@ Pp.",
+        .compareDerived: "abgeleitet",
         .updated: "aktualisiert %@",
         .updatedFrom: "aktualisiert %@ · %@",
         .reconnect: "%@ neu verbinden",

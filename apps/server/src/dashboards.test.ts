@@ -445,6 +445,203 @@ describe("dashboard studio API", () => {
         (connection_id, workspace_id, resource_id, name, kind)
       values (${connectionId}, ${workspaceId}, 'site-1', 'Main site', 'site')
       on conflict do nothing`;
+    // Amounts, for the compare widget's unit rules (ADR 0019 §10).
+    await admin`
+      insert into metric_definitions (connector_id, key, name, description,
+        kind, unit, granularity, dimensions, aggregations)
+      values
+        ('demo', 'demo.proceeds', 'Proceeds', '', 'delta', 'currency_minor',
+         'day', '["resource","currency"]', '["sum"]'),
+        ('demo', 'demo.ad_spend', 'Ad spend', '', 'delta', 'EUR_minor',
+         'day', '["resource"]', '["sum"]')
+      on conflict do nothing`;
+  });
+
+  /** A compare widget (ADR 0019 §10): signups ÷ visitors by default. */
+  const compareWidget = (
+    overrides: Record<string, unknown> = {},
+    denominator: Record<string, unknown> = {},
+  ) =>
+    metricWidget({
+      type: "compare",
+      w: 4,
+      h: 3,
+      denominator: {
+        connectionId: connectionId ?? "own",
+        metricKey: "demo.visitors",
+        ...denominator,
+      },
+      ...overrides,
+    });
+
+  it("stores a compare widget with both bindings, and copies it (ADR 0019 §10)", async () => {
+    const response = await createDashboard(owner, {
+      name: "Compare",
+      slides: [
+        {
+          widgets: [
+            compareWidget(
+              {
+                title: "Conversion",
+                dimensions: { resource: "site-1" },
+                options: { ratioLabel: "conversion" },
+              },
+              { aggregation: "max", dimensions: { resource: "site-1" } },
+            ),
+          ],
+        },
+      ],
+    });
+    expect(response.statusCode).toBe(200);
+    const dashboard = dashboardResponseSchema.parse(response.json()).dashboard;
+    const [widget] = dashboard.slides[0]!.widgets;
+    expect(widget).toMatchObject({
+      type: "compare",
+      title: "Conversion",
+      connectionId,
+      metricKey: "demo.signups",
+      aggregation: "sum",
+      period: "last_7_days",
+      dimensions: { resource: "site-1" },
+      resourceName: "Main site",
+      denominator: {
+        connectionId,
+        metricKey: "demo.visitors",
+        aggregation: "max",
+        dimensions: { resource: "site-1" },
+        resourceName: "Main site",
+        allResourcesName: null,
+      },
+      options: {
+        format: "percent",
+        ratioLabel: "conversion",
+        showChange: true,
+      },
+    });
+    // The denominator's aggregation defaults like the numerator's.
+    const defaulted = await put(dashboard, {
+      slides: [{ widgets: [compareWidget()] }],
+    });
+    expect(defaulted.statusCode).toBe(200);
+    const saved = dashboardResponseSchema.parse(defaulted.json()).dashboard;
+    expect(saved.slides[0]!.widgets[0]).toMatchObject({
+      type: "compare",
+      denominator: { metricKey: "demo.visitors", aggregation: "last" },
+      options: { format: "percent", ratioLabel: null, showChange: true },
+    });
+    // A compare widget is not a tile.
+    expect(saved.tiles).toEqual([]);
+
+    const copy = await call(
+      "POST",
+      `${base()}/${saved.id}/duplicate`,
+      owner,
+      {},
+    );
+    const duplicated = dashboardResponseSchema.parse(copy.json()).dashboard;
+    expect(duplicated.slides[0]!.widgets[0]).toMatchObject({
+      type: "compare",
+      denominator: { metricKey: "demo.visitors", aggregation: "last" },
+    });
+  });
+
+  it("accepts the ratios the units allow (ADR 0019 §10)", async () => {
+    const response = await createDashboard(owner, {
+      name: "Ratios",
+      slides: [
+        {
+          widgets: [
+            // An amount per unit: proceeds per signup.
+            compareWidget(
+              {
+                metricKey: "demo.proceeds",
+                displayCurrency: "EUR",
+                options: { format: "ratio" },
+              },
+              { metricKey: "demo.signups" },
+            ),
+            // ROAS: proceeds in euros over euro ad spend.
+            compareWidget(
+              {
+                x: 4,
+                metricKey: "demo.proceeds",
+                dimensions: { currency: "EUR" },
+                options: { format: "ratio", ratioLabel: "ROAS" },
+              },
+              { metricKey: "demo.ad_spend" },
+            ),
+          ],
+        },
+      ],
+    });
+    expect(response.statusCode).toBe(200);
+    const dashboard = dashboardResponseSchema.parse(response.json()).dashboard;
+    expect(
+      dashboard.slides[0]!.widgets.map((widget) => [
+        widget.type,
+        "displayCurrency" in widget ? widget.displayCurrency : null,
+      ]),
+    ).toEqual([
+      ["compare", "EUR"],
+      ["compare", null],
+    ]);
+  });
+
+  it("counts a compare widget as two data widgets (ADR 0019 §2)", async () => {
+    const compares = (count: number) => ({
+      widgets: many(count, (i) =>
+        compareWidget({ x: (i % 3) * 4, y: Math.floor(i / 3) * 3 }),
+      ),
+    });
+    // 32 metric widgets and 8 compare widgets: 48 queries.
+    const full = await createDashboard(owner, {
+      name: "Full",
+      slides: [fullSlide(), fullSlide(), compares(6), compares(2)],
+    });
+    expect(full.statusCode).toBe(200);
+    expectError(
+      await createDashboard(owner, {
+        name: "Too full",
+        slides: [fullSlide(), fullSlide(), compares(6), compares(3)],
+      }),
+      400,
+      "too_many_data_widgets",
+    );
+  });
+
+  it("deletes a compare widget with its denominator's connection", async () => {
+    const [row] = await admin`
+      insert into connections (workspace_id, connector_id, name)
+      values (${workspaceId}, 'demo', 'Second') returning id`;
+    const second = row!.id as string;
+    const response = await createDashboard(owner, {
+      name: "Two sources",
+      slides: [
+        {
+          widgets: [
+            compareWidget({}, { connectionId: second }),
+            metricWidget({ x: 6, y: 0 }),
+          ],
+        },
+      ],
+    });
+    expect(response.statusCode).toBe(200);
+    const dashboard = dashboardResponseSchema.parse(response.json()).dashboard;
+    expect(
+      (
+        await call(
+          "DELETE",
+          `/v1/workspaces/${workspaceId}/connections/${second}`,
+          owner,
+        )
+      ).statusCode,
+    ).toBeLessThan(300);
+    const read = await call("GET", `${base()}/${dashboard.id}`, owner);
+    expect(
+      dashboardResponseSchema
+        .parse(read.json())
+        .dashboard.slides[0]!.widgets.map((widget) => widget.type),
+    ).toEqual(["metric"]);
   });
 
   it("stores a status board with its defaults and validates its sources (ADR 0019 §7)", async () => {
@@ -1036,6 +1233,101 @@ describe("dashboard studio API", () => {
       [{ widgets: [metricWidget({ dimensions: { resource: "site-9" } })] }],
       400,
       "unknown_resource",
+    ],
+    [
+      "a compare widget without a denominator",
+      [{ widgets: [metricWidget({ type: "compare", w: 4, h: 3 })] }],
+      400,
+      "invalid_request",
+    ],
+    [
+      "a compare widget below its 4 × 3 minimum",
+      [{ widgets: [compareWidget({ w: 3, h: 3 })] }],
+      400,
+      "widget_too_small",
+    ],
+    [
+      "a compare widget over another workspace's connection",
+      [{ widgets: [compareWidget({}, { connectionId: "foreign" })] }],
+      400,
+      "tile_metric_not_found",
+    ],
+    [
+      "a compare widget over an unknown metric",
+      [{ widgets: [compareWidget({}, { metricKey: "demo.nope" })] }],
+      400,
+      "tile_metric_not_found",
+    ],
+    [
+      "a compare widget's denominator with an unknown filter",
+      [{ widgets: [compareWidget({}, { dimensions: { country: "DE" } })] }],
+      400,
+      "unknown_dimension",
+    ],
+    [
+      "a compare widget with a long ratio label",
+      [
+        {
+          widgets: [compareWidget({ options: { ratioLabel: "x".repeat(31) } })],
+        },
+      ],
+      400,
+      "invalid_request",
+    ],
+    [
+      "an amount over a count as a percentage",
+      [
+        {
+          widgets: [
+            compareWidget({
+              metricKey: "demo.proceeds",
+              dimensions: { currency: "EUR" },
+            }),
+          ],
+        },
+      ],
+      400,
+      "compare_units_incompatible",
+    ],
+    [
+      "a count over an amount",
+      [
+        {
+          widgets: [
+            compareWidget(
+              { options: { format: "ratio" } },
+              { metricKey: "demo.ad_spend" },
+            ),
+          ],
+        },
+      ],
+      400,
+      "compare_units_incompatible",
+    ],
+    [
+      "amounts in two currencies",
+      [
+        {
+          widgets: [
+            compareWidget(
+              {
+                metricKey: "demo.proceeds",
+                dimensions: { currency: "USD" },
+                options: { format: "ratio" },
+              },
+              { metricKey: "demo.ad_spend" },
+            ),
+          ],
+        },
+      ],
+      400,
+      "compare_units_incompatible",
+    ],
+    [
+      "a display currency that converts neither side",
+      [{ widgets: [compareWidget({ displayCurrency: "EUR" })] }],
+      400,
+      "currency_choice_conflict",
     ],
   ])("refuses %s", async (_label, slides, status, error) => {
     const resolved = JSON.parse(

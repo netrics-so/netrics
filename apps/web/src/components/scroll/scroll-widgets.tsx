@@ -1,6 +1,11 @@
 "use client";
 
-import { labelParts, othersLabel, parseTextWidget } from "@netrics/domain";
+import {
+  labelParts,
+  othersLabel,
+  parseTextWidget,
+  periodLabel,
+} from "@netrics/domain";
 
 import { Sparkline } from "@/components/sparkline";
 import { useNow } from "@/components/studio/clock-widget";
@@ -26,6 +31,10 @@ import {
   useLiveTable,
   type TableReadingProps,
 } from "@/components/studio/table-widget";
+import {
+  useLiveCompare,
+  type CompareReadingProps,
+} from "@/components/studio/compare-widget";
 import { WidgetFailed } from "@/components/studio/slide-canvas";
 import { Spans } from "@/components/studio/text-widget";
 import {
@@ -56,6 +65,12 @@ import {
   statusTone,
 } from "@/lib/studio-status";
 import { tableRowTexts, tableSubtitle } from "@/lib/studio-table";
+import {
+  compareChangeText,
+  compareFooterCandidates,
+  compareOperandTexts,
+  compareRatioText,
+} from "@/lib/studio-compare";
 import { LINE_HEIGHT, u } from "@/lib/studio-render";
 import {
   type ImageWidget,
@@ -631,6 +646,120 @@ export function ScrollStatusCard(props: StatusReadingProps & ScrollCardSize) {
   );
 }
 
+/**
+ * The compare card (ADR 0019 section 10): the operands with their
+ * captions, then the ratio with its label and change; one column wide.
+ */
+export function ScrollCompareCard(props: CompareReadingProps & ScrollCardSize) {
+  const { reading, options } = props;
+  const locale = useLocale();
+  const t = useT("screen.widget");
+  const [footer] = compareFooterCandidates(
+    useFooterCandidates(props.updatedAt, props.source),
+    locale,
+  );
+  const units = cardUnits(props.width, props.rootPx);
+  const placeholder = props.loading ? "…" : "—";
+  const operand = (side: "numerator" | "denominator") => {
+    const texts = reading
+      ? compareOperandTexts(reading[side], locale)
+      : { full: placeholder, compact: placeholder };
+    const value = scrollValue(texts, (units - 48) / 2);
+    return (
+      <span className="sw-compare-operand">
+        <span
+          className={`sw-value sw-compare-number${reading ? "" : " sw-placeholder"}`}
+          style={{ fontSize: u(Math.min(value.size, SCROLL_TYPE.valueMin)) }}
+        >
+          {value.text}
+        </span>
+        <span
+          className="sw-muted sw-compare-caption"
+          style={{ fontSize: u(SCROLL_TYPE.small) }}
+        >
+          {reading?.[side].label ?? ""}
+        </span>
+      </span>
+    );
+  };
+  const ratio = reading
+    ? compareRatioText(
+        reading.ratio.value,
+        options.format,
+        reading.unit,
+        locale,
+      )
+    : placeholder;
+  const change =
+    reading && options.showChange
+      ? compareChangeText(reading.ratio, options.format, reading.better, locale)
+      : null;
+  return (
+    <article
+      className="sw scroll-card scroll-card--compare"
+      aria-busy={props.loading ?? false}
+    >
+      <ScrollLabel label={props.label} />
+      <p className="sw-muted" style={{ fontSize: u(SCROLL_TYPE.small) }}>
+        {periodLabel(props.period, locale)}
+      </p>
+      <div className="sw-compare-operands" style={{ columnGap: u(16) }}>
+        {operand("numerator")}
+        <span
+          className="sw-compare-separator"
+          aria-hidden="true"
+          style={{ fontSize: u(SCROLL_TYPE.valueMin) }}
+        >
+          /
+        </span>
+        {operand("denominator")}
+      </div>
+      <p
+        className="sw-compare-ratio-row sw-compare-ratio-row--below"
+        style={{ fontSize: u(SCROLL_TYPE.change), columnGap: u(12) }}
+      >
+        <span
+          className={`sw-value sw-compare-ratio${reading ? "" : " sw-placeholder"}`}
+          style={{ fontSize: u(SCROLL_TYPE.valueMax) }}
+        >
+          {ratio}
+        </span>
+        <span className="sw-compare-ratio-below">
+          <span className="sw-compare-ratio-label">
+            {options.ratioLabel ?? t("compareRatio")}
+          </span>
+          {change ? (
+            <span
+              className={`sw-compare-change sw-change${change.tone === "neutral" ? "" : ` ${change.tone}`}`}
+            >
+              {change.text}
+            </span>
+          ) : null}
+        </span>
+      </p>
+      {props.notice ? (
+        <WidgetNotice size={SCROLL_TYPE.small} stale={props.status === "stale"}>
+          {props.notice}
+        </WidgetNotice>
+      ) : footer ? (
+        <WidgetFooter size={SCROLL_TYPE.small}>{footer}</WidgetFooter>
+      ) : null}
+    </article>
+  );
+}
+
+function LiveScrollCompare({
+  widget,
+  env,
+  size,
+}: {
+  widget: Extract<StudioWidget, { type: "compare" }>;
+  env: StudioEnv;
+  size: ScrollCardSize;
+}) {
+  return <ScrollCompareCard {...useLiveCompare(widget, env)} {...size} />;
+}
+
 function LiveScrollStatus({
   widget,
   env,
@@ -732,6 +861,8 @@ export function LiveScrollWidget({
       return <LiveScrollTable widget={widget} env={env} size={size} />;
     case "status":
       return <LiveScrollStatus widget={widget} env={env} size={size} />;
+    case "compare":
+      return <LiveScrollCompare widget={widget} env={env} size={size} />;
     case "clock":
       return <LiveScrollClock widget={widget} env={env} size={size} />;
     case "text":

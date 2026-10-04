@@ -75,6 +75,11 @@ export const screenEn = {
       statusNever: "never",
       statusItem:
         "{name}: {status, select, ok {up to date} stale {delayed} backfilling {loading history} auth_failed {needs attention} outage {unreachable} other {unknown}}",
+      /** Compare widgets (ADR 0019 section 10). */
+      compareRatio: "ratio",
+      comparePoints: "{value} pt",
+      compareDerived: "derived",
+      compareNoRatio: "–",
     },
     /** What a playing screen shows around its slides (ADR 0018, section 5). */
     player: {

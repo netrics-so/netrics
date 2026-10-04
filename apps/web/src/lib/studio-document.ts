@@ -16,6 +16,7 @@ import {
   STUDIO_LIMITS,
   STUDIO_MIN_WIDGET_SIZE,
   isBuiltinThemeKey,
+  dataWidgetCost,
   isDataWidgetType,
   isInsideFormatGrid,
   meetsMinimumSize,
@@ -334,6 +335,7 @@ export const DEFAULT_WIDGET_SIZE: Readonly<
   // Its minimum (ADR 0019 section 2).
   table: { w: 4, h: 4 },
   status: { w: 3, h: 3 },
+  compare: { w: 4, h: 3 },
 };
 
 /**
@@ -415,10 +417,14 @@ export function addWidgetBlocker(
   return null;
 }
 
+/**
+ * The draft's metric queries toward `STUDIO_LIMITS.dataWidgets`: a compare
+ * widget counts twice (ADR 0019 section 2).
+ */
 export function dataWidgetCount(document: StudioDocument): number {
   return document.slides
     .flatMap((slide) => slide.widgets)
-    .filter((widget) => isDataWidgetType(widget.type)).length;
+    .reduce((sum, widget) => sum + dataWidgetCost(widget.type), 0);
 }
 
 /**
@@ -589,6 +595,19 @@ function widgetInput(widget: DashboardWidget): DashboardWidgetInput {
         ...input
       } = widget;
       return { ...input, title: input.title?.trim() || null };
+    }
+    case "compare": {
+      const {
+        resourceName: _resourceName,
+        allResourcesName: _allResourcesName,
+        denominator: {
+          resourceName: _denominatorResource,
+          allResourcesName: _denominatorScope,
+          ...denominator
+        },
+        ...input
+      } = widget;
+      return { ...input, denominator, title: input.title?.trim() || null };
     }
     case "text":
       return { ...widget, title: widget.title?.trim() || null };
@@ -1090,9 +1109,11 @@ export function createStudioReducer(newId: () => string) {
         }
         const to = action.widget.type;
         if (
-          isDataWidgetType(to) &&
-          !isDataWidgetType(current.type) &&
-          dataWidgetCount(draft) >= STUDIO_LIMITS.dataWidgets
+          dataWidgetCost(to) > dataWidgetCost(current.type) &&
+          dataWidgetCount(draft) -
+            dataWidgetCost(current.type) +
+            dataWidgetCost(to) >
+            STUDIO_LIMITS.dataWidgets
         ) {
           return announce(
             state,
@@ -1379,7 +1400,7 @@ export function widgetLimitBlocker(
   }
   if (
     isDataWidgetType(type) &&
-    dataWidgetCount(document) >= STUDIO_LIMITS.dataWidgets
+    dataWidgetCount(document) + dataWidgetCost(type) > STUDIO_LIMITS.dataWidgets
   ) {
     return t("limits.dataWidgets", { max: STUDIO_LIMITS.dataWidgets });
   }

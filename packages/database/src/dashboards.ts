@@ -113,6 +113,19 @@ export interface WidgetInput {
   /** Image widgets (#217). */
   imageId: string | null;
   options: Record<string, unknown>;
+  /**
+   * Compare widgets: the denominator's binding (ADR 0019 section 10);
+   * missing or null for every other type.
+   */
+  denominator?: WidgetDenominatorInput | null;
+}
+
+/** A compare widget's second metric, over the widget's period. */
+export interface WidgetDenominatorInput {
+  connectionId: string;
+  metricKey: string;
+  aggregation: string;
+  dimensions: Record<string, string>;
 }
 
 /**
@@ -528,6 +541,10 @@ async function writeSlides(
       text: widget.text,
       imageId: widget.imageId,
       options: widget.options,
+      denominatorConnectionId: widget.denominator?.connectionId ?? null,
+      denominatorMetricKey: widget.denominator?.metricKey ?? null,
+      denominatorAggregation: widget.denominator?.aggregation ?? null,
+      denominatorDimensions: widget.denominator?.dimensions ?? {},
     })),
   );
   if (widgetRows.length > 0) {

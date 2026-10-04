@@ -15,7 +15,15 @@
  */
 
 export type StudioWidgetType =
-  "metric" | "line" | "bar" | "image" | "text" | "clock" | "table" | "status";
+  | "metric"
+  | "line"
+  | "bar"
+  | "image"
+  | "text"
+  | "clock"
+  | "table"
+  | "status"
+  | "compare";
 
 export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "metric",
@@ -26,6 +34,7 @@ export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "clock",
   "table",
   "status",
+  "compare",
 ];
 
 /** A widget's cells: 0-based column and row, width and height in cells. */
@@ -82,12 +91,18 @@ export const STUDIO_MIN_WIDGET_SIZE: Readonly<
   clock: { w: 2, h: 1 },
   table: { w: 4, h: 4 },
   status: { w: 3, h: 3 },
+  // Two five-character operands at 48 u and the separator (ADR 0019 §10).
+  compare: { w: 4, h: 3 },
 };
 
 /** Widgets with a title and resource line (bound to a metric). */
 export function isDataWidget(type: StudioWidgetType): boolean {
   return (
-    type === "metric" || type === "line" || type === "bar" || type === "table"
+    type === "metric" ||
+    type === "line" ||
+    type === "bar" ||
+    type === "table" ||
+    type === "compare"
   );
 }
 
@@ -446,6 +461,8 @@ export const STUDIO_TEXT_MINIMUMS = {
   cell: 28,
   /** Table column heads, in caps. */
   columnHead: 24,
+  /** A compare widget's two numbers (ADR 0019 section 10). */
+  operand: 48,
 } as const;
 
 /** The theme font scales (ADR 0015, section 6). */
@@ -480,7 +497,8 @@ export type StudioTextRole =
   | "date"
   | "zone"
   | "cell"
-  | "columnHead";
+  | "columnHead"
+  | "operand";
 
 export type StudioTypeScale = Partial<Record<StudioTextRole, number>>;
 
@@ -492,6 +510,8 @@ const VALUE_HEIGHT_SHARE: Readonly<Record<"metric" | "line" | "bar", number>> =
     bar: 0.2,
   };
 const CLOCK_HEIGHT_SHARE = 0.6;
+/** Share of a compare widget's content height its ratio may take at most. */
+const COMPARE_VALUE_HEIGHT_SHARE = 0.3;
 
 /** Content height of a widget in units: its height less the padding. */
 function contentHeight(
@@ -563,6 +583,22 @@ export function widgetTypeScale(
         resource: m.resource * scale,
         cell: m.cell * scale,
       };
+    case "compare": {
+      // The ratio is the value (ADR 0019 section 10).
+      const valueMin = m.value * scale;
+      return {
+        any,
+        title: m.title * scale,
+        resource: m.resource * scale,
+        change: m.change * scale,
+        operand: m.operand * scale,
+        valueMin,
+        valueMax: Math.max(
+          valueMin,
+          contentHeight(placement, showHeader) * COMPARE_VALUE_HEIGHT_SHARE,
+        ),
+      };
+    }
     case "clock": {
       const clockMin = m.clock * scale;
       return {
