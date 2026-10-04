@@ -1608,15 +1608,18 @@ export type SlideLayoutInput = z.input<typeof slideLayoutInputSchema>;
  * text_cut (a text widget's text does not fit even at body size),
  * continues (the slide takes `pages` pages), widget_hidden,
  * widget_to_review (placed automatically in a custom layout),
- * widget_too_small (a custom placement below the minimum) and
- * header_name_cut (the dashboard name does not fit the header). Read-only.
+ * widget_too_small (a custom placement below the minimum),
+ * header_name_cut (the dashboard name does not fit the header) and
+ * clock_parts_hidden (a clock's date or zone line is left out for room,
+ * info). Read-only.
  */
 export const formatWarningSchema = z.object({
   format: screenFormatSchema,
   code: z.enum(FORMAT_WARNING_CODES),
   /**
    * attention: cut off, too small or to review (the Studio counts the
-   * formats with any); info: continuation pages and hidden widgets.
+   * formats with any); info: continuation pages, hidden widgets and clock
+   * lines left out.
    */
   severity: z.enum(["attention", "info"]),
   /** The widget concerned, or null for the slide (pages, header). */
@@ -1663,6 +1666,13 @@ export const clockWidgetOptionsSchema = z.object({
   hour12: z.boolean().default(false),
   /** IANA time zone; null shows the workspace's. */
   timeZone: timeZoneSchema.nullable().default(null),
+  /**
+   * short: "Sat 4 Oct"; long: "Saturday, 4 October" (ADR 0019 §9). Older
+   * screens ignore it and show the short date.
+   */
+  dateStyle: z.enum(["short", "long"]).default("short"),
+  /** A zone line below the date: "Berlin · UTC+2". Older screens ignore it. */
+  showZone: z.boolean().default(false),
 });
 
 /** The metric a data widget shows, validated like a tile's. */
@@ -2539,8 +2549,17 @@ function deviceWidgetUnion(grid: { columns: number; rows: number }) {
       type: z.literal("clock"),
       ...deviceWidgetShape,
       label: z.string().nullable(),
-      /** `timeZone` resolved: the widget's, else the workspace's. */
-      options: clockWidgetOptionsSchema.extend({ timeZone: z.string().min(1) }),
+      /**
+       * `timeZone` resolved: the widget's, else the workspace's.
+       * `dateStyle` and `showZone` are sent only when set (long, true), so
+       * the payload and its version of an existing clock stay as they were;
+       * absent means short and false.
+       */
+      options: clockWidgetOptionsSchema.extend({
+        timeZone: z.string().min(1),
+        dateStyle: z.enum(["short", "long"]).optional(),
+        showZone: z.boolean().optional(),
+      }),
     }),
   ]);
 }

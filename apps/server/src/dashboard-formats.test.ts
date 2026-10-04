@@ -115,7 +115,15 @@ const line = (x: number, y: number, w = 6, h = 4) => ({
   period: "last_30_days",
 });
 
-const clock = (x: number, y: number) => ({ type: "clock", x, y, w: 2, h: 1 });
+/** A time-only 2 × 1 clock: everything it shows fits. */
+const clock = (x: number, y: number) => ({
+  type: "clock",
+  x,
+  y,
+  w: 2,
+  h: 1,
+  options: { showDate: false },
+});
 
 /** Two metrics above a chart, and a slide with a clock. */
 const slides = () => [
@@ -938,6 +946,39 @@ describe("readability per format (#280)", () => {
       `9x16 widget_to_review ${c!.id}`,
     ]);
     expect(await get(dashboard.id)).toEqual(saved);
+  });
+
+  it("clock_parts_hidden: a 2 × 1 clock with the long date and zone line (info)", async () => {
+    const options = { dateStyle: "long", showZone: true };
+    const dashboard = await create({
+      slides: [
+        {
+          name: "Time",
+          widgets: [
+            { type: "clock", x: 0, y: 0, w: 2, h: 1, options },
+            { type: "clock", x: 0, y: 2, w: 3, h: 3, options },
+          ],
+        },
+      ],
+    });
+    const [small, large] = dashboard.slides[0]!.widgets;
+    expect(small!.options).toMatchObject(options);
+    const primary = dashboard.slides[0]!.formatWarnings.filter(
+      (warning) => warning.format === "16x9",
+    );
+    expect(primary).toEqual([
+      {
+        format: "16x9",
+        code: "clock_parts_hidden",
+        severity: "info",
+        widgetId: small!.id,
+        pages: null,
+      },
+    ]);
+    // The 3 × 3 clock shows all three lines in the primary format.
+    expect(primary.some((warning) => warning.widgetId === large!.id)).toBe(
+      false,
+    );
   });
 
   it("reports continuation pages and a dashboard name too long for narrow headers", async () => {

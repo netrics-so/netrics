@@ -214,6 +214,39 @@ describe("formatWarnings", () => {
     ).toBe(true);
   });
 
+  it("clock_parts_hidden: a 2 × 1 clock with the long date and zone line (info)", () => {
+    const clock = (w: number, h: number): ReadabilityWidget => ({
+      id: "c",
+      type: "clock",
+      x: 0,
+      y: 0,
+      w,
+      h,
+      clock: { showDate: true, dateStyle: "long", zone: "Europe/Berlin" },
+    });
+    const small = formatWarnings(slide([clock(2, 1)]), "16x9", context);
+    expect(codes(small)).toEqual(["16x9 clock_parts_hidden c"]);
+    expect(small[0]!.severity).toBe("info");
+    expect(
+      codes(formatWarnings(slide([clock(3, 3)]), "16x9", context)),
+    ).toEqual([]);
+    // Without the options a time-only 2 × 1 clock hides nothing.
+    expect(
+      codes(
+        formatWarnings(
+          slide([
+            {
+              ...clock(2, 1),
+              clock: { showDate: false, dateStyle: "short", zone: null },
+            },
+          ]),
+          "16x9",
+          context,
+        ),
+      ),
+    ).toEqual([]);
+  });
+
   it("continues: the number of pages when auto needs continuation pages", () => {
     // A full 16:9 slide of eight 3 × 2 metrics and a chart band.
     const widgets: ReadabilityWidget[] = [

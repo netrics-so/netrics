@@ -486,7 +486,7 @@ describe("clock widget", () => {
         now={new Date("2026-10-04T12:05:00Z")}
         timeZone="Europe/Berlin"
         options={{ showDate: true, hour12: false }}
-        placement={{ x: 0, y: 0, w: 2, h: 1 }}
+        placement={{ x: 0, y: 0, w: 3, h: 2 }}
         showHeader
         fontScale={1}
       />,
@@ -494,6 +494,46 @@ describe("clock widget", () => {
     expect(text(html)).toContain("14:05");
     expect(text(html)).toContain("Sun 4 Oct");
     expect(Math.max(...fontSizes(html))).toBeGreaterThanOrEqual(56);
+  });
+
+  it("shows the long date and the zone line where they fit (ADR 0019 §9)", () => {
+    const html = renderI18n(
+      <ClockWidgetView
+        now={new Date("2026-10-04T12:05:00Z")}
+        timeZone="Europe/Berlin"
+        options={{
+          showDate: true,
+          hour12: false,
+          dateStyle: "long",
+          showZone: true,
+        }}
+        placement={{ x: 0, y: 0, w: 3, h: 3 }}
+        showHeader
+        fontScale={1}
+      />,
+    );
+    expect(text(html)).toContain("Sunday, 4 October");
+    expect(text(html)).toContain("Berlin \u00b7 UTC+2");
+    expect(Math.min(...fontSizes(html))).toBeGreaterThanOrEqual(24);
+  });
+
+  it("shows only the time in a 2 × 1 clock with both options", () => {
+    const html = renderI18n(
+      <ClockWidgetView
+        now={new Date("2026-10-04T12:05:00Z")}
+        timeZone="Europe/Berlin"
+        options={{
+          showDate: true,
+          hour12: false,
+          dateStyle: "long",
+          showZone: true,
+        }}
+        placement={{ x: 0, y: 0, w: 2, h: 1 }}
+        showHeader
+        fontScale={1}
+      />,
+    );
+    expect(text(html)).toBe("14:05");
   });
 });
 
@@ -593,7 +633,13 @@ describe("slide canvas", () => {
       w: 6,
       h: 4,
       title: null,
-      options: { showDate: true, hour12: false, timeZone: null },
+      options: {
+        showDate: true,
+        hour12: false,
+        timeZone: null,
+        dateStyle: "short",
+        showZone: false,
+      },
     },
   ];
   const slide = {

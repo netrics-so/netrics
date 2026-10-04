@@ -66,7 +66,7 @@ public struct StudioFrame: Sendable, Equatable {
 /** Text roles of a widget; see widgetTypeScale. */
 public enum StudioTextRole: String, Sendable, CaseIterable, Codable {
     case any, title, resource, change, axis, body, heading, display
-    case valueMin, valueMax, clockMin, clockMax, date
+    case valueMin, valueMax, clockMin, clockMax, date, zone
 }
 
 public enum StudioFontWeight: String, Sendable, Codable {
@@ -106,6 +106,20 @@ public struct StudioLabelFit: Sendable, Equatable {
     public var fits: Bool
     public var titleLines: Int
     public var resourceLines: Int
+}
+
+/** How the clock shows the date: "Sat 4 Oct" or "Saturday, 4 October". */
+public enum ClockDateStyle: String, Sendable, Codable {
+    case short, long
+}
+
+/** The clock's sizes in units; nil for a part that is off or does not fit. */
+public struct StudioClockLayout: Sendable, Equatable {
+    public var time: Double
+    public var date: Double?
+    public var zone: Double?
+    /** A part that is on does not fit. */
+    public var hidden: Bool
 }
 
 public enum StudioLayout {
@@ -201,6 +215,8 @@ public enum StudioLayout {
         public static let display = 96.0
         public static let value = 64.0
         public static let clock = 56.0
+        /** The clock's zone line (ADR 0019, section 9). */
+        public static let zone = 24.0
     }
 
     /** A font scale never lowers a minimum: anything below 1 is 1. */
@@ -253,6 +269,7 @@ public enum StudioLayout {
                 .clockMin: clockMin,
                 .clockMax: max(clockMin, contentHeight(placement, showHeader: showHeader) * 0.6),
                 .date: Minimum.title * scale,
+                .zone: Minimum.zone * scale,
             ]
         }
     }
@@ -353,6 +370,88 @@ public enum StudioLayout {
         let widthAtOne = estimateTextWidth(text, fontSize: 1, weight: weight)
         let size = widthAtOne > 0 ? Swift.min(max, maxWidth / widthAtOne) : max
         return size >= min ? size : nil
+    }
+
+    // MARK: Clock (ADR 0019, section 9; clockLayout in the domain)
+
+    /** The widest date of each style in English and German (CLOCK_DATE_SAMPLES). */
+    public static func clockDateSample(_ style: ClockDateStyle) -> String {
+        style == .long ? "Donnerstag, 10. September" : "Mo., 16. März"
+    }
+
+    static let zoneOffsetSample = "UTC\u{2212}00:00"
+
+    /** "Buenos Aires" for "America/Argentina/Buenos_Aires"; nil for "UTC", "Etc/GMT+3". */
+    public static func zoneCity(_ timeZone: String) -> String? {
+        if timeZone.hasPrefix("Etc/") || !timeZone.contains("/") { return nil }
+        let last = timeZone.split(separator: "/", omittingEmptySubsequences: false).last.map(String.init) ?? ""
+        let city = last.replacingOccurrences(of: "_", with: " ").trimmingCharacters(in: .whitespaces)
+        return city.isEmpty ? nil : city
+    }
+
+    /** The zone's offset from UTC in minutes at the date; nil for an unknown zone. */
+    public static func zoneOffsetMinutes(_ timeZone: String, at date: Date) -> Int? {
+        guard let zone = TimeZone(identifier: timeZone) else { return nil }
+        return Int((Double(zone.secondsFromGMT(for: date)) / 60).rounded())
+    }
+
+    /** "UTC+2", "UTC+5:30", "UTC−3", "UTC". */
+    public static func formatUtcOffset(_ minutes: Int) -> String {
+        if minutes == 0 { return "UTC" }
+        let sign = minutes > 0 ? "+" : "\u{2212}"
+        let total = abs(minutes)
+        let rest = total % 60
+        return "UTC\(sign)\(total / 60)" + (rest == 0 ? "" : ":" + (rest < 10 ? "0\(rest)" : "\(rest)"))
+    }
+
+    /** The clock's zone line: "Berlin · UTC+2", "UTC" for Etc/UTC. */
+    public static func zoneLabel(_ timeZone: String, at date: Date) -> String {
+        let city = zoneCity(timeZone)
+        guard let minutes = zoneOffsetMinutes(timeZone, at: date) else { return city ?? timeZone }
+        let offset = formatUtcOffset(minutes)
+        return city.map { "\($0) \u{00B7} \(offset)" } ?? offset
+    }
+
+    /** The widest zone line of the zone, for the fit. */
+    public static func zoneLabelSample(_ timeZone: String) -> String {
+        zoneCity(timeZone).map { "\($0) \u{00B7} \(zoneOffsetSample)" } ?? zoneOffsetSample
+    }
+
+    /**
+     * The clock's content: the time at least 56 units and as large as fits,
+     * the date (30, down to 24 for its widest sample) and the zone line
+     * (24); when lines do not fit, the zone line goes first, then the date.
+     */
+    public static func clockLayout(
+        placement: StudioPlacement, box: (width: Double, height: Double), fontScale: Double? = nil,
+        showHeader: Bool = true, time: String, showDate: Bool, dateStyle: ClockDateStyle, zone: String?
+    ) -> StudioClockLayout {
+        let scale = effectiveFontScale(fontScale)
+        let sizes = typeScale(.clock, placement: placement, fontScale: scale, showHeader: showHeader)
+        let timeMin = sizes[.clockMin]!
+        let dateSize = showDate
+            ? fitTextSize(clockDateSample(dateStyle), maxWidth: box.width, min: sizes[.any]!, max: sizes[.date]!)
+            : nil
+        let zoneSize: Double? = zone.flatMap {
+            estimateTextWidth(zoneLabelSample($0), fontSize: sizes[.zone]!) <= box.width ? sizes[.zone]! : nil
+        }
+        func linesHeight(_ date: Bool, _ zone: Bool) -> Double {
+            (date ? (dateSize ?? 0) * 1.15 : 0) + (zone ? (zoneSize ?? 0) * 1.15 : 0)
+        }
+        func fits(_ date: Bool, _ zone: Bool) -> Bool {
+            (!date || dateSize != nil) && (!zone || zoneSize != nil) && timeMin + linesHeight(date, zone) <= box.height
+        }
+        let wantZone = zone != nil
+        let candidates: [(Bool, Bool)] = [(showDate, wantZone), (showDate, false), (false, false)]
+        let chosen = candidates.first { fits($0.0, $0.1) } ?? (false, false)
+        let used = linesHeight(chosen.0, chosen.1)
+        let maximum = Swift.max(timeMin, Swift.min(sizes[.clockMax]!, box.height - used))
+        // Widest digits, so the size does not change from minute to minute.
+        let sample = String(time.map { $0.isASCII && $0.isNumber ? "0" : $0 })
+        let size = fitTextSize(sample, maxWidth: box.width, min: timeMin, max: maximum, weight: .semibold) ?? timeMin
+        return StudioClockLayout(
+            time: size, date: chosen.0 ? dateSize : nil, zone: chosen.1 ? zoneSize : nil,
+            hidden: chosen.0 != showDate || chosen.1 != wantZone)
     }
 
     // MARK: Label fit

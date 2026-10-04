@@ -803,6 +803,10 @@ struct TextWidgetView: View {
 
 // MARK: Clock
 
+/**
+ * The time in the accent colour, the date and the zone line, centred as on
+ * the web; lines that do not fit are left out (StudioLayout.clockLayout).
+ */
 struct ClockWidgetView: View {
     let options: ClockWidgetOptions
     let placement: ScreenPlacement
@@ -813,25 +817,32 @@ struct ClockWidgetView: View {
             let zone = options.timeZone ?? env.timeZone
             let text = TVTime.clockWidget(
                 context.date, timeZone: zone, hour12: options.hour12, showDate: options.showDate,
-                language: env.language)
-            let sizes = StudioRender.clockSize(
-                time: text.time, hasDate: text.date != nil, placement: placement.cells, fontScale: env.fontScale,
-                showHeader: env.showHeader, unitBox: placement.unitBox)
-            VStack(alignment: .leading, spacing: 0) {
+                dateStyle: options.dateStyle, showZone: options.showZone, language: env.language)
+            let layout = StudioRender.clockLayout(
+                time: text.time, options: options, timeZone: zone, placement: placement.cells,
+                fontScale: env.fontScale, showHeader: env.showHeader, unitBox: placement.unitBox)
+            VStack(alignment: .center, spacing: 0) {
                 Text(text.time)
-                    .font(env.font(sizes.time, .semibold).monospacedDigit())
+                    .font(env.font(layout.time, .semibold).monospacedDigit())
                     .foregroundStyle(env.colors.accent)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
-                if let date = text.date {
+                if let date = text.date, let size = layout.date {
                     Text(date)
-                        .font(env.font(sizes.date))
-                        .foregroundStyle(env.colors.label)
+                        .font(env.font(size))
+                        .foregroundStyle(env.colors.muted)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
+                if let line = text.zone, let size = layout.zone {
+                    Text(line)
+                        .font(env.font(size))
+                        .foregroundStyle(env.colors.muted)
+                        .lineLimit(1)
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
     }
 }

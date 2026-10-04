@@ -453,21 +453,18 @@ public enum StudioRender {
 
     // MARK: Clock widget
 
-    /** The clock's time size in units: as large as fits, at least the minimum. */
-    public static func clockSize(
-        time: String, hasDate: Bool, placement: StudioPlacement, fontScale: Double, showHeader: Bool,
-        unitBox: StudioCanvas? = nil
-    ) -> (time: Double, date: Double) {
-        let sizes = StudioLayout.typeScale(.clock, placement: placement, fontScale: fontScale, showHeader: showHeader)
+    /**
+     * The clock's sizes in units (StudioLayout.clockLayout): the time as
+     * large as fits, the date and the zone line, or nil for a line left out.
+     */
+    public static func clockLayout(
+        time: String, options: ClockWidgetOptions, timeZone: String, placement: StudioPlacement, fontScale: Double,
+        showHeader: Bool, unitBox: StudioCanvas? = nil
+    ) -> StudioClockLayout {
         let box = contentBox(placement, showHeader: showHeader, unitBox: unitBox)
-        let dateSize = sizes[.date] ?? StudioLayout.Minimum.title
-        let dateHeight = hasDate ? dateSize * lineHeight : 0
-        let minimum = sizes[.clockMin] ?? StudioLayout.Minimum.clock
-        let maximum = Swift.max(minimum, Swift.min(sizes[.clockMax] ?? minimum, (box.height - dateHeight) / valueLineHeight))
-        // Widest digits, so the size does not change from minute to minute.
-        let sample = String(time.map { $0.isNumber ? "0" : $0 })
-        let size = StudioLayout.fitTextSize(sample, maxWidth: box.width, min: minimum, max: maximum, weight: .semibold)
-        return (size ?? minimum, dateSize)
+        return StudioLayout.clockLayout(
+            placement: placement, box: box, fontScale: fontScale, showHeader: showHeader, time: time,
+            showDate: options.showDate, dateStyle: options.dateStyle, zone: options.showZone ? timeZone : nil)
     }
 }
 
@@ -549,10 +546,15 @@ extension MetricFormat {
 }
 
 extension TVTime {
-    /** The clock widget: "14:05" (or "2:05 PM") and "Sat 4 Oct". */
+    /**
+     * The clock widget: "14:05" (or "2:05 PM"), "Sat 4 Oct" or the long
+     * "Saturday, 4 October" ("Samstag, 4. Oktober"; the weekday, a comma,
+     * day and month, as on the web) and the zone line "Berlin · UTC+2".
+     */
     public static func clockWidget(
-        _ date: Date, timeZone: String, hour12: Bool, showDate: Bool, language: ScreenLanguage = .en
-    ) -> (time: String, date: String?) {
+        _ date: Date, timeZone: String, hour12: Bool, showDate: Bool, dateStyle: ClockDateStyle = .short,
+        showZone: Bool = false, language: ScreenLanguage = .en
+    ) -> (time: String, date: String?, zone: String?) {
         let time: String
         if hour12 {
             let style = Date.FormatStyle(locale: Locale(identifier: "en_US"), timeZone: zone(timeZone))
@@ -562,9 +564,15 @@ extension TVTime {
         } else {
             time = hourMinute(date, timeZone: timeZone, language: language)
         }
-        guard showDate else { return (time, nil) }
-        let day = Date.FormatStyle(locale: language.dateLocale, timeZone: zone(timeZone))
-            .weekday(.abbreviated).day().month(.abbreviated)
-        return (time, date.formatted(day))
+        let zoneLine = showZone ? StudioLayout.zoneLabel(timeZone, at: date) : nil
+        guard showDate else { return (time, nil, zoneLine) }
+        let base = Date.FormatStyle(locale: language.dateLocale, timeZone: zone(timeZone))
+        let day: String
+        if dateStyle == .long {
+            day = "\(date.formatted(base.weekday(.wide))), \(date.formatted(base.day().month(.wide)))"
+        } else {
+            day = date.formatted(base.weekday(.abbreviated).day().month(.abbreviated))
+        }
+        return (time, day, zoneLine)
     }
 }

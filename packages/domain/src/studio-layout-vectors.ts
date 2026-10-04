@@ -10,6 +10,9 @@
  * Not exported from the package index: only tests use it.
  */
 import {
+  CLOCK_DATE_SAMPLES,
+  STUDIO_REFERENCE_CANVAS,
+  STUDIO_SPACING,
   STUDIO_MIN_WIDGET_SIZE,
   STUDIO_WIDGET_TYPES,
   compactNumber,
@@ -22,11 +25,15 @@ import {
   legacyLayout,
   meetsMinimumSize,
   parseTextWidget,
+  clockLayout,
   studioFrame,
   textWidgetSizes,
   widgetRect,
   widgetTypeScale,
   wrappedLineCount,
+  zoneLabel,
+  zoneLabelSample,
+  type ClockDateStyle,
   type StudioCanvas,
   type StudioFontWeight,
   type StudioPlacement,
@@ -59,6 +66,58 @@ const SIZES: StudioPlacement[] = [
 ];
 
 const FONT_SCALES = [1, 1.15, 1.3, 0.8];
+
+/** Zones for the zone line: DST in both hemispheres, half and quarter hours. */
+const ZONES = [
+  "Europe/Berlin",
+  "America/New_York",
+  "America/Sao_Paulo",
+  "America/Argentina/Buenos_Aires",
+  "Asia/Kolkata",
+  "Asia/Kathmandu",
+  "Australia/Adelaide",
+  "Pacific/Chatham",
+  "America/St_Johns",
+  "Etc/UTC",
+  "UTC",
+  "Etc/GMT+3",
+  "Etc/GMT-14",
+];
+
+/** Summer and winter in the north, and a daylight saving change in Berlin. */
+const INSTANTS = [
+  "2026-07-04T12:00:00.000Z",
+  "2026-01-10T12:00:00.000Z",
+  "2026-03-29T00:59:59.000Z",
+  "2026-03-29T01:00:00.000Z",
+];
+
+const CLOCK_CASES = [
+  { w: 2, h: 1 },
+  { w: 2, h: 2 },
+  { w: 3, h: 2 },
+  { w: 3, h: 3 },
+  { w: 4, h: 2 },
+  { w: 12, h: 8 },
+];
+
+const CLOCK_OPTIONS: Array<{
+  time: string;
+  showDate: boolean;
+  dateStyle: ClockDateStyle;
+  zone: string | null;
+}> = [
+  { time: "14:05", showDate: true, dateStyle: "short", zone: null },
+  { time: "14:05", showDate: false, dateStyle: "short", zone: null },
+  { time: "14:05", showDate: true, dateStyle: "long", zone: "Europe/Berlin" },
+  { time: "2:05 PM", showDate: false, dateStyle: "long", zone: "Etc/UTC" },
+  {
+    time: "12:59 PM",
+    showDate: true,
+    dateStyle: "short",
+    zone: "America/Argentina/Buenos_Aires",
+  },
+];
 
 const TEXTS = [
   "",
@@ -329,6 +388,42 @@ export function buildStudioLayoutVectors() {
     text: compactNumber(value),
   }));
 
+  const zoneLabels = ZONES.flatMap((timeZone) =>
+    INSTANTS.map((at) => ({
+      timeZone,
+      at,
+      label: zoneLabel(timeZone, new Date(at)),
+      sample: zoneLabelSample(timeZone),
+    })),
+  );
+
+  const clockLayouts = CLOCK_CASES.flatMap((size) =>
+    [1, 1.3].flatMap((fontScale) =>
+      CLOCK_OPTIONS.map((options) => {
+        const placement = { x: 0, y: 0, w: size.w, h: size.h };
+        const rect = widgetRect(placement, STUDIO_REFERENCE_CANVAS, true);
+        const box = {
+          width: rect.width - 2 * STUDIO_SPACING.widgetPadding,
+          height: rect.height - 2 * STUDIO_SPACING.widgetPadding,
+        };
+        return {
+          w: size.w,
+          h: size.h,
+          box,
+          fontScale,
+          ...options,
+          layout: clockLayout({
+            placement,
+            box,
+            fontScale,
+            showHeader: true,
+            ...options,
+          }),
+        };
+      }),
+    ),
+  );
+
   return {
     about:
       "Generated from packages/domain/src/studio-layout.ts by `pnpm vectors:studio`. Do not edit by hand.",
@@ -347,5 +442,8 @@ export function buildStudioLayoutVectors() {
     legacy,
     markdown,
     compact,
+    clockDateSamples: CLOCK_DATE_SAMPLES,
+    zoneLabels,
+    clockLayouts,
   };
 }

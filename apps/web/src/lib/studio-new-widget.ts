@@ -129,7 +129,13 @@ export function newWidget(
         widget: {
           type,
           title: null,
-          options: { showDate: true, hour12: false, timeZone: null },
+          options: {
+            showDate: true,
+            hour12: false,
+            timeZone: null,
+            dateStyle: "short",
+            showZone: false,
+          },
         },
       };
   }

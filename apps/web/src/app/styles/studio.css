@@ -1125,6 +1125,13 @@
   color: var(--warning-text);
 }
 
+/* Left out by design (a clock's lines): said plainly, without alarm. */
+.fit-check--partial {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
 .rail-slide .rail-actions {
   margin: 0;
 }

@@ -2328,6 +2328,12 @@ a.health-badge:hover {
   color: var(--t-muted);
 }
 
+/* The zone line ("Berlin · UTC+2", ADR 0019 §9): quiet, one line. */
+.sw-clock-zone {
+  color: var(--t-muted);
+  white-space: nowrap;
+}
+
 .sw-failed {
   justify-content: center;
 }

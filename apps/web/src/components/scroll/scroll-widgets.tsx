@@ -328,12 +328,21 @@ export function ScrollBarCard(props: BarReadingProps & ScrollCardSize) {
   );
 }
 
-/** The clock card: the time in the accent colour, and the date. */
+/**
+ * The clock card: the time in the accent colour, the date and the zone
+ * line; the card grows to fit them, so nothing is left out.
+ */
 export function ScrollClockCard(
   props: {
     now: Date;
     timeZone: string;
-    options: { showDate: boolean; hour12: boolean };
+    options: {
+      showDate: boolean;
+      hour12: boolean;
+      /** Absent from older payloads: the short date. */
+      dateStyle?: "short" | "long";
+      showZone?: boolean;
+    };
   } & ScrollCardSize,
 ) {
   const locale = useLocale();
@@ -342,6 +351,8 @@ export function ScrollClockCard(
     timeZone: props.timeZone,
     hour12: props.options.hour12,
     showDate: props.options.showDate,
+    dateStyle: props.options.dateStyle ?? "short",
+    showZone: props.options.showZone ?? false,
   });
   const size = scrollClockSize(text.time, cardUnits(props.width, props.rootPx));
   return (
@@ -360,6 +371,15 @@ export function ScrollClockCard(
           suppressHydrationWarning
         >
           {text.date}
+        </span>
+      ) : null}
+      {text.zone ? (
+        <span
+          className="sw-clock-zone"
+          style={{ fontSize: u(SCROLL_TYPE.small) }}
+          suppressHydrationWarning
+        >
+          {text.zone}
         </span>
       ) : null}
     </div>

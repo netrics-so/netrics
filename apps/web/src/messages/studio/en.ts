@@ -260,6 +260,11 @@ export const studioEn = {
       hours24: "24-hour (14:05)",
       hours12: "12-hour (2:05 PM)",
       date: "Date",
+      dateStyle: "Date format",
+      dateShort: "Short (Sat 4 Oct)",
+      dateLong: "Long (Saturday, 4 October)",
+      showZone: "Show time zone",
+      zoneHelp: "City and UTC offset, such as Berlin · UTC+2.",
       image: "Image",
       fit: "Fit",
       fitContain: "Whole image (contain)",
@@ -296,6 +301,9 @@ export const studioEn = {
       labelFits: "Label fits at 1080p",
       labelFitsValue: "Label fits at 1080p · value {size} px",
       textFits: "Text fits at 1080p",
+      clockFits: "Everything the clock shows fits at 1080p",
+      clockPartsHidden:
+        "{hidden, select, zone {The time zone does not fit, so it is left out.} date {The date does not fit, so it is left out.} other {The date and time zone do not fit, so they are left out.}} A larger clock shows more.",
     },
     readability: {
       titleCut: "The title is cut off on TVs.",
@@ -373,6 +381,8 @@ export const studioEn = {
         widget_to_review: "{widget} was placed automatically: review it.",
         widget_too_small: "{widget} is smaller than its minimum size.",
         header_name_cut: "The dashboard name does not fit the header.",
+        clock_parts_hidden:
+          "{widget}: the date or time zone does not fit, so only part of the clock shows.",
       },
       showInEditor: "Select in {primary}",
       openFormat: "Open {name} {ratio}",

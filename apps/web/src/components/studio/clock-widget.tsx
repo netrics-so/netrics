@@ -2,17 +2,11 @@
 
 import { useEffect, useState } from "react";
 
-import { fitTextSize, type StudioPlacement } from "@netrics/domain";
+import { clockLayout, type ClockDateStyle } from "@netrics/domain";
 
 import { useLocale } from "@/lib/i18n/client";
 import { clockText, msUntilNextMinute } from "@/lib/studio-clock";
-import {
-  LINE_HEIGHT,
-  VALUE_LINE_HEIGHT,
-  contentBox,
-  typeScaleFor,
-  u,
-} from "@/lib/studio-render";
+import { contentBox, u, type ScreenPlacement } from "@/lib/studio-render";
 
 /**
  * The current time, re-rendered when the minute changes. Before hydration
@@ -35,61 +29,71 @@ export function useNow(): Date {
 export interface ClockWidgetViewProps {
   now: Date;
   timeZone: string;
-  options: { showDate: boolean; hour12: boolean };
-  placement: StudioPlacement;
+  options: {
+    showDate: boolean;
+    hour12: boolean;
+    /** Absent from older payloads: the short date. */
+    dateStyle?: ClockDateStyle;
+    showZone?: boolean;
+  };
+  placement: ScreenPlacement;
   showHeader: boolean;
   fontScale: number;
 }
 
 /**
  * The clock widget: the time in the accent colour, as large as the widget
- * allows (at least 56 units), and the date below it.
+ * allows (at least 56 units), the date below it and the zone line (ADR
+ * 0019, section 9). Lines that do not fit are left out, the zone line
+ * first (`clockLayout`; the Studio says so with `clock_parts_hidden`).
  */
 export function ClockWidgetView(props: ClockWidgetViewProps) {
   const locale = useLocale();
+  const dateStyle = props.options.dateStyle ?? "short";
+  const showZone = props.options.showZone ?? false;
   const text = clockText(props.now, {
     locale,
     timeZone: props.timeZone,
     hour12: props.options.hour12,
     showDate: props.options.showDate,
+    dateStyle,
+    showZone,
   });
-  const sizes = typeScaleFor(
-    "clock",
-    props.placement,
-    props.fontScale,
-    props.showHeader,
-  );
-  const box = contentBox(props.placement, props.showHeader);
-  const dateSize = sizes.date ?? 30;
-  const dateHeight = text.date ? dateSize * LINE_HEIGHT : 0;
-  const min = sizes.clockMin ?? 56;
-  const max = Math.max(
-    min,
-    Math.min(
-      sizes.clockMax ?? min,
-      (box.height - dateHeight) / VALUE_LINE_HEIGHT,
-    ),
-  );
-  // Widest digits, so the size does not change from minute to minute.
-  const sample = text.time.replace(/\d/g, "0");
-  const size =
-    fitTextSize(sample, box.width, { min, max, weight: "semibold" }) ?? min;
+  const layout = clockLayout({
+    placement: props.placement,
+    box: contentBox(props.placement, props.showHeader),
+    fontScale: props.fontScale,
+    showHeader: props.showHeader,
+    time: text.time,
+    showDate: props.options.showDate,
+    dateStyle,
+    zone: showZone ? props.timeZone : null,
+  });
   return (
     <div className="sw sw-clock">
       <time
         className="sw-clock-time"
-        style={{ fontSize: u(size) }}
+        style={{ fontSize: u(layout.time) }}
         suppressHydrationWarning
       >
         {text.time}
       </time>
-      {text.date ? (
+      {text.date !== null && layout.date !== null ? (
         <span
           className="sw-clock-date"
-          style={{ fontSize: u(dateSize) }}
+          style={{ fontSize: u(layout.date) }}
           suppressHydrationWarning
         >
           {text.date}
+        </span>
+      ) : null}
+      {text.zone !== null && layout.zone !== null ? (
+        <span
+          className="sw-clock-zone"
+          style={{ fontSize: u(layout.zone) }}
+          suppressHydrationWarning
+        >
+          {text.zone}
         </span>
       ) : null}
     </div>

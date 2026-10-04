@@ -264,6 +264,11 @@ export const studioDe: Catalog<typeof studioEn> = {
       hours24: "24 Stunden (14:05)",
       hours12: "12 Stunden (2:05 PM)",
       date: "Datum",
+      dateStyle: "Datumsformat",
+      dateShort: "Kurz (Sa., 4. Okt.)",
+      dateLong: "Lang (Samstag, 4. Oktober)",
+      showZone: "Zeitzone anzeigen",
+      zoneHelp: "Stadt und Abstand zu UTC, etwa Berlin · UTC+2.",
       image: "Bild",
       fit: "Einpassen",
       fitContain: "Ganzes Bild (contain)",
@@ -301,6 +306,9 @@ export const studioDe: Catalog<typeof studioEn> = {
       labelFits: "Beschriftung passt bei 1080p",
       labelFitsValue: "Beschriftung passt bei 1080p · Wert {size} px",
       textFits: "Text passt bei 1080p",
+      clockFits: "Alles, was die Uhr zeigt, passt bei 1080p",
+      clockPartsHidden:
+        "{hidden, select, zone {Die Zeitzone passt nicht und wird weggelassen.} date {Das Datum passt nicht und wird weggelassen.} other {Datum und Zeitzone passen nicht und werden weggelassen.}} Eine größere Uhr zeigt mehr.",
     },
     readability: {
       titleCut: "Der Titel wird auf TVs abgeschnitten.",
@@ -379,6 +387,8 @@ export const studioDe: Catalog<typeof studioEn> = {
         widget_too_small: "{widget} ist kleiner als seine Mindestgröße.",
         header_name_cut:
           "Der Name des Dashboards passt nicht in die Kopfzeile.",
+        clock_parts_hidden:
+          "{widget}: Datum oder Zeitzone passen nicht, die Uhr zeigt nur einen Teil.",
       },
       showInEditor: "In {primary} auswählen",
       openFormat: "{name} {ratio} öffnen",

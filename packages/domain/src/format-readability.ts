@@ -21,6 +21,7 @@ import {
 } from "./screen-formats.js";
 import {
   SCREEN_FORMATS,
+  clockLayout,
   SCREEN_FORMAT_KEYS,
   STUDIO_MIN_WIDGET_SIZE,
   STUDIO_SPACING,
@@ -33,6 +34,7 @@ import {
   screenFrame,
   textWidgetSizes,
   wrappedLineCount,
+  type ClockDateStyle,
   type ScreenFormat,
   type StudioPlacement,
   type StudioTextBlock,
@@ -248,7 +250,9 @@ export type FormatWarningCode =
   /** A custom placement is below its type's minimum (the server refuses these). */
   | "widget_too_small"
   /** The dashboard name does not fit the header. */
-  | "header_name_cut";
+  | "header_name_cut"
+  /** A clock's date or zone line does not fit, so the screen leaves it out. */
+  | "clock_parts_hidden";
 
 export const FORMAT_WARNING_CODES: readonly FormatWarningCode[] = [
   "label_cut",
@@ -258,13 +262,15 @@ export const FORMAT_WARNING_CODES: readonly FormatWarningCode[] = [
   "widget_to_review",
   "widget_too_small",
   "header_name_cut",
+  "clock_parts_hidden",
 ];
 
 /**
  * `attention`: something on the screen is cut off, too small or waits for
  * review: the Studio counts these ("3 formats need attention"). `info`: a
  * consequence of the layout the Studio shows without alarm (continuation
- * pages, which are never truncation, and widgets the user hid).
+ * pages, which are never truncation, widgets the user hid, and clock
+ * lines left out for room).
  */
 export type FormatWarningSeverity = "attention" | "info";
 
@@ -278,6 +284,7 @@ export const FORMAT_WARNING_SEVERITY: Readonly<
   widget_to_review: "attention",
   widget_too_small: "attention",
   header_name_cut: "attention",
+  clock_parts_hidden: "info",
 };
 
 export interface FormatWarningItem {
@@ -297,6 +304,15 @@ export interface ReadabilityWidget extends LayoutWidget {
   /** Text widgets: the text and its size option. */
   text?: string | null;
   textSize?: StudioTextSize | null;
+  /**
+   * Clock widgets: the date and zone line options, the zone resolved (the
+   * widget's, else the workspace's); null without a zone line.
+   */
+  clock?: {
+    showDate: boolean;
+    dateStyle: ClockDateStyle;
+    zone: string | null;
+  } | null;
 }
 
 export interface ReadabilitySlide {
@@ -321,7 +337,8 @@ export interface ReadabilityContext {
 /**
  * The readability warnings of a slide in one format, in a stable order:
  * the header, continuation pages, then the widgets in the primary's reading
- * order (hidden, to review, too small, label or text cut off). Labels and
+ * order (hidden, to review, too small, label or text cut off, clock
+ * lines left out). Labels and
  * text are measured at the format's reference canvas with the size the
  * widget has in that format's layout (auto or custom).
  */
@@ -413,6 +430,16 @@ export function formatWarnings(
         format,
       });
       if (fit.overflow) warn("text_cut", widget.id);
+    } else if (widget.type === "clock" && widget.clock) {
+      const fit = clockLayout({
+        placement,
+        box: contentBoxIn(placement, format, context.showHeader),
+        fontScale: context.fontScale,
+        showHeader: context.showHeader,
+        time: "00:00",
+        ...widget.clock,
+      });
+      if (fit.hidden) warn("clock_parts_hidden", widget.id);
     }
   }
   return warnings;

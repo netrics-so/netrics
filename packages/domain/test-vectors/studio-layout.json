@@ -3693,7 +3693,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 56,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -3706,7 +3707,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 56,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -3719,7 +3721,8 @@
         "any": 27.599999999999998,
         "clockMin": 64.39999999999999,
         "clockMax": 64.39999999999999,
-        "date": 34.5
+        "date": 34.5,
+        "zone": 27.599999999999998
       }
     },
     {
@@ -3732,7 +3735,8 @@
         "any": 27.599999999999998,
         "clockMin": 64.39999999999999,
         "clockMax": 64.39999999999999,
-        "date": 34.5
+        "date": 34.5,
+        "zone": 27.599999999999998
       }
     },
     {
@@ -3745,7 +3749,8 @@
         "any": 31.200000000000003,
         "clockMin": 72.8,
         "clockMax": 72.8,
-        "date": 39
+        "date": 39,
+        "zone": 31.200000000000003
       }
     },
     {
@@ -3758,7 +3763,8 @@
         "any": 31.200000000000003,
         "clockMin": 72.8,
         "clockMax": 72.8,
-        "date": 39
+        "date": 39,
+        "zone": 31.200000000000003
       }
     },
     {
@@ -3771,7 +3777,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 56,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -3784,7 +3791,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 56,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -3797,7 +3805,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 105.05999999999999,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -3810,7 +3819,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 116.39999999999999,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -3823,7 +3833,8 @@
         "any": 27.599999999999998,
         "clockMin": 64.39999999999999,
         "clockMax": 105.05999999999999,
-        "date": 34.5
+        "date": 34.5,
+        "zone": 27.599999999999998
       }
     },
     {
@@ -3836,7 +3847,8 @@
         "any": 27.599999999999998,
         "clockMin": 64.39999999999999,
         "clockMax": 116.39999999999999,
-        "date": 34.5
+        "date": 34.5,
+        "zone": 27.599999999999998
       }
     },
     {
@@ -3849,7 +3861,8 @@
         "any": 31.200000000000003,
         "clockMin": 72.8,
         "clockMax": 105.05999999999999,
-        "date": 39
+        "date": 39,
+        "zone": 31.200000000000003
       }
     },
     {
@@ -3862,7 +3875,8 @@
         "any": 31.200000000000003,
         "clockMin": 72.8,
         "clockMax": 116.39999999999999,
-        "date": 39
+        "date": 39,
+        "zone": 31.200000000000003
       }
     },
     {
@@ -3875,7 +3889,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 105.05999999999999,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -3888,7 +3903,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 116.39999999999999,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -3901,7 +3917,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 176.79,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -3914,7 +3931,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 193.79999999999998,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -3927,7 +3945,8 @@
         "any": 27.599999999999998,
         "clockMin": 64.39999999999999,
         "clockMax": 176.79,
-        "date": 34.5
+        "date": 34.5,
+        "zone": 27.599999999999998
       }
     },
     {
@@ -3940,7 +3959,8 @@
         "any": 27.599999999999998,
         "clockMin": 64.39999999999999,
         "clockMax": 193.79999999999998,
-        "date": 34.5
+        "date": 34.5,
+        "zone": 27.599999999999998
       }
     },
     {
@@ -3953,7 +3973,8 @@
         "any": 31.200000000000003,
         "clockMin": 72.8,
         "clockMax": 176.79,
-        "date": 39
+        "date": 39,
+        "zone": 31.200000000000003
       }
     },
     {
@@ -3966,7 +3987,8 @@
         "any": 31.200000000000003,
         "clockMin": 72.8,
         "clockMax": 193.79999999999998,
-        "date": 39
+        "date": 39,
+        "zone": 31.200000000000003
       }
     },
     {
@@ -3979,7 +4001,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 176.79,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -3992,7 +4015,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 193.79999999999998,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -4005,7 +4029,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 248.51999999999998,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -4018,7 +4043,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 271.2,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -4031,7 +4057,8 @@
         "any": 27.599999999999998,
         "clockMin": 64.39999999999999,
         "clockMax": 248.51999999999998,
-        "date": 34.5
+        "date": 34.5,
+        "zone": 27.599999999999998
       }
     },
     {
@@ -4044,7 +4071,8 @@
         "any": 27.599999999999998,
         "clockMin": 64.39999999999999,
         "clockMax": 271.2,
-        "date": 34.5
+        "date": 34.5,
+        "zone": 27.599999999999998
       }
     },
     {
@@ -4057,7 +4085,8 @@
         "any": 31.200000000000003,
         "clockMin": 72.8,
         "clockMax": 248.51999999999998,
-        "date": 39
+        "date": 39,
+        "zone": 31.200000000000003
       }
     },
     {
@@ -4070,7 +4099,8 @@
         "any": 31.200000000000003,
         "clockMin": 72.8,
         "clockMax": 271.2,
-        "date": 39
+        "date": 39,
+        "zone": 31.200000000000003
       }
     },
     {
@@ -4083,7 +4113,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 248.51999999999998,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -4096,7 +4127,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 271.2,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -4109,7 +4141,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 535.4399999999999,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -4122,7 +4155,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 580.8,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -4135,7 +4169,8 @@
         "any": 27.599999999999998,
         "clockMin": 64.39999999999999,
         "clockMax": 535.4399999999999,
-        "date": 34.5
+        "date": 34.5,
+        "zone": 27.599999999999998
       }
     },
     {
@@ -4148,7 +4183,8 @@
         "any": 27.599999999999998,
         "clockMin": 64.39999999999999,
         "clockMax": 580.8,
-        "date": 34.5
+        "date": 34.5,
+        "zone": 27.599999999999998
       }
     },
     {
@@ -4161,7 +4197,8 @@
         "any": 31.200000000000003,
         "clockMin": 72.8,
         "clockMax": 535.4399999999999,
-        "date": 39
+        "date": 39,
+        "zone": 31.200000000000003
       }
     },
     {
@@ -4174,7 +4211,8 @@
         "any": 31.200000000000003,
         "clockMin": 72.8,
         "clockMax": 580.8,
-        "date": 39
+        "date": 39,
+        "zone": 31.200000000000003
       }
     },
     {
@@ -4187,7 +4225,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 535.4399999999999,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     },
     {
@@ -4200,7 +4239,8 @@
         "any": 24,
         "clockMin": 56,
         "clockMax": 580.8,
-        "date": 30
+        "date": 30,
+        "zone": 24
       }
     }
   ],
@@ -12235,6 +12275,1466 @@
     {
       "value": null,
       "text": "—"
+    }
+  ],
+  "clockDateSamples": {
+    "short": "Mo., 16. März",
+    "long": "Donnerstag, 10. September"
+  },
+  "zoneLabels": [
+    {
+      "timeZone": "Europe/Berlin",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "Berlin · UTC+2",
+      "sample": "Berlin · UTC−00:00"
+    },
+    {
+      "timeZone": "Europe/Berlin",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "Berlin · UTC+1",
+      "sample": "Berlin · UTC−00:00"
+    },
+    {
+      "timeZone": "Europe/Berlin",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "Berlin · UTC+1",
+      "sample": "Berlin · UTC−00:00"
+    },
+    {
+      "timeZone": "Europe/Berlin",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "Berlin · UTC+2",
+      "sample": "Berlin · UTC−00:00"
+    },
+    {
+      "timeZone": "America/New_York",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "New York · UTC−4",
+      "sample": "New York · UTC−00:00"
+    },
+    {
+      "timeZone": "America/New_York",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "New York · UTC−5",
+      "sample": "New York · UTC−00:00"
+    },
+    {
+      "timeZone": "America/New_York",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "New York · UTC−4",
+      "sample": "New York · UTC−00:00"
+    },
+    {
+      "timeZone": "America/New_York",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "New York · UTC−4",
+      "sample": "New York · UTC−00:00"
+    },
+    {
+      "timeZone": "America/Sao_Paulo",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "Sao Paulo · UTC−3",
+      "sample": "Sao Paulo · UTC−00:00"
+    },
+    {
+      "timeZone": "America/Sao_Paulo",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "Sao Paulo · UTC−3",
+      "sample": "Sao Paulo · UTC−00:00"
+    },
+    {
+      "timeZone": "America/Sao_Paulo",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "Sao Paulo · UTC−3",
+      "sample": "Sao Paulo · UTC−00:00"
+    },
+    {
+      "timeZone": "America/Sao_Paulo",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "Sao Paulo · UTC−3",
+      "sample": "Sao Paulo · UTC−00:00"
+    },
+    {
+      "timeZone": "America/Argentina/Buenos_Aires",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "Buenos Aires · UTC−3",
+      "sample": "Buenos Aires · UTC−00:00"
+    },
+    {
+      "timeZone": "America/Argentina/Buenos_Aires",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "Buenos Aires · UTC−3",
+      "sample": "Buenos Aires · UTC−00:00"
+    },
+    {
+      "timeZone": "America/Argentina/Buenos_Aires",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "Buenos Aires · UTC−3",
+      "sample": "Buenos Aires · UTC−00:00"
+    },
+    {
+      "timeZone": "America/Argentina/Buenos_Aires",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "Buenos Aires · UTC−3",
+      "sample": "Buenos Aires · UTC−00:00"
+    },
+    {
+      "timeZone": "Asia/Kolkata",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "Kolkata · UTC+5:30",
+      "sample": "Kolkata · UTC−00:00"
+    },
+    {
+      "timeZone": "Asia/Kolkata",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "Kolkata · UTC+5:30",
+      "sample": "Kolkata · UTC−00:00"
+    },
+    {
+      "timeZone": "Asia/Kolkata",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "Kolkata · UTC+5:30",
+      "sample": "Kolkata · UTC−00:00"
+    },
+    {
+      "timeZone": "Asia/Kolkata",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "Kolkata · UTC+5:30",
+      "sample": "Kolkata · UTC−00:00"
+    },
+    {
+      "timeZone": "Asia/Kathmandu",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "Kathmandu · UTC+5:45",
+      "sample": "Kathmandu · UTC−00:00"
+    },
+    {
+      "timeZone": "Asia/Kathmandu",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "Kathmandu · UTC+5:45",
+      "sample": "Kathmandu · UTC−00:00"
+    },
+    {
+      "timeZone": "Asia/Kathmandu",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "Kathmandu · UTC+5:45",
+      "sample": "Kathmandu · UTC−00:00"
+    },
+    {
+      "timeZone": "Asia/Kathmandu",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "Kathmandu · UTC+5:45",
+      "sample": "Kathmandu · UTC−00:00"
+    },
+    {
+      "timeZone": "Australia/Adelaide",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "Adelaide · UTC+9:30",
+      "sample": "Adelaide · UTC−00:00"
+    },
+    {
+      "timeZone": "Australia/Adelaide",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "Adelaide · UTC+10:30",
+      "sample": "Adelaide · UTC−00:00"
+    },
+    {
+      "timeZone": "Australia/Adelaide",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "Adelaide · UTC+10:30",
+      "sample": "Adelaide · UTC−00:00"
+    },
+    {
+      "timeZone": "Australia/Adelaide",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "Adelaide · UTC+10:30",
+      "sample": "Adelaide · UTC−00:00"
+    },
+    {
+      "timeZone": "Pacific/Chatham",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "Chatham · UTC+12:45",
+      "sample": "Chatham · UTC−00:00"
+    },
+    {
+      "timeZone": "Pacific/Chatham",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "Chatham · UTC+13:45",
+      "sample": "Chatham · UTC−00:00"
+    },
+    {
+      "timeZone": "Pacific/Chatham",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "Chatham · UTC+13:45",
+      "sample": "Chatham · UTC−00:00"
+    },
+    {
+      "timeZone": "Pacific/Chatham",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "Chatham · UTC+13:45",
+      "sample": "Chatham · UTC−00:00"
+    },
+    {
+      "timeZone": "America/St_Johns",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "St Johns · UTC−2:30",
+      "sample": "St Johns · UTC−00:00"
+    },
+    {
+      "timeZone": "America/St_Johns",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "St Johns · UTC−3:30",
+      "sample": "St Johns · UTC−00:00"
+    },
+    {
+      "timeZone": "America/St_Johns",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "St Johns · UTC−2:30",
+      "sample": "St Johns · UTC−00:00"
+    },
+    {
+      "timeZone": "America/St_Johns",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "St Johns · UTC−2:30",
+      "sample": "St Johns · UTC−00:00"
+    },
+    {
+      "timeZone": "Etc/UTC",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "UTC",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "Etc/UTC",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "UTC",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "Etc/UTC",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "UTC",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "Etc/UTC",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "UTC",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "UTC",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "UTC",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "UTC",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "UTC",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "UTC",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "UTC",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "UTC",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "UTC",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "Etc/GMT+3",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "UTC−3",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "Etc/GMT+3",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "UTC−3",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "Etc/GMT+3",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "UTC−3",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "Etc/GMT+3",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "UTC−3",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "Etc/GMT-14",
+      "at": "2026-07-04T12:00:00.000Z",
+      "label": "UTC+14",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "Etc/GMT-14",
+      "at": "2026-01-10T12:00:00.000Z",
+      "label": "UTC+14",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "Etc/GMT-14",
+      "at": "2026-03-29T00:59:59.000Z",
+      "label": "UTC+14",
+      "sample": "UTC−00:00"
+    },
+    {
+      "timeZone": "Etc/GMT-14",
+      "at": "2026-03-29T01:00:00.000Z",
+      "label": "UTC+14",
+      "sample": "UTC−00:00"
+    }
+  ],
+  "clockLayouts": [
+    {
+      "w": 2,
+      "h": 1,
+      "box": {
+        "width": 248,
+        "height": 55.55
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 56,
+        "date": null,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 2,
+      "h": 1,
+      "box": {
+        "width": 248,
+        "height": 55.55
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": false,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 56,
+        "date": null,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 2,
+      "h": 1,
+      "box": {
+        "width": 248,
+        "height": 55.55
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "long",
+      "zone": "Europe/Berlin",
+      "layout": {
+        "time": 56,
+        "date": null,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 2,
+      "h": 1,
+      "box": {
+        "width": 248,
+        "height": 55.55
+      },
+      "fontScale": 1,
+      "time": "2:05 PM",
+      "showDate": false,
+      "dateStyle": "long",
+      "zone": "Etc/UTC",
+      "layout": {
+        "time": 56,
+        "date": null,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 2,
+      "h": 1,
+      "box": {
+        "width": 248,
+        "height": 55.55
+      },
+      "fontScale": 1,
+      "time": "12:59 PM",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": "America/Argentina/Buenos_Aires",
+      "layout": {
+        "time": 56,
+        "date": null,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 2,
+      "h": 1,
+      "box": {
+        "width": 248,
+        "height": 55.55
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 72.8,
+        "date": null,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 2,
+      "h": 1,
+      "box": {
+        "width": 248,
+        "height": 55.55
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": false,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 72.8,
+        "date": null,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 2,
+      "h": 1,
+      "box": {
+        "width": 248,
+        "height": 55.55
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "long",
+      "zone": "Europe/Berlin",
+      "layout": {
+        "time": 72.8,
+        "date": null,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 2,
+      "h": 1,
+      "box": {
+        "width": 248,
+        "height": 55.55
+      },
+      "fontScale": 1.3,
+      "time": "2:05 PM",
+      "showDate": false,
+      "dateStyle": "long",
+      "zone": "Etc/UTC",
+      "layout": {
+        "time": 72.8,
+        "date": null,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 2,
+      "h": 1,
+      "box": {
+        "width": 248,
+        "height": 55.55
+      },
+      "fontScale": 1.3,
+      "time": "12:59 PM",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": "America/Argentina/Buenos_Aires",
+      "layout": {
+        "time": 72.8,
+        "date": null,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 2,
+      "h": 2,
+      "box": {
+        "width": 248,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 84.35374149659863,
+        "date": 30,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 2,
+      "h": 2,
+      "box": {
+        "width": 248,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": false,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 84.35374149659863,
+        "date": null,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 2,
+      "h": 2,
+      "box": {
+        "width": 248,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "long",
+      "zone": "Europe/Berlin",
+      "layout": {
+        "time": 84.35374149659863,
+        "date": null,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 2,
+      "h": 2,
+      "box": {
+        "width": 248,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "2:05 PM",
+      "showDate": false,
+      "dateStyle": "long",
+      "zone": "Etc/UTC",
+      "layout": {
+        "time": 56.91336775674124,
+        "date": null,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 2,
+      "h": 2,
+      "box": {
+        "width": 248,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "12:59 PM",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": "America/Argentina/Buenos_Aires",
+      "layout": {
+        "time": 56,
+        "date": 30,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 2,
+      "h": 2,
+      "box": {
+        "width": 248,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 84.35374149659863,
+        "date": 33.87978142076503,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 2,
+      "h": 2,
+      "box": {
+        "width": 248,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": false,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 84.35374149659863,
+        "date": null,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 2,
+      "h": 2,
+      "box": {
+        "width": 248,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "long",
+      "zone": "Europe/Berlin",
+      "layout": {
+        "time": 84.35374149659863,
+        "date": null,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 2,
+      "h": 2,
+      "box": {
+        "width": 248,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "2:05 PM",
+      "showDate": false,
+      "dateStyle": "long",
+      "zone": "Etc/UTC",
+      "layout": {
+        "time": 72.8,
+        "date": null,
+        "zone": 31.200000000000003,
+        "hidden": false
+      }
+    },
+    {
+      "w": 2,
+      "h": 2,
+      "box": {
+        "width": 248,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "12:59 PM",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": "America/Argentina/Buenos_Aires",
+      "layout": {
+        "time": 72.8,
+        "date": 33.87978142076503,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 105.05999999999999,
+        "date": 30,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": false,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 105.05999999999999,
+        "date": null,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "long",
+      "zone": "Europe/Berlin",
+      "layout": {
+        "time": 105.05999999999999,
+        "date": 29.381818181818186,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "2:05 PM",
+      "showDate": false,
+      "dateStyle": "long",
+      "zone": "Etc/UTC",
+      "layout": {
+        "time": 92.71371199082041,
+        "date": null,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "12:59 PM",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": "America/Argentina/Buenos_Aires",
+      "layout": {
+        "time": 80.66287311570329,
+        "date": 30,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 105.05999999999999,
+        "date": 39,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": false,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 105.05999999999999,
+        "date": null,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "long",
+      "zone": "Europe/Berlin",
+      "layout": {
+        "time": 105.05999999999999,
+        "date": null,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "2:05 PM",
+      "showDate": false,
+      "dateStyle": "long",
+      "zone": "Etc/UTC",
+      "layout": {
+        "time": 92.71371199082041,
+        "date": null,
+        "zone": 31.200000000000003,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "12:59 PM",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": "America/Argentina/Buenos_Aires",
+      "layout": {
+        "time": 80.66287311570329,
+        "date": 39,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 137.41496598639455,
+        "date": 30,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": false,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 137.41496598639455,
+        "date": null,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "long",
+      "zone": "Europe/Berlin",
+      "layout": {
+        "time": 137.41496598639455,
+        "date": 29.381818181818186,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1,
+      "time": "2:05 PM",
+      "showDate": false,
+      "dateStyle": "long",
+      "zone": "Etc/UTC",
+      "layout": {
+        "time": 92.71371199082041,
+        "date": null,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1,
+      "time": "12:59 PM",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": "America/Argentina/Buenos_Aires",
+      "layout": {
+        "time": 80.66287311570329,
+        "date": 30,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 137.41496598639455,
+        "date": 39,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": false,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 137.41496598639455,
+        "date": null,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "long",
+      "zone": "Europe/Berlin",
+      "layout": {
+        "time": 137.41496598639455,
+        "date": null,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1.3,
+      "time": "2:05 PM",
+      "showDate": false,
+      "dateStyle": "long",
+      "zone": "Etc/UTC",
+      "layout": {
+        "time": 92.71371199082041,
+        "date": null,
+        "zone": 31.200000000000003,
+        "hidden": false
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1.3,
+      "time": "12:59 PM",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": "America/Argentina/Buenos_Aires",
+      "layout": {
+        "time": 80.66287311570329,
+        "date": 39,
+        "zone": null,
+        "hidden": true
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 105.05999999999999,
+        "date": 30,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": false,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 105.05999999999999,
+        "date": null,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "long",
+      "zone": "Europe/Berlin",
+      "layout": {
+        "time": 105.05999999999999,
+        "date": 30,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "2:05 PM",
+      "showDate": false,
+      "dateStyle": "long",
+      "zone": "Etc/UTC",
+      "layout": {
+        "time": 105.05999999999999,
+        "date": null,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "time": "12:59 PM",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": "America/Argentina/Buenos_Aires",
+      "layout": {
+        "time": 105.05999999999999,
+        "date": 30,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 105.05999999999999,
+        "date": 39,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": false,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 105.05999999999999,
+        "date": null,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "long",
+      "zone": "Europe/Berlin",
+      "layout": {
+        "time": 94.37,
+        "date": 39,
+        "zone": 31.200000000000003,
+        "hidden": false
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "2:05 PM",
+      "showDate": false,
+      "dateStyle": "long",
+      "zone": "Etc/UTC",
+      "layout": {
+        "time": 105.05999999999999,
+        "date": null,
+        "zone": 31.200000000000003,
+        "hidden": false
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "time": "12:59 PM",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": "America/Argentina/Buenos_Aires",
+      "layout": {
+        "time": 94.37,
+        "date": 39,
+        "zone": 31.200000000000003,
+        "hidden": false
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 535.4399999999999,
+        "date": 30,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": false,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 535.4399999999999,
+        "date": null,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "long",
+      "zone": "Europe/Berlin",
+      "layout": {
+        "time": 535.4399999999999,
+        "date": 30,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1,
+      "time": "2:05 PM",
+      "showDate": false,
+      "dateStyle": "long",
+      "zone": "Etc/UTC",
+      "layout": {
+        "time": 414.9168100975329,
+        "date": null,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1,
+      "time": "12:59 PM",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": "America/Argentina/Buenos_Aires",
+      "layout": {
+        "time": 360.98632325047413,
+        "date": 30,
+        "zone": 24,
+        "hidden": false
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 535.4399999999999,
+        "date": 39,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": false,
+      "dateStyle": "short",
+      "zone": null,
+      "layout": {
+        "time": 535.4399999999999,
+        "date": null,
+        "zone": null,
+        "hidden": false
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1.3,
+      "time": "14:05",
+      "showDate": true,
+      "dateStyle": "long",
+      "zone": "Europe/Berlin",
+      "layout": {
+        "time": 535.4399999999999,
+        "date": 39,
+        "zone": 31.200000000000003,
+        "hidden": false
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1.3,
+      "time": "2:05 PM",
+      "showDate": false,
+      "dateStyle": "long",
+      "zone": "Etc/UTC",
+      "layout": {
+        "time": 414.9168100975329,
+        "date": null,
+        "zone": 31.200000000000003,
+        "hidden": false
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1.3,
+      "time": "12:59 PM",
+      "showDate": true,
+      "dateStyle": "short",
+      "zone": "America/Argentina/Buenos_Aires",
+      "layout": {
+        "time": 360.98632325047413,
+        "date": 39,
+        "zone": 31.200000000000003,
+        "hidden": false
+      }
     }
   ]
 }

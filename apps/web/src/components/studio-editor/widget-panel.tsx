@@ -214,6 +214,7 @@ function FitCheckNote({
   unreadable,
   fontScale,
   showHeader,
+  timeZone,
   label,
 }: WidgetPanelProps & { label: string }) {
   const locale = useLocale();
@@ -224,15 +225,16 @@ function FitCheckNote({
     fontScale: fontScale ?? 1,
     showHeader: showHeader ?? true,
     locale,
+    ...(timeZone ? { timeZone } : {}),
   });
   if (!check) return null;
+  const icon = { fits: "✓", cut: "⚠", partial: "ℹ" }[check.state];
   return (
     <p
       className={`fit-check fit-check--${check.state}`}
-      role={check.state === "cut" ? "status" : undefined}
+      role={check.state === "fits" ? undefined : "status"}
     >
-      <span aria-hidden="true">{check.state === "fits" ? "✓" : "⚠"}</span>{" "}
-      {check.text}
+      <span aria-hidden="true">{icon}</span> {check.text}
     </p>
   );
 }
@@ -989,6 +991,30 @@ function StyleFields({
           >
             {t("date")}
           </Check>
+          {widget.options.showDate ? (
+            <div className="field">
+              <label htmlFor="widget-date-style">{t("dateStyle")}</label>
+              <select
+                id="widget-date-style"
+                value={widget.options.dateStyle}
+                onChange={(event) =>
+                  options({
+                    dateStyle: event.target.value === "long" ? "long" : "short",
+                  })
+                }
+              >
+                <option value="short">{t("dateShort")}</option>
+                <option value="long">{t("dateLong")}</option>
+              </select>
+            </div>
+          ) : null}
+          <Check
+            checked={widget.options.showZone}
+            onChange={(showZone) => options({ showZone })}
+          >
+            {t("showZone")}
+          </Check>
+          <p className="help">{t("zoneHelp")}</p>
         </fieldset>
       );
     }

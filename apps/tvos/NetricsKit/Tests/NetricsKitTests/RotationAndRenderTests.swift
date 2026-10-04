@@ -295,15 +295,33 @@ private func at(_ seconds: TimeInterval) -> Date { T0.addingTimeInterval(seconds
     }
 
     @Test func clockIsAtLeastItsMinimum() {
-        let small = StudioRender.clockSize(
-            time: "14:05", hasDate: true, placement: StudioPlacement(x: 0, y: 0, w: 2, h: 1), fontScale: 1,
-            showHeader: true)
+        let small = StudioRender.clockLayout(
+            time: "14:05", options: ClockWidgetOptions(), timeZone: "UTC",
+            placement: StudioPlacement(x: 0, y: 0, w: 2, h: 1), fontScale: 1, showHeader: true)
         #expect(small.time == StudioLayout.Minimum.clock)
-        let large = StudioRender.clockSize(
-            time: "14:05", hasDate: true, placement: StudioPlacement(x: 0, y: 0, w: 4, h: 3), fontScale: 1,
-            showHeader: true)
+        #expect(small.date == nil)
+        #expect(small.hidden)
+        let large = StudioRender.clockLayout(
+            time: "14:05", options: ClockWidgetOptions(), timeZone: "UTC",
+            placement: StudioPlacement(x: 0, y: 0, w: 4, h: 3), fontScale: 1, showHeader: true)
         #expect(large.time > small.time)
         #expect(large.date == StudioLayout.Minimum.title)
+        #expect(large.zone == nil)
+        #expect(!large.hidden)
+    }
+
+    @Test func clockWithLongDateAndZone() {
+        let options = ClockWidgetOptions(dateStyle: .long, showZone: true)
+        let threeByThree = StudioRender.clockLayout(
+            time: "14:05", options: options, timeZone: "Europe/Berlin",
+            placement: StudioPlacement(x: 0, y: 0, w: 3, h: 3), fontScale: 1, showHeader: true)
+        #expect(threeByThree.zone == StudioLayout.Minimum.zone)
+        #expect(threeByThree.date != nil)
+        #expect(!threeByThree.hidden)
+        let twoByOne = StudioRender.clockLayout(
+            time: "14:05", options: options, timeZone: "Europe/Berlin",
+            placement: StudioPlacement(x: 0, y: 0, w: 2, h: 1), fontScale: 1, showHeader: true)
+        #expect(twoByOne.date == nil && twoByOne.zone == nil && twoByOne.hidden)
     }
 
     @Test func lineDomainStartsAtZero() {
@@ -361,6 +379,35 @@ private func at(_ seconds: TimeInterval) -> Date { T0.addingTimeInterval(seconds
         let ny = TVTime.clockWidget(date, timeZone: "America/New_York", hour12: true, showDate: false)
         #expect(ny.time == "8:05 AM")
         #expect(ny.date == nil)
+        #expect(ny.zone == nil)
+        let summer = ISODate.parse("2026-10-03T12:00:00.000Z")!
+        let long = TVTime.clockWidget(
+            summer, timeZone: "Europe/Berlin", hour12: false, showDate: true, dateStyle: .long, showZone: true)
+        #expect(long.date == "Saturday, 3 October")
+        #expect(long.zone == "Berlin \u{00B7} UTC+2")
+        let german = TVTime.clockWidget(
+            summer, timeZone: "Europe/Berlin", hour12: false, showDate: true, dateStyle: .long, language: .de)
+        #expect(german.date == "Samstag, 3. Oktober")
+        let winter = TVTime.clockWidget(
+            ISODate.parse("2026-12-04T12:00:00.000Z")!, timeZone: "Europe/Berlin", hour12: false, showDate: false,
+            showZone: true)
+        #expect(winter.zone == "Berlin \u{00B7} UTC+1")
+    }
+
+    @Test func datesStayWithinTheLayoutSample() {
+        let start = ISODate.parse("2026-01-01T12:00:00.000Z")!
+        for style in [ClockDateStyle.short, .long] {
+            let sample = StudioLayout.estimateTextWidth(StudioLayout.clockDateSample(style), fontSize: 1)
+            for language in [ScreenLanguage.en, .de] {
+                for day in 0..<366 {
+                    let date = start.addingTimeInterval(Double(day) * 86_400)
+                    let text = TVTime.clockWidget(
+                        date, timeZone: "UTC", hour12: false, showDate: true, dateStyle: style, language: language
+                    ).date!
+                    #expect(StudioLayout.estimateTextWidth(text, fontSize: 1) <= sample, "\(text)")
+                }
+            }
+        }
     }
 
     @Test func themeColours() {

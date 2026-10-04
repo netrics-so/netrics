@@ -655,12 +655,22 @@ async function buildSlides(
           options: parsedOptions(textWidgetOptionsSchema, widget.options),
         });
       } else if (widget.type === "clock") {
-        const clock = parsedOptions(clockWidgetOptionsSchema, widget.options);
+        const { dateStyle, showZone, ...clock } = parsedOptions(
+          clockWidgetOptionsSchema,
+          widget.options,
+        );
         widgets.push({
           type: "clock",
           ...placement,
           label: widget.title,
-          options: { ...clock, timeZone: clock.timeZone ?? timeZone },
+          options: {
+            ...clock,
+            timeZone: clock.timeZone ?? timeZone,
+            // Only when set (ADR 0019 §9): an existing clock's payload and
+            // version stay as they were.
+            ...(dateStyle === "short" ? {} : { dateStyle }),
+            ...(showZone ? { showZone } : {}),
+          },
         });
       }
     }

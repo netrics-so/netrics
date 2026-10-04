@@ -6912,6 +6912,18 @@
                                             "type": "null"
                                           }
                                         ]
+                                      },
+                                      "dateStyle": {
+                                        "default": "short",
+                                        "type": "string",
+                                        "enum": [
+                                          "short",
+                                          "long"
+                                        ]
+                                      },
+                                      "showZone": {
+                                        "default": false,
+                                        "type": "boolean"
                                       }
                                     }
                                   }
@@ -7972,12 +7984,26 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "dateStyle": {
+                                              "default": "short",
+                                              "type": "string",
+                                              "enum": [
+                                                "short",
+                                                "long"
+                                              ]
+                                            },
+                                            "showZone": {
+                                              "default": false,
+                                              "type": "boolean"
                                             }
                                           },
                                           "required": [
                                             "showDate",
                                             "hour12",
-                                            "timeZone"
+                                            "timeZone",
+                                            "dateStyle",
+                                            "showZone"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -8105,7 +8131,8 @@
                                         "widget_hidden",
                                         "widget_to_review",
                                         "widget_too_small",
-                                        "header_name_cut"
+                                        "header_name_cut",
+                                        "clock_parts_hidden"
                                       ]
                                     },
                                     "severity": {
@@ -9252,12 +9279,26 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "dateStyle": {
+                                              "default": "short",
+                                              "type": "string",
+                                              "enum": [
+                                                "short",
+                                                "long"
+                                              ]
+                                            },
+                                            "showZone": {
+                                              "default": false,
+                                              "type": "boolean"
                                             }
                                           },
                                           "required": [
                                             "showDate",
                                             "hour12",
-                                            "timeZone"
+                                            "timeZone",
+                                            "dateStyle",
+                                            "showZone"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -9385,7 +9426,8 @@
                                         "widget_hidden",
                                         "widget_to_review",
                                         "widget_too_small",
-                                        "header_name_cut"
+                                        "header_name_cut",
+                                        "clock_parts_hidden"
                                       ]
                                     },
                                     "severity": {
@@ -10452,6 +10494,18 @@
                                             "type": "null"
                                           }
                                         ]
+                                      },
+                                      "dateStyle": {
+                                        "default": "short",
+                                        "type": "string",
+                                        "enum": [
+                                          "short",
+                                          "long"
+                                        ]
+                                      },
+                                      "showZone": {
+                                        "default": false,
+                                        "type": "boolean"
                                       }
                                     }
                                   }
@@ -11522,12 +11576,26 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "dateStyle": {
+                                              "default": "short",
+                                              "type": "string",
+                                              "enum": [
+                                                "short",
+                                                "long"
+                                              ]
+                                            },
+                                            "showZone": {
+                                              "default": false,
+                                              "type": "boolean"
                                             }
                                           },
                                           "required": [
                                             "showDate",
                                             "hour12",
-                                            "timeZone"
+                                            "timeZone",
+                                            "dateStyle",
+                                            "showZone"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -11655,7 +11723,8 @@
                                         "widget_hidden",
                                         "widget_to_review",
                                         "widget_too_small",
-                                        "header_name_cut"
+                                        "header_name_cut",
+                                        "clock_parts_hidden"
                                       ]
                                     },
                                     "severity": {
@@ -12937,12 +13006,26 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "dateStyle": {
+                                              "default": "short",
+                                              "type": "string",
+                                              "enum": [
+                                                "short",
+                                                "long"
+                                              ]
+                                            },
+                                            "showZone": {
+                                              "default": false,
+                                              "type": "boolean"
                                             }
                                           },
                                           "required": [
                                             "showDate",
                                             "hour12",
-                                            "timeZone"
+                                            "timeZone",
+                                            "dateStyle",
+                                            "showZone"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -13070,7 +13153,8 @@
                                         "widget_hidden",
                                         "widget_to_review",
                                         "widget_too_small",
-                                        "header_name_cut"
+                                        "header_name_cut",
+                                        "clock_parts_hidden"
                                       ]
                                     },
                                     "severity": {
@@ -18215,6 +18299,16 @@
                                             "timeZone": {
                                               "type": "string",
                                               "minLength": 1
+                                            },
+                                            "dateStyle": {
+                                              "type": "string",
+                                              "enum": [
+                                                "short",
+                                                "long"
+                                              ]
+                                            },
+                                            "showZone": {
+                                              "type": "boolean"
                                             }
                                           },
                                           "required": [
@@ -19905,6 +19999,16 @@
                                             "timeZone": {
                                               "type": "string",
                                               "minLength": 1
+                                            },
+                                            "dateStyle": {
+                                              "type": "string",
+                                              "enum": [
+                                                "short",
+                                                "long"
+                                              ]
+                                            },
+                                            "showZone": {
+                                              "type": "boolean"
                                             }
                                           },
                                           "required": [
@@ -26679,12 +26783,26 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "dateStyle": {
+                                              "default": "short",
+                                              "type": "string",
+                                              "enum": [
+                                                "short",
+                                                "long"
+                                              ]
+                                            },
+                                            "showZone": {
+                                              "default": false,
+                                              "type": "boolean"
                                             }
                                           },
                                           "required": [
                                             "showDate",
                                             "hour12",
-                                            "timeZone"
+                                            "timeZone",
+                                            "dateStyle",
+                                            "showZone"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -26812,7 +26930,8 @@
                                         "widget_hidden",
                                         "widget_to_review",
                                         "widget_too_small",
-                                        "header_name_cut"
+                                        "header_name_cut",
+                                        "clock_parts_hidden"
                                       ]
                                     },
                                     "severity": {

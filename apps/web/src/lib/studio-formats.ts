@@ -219,6 +219,8 @@ export interface DraftReadabilityContext {
   showHeader: boolean;
   dashboardName: string;
   logoAspect: number | null;
+  /** The workspace's time zone, for clocks without their own. */
+  timeZone?: string;
   /** A data widget's label as screens show it ("Downloads · Wurfel"). */
   labelOf(widget: DashboardWidget): string | null;
 }
@@ -244,6 +246,18 @@ function readabilityWidget(
       ...base!,
       text: widget.text,
       textSize: widget.options.size,
+    };
+  }
+  if (widget.type === "clock") {
+    return {
+      ...base!,
+      clock: {
+        showDate: widget.options.showDate,
+        dateStyle: widget.options.dateStyle,
+        zone: widget.options.showZone
+          ? (widget.options.timeZone ?? context.timeZone ?? "UTC")
+          : null,
+      },
     };
   }
   return base!;

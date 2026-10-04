@@ -225,6 +225,45 @@ private func weight(_ any: Any?) -> StudioFontWeight {
             #expect(StudioLayout.compactNumber(value) == c["text"] as! String, "\(value)")
         }
     }
+
+    @Test func clockDateSamples() {
+        let samples = StudioVectors.root["clockDateSamples"] as! [String: String]
+        #expect(StudioLayout.clockDateSample(.short) == samples["short"])
+        #expect(StudioLayout.clockDateSample(.long) == samples["long"])
+    }
+
+    @Test func zoneLabels() {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        for c in StudioVectors.cases("zoneLabels") {
+            let zone = c["timeZone"] as! String
+            let date = iso.date(from: c["at"] as! String)!
+            #expect(StudioLayout.zoneLabel(zone, at: date) == c["label"] as! String, "\(c)")
+            #expect(StudioLayout.zoneLabelSample(zone) == c["sample"] as! String, "\(c)")
+        }
+    }
+
+    @Test func clockLayouts() {
+        for c in StudioVectors.cases("clockLayouts") {
+            let box = c["box"] as! [String: Any]
+            let layout = StudioLayout.clockLayout(
+                placement: StudioPlacement(x: 0, y: 0, w: int(c["w"]), h: int(c["h"])),
+                box: (double(box["width"]), double(box["height"])), fontScale: double(c["fontScale"]),
+                showHeader: true, time: c["time"] as! String, showDate: bool(c["showDate"]),
+                dateStyle: ClockDateStyle(rawValue: c["dateStyle"] as! String)!,
+                zone: c["zone"] is NSNull ? nil : c["zone"] as? String)
+            let e = c["layout"] as! [String: Any]
+            #expect(close(layout.time, double(e["time"])), "\(c)")
+            #expect(layout.hidden == bool(e["hidden"]), "\(c)")
+            for (value, key) in [(layout.date, "date"), (layout.zone, "zone")] {
+                if e[key] is NSNull {
+                    #expect(value == nil, "\(c) \(key)")
+                } else {
+                    #expect(value.map { close($0, double(e[key])) } == true, "\(c) \(key)")
+                }
+            }
+        }
+    }
 }
 
 @Suite struct StudioLayoutTests {
