@@ -13,50 +13,46 @@ import {
   type ContrastCheck,
   type ThemeColorToken,
   type ThemeFontScale,
+  type Locale,
   type ThemeTokens,
 } from "@netrics/domain";
 
 import { ThemePreview } from "@/components/theme-preview";
 import { apiErrorMessage, deleteTheme, updateTheme } from "@/lib/api";
-import { useLocale } from "@/lib/i18n/client";
+import type { WebTranslator } from "@/lib/i18n/catalogs";
+import { useLocale, useT } from "@/lib/i18n/client";
 
-const TOKEN_LABELS: Record<ThemeColorToken, [string, string]> = {
-  background: ["Background", "The canvas behind the widgets"],
-  surface: ["Surface", "Widget background"],
-  border: ["Border", "Widget border"],
-  text: ["Text", "Values and headings"],
-  label: ["Label", "Widget titles"],
-  muted: ["Muted", "Secondary lines and axes"],
-  accent: ["Accent", "Highlights, the last point, the clock"],
-  up: ["Up", "Change in the good direction"],
-  down: ["Down", "Change in the bad direction"],
-  warning: ["Warning", "Stale data and failures"],
-  chartLine: ["Chart line", "Sparklines and line charts"],
-  chartFill: ["Chart fill", "Bars and the area under lines"],
+const SCALE_NAMES: Record<ThemeFontScale, "normal" | "large" | "larger"> = {
+  1: "normal",
+  1.15: "large",
+  1.3: "larger",
 };
 
-const SCALE_LABELS: Record<ThemeFontScale, string> = {
-  1: "Normal (1.0×)",
-  1.15: "Large (1.15×)",
-  1.3: "Larger (1.3×)",
-};
+type EditorT = WebTranslator<"themes.editor">;
+type TokensT = WebTranslator<"themes.tokens">;
 
-function pairName(check: ContrastCheck): string {
-  return `${TOKEN_LABELS[check.foreground][0]} on ${TOKEN_LABELS[
-    check.background
-  ][0].toLowerCase()}`;
+function ratioText(ratio: number, locale: Locale): string {
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(ratio);
 }
 
-const LEVEL_TEXT = {
-  pass: "AA",
-  warn: "Below AA",
-  fail: "Too low",
-} as const;
+function pairName(check: ContrastCheck, t: EditorT, tokens: TokensT): string {
+  const background = tokens(`${check.background}.label`);
+  return t("pair", {
+    foreground: tokens(`${check.foreground}.label`),
+    // "Text on surface"; German nouns keep their capital ("Text auf Fläche").
+    background: tokens.locale === "de" ? background : background.toLowerCase(),
+  });
+}
 
 function ContrastBadge({ check }: { check: ContrastCheck }) {
+  const locale = useLocale();
+  const t = useT("themes.editor");
   return (
     <span className={`contrast-badge ${check.level}`}>
-      {check.ratio.toFixed(2)}:1 · {LEVEL_TEXT[check.level]}
+      {ratioText(check.ratio, locale)}:1 · {t(`levels.${check.level}`)}
     </span>
   );
 }
@@ -73,6 +69,9 @@ export function ThemeEditor({
   canEdit: boolean;
 }) {
   const locale = useLocale();
+  const t = useT("themes.editor");
+  const tokenText = useT("themes.tokens");
+  const common = useT("common");
   const router = useRouter();
   const [name, setName] = useState(theme.name);
   const [tokens, setTokens] = useState<ThemeTokens>(
@@ -135,7 +134,7 @@ export function ThemeEditor({
   }
 
   async function onDelete() {
-    if (!window.confirm(`Delete the theme "${theme.name}"?`)) {
+    if (!window.confirm(t("confirmDelete", { name: theme.name }))) {
       return;
     }
     setError(null);
@@ -156,7 +155,7 @@ export function ThemeEditor({
     <form className="theme-editor" onSubmit={onSubmit}>
       <div className="dashboard-header">
         <div className="field">
-          <label htmlFor="theme-name">Theme name</label>
+          <label htmlFor="theme-name">{t("name")}</label>
           <input
             id="theme-name"
             className="dashboard-name-input"
@@ -170,15 +169,16 @@ export function ThemeEditor({
             }}
           />
         </div>
-        <span className="muted">Based on {baseName}</span>
+        <span className="muted">{t("basedOn", { name: baseName })}</span>
       </div>
 
       <div className="theme-editor-layout">
         <div className="theme-editor-side">
           <fieldset className="theme-tokens" disabled={disabled}>
-            <legend>Colours</legend>
+            <legend>{t("colours")}</legend>
             {THEME_COLOR_TOKENS.map((token) => {
-              const [label, help] = TOKEN_LABELS[token];
+              const label = tokenText(`${token}.label`);
+              const help = tokenText(`${token}.help`);
               const draft = drafts[token];
               const worst = tokenChecks(token).find(
                 (check) => check.level === "fail",
@@ -187,7 +187,7 @@ export function ThemeEditor({
                 <div className="theme-token" key={token}>
                   <input
                     type="color"
-                    aria-label={`${label} colour picker`}
+                    aria-label={t("colourPicker", { label })}
                     value={tokens[token]}
                     onChange={(event) => setColor(token, event.target.value)}
                   />
@@ -204,9 +204,12 @@ export function ThemeEditor({
                     />
                     <p className="help" id={`token-${token}-help`}>
                       {draft !== undefined
-                        ? "Enter a colour like #7aa2f7."
+                        ? t("enterColour")
                         : worst
-                          ? `${pairName(worst)} is ${worst.ratio.toFixed(2)}:1, below 3:1.`
+                          ? t("pairTooLow", {
+                              pair: pairName(worst, t, tokenText),
+                              ratio: ratioText(worst.ratio, locale),
+                            })
                           : help}
                     </p>
                   </div>
@@ -214,7 +217,7 @@ export function ThemeEditor({
               );
             })}
             <div className="field">
-              <label htmlFor="theme-font-scale">Text size</label>
+              <label htmlFor="theme-font-scale">{t("textSize")}</label>
               <select
                 id="theme-font-scale"
                 value={String(tokens.fontScale)}
@@ -228,13 +231,15 @@ export function ThemeEditor({
               >
                 {THEME_FONT_SCALES.map((scale) => (
                   <option key={scale} value={String(scale)}>
-                    {SCALE_LABELS[scale]}
+                    {t(`scales.${SCALE_NAMES[scale]}`, {
+                      factor: new Intl.NumberFormat(locale, {
+                        minimumFractionDigits: 1,
+                      }).format(scale),
+                    })}
                   </option>
                 ))}
               </select>
-              <p className="help">
-                Scales every text up; it never goes below the TV minimums.
-              </p>
+              <p className="help">{t("textSizeHint")}</p>
             </div>
           </fieldset>
         </div>
@@ -243,15 +248,12 @@ export function ThemeEditor({
           <ThemePreview tokens={tokens} />
 
           <section className="theme-contrast" aria-labelledby="contrast-title">
-            <h2 id="contrast-title">Contrast</h2>
-            <p className="muted">
-              TVs are read from a distance. Below 4.5:1 is a warning; below 3:1
-              the theme cannot be saved.
-            </p>
+            <h2 id="contrast-title">{t("contrast")}</h2>
+            <p className="muted">{t("contrastHint")}</p>
             <ul aria-live="polite">
               {checks.map((check) => (
                 <li key={`${check.foreground}-${check.background}`}>
-                  <span>{pairName(check)}</span>
+                  <span>{pairName(check, t, tokenText)}</span>
                   <ContrastBadge check={check} />
                 </li>
               ))}
@@ -265,10 +267,10 @@ export function ThemeEditor({
                 className="primary"
                 disabled={pending || failing || invalid || !name.trim()}
               >
-                {pending ? "Saving…" : "Save theme"}
+                {pending ? common("saving") : t("save")}
               </button>
               <button type="button" onClick={resetToBase} disabled={pending}>
-                Reset to {baseName}
+                {t("resetTo", { name: baseName })}
               </button>
               <button
                 type="button"
@@ -276,19 +278,16 @@ export function ThemeEditor({
                 onClick={onDelete}
                 disabled={pending}
               >
-                Delete
+                {common("delete")}
               </button>
-              {saved ? <span className="muted">Saved.</span> : null}
+              {saved ? <span className="muted">{t("saved")}</span> : null}
             </div>
           ) : (
-            <p className="muted">
-              Your role can view themes but not change them.
-            </p>
+            <p className="muted">{t("readOnly")}</p>
           )}
           {failing ? (
             <div className="error" role="status">
-              Raise the contrast of the pairs marked &ldquo;Too low&rdquo; to
-              save.
+              {t("raiseContrast")}
             </div>
           ) : null}
           {error ? (

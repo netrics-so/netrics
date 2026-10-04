@@ -13,7 +13,7 @@ import {
   revokeInvitation,
   updateMemberRole,
 } from "@/lib/api";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 const ALL_ROLES: WorkspaceRole[] = ["owner", "admin", "editor", "viewer"];
 
@@ -40,6 +40,8 @@ export function InviteMemberForm({
   actorRole: WorkspaceRole;
 }) {
   const locale = useLocale();
+  const t = useT("members");
+  const roles = useT("common.roles");
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -76,7 +78,7 @@ export function InviteMemberForm({
     <>
       <form className="inline" onSubmit={onSubmit}>
         <div className="field">
-          <label htmlFor="invite-email">Invite by email</label>
+          <label htmlFor="invite-email">{t("inviteEmail")}</label>
           <input
             id="invite-email"
             name="email"
@@ -86,7 +88,7 @@ export function InviteMemberForm({
           />
         </div>
         <div className="field">
-          <label htmlFor="invite-role">Role</label>
+          <label htmlFor="invite-role">{t("role")}</label>
           <select
             id="invite-role"
             name="role"
@@ -95,34 +97,30 @@ export function InviteMemberForm({
           >
             {grantable.map((role) => (
               <option key={role} value={role}>
-                {role}
+                {roles(role)}
               </option>
             ))}
           </select>
         </div>
         <button type="submit" disabled={pending}>
-          {pending ? "Inviting…" : "Invite"}
+          {pending ? t("inviting") : t("invite")}
         </button>
       </form>
       {error ? <div className="error">{error}</div> : null}
       {result ? (
         result.inviteUrl ? (
           <div className="stack">
-            <p className="muted">
-              Email is not configured on this installation. Send this link to{" "}
-              {result.email} yourself. It works once, only for that address, and
-              expires in 7 days.
-            </p>
+            <p className="muted">{t("noEmail", { email: result.email })}</p>
             <input
               readOnly
               value={result.inviteUrl}
-              aria-label="Invitation link"
+              aria-label={t("inviteLink")}
               className="copy-link"
               onFocus={(event) => event.currentTarget.select()}
             />
           </div>
         ) : (
-          <p className="muted">Invitation sent to {result.email}.</p>
+          <p className="muted">{t("sent", { email: result.email })}</p>
         )
       ) : null}
     </>
@@ -139,10 +137,15 @@ function InvitationRow({
   actorRole: WorkspaceRole;
 }) {
   const locale = useLocale();
+  const t = useT("members");
+  const roles = useT("common.roles");
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const mayRevoke = canManageMember(actorRole, invitation.role, "add");
+  const expires = new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+  }).format(new Date(invitation.expiresAt));
 
   async function revoke() {
     setError(null);
@@ -162,15 +165,19 @@ function InvitationRow({
       <span>
         {invitation.email}{" "}
         <span className="muted">
-          invited as {invitation.role}
-          {invitation.invitedByName ? ` by ${invitation.invitedByName}` : ""},
-          expires {new Date(invitation.expiresAt).toLocaleDateString()}
+          {invitation.invitedByName
+            ? t("invitedAsBy", {
+                role: roles(invitation.role),
+                inviter: invitation.invitedByName,
+                date: expires,
+              })
+            : t("invitedAs", { role: roles(invitation.role), date: expires })}
         </span>
       </span>
       <span className="value">
         {mayRevoke ? (
           <button type="button" onClick={revoke} disabled={pending}>
-            {pending ? "Revoking…" : "Revoke"}
+            {pending ? t("revoking") : t("revoke")}
           </button>
         ) : null}
         {error ? <span className="error">{error}</span> : null}
@@ -191,6 +198,8 @@ function MemberRow({
   currentUserId: string;
 }) {
   const locale = useLocale();
+  const t = useT("members");
+  const roles = useT("common.roles");
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -219,12 +228,13 @@ function MemberRow({
         {member.displayName}{" "}
         <span className="muted">
           {member.email}
-          {isSelf ? " (you)" : ""}
+          {isSelf ? ` ${t("you")}` : ""}
         </span>
       </span>
       <span className="value">
         {mayChangeRole ? (
           <select
+            aria-label={t("roleOf", { name: member.displayName })}
             value={member.role}
             disabled={pending}
             onChange={(event) =>
@@ -239,12 +249,12 @@ function MemberRow({
           >
             {roleOptionsForTarget(actorRole, member).map((role) => (
               <option key={role} value={role}>
-                {role}
+                {roles(role)}
               </option>
             ))}
           </select>
         ) : (
-          <span className="role-badge">{member.role}</span>
+          <span className="role-badge">{roles(member.role)}</span>
         )}
         {mayRemove ? (
           <button
@@ -254,14 +264,17 @@ function MemberRow({
             onClick={() => {
               if (
                 window.confirm(
-                  `Remove ${member.displayName} (${member.email}) from this workspace?`,
+                  t("confirmRemove", {
+                    name: member.displayName,
+                    email: member.email,
+                  }),
                 )
               ) {
                 void run(() => removeMember(workspaceId, member.userId));
               }
             }}
           >
-            Remove
+            {t("remove")}
           </button>
         ) : null}
       </span>
@@ -285,9 +298,10 @@ export function MembersManager({
   canAdd: boolean;
   invitations: Invitation[];
 }) {
+  const t = useT("members");
   return (
     <div className="card">
-      <h2>Members</h2>
+      <h2>{t("title")}</h2>
       {members.map((member) => (
         <MemberRow
           key={member.id}
@@ -301,7 +315,7 @@ export function MembersManager({
         <>
           {invitations.length > 0 ? (
             <>
-              <h3>Pending invitations</h3>
+              <h3>{t("pendingInvitations")}</h3>
               {invitations.map((invitation) => (
                 <InvitationRow
                   key={invitation.id}

@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { BUILTIN_THEMES, can } from "@netrics/domain";
+import { can } from "@netrics/domain";
 
 import { getTheme, listWorkspaces } from "@/lib/api";
+import { getLocale, getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
+import { builtinThemeName } from "@/lib/theme-name";
 
 import { ThemeEditor } from "./theme-editor";
 
@@ -27,18 +29,19 @@ export default async function ThemePage({ params }: ThemePageProps) {
     notFound();
   }
   const { theme } = result;
+  const [t, locale] = await Promise.all([getT("themes"), getLocale()]);
 
   return (
     <div className="theme-editor-page">
       <p className="muted">
         <Link href={`/workspaces/${workspaceId}/settings/themes`}>
-          All themes
+          {t("allThemes")}
         </Link>
       </p>
       <ThemeEditor
         workspaceId={workspaceId}
         theme={theme}
-        baseName={BUILTIN_THEMES[theme.base].name}
+        baseName={builtinThemeName(theme.base, locale)}
         canEdit={can(membership.role, "dashboards:update")}
       />
     </div>

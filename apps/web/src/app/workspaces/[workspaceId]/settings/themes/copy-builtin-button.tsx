@@ -7,7 +7,7 @@ import type { BuiltinThemeKey } from "@netrics/domain";
 
 import { apiErrorMessage, createTheme } from "@/lib/api";
 import { copyName } from "@/lib/theme-name";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 export function CopyBuiltinButton({
   workspaceId,
@@ -21,6 +21,7 @@ export function CopyBuiltinButton({
   takenNames: string[];
 }) {
   const locale = useLocale();
+  const t = useT("themes");
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +31,7 @@ export function CopyBuiltinButton({
     setError(null);
     try {
       const { theme } = await createTheme(workspaceId, {
-        name: copyName(baseName, takenNames),
+        name: copyName(baseName, takenNames, locale),
         base,
       });
       router.push(`/workspaces/${workspaceId}/settings/themes/${theme.id}`);
@@ -43,7 +44,7 @@ export function CopyBuiltinButton({
   return (
     <>
       <button type="button" onClick={copy} disabled={pending}>
-        {pending ? "Copying…" : "Copy and edit"}
+        {pending ? t("copying") : t("copy")}
       </button>
       {error ? <div className="error">{error}</div> : null}
     </>

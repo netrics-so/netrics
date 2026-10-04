@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -26,6 +27,11 @@ interface WorkspaceSettingsPageProps {
   params: Promise<{ workspaceId: string }>;
 }
 
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("workspaceSettings");
+  return { title: t("metaTitle") };
+}
+
 export default async function WorkspaceSettingsPage({
   params,
 }: WorkspaceSettingsPageProps) {
@@ -43,7 +49,11 @@ export default async function WorkspaceSettingsPage({
   }
 
   const role = membership.role;
-  const screenLanguage = await getT("workspaceSettings.screenLanguage");
+  const [t, roles, screenLanguage] = await Promise.all([
+    getT("workspaceSettings"),
+    getT("common.roles"),
+    getT("workspaceSettings.screenLanguage"),
+  ]);
   const canRename = can(role, "workspace:rename");
   const canAddMembers = can(role, "members:add");
   const [{ members }, { invitations }, conversion] = await Promise.all([
@@ -56,17 +66,23 @@ export default async function WorkspaceSettingsPage({
 
   return (
     <>
-      <h1>{workspaceResult.workspace.name} — settings</h1>
+      <h1>{t("title", { workspace: workspaceResult.workspace.name })}</h1>
       <p className="subtitle">
-        Your role: <span className="role-badge">{role}</span>
+        {t.rich("yourRole", {
+          role: (
+            <span key="role" className="role-badge">
+              {roles(role)}
+            </span>
+          ),
+        })}
       </p>
       <p className="muted">
-        <Link href={`/workspaces/${workspaceId}`}>Back to workspace</Link>
+        <Link href={`/workspaces/${workspaceId}`}>{t("backToWorkspace")}</Link>
       </p>
 
       {canRename ? (
         <div className="card">
-          <h2>Workspace</h2>
+          <h2>{t("workspace.title")}</h2>
           <RenameWorkspaceForm
             workspaceId={workspaceId}
             currentName={workspaceResult.workspace.name}
@@ -75,10 +91,7 @@ export default async function WorkspaceSettingsPage({
             workspaceId={workspaceId}
             currentTimeZone={workspaceResult.workspace.timeZone}
           />
-          <p className="muted">
-            Dashboards count &ldquo;today&rdquo; and daily numbers in this time
-            zone.
-          </p>
+          <p className="muted">{t("workspace.timeZoneHint")}</p>
           <ScreenLanguageForm
             workspaceId={workspaceId}
             current={workspaceResult.workspace.screenLocale}
@@ -90,7 +103,7 @@ export default async function WorkspaceSettingsPage({
 
       {canRename && conversion ? (
         <div className="card">
-          <h2>Currency</h2>
+          <h2>{t("currency.title")}</h2>
           <DisplayCurrencyForm
             workspaceId={workspaceId}
             currentDisplayCurrency={workspaceResult.workspace.displayCurrency}
@@ -101,14 +114,11 @@ export default async function WorkspaceSettingsPage({
 
       {can(role, "dashboards:view") ? (
         <div className="card">
-          <h2>Themes</h2>
-          <p className="muted">
-            Colours and text size of dashboards on TVs: five built-in themes and
-            your own.
-          </p>
+          <h2>{t("themes.title")}</h2>
+          <p className="muted">{t("themes.hint")}</p>
           <p>
             <Link href={`/workspaces/${workspaceId}/settings/themes`}>
-              Manage themes
+              {t("themes.manage")}
             </Link>
           </p>
         </div>

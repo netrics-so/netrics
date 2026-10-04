@@ -12,6 +12,7 @@ import {
   isKioskPath,
   isRealCommit,
 } from "@/lib/deploy-skew";
+import { useT } from "@/lib/i18n/client";
 
 // Inlined at build time: the commit this bundle was built from.
 const BUNDLE_COMMIT = process.env.NEXT_PUBLIC_GIT_SHA ?? "";
@@ -66,6 +67,7 @@ function isEditable(element: Element | null): boolean {
  * lib/deploy-skew has the rules. Mounted once in the root layout.
  */
 export function DeployWatcher() {
+  const t = useT("deployNotice");
   const [notice, setNotice] = useState<Notice>(null);
 
   useEffect(() => {
@@ -204,9 +206,7 @@ export function DeployWatcher() {
   }
   return (
     <div className="deploy-notice" role="status" aria-live="polite">
-      {notice === "reloading"
-        ? "netrics was updated — reloading…"
-        : "netrics was updated — the page reloads when you move on."}
+      {notice === "reloading" ? t("reloading") : t("onNavigation")}
     </div>
   );
 }

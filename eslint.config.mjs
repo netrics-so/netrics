@@ -100,7 +100,11 @@ const I18N_WORKSPACE = [];
 const I18N_STUDIO = [];
 
 // Settings, themes, status, deploy notice and error pages (#254).
-const I18N_SETTINGS = [];
+const I18N_SETTINGS = [
+  "apps/web/src/app/workspaces/[[]workspaceId]/settings/**/*.tsx",
+  "apps/web/src/app/status/**/*.tsx",
+  "apps/web/src/components/deploy-watcher.tsx",
+];
 
 export const I18N_FILES = [
   ...I18N_FOUNDATION,
