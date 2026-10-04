@@ -1,13 +1,15 @@
-import Charts
 import ImageIO
 import NetricsKit
 import SwiftUI
 
-// The schema 2 widget renderers (ADR 0015, sections 2 and 8), the
-// counterparts of apps/web/src/components/studio. Sizes come from
-// StudioRender in canvas units, colours from the theme tokens. Titles and
-// resource names wrap to two lines and shrink to the minimum before the
-// last-resort ellipsis; values switch to the compact form, never cut.
+// The schema 2 widget renderers (ADR 0015, sections 2 and 8; ADR 0018,
+// sections 5 and 6), the counterparts of apps/web/src/components/studio.
+// Sizes come from StudioRender in canvas units, colours from the theme
+// tokens and what SignalDesign derives from them. Titles and resource names
+// wrap to two lines and shrink to the minimum before the last-resort
+// ellipsis; values switch to the compact form, never cut. Data widgets say
+// when their numbers were updated, and take a surface of their own when
+// they cannot show them (auth failed, no data, backfilling).
 
 struct WidgetView: View {
     let widget: DeviceWidget
@@ -19,14 +21,25 @@ struct WidgetView: View {
     var body: some View {
         switch widget.content {
         case .metric(let options, let data):
-            MetricWidgetView(label: widget.label ?? "", placement: placement, options: options, data: data, env: env)
-                .surface(env)
+            // The footer's "updated 2 min. ago" is worded anew every minute.
+            TimelineView(.everyMinute) { context in
+                MetricWidgetView(
+                    label: widget.label ?? "", placement: placement, options: options, data: data, env: env,
+                    now: context.date)
+            }
+            .surface(env, state: SurfaceState(data.status))
         case .line(let options, let data):
-            LineWidgetView(label: widget.label ?? "", placement: placement, options: options, data: data, env: env)
-                .surface(env)
+            TimelineView(.everyMinute) { context in
+                LineWidgetView(
+                    label: widget.label ?? "", placement: placement, options: options, data: data, env: env,
+                    now: context.date)
+            }
+            .surface(env, state: SurfaceState(data.status))
         case .bar(_, let data):
-            BarWidgetView(label: widget.label ?? "", placement: placement, data: data, env: env)
-                .surface(env)
+            TimelineView(.everyMinute) { context in
+                BarWidgetView(label: widget.label ?? "", placement: placement, data: data, env: env, now: context.date)
+            }
+            .surface(env, state: SurfaceState(data.status))
         case .image(_, let options):
             ImageWidgetView(stored: image, options: options, label: widget.label, env: env)
         case .text(let text, let options):
@@ -39,19 +52,6 @@ struct WidgetView: View {
             // cannot read: its cell stays, empty and themed.
             Color.clear.surface(env)
         }
-    }
-}
-
-extension View {
-    /** The widget box: padding, surface, border (web: .sw). */
-    func surface(_ env: WidgetEnv, padded: Bool = true) -> some View {
-        let radius = env.pt(12)
-        return self
-            .padding(padded ? env.pt(StudioLayout.widgetPadding) : 0)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(env.colors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: radius))
-            .overlay(RoundedRectangle(cornerRadius: radius).stroke(env.colors.border, lineWidth: max(1, env.pt(1.5))))
     }
 }
 
@@ -87,18 +87,44 @@ struct WidgetLabelView: View {
     }
 }
 
-/** A stale or failure notice in the theme's warning colour (as on tiles). */
+/**
+ * A stale or failure notice in the theme's warning colour. A stale one
+ * (the last sync is too long ago) starts with a dot that blinks on a
+ * playing slide (ADR 0018 sections 5 and 6); the others with a sign.
+ */
 struct NoticeLine: View {
+    let text: String
+    let size: Double
+    let env: WidgetEnv
+    var stale = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: env.pt(size * 0.3)) {
+            if stale {
+                StaleDot(color: env.colors.warning, size: env.pt(size * 0.45))
+            } else {
+                Text("⚠")
+            }
+            Text(text)
+        }
+        .font(env.font(size))
+        .foregroundStyle(env.colors.warning)
+        .lineLimit(2)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/** The freshness footer: one muted line at the bottom of a data widget. */
+struct FooterLine: View {
     let text: String
     let size: Double
     let env: WidgetEnv
 
     var body: some View {
-        Text("⚠ \(text)")
-            .font(env.font(size))
-            .foregroundStyle(env.colors.warning)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
+        Text(text)
+            .font(env.font(size).monospacedDigit())
+            .foregroundStyle(env.colors.muted)
+            .lineLimit(1)
     }
 }
 
@@ -110,6 +136,81 @@ func dataNotice(status: DeviceTileStatus, updatedAt: String?, unit: String?, lan
     return unit == nil ? KitStrings.text(.couldNotLoad, language) : nil
 }
 
+/**
+ * How a counting value is worded on every frame of the enter: as the
+ * shown text is, in full or compact, with its "≈"; nil when the shown text
+ * is neither (nothing counts then). Web: `countFormat`.
+ */
+func countFormat(
+    shown: String, full: String, compact: String, value: Double?, unit: String?, approximate: Bool,
+    language: ScreenLanguage
+) -> ((Double) -> String)? {
+    guard let unit, value != nil else { return nil }
+    let approx = approximate ? "≈ " : ""
+    if shown == full {
+        return { approx + MetricFormat.value($0, unit: unit, language: language) }
+    }
+    if shown == compact {
+        return { approx + MetricFormat.compactValue($0, unit: unit, language: language) }
+    }
+    return nil
+}
+
+/**
+ * A data widget whose numbers cannot be shown (ADR 0018 section 5, design
+ * 4b): its label, then for auth failed "Reconnect the source" with a hint
+ * and when it last worked in the footer; for no data and backfilling a
+ * skeleton block (sweeping while the history loads) and what is going on.
+ * No value, no chart. The label and the sizes are the widget's own
+ * layout's, so the shared layout math is unchanged.
+ */
+struct DataStateView: View {
+    let surface: DataSurface
+    let type: StudioWidgetType
+    let label: StudioRender.LabelLayout
+    /** The layout's smallest text size (at least 24 units). */
+    let small: Double
+    let updatedAt: String?
+    let placement: ScreenPlacement
+    let env: WidgetEnv
+    let now: Date
+
+    var body: some View {
+        // Screens carry no source name: "Reconnect the source".
+        let texts = surface.texts(source: nil, language: env.language)
+        VStack(alignment: .leading, spacing: 0) {
+            WidgetLabelView(layout: label, env: env)
+            Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: env.pt(6)) {
+                if let headline = texts.headline {
+                    Text(headline)
+                        .font(env.font(DataSurface.reconnectSize(small: small), .semibold))
+                        .foregroundStyle(env.colors.down)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    SkeletonBlock(env: env, sweeping: surface == .backfilling)
+                }
+                Text(texts.hint)
+                    .font(env.font(small))
+                    .foregroundStyle(env.colors.muted)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if surface == .authFailed,
+                let footer = WidgetFooter.line(
+                    WidgetFooter.candidates(updatedAt: updatedAt, source: nil, now: now, language: env.language),
+                    type: type, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
+                    unitBox: placement.unitBox)
+            {
+                FooterLine(text: footer, size: small, env: env)
+                    .padding(.top, env.pt(12))
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 // MARK: Metric
 
 struct MetricWidgetView: View {
@@ -118,11 +219,15 @@ struct MetricWidgetView: View {
     let options: MetricWidgetOptions
     let data: MetricWidgetData
     let env: WidgetEnv
+    var now = Date()
+
+    @Environment(\.enterProgress) private var progress
 
     var body: some View {
         let tile = data.tile(id: "", label: label)
         let unit = data.unit ?? "count"
-        let approx = data.conversion != nil && data.value != nil ? "≈ " : ""
+        let approximate = data.conversion != nil && data.value != nil
+        let approx = approximate ? "≈ " : ""
         let full = data.unit == nil ? "—" : approx + MetricFormat.value(data.value, unit: unit, language: env.language)
         let compact = data.unit == nil ? "—" : approx + MetricFormat.compactValue(data.value, unit: unit, language: env.language)
         let change = MetricFormat.change(
@@ -142,101 +247,128 @@ struct MetricWidgetView: View {
                     ))
         let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: env.language)
         let note = ConversionFormat.note(data.conversion, language: env.language)
+        // The footer takes the slot under the numbers (the web's source
+        // line); a notice replaces it, and without a footer the conversion
+        // note keeps the slot.
+        let footer =
+            notice != nil
+            ? nil
+            : WidgetFooter.line(
+                WidgetFooter.candidates(updatedAt: data.updatedAt, source: nil, now: now, language: env.language),
+                type: .metric, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
+                unitBox: placement.unitBox)
+        let slot = footer ?? note
         let layout = StudioRender.metricLayout(
             label: label, value: (full, compact), periodText: MetricFormat.subtitle(tile, language: env.language), change: changeLine,
-            notice: notice, note: note, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
+            notice: notice, note: slot, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
             showSparkline: options.showSparkline && Sparkline.isDrawable(data.spark), unitBox: placement.unitBox)
         let tone = change.map { MetricFormat.tone($0.direction, better: data.better) } ?? .flat
 
-        VStack(alignment: .leading, spacing: 0) {
-            WidgetLabelView(layout: layout.label, env: env)
-            if layout.showPeriod {
-                Text(MetricFormat.subtitle(tile, language: env.language))
-                    .font(env.font(layout.small))
-                    .foregroundStyle(env.colors.muted)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Text(layout.value.text)
+        if let surface = DataSurface(data.status) {
+            DataStateView(
+                surface: surface, type: .metric, label: layout.label, small: layout.small, updatedAt: data.updatedAt,
+                placement: placement, env: env, now: now)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                WidgetLabelView(layout: layout.label, env: env)
+                if layout.showPeriod {
+                    Text(MetricFormat.subtitle(tile, language: env.language))
+                        .font(env.font(layout.small))
+                        .foregroundStyle(env.colors.muted)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // Between the label and the value (design 4a): only the
+                // order changes, the heights are the layout's.
+                if layout.sparkline > 0 {
+                    SparklineChart(spark: data.spark, env: env)
+                        .frame(maxHeight: .infinity)
+                        .padding(.vertical, env.pt(StudioRender.stackGap / 2))
+                }
+                CountingValue(
+                    final: layout.value.text, target: data.value,
+                    format: countFormat(
+                        shown: layout.value.text, full: full, compact: compact, value: data.value, unit: data.unit,
+                        approximate: approximate, language: env.language)
+                )
                 .font(env.font(layout.value.size, .semibold).monospacedDigit())
-                .foregroundStyle(data.unit == nil ? env.colors.muted : env.colors.text)
+                .tracking(-0.01 * env.pt(layout.value.size))
+                .foregroundStyle(data.unit == nil || data.status == .stale ? env.colors.muted : env.colors.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
-            if let changeText = layout.changeText {
-                Text(changeText)
-                    .font(env.font(layout.change))
-                    .foregroundStyle(change == nil ? env.colors.muted : env.colors.tone(tone))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            if let comparisonText = layout.comparisonText {
-                Text(comparisonText)
-                    .font(env.font(layout.comparison))
-                    .foregroundStyle(env.colors.muted)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            if layout.sparkline > 0 {
-                SparklineChart(spark: data.spark, colors: env.colors, lineWidth: max(3, env.pt(4)))
-                    .frame(maxHeight: .infinity)
-                    .padding(.top, env.pt(StudioRender.stackGap))
-            } else {
-                Spacer(minLength: 0)
-            }
-            if layout.showNote, let note {
-                Text(note)
-                    .font(env.font(layout.small))
-                    .foregroundStyle(env.colors.muted)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            if let notice {
-                NoticeLine(text: notice, size: layout.small, env: env)
+                if let changeText = layout.changeText {
+                    Text(changeText)
+                        .font(env.font(layout.change))
+                        .foregroundStyle(change == nil ? env.colors.muted : env.colors.tone(tone))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                if let comparisonText = layout.comparisonText {
+                    Text(comparisonText)
+                        .font(env.font(layout.comparison))
+                        .foregroundStyle(env.colors.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                if layout.sparkline == 0 {
+                    Spacer(minLength: 0)
+                }
+                if layout.showNote, let slot {
+                    if slot == footer {
+                        FooterLine(text: slot, size: layout.small, env: env)
+                    } else {
+                        Text(slot)
+                            .font(env.font(layout.small))
+                            .foregroundStyle(env.colors.muted)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+                if let notice {
+                    NoticeLine(text: notice, size: layout.small, env: env, stale: data.status == .stale)
+                }
             }
         }
     }
 }
 
-/** The metric widget's sparkline: one point per bucket, gaps for null. */
+/**
+ * The metric widget's sparkline: the chart line, drawn while the slide
+ * enters, gaps for null buckets, and the latest point in the accent with
+ * its pulse once the draw is done.
+ */
 struct SparklineChart: View {
     let spark: [Double?]
-    let colors: StudioColors
-    let lineWidth: CGFloat
+    let env: WidgetEnv
+
+    @Environment(\.enterProgress) private var progress
 
     var body: some View {
-        let segments = Sparkline.segments(spark)
-        let values = segments.flatMap { $0.map(\.value) }
+        let colors = env.colors
+        let values = spark.compactMap { $0 }
         let low = values.min() ?? 0
         let high = values.max() ?? 1
         let pad = high > low ? (high - low) * 0.08 : max(abs(high) * 0.1, 1)
-        let last = segments.last?.last
-        Chart {
-            ForEach(Array(segments.enumerated()), id: \.offset) { segment, points in
-                ForEach(points, id: \.index) { point in
-                    LineMark(
-                        x: .value("Bucket", point.index), y: .value("Value", point.value),
-                        series: .value("Segment", segment)
-                    )
-                    .foregroundStyle(colors.chartLine)
-                    .lineStyle(StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+        let series = PlotSeries(spark, domain: (low - pad)...(high + pad))
+        let lineWidth = max(2, env.pt(3))
+        let dot = env.pt(5)
+        GeometryReader { box in
+            ZStack(alignment: .topLeading) {
+                SeriesLine(series: series)
+                    .trim(from: 0, to: progress)
+                    .stroke(colors.chartLine, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+                if let last = series.last {
+                    let point = CGPoint(x: last.x * box.size.width, y: last.y * box.size.height)
+                    ZStack {
+                        PulseRing(color: colors.accent, radius: dot, reach: env.pt(EnterMotion.pulseRing))
+                        Circle().fill(colors.accent).frame(width: dot * 2, height: dot * 2)
+                    }
+                    .position(point)
+                    .modifier(AppearAtEnd(progress: progress))
                 }
-                if points.count == 1, let point = points.first {
-                    PointMark(x: .value("Bucket", point.index), y: .value("Value", point.value))
-                        .foregroundStyle(colors.chartLine)
-                        .symbolSize(lineWidth * lineWidth * 2)
-                }
-            }
-            if let last {
-                PointMark(x: .value("Bucket", last.index), y: .value("Value", last.value))
-                    .foregroundStyle(colors.accent)
-                    .symbolSize(lineWidth * lineWidth * 6)
             }
         }
-        .chartXScale(domain: 0...max(spark.count - 1, 1))
-        .chartYScale(domain: (low - pad)...(high + pad))
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
-        .chartLegend(.hidden)
+        .accessibilityHidden(true)
     }
 }
 
@@ -248,51 +380,75 @@ struct LineWidgetView: View {
     let options: LineWidgetOptions
     let data: LineWidgetData
     let env: WidgetEnv
+    var now = Date()
 
     var body: some View {
         let unit = data.unit ?? "count"
-        let approx = data.conversion != nil && data.value != nil ? "≈ " : ""
+        let approximate = data.conversion != nil && data.value != nil
+        let approx = approximate ? "≈ " : ""
         let full = data.unit == nil ? "—" : approx + MetricFormat.value(data.value, unit: unit, language: env.language)
         let compact = data.unit == nil ? "—" : approx + MetricFormat.compactValue(data.value, unit: unit, language: env.language)
         let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: env.language)
-        let layout = StudioRender.chartLayout(
-            type: .line, label: label, value: (full, compact), notice: notice, placement: placement.cells,
-            showHeader: env.showHeader, fontScale: env.fontScale, unitBox: placement.unitBox)
+        let fitted = WidgetFooter.chartLayout(
+            type: .line, label: label, value: (full, compact), notice: notice,
+            footer: WidgetFooter.line(
+                WidgetFooter.candidates(updatedAt: data.updatedAt, source: nil, now: now, language: env.language),
+                type: .line, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
+                unitBox: placement.unitBox),
+            placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
+            unitBox: placement.unitBox)
+        let layout = fitted.layout
         let previous = options.showPrevious ? Array(data.previous.prefix(data.values.count)) : []
         let domain = StudioRender.lineDomain(values: data.values, previous: previous)
 
-        VStack(alignment: .leading, spacing: 0) {
-            WidgetLabelView(layout: layout.label, env: env)
-            if let value = layout.value {
-                Text(value.text)
+        if let surface = DataSurface(data.status) {
+            DataStateView(
+                surface: surface, type: .line, label: layout.label, small: layout.small, updatedAt: data.updatedAt,
+                placement: placement, env: env, now: now)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                WidgetLabelView(layout: layout.label, env: env)
+                if let value = layout.value {
+                    CountingValue(
+                        final: value.text, target: data.value,
+                        format: countFormat(
+                            shown: value.text, full: full, compact: compact, value: data.value, unit: data.unit,
+                            approximate: approximate, language: env.language)
+                    )
                     .font(env.font(value.size, .semibold).monospacedDigit())
-                    .foregroundStyle(data.unit == nil ? env.colors.muted : env.colors.text)
+                    .tracking(-0.01 * env.pt(value.size))
+                    .foregroundStyle(data.unit == nil || data.status == .stale ? env.colors.muted : env.colors.text)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                     .padding(.bottom, env.pt(StudioRender.stackGap))
-            }
-            if let domain, data.unit != nil {
-                LineChartView(
-                    data: data, previous: previous, domain: domain, showAxis: options.showAxis, axisSize: layout.axis,
-                    unit: unit, env: env, timeZone: env.timeZone)
-                .frame(maxHeight: .infinity)
-            } else {
-                Text(data.unit == nil ? "" : KitStrings.text(.noDataForPeriod, env.language))
-                    .font(env.font(layout.small))
-                    .foregroundStyle(env.colors.muted)
-                Spacer(minLength: 0)
-            }
-            if let notice {
-                NoticeLine(text: notice, size: layout.small, env: env)
+                }
+                if let domain, data.unit != nil {
+                    LineChartView(
+                        data: data, previous: previous, domain: domain, showAxis: options.showAxis, axisSize: layout.axis,
+                        unit: unit, env: env, timeZone: env.timeZone)
+                    .frame(maxHeight: .infinity)
+                } else {
+                    Text(data.unit == nil ? "" : KitStrings.text(.noDataForPeriod, env.language))
+                        .font(env.font(layout.small))
+                        .foregroundStyle(env.colors.muted)
+                    Spacer(minLength: 0)
+                }
+                if let notice {
+                    NoticeLine(text: notice, size: layout.small, env: env, stale: data.status == .stale)
+                } else if let footer = fitted.footer {
+                    FooterLine(text: footer, size: layout.small, env: env)
+                }
             }
         }
     }
 }
 
 /**
- * The period's points with the previous period dashed behind them, on one
- * value axis from zero; the area under the current line in the fill
- * colour, the latest point in the accent. Axis labels (top and bottom value,
+ * The period's line over the area under it (fading from the chart fill to
+ * nothing), the previous period dashed behind it, on one value axis from
+ * zero, and a dot at the latest point with its pulse. While the slide
+ * enters the line draws, the area and the previous period fade in, and the
+ * dot appears when the draw is done. Axis labels (top and bottom value,
  * first and last bucket) are at least 24 units.
  */
 struct LineChartView: View {
@@ -305,50 +461,45 @@ struct LineChartView: View {
     let env: WidgetEnv
     let timeZone: String
 
+    @Environment(\.enterProgress) private var progress
+
     var body: some View {
         let colors = env.colors
-        let current = Sparkline.segments(data.values)
-        let earlier = Sparkline.segments(previous)
         let count = data.values.count
-        let last = current.last?.last
-        let lineWidth = max(3, env.pt(4))
-        let chart = Chart {
-            ForEach(Array(earlier.enumerated()), id: \.offset) { segment, points in
-                ForEach(points, id: \.index) { point in
-                    LineMark(
-                        x: .value("Bucket", point.index), y: .value("Value", point.value),
-                        series: .value("Series", "previous-\(segment)")
+        let current = PlotSeries(data.values, domain: domain, count: count)
+        let earlier = PlotSeries(previous, domain: domain, count: count)
+        let span = domain.upperBound - domain.lowerBound
+        let base = CGFloat(span > 0 ? 1 - (max(domain.lowerBound, 0) - domain.lowerBound) / span : 1)
+        let radius = env.pt(max(9, axisSize * 0.3))
+        let chart = GeometryReader { box in
+            ZStack(alignment: .topLeading) {
+                SeriesArea(series: current, base: base)
+                    .fill(
+                        LinearGradient(
+                            colors: [colors.chartFill.opacity(0.35), colors.chartFill.opacity(0)], startPoint: .top,
+                            endPoint: .bottom)
                     )
-                    .foregroundStyle(colors.muted)
-                    .lineStyle(StrokeStyle(lineWidth: lineWidth * 0.75, lineCap: .round, dash: [lineWidth * 2, lineWidth * 2]))
+                    .opacity(progress)
+                SeriesLine(series: earlier)
+                    .stroke(
+                        colors.muted,
+                        style: StrokeStyle(lineWidth: env.pt(3), lineCap: .butt, dash: [env.pt(12), env.pt(9)]))
+                    .opacity(0.8 * progress)
+                SeriesLine(series: current)
+                    .trim(from: 0, to: progress)
+                    .stroke(
+                        colors.chartLine, style: StrokeStyle(lineWidth: env.pt(5.25), lineCap: .round, lineJoin: .round))
+                if let last = current.last {
+                    ZStack {
+                        PulseRing(color: colors.accent, radius: radius, reach: env.pt(EnterMotion.pulseRing))
+                        Circle().fill(colors.accent).frame(width: radius * 2, height: radius * 2)
+                    }
+                    .position(x: last.x * box.size.width, y: last.y * box.size.height)
+                    .modifier(AppearAtEnd(progress: progress))
                 }
-            }
-            ForEach(Array(current.enumerated()), id: \.offset) { segment, points in
-                ForEach(points, id: \.index) { point in
-                    AreaMark(
-                        x: .value("Bucket", point.index), yStart: .value("Base", max(domain.lowerBound, 0)),
-                        yEnd: .value("Value", point.value), series: .value("Series", "area-\(segment)")
-                    )
-                    .foregroundStyle(colors.chartFill.opacity(0.25))
-                    LineMark(
-                        x: .value("Bucket", point.index), y: .value("Value", point.value),
-                        series: .value("Series", "current-\(segment)")
-                    )
-                    .foregroundStyle(colors.chartFill)
-                    .lineStyle(StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
-                }
-            }
-            if let last {
-                PointMark(x: .value("Bucket", last.index), y: .value("Value", last.value))
-                    .foregroundStyle(colors.accent)
-                    .symbolSize(lineWidth * lineWidth * 6)
             }
         }
-        .chartXScale(domain: 0...max(count - 1, 1))
-        .chartYScale(domain: domain)
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
-        .chartLegend(.hidden)
+        .accessibilityHidden(true)
 
         if showAxis {
             let font = env.font(axisSize).monospacedDigit()
@@ -363,6 +514,10 @@ struct LineChartView: View {
                     .foregroundStyle(colors.muted)
                     .fixedSize(horizontal: true, vertical: false)
                     chart
+                        .overlay(alignment: .bottom) {
+                            // The axis line under the plot (web: .sw-axis).
+                            Rectangle().fill(colors.border).frame(height: env.pt(2))
+                        }
                 }
                 HStack {
                     Text(data.buckets.first.flatMap { MetricFormat.bucketLabel($0, period: data.period, timeZone: timeZone, language: env.language) } ?? "")
@@ -371,7 +526,7 @@ struct LineChartView: View {
                         Text(data.buckets.last.flatMap { MetricFormat.bucketLabel($0, period: data.period, timeZone: timeZone, language: env.language) } ?? "")
                     }
                 }
-                .font(env.font(axisSize))
+                .font(font)
                 .foregroundStyle(colors.muted)
                 .lineLimit(1)
             }
@@ -388,78 +543,103 @@ struct BarWidgetView: View {
     let placement: ScreenPlacement
     let data: BarWidgetData
     let env: WidgetEnv
+    var now = Date()
 
     var body: some View {
         let unit = data.unit ?? "count"
         let approx = data.conversion != nil ? "≈ " : ""
         let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: env.language)
-        let layout = StudioRender.chartLayout(
-            type: .bar, label: label, value: nil, notice: notice, placement: placement.cells,
-            showHeader: env.showHeader, fontScale: env.fontScale, unitBox: placement.unitBox)
+        let fitted = WidgetFooter.chartLayout(
+            type: .bar, label: label, value: nil, notice: notice,
+            footer: WidgetFooter.line(
+                WidgetFooter.candidates(updatedAt: data.updatedAt, source: nil, now: now, language: env.language),
+                type: .bar, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
+                unitBox: placement.unitBox),
+            placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
+            unitBox: placement.unitBox)
+        let layout = fitted.layout
         let bars = StudioRender.barLayout(
             bars: data.bars, others: data.others, width: layout.chartWidth, height: layout.chartHeight,
             size: layout.resource, format: { approx + MetricFormat.value($0, unit: unit, language: env.language) },
             othersLabel: KitStrings.text(.others, env.language))
 
-        VStack(alignment: .leading, spacing: 0) {
-            WidgetLabelView(layout: layout.label, env: env)
-            if bars.rows.isEmpty {
-                Text(data.unit == nil ? "—" : KitStrings.text(.noDataForPeriod, env.language))
-                    .font(env.font(layout.small))
-                    .foregroundStyle(env.colors.muted)
-                Spacer(minLength: 0)
-            } else {
-                let largest = bars.rows.map(\.value).reduce(0, max)
-                VStack(alignment: .leading, spacing: env.pt(bars.rowGap)) {
-                    ForEach(Array(bars.rows.enumerated()), id: \.offset) { _, row in
-                        VStack(alignment: .leading, spacing: env.pt(4)) {
-                            HStack(alignment: .firstTextBaseline, spacing: env.pt(16)) {
-                                Text(row.label.text)
-                                    .font(env.font(bars.size, .semibold))
-                                    .foregroundStyle(row.others ? env.colors.muted : env.colors.label)
-                                    .lineLimit(2)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Spacer(minLength: 0)
-                                Text(row.valueText)
-                                    .font(env.font(bars.size, .semibold).monospacedDigit())
-                                    .foregroundStyle(env.colors.text)
-                                    .lineLimit(1)
-                                    .fixedSize()
+        if let surface = DataSurface(data.status) {
+            DataStateView(
+                surface: surface, type: .bar, label: layout.label, small: layout.small, updatedAt: data.updatedAt,
+                placement: placement, env: env, now: now)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                WidgetLabelView(layout: layout.label, env: env)
+                if bars.rows.isEmpty {
+                    Text(data.unit == nil ? "—" : KitStrings.text(.noDataForPeriod, env.language))
+                        .font(env.font(layout.small))
+                        .foregroundStyle(env.colors.muted)
+                    Spacer(minLength: 0)
+                } else {
+                    VStack(alignment: .leading, spacing: env.pt(bars.rowGap)) {
+                        ForEach(Array(bars.rows.enumerated()), id: \.offset) { _, row in
+                            VStack(alignment: .leading, spacing: env.pt(4)) {
+                                HStack(alignment: .firstTextBaseline, spacing: env.pt(16)) {
+                                    Text(row.label.text)
+                                        .font(env.font(bars.size, .semibold))
+                                        .foregroundStyle(row.others ? env.colors.muted : env.colors.label)
+                                        .lineLimit(2)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Spacer(minLength: 0)
+                                    Text(row.valueText)
+                                        .font(env.font(bars.size, .semibold).monospacedDigit())
+                                        .foregroundStyle(row.others ? env.colors.muted : env.colors.text)
+                                        .lineLimit(1)
+                                        .fixedSize()
+                                }
+                                BarTrack(ratio: row.ratio, others: row.others, env: env)
+                                    .frame(height: env.pt(bars.barHeight))
                             }
-                            BarChartRow(value: row.value, largest: largest, others: row.others, colors: env.colors)
-                                .frame(height: env.pt(bars.barHeight))
                         }
                     }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
-            }
-            if let notice {
-                NoticeLine(text: notice, size: layout.small, env: env)
+                if let notice {
+                    NoticeLine(text: notice, size: layout.small, env: env, stale: data.status == .stale)
+                } else if let footer = fitted.footer {
+                    FooterLine(text: footer, size: layout.small, env: env)
+                }
             }
         }
     }
 }
 
-/** One bar on a shared scale (Swift Charts), "Others" in the muted colour. */
-struct BarChartRow: View {
-    let value: Double
-    let largest: Double
+/**
+ * One bar on its track: the fill runs from a deeper shade of the chart
+ * fill to the fill (flat themes: the plain fill), "Others" dimmed; it grows
+ * from the start while the slide enters.
+ */
+struct BarTrack: View {
+    let ratio: Double
     let others: Bool
-    let colors: StudioColors
+    let env: WidgetEnv
+
+    @Environment(\.enterProgress) private var progress
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        Chart {
-            BarMark(xStart: .value("Start", 0), xEnd: .value("Value", max(0, value)), y: .value("Row", 0))
-                .foregroundStyle(others ? colors.muted : colors.chartFill)
-                .clipShape(Capsule())
+        let derived = env.colors.derived
+        let shape = RoundedRectangle(cornerRadius: env.pt(6))
+        GeometryReader { box in
+            ZStack(alignment: .leading) {
+                shape.fill(Color(derived.track))
+                shape
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(derived.barStart), Color(derived.barEnd)], startPoint: .leading,
+                            endPoint: .trailing)
+                    )
+                    .frame(width: max(2 / max(displayScale, 1), box.size.width * CGFloat(min(1, max(0, ratio)))))
+                    .opacity(others ? 0.5 : 1)
+                    .scaleEffect(x: progress, y: 1, anchor: .leading)
+            }
         }
-        .chartXScale(domain: 0...max(largest, 1))
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
-        .chartLegend(.hidden)
-        .chartPlotStyle { plot in
-            plot.background(colors.border.opacity(0.6)).clipShape(Capsule())
-        }
+        .accessibilityHidden(true)
     }
 }
 

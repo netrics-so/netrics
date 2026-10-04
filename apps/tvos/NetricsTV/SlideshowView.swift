@@ -12,7 +12,9 @@ import SwiftUI
  * nothing to rotate), and pressing and holding the clickpad opens the
  * settings. A new payload or format keeps the slide on screen when it
  * still exists. Pages fade in 400 ms, or switch at once with Reduce Motion
- * or the dashboard's "none" transition.
+ * or the dashboard's "none" transition. While the rotation moves on by
+ * itself, the slide footer says where it is and what comes next (ADR 0018
+ * section 5).
  */
 struct SlideshowView: View {
     let state: DeviceState
@@ -47,6 +49,24 @@ struct SlideshowView: View {
         return pages.first { $0.id == id } ?? pages.first
     }
 
+    /** "2 / 3 · Sales · next: Team" and the slide's time, while the rotation moves on by itself. */
+    private func footer(pages: [ScreenPage], page: ScreenPage) -> SlideFooterInfo? {
+        guard let rotation, rotation.rotates, let index = pages.firstIndex(where: { $0.id == page.id }) else {
+            return nil
+        }
+        func name(_ entry: ScreenPage) -> String? {
+            SlideFooter.entryName(
+                slideName: payload.slides.first { $0.id == entry.slideId }?.name, pageLabel: entry.pageLabel)
+        }
+        let next = pages[(index + 1) % pages.count]
+        let progress = rotation.progress(at: Date())
+        return SlideFooterInfo(
+            text: SlideFooter.text(
+                position: index + 1, count: pages.count, name: name(page), next: name(next),
+                language: payload.language),
+            progress: progress, remaining: (1 - progress) * rotation.currentDuration, paused: rotation.isPaused)
+    }
+
     private func slideshow(pages: [ScreenPage], format: ScreenFormat, viewport: StudioCanvas) -> some View {
         let colors = StudioColors(payload.theme.tokens)
         let page = current(pages)
@@ -56,7 +76,8 @@ struct SlideshowView: View {
             if let page, let slide {
                 SlideCanvasView(
                     payload: payload, slide: slide, page: page, format: format, viewport: viewport, colors: colors,
-                    state: state, images: images, paused: rotation?.isPaused ?? false
+                    state: state, images: images, paused: rotation?.isPaused ?? false,
+                    footer: footer(pages: pages, page: page)
                 )
                 .id(page.id)
                 .transition(.opacity)
@@ -117,6 +138,8 @@ struct SlideshowView: View {
 struct StudioColors {
     let background, surface, border, text, label, muted, accent, up, down, warning, chartLine, chartFill: Color
     let fontScale: Double
+    /** Surfaces, states and chart fills derived from the tokens (ADR 0018 section 5). */
+    let derived: DerivedSurfaces
 
     init(_ tokens: ThemeTokens) {
         background = Color(token: tokens.background)
@@ -132,6 +155,7 @@ struct StudioColors {
         chartLine = Color(token: tokens.chartLine)
         chartFill = Color(token: tokens.chartFill)
         fontScale = tokens.fontScale
+        derived = DerivedSurfaces(tokens)
     }
 
     func tone(_ direction: MetricFormat.Direction) -> Color {
@@ -183,8 +207,12 @@ struct SlideCanvasView: View {
     let state: DeviceState
     let images: FileImageCache
     let paused: Bool
+    var footer: SlideFooterInfo?
 
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /** Set when the page appears: the enter (ADR 0018 section 6) runs towards it. */
+    @State private var entered = false
 
     var body: some View {
         let showHeader = payload.dashboard?.showHeader ?? true
@@ -197,6 +225,16 @@ struct SlideCanvasView: View {
         let widgets = Dictionary(slide.widgets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         ZStack(alignment: .topLeading) {
             colors.background
+            if let glow = colors.derived.canvasGlow, height > 0 {
+                // A faint glow of the accent from the top of a dark canvas
+                // (web: an ellipse at 50% −20%, fading out by 60 %).
+                RadialGradient(
+                    colors: [Color(glow), Color(glow).opacity(0)], center: UnitPoint(x: 0.5, y: -0.2), startRadius: 0,
+                    endRadius: height * 0.73
+                )
+                .scaleEffect(x: (1.82 * width) / (0.73 * height), y: 1, anchor: UnitPoint(x: 0.5, y: -0.2))
+                .frame(width: width, height: height)
+            }
             if let background = slide.background, let file = imageFile(background.imageId) {
                 DownsampledImage(
                     file: file.url, image: file.image, fit: .cover, align: .center,
@@ -222,9 +260,25 @@ struct SlideCanvasView: View {
                         .position(x: CGFloat(rect.x + rect.width / 2), y: CGFloat(rect.y + rect.height / 2))
                 }
             }
+            if let footer {
+                // In the canvas's bottom padding (32 units): the grid is unchanged.
+                let canvas = geometry.frame.canvas
+                let band = env.pt(StudioLayout.padding)
+                SlideFooterView(info: footer, env: env)
+                    .frame(width: CGFloat(canvas.width), height: band)
+                    .position(x: CGFloat(canvas.x + canvas.width / 2), y: CGFloat(canvas.y + canvas.height) - band / 2)
+            }
         }
         .frame(width: width, height: height)
         .clipped()
+        // The enter: one state change, which SwiftUI interpolates for 1.2 s
+        // (count-up, draws, bars, fades); nothing with Reduce Motion.
+        .environment(\.enterProgress, reduceMotion || entered ? 1 : 0)
+        .environment(\.motionCues, !reduceMotion)
+        .onAppear {
+            guard !reduceMotion, !entered else { return }
+            withAnimation(.slideEnter) { entered = true }
+        }
     }
 
     private func imageForWidget(_ widget: DeviceWidget) -> StoredImage? {
@@ -272,6 +326,15 @@ struct SlideHeaderView: View {
         let fit = StudioLayout.headerFit(
             name: name, slideName: slide.name, format: format,
             logoAspect: logo.flatMap { $0.image.height > 0 ? Double($0.image.width) / Double($0.image.height) : nil })
+        let slideName = slide.name.flatMap { $0.isEmpty || !fit.showSlideName ? nil : $0 }
+        // "next refresh in 42 s" where there is room (ADR 0018 section 5).
+        let cycle = RefreshCountdown.cycle(
+            updatedAt: state.updatedAt, offline: state.offline, refreshAfterSec: payload.refreshAfterSec)
+        let showCountdown =
+            cycle != nil
+            && RefreshCountdown.fits(
+                fit, name: name, slideName: slideName, pageLabel: pageLabel,
+                sample: RefreshCountdown.sample(env.language))
         HStack(spacing: env.pt(StudioHeaderMetrics.gap)) {
             if let logo {
                 let height = env.pt(StudioHeaderMetrics.logo)
@@ -281,6 +344,10 @@ struct SlideHeaderView: View {
                     box: CGSize(width: height * aspect, height: height), displayScale: env.displayScale
                 )
                 .frame(width: height * aspect, height: height)
+                // The brand mark glows in the accent on dark canvases.
+                .shadow(
+                    color: colors.derived.kind == .layered ? colors.accent.opacity(0.35) : .clear,
+                    radius: env.pt(5), x: 0, y: env.pt(6))
             }
             // Names wrap (narrow formats) or shrink rather than lose their end.
             Text(name)
@@ -289,7 +356,7 @@ struct SlideHeaderView: View {
                 .lineLimit(fit.maxNameLines)
                 .minimumScaleFactor(0.6)
                 .layoutPriority(2)
-            if let slideName = slide.name, !slideName.isEmpty, fit.showSlideName {
+            if let slideName {
                 Text(slideName)
                     .font(env.font(StudioHeaderMetrics.meta))
                     .foregroundStyle(colors.muted)
@@ -304,7 +371,10 @@ struct SlideHeaderView: View {
                     .fixedSize()
             }
             Spacer(minLength: env.pt(StudioHeaderMetrics.clockSpace))
-            HStack(spacing: env.pt(24)) {
+            HStack(spacing: env.pt(RefreshCountdown.metaGap)) {
+                if showCountdown, let cycle {
+                    RefreshCountdownView(since: cycle.since, every: cycle.every, env: env)
+                }
                 if paused {
                     Text("❚❚ \(L10n.tr("Paused", env.language))")
                         .font(env.font(30))

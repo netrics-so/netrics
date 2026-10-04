@@ -134,6 +134,22 @@ drops the alpha channel of opaque images and checks the sizes.
   lines and the slide name is dropped first (`headerFit`). Apple TV is
   always screen view; the display mode setting is for browser kiosks. A
   schema 2 payload is the `16x9` layout, unrotated, as before.
+- **Signal design (ADR 0018 sections 5 and 6, #313).** Widgets draw the
+  web's TV design from the theme tokens, never new tokens:
+  `SignalDesign.swift` ports `themeSurface` (layered or flat) and the
+  colours the web derives with `color-mix` (gradient, inner highlight,
+  shadow, 24 unit radius; stale, auth failed and empty borders), the
+  freshness footer ("updated 5 min. ago", RelativeDateTimeFormatter in the
+  screen language, the same slot and fallback rules as `footerLine`), the
+  header's refresh countdown (`refreshAfterSec` after the last answer, left
+  out before a name would be cut) and the slide footer ("2 / 3 · Sales ·
+  next: Team" with a progress bar). Auth failed, no data and backfilling
+  replace the numbers with their own surface. On every slide change values
+  count up, lines draw, bars grow and areas fade in over 1.2 s (ease-out
+  cubic), driven by one state change that SwiftUI interpolates; afterwards
+  only the last point's pulse, the stale dot's blink and the skeleton's
+  sweep move. Reduce Motion turns all of it off. Text is SF Pro, values and
+  clocks in tabular figures.
 - **Images.** The payload's images are downloaded once with the device
   token from their device URL (only `/v1/device/images/…` on the paired
   server), verified against their SHA-256 and stored by hash in
@@ -192,6 +208,8 @@ one could leave these rules.
   pairs with an Apple TV on another subnet but drops the connection, because
   `remotepairingd` requires the TV to be on the Mac's own link (ARP); put the
   Mac on the TV's subnet first (#129).
+- Check the Signal design's cost (shadows, the enter, the continuous cues)
+  on a physical Apple TV HD; it is checked in the simulator only (#313).
 - Check on a device that App Transport Security lets a pinned self-signed
   certificate through on a host outside the local network. Local hosts are
   exempt from ATS, so they work.

@@ -54,6 +54,8 @@ public enum KitText: String, Sendable, CaseIterable {
     case offline, offlineLastUpdate
     case conversionSource, conversionNotConverted
     case weekOf, others
+    case updated, updatedFrom, reconnect, reconnectSource, reconnectHint, loadingHistory
+    case nextRefresh, slidePosition, nextSlide
     case serverInvalidAddress, serverPlainHTTPToPublicHost, serverPlainHTTPNeedsSetting, serverUnreachable
     case serverTimedOut, serverUntrustedCertificateSettingHelps, serverUntrustedCertificate
     case serverCertificateChanged, serverRedirected, serverRedirectedSomewhere, serverNotNetrics
@@ -106,6 +108,15 @@ public enum KitStrings {
         .conversionNotConverted: "%@ · %@ not converted",
         .weekOf: "Week of %@",
         .others: "Others",
+        .updated: "updated %@",
+        .updatedFrom: "updated %@ · %@",
+        .reconnect: "Reconnect %@",
+        .reconnectSource: "Reconnect the source",
+        .reconnectHint: "Access was rejected. An admin can fix this under Connections.",
+        .loadingHistory: "Loading history…",
+        .nextRefresh: "next refresh in %d s",
+        .slidePosition: "%d / %d",
+        .nextSlide: "next: %@",
         .serverInvalidAddress: "Enter the address of your netrics server, for example netrics.example.com.",
         .serverPlainHTTPToPublicHost:
             "%@ is not on your local network, so it needs HTTPS. Plain HTTP is only possible for local servers.",
@@ -172,6 +183,15 @@ public enum KitStrings {
         .conversionNotConverted: "%@ · %@ nicht umgerechnet",
         .weekOf: "Woche vom %@",
         .others: "Andere",
+        .updated: "aktualisiert %@",
+        .updatedFrom: "aktualisiert %@ · %@",
+        .reconnect: "%@ neu verbinden",
+        .reconnectSource: "Quelle neu verbinden",
+        .reconnectHint: "Der Zugriff wurde abgelehnt. Ein Admin kann das unter Verbindungen beheben.",
+        .loadingHistory: "Verlauf wird geladen …",
+        .nextRefresh: "nächste Aktualisierung in %d s",
+        .slidePosition: "%d / %d",
+        .nextSlide: "als Nächstes: %@",
         .serverInvalidAddress: "Gib die Adresse deines netrics-Servers ein, zum Beispiel netrics.example.com.",
         .serverPlainHTTPToPublicHost:
             "%@ ist nicht in deinem lokalen Netzwerk und braucht daher HTTPS. Einfaches HTTP geht nur bei lokalen Servern.",
