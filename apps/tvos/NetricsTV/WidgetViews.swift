@@ -11,26 +11,28 @@ import SwiftUI
 
 struct WidgetView: View {
     let widget: DeviceWidget
+    /** Where the widget is on this screen: cells in the format's grid, and its box in units off the classic canvas. */
+    let placement: ScreenPlacement
     let env: WidgetEnv
     let image: StoredImage?
 
     var body: some View {
         switch widget.content {
         case .metric(let options, let data):
-            MetricWidgetView(label: widget.label ?? "", placement: widget.placement, options: options, data: data, env: env)
+            MetricWidgetView(label: widget.label ?? "", placement: placement, options: options, data: data, env: env)
                 .surface(env)
         case .line(let options, let data):
-            LineWidgetView(label: widget.label ?? "", placement: widget.placement, options: options, data: data, env: env)
+            LineWidgetView(label: widget.label ?? "", placement: placement, options: options, data: data, env: env)
                 .surface(env)
         case .bar(_, let data):
-            BarWidgetView(label: widget.label ?? "", placement: widget.placement, data: data, env: env)
+            BarWidgetView(label: widget.label ?? "", placement: placement, data: data, env: env)
                 .surface(env)
         case .image(_, let options):
             ImageWidgetView(stored: image, options: options, label: widget.label, env: env)
         case .text(let text, let options):
-            TextWidgetView(text: text, options: options, placement: widget.placement, env: env)
+            TextWidgetView(text: text, options: options, placement: placement, env: env)
         case .clock(let options):
-            ClockWidgetView(options: options, placement: widget.placement, env: env)
+            ClockWidgetView(options: options, placement: placement, env: env)
                 .surface(env)
         case .unsupported:
             // A type this build does not know (a newer server), or one it
@@ -112,7 +114,7 @@ func dataNotice(status: DeviceTileStatus, updatedAt: String?, unit: String?, lan
 
 struct MetricWidgetView: View {
     let label: String
-    let placement: StudioPlacement
+    let placement: ScreenPlacement
     let options: MetricWidgetOptions
     let data: MetricWidgetData
     let env: WidgetEnv
@@ -142,8 +144,8 @@ struct MetricWidgetView: View {
         let note = ConversionFormat.note(data.conversion, language: env.language)
         let layout = StudioRender.metricLayout(
             label: label, value: (full, compact), periodText: MetricFormat.subtitle(tile, language: env.language), change: changeLine,
-            notice: notice, note: note, placement: placement, showHeader: env.showHeader, fontScale: env.fontScale,
-            showSparkline: options.showSparkline && Sparkline.isDrawable(data.spark))
+            notice: notice, note: note, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
+            showSparkline: options.showSparkline && Sparkline.isDrawable(data.spark), unitBox: placement.unitBox)
         let tone = change.map { MetricFormat.tone($0.direction, better: data.better) } ?? .flat
 
         VStack(alignment: .leading, spacing: 0) {
@@ -242,7 +244,7 @@ struct SparklineChart: View {
 
 struct LineWidgetView: View {
     let label: String
-    let placement: StudioPlacement
+    let placement: ScreenPlacement
     let options: LineWidgetOptions
     let data: LineWidgetData
     let env: WidgetEnv
@@ -254,8 +256,8 @@ struct LineWidgetView: View {
         let compact = data.unit == nil ? "—" : approx + MetricFormat.compactValue(data.value, unit: unit, language: env.language)
         let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: env.language)
         let layout = StudioRender.chartLayout(
-            type: .line, label: label, value: (full, compact), notice: notice, placement: placement,
-            showHeader: env.showHeader, fontScale: env.fontScale)
+            type: .line, label: label, value: (full, compact), notice: notice, placement: placement.cells,
+            showHeader: env.showHeader, fontScale: env.fontScale, unitBox: placement.unitBox)
         let previous = options.showPrevious ? Array(data.previous.prefix(data.values.count)) : []
         let domain = StudioRender.lineDomain(values: data.values, previous: previous)
 
@@ -383,7 +385,7 @@ struct LineChartView: View {
 
 struct BarWidgetView: View {
     let label: String
-    let placement: StudioPlacement
+    let placement: ScreenPlacement
     let data: BarWidgetData
     let env: WidgetEnv
 
@@ -392,8 +394,8 @@ struct BarWidgetView: View {
         let approx = data.conversion != nil ? "≈ " : ""
         let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: env.language)
         let layout = StudioRender.chartLayout(
-            type: .bar, label: label, value: nil, notice: notice, placement: placement, showHeader: env.showHeader,
-            fontScale: env.fontScale)
+            type: .bar, label: label, value: nil, notice: notice, placement: placement.cells,
+            showHeader: env.showHeader, fontScale: env.fontScale, unitBox: placement.unitBox)
         let bars = StudioRender.barLayout(
             bars: data.bars, others: data.others, width: layout.chartWidth, height: layout.chartHeight,
             size: layout.resource, format: { approx + MetricFormat.value($0, unit: unit, language: env.language) },
@@ -576,12 +578,13 @@ struct DownsampledImage: View {
 struct TextWidgetView: View {
     let text: String
     let options: TextWidgetOptions
-    let placement: StudioPlacement
+    let placement: ScreenPlacement
     let env: WidgetEnv
 
     var body: some View {
         let layout = StudioRender.textLayout(
-            text, size: options.size, placement: placement, fontScale: env.fontScale, showHeader: env.showHeader)
+            text, size: options.size, placement: placement.cells, fontScale: env.fontScale, showHeader: env.showHeader,
+            format: placement.format)
         let horizontal: HorizontalAlignment = options.align == .center ? .center : options.align == .end ? .trailing : .leading
         let textAlign: TextAlignment = options.align == .center ? .center : options.align == .end ? .trailing : .leading
         let frameAlign: Alignment = options.align == .center ? .top : options.align == .end ? .topTrailing : .topLeading
@@ -622,7 +625,7 @@ struct TextWidgetView: View {
 
 struct ClockWidgetView: View {
     let options: ClockWidgetOptions
-    let placement: StudioPlacement
+    let placement: ScreenPlacement
     let env: WidgetEnv
 
     var body: some View {
@@ -632,8 +635,8 @@ struct ClockWidgetView: View {
                 context.date, timeZone: zone, hour12: options.hour12, showDate: options.showDate,
                 language: env.language)
             let sizes = StudioRender.clockSize(
-                time: text.time, hasDate: text.date != nil, placement: placement, fontScale: env.fontScale,
-                showHeader: env.showHeader)
+                time: text.time, hasDate: text.date != nil, placement: placement.cells, fontScale: env.fontScale,
+                showHeader: env.showHeader, unitBox: placement.unitBox)
             VStack(alignment: .leading, spacing: 0) {
                 Text(text.time)
                     .font(env.font(sizes.time, .semibold).monospacedDigit())

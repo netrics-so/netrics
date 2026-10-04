@@ -112,8 +112,8 @@ import Testing
         #expect(v2.version == "v2-1")
         #expect(v2.hasDashboard)
         // A schema this build does not know is not read as schema 1.
-        let v3 = Data(#"{"version": "x", "schema": 3, "slides": [], "tiles": []}"#.utf8)
-        #expect(throws: (any Error).self) { try JSONDecoder().decode(DashboardPayload.self, from: v3) }
+        let v4 = Data(#"{"version": "x", "schema": 4, "slides": [], "tiles": []}"#.utf8)
+        #expect(throws: (any Error).self) { try JSONDecoder().decode(DashboardPayload.self, from: v4) }
     }
 
     @Test func cachedPayloadsRoundTrip() throws {
@@ -148,7 +148,8 @@ import Testing
         #expect(try info("").preferredDashboardSchema == 1)
         #expect(try info(#", "dashboardSchemas": [1]"#).preferredDashboardSchema == 1)
         #expect(try info(#", "dashboardSchemas": [1, 2]"#).preferredDashboardSchema == 2)
-        #expect(try info(#", "dashboardSchemas": [1, 2, 3]"#).preferredDashboardSchema == 2)
+        #expect(try info(#", "dashboardSchemas": [1, 2, 3]"#).preferredDashboardSchema == 3)
+        #expect(try info(#", "dashboardSchemas": [1, 2]"#).preferredDashboardSchema == 2)
         #expect(try info(#", "dashboardSchemas": "two""#).preferredDashboardSchema == 1)
     }
 }

@@ -49,6 +49,7 @@ extension Color {
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         let language = model.language
@@ -65,9 +66,42 @@ struct RootView: View {
                 DeviceView()
             }
         }
+        // The whole screen, for the heartbeat (ADR 0017, section 7).
+        .background {
+            GeometryReader { screen in
+                Color.clear
+                    .onAppear { model.measured(screen.size, scale: displayScale) }
+                    .onChange(of: screen.size) { _, size in model.measured(size, scale: displayScale) }
+            }
+            .ignoresSafeArea()
+        }
         // Chrome and numbers in the screen language (ADR 0016).
         .environment(\.screenLanguage, language)
         .environment(\.locale, language.locale)
+    }
+}
+
+/**
+ * Everything after pairing turns by the device's rotation setting (ADR
+ * 0017, section 7): tvOS cannot know that a TV hangs on its side, so a
+ * portrait TV is a setting in netrics. A quarter turn lays the content out
+ * with the screen's sides swapped (1080 × 1920 points on a 1080p TV) and
+ * turns it clockwise about the centre, as the web kiosk does.
+ */
+struct RotatedScreen<Content: View>: View {
+    let rotation: ScreenRotation
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        GeometryReader { screen in
+            let size = rotation.swapsSides
+                ? CGSize(width: screen.size.height, height: screen.size.width) : screen.size
+            content
+                .frame(width: size.width, height: size.height)
+                .rotationEffect(.degrees(Double(rotation.rawValue)))
+                .position(x: screen.size.width / 2, y: screen.size.height / 2)
+        }
+        .ignoresSafeArea()
     }
 }
 
@@ -89,33 +123,9 @@ struct DeviceView: View {
                 BlockedView(
                     message: KitStrings.translate(message, to: language), openSettings: { showSettings = true })
             case .paired:
-                if let payload = state.payload {
-                    if let v2 = state.dashboardV2, v2.dashboard != nil {
-                        // Schema 2: slides, rotated here (ADR 0015).
-                        SlideshowView(
-                            state: state, payload: v2, images: model.images,
-                            openSettings: { showSettings = true })
-                    } else if let dashboard = state.dashboard, dashboard.dashboard != nil {
-                        // Schema 1 (an older server): every tile on one screen.
-                        DashboardView(state: state, dashboard: dashboard)
-                            .remoteSettingsGesture { showSettings = true }
-                    } else {
-                        MessageView(
-                            title: L10n.tr("No dashboard assigned yet", language),
-                            text: L10n.tr(
-                                "Choose one under TVs in netrics; this screen picks it up on its own.", language),
-                            marker: state.offline
-                                ? TVTime.offlineMarker(
-                                    updatedAt: state.updatedAt, timeZone: payload.timeZone, language: language)
-                                : nil
-                        )
-                        .remoteSettingsGesture { showSettings = true }
-                    }
-                } else {
-                    MessageView(
-                        title: "netrics",
-                        text: L10n.tr(state.offline ? "Connecting to netrics…" : "Loading…", language))
-                        .remoteSettingsGesture { showSettings = true }
+                // The pairing screen stays upright; from here on the setting applies.
+                RotatedScreen(rotation: ScreenView.rotation(state.dashboardV2)) {
+                    paired(state)
                 }
             }
         }
@@ -127,6 +137,39 @@ struct DeviceView: View {
                 try? await Task.sleep(for: .seconds(4))
                 showSettings = true
             }
+        }
+    }
+
+    /** A paired TV: its dashboard, or a notice, in the rotated frame. */
+    @ViewBuilder
+    private func paired(_ state: DeviceState) -> some View {
+        if let payload = state.payload {
+            if let v2 = state.dashboardV2, v2.dashboard != nil {
+                // Schema 2 or 3: slides, rotated here (ADR 0015, ADR 0017).
+                SlideshowView(
+                    state: state, payload: v2, images: model.images,
+                    openSettings: { showSettings = true })
+            } else if let dashboard = state.dashboard, dashboard.dashboard != nil {
+                // Schema 1 (an older server): every tile on one screen.
+                DashboardView(state: state, dashboard: dashboard)
+                    .remoteSettingsGesture { showSettings = true }
+            } else {
+                MessageView(
+                    title: L10n.tr("No dashboard assigned yet", language),
+                    text: L10n.tr(
+                        "Choose one under TVs in netrics; this screen picks it up on its own.", language),
+                    marker: state.offline
+                        ? TVTime.offlineMarker(
+                            updatedAt: state.updatedAt, timeZone: payload.timeZone, language: language)
+                        : nil
+                )
+                .remoteSettingsGesture { showSettings = true }
+            }
+        } else {
+            MessageView(
+                title: "netrics",
+                text: L10n.tr(state.offline ? "Connecting to netrics…" : "Loading…", language))
+                .remoteSettingsGesture { showSettings = true }
         }
     }
 }

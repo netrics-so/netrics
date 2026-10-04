@@ -30,6 +30,9 @@ final class AppModel {
     private(set) var cloudError: ServerCheckError?
     /** Seconds between checks of netrics cloud while it does not answer. */
     static let cloudRetryInterval: Duration = .seconds(10)
+    /** The screen in points and its scale, as the root view measures it (unrotated). */
+    private(set) var screen = StudioCanvas(width: 0, height: 0)
+    private(set) var screenScale = 1.0
 
     private let store: any CredentialStore = KeychainCredentialStore()
     private let cache: any DashboardCache = FileDashboardCache.inCachesDirectory()
@@ -141,7 +144,8 @@ final class AppModel {
         )
         let client = DeviceClient(
             server: server, transport: transport, store: store, cache: cache, images: images,
-            appVersion: Self.appVersion)
+            appVersion: Self.appVersion,
+            screen: { [weak self] in await self?.screenReport() })
         self.client = client
         device = DeviceState()
         route = .running
@@ -151,6 +155,20 @@ final class AppModel {
             }
         }
         runTask = Task { await client.run() }
+    }
+
+    /** The root view measured the screen (launch, or a new display mode on the TV). */
+    func measured(_ size: CGSize, scale: CGFloat) {
+        screen = StudioCanvas(width: Double(size.width), height: Double(size.height))
+        screenScale = Double(scale)
+    }
+
+    /**
+     * What the heartbeat reports (ADR 0017, section 7): the size after the
+     * rotation setting, the format shown and screen view.
+     */
+    func screenReport() -> DeviceScreenReport? {
+        ScreenView.report(screen: screen, scale: screenScale, payload: device.dashboardV2)
     }
 
     private func apply(_ state: DeviceState) {

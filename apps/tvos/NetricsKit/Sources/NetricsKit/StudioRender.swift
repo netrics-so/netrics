@@ -16,9 +16,29 @@ public enum StudioRender {
     /** Below this height in units a sparkline says nothing; it is left out. */
     public static let minSparklineHeight = 40.0
 
-    /** A widget's content box in units: its rect less the widget padding. */
-    public static func contentBox(_ placement: StudioPlacement, showHeader: Bool) -> (width: Double, height: Double) {
+    /**
+     * A widget's content box in units: its rect less the widget padding.
+     * Off the classic 16:9 canvas (ADR 0017) the screen passes the widget's
+     * box in units (`ScreenPlacement.unitBox`), since the format's grid and
+     * a stretched screen give it other proportions.
+     */
+    public static func contentBox(_ placement: StudioPlacement, showHeader: Bool, unitBox: StudioCanvas? = nil)
+        -> (width: Double, height: Double)
+    {
+        if let unitBox {
+            return (unitBox.width - 2 * StudioLayout.widgetPadding, unitBox.height - 2 * StudioLayout.widgetPadding)
+        }
         let rect = StudioLayout.widgetRect(placement, canvas: StudioLayout.referenceCanvas, showHeader: showHeader)
+        return (rect.width - 2 * StudioLayout.widgetPadding, rect.height - 2 * StudioLayout.widgetPadding)
+    }
+
+    /** A widget's content box in units at its format's reference canvas (the Studio's readability check). */
+    public static func contentBox(_ placement: StudioPlacement, format: ScreenFormat, showHeader: Bool)
+        -> (width: Double, height: Double)
+    {
+        let rect = StudioLayout.placementRect(
+            placement,
+            frame: StudioLayout.screenFrame(screen: format.spec.reference, format: format, showHeader: showHeader))
         return (rect.width - 2 * StudioLayout.widgetPadding, rect.height - 2 * StudioLayout.widgetPadding)
     }
 
@@ -147,9 +167,9 @@ public enum StudioRender {
     public static func metricLayout(
         label: String, value: (full: String, compact: String), periodText: String,
         change: (full: String, short: String, comparison: String?)?, notice: String?, note: String?, placement: StudioPlacement,
-        showHeader: Bool, fontScale: Double, showSparkline: Bool
+        showHeader: Bool, fontScale: Double, showSparkline: Bool, unitBox: StudioCanvas? = nil
     ) -> MetricLayout {
-        let box = contentBox(placement, showHeader: showHeader)
+        let box = contentBox(placement, showHeader: showHeader, unitBox: unitBox)
         let sizes = StudioLayout.typeScale(.metric, placement: placement, fontScale: fontScale, showHeader: showHeader)
         let labelLayout = labelLayout(label, width: box.width, sizes: sizes)
         let small = sizes[.any] ?? StudioLayout.Minimum.any
@@ -230,9 +250,9 @@ public enum StudioRender {
 
     public static func chartLayout(
         type: StudioWidgetType, label: String, value: (full: String, compact: String)?, notice: String?,
-        placement: StudioPlacement, showHeader: Bool, fontScale: Double
+        placement: StudioPlacement, showHeader: Bool, fontScale: Double, unitBox: StudioCanvas? = nil
     ) -> ChartLayout {
-        let box = contentBox(placement, showHeader: showHeader)
+        let box = contentBox(placement, showHeader: showHeader, unitBox: unitBox)
         let sizes = StudioLayout.typeScale(type, placement: placement, fontScale: fontScale, showHeader: showHeader)
         let labelLayout = labelLayout(label, width: box.width, sizes: sizes)
         let small = sizes[.any] ?? StudioLayout.Minimum.any
@@ -404,12 +424,17 @@ public enum StudioRender {
         return height
     }
 
-    /** The text's blocks at its size option, or the next smaller one that fits. */
+    /**
+     * The text's blocks at its size option, or the next smaller one that
+     * fits, measured at the reference canvas of the placement's format (as
+     * the Studio's readability check and the web, ADR 0017 section 6).
+     */
     public static func textLayout(
-        _ text: String, size: StudioTextSize, placement: StudioPlacement, fontScale: Double, showHeader: Bool
+        _ text: String, size: StudioTextSize, placement: StudioPlacement, fontScale: Double, showHeader: Bool,
+        format: ScreenFormat = .widescreen
     ) -> TextLayout {
         let blocks = StudioLayout.parseText(text)
-        let box = contentBox(placement, showHeader: showHeader)
+        let box = contentBox(placement, format: format, showHeader: showHeader)
         var current = size
         while true {
             let sizes = StudioLayout.textWidgetSizes(current, fontScale: fontScale)
@@ -430,10 +455,11 @@ public enum StudioRender {
 
     /** The clock's time size in units: as large as fits, at least the minimum. */
     public static func clockSize(
-        time: String, hasDate: Bool, placement: StudioPlacement, fontScale: Double, showHeader: Bool
+        time: String, hasDate: Bool, placement: StudioPlacement, fontScale: Double, showHeader: Bool,
+        unitBox: StudioCanvas? = nil
     ) -> (time: Double, date: Double) {
         let sizes = StudioLayout.typeScale(.clock, placement: placement, fontScale: fontScale, showHeader: showHeader)
-        let box = contentBox(placement, showHeader: showHeader)
+        let box = contentBox(placement, showHeader: showHeader, unitBox: unitBox)
         let dateSize = sizes[.date] ?? StudioLayout.Minimum.title
         let dateHeight = hasDate ? dateSize * lineHeight : 0
         let minimum = sizes[.clockMin] ?? StudioLayout.Minimum.clock
