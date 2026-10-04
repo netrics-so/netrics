@@ -918,6 +918,40 @@ describe("screen language (ADR 0016)", () => {
     expect((await v2(STUDIO, NOW, "en")).version).toBe(english.version);
   });
 
+  it("uses the connector's German metric names and noun (#257)", async () => {
+    await owner`update connectors set manifest = ${owner.json({
+      id: "snap",
+      translations: {
+        de: {
+          resourceNoun: { singular: "App", plural: "Apps" },
+          metrics: { "snap.downloads": { name: "Ladevorgänge" } },
+        },
+      },
+    })} where id = 'snap'`;
+    try {
+      const payload = await v2(STUDIO, NOW, "de");
+      expect(labels(payload)).toContainEqual([
+        id(1, 103),
+        "Ladevorgänge · Alle Apps",
+      ]);
+      expect(labels(payload)).toContainEqual([
+        id(1, 101),
+        "Ladevorgänge · Wurfel",
+      ]);
+      expect((await v1(STUDIO, "de")).tiles[0]!.label).toBe(
+        "Ladevorgänge · Wurfel",
+      );
+      // English keeps the manifest's own names.
+      expect(labels(await v2(STUDIO))).toContainEqual([
+        id(1, 103),
+        "Downloads · All resources",
+      ]);
+    } finally {
+      await owner`update connectors set manifest = ${owner.json({ id: "snap" })}
+                  where id = 'snap'`;
+    }
+  });
+
   it("labels schema 1 in German and adds the language only then", async () => {
     const german = deviceDashboardResponseSchema.parse(await v1(STUDIO, "de"));
     expect(german.locale).toBe("de");

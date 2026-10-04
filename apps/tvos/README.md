@@ -137,6 +137,16 @@ notices and the grid follow `format-metric.ts`, `tile-status.ts` and
 `tv-grid.ts`; the widget layout follows `studio-render.ts`, `studio-chart.ts`
 and the text widget layout in `studio-widgets.ts`.
 
+## Languages
+
+English and German (ADR 0016). The app's own text lives in
+`NetricsTV/Localizable.xcstrings` (keyed by the English text); NetricsKit's
+formatting words (periods, comparisons, notices) are a typed table in
+`Localization.swift`. Before pairing the app follows the Apple TV's
+language; once paired, the payload's `locale` (the workspace's screen
+language) decides the app's text and number and date formats. Labels in the
+payload arrive finished. Tests check that every key has a German value.
+
 ## Transport security
 
 HTTPS with a valid certificate is the default. "Allow insecure connections"
