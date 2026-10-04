@@ -61,7 +61,10 @@ export function imageHeaders(
     .header("etag", etag)
     .header("cache-control", "private, max-age=31536000, immutable")
     .header("x-content-type-options", "nosniff")
-    .header("content-security-policy", "default-src 'none'; sandbox")
+    .header(
+      "content-security-policy",
+      "default-src 'none'; sandbox; frame-ancestors 'none'",
+    )
     .header(
       "content-disposition",
       `inline; filename="image.${EXTENSIONS[image.contentType] ?? "bin"}"`,

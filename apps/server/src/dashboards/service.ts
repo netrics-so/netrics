@@ -29,6 +29,7 @@ import {
   metricWidgets,
   replaceDashboard,
   resourceNameKey,
+  hasSqlstate,
   withWorkspace,
   type Dashboard,
   type DashboardSettings,
@@ -624,6 +625,35 @@ async function chooseTheme(
   return ok(choice);
 }
 
+const IMAGE_REFERENCE_KEYS = [
+  "dashboards_logo_image_fk",
+  "dashboard_slides_background_image_fk",
+  "dashboard_widgets_image_fk",
+];
+
+/** A foreign key violation on one of the image references. */
+function isImageReferenceError(error: unknown): boolean {
+  if (!hasSqlstate(error, "23503")) {
+    return false;
+  }
+  let current: unknown = error;
+  for (let depth = 0; current instanceof Error && depth < 8; depth += 1) {
+    const constraint = (current as { constraint_name?: unknown })
+      .constraint_name;
+    if (
+      (typeof constraint === "string" &&
+        IMAGE_REFERENCE_KEYS.includes(constraint)) ||
+      IMAGE_REFERENCE_KEYS.some(
+        (key) => current instanceof Error && current.message.includes(key),
+      )
+    ) {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
+}
+
 /**
  * Whether every image a dashboard uses (logo, slide backgrounds, image
  * widgets) is an image of this workspace (#217). The composite foreign keys
@@ -683,6 +713,25 @@ export function createDashboardService(deps: { db: Database }) {
       run,
     );
 
+  /**
+   * A dashboard write. An image it uses may be deleted by a concurrent
+   * request after checkImages; the deferred image keys then refuse the
+   * commit (23503), which is answered like a missing image (#217).
+   */
+  const writeInWorkspace = async (
+    actor: Actor,
+    run: (tx: Transaction) => Promise<Result<DashboardView>>,
+  ): Promise<Result<DashboardView>> => {
+    try {
+      return await inWorkspace(actor, run);
+    } catch (error) {
+      if (isImageReferenceError(error)) {
+        return fail<DashboardView>(400, "image_not_found");
+      }
+      throw error;
+    }
+  };
+
   return {
     list(actor: Actor) {
       return inWorkspace(actor, async (tx) =>
@@ -707,7 +756,7 @@ export function createDashboardService(deps: { db: Database }) {
     },
 
     create(actor: Actor, body: CreateDashboardRequest) {
-      return inWorkspace(actor, async (tx) => {
+      return writeInWorkspace(actor, async (tx) => {
         if (!(await checkProject(tx, actor.workspaceId, body.projectId))) {
           return fail<DashboardView>(404, "project_not_found");
         }
@@ -761,7 +810,7 @@ export function createDashboardService(deps: { db: Database }) {
     },
 
     replace(actor: Actor, dashboardId: string, body: ReplaceDashboardRequest) {
-      return inWorkspace(actor, async (tx) => {
+      return writeInWorkspace(actor, async (tx) => {
         if (!(await checkProject(tx, actor.workspaceId, body.projectId))) {
           return fail<DashboardView>(404, "project_not_found");
         }
@@ -873,7 +922,7 @@ export function createDashboardService(deps: { db: Database }) {
       dashboardId: string,
       body: DuplicateDashboardRequest,
     ) {
-      return inWorkspace(actor, async (tx) => {
+      return writeInWorkspace(actor, async (tx) => {
         const source = await findDashboard(tx, actor.workspaceId, dashboardId);
         if (!source) {
           return fail<DashboardView>(404, NOT_FOUND);

@@ -263,7 +263,7 @@ browsers and tvOS ImageIO. Image bytes and names never reach logs.
   so a device credential cannot enumerate the workspace's images.
 
 Both answer with the stored `Content-Type`, `X-Content-Type-Options:
-nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`,
+nosniff`, `Content-Security-Policy: default-src 'none'; sandbox; frame-ancestors 'none'`,
 `Content-Disposition: inline; filename="image.<ext>"`,
 `Cross-Origin-Resource-Policy: same-origin`, `ETag: "<sha256>"` (304 on
 `If-None-Match`) and `Cache-Control: private, max-age=31536000, immutable`.

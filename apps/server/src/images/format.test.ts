@@ -328,6 +328,177 @@ describe("sanitizeImage: metadata", () => {
   });
 });
 
+describe("sanitizeImage: review hardening (#217)", () => {
+  const jpegSegment = (marker: number, data: Buffer) => {
+    const header = Buffer.from([0xff, marker, 0, 0]);
+    header.writeUInt16BE(data.length + 2, 2);
+    return Buffer.concat([header, data]);
+  };
+  /** plain.jpg with its own APP0 replaced by `segments`. */
+  const jpegWith = (...segments: Buffer[]) => {
+    const source = fixture("plain.jpg");
+    const app0Length = source.readUInt16BE(4);
+    return Buffer.concat([
+      source.subarray(0, 2),
+      ...segments,
+      source.subarray(4 + app0Length),
+    ]);
+  };
+
+  it("keeps a JFIF header without its thumbnail and drops JFXX", () => {
+    // JFIF 1.02, 72 dpi, with a 2 × 1 RGB thumbnail that carries text.
+    const thumbnail = Buffer.from("GPS 52.5N");
+    const jfif = Buffer.concat([
+      Buffer.from("JFIF\0", "latin1"),
+      Buffer.from([1, 2, 1, 0, 72, 0, 72, 3, 1]),
+      thumbnail,
+    ]);
+    const jfxx = Buffer.concat([
+      Buffer.from("JFXX\0\x10", "latin1"),
+      Buffer.from("embedded JPEG thumbnail, GPS secret"),
+    ]);
+    const { content } = accepted(
+      "image/jpeg",
+      jpegWith(jpegSegment(0xe0, jfif), jpegSegment(0xe0, jfxx)),
+    );
+    expect(content.includes("GPS")).toBe(false);
+    expect(content.includes("JFXX")).toBe(false);
+    const [app0, next] = jpegSegments(content);
+    expect(app0!.marker).toBe(0xe0);
+    expect(app0!.bytes).toEqual(
+      Buffer.concat([
+        Buffer.from([0xff, 0xe0, 0x00, 0x10]),
+        Buffer.from("JFIF\0", "latin1"),
+        Buffer.from([1, 2, 1, 0, 72, 0, 72, 0, 0]),
+      ]),
+    );
+    expect(next!.marker).not.toBe(0xe0);
+  });
+
+  it("keeps APP14 only as Adobe's 12-byte segment", () => {
+    const adobe = Buffer.from("Adobe\0\x64\0\0\0\0\x01", "latin1");
+    const kept = accepted("image/jpeg", jpegWith(jpegSegment(0xee, adobe)));
+    expect(kept.content.includes("Adobe")).toBe(true);
+    for (const data of [
+      Buffer.concat([adobe, Buffer.from("secret")]),
+      Buffer.from("Notadobe secret"),
+    ]) {
+      const { content } = accepted(
+        "image/jpeg",
+        jpegWith(jpegSegment(0xee, data)),
+      );
+      expect(content.includes("secret")).toBe(false);
+      expect(jpegSegments(content).map(({ marker }) => marker)).not.toContain(
+        0xee,
+      );
+    }
+  });
+
+  it("drops kept PNG chunks whose length does not fit, and renames iCCP", () => {
+    const source = fixture("plain.png");
+    const [header, ...rest] = pngChunks(source);
+    const bad = [
+      pngChunk("gAMA", Buffer.from("secret")),
+      pngChunk("sRGB", Buffer.from("secret")),
+      pngChunk("pHYs", Buffer.from("not nine bytes, secret")),
+      pngChunk("cHRM", Buffer.from("secret")),
+      pngChunk("bKGD", Buffer.from("secrets")),
+      pngChunk("sBIT", Buffer.from("secret")),
+      // tRNS is not allowed with colour type 6 (RGBA)
+      pngChunk("tRNS", Buffer.from("se")),
+    ];
+    const input = Buffer.concat([
+      PNG_SIGNATURE,
+      pngChunk(header!.type, header!.data),
+      ...bad,
+      ...rest.map((chunk) => pngChunk(chunk.type, chunk.data)),
+    ]);
+    const { content } = accepted("image/png", input);
+    expect(content).toEqual(source);
+
+    const metadata = accepted("image/png", fixture("metadata.png")).content;
+    const iccp = pngChunks(metadata).find((chunk) => chunk.type === "iCCP")!;
+    expect(iccp.data.subarray(0, 5)).toEqual(Buffer.from("ICC\0\0", "latin1"));
+    const original = pngChunks(fixture("metadata.png")).find(
+      (chunk) => chunk.type === "iCCP",
+    )!;
+    // Same compressed profile after the name.
+    expect(iccp.data.subarray(5)).toEqual(
+      original.data.subarray(original.data.indexOf(0) + 2),
+    );
+    expect(accepted("image/png", metadata).content).toEqual(metadata);
+  });
+
+  it("keeps valid tRNS, bKGD and sBIT for the colour type", () => {
+    const source = fixture("plain.png");
+    const [, ...rest] = pngChunks(source);
+    const rgb = Buffer.concat([
+      PNG_SIGNATURE,
+      ihdr(24, 16, 8, 2),
+      pngChunk("sBIT", Buffer.from([8, 8, 8])),
+      pngChunk("tRNS", Buffer.alloc(6)),
+      pngChunk("bKGD", Buffer.alloc(6)),
+      ...rest.map((chunk) => pngChunk(chunk.type, chunk.data)),
+    ]);
+    expect(
+      pngChunks(accepted("image/png", rgb).content).map((c) => c.type),
+    ).toEqual(["IHDR", "sBIT", "tRNS", "bKGD", "IDAT", "IEND"]);
+    const palette = Buffer.concat([
+      PNG_SIGNATURE,
+      ihdr(24, 16, 8, 3),
+      pngChunk("PLTE", Buffer.alloc(6)),
+      // two palette entries: three alpha values is one too many
+      pngChunk("tRNS", Buffer.alloc(3)),
+      ...rest.map((chunk) => pngChunk(chunk.type, chunk.data)),
+    ]);
+    expect(
+      pngChunks(accepted("image/png", palette).content).map((c) => c.type),
+    ).toEqual(["IHDR", "PLTE", "IDAT", "IEND"]);
+  });
+
+  it("refuses more than 1,000 chunks or segments and empty tables", () => {
+    const source = fixture("plain.png");
+    const [header, ...rest] = pngChunks(source);
+    const many = Buffer.concat([
+      PNG_SIGNATURE,
+      pngChunk(header!.type, header!.data),
+      ...Array.from({ length: 1000 }, () =>
+        pngChunk("tEXt", Buffer.from("a\0b")),
+      ),
+      ...rest.map((chunk) => pngChunk(chunk.type, chunk.data)),
+    ]);
+    expectRejected("image/png", many, "image_invalid");
+
+    const comments = Array.from({ length: 1000 }, () =>
+      jpegSegment(0xfe, Buffer.from("c")),
+    );
+    expectRejected("image/jpeg", jpegWith(...comments), "image_invalid");
+    expectRejected(
+      "image/jpeg",
+      jpegWith(jpegSegment(0xdb, Buffer.alloc(0))),
+      "image_invalid",
+    );
+    expectRejected(
+      "image/jpeg",
+      jpegWith(jpegSegment(0xc4, Buffer.alloc(0))),
+      "image_invalid",
+    );
+
+    const [image] = riffChunks(fixture("lossy.webp"));
+    expectRejected(
+      "image/webp",
+      webp(
+        vp8x(0, 24, 16),
+        ...Array.from({ length: 1000 }, () =>
+          riffChunk("JUNK", Buffer.alloc(0)),
+        ),
+        riffChunk("VP8 ", image!.data),
+      ),
+      "image_invalid",
+    );
+  });
+});
+
 describe("sanitizeImage: refused files", () => {
   it("refuses SVG and HTML whatever type they claim", () => {
     const svg = Buffer.from(

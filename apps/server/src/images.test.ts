@@ -459,7 +459,8 @@ describe("list, content and delete", () => {
     expect(response.headers).toMatchObject({
       "content-type": "image/png",
       "x-content-type-options": "nosniff",
-      "content-security-policy": "default-src 'none'; sandbox",
+      "content-security-policy":
+        "default-src 'none'; sandbox; frame-ancestors 'none'",
       "content-disposition": 'inline; filename="image.png"',
       "cross-origin-resource-policy": "same-origin",
       etag: `"${image.sha256}"`,
@@ -874,7 +875,8 @@ describe("device access to images", () => {
       expect(response.headers).toMatchObject({
         "content-type": image.contentType,
         "x-content-type-options": "nosniff",
-        "content-security-policy": "default-src 'none'; sandbox",
+        "content-security-policy":
+          "default-src 'none'; sandbox; frame-ancestors 'none'",
         "cross-origin-resource-policy": "same-origin",
         etag: `"${image.sha256}"`,
         "cache-control": "private, max-age=31536000, immutable",
@@ -962,6 +964,58 @@ describe("device access to images", () => {
   });
 });
 
+describe("review hardening (#217)", () => {
+  it("logs a failed image write without the name or the bytes (M1)", async () => {
+    await admin`alter table workspace_images add constraint review_fail
+                check (name <> 'Leaky Name.png')`;
+    try {
+      const failed = await upload(owner, fixture("plain.png"), "image/png", {
+        name: "Leaky Name.png",
+      });
+      expectError(failed, 500, "internal_error");
+    } finally {
+      await admin`alter table workspace_images drop constraint review_fail`;
+    }
+    const text = logs.join("\n");
+    expect(text).toContain("ImageStoreError");
+    expect(text).toContain("23514");
+    expect(text).not.toContain("Leaky");
+    expect(text).not.toContain("IHDR");
+    expect(text).not.toContain(
+      fixture("plain.png").toString("hex").slice(0, 40),
+    );
+  });
+
+  it("answers 400 when an image disappears before the save commits (L3)", async () => {
+    const image = await uploaded(owner, fixture("plain.png"), "image/png");
+    // Stands in for a concurrent delete between the check and the commit.
+    await admin.unsafe(`
+      create function review_drop_image() returns trigger language plpgsql as $$
+      begin
+        delete from workspace_images where id = new.image_id;
+        return new;
+      end $$;
+      create trigger review_drop_image after insert on dashboard_widgets
+        for each row when (new.image_id is not null)
+        execute function review_drop_image();`);
+    try {
+      expectError(
+        await newDashboard(owner, {
+          slides: imageSlides({ widget: image.id }),
+        }),
+        400,
+        "image_not_found",
+      );
+    } finally {
+      await admin.unsafe(`
+        drop trigger review_drop_image on dashboard_widgets;
+        drop function review_drop_image();`);
+    }
+    // The transaction rolled back: the image is still there.
+    expect((await get(owner, image.url)).statusCode).toBe(200);
+  });
+});
+
 describe("logs", () => {
   it("never contain image bytes or names", () => {
     const text = logs.join("\n");
@@ -971,6 +1025,7 @@ describe("logs", () => {
       "holiday.jpg",
       "Private Name",
       "first.png",
+      "Leaky",
     ]) {
       expect(text).not.toContain(name);
     }

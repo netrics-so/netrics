@@ -101,6 +101,72 @@ const PNG_BIT_DEPTHS: Record<number, readonly number[]> = {
   6: [8, 16],
 };
 
+/** At most this many chunks or segments per file (work bound). */
+const MAX_PARTS = 1000;
+
+/** Valid lengths of a kept ancillary chunk for a colour type. */
+function ancillaryLengthOk(
+  type: string,
+  length: number,
+  colorType: number,
+  paletteEntries: number,
+): boolean {
+  switch (type) {
+    case "gAMA":
+    case "cICP":
+      return length === 4;
+    case "sRGB":
+      return length === 1;
+    case "pHYs":
+      return length === 9;
+    case "cHRM":
+      return length === 32;
+    case "cLLI":
+      return length === 8;
+    case "mDCV":
+      return length === 24;
+    case "bKGD":
+      return length === ({ 0: 2, 2: 6, 3: 1, 4: 2, 6: 6 }[colorType] ?? -1);
+    case "sBIT":
+      return length === ({ 0: 1, 2: 3, 3: 3, 4: 2, 6: 4 }[colorType] ?? -1);
+    case "tRNS":
+      return colorType === 0
+        ? length === 2
+        : colorType === 2
+          ? length === 6
+          : colorType === 3 && length >= 1 && length <= paletteEntries;
+    default:
+      return true;
+  }
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const chunk = Buffer.alloc(12 + data.length);
+  chunk.writeUInt32BE(data.length, 0);
+  chunk.write(type, 4, "latin1");
+  data.copy(chunk, 8);
+  chunk.writeUInt32BE(
+    crc32(chunk.subarray(4, 8 + data.length)),
+    8 + data.length,
+  );
+  return chunk;
+}
+
+/**
+ * iCCP with its free-text profile name replaced by "ICC"; null when the
+ * chunk is malformed (then it is dropped).
+ */
+function iccpWithoutName(data: Buffer): Buffer | null {
+  const end = data.indexOf(0);
+  if (end < 1 || end > 79 || data[end + 1] !== 0 || data.length < end + 3) {
+    return null;
+  }
+  return pngChunk(
+    "iCCP",
+    Buffer.concat([Buffer.from("ICC\0\0", "latin1"), data.subarray(end + 2)]),
+  );
+}
+
 function isChunkTypeByte(byte: number): boolean {
   return (byte >= 0x41 && byte <= 0x5a) || (byte >= 0x61 && byte <= 0x7a);
 }
@@ -112,13 +178,16 @@ function sanitizePng(input: Buffer) {
   let height = 0;
   let colorType = -1;
   let seenPlte = false;
+  let paletteEntries = 0;
+  let chunks = 0;
   let idatState: "before" | "inside" | "after" = "before";
   let ended = false;
   let first = true;
   const seen = new Set<string>();
 
   while (!ended) {
-    if (offset + 12 > input.length) {
+    chunks += 1;
+    if (chunks > MAX_PARTS || offset + 12 > input.length) {
       reject();
     }
     const length = input.readUInt32BE(offset);
@@ -201,6 +270,7 @@ function sanitizePng(input: Buffer) {
           reject();
         }
         seenPlte = true;
+        paletteEntries = length / 3;
         kept.push(chunk);
         break;
       case "IEND":
@@ -215,8 +285,19 @@ function sanitizePng(input: Buffer) {
           // An unknown critical chunk: a decoder must refuse the image.
           reject();
         }
-        if (PNG_KEPT_ANCILLARY.has(type)) {
-          kept.push(chunk);
+        // A kept chunk with an impossible length is dropped, not stored.
+        if (
+          PNG_KEPT_ANCILLARY.has(type) &&
+          ancillaryLengthOk(type, length, colorType, paletteEntries)
+        ) {
+          if (type === "iCCP") {
+            const iccp = iccpWithoutName(data);
+            if (iccp) {
+              kept.push(iccp);
+            }
+          } else {
+            kept.push(chunk);
+          }
         }
     }
   }
@@ -237,6 +318,8 @@ const JPEG_OTHER_SOF = new Set([
 // Table and restart segments the decoder needs.
 const JPEG_TABLES = new Set([0xc4, 0xcc, 0xdb, 0xdd]);
 const ICC_PROFILE_ID = Buffer.from("ICC_PROFILE\0", "latin1");
+const JFIF_ID = Buffer.from("JFIF\0", "latin1");
+const ADOBE_ID = Buffer.from("Adobe", "latin1");
 
 function sanitizeJpeg(input: Buffer) {
   const kept: Buffer[] = [input.subarray(0, 2)];
@@ -245,9 +328,15 @@ function sanitizeJpeg(input: Buffer) {
   let height = 0;
   let sawFrame = false;
   let sawScan = false;
+  let segments = 0;
 
   for (;;) {
-    if (offset >= input.length || input[offset] !== 0xff) {
+    segments += 1;
+    if (
+      segments > MAX_PARTS ||
+      offset >= input.length ||
+      input[offset] !== 0xff
+    ) {
       reject();
     }
     // Fill bytes (0xFF) may precede a marker.
@@ -316,6 +405,9 @@ function sanitizeJpeg(input: Buffer) {
       reject();
     }
     if (JPEG_TABLES.has(marker)) {
+      if (data.length === 0) {
+        reject();
+      }
       kept.push(segment);
       continue;
     }
@@ -356,9 +448,29 @@ function sanitizeJpeg(input: Buffer) {
       sawScan = true;
       continue;
     }
-    if (marker === 0xe0 || marker === 0xee) {
-      // JFIF and Adobe (colour transform) carry no personal data.
-      kept.push(segment);
+    if (marker === 0xe0) {
+      // JFIF only, without its thumbnail: the 14-byte header with the
+      // thumbnail size zeroed. JFXX (extension thumbnails) and anything
+      // else in APP0 are dropped.
+      if (data.length >= 14 && startsWith(data, [...JFIF_ID])) {
+        const jfif = Buffer.from([
+          0xff,
+          0xe0,
+          0x00,
+          0x10,
+          ...data.subarray(0, 14),
+        ]);
+        jfif[16] = 0;
+        jfif[17] = 0;
+        kept.push(jfif);
+      }
+      continue;
+    }
+    if (marker === 0xee) {
+      // Adobe's colour transform, exactly the 12-byte segment.
+      if (data.length === 12 && startsWith(data, [...ADOBE_ID])) {
+        kept.push(segment);
+      }
       continue;
     }
     if (marker === 0xe2) {
@@ -391,6 +503,9 @@ function readRiffChunks(input: Buffer): RiffChunk[] {
   const chunks: RiffChunk[] = [];
   let offset = 12;
   while (offset < input.length) {
+    if (chunks.length >= MAX_PARTS) {
+      reject();
+    }
     if (offset + 8 > input.length) {
       reject();
     }

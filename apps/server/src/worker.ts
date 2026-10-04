@@ -2,6 +2,8 @@ import { hostname } from "node:os";
 
 import pino, { type Logger } from "pino";
 
+import { logSerializers } from "./log-serializers.js";
+
 import { createDefaultRegistry } from "./connectors.js";
 import {
   claimJobs,
@@ -274,6 +276,7 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
 /** Process entry for NETRICS_ROLE=worker (called from src/index.ts). */
 export async function startWorker(config: Config): Promise<void> {
   const logger = pino({
+    serializers: logSerializers,
     level: config.logLevel,
     base: { service: "netrics-server", role: config.role },
   });

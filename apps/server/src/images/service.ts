@@ -114,6 +114,41 @@ export function presentImage(image: ImageRow): WorkspaceImage {
   };
 }
 
+/**
+ * A failed image write, with only the SQLSTATE: the driver's error repeats
+ * the query's bound values (the image bytes, its name), and an error that
+ * reaches the request log must not carry them.
+ */
+export class ImageStoreError extends Error {
+  readonly code: string | undefined;
+
+  constructor(code: string | undefined) {
+    super(`image store failed${code ? ` (SQLSTATE ${code})` : ""}`);
+    this.name = "ImageStoreError";
+    this.code = code;
+  }
+}
+
+function sqlstateOf(error: unknown): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; current instanceof Error && depth < 8; depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && /^[0-9A-Z]{5}$/.test(code)) {
+      return code;
+    }
+    current = current.cause;
+  }
+  return undefined;
+}
+
+async function withoutQueryValues<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    throw new ImageStoreError(sqlstateOf(error));
+  }
+}
+
 export interface ImageServiceDeps {
   db: Database;
   quota: ImageQuota;
@@ -162,38 +197,40 @@ export function createImageService(deps: ImageServiceDeps) {
         return fail(REJECTION_STATUS[checked.error], checked.error);
       }
       const sha256 = createHash("sha256").update(checked.content).digest("hex");
-      return inWorkspace(actor, async (tx) => {
-        const result = await store.insert(
-          tx,
-          actor.workspaceId,
-          {
-            name: sanitizeImageName(rawName),
-            contentType: checked.contentType,
-            width: checked.width,
-            height: checked.height,
-            sha256,
-            content: checked.content,
-            createdByUserId: actor.callerId,
-          },
-          quota,
-        );
-        if (result.status === "quota_exceeded") {
-          return fail(409, "image_quota_exceeded");
-        }
-        await insertAuditEvent(tx, {
-          workspaceId: actor.workspaceId,
-          actorUserId: actor.callerId,
-          action: "image.uploaded",
-          target: result.image.id,
-          metadata: {
-            contentType: result.image.contentType,
-            bytes: result.image.bytes,
-            width: result.image.width,
-            height: result.image.height,
-          },
-        });
-        return ok(presentImage(result.image));
-      });
+      return withoutQueryValues(() =>
+        inWorkspace(actor, async (tx) => {
+          const result = await store.insert(
+            tx,
+            actor.workspaceId,
+            {
+              name: sanitizeImageName(rawName),
+              contentType: checked.contentType,
+              width: checked.width,
+              height: checked.height,
+              sha256,
+              content: checked.content,
+              createdByUserId: actor.callerId,
+            },
+            quota,
+          );
+          if (result.status === "quota_exceeded") {
+            return fail(409, "image_quota_exceeded");
+          }
+          await insertAuditEvent(tx, {
+            workspaceId: actor.workspaceId,
+            actorUserId: actor.callerId,
+            action: "image.uploaded",
+            target: result.image.id,
+            metadata: {
+              contentType: result.image.contentType,
+              bytes: result.image.bytes,
+              width: result.image.width,
+              height: result.image.height,
+            },
+          });
+          return ok(presentImage(result.image));
+        }),
+      );
     },
 
     /** Metadata of one image, or 404 when `version` is not its SHA-256. */

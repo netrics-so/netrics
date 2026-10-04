@@ -169,7 +169,8 @@ describe("api proxy requests", () => {
     const imageHeaders = {
       "content-type": "image/png",
       "x-content-type-options": "nosniff",
-      "content-security-policy": "default-src 'none'; sandbox",
+      "content-security-policy":
+        "default-src 'none'; sandbox; frame-ancestors 'none'",
       "content-disposition": 'inline; filename="image.png"',
       "cross-origin-resource-policy": "same-origin",
       etag: '"abc"',

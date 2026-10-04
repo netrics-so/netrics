@@ -16,6 +16,7 @@ import type { ConnectorRegistry } from "@netrics/connector-runtime";
 
 import { createAuthService, type AuthService } from "./auth/index.js";
 import { registerClientAddress } from "./client-address.js";
+import { logSerializers } from "./log-serializers.js";
 import { createDefaultRegistry } from "./connectors.js";
 import { createOnboarding } from "./onboarding.js";
 import { createCredentialKeyring } from "./credentials.js";
@@ -75,9 +76,15 @@ export async function buildApp(
 
   const app = Fastify({
     ...(deps.logger
-      ? { loggerInstance: deps.logger }
+      ? {
+          loggerInstance: deps.logger.child(
+            {},
+            { serializers: logSerializers },
+          ),
+        }
       : {
           logger: {
+            serializers: logSerializers,
             level: config.logLevel,
             base: { service: "netrics-server", role: config.role },
           },

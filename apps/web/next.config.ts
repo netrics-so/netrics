@@ -22,7 +22,8 @@ const contentSecurityPolicy = [
   "frame-ancestors 'none'",
 ].join("; ");
 
-const IMAGE_CONTENT_POLICY = "default-src 'none'; sandbox";
+const IMAGE_CONTENT_POLICY =
+  "default-src 'none'; sandbox; frame-ancestors 'none'";
 
 const securityHeaders = [
   { key: "Content-Security-Policy", value: contentSecurityPolicy },
