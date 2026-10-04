@@ -167,6 +167,7 @@ export type {
   DashboardSummary,
   DashboardWidgetRow,
   LayoutPlacement,
+  PreviewWidget,
   ReplaceResult,
   SlideInput,
   SlideLayout,

@@ -1855,6 +1855,38 @@ export const dashboardListResponseSchema = z.object({
       slideCount: z.number().int().min(0),
       widgetCount: z.number().int().min(0),
       updatedAt: z.iso.datetime(),
+      /**
+       * The theme shown (#304): a built-in key (named in the reader's
+       * language) or a custom theme of the workspace, with its name.
+       */
+      theme: z.object({
+        builtin: builtinThemeKeySchema.nullable(),
+        id: z.uuid().nullable(),
+        name: z.string().min(1),
+      }),
+      /** The brand accent, else the theme's accent. */
+      accent: hexColorSchema,
+      primaryFormat: screenFormatSchema,
+      /** Screens (not revoked) that show this dashboard. */
+      screenCount: z.number().int().min(0),
+      /**
+       * A thumbnail of the first enabled slide: the theme's colours and
+       * its widgets on the primary format's grid (none without one).
+       */
+      preview: z.object({
+        background: hexColorSchema,
+        surface: hexColorSchema,
+        border: hexColorSchema,
+        widgets: z.array(
+          z.object({
+            type: widgetTypeSchema,
+            x: z.number().int().min(0),
+            y: z.number().int().min(0),
+            w: z.number().int().min(1),
+            h: z.number().int().min(1),
+          }),
+        ),
+      }),
     }),
   ),
 });

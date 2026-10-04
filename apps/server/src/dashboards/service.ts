@@ -65,6 +65,7 @@ import {
 } from "@netrics/domain";
 
 import { resolveThemeTokens } from "../themes/service.js";
+import { presentSummaries } from "./summaries.js";
 import { copyLayouts, rebaseSlides, resolveSlideLayouts } from "./layouts.js";
 import {
   dashboardFormatWarnings,
@@ -813,10 +814,11 @@ export function createDashboardService(deps: { db: Database }) {
   return {
     list(actor: Actor) {
       return inWorkspace(actor, async (tx) =>
-        (await listDashboards(tx, actor.workspaceId)).map((summary) => ({
-          ...summary,
-          updatedAt: summary.updatedAt.toISOString(),
-        })),
+        presentSummaries(
+          tx,
+          actor.workspaceId,
+          await listDashboards(tx, actor.workspaceId),
+        ),
       );
     },
 

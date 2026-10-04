@@ -441,6 +441,73 @@ describe("dashboards", () => {
     expect(rows[0]!.id).toBe(created.slides[1]!.widgets[0]!.id);
   });
 
+  it("lists thumbnails and screen counts per workspace (#304)", async () => {
+    const shown = await inA((tx) =>
+      insertDashboard(tx, workspaceA, {
+        name: "Shown",
+        projectId: null,
+        settings: { themeBuiltin: "paper", accentColor: "#e5572f" },
+        primaryFormat: "9x16",
+        slides: [
+          slide([metric(connectionA, { x: 3 })], { enabled: false }),
+          slide([
+            metric(connectionA, { x: 3, y: 2, w: 3, h: 3 }),
+            { ...metric(connectionA, { w: 6 }), type: "line" },
+          ]),
+        ],
+      }),
+    );
+    const off = await inA((tx) =>
+      insertDashboard(tx, workspaceA, {
+        name: "All off",
+        projectId: null,
+        slides: [slide([metric(connectionA)], { enabled: false })],
+      }),
+    );
+    const foreign = await inB((tx) =>
+      insertDashboard(tx, workspaceB, {
+        name: "Foreign",
+        projectId: null,
+        slides: [slide([metric(connectionB, { x: 1 })])],
+      }),
+    );
+    await admin`insert into devices (workspace_id, name, dashboard_id, revoked_at)
+                values (${workspaceA}, 'Wall', ${shown.id}, null),
+                       (${workspaceA}, 'Lobby', ${shown.id}, null),
+                       (${workspaceA}, 'Old', ${shown.id}, now()),
+                       (${workspaceB}, 'Theirs', ${foreign.id}, null)`;
+
+    const listA = await inA((tx) => listDashboards(tx, workspaceA));
+    expect(listA.find((d) => d.id === shown.id)).toMatchObject({
+      themeBuiltin: "paper",
+      themeId: null,
+      accentColor: "#e5572f",
+      primaryFormat: "9x16",
+      screenCount: 2,
+      // The first enabled slide, in reading order.
+      previewWidgets: [
+        { type: "line", x: 0, y: 0, w: 6, h: 2 },
+        { type: "metric", x: 3, y: 2, w: 3, h: 3 },
+      ],
+    });
+    expect(listA.find((d) => d.id === off.id)).toMatchObject({
+      screenCount: 0,
+      previewWidgets: [],
+    });
+    expect(listA.map((d) => d.id)).not.toContain(foreign.id);
+
+    // Workspace B sees only its own dashboard, its screen and its widgets.
+    const listB = await inB((tx) => listDashboards(tx, workspaceB));
+    expect(listB).toHaveLength(1);
+    expect(listB[0]).toMatchObject({
+      id: foreign.id,
+      screenCount: 1,
+      previewWidgets: [{ type: "metric", x: 1, y: 0, w: 3, h: 2 }],
+    });
+    // A's dashboards stay hidden from B's context (RLS).
+    expect(await inB((tx) => listDashboards(tx, workspaceA))).toEqual([]);
+  });
+
   it("drops a deleted connection's widgets", async () => {
     const [extra] =
       await admin`insert into connections (workspace_id, connector_id, name)

@@ -4,6 +4,7 @@ import { accountDe } from "./account/de";
 import { apiErrorsDe } from "./api-errors/de";
 import { authDe } from "./auth/de";
 import { commonDe } from "./common/de";
+import { dashboardsDe } from "./dashboards/de";
 import type { WebMessages } from "./en";
 import { formatsDe } from "./formats/de";
 import { screenDe } from "./screen/de";
@@ -29,6 +30,7 @@ export const de: Catalog<WebMessages> = {
   ...formatsDe,
   ...authDe,
   ...workspaceDe,
+  ...dashboardsDe,
   ...studioDe,
   ...settingsDe,
   ...screenDe,
