@@ -1,5 +1,6 @@
 "use client";
 
+import type { DeviceTileStatus } from "@netrics/contracts";
 import { othersLabel, type StudioPlacement } from "@netrics/domain";
 
 import { displayUnit, formatValue } from "@/lib/format-metric";
@@ -16,9 +17,8 @@ import {
   type DataWidget,
   type StudioEnv,
 } from "@/lib/studio-widgets";
-import { connectionNotice } from "@/lib/tile-status";
 
-import { dataNotice, dataWidgetLabel } from "./metric-widget";
+import { dataWidgetLabel, liveDataState } from "./metric-widget";
 import { useBreakdownData } from "./use-widget-data";
 import {
   WidgetFooter,
@@ -38,6 +38,8 @@ export interface BarWidgetViewProps {
   label: string;
   reading: BarReading | null;
   notice: string | null;
+  /** How far the numbers can be trusted; default ok. */
+  status?: DeviceTileStatus;
   /** The connection's name, for the footer; null: none to show. */
   source?: string | null;
   /** The data's last successful sync, for the footer; null: unknown. */
@@ -146,7 +148,12 @@ export function BarWidgetView(props: BarWidgetViewProps) {
         )}
       </div>
       {props.notice ? (
-        <WidgetNotice size={layout.sizes.small}>{props.notice}</WidgetNotice>
+        <WidgetNotice
+          size={layout.sizes.small}
+          stale={props.status === "stale"}
+        >
+          {props.notice}
+        </WidgetNotice>
       ) : footer ? (
         <WidgetFooter size={layout.sizes.small}>{footer}</WidgetFooter>
       ) : null}
@@ -189,14 +196,15 @@ export function useLiveBar(
           approximate: data.conversion !== null,
         }
       : null,
-    notice: dataNotice(
-      error,
-      data !== null,
-      connectionNotice(
-        env.connections[widget.connectionId],
-        Date.now(),
-        locale,
-      ),
+    ...liveDataState(
+      {
+        error,
+        loading,
+        loaded: data !== null,
+        hasData:
+          data !== null && (data.groups.length > 0 || data.others !== null),
+      },
+      env.connections[widget.connectionId],
       locale,
     ),
     source: env.connections[widget.connectionId]?.name ?? null,

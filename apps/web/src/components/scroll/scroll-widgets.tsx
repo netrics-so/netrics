@@ -155,7 +155,9 @@ export function ScrollMetricCard(props: MetricReadingProps & ScrollCardSize) {
         </div>
       ) : null}
       {props.notice ? (
-        <WidgetNotice size={SCROLL_TYPE.small}>{props.notice}</WidgetNotice>
+        <WidgetNotice size={SCROLL_TYPE.small} stale={props.status === "stale"}>
+          {props.notice}
+        </WidgetNotice>
       ) : footer ? (
         <WidgetFooter size={SCROLL_TYPE.small}>{footer}</WidgetFooter>
       ) : null}
@@ -234,7 +236,9 @@ export function ScrollLineCard(props: LineReadingProps & ScrollCardSize) {
         ) : null}
       </div>
       {props.notice ? (
-        <WidgetNotice size={SCROLL_TYPE.small}>{props.notice}</WidgetNotice>
+        <WidgetNotice size={SCROLL_TYPE.small} stale={props.status === "stale"}>
+          {props.notice}
+        </WidgetNotice>
       ) : footer ? (
         <WidgetFooter size={SCROLL_TYPE.small}>{footer}</WidgetFooter>
       ) : null}
@@ -314,7 +318,9 @@ export function ScrollBarCard(props: BarReadingProps & ScrollCardSize) {
         </p>
       )}
       {props.notice ? (
-        <WidgetNotice size={SCROLL_TYPE.small}>{props.notice}</WidgetNotice>
+        <WidgetNotice size={SCROLL_TYPE.small} stale={props.status === "stale"}>
+          {props.notice}
+        </WidgetNotice>
       ) : footer ? (
         <WidgetFooter size={SCROLL_TYPE.small}>{footer}</WidgetFooter>
       ) : null}

@@ -102,19 +102,34 @@ export function WidgetFooter({
   );
 }
 
-/** A stale or failure notice in the theme's warning colour. */
+/**
+ * A stale or failure notice in the theme's warning colour. A stale one
+ * (the data's last sync is too long ago) starts with a dot that blinks on
+ * player slides (ADR 0018 sections 5 and 6); the others with a sign.
+ */
 export function WidgetNotice({
   size,
   children,
   title,
+  stale = false,
 }: {
   size: number;
   children: ReactNode;
   title?: string;
+  stale?: boolean;
 }) {
   return (
-    <p className="sw-notice" style={{ fontSize: u(size) }} title={title}>
-      <span aria-hidden="true">⚠</span> {children}
+    <p
+      className={stale ? "sw-notice sw-notice--stale" : "sw-notice"}
+      style={{ fontSize: u(size) }}
+      title={title}
+    >
+      {stale ? (
+        <span className="sw-stale-dot" aria-hidden="true" />
+      ) : (
+        <span aria-hidden="true">⚠</span>
+      )}{" "}
+      {children}
     </p>
   );
 }

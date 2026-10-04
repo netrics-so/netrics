@@ -2407,6 +2407,129 @@ a.health-badge:hover {
   }
 }
 
+/* ─── TV motion (ADR 0018 §6) ─────────────────────────────────────────── */
+
+/* Slide enter: while a player slide enters (1200 ms, data-entering), its
+   clock sets the eased progress as --enter-p, 0 → 1, and these read it:
+   lines draw over their pathLength (100), area fills and the previous
+   period fade in, bars grow from the start, and the end dots wait for the
+   draw. Values count up in script (enter-motion.tsx). Without the clock
+   (server render, the Studio canvas, reduced motion) all is final. */
+.slide-player-slide[data-entering] .sw-line-current,
+.slide-player-slide[data-entering] .sw .sparkline-line {
+  stroke-dasharray: 100px 100px;
+  stroke-dashoffset: calc(100px * (1 - var(--enter-p, 1)));
+}
+
+.slide-player-slide[data-entering] .sw-line-area {
+  opacity: var(--enter-p, 1);
+}
+
+.slide-player-slide[data-entering] .sw-line-previous {
+  opacity: calc(0.8 * var(--enter-p, 1));
+}
+
+.slide-player-slide[data-entering] .sw-bar-fill {
+  transform: scaleX(var(--enter-p, 1));
+  transform-origin: left center;
+}
+
+.slide-player-slide[data-entering] .sw-line-last,
+.slide-player-slide[data-entering] .sw-line-pulse,
+.slide-player-slide[data-entering] .sw .sparkline-last {
+  visibility: hidden;
+  animation: none;
+}
+
+/* Continuous, and only these: the last point's pulse (2.4 s), the stale
+   dot's blink (1.8 s) and the skeleton's sweep (1.6 s), on player slides;
+   the Studio canvas stays still. */
+.sw-line-pulse {
+  fill: var(--t-accent);
+  opacity: 0;
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.slide-player-slide .sw-line-pulse {
+  animation: sw-pulse-ring 2.4s ease-out infinite;
+}
+
+.slide-player-slide .sw .sparkline-last {
+  animation: sw-pulse 2.4s ease-out infinite;
+}
+
+.sw-stale-dot {
+  display: inline-block;
+  width: 0.45em;
+  height: 0.45em;
+  border-radius: 50%;
+  background: var(--t-warning);
+  vertical-align: 0.12em;
+}
+
+.slide-player-slide .sw-stale-dot {
+  animation: sw-blink 1.8s ease-in-out infinite;
+}
+
+/* A ring of the accent growing 21 units out from the dot and fading. */
+@keyframes sw-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--t-accent) 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 calc(var(--u) * 21) transparent;
+  }
+}
+
+/* The same for an SVG dot (no box-shadow): a disc scaled out to the
+   ring's reach (--sw-pulse-scale) and faded. */
+@keyframes sw-pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(var(--sw-pulse-scale, 3));
+    opacity: 0;
+  }
+}
+
+@keyframes sw-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes sw-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Reduced motion: the final state at once, nothing pulses or blinks. */
+@media (prefers-reduced-motion: reduce) {
+  .slide-player-slide {
+    --enter-p: 1 !important;
+  }
+
+  .slide-player-slide .sw-line-pulse,
+  .slide-player-slide .sw .sparkline-last,
+  .slide-player-slide .sw-stale-dot {
+    animation: none;
+  }
+}
+
 /* A screen playing slides: the slides over the whole screen, in its
    format (ADR 0017); the player letterboxes only extreme shapes. */
 .slide-screen {
