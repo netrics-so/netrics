@@ -28,6 +28,7 @@ const settings: DashboardSettings = {
   themeBuiltin: "netrics_dark",
   themeId: null,
   accentColor: null,
+  logoImageId: null,
 };
 
 function slide(widgets: StudioWidget[], extra: object = {}): DashboardSlide {
@@ -37,6 +38,7 @@ function slide(widgets: StudioWidget[], extra: object = {}): DashboardSlide {
     name: null,
     durationSeconds: null,
     enabled: true,
+    background: null,
     widgets: widgets as DashboardWidget[],
     ...extra,
   };
