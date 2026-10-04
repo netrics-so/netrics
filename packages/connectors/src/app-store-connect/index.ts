@@ -115,11 +115,16 @@ export {
   REVIEWS_ROLE_MESSAGE,
   REVIEW_FIELDS,
   REVIEW_METRIC_KEYS,
+  REVIEW_TEXT_DAYS,
+  REVIEW_TEXT_LIMITS,
+  REVIEW_TEXT_PER_APP,
   TOP_REVIEW_TERRITORIES,
+  capReviewText,
   probeCustomerReviews,
   probeReviewsKeyNotAdmin,
   readAppReviews,
   reviewObservations,
+  reviewTextOf,
   reviewsProbeApp,
   reviewsWindow,
   syncReviewApps,
@@ -267,7 +272,7 @@ const appStoreConnectDe: ManifestTranslation = {
 export const appStoreConnectManifest: ConnectorManifest = {
   id: "app-store-connect",
   version: "0.1.2",
-  sdkVersion: "^0.2.7",
+  sdkVersion: "^0.2.8",
   category: "apps",
   brandColor: "#0d84ff",
   name: "App Store Connect",
@@ -771,18 +776,27 @@ export function createAppStoreConnectConnector(
         }
         const appIds = await appIdsOf();
         const end = Math.min(start + REVIEWS_APPS_PER_PAGE, appIds.length);
-        const { observations, stop } = await syncReviewApps(
-          createAppStoreConnectClient(runtime.fetch, reviewsToken),
-          appIds.slice(start, end),
-          { now: now(), from: request.from, maxDays: BACKFILL_DAYS, log },
-        );
+        const { observations, reviews, reviewWindows, stop } =
+          await syncReviewApps(
+            createAppStoreConnectClient(runtime.fetch, reviewsToken),
+            appIds.slice(start, end),
+            { now: now(), from: request.from, maxDays: BACKFILL_DAYS, log },
+          );
+        // Review text (ADR 0019 §11): the newest reviews of each app read
+        // on this page, and the spans read completely (neither when no app
+        // was read, e.g. after a rate limit).
+        const text =
+          reviews.length > 0 || reviewWindows.length > 0
+            ? { reviews, reviewWindows }
+            : {};
         return end < appIds.length && !stop
           ? {
               observations,
+              ...text,
               nextCursor: reviewsCursor(end, salesCursor),
               done: false,
             }
-          : { observations, nextCursor: salesCursor, done: true };
+          : { observations, ...text, nextCursor: salesCursor, done: true };
       }
 
       // Analytics pages come after the sales of a sync (ADR 0014, #174):

@@ -69,8 +69,60 @@ export function observationKey(observation: Observation): string {
   ]);
 }
 
+// ─── Review text (optional, since SDK 0.2.8; ADR 0019 §11) ─────────────────
+
+/**
+ * One customer review of a resource (an app), for the latest-review widget.
+ * Title, body and author are user content and personal data: the host
+ * stores them in its own table with length caps and retention, never in
+ * observations, logs or errors. Text longer than the host's caps (title 300,
+ * body 4,000, author 100 characters) is cut on ingest.
+ */
+export const syncReviewSchema = z.object({
+  /** The provider's review id; unique per connection. */
+  id: z.string().min(1).max(200),
+  /** The resource (app) the review belongs to. */
+  resource: z.string().min(1),
+  rating: z.number().int().min(1).max(5),
+  title: z.string().nullable(),
+  body: z.string().nullable(),
+  /** The reviewer's nickname as the provider shows it. */
+  author: z.string().nullable(),
+  /** ISO 3166-1 alpha-2, uppercase; null when unknown. */
+  territory: z
+    .string()
+    .regex(/^[A-Z]{2}$/)
+    .nullable(),
+  createdAt: z.iso.datetime({ offset: false }),
+});
+export type SyncReview = z.infer<typeof syncReviewSchema>;
+
+/**
+ * A span of review creation times [from, to) of one resource that the
+ * connector read completely. The host deletes stored reviews of that
+ * resource created inside the span that the result did not return, so
+ * edited and deleted reviews follow the provider.
+ */
+export const reviewWindowSchema = z
+  .object({
+    resource: z.string().min(1),
+    from: z.iso.datetime({ offset: false }),
+    to: z.iso.datetime({ offset: false }),
+  })
+  .refine((window) => window.from < window.to, {
+    message: "from must be before to",
+  });
+export type ReviewWindow = z.infer<typeof reviewWindowSchema>;
+
 export const syncResultSchema = z.object({
   observations: z.array(observationSchema),
+  /**
+   * Optional (SDK 0.2.8): reviews read on this page. Connectors without
+   * review text return neither this nor `reviewWindows`.
+   */
+  reviews: z.array(syncReviewSchema).optional(),
+  /** Optional (SDK 0.2.8): the spans this page read completely. */
+  reviewWindows: z.array(reviewWindowSchema).optional(),
   /**
    * Where the next request continues. The host commits each page with its
    * cursor as a checkpoint, so a cursor returned with done=false may come

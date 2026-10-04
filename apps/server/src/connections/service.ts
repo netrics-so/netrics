@@ -35,12 +35,14 @@ import {
 } from "@netrics/domain";
 import {
   deleteConnection as deleteConnectionRow,
+  deleteConnectionAppReviews,
   enqueueJob,
   findConnection,
   findConnectionOAuth,
   finishConnectionSetup,
   findProject,
   findResourceNames,
+  hideAppReview,
   insertAuditEvent,
   insertConnection,
   latestObservationByResource,
@@ -638,6 +640,23 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       changes.push({ key: id, change: had ? "replaced" : "added" });
     }
     return ok({ stored: key.stored(), changes });
+  }
+
+  /**
+   * Whether the connector keeps review text with an additional reviews key
+   * (ADR 0019 §11): its signed-key provider declares one.
+   */
+  function hasReviewsKey(manifest: ConnectorManifest): boolean {
+    const strategy = manifest.authStrategies.find(
+      (entry) => entry.strategy === "signed-key",
+    );
+    const provider =
+      strategy?.strategy === "signed-key"
+        ? signedKeys.get(strategy.provider)
+        : undefined;
+    return (provider?.additionalKeys ?? []).some(
+      (key) => key.id === REVIEWS_KEY_ID,
+    );
   }
 
   /**
@@ -1494,6 +1513,21 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!row) {
           return fail(404, NOT_FOUND);
         }
+        // Review text is kept only while a reviews key is stored (ADR 0019
+        // §11): removing it, or a main key of another team dropping it,
+        // deletes the connection's stored reviews in this commit.
+        const reviewTextDeleted =
+          body.credentials !== undefined &&
+          hasReviewsKey(registered.manifest) &&
+          (storedCredentials ?? body.credentials)[REVIEWS_KEY_ID] == null
+            ? await deleteConnectionAppReviews(
+                tx,
+                actor.workspaceId,
+                connectionId,
+              )
+            : 0;
+        const reviewsDeletedNote =
+          reviewTextDeleted > 0 ? { reviewTextDeleted } : {};
         let state = existing.state;
         let setupPending = row.setupPending;
         // Finishing setup (ADR 0012): a connection created by an OAuth
@@ -1559,6 +1593,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
                 key: entry.key,
                 change: entry.change,
                 ...(refetch ? { backfillRequested: true } : {}),
+                ...(entry.change === "removed" ? reviewsDeletedNote : {}),
               },
             });
           }
@@ -1573,7 +1608,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             actorUserId: actor.callerId,
             action: "connection.credentials_updated",
             target: connectionId,
-            metadata: { connectorId: row.connectorId },
+            metadata: { connectorId: row.connectorId, ...reviewsDeletedNote },
           });
         }
         if (
@@ -1680,6 +1715,33 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           metadata: { jobId },
         });
         return ok(jobId);
+      });
+    },
+
+    /**
+     * "Hide this review" (ADR 0019 §11, moderation): sets `hidden_at`, so no
+     * widget shows the review again. The audit event names the connection,
+     * the app and the provider's review id, never the review's text.
+     */
+    async hideReview(actor: Actor, connectionId: string, reviewId: string) {
+      return inWorkspace(actor, async (tx) => {
+        const hidden = await hideAppReview(tx, {
+          workspaceId: actor.workspaceId,
+          connectionId,
+          providerReviewId: reviewId,
+          now: new Date(),
+        });
+        if (!hidden) {
+          return fail<null>(404, "review_not_found");
+        }
+        await insertAuditEvent(tx, {
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.callerId,
+          action: "review.hidden",
+          target: connectionId,
+          metadata: { resource: hidden.resourceId, reviewId },
+        });
+        return ok(null);
       });
     },
 

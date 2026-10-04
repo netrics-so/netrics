@@ -465,6 +465,56 @@ export const connectionResources = pgTable(
   ],
 );
 
+// Recent customer reviews with their text (ADR 0019 §11, #334), for the
+// latest-review widget. The nickname is personal data and the text user
+// content: lengths are capped in the database, the hourly maintenance keeps
+// the newest 50 per app and none older than 90 days (prune_app_reviews),
+// and the rows go with the connection, its workspace or its reviews key.
+// Keyed by connection and provider id, so a second review source (Google
+// Play) uses the same table.
+export const appReviews = pgTable(
+  "app_reviews",
+  {
+    connectionId: uuid("connection_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    providerReviewId: text("provider_review_id").notNull(),
+    resourceId: text("resource_id").notNull(),
+    rating: smallint("rating").notNull(),
+    title: text("title"),
+    body: text("body"),
+    author: text("author"),
+    territory: text("territory"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    hiddenAt: timestamp("hidden_at", { withTimezone: true }),
+    ingestedAt: timestamp("ingested_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.connectionId, table.providerReviewId] }),
+    foreignKey({
+      name: "app_reviews_connection_fk",
+      columns: [table.connectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("cascade"),
+    index("app_reviews_workspace_idx").on(table.workspaceId),
+    index("app_reviews_resource_created_idx").on(
+      table.connectionId,
+      table.resourceId,
+      table.createdAt.desc(),
+    ),
+    index("app_reviews_created_at_idx").on(table.createdAt),
+    check("app_reviews_rating", sql`${table.rating} between 1 and 5`),
+    check("app_reviews_title_length", sql`char_length(${table.title}) <= 300`),
+    check("app_reviews_body_length", sql`char_length(${table.body}) <= 4000`),
+    check(
+      "app_reviews_author_length",
+      sql`char_length(${table.author}) <= 100`,
+    ),
+    check("app_reviews_territory", sql`${table.territory} ~ '^[A-Z]{2}$'`),
+  ],
+);
+
 // (connection_id, source_identity) is the idempotency key: re-ingesting the
 // same source observation is a no-op (ON CONFLICT DO NOTHING).
 // One value of one series at one time (ADR 0008). The key (connection,

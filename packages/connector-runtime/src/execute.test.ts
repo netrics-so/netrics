@@ -102,6 +102,52 @@ describe("executeSync", () => {
     );
   });
 
+  describe("review text (SDK 0.2.8)", () => {
+    const review = {
+      id: "r1",
+      resource: "demo-site-1",
+      rating: 5,
+      title: "Private title text",
+      body: "Private body text",
+      author: "private-nickname",
+      territory: "DE",
+      createdAt: "2026-10-01T10:00:00.000Z",
+    };
+
+    it("passes reviews and review windows through", async () => {
+      const window = {
+        resource: "demo-site-1",
+        from: "2026-09-01T00:00:00.000Z",
+        to: "2026-10-02T00:00:00.000Z",
+      };
+      const connector = connectorWith(demoManifest, () => ({
+        observations: [],
+        reviews: [review],
+        reviewWindows: [window],
+        done: true,
+      }));
+      const result = await executeSync(connector, baseContext, request);
+      expect(result.reviews).toEqual([review]);
+      expect(result.reviewWindows).toEqual([window]);
+    });
+
+    it("rejects a malformed review without repeating its text", async () => {
+      const connector = connectorWith(demoManifest, () => ({
+        observations: [],
+        reviews: [{ ...review, rating: 6, territory: "Germany" }],
+        done: true,
+      }));
+      const error = await executeSync(connector, baseContext, request).then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(ContractViolationError);
+      const message = (error as Error).message;
+      expect(message).toMatch(/reviews\.0\.rating/);
+      expect(message).not.toMatch(/Private|private-nickname|Germany/);
+    });
+  });
+
   it("rejects observations with undeclared dimensions", async () => {
     const connector = connectorWith(demoManifest, () => ({
       observations: [

@@ -7,16 +7,19 @@ import { logSerializers } from "./log-serializers.js";
 import { sql } from "drizzle-orm";
 
 import {
+  APP_REVIEW_RETENTION,
   createDatabase,
   DEFAULT_RETENTION,
   enqueueSyncJob,
   heartbeat,
   listDueConnections,
+  pruneAppReviews,
   pruneHistory,
   pruneOAuthAuthorizations,
   pruneSecurityRecords,
   SECURITY_RETENTION,
   setConnectionNextDue,
+  type AppReviewRetentionPolicy,
   type Database,
   type RetentionPolicy,
   type SecurityRetentionPolicy,
@@ -133,7 +136,9 @@ export interface SchedulerDeps {
   retention?: RetentionPolicy;
   /** Retention of audit events, sessions and rate-limit rows (IPs). */
   securityRetention?: SecurityRetentionPolicy;
-  /** Clock for security-record retention (tests pin it). */
+  /** Retention of App Store review text (ADR 0019 §11). */
+  appReviewRetention?: AppReviewRetentionPolicy;
+  /** Clock for security-record and review retention (tests pin it). */
   now?: () => Date;
   schedulerId?: string;
   logger?: Logger;
@@ -196,6 +201,16 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
     );
     if (Object.values(security).some((count) => count > 0)) {
       logger.info(security, "pruned security records");
+    }
+    // Review text (ADR 0019 §11): per app the newest 50, none older than
+    // 90 days (APP_REVIEW_RETENTION). Counts only in the log.
+    const reviews = await pruneAppReviews(
+      schedulerDb,
+      now(),
+      deps.appReviewRetention ?? APP_REVIEW_RETENTION,
+    );
+    if (Object.values(reviews).some((count) => count > 0)) {
+      logger.info(reviews, "pruned app review text");
     }
   }
 

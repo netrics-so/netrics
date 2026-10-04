@@ -167,6 +167,7 @@ const API_ERROR_ALIASES: Readonly<Record<string, ApiErrorKey>> = {
   member_not_found: "record_not_found",
   project_not_found: "record_not_found",
   connection_not_found: "record_not_found",
+  review_not_found: "record_not_found",
   image_type_mismatch: "image_invalid",
   unsupported_media_type: "image_invalid",
   tile_metric_not_found: "metric_not_found",

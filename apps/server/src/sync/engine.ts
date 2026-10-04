@@ -16,9 +16,11 @@ import {
   type Observation,
   type SyncMode,
   type SyncRequest,
+  type SyncResult,
 } from "@netrics/connector-sdk";
 import {
   connectionResourcesDiscoveredAt,
+  ingestAppReviews,
   schema,
   upsertConnectionResources,
   withWorkspace,
@@ -599,7 +601,52 @@ async function runSync(
       });
     };
 
+    /**
+     * Stores the review text of one page (ADR 0019 §11) in the page's
+     * transaction. Only while the connection's credentials are the ones
+     * this run started with: a reviews key removed (and its reviews
+     * deleted) during the run must not bring them back. The row lock
+     * orders this against that removal.
+     */
+    const ingestReviews = async (
+      tx: Transaction,
+      result: Pick<SyncResult, "reviews" | "reviewWindows">,
+    ): Promise<void> => {
+      const reviews = result.reviews ?? [];
+      const windows = result.reviewWindows ?? [];
+      if (reviews.length === 0 && windows.length === 0) {
+        return;
+      }
+      const [current] = await tx
+        .select({ credentials: schema.connections.credentialsEncrypted })
+        .from(schema.connections)
+        .where(
+          and(
+            eq(schema.connections.id, connectionId),
+            eq(schema.connections.workspaceId, workspaceId),
+          ),
+        )
+        .for("share");
+      const started = connection.credentialsEncrypted;
+      const unchanged =
+        current?.credentials != null &&
+        started != null &&
+        current.credentials.equals(started);
+      if (!unchanged) {
+        log.info("review text not stored: the connection's keys changed");
+        return;
+      }
+      await ingestAppReviews(tx, {
+        workspaceId,
+        connectionId,
+        reviews,
+        windows,
+        now,
+      });
+    };
+
     let finalObservations: Observation[] = [];
+    let finalReviews: Pick<SyncResult, "reviews" | "reviewWindows"> = {};
     let finalCursor = startCursor;
     if (window.from < window.to) {
       let cursor = startCursor ?? undefined;
@@ -621,6 +668,7 @@ async function runSync(
         );
         if (result.done) {
           finalObservations = result.observations;
+          finalReviews = result;
           finalCursor = result.nextCursor ?? iso(window.to);
           break;
         }
@@ -642,6 +690,7 @@ async function runSync(
           { workspaceId },
           async (tx) => {
             const count = await ingestPage(tx, result.observations);
+            await ingestReviews(tx, result);
             await tx
               .insert(schema.connectionState)
               .values({
@@ -669,6 +718,7 @@ async function runSync(
       const observationsWritten =
         progress.observationsWritten +
         (await ingestPage(tx, finalObservations));
+      await ingestReviews(tx, finalReviews);
 
       // Cursor advancement commits in this same transaction as the
       // observation inserts — never without them.
