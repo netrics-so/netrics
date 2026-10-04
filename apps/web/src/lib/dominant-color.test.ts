@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -63,9 +66,9 @@ describe("dominantColor", () => {
     ).toBeNull();
     expect(dominantColor(pixels([10, [200, 30, 30, 0]]))).toBeNull();
     expect(dominantColor([])).toBeNull();
-    // A trace of colour (below 2 %) is not the icon's colour.
+    // A trace of colour (below 0.5 %) is not the icon's colour.
     expect(
-      dominantColor(pixels([1000, [250, 250, 250]], [5, [0, 200, 0]])),
+      dominantColor(pixels([1000, [250, 250, 250]], [4, [0, 200, 0]])),
     ).toBeNull();
   });
 });
@@ -113,6 +116,59 @@ describe("brandAccent", () => {
       }
     }
     expect(brandAccent(icon, DARK)).not.toBeNull();
+  });
+});
+
+/**
+ * The real App Store icons (#248): the 1024 px PNGs from the public iTunes
+ * lookup, scaled to the 64 × 64 sample the browser reads, as raw RGBA.
+ */
+function icon(name: "voila" | "wurfel" | "paperstand"): Uint8Array {
+  return gunzipSync(
+    readFileSync(new URL(`./fixtures/${name}-64.rgba.gz`, import.meta.url)),
+  );
+}
+
+describe("brandAccent on real app icons", () => {
+  it("voilà: the purple background, lightened to read on netrics Dark", () => {
+    expect(dominantColor(icon("voila"))).toBe("#4f35c5");
+    const accent = brandAccent(icon("voila"), DARK);
+    expect(accent).toBe("#8572d9");
+    expect(contrastRatio(accent!, DARK)).toBeGreaterThanOrEqual(
+      CONTRAST_RECOMMENDED,
+    );
+  });
+
+  it("Wurfel: the green tile, not the cream background or black squares", () => {
+    expect(dominantColor(icon("wurfel"))).toBe("#35846a");
+    const accent = brandAccent(icon("wurfel"), DARK);
+    expect(accent).toBe("#3b9376");
+    expect(contrastRatio(accent!, DARK)).toBeGreaterThanOrEqual(
+      CONTRAST_RECOMMENDED,
+    );
+  });
+
+  it("Paperstand: the copper dot next to the P", () => {
+    expect(dominantColor(icon("paperstand"))).toBe("#946445");
+    const accent = brandAccent(icon("paperstand"), DARK);
+    expect(accent).toBe("#af7753");
+    expect(contrastRatio(accent!, DARK)).toBeGreaterThanOrEqual(
+      CONTRAST_RECOMMENDED,
+    );
+  });
+
+  it("gives a readable accent (or the theme's) on every built-in theme", () => {
+    for (const name of ["voila", "wurfel", "paperstand"] as const) {
+      for (const theme of Object.values(BUILTIN_THEMES)) {
+        const accent = brandAccent(icon(name), theme.tokens.surface);
+        if (accent !== null) {
+          expect(
+            contrastRatio(accent, theme.tokens.surface),
+            `${name} on ${theme.name}`,
+          ).toBeGreaterThanOrEqual(CONTRAST_RECOMMENDED);
+        }
+      }
+    }
   });
 });
 

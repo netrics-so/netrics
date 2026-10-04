@@ -17,8 +17,13 @@ const MIN_CHROMA = 0.2;
 /** Lightness band (HSL, 0–1) of colourful pixels; outside is near white or black. */
 const MIN_LIGHTNESS = 0.12;
 const MAX_LIGHTNESS = 0.92;
-/** Share of opaque pixels that must be colourful for an icon to have a colour. */
-const MIN_COLOURFUL_SHARE = 0.02;
+/**
+ * Share of opaque pixels that must be colourful for an icon to have a
+ * colour. Brand marks are often small: Wurfel's green tile is about 2 % of
+ * its icon, Paperstand's copper dot under 1 %, so 0.5 % (20 pixels of the
+ * 64 × 64 sample) still counts while stray anti-aliasing does not.
+ */
+const MIN_COLOURFUL_SHARE = 0.005;
 
 function hex(value: number): string {
   return Math.round(Math.min(255, Math.max(0, value)))
