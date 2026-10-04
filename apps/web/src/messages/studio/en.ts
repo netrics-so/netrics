@@ -272,6 +272,69 @@ export const studioEn = {
       formatsAttentionTitle:
         "As saved, in {formats}: a label or text is cut off, the name does not fit the header, or widgets wait for review.",
     },
+    formats: {
+      switcher: "Screen formats",
+      names: {
+        "16x9": "TV",
+        "21x9": "Ultra-wide",
+        "4x3": "Classic",
+        "3x4": "Tablet portrait",
+        "9x16": "Portrait",
+        scroll: "Phone",
+      },
+      scrollRatio: "Scroll view",
+      layout: {
+        primary: "Primary",
+        auto: "Auto",
+        custom: "Custom",
+      },
+      attention: "{count, plural, one {# warning} other {# warnings}}",
+      toReview: "{count} to review",
+      screens:
+        "{count, plural, one {Used by # paired screen} other {Used by # paired screens}}",
+      chipLabel:
+        "{name} {ratio}, {layout}{attention, plural, =0 {} one {, # warning} other {, # warnings}}{review, plural, =0 {} other {, # to review}}{screens, plural, =0 {} one {, used by # screen} other {, used by # screens}}",
+      allFormats: "All formats",
+      devices: "Preview on",
+      device: {
+        tv: "TV",
+        "tv-portrait": "Portrait TV",
+        "monitor-wide": "Ultra-wide monitor",
+        monitor: "Monitor",
+        "monitor-portrait": "Portrait monitor",
+        "tablet-landscape": "Tablet",
+        "tablet-portrait": "Tablet",
+        phone: "Phone",
+      },
+      frameLabel: "Preview: {name} {ratio}, {device}",
+      scrollFrameLabel: "Preview: scroll view, {device}",
+      autoNote:
+        "Laid out automatically from the {primary} layout. Edit in {primary}: your unsaved changes show here right away.",
+      customNote:
+        "{count, plural, one {# slide is} other {# slides are}} arranged by hand in this format; the others are laid out automatically. Unsaved changes in {primary} show here right away.",
+      scrollNote:
+        "The dashboard page on phones and tablets: every slide as a section, in reading order.",
+      pages: "Pages",
+      page: "Page {page} of {pages}",
+      announce:
+        "{name} {ratio}{pages, plural, =1 {} other {, page {page} of {pages}}}",
+      announceScroll: "Scroll view, {device}",
+      announceOverview: "All formats side by side",
+      warningsTitle: "Readability in {ratio}",
+      noWarnings: "Everything reads well in this format.",
+      warning: {
+        label_cut: "{widget}: the label is cut off.",
+        text_cut: "{widget}: the text is cut off.",
+        continues: "Continues on {pages} pages.",
+        widget_hidden: "{widget} is hidden in this format.",
+        widget_to_review: "{widget} was placed automatically: review it.",
+        widget_too_small: "{widget} is smaller than its minimum size.",
+        header_name_cut: "The dashboard name does not fit the header.",
+      },
+      showInEditor: "Select in {primary}",
+      openFormat: "Open {name} {ratio}",
+      overviewHelp: "Every format with this slide; choose one to look closer.",
+    },
     document: {
       noSpace: "There is no free space on this slide for it.",
       spotTaken: "That spot is taken; the widget was not added.",

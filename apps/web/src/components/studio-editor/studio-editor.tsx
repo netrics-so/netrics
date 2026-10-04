@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useReducer,
+  useState,
+} from "react";
 
 import type {
   Dashboard,
@@ -11,6 +18,7 @@ import type {
   WorkspaceImage,
   WorkspaceMetric,
 } from "@netrics/contracts";
+import { isDataWidgetType } from "@netrics/domain";
 
 import {
   ApiError,
@@ -32,10 +40,25 @@ import {
   toCopyRequest,
   toReplaceRequest,
 } from "@/lib/studio-document";
+import { dataWidgetLabel } from "@/components/studio/metric-widget";
+import type { SlideLayouts } from "@/lib/screen-view";
+import {
+  deviceOf,
+  draftFormatWarnings,
+  formatViewReducer,
+  initialFormatView,
+  isEditableTarget,
+  screensByTarget,
+  targetStatuses,
+  type PreviewDeviceId,
+  type PreviewTarget,
+} from "@/lib/studio-formats";
 import { resolveDashboardTheme } from "@/lib/studio-theme";
 import {
+  metricKeyOf,
   referencedImageIds,
   toStudioImage,
+  type DataWidget,
   type StudioConnection,
   type StudioEnv,
 } from "@/lib/studio-widgets";
@@ -49,6 +72,13 @@ import {
 } from "./canvas-extras";
 import { EditorCanvas, type CanvasOutline } from "./editor-canvas";
 import { FormatAttention } from "./format-attention";
+import {
+  FormatOverview,
+  FormatPreview,
+  draftSlidePages,
+  type PreviewContext,
+} from "./format-preview";
+import { FormatSwitcher, useTargetName } from "./format-switcher";
 import { useResourceIcons, type PickableImage } from "./image-picker";
 import {
   DashboardSettingsPanel,
@@ -109,6 +139,8 @@ export function StudioEditor({
 }) {
   const locale = useLocale();
   const t = useT("studio.editor");
+  const formatsT = useT("studio.formats");
+  const targetName = useTargetName();
   const common = useT("common");
   const router = useRouter();
   const [state, dispatch] = useReducer(reducer, dashboard, (initial) =>
@@ -116,6 +148,15 @@ export function StudioEditor({
   );
   // Readability per format of the saved version (ADR 0017 §6, #280).
   const [savedSlides, setSavedSlides] = useState(dashboard.slides);
+  const primaryFormat = dashboard.primaryFormat;
+  // The format switcher (ADR 0017 section 10, #283): editing stays on the
+  // primary format; every other format is a device-frame preview.
+  const [formatView, formatDispatch] = useReducer(
+    formatViewReducer,
+    primaryFormat,
+    initialFormatView,
+  );
+  const stagePanelId = useId();
   const [images, setImages] = useState(initialImages);
   const [devices, setDevices] = useState(initialDevices);
   const [saving, setSaving] = useState(false);
@@ -133,6 +174,11 @@ export function StudioEditor({
 
   const { draft } = state;
   const slide = selectedSlide(state);
+  const slideId = slide?.id;
+  // Another slide starts on its first page.
+  useEffect(() => {
+    formatDispatch({ type: "slideChanged" });
+  }, [slideId]);
   const widget = selectedWidget(state);
   const problems = useMemo(
     () => documentProblems(draft, locale),
@@ -187,7 +233,13 @@ export function StudioEditor({
     metricsById,
     theme.tokens.fontScale,
   );
-  const widgetClipboard = useWidgetClipboard(widget, dispatch, !playing);
+  const editing =
+    !formatView.overview && isEditableTarget(formatView.target, primaryFormat);
+  const widgetClipboard = useWidgetClipboard(
+    widget,
+    dispatch,
+    !playing && editing,
+  );
   const env: StudioEnv = useMemo(
     () => ({
       workspaceId,
@@ -208,11 +260,63 @@ export function StudioEditor({
       studioImages,
     ],
   );
-  // The custom layouts as loaded (ADR 0017): Play completes them against
-  // the draft. The Studio does not edit them yet (#284).
-  const savedLayouts = useMemo(
-    () => new Map(dashboard.slides.map((slide) => [slide.id, slide.layouts])),
-    [dashboard.slides],
+  // The custom layouts as last loaded or saved (ADR 0017): Play and the
+  // previews complete them against the draft. The Studio does not edit
+  // them yet (#284).
+  const savedLayouts: ReadonlyMap<string, SlideLayouts> = useMemo(
+    () => new Map(savedSlides.map((slide) => [slide.id, slide.layouts])),
+    [savedSlides],
+  );
+
+  // Readability per format of the draft (ADR 0017 section 6), as the
+  // server computes it on save, so the switcher shows unsaved changes.
+  const logoImage = draft.settings.logoImageId
+    ? studioImages.get(draft.settings.logoImageId)
+    : undefined;
+  const draftWarnings = useMemo(() => {
+    const context = {
+      primaryFormat,
+      fontScale: theme.tokens.fontScale,
+      showHeader: draft.settings.showHeader,
+      dashboardName: draft.name.trim(),
+      logoAspect:
+        logoImage && logoImage.width > 0 && logoImage.height > 0
+          ? logoImage.width / logoImage.height
+          : null,
+      labelOf: (entry: DataWidget | { type: string }) =>
+        isDataWidgetType(entry.type)
+          ? dataWidgetLabel(
+              entry as DataWidget,
+              metricsById.get(metricKeyOf(entry as DataWidget)),
+            )
+          : null,
+    };
+    return new Map(
+      draft.slides.map((entry) => [
+        entry.id,
+        draftFormatWarnings(
+          { ...entry, layouts: savedLayouts.get(entry.id) ?? null },
+          context,
+        ),
+      ]),
+    );
+  }, [
+    draft,
+    primaryFormat,
+    theme.tokens.fontScale,
+    logoImage,
+    metricsById,
+    savedLayouts,
+  ]);
+  const previewContext: PreviewContext = useMemo(
+    () => ({
+      document: draft,
+      primaryFormat,
+      layouts: savedLayouts,
+      tokens: theme.tokens,
+      env,
+    }),
+    [draft, primaryFormat, savedLayouts, theme.tokens, env],
   );
 
   const onUploadImage = useCallback(
@@ -364,6 +468,49 @@ export function StudioEditor({
   const assignedCount =
     activeDevices?.filter((device) => device.dashboardId === state.dashboardId)
       .length ?? 0;
+  const statuses = targetStatuses({
+    primaryFormat,
+    slides: draft.slides.map((entry) => ({
+      layouts: savedLayouts.get(entry.id) ?? null,
+    })),
+    warnings: [...draftWarnings.values()].flat(),
+    screens: screensByTarget(activeDevices),
+  });
+  const currentStatus =
+    statuses.find((status) => status.target === formatView.target) ??
+    statuses[0]!;
+
+  function announceTarget(target: PreviewTarget, page = 0) {
+    const { name, ratio } = targetName(target);
+    if (target === "scroll") {
+      const device = deviceOf(formatView, target);
+      dispatch({
+        type: "announce",
+        text: formatsT("announceScroll", {
+          device: formatsT(`device.${device.id}`),
+        }),
+      });
+      return;
+    }
+    const pages = slide
+      ? draftSlidePages(previewContext, slide.id, target).length
+      : 1;
+    dispatch({
+      type: "announce",
+      text: formatsT("announce", { name, ratio, page: page + 1, pages }),
+    });
+  }
+
+  function selectTarget(target: PreviewTarget) {
+    formatDispatch({ type: "select", target });
+    announceTarget(target);
+  }
+
+  function showWarning(slideId: string, widgetId: string | null) {
+    formatDispatch({ type: "select", target: primaryFormat });
+    dispatch({ type: "selectSlide", slideId });
+    dispatch({ type: "selectWidget", widgetId });
+  }
 
   return (
     <div className="studio">
@@ -511,43 +658,104 @@ export function StudioEditor({
         <section className="studio-stage" aria-label={t("stage")}>
           {slide ? (
             <>
-              <div className="stage-toolbar">
-                <AddWidgetMenu
-                  document={draft}
-                  slide={slide}
-                  metrics={metrics}
-                  imageIds={images.map((image) => image.id)}
-                  dispatch={dispatch}
-                  showHeader={draft.settings.showHeader}
-                  onDragNew={setIncoming}
-                />
-                <WidgetClipboardBar
-                  selected={widget}
-                  clipboard={widgetClipboard.clipboard}
-                  onCopy={widgetClipboard.copy}
-                  onPaste={widgetClipboard.paste}
-                  onDuplicate={widgetClipboard.duplicate}
-                />
-              </div>
-              <EditorCanvas
-                slide={slide}
-                dashboardName={draft.name}
-                settings={draft.settings}
-                tokens={theme.tokens}
-                env={env}
-                selectedWidgetId={state.selectedWidgetId}
-                widgetsWithProblems={widgetsWithProblems}
-                dispatch={dispatch}
-                unreadable={unreadable.byWidget}
-                incoming={incoming}
+              <FormatSwitcher
+                statuses={statuses}
+                selected={formatView.target}
+                overview={formatView.overview}
+                panelId={stagePanelId}
+                onSelect={selectTarget}
+                onOverview={(on) => {
+                  formatDispatch({ type: "overview", on });
+                  if (on) {
+                    dispatch({
+                      type: "announce",
+                      text: formatsT("announceOverview"),
+                    });
+                  } else {
+                    announceTarget(formatView.target);
+                  }
+                }}
               />
-              <p className="help">
-                {t("canvasHelp", {
-                  theme: theme.builtin
-                    ? builtinThemeName(theme.builtin, locale)
-                    : theme.name,
-                })}
-              </p>
+              {formatView.overview ? (
+                <FormatOverview
+                  context={previewContext}
+                  view={formatView}
+                  statuses={statuses}
+                  slideId={slide.id}
+                  panelId={stagePanelId}
+                  onOpen={selectTarget}
+                />
+              ) : editing ? (
+                <div
+                  id={stagePanelId}
+                  role="tabpanel"
+                  aria-labelledby={`${stagePanelId}-tab-${formatView.target}`}
+                  className="format-editor"
+                >
+                  <div className="stage-toolbar">
+                    <AddWidgetMenu
+                      document={draft}
+                      slide={slide}
+                      metrics={metrics}
+                      imageIds={images.map((image) => image.id)}
+                      dispatch={dispatch}
+                      showHeader={draft.settings.showHeader}
+                      onDragNew={setIncoming}
+                    />
+                    <WidgetClipboardBar
+                      selected={widget}
+                      clipboard={widgetClipboard.clipboard}
+                      onCopy={widgetClipboard.copy}
+                      onPaste={widgetClipboard.paste}
+                      onDuplicate={widgetClipboard.duplicate}
+                    />
+                  </div>
+                  <EditorCanvas
+                    slide={slide}
+                    dashboardName={draft.name}
+                    settings={draft.settings}
+                    tokens={theme.tokens}
+                    env={env}
+                    selectedWidgetId={state.selectedWidgetId}
+                    widgetsWithProblems={widgetsWithProblems}
+                    dispatch={dispatch}
+                    unreadable={unreadable.byWidget}
+                    incoming={incoming}
+                  />
+                  <p className="help">
+                    {t("canvasHelp", {
+                      theme: theme.builtin
+                        ? builtinThemeName(theme.builtin, locale)
+                        : theme.name,
+                    })}
+                  </p>
+                </div>
+              ) : (
+                <FormatPreview
+                  context={previewContext}
+                  view={formatView}
+                  status={currentStatus}
+                  slideId={slide.id}
+                  warnings={draftWarnings}
+                  panelId={stagePanelId}
+                  onDevice={(device: PreviewDeviceId) => {
+                    formatDispatch({ type: "device", device });
+                    if (formatView.target === "scroll") {
+                      dispatch({
+                        type: "announce",
+                        text: formatsT("announceScroll", {
+                          device: formatsT(`device.${device}`),
+                        }),
+                      });
+                    }
+                  }}
+                  onPage={(page) => {
+                    formatDispatch({ type: "page", page });
+                    announceTarget(formatView.target, page);
+                  }}
+                  onShowWarning={showWarning}
+                />
+              )}
             </>
           ) : null}
         </section>
