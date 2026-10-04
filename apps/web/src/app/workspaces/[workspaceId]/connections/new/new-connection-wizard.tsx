@@ -33,10 +33,11 @@ import {
   emptyKeyValues,
   fieldOfMessage,
   keyCredentials,
+  localizedFieldLabel,
   missingKeyField,
   signedKeyStrategyOf,
 } from "@/lib/signed-key";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 interface NewConnectionWizardProps {
   workspaceId: string;
@@ -48,6 +49,8 @@ export function NewConnectionWizard({
   connectors,
 }: NewConnectionWizardProps) {
   const locale = useLocale();
+  const t = useT("connections.wizard");
+  const common = useT("common");
   const router = useRouter();
   const [connector, setConnector] = useState<ConnectorCatalogEntry | null>(
     null,
@@ -78,7 +81,6 @@ export function NewConnectionWizard({
   const keyStrategy = signedKeyStrategyOf(connector ?? undefined);
   const wantsToken = tokenStrategy !== undefined && keyStrategy === null;
   const appStore = keyStrategy?.provider === APP_STORE_CONNECT_PROVIDER;
-  const resourceNoun = appStore ? "apps" : "resources";
   // OAuth-only connectors connect at the provider; the callback creates the
   // connection and setup continues on the return (ADR 0012).
   const oauthProvider =
@@ -148,8 +150,10 @@ export function NewConnectionWizard({
       setFieldErrors({
         [missing.key]:
           missing.input === "file"
-            ? `Choose the .p8 file, or paste the key.`
-            : `${missing.label} is required.`,
+            ? t("chooseFile")
+            : t("fieldRequired", {
+                field: localizedFieldLabel(keyStrategy!, missing, locale),
+              }),
       });
       return;
     }
@@ -162,7 +166,7 @@ export function NewConnectionWizard({
       setPreview(result);
       setSelectedResources(new Set(result.resources.map((r) => r.id)));
       if (!result.check.ok) {
-        showFailure(result.check.message ?? "The connection check failed.");
+        showFailure(result.check.message ?? t("checkFailed"));
       }
     } catch (cause) {
       setPreview(null);
@@ -183,7 +187,7 @@ export function NewConnectionWizard({
       let resources: string[] | undefined;
       if (preview && preview.resources.length > 0 && selectedResources) {
         if (selectedResources.size === 0) {
-          setError(`Select at least one of the discovered ${resourceNoun}.`);
+          setError(appStore ? t("selectApp") : t("selectResource"));
           setPending(null);
           return;
         }
@@ -222,7 +226,7 @@ export function NewConnectionWizard({
   return (
     <>
       <div className="card">
-        <h2>1. Choose a connector</h2>
+        <h2>{t("chooseConnector")}</h2>
         <div className="connector-cards">
           {connectors.map((entry) => (
             <button
@@ -235,8 +239,11 @@ export function NewConnectionWizard({
               <p>{entry.description}</p>
               <p className="meta">
                 {entry.unavailable
-                  ? unavailableCopy(entry.unavailable).summary
-                  : `v${entry.version} · ${entry.metricsCount} metrics${entry.supportsBackfill ? " · backfill" : ""}`}
+                  ? unavailableCopy(entry.unavailable, locale).summary
+                  : t(entry.supportsBackfill ? "metaBackfill" : "meta", {
+                      version: entry.version,
+                      count: entry.metricsCount,
+                    })}
               </p>
             </button>
           ))}
@@ -249,12 +256,12 @@ export function NewConnectionWizard({
 
       {connector && connector.available && oauthProvider ? (
         <div className="card">
-          <h2>2. Connect with {providerName(oauthProvider)}</h2>
+          <h2>{t("connectWith", { provider: providerName(oauthProvider) })}</h2>
           <p>
-            You sign in at {providerName(oauthProvider)} and allow netrics
-            read-only access to your {connector.name} data. netrics never sees
-            your {providerName(oauthProvider)} password. Afterwards you choose
-            what this connection reads.
+            {t("oauthIntro", {
+              provider: providerName(oauthProvider),
+              connector: connector.name,
+            })}
           </p>
           <ConnectOAuthButton
             workspaceId={workspaceId}
@@ -269,27 +276,26 @@ export function NewConnectionWizard({
         <div className="card">
           <h2>
             {keyStrategy
-              ? `2. Add your ${keyStrategy.providerName ?? connector.name} key`
-              : "2. Configure"}
+              ? t("addKey", {
+                  name: keyStrategy.providerName ?? connector.name,
+                })
+              : t("configure")}
           </h2>
           {appStore ? (
             <p className="muted">
-              App Store Connect has no &ldquo;Sign in with Apple&rdquo; for its
-              data, so netrics reads it with a team API key that you create
-              once. It takes about two minutes; netrics stores the key encrypted
-              and checks it with Apple before saving.{" "}
+              {t("appStoreIntro")}{" "}
               <a
                 href={APP_STORE_CONNECT_DOCS_URL}
                 target="_blank"
                 rel="noreferrer"
               >
-                More about the connector
+                {t("moreAboutConnector")}
               </a>
             </p>
           ) : null}
           <form className="stack" onSubmit={(event) => event.preventDefault()}>
             <div className="field">
-              <label htmlFor="connection-name">Name</label>
+              <label htmlFor="connection-name">{t("name")}</label>
               <input
                 id="connection-name"
                 type="text"
@@ -351,11 +357,11 @@ export function NewConnectionWizard({
               >
                 {pending === "preview"
                   ? keyStrategy
-                    ? "Checking with Apple…"
-                    : "Testing…"
+                    ? t("checkingWithApple")
+                    : t("testing")
                   : keyStrategy
-                    ? "Check key and find apps"
-                    : "Test connection"}
+                    ? t("checkKey")
+                    : t("test")}
               </button>
             </div>
             {error && errorInConfigure ? (
@@ -369,18 +375,18 @@ export function NewConnectionWizard({
 
       {preview && preview.check.ok ? (
         <div className="card">
-          <h2>
-            {appStore ? "3. Choose apps and create" : "3. Review and create"}
-          </h2>
+          <h2>{appStore ? t("chooseApps") : t("review")}</h2>
           <div className="notice">
-            Connection check passed
-            {preview.check.message ? `: ${preview.check.message}` : "."}
+            {preview.check.message
+              ? t("checkPassedWith", { message: preview.check.message })
+              : t("checkPassed")}
           </div>
           {preview.resources.length > 0 ? (
             <>
               <p className="muted">
-                Found {preview.resources.length} {resourceNoun} — uncheck any
-                you do not want to sync.
+                {t(appStore ? "foundApps" : "foundResources", {
+                  count: preview.resources.length,
+                })}
               </p>
               <ul className="workspace-list">
                 {preview.resources.map((resource) => (
@@ -406,7 +412,7 @@ export function NewConnectionWizard({
               disabled={pending !== null}
               onClick={onCreate}
             >
-              {pending === "create" ? "Creating…" : "Create connection"}
+              {pending === "create" ? common("creating") : t("create")}
             </button>
           </div>
         </div>
@@ -422,18 +428,19 @@ function UnavailableConnector({
 }: {
   connector: ConnectorCatalogEntry;
 }) {
-  const copy = unavailableCopy(connector.unavailable!);
+  const locale = useLocale();
+  const t = useT("connections.wizard");
+  const copy = unavailableCopy(connector.unavailable!, locale);
   return (
     <div className="card">
-      <h2>{connector.name} is not available here</h2>
+      <h2>{t("unavailableTitle", { name: connector.name })}</h2>
       <p className="break-anywhere">{copy.detail}</p>
       {copy.guideUrl ? (
         <p className="muted">
-          Running netrics yourself?{" "}
+          {t("selfHosting")}{" "}
           <a href={copy.guideUrl} target="_blank" rel="noreferrer">
-            Read the setup guide
+            {t("setupGuide")}
           </a>
-          .
         </p>
       ) : null}
     </div>

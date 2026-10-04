@@ -12,6 +12,9 @@ import type {
   ConnectorAuthStrategy,
   ConnectorCatalogEntry,
 } from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
+
+import { webTranslator } from "./i18n/catalogs";
 
 /** The App Store Connect connector and its signed-key provider. */
 export const APP_STORE_CONNECT_CONNECTOR_ID = "app-store-connect";
@@ -39,6 +42,79 @@ export function signedKeyStrategyOf(
   return strategy?.provider && strategy.fields && strategy.fields.length > 0
     ? (strategy as SignedKeyStrategy)
     : null;
+}
+
+const APP_STORE_CONNECT_FIELDS = ["issuerId", "keyId", "privateKey"] as const;
+
+/**
+ * The App Store Connect key form in the user's language. The provider's
+ * labels, descriptions and setup steps are defined on the server in
+ * English; the web app words them from its catalog by field key and step.
+ * English, other providers and anything unexpected keep the server's text.
+ * Server messages still match the server's labels (fieldOfMessage), so
+ * callers match against the strategy they were given.
+ */
+export function localizeSignedKeyStrategy(
+  strategy: SignedKeyStrategy,
+  locale: Locale,
+): SignedKeyStrategy {
+  if (locale === "en" || strategy.provider !== APP_STORE_CONNECT_PROVIDER) {
+    return strategy;
+  }
+  const t = webTranslator(locale, "connections.signedKey.appStoreConnect");
+  // The main key's descriptions; the reviews key brings its own.
+  const mainKey = strategy.providerName === "App Store Connect";
+  const fields = strategy.fields.map((field) => {
+    const key = APP_STORE_CONNECT_FIELDS.find((entry) => entry === field.key);
+    if (!key) {
+      return field;
+    }
+    return {
+      ...field,
+      label: t(`labels.${key}`),
+      ...(mainKey ? { description: t(`descriptions.${key}`) } : {}),
+    };
+  });
+  const setup = strategy.setup;
+  const steps = [
+    t("steps.1"),
+    t("steps.2"),
+    t("steps.3"),
+    t("steps.4"),
+    t("steps.5"),
+  ];
+  return {
+    ...strategy,
+    fields,
+    ...(setup && setup.steps.length === steps.length
+      ? {
+          setup: {
+            ...setup,
+            steps,
+            links: setup.links?.map((link) =>
+              link.step === 0
+                ? { ...link, label: t("links.keys") }
+                : link.step === 3
+                  ? { ...link, label: t("links.payments") }
+                  : link,
+            ),
+          },
+        }
+      : {}),
+  };
+}
+
+/** A field's label in the user's language (see localizeSignedKeyStrategy). */
+export function localizedFieldLabel(
+  strategy: SignedKeyStrategy,
+  field: Pick<SignedKeyField, "key" | "label">,
+  locale: Locale,
+): string {
+  return (
+    localizeSignedKeyStrategy(strategy, locale).fields.find(
+      (entry) => entry.key === field.key,
+    )?.label ?? field.label
+  );
 }
 
 /** Empty values for every field of the strategy. */
@@ -74,16 +150,18 @@ export function keyFieldHint(
   provider: string,
   key: string,
   value: string,
+  locale: Locale,
 ): string | null {
+  const t = webTranslator(locale, "connections.signedKey.hints");
   const trimmed = value.trim();
   if (trimmed === "" || provider !== APP_STORE_CONNECT_PROVIDER) {
     return null;
   }
   if (key === "issuerId" && !UUID.test(trimmed)) {
-    return "The issuer ID is a UUID with dashes, like 57246542-96fe-1a63-e053-0824d011072a. It is shown above the list of team keys.";
+    return t("issuerId");
   }
   if (key === "keyId" && !KEY_ID.test(trimmed.toUpperCase())) {
-    return "The key ID has 10 letters and digits, like 2X9R4HXF34. It is in the key's row, and in the file name AuthKey_<Key ID>.p8.";
+    return t("keyId");
   }
   return null;
 }
@@ -100,24 +178,29 @@ export function keyIdFromFileName(name: string): string | null {
  * A hint for the private key's text (from the file or pasted), or null
  * when it looks like a PEM PKCS#8 private key within the size limit.
  */
-export function privateKeyHint(text: string, maxBytes: number): string | null {
+export function privateKeyHint(
+  text: string,
+  maxBytes: number,
+  locale: Locale,
+): string | null {
   if (text.trim() === "") {
     return null;
   }
+  const t = webTranslator(locale, "connections.signedKey.hints");
   if (new TextEncoder().encode(text).length > maxBytes) {
-    return `This is larger than ${Math.round(maxBytes / 1024)} KiB, so it is not an API key. Choose the AuthKey_<Key ID>.p8 file.`;
+    return t("tooLarge", { kib: Math.round(maxBytes / 1024) });
   }
   if (text.includes("-----BEGIN CERTIFICATE-----")) {
-    return "This is a certificate, not a private key. Choose the AuthKey_<Key ID>.p8 file you downloaded with the API key.";
+    return t("certificate");
   }
   if (text.includes("-----BEGIN RSA PRIVATE KEY-----")) {
-    return "This is an RSA private key. The API key is an EC key in the AuthKey_<Key ID>.p8 file.";
+    return t("rsaKey");
   }
   if (text.includes("-----BEGIN PUBLIC KEY-----")) {
-    return "This is a public key. Choose the AuthKey_<Key ID>.p8 file, which holds the private key.";
+    return t("publicKey");
   }
   if (!text.includes("-----BEGIN PRIVATE KEY-----")) {
-    return "This does not look like a .p8 private key: it should start with -----BEGIN PRIVATE KEY-----.";
+    return t("notPem");
   }
   return null;
 }

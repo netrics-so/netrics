@@ -13,10 +13,10 @@ import {
 } from "@/lib/api";
 import {
   DEFAULT_ROW_LIMIT,
-  DIMENSION_LABELS,
   MAX_BREAKDOWN_DIMENSIONS,
   MAX_ROW_LIMIT,
   SEARCH_CONSOLE_DIMENSIONS,
+  dimensionLabel,
   fromDimensionsValue,
   parseRowLimit,
   propertyView,
@@ -24,7 +24,7 @@ import {
   type PropertyView,
   type SearchConsoleDimension,
 } from "@/lib/oauth-connection";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 interface SearchConsoleSettingsProps {
   workspaceId: string;
@@ -52,7 +52,10 @@ export function SearchConsoleSettings({
   mode,
 }: SearchConsoleSettingsProps) {
   const locale = useLocale();
+  const t = useT("connections.searchConsole");
+  const common = useT("common");
   const router = useRouter();
+  const maxRows = new Intl.NumberFormat(locale).format(MAX_ROW_LIMIT);
   const config = connection.config;
   const [properties, setProperties] = useState<Properties>({
     status: "loading",
@@ -87,7 +90,9 @@ export function SearchConsoleSettings({
         if (cancelled) {
           return;
         }
-        const views = resources.map(propertyView);
+        const views = resources.map((resource) =>
+          propertyView(resource, locale),
+        );
         setProperties({ status: "ready", properties: views });
         // One property: nothing to choose.
         setSiteUrl((current) =>
@@ -134,14 +139,12 @@ export function SearchConsoleSettings({
     setError(null);
     setNotice(null);
     if (siteUrl === "") {
-      setError("Choose a Search Console property.");
+      setError(t("chooseProperty"));
       return;
     }
     const limit = parseRowLimit(rowLimit);
     if (dimensions.length > 0 && limit === null) {
-      setError(
-        `Rows per day must be a whole number from 1 to ${MAX_ROW_LIMIT.toLocaleString("en-US")}.`,
-      );
+      setError(t("rowLimitInvalid", { max: maxRows }));
       return;
     }
     const nextName =
@@ -179,11 +182,7 @@ export function SearchConsoleSettings({
         );
         return;
       }
-      setNotice(
-        refetch
-          ? "Settings saved. The last 16 months are read again with the new settings."
-          : "Settings saved.",
-      );
+      setNotice(refetch ? t("savedRefetch") : t("saved"));
       router.refresh();
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));
@@ -196,7 +195,7 @@ export function SearchConsoleSettings({
     <form className="stack" onSubmit={onSubmit}>
       {mode === "edit" ? (
         <div className="field">
-          <label htmlFor="sc-name">Name</label>
+          <label htmlFor="sc-name">{t("name")}</label>
           <input
             id="sc-name"
             type="text"
@@ -210,24 +209,17 @@ export function SearchConsoleSettings({
       ) : null}
 
       <fieldset className="choice-group" disabled={pending}>
-        <legend>Property</legend>
+        <legend>{t("property")}</legend>
         {properties.status === "loading" ? (
-          <p className="muted">Loading the properties of this account…</p>
+          <p className="muted">{t("loading")}</p>
         ) : null}
         {properties.status === "error" ? (
           <div className="error" role="alert">
-            {properties.reconnect
-              ? "Google no longer accepts this connection's authorization. Reconnect Google above, then choose the property."
-              : properties.message}
+            {properties.reconnect ? t("reconnect") : properties.message}
           </div>
         ) : null}
         {properties.status === "ready" && listed.length === 0 ? (
-          <p className="muted">
-            This Google account has no verified Search Console property. Ask an
-            owner of the property to add the account in Search Console (Settings
-            → Users and permissions), or reconnect with a different Google
-            account.
-          </p>
+          <p className="muted">{t("noProperties")}</p>
         ) : null}
         {listed.map((property) => (
           <label className="choice" key={property.siteUrl}>
@@ -259,24 +251,17 @@ export function SearchConsoleSettings({
             />
             <span>
               <span className="choice-title">{siteUrl}</span>
-              <span className="muted">
-                {" "}
-                No longer listed for this Google account
-              </span>
+              <span className="muted"> {t("noLongerListed")}</span>
             </span>
           </label>
         ) : null}
-        <p className="help">
-          Domain properties cover every protocol and subdomain; URL-prefix
-          properties only the addresses under that prefix.
-        </p>
+        <p className="help">{t("propertyHelp")}</p>
       </fieldset>
 
       <fieldset className="choice-group" disabled={pending}>
-        <legend>Breakdown (optional)</legend>
+        <legend>{t("breakdown")}</legend>
         <p className="help">
-          Daily totals are always collected. Up to {MAX_BREAKDOWN_DIMENSIONS} of
-          these add clicks and impressions per page, query, country or device.
+          {t("breakdownHelp", { max: MAX_BREAKDOWN_DIMENSIONS })}
         </p>
         <div className="choice-row">
           {SEARCH_CONSOLE_DIMENSIONS.map((dimension) => {
@@ -291,14 +276,14 @@ export function SearchConsoleSettings({
                   }
                   onChange={() => toggleDimension(dimension)}
                 />
-                <span>{DIMENSION_LABELS[dimension]}</span>
+                <span>{dimensionLabel(dimension, locale)}</span>
               </label>
             );
           })}
         </div>
         {dimensions.length > 0 ? (
           <div className="field">
-            <label htmlFor="sc-row-limit">Rows per day</label>
+            <label htmlFor="sc-row-limit">{t("rowsPerDay")}</label>
             <input
               id="sc-row-limit"
               type="number"
@@ -311,28 +296,16 @@ export function SearchConsoleSettings({
               onChange={(event) => setRowLimit(event.target.value)}
             />
             <p className="help" id="sc-row-limit-help">
-              The top rows by clicks, at most{" "}
-              {MAX_ROW_LIMIT.toLocaleString("en-US")}. Search Console leaves out
-              rare queries to protect privacy, so a breakdown adds up to less
-              than the totals.
+              {t("rowsHelp", { max: maxRows })}
             </p>
           </div>
         ) : null}
       </fieldset>
 
       {mode === "finish" ? (
-        <p className="muted">
-          Search Console data appears with a 2–3 day delay; the newest days are
-          filled in once Google finalises them. The first sync reads the last 16
-          months, as far back as Search Console keeps data.
-        </p>
+        <p className="muted">{t("finishNote")}</p>
       ) : (
-        <p className="muted">
-          Changing the property, breakdown or rows per day reads the last 16
-          months again with the new settings. Data collected with the earlier
-          settings stays: a breakdown you remove keeps its past values but is no
-          longer updated.
-        </p>
+        <p className="muted">{t("editNote")}</p>
       )}
 
       <div className="actions">
@@ -342,10 +315,10 @@ export function SearchConsoleSettings({
           disabled={pending || properties.status === "loading"}
         >
           {pending
-            ? "Saving…"
+            ? common("saving")
             : mode === "finish"
-              ? "Save and start syncing"
-              : "Save changes"}
+              ? t("saveAndSync")
+              : t("saveChanges")}
         </button>
       </div>
       {notice ? <div className="notice">{notice}</div> : null}

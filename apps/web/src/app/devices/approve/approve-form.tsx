@@ -3,7 +3,10 @@
 import { useState, type FormEvent } from "react";
 
 import { apiErrorMessage, approveDevice } from "@/lib/api";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
+
+/** The format of a pairing code, as the TV shows it. */
+const CODE_PLACEHOLDER = "XXXX-XXXX";
 
 export interface ApprovableWorkspace {
   id: string;
@@ -21,6 +24,7 @@ export function ApproveDeviceForm({
   workspaces,
 }: ApproveDeviceFormProps) {
   const locale = useLocale();
+  const t = useT("deviceApproval");
   const [code, setCode] = useState(initialCode);
   const [workspaceId, setWorkspaceId] = useState(workspaces[0]!.id);
   const workspace = workspaces.find((w) => w.id === workspaceId)!;
@@ -59,8 +63,7 @@ export function ApproveDeviceForm({
   if (paired) {
     return (
       <div className="notice" role="status">
-        <strong>{paired} is connected.</strong> The TV shows the dashboard in a
-        few seconds.
+        <strong>{t("connected", { name: paired })}</strong> {t("showsSoon")}
       </div>
     );
   }
@@ -68,7 +71,7 @@ export function ApproveDeviceForm({
   return (
     <form className="stack" onSubmit={onSubmit}>
       <div className="field">
-        <label htmlFor="pairing-code">Code on the TV</label>
+        <label htmlFor="pairing-code">{t("code")}</label>
         <input
           id="pairing-code"
           type="text"
@@ -77,7 +80,7 @@ export function ApproveDeviceForm({
           autoComplete="off"
           autoCapitalize="characters"
           spellCheck={false}
-          placeholder="XXXX-XXXX"
+          placeholder={CODE_PLACEHOLDER}
           maxLength={20}
           disabled={pending}
           onChange={(event) => setCode(event.target.value)}
@@ -85,7 +88,7 @@ export function ApproveDeviceForm({
       </div>
       {workspaces.length > 1 ? (
         <div className="field">
-          <label htmlFor="pairing-workspace">Workspace</label>
+          <label htmlFor="pairing-workspace">{t("workspace")}</label>
           <select
             id="pairing-workspace"
             value={workspaceId}
@@ -101,7 +104,7 @@ export function ApproveDeviceForm({
         </div>
       ) : null}
       <div className="field">
-        <label htmlFor="pairing-dashboard">Dashboard</label>
+        <label htmlFor="pairing-dashboard">{t("dashboard")}</label>
         <select
           id="pairing-dashboard"
           value={dashboardId}
@@ -113,11 +116,11 @@ export function ApproveDeviceForm({
               {dashboard.name}
             </option>
           ))}
-          <option value="">None yet</option>
+          <option value="">{t("noDashboard")}</option>
         </select>
       </div>
       <div className="field">
-        <label htmlFor="pairing-name">Name of the TV</label>
+        <label htmlFor="pairing-name">{t("name")}</label>
         <input
           id="pairing-name"
           type="text"
@@ -126,11 +129,11 @@ export function ApproveDeviceForm({
           disabled={pending}
           onChange={(event) => setName(event.target.value)}
         />
-        <p className="help">For example “Office lobby”.</p>
+        <p className="help">{t("nameExample")}</p>
       </div>
       <div className="actions">
         <button type="submit" className="primary" disabled={pending}>
-          {pending ? "Connecting…" : "Connect TV"}
+          {pending ? t("connecting") : t("connect")}
         </button>
       </div>
       {error ? (

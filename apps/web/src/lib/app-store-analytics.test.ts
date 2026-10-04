@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  ADMIN_KEY_GUIDE,
+  adminKeyGuide,
   adminKeyIdOf,
   analyticsStatusLabel,
   needsEnablement,
@@ -10,19 +10,29 @@ import {
 
 describe("App Store analytics card", () => {
   it("labels each status, with the latency of a fresh request", () => {
-    expect(analyticsStatusLabel("not_enabled", null)).toBe("Not enabled");
-    expect(analyticsStatusLabel("stopped", null)).toBe(
+    expect(analyticsStatusLabel("not_enabled", null, "en")).toBe("Not enabled");
+    expect(analyticsStatusLabel("stopped", null, "en")).toBe(
       "App Store analytics paused — enable again",
     );
-    expect(analyticsStatusLabel("requested", null)).toBe(
+    expect(analyticsStatusLabel("requested", null, "en")).toBe(
       "Requested — data pending (the first reports take 1–2 days)",
     );
-    expect(analyticsStatusLabel("available", "2026-09-29")).toBe(
-      "Available through 2026-09-29",
+    expect(analyticsStatusLabel("available", "2026-09-29", "en")).toBe(
+      "Available through Sep 29, 2026",
     );
-    expect(analyticsStatusLabel("unknown", null)).toBe(
+    expect(analyticsStatusLabel("unknown", null, "en")).toBe(
       "Status unknown right now",
     );
+  });
+
+  it("speaks German, with the day as a German date", () => {
+    expect(analyticsStatusLabel("available", "2026-09-29", "de")).toBe(
+      "Verfügbar bis 29.09.2026",
+    );
+    expect(analyticsStatusLabel("not_enabled", null, "de")).toBe(
+      "Nicht aktiviert",
+    );
+    expect(adminKeyGuide("de").steps.at(-1)).toMatch(/^Widerruf den Schlüssel/);
   });
 
   it("asks for the Admin step only when an app is not or no longer requested", () => {
@@ -41,7 +51,7 @@ describe("App Store analytics card", () => {
   it("reminds of the temporary key by its ID, and says to revoke it", () => {
     expect(adminKeyIdOf({ keyId: " 4dm1nk3y01 " })).toBe("4DM1NK3Y01");
     expect(adminKeyIdOf({ keyId: "short" })).toBeNull();
-    expect(ADMIN_KEY_GUIDE.steps.at(-1)).toMatch(
+    expect(adminKeyGuide("en").steps.at(-1)).toMatch(
       /^Revoke the key right afterwards/,
     );
   });

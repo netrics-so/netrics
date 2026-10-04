@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
@@ -12,10 +13,16 @@ import {
   listConnectors,
   listWorkspaces,
 } from "@/lib/api";
+import { getT } from "@/lib/i18n/server";
 import { parseOAuthOutcome } from "@/lib/oauth-connection";
 import { requireSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("connections.newPage");
+  return { title: t("pageTitle") };
+}
 
 interface NewConnectionPageProps {
   params: Promise<{ workspaceId: string }>;
@@ -31,6 +38,8 @@ export default async function NewConnectionPage({
   const { workspaceId } = await params;
   const query = await searchParams;
   const { cookieHeader } = await requireSession();
+  const t = await getT("connections.newPage");
+  const roles = await getT("common.roles");
   const outcome = parseOAuthOutcome(query.oauth);
   const connectionParam =
     typeof query.connection === "string" && UUID.test(query.connection)
@@ -54,13 +63,12 @@ export default async function NewConnectionPage({
   if (!can(membership.role, "connections:create")) {
     return (
       <>
-        <h1>Add connection</h1>
+        <h1>{t("title")}</h1>
         <p className="muted">
-          Your role ({membership.role}) cannot create connections in this
-          workspace.
+          {t("roleCannot", { role: roles(membership.role) })}
         </p>
         <p className="muted">
-          <Link href={`/workspaces/${workspaceId}`}>Back to workspace</Link>
+          <Link href={`/workspaces/${workspaceId}`}>{t("back")}</Link>
         </p>
       </>
     );
@@ -74,7 +82,7 @@ export default async function NewConnectionPage({
     }
     return (
       <>
-        <h1>Finish setup</h1>
+        <h1>{t("finishSetup")}</h1>
         <p className="subtitle">{workspaceResult.workspace.name}</p>
         <FinishSetup
           workspaceId={workspaceId}
@@ -89,7 +97,7 @@ export default async function NewConnectionPage({
 
   return (
     <>
-      <h1>Add connection</h1>
+      <h1>{t("title")}</h1>
       <p className="subtitle">{workspaceResult.workspace.name}</p>
       <OAuthOutcomeBanner outcome={outcome} />
       <NewConnectionWizard workspaceId={workspaceId} connectors={connectors} />

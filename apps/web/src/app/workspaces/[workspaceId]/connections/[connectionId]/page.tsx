@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { can } from "@netrics/domain";
 
-import { AUTH_STATE_LABELS, HealthBadge } from "../../health-badge";
+import { HealthBadge } from "../../health-badge";
 import { FinishSetup } from "../finish-setup";
 import { OAuthOutcomeBanner } from "../oauth-outcome";
 import { ReconnectBanner } from "../reconnect-banner";
@@ -21,13 +21,14 @@ import {
   listWorkspaceMetrics,
   listWorkspaces,
 } from "@/lib/api";
-import { getLocale } from "@/lib/i18n/server";
+import { getLocale, getT } from "@/lib/i18n/server";
 import {
   parseOAuthOutcome,
   providerName,
   SEARCH_CONSOLE_CONNECTOR_ID,
 } from "@/lib/oauth-connection";
 import { observationBreakdown } from "@/lib/format-metric";
+import { formatReportingDay } from "@/lib/app-store-analytics";
 import { intervalLabel, relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
 import {
@@ -57,6 +58,8 @@ export default async function ConnectionDetailPage({
   const query = await searchParams;
   const { cookieHeader } = await requireSession();
   const locale = await getLocale();
+  const t = await getT("connections.detail");
+  const health = await getT("health");
 
   const [{ workspaces }, workspaceResult, detail] = await Promise.all([
     listWorkspaces(cookieHeader),
@@ -81,6 +84,13 @@ export default async function ConnectionDetailPage({
       .filter((metric) => metric.connectionId === connectionId)
       .map((metric) => [metric.key, metric.name]),
   );
+  // Breakdown dimension names in the viewer's language, from the API.
+  const dimensionNames: Record<string, string> = Object.assign(
+    {},
+    ...metrics
+      .filter((metric) => metric.connectionId === connectionId)
+      .map((metric) => metric.dimensionNames),
+  );
   const connector = connectors.find((c) => c.id === connection.connectorId);
   const canUpdate = can(role, "connections:update");
   const authFailed = connection.state.authState === "auth_failed";
@@ -96,6 +106,8 @@ export default async function ConnectionDetailPage({
   const keyStrategy = oauth ? null : signedKeyStrategyOf(connector);
   const keyName = keyStrategy?.providerName ?? connection.connectorName;
   const appStore = connection.connectorId === APP_STORE_CONNECT_CONNECTOR_ID;
+  const latestDay = appStore ? latestReportingDay(observations) : null;
+  const numbers = new Intl.NumberFormat(locale, { maximumFractionDigits: 6 });
 
   return (
     <>
@@ -105,7 +117,7 @@ export default async function ConnectionDetailPage({
         <HealthBadge health={connection.state.health} />
       </p>
       <p className="muted">
-        <Link href={`/workspaces/${workspaceId}`}>Back to workspace</Link>
+        <Link href={`/workspaces/${workspaceId}`}>{t("back")}</Link>
       </p>
 
       <OAuthOutcomeBanner
@@ -114,8 +126,7 @@ export default async function ConnectionDetailPage({
       />
       {query.setup === "finished" && !connection.setupPending ? (
         <div className="notice page-alert" role="status">
-          Setup finished. The first sync is queued and reads up to 16 months
-          back; new data then arrives every few hours.
+          {t("setupFinished")}
         </div>
       ) : null}
 
@@ -139,67 +150,64 @@ export default async function ConnectionDetailPage({
       {authFailed ? (
         <div className="error page-alert" role="alert">
           <p>
-            <strong>
-              Syncing is paused: this connection needs new credentials.
-            </strong>{" "}
-            {authMessage ?? ""}
+            <strong>{t("pausedCredentials")}</strong> {authMessage ?? ""}
           </p>
           <p>
             {keyStrategy ? (
               canUpdate ? (
                 <>
-                  <a href="#replace-key">Upload a new {keyName} key</a>. netrics
-                  checks it first; saving it restarts syncing right away, and
-                  the data collected so far is kept.
+                  <a href="#replace-key">
+                    {t("uploadNewKey", { name: keyName })}
+                  </a>{" "}
+                  {t("uploadNewKeyDetail")}
                 </>
               ) : (
-                `Ask a workspace owner, admin or editor to upload a new ${keyName} key.`
+                t("askUploadKey", { name: keyName })
               )
             ) : oauth ? (
               searchConsole ? (
-                "Restore the account's permission for the property in Search Console, or choose another property below."
+                t("restoreSearchConsole")
               ) : (
-                "Check the account's permissions at the provider, or change the settings below."
+                t("checkProviderPermissions")
               )
             ) : canUpdate ? (
               <>
-                <a href="#edit-connection">Enter a new token below</a>. Saving
-                it restarts syncing right away; the data collected so far is
-                kept.
+                <a href="#edit-connection">{t("enterToken")}</a>{" "}
+                {t("enterTokenDetail")}
               </>
             ) : (
-              "Ask a workspace owner or admin to update the credentials."
+              t("askUpdateCredentials")
             )}
           </p>
         </div>
       ) : null}
 
       <div className="card">
-        <h2>Health</h2>
+        <h2>{t("health")}</h2>
         <div className="row">
-          <span className="label">Auth state</span>
+          <span className="label">{t("authState")}</span>
           <span className="value">
-            {AUTH_STATE_LABELS[connection.state.authState]}
+            {health(`authStates.${connection.state.authState}`)}
           </span>
         </div>
         <div className="row">
-          <span className="label">Consecutive failures</span>
+          <span className="label">{t("consecutiveFailures")}</span>
           <span className="value">{connection.state.consecutiveFailures}</span>
         </div>
         <div className="row">
-          <span className="label">Last success</span>
+          <span className="label">{t("lastSuccess")}</span>
           <span className="value">
             {relativeTime(connection.state.lastSuccessAt, locale)}
           </span>
         </div>
         <div className="row">
-          <span className="label">Next sync due</span>
+          <span className="label">{t("nextSync")}</span>
           <span className="value">
             {nextSyncLabel(connection.state, locale)}
           </span>
         </div>
         <div className="row">
-          <span className="label">Poll interval</span>
+          <span className="label">{t("pollInterval")}</span>
           <span className="value">
             {intervalLabel(connection.state.pollIntervalSeconds, locale)}
           </span>
@@ -207,19 +215,21 @@ export default async function ConnectionDetailPage({
         {oauth ? (
           <div className="row">
             <span className="label">
-              {providerName(oauth.provider)} account
+              {t("providerAccount", { provider: providerName(oauth.provider) })}
             </span>
             <span className="value">
               {oauth.accountEmail
-                ? `Connected as ${oauth.accountEmail}`
-                : "Connected"}
+                ? t("connectedAs", { email: oauth.accountEmail })
+                : t("connected")}
             </span>
           </div>
         ) : (
           <div className="row">
-            <span className="label">Credentials</span>
+            <span className="label">{t("credentials")}</span>
             <span className="value">
-              {connection.hasCredentials ? "stored" : "none"}
+              {connection.hasCredentials
+                ? t("credentialsStored")
+                : t("credentialsNone")}
             </span>
           </div>
         )}
@@ -285,25 +295,21 @@ export default async function ConnectionDetailPage({
 
       {appStore ? (
         <div className="card">
-          <h2>About App Store Connect data</h2>
+          <h2>{t("appStoreAbout")}</h2>
           <div className="row">
-            <span className="label">Latest reporting day</span>
+            <span className="label">{t("latestReportingDay")}</span>
             <span className="value">
-              {latestReportingDay(observations) ?? "None yet"}
+              {latestDay ? formatReportingDay(latestDay, locale) : t("noneYet")}
             </span>
           </div>
           <p className="muted">
-            Sales arrive the next morning, Pacific Time (Apple publishes a
-            day&apos;s report by about 8 a.m. PT); App Store analytics follow
-            about two days later. Reporting days are Pacific Time days, not your
-            workspace&apos;s time zone. Proceeds are kept in each currency Apple
-            reports.{" "}
+            {t("appStoreTiming")}{" "}
             <a
               href={APP_STORE_CONNECT_DOCS_URL}
               target="_blank"
               rel="noreferrer"
             >
-              More about the connector
+              {t("moreAboutConnector")}
             </a>
           </p>
         </div>
@@ -311,23 +317,16 @@ export default async function ConnectionDetailPage({
 
       {searchConsole ? (
         <div className="card">
-          <h2>About Search Console data</h2>
+          <h2>{t("searchConsoleAbout")}</h2>
+          <p className="muted">{t("searchConsoleTiming")}</p>
           <p className="muted">
-            Search Console data appears with a 2–3 day delay; the newest days
-            are filled in once Google finalises them, so today and yesterday are
-            usually empty. Click-through rate and average position are daily
-            values: over several days they are not added up.
-          </p>
-          <p className="muted">
-            Search Console leaves out rare queries to protect searchers&apos;
-            privacy (anonymized queries), and a breakdown keeps only its top
-            rows per day, so breakdowns add up to less than the totals.{" "}
+            {t("searchConsolePrivacy")}{" "}
             <a
               href="https://github.com/netrics-so/netrics/blob/main/docs/connectors/google-search-console.md"
               target="_blank"
               rel="noreferrer"
             >
-              More about the connector
+              {t("moreAboutConnector")}
             </a>
           </p>
         </div>
@@ -335,7 +334,7 @@ export default async function ConnectionDetailPage({
 
       {canUpdate && !connection.setupPending ? (
         <div className="card" id="edit-connection">
-          <h2>Edit connection</h2>
+          <h2>{t("editConnection")}</h2>
           {searchConsole ? (
             <SearchConsoleSettings
               workspaceId={workspaceId}
@@ -354,32 +353,30 @@ export default async function ConnectionDetailPage({
       ) : null}
 
       <div className="card">
-        <h2>Sync runs</h2>
+        <h2>{t("syncRuns")}</h2>
         {syncRuns.length === 0 ? (
           <p className="muted">
-            {connection.setupPending
-              ? "Nothing syncs until the setup is finished."
-              : "No sync runs yet — the initial backfill is queued."}
+            {connection.setupPending ? t("nothingSyncs") : t("noRuns")}
           </p>
         ) : (
           <table className="table">
             <thead>
               <tr>
-                <th>Status</th>
-                <th>Mode</th>
-                <th>Window</th>
-                <th>Observations</th>
-                <th>Attempt</th>
-                <th>Error</th>
-                <th>Started</th>
-                <th>Finished</th>
+                <th>{t("runs.status")}</th>
+                <th>{t("runs.mode")}</th>
+                <th>{t("runs.window")}</th>
+                <th>{t("runs.observations")}</th>
+                <th>{t("runs.attempt")}</th>
+                <th>{t("runs.error")}</th>
+                <th>{t("runs.started")}</th>
+                <th>{t("runs.finished")}</th>
               </tr>
             </thead>
             <tbody>
               {syncRuns.map((run) => (
                 <tr key={run.id}>
-                  <td>{run.status}</td>
-                  <td>{run.mode}</td>
+                  <td>{t(`runStatus.${run.status}`)}</td>
+                  <td>{t(`runMode.${run.mode}`)}</td>
                   <td className="muted">
                     {shortWindow(run.requestedFrom, run.requestedTo)}
                   </td>
@@ -404,18 +401,18 @@ export default async function ConnectionDetailPage({
       </div>
 
       <div className="card">
-        <h2>Latest observations</h2>
+        <h2>{t("latestObservations")}</h2>
         {observations.length === 0 ? (
-          <p className="muted">No observations ingested yet.</p>
+          <p className="muted">{t("noObservations")}</p>
         ) : (
           <table className="table">
             <thead>
               <tr>
-                <th>Metric</th>
-                <th>Resource</th>
-                <th>Breakdown</th>
-                <th>Day</th>
-                <th>Value</th>
+                <th>{t("observations.metric")}</th>
+                <th>{t("observations.resource")}</th>
+                <th>{t("observations.breakdown")}</th>
+                <th>{t("observations.day")}</th>
+                <th>{t("observations.value")}</th>
               </tr>
             </thead>
             <tbody>
@@ -443,7 +440,10 @@ export default async function ConnectionDetailPage({
                     {observationBreakdown(observation.dimensions).map(
                       ([dimension, value]) => (
                         <div key={dimension}>
-                          <span className="muted">{dimension}</span> {value}
+                          <span className="muted">
+                            {dimensionNames[dimension] ?? dimension}
+                          </span>{" "}
+                          {value}
                         </div>
                       ),
                     )}
@@ -451,7 +451,9 @@ export default async function ConnectionDetailPage({
                   <td className="muted nowrap">
                     {observation.sourceTimestamp.slice(0, 10)}
                   </td>
-                  <td className="nowrap">{observation.value}</td>
+                  <td className="nowrap">
+                    {numbers.format(observation.value)}
+                  </td>
                 </tr>
               ))}
             </tbody>

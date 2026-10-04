@@ -17,7 +17,7 @@ import {
   parseConfigSchema,
 } from "@/lib/config-schema";
 import { signedKeyStrategyOf } from "@/lib/signed-key";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 interface EditConnectionFormProps {
   workspaceId: string;
@@ -31,6 +31,8 @@ export function EditConnectionForm({
   connector,
 }: EditConnectionFormProps) {
   const locale = useLocale();
+  const t = useT("connections.edit");
+  const common = useT("common");
   const router = useRouter();
   const fields = useMemo(
     () => (connector ? parseConfigSchema(connector.configSchema) : []),
@@ -69,7 +71,7 @@ export function EditConnectionForm({
         ...(token !== "" ? { credentials: { token } } : {}),
       });
       setToken("");
-      setNotice("Connection updated.");
+      setNotice(t("updated"));
       router.refresh();
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));
@@ -81,7 +83,7 @@ export function EditConnectionForm({
   return (
     <form className="stack" onSubmit={onSubmit}>
       <div className="field">
-        <label htmlFor="edit-name">Name</label>
+        <label htmlFor="edit-name">{t("name")}</label>
         <input
           id="edit-name"
           type="text"
@@ -114,13 +116,12 @@ export function EditConnectionForm({
         />
       ) : (
         <p className="muted">
-          Connector {connection.connectorId} is not in the deployed bundle;
-          config editing is unavailable.
+          {t("connectorMissing", { connector: connection.connectorId })}
         </p>
       )}
       <div className="actions">
         <button type="submit" className="primary" disabled={pending}>
-          {pending ? "Saving…" : "Save changes"}
+          {pending ? common("saving") : t("saveChanges")}
         </button>
       </div>
       {notice ? <div className="notice">{notice}</div> : null}

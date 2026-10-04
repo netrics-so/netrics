@@ -94,7 +94,15 @@ const I18N_FOUNDATION = [
 const I18N_AUTH = [];
 
 // Workspace overview, projects, connections and devices (#252).
-const I18N_WORKSPACE = [];
+const I18N_WORKSPACE = [
+  "apps/web/src/app/workspaces/[[]workspaceId]/page.tsx",
+  "apps/web/src/app/workspaces/[[]workspaceId]/create-project-form.tsx",
+  "apps/web/src/app/workspaces/[[]workspaceId]/create-dashboard-form.tsx",
+  "apps/web/src/app/workspaces/[[]workspaceId]/health-badge.tsx",
+  "apps/web/src/app/workspaces/[[]workspaceId]/device-controls.tsx",
+  "apps/web/src/app/workspaces/[[]workspaceId]/connections/**/*.tsx",
+  "apps/web/src/app/devices/approve/**/*.tsx",
+];
 
 // Dashboards, the web TV layout and the Studio (#253).
 const I18N_STUDIO = [];

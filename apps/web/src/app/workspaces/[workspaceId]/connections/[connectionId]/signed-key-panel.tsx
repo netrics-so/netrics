@@ -11,10 +11,11 @@ import {
   emptyKeyValues,
   fieldOfMessage,
   keyCredentials,
+  localizedFieldLabel,
   missingKeyField,
   type SignedKeyStrategy,
 } from "@/lib/signed-key";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 interface SignedKeyPanelProps {
   workspaceId: string;
@@ -46,8 +47,10 @@ export function SignedKeyPanel({
   canUpdate,
 }: SignedKeyPanelProps) {
   const locale = useLocale();
+  const t = useT("connections.keyPanel");
+  const common = useT("common");
   const router = useRouter();
-  const name = strategy.providerName ?? "provider";
+  const name = strategy.providerName ?? t("provider");
   const [open, setOpen] = useState(authFailed && canUpdate);
   // A new key is usually from the same team: keep its issuer ID. The key
   // ID comes with the new file (AuthKey_<Key ID>.p8).
@@ -89,8 +92,10 @@ export function SignedKeyPanel({
       setFieldErrors({
         [missing.key]:
           missing.input === "file"
-            ? "Choose the .p8 file, or paste the key."
-            : `${missing.label} is required.`,
+            ? t("chooseFile")
+            : t("fieldRequired", {
+                field: localizedFieldLabel(strategy, missing, locale),
+              }),
       });
       return;
     }
@@ -129,11 +134,11 @@ export function SignedKeyPanel({
 
   return (
     <div className="card" id="replace-key">
-      <h2>{name} key</h2>
+      <h2>{t("title", { name })}</h2>
       <div className="row">
-        <span className="label">Private key</span>
+        <span className="label">{t("privateKey")}</span>
         <span className="value">
-          {hasCredentials ? "Stored, encrypted (never shown)" : "None"}
+          {hasCredentials ? t("stored") : common("none")}
         </span>
       </div>
       {signedKey?.fields.map((field) => (
@@ -148,20 +153,17 @@ export function SignedKeyPanel({
       {replaced ? (
         <div className="notice" role="status">
           <p>
-            Key replaced
             {replaced.newKeyId
-              ? ` — netrics now uses key ${replaced.newKeyId}`
-              : ""}
-            . Syncing continues with the new key; the data collected so far is
-            kept.
+              ? t("replacedKey", { keyId: replaced.newKeyId })
+              : t("replaced")}
           </p>
           <p>
-            Now revoke the old key
-            {replaced.oldKeyId ? ` ${replaced.oldKeyId}` : ""} in {name}:
-            netrics cannot do that for you.{" "}
+            {replaced.oldKeyId
+              ? t("revokeOldKey", { keyId: replaced.oldKeyId, name })
+              : t("revokeOld", { name })}{" "}
             {revokeUrl ? (
               <a href={revokeUrl} target="_blank" rel="noreferrer">
-                Open {name} API keys ↗
+                {t("openKeys", { name })} ↗
               </a>
             ) : null}
           </p>
@@ -169,16 +171,11 @@ export function SignedKeyPanel({
       ) : null}
 
       {!canUpdate ? (
-        <p className="muted">
-          Ask a workspace owner, admin or editor to replace the key.
-        </p>
+        <p className="muted">{t("askToReplace")}</p>
       ) : open ? (
         <form className="stack" onSubmit={onSubmit}>
-          <h3>{authFailed ? `Upload a new ${name} key` : "Replace key"}</h3>
-          <p className="muted">
-            netrics checks the new key with {name} first. If the check fails,
-            the stored key stays as it is.
-          </p>
+          <h3>{authFailed ? t("uploadNew", { name }) : t("replace")}</h3>
+          <p className="muted">{t("checksFirst", { name })}</p>
           <SignedKeyFields
             strategy={strategy}
             values={values}
@@ -192,16 +189,16 @@ export function SignedKeyPanel({
           />
           <div className="actions">
             <button type="submit" className="primary" disabled={pending}>
-              {pending ? `Checking with ${name}…` : "Check and replace key"}
+              {pending ? t("checking", { name }) : t("checkAndReplace")}
             </button>
             <button type="button" disabled={pending} onClick={close}>
-              Cancel
+              {common("cancel")}
             </button>
           </div>
           {error ? (
             <div className="error" role="alert">
               <p>{error}</p>
-              <p>The stored key was not changed.</p>
+              <p>{t("notChanged")}</p>
             </div>
           ) : null}
         </form>
@@ -215,7 +212,7 @@ export function SignedKeyPanel({
               setOpen(true);
             }}
           >
-            {authFailed ? `Upload a new ${name} key` : "Replace key"}
+            {authFailed ? t("uploadNew", { name }) : t("replace")}
           </button>
         </div>
       )}

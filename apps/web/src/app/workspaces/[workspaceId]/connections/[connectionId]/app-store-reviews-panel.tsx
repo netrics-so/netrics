@@ -18,7 +18,7 @@ import {
 } from "@/lib/api";
 import {
   REMOVE_REVIEWS_KEY,
-  REVIEWS_KEY_GUIDE,
+  reviewsKeyGuide,
   reviewsKeyCredentials,
   reviewsKeyStrategy,
   reviewsStatusLabel,
@@ -26,10 +26,11 @@ import {
 import {
   emptyKeyValues,
   fieldOfMessage,
+  localizedFieldLabel,
   missingKeyField,
   type SignedKeyStrategy,
 } from "@/lib/signed-key";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 interface AppStoreReviewsPanelProps {
   workspaceId: string;
@@ -56,7 +57,14 @@ export function AppStoreReviewsPanel({
   canUpdate,
 }: AppStoreReviewsPanelProps) {
   const locale = useLocale();
-  const keyStrategy = useMemo(() => reviewsKeyStrategy(strategy), [strategy]);
+  const t = useT("connections.appStoreReviews");
+  const shared = useT("connections.appStoreAnalytics");
+  const common = useT("common");
+  const keyStrategy = useMemo(
+    () => reviewsKeyStrategy(strategy, locale),
+    [strategy, locale],
+  );
+  const guide = reviewsKeyGuide(locale);
   const [status, setStatus] = useState<AppStoreReviewsStatusResponse | null>(
     null,
   );
@@ -106,8 +114,10 @@ export function AppStoreReviewsPanel({
       setFieldErrors({
         [missing.key]:
           missing.input === "file"
-            ? "Choose the .p8 file of the Customer Support key, or paste it."
-            : `${missing.label} is required.`,
+            ? t("chooseFile")
+            : shared("fieldRequired", {
+                field: localizedFieldLabel(keyStrategy, missing, locale),
+              }),
       });
       return;
     }
@@ -159,29 +169,15 @@ export function AppStoreReviewsPanel({
 
   return (
     <div className="card" id="app-store-reviews">
-      <h2>App Store ratings and reviews</h2>
-      <p className="muted">
-        Optional. Reviews per day, their star ratings and where they come from
-        need a second team key with the Customer Support role, because the Sales
-        key cannot read reviews. netrics keeps only counts and stars, never
-        review text or nicknames. The API returns the reviews customers wrote,
-        as Apple lists them; it has no aggregate star rating, so these numbers
-        are not the rating shown on the App Store. Sales never depend on this
-        key.
-      </p>
+      <h2>{t("title")}</h2>
+      <p className="muted">{t("intro")}</p>
 
-      {!canUpdate ? (
-        <p className="muted">
-          Ask a workspace owner, admin or editor to add a Customer Support key.
-        </p>
-      ) : null}
+      {!canUpdate ? <p className="muted">{t("askToAdd")}</p> : null}
 
       {status?.status === "paused" ? (
         <div className="error" role="alert">
           <p>
-            {status.message ??
-              "App Store reviews paused — upload a new reviews key."}{" "}
-            Sales and analytics keep syncing.
+            {status.message ?? t("pausedFallback")} {t("salesKeepSyncing")}
           </p>
         </div>
       ) : null}
@@ -190,39 +186,39 @@ export function AppStoreReviewsPanel({
         <div className="notice" role="status">
           {outcome.kind === "stored" ? (
             <p>
-              Customer Support key{outcome.keyId ? ` ${outcome.keyId}` : ""}{" "}
-              stored. Reviews of the last year are read with the next sync.
+              {outcome.keyId
+                ? t("storedKey", { keyId: outcome.keyId })
+                : t("stored")}
               {outcome.previous && outcome.previous !== outcome.keyId ? (
                 <>
                   {" "}
                   <strong>
-                    Now revoke the previous key {outcome.previous} in App Store
-                    Connect.
+                    {t("revokePrevious", { keyId: outcome.previous })}
                   </strong>{" "}
                   <a
-                    href={status?.keysUrl ?? REVIEWS_KEY_GUIDE.links[0].url}
+                    href={status?.keysUrl ?? guide.links[0]!.url}
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Open App Store Connect API keys ↗
+                    {shared("openKeys")} ↗
                   </a>
                 </>
               ) : null}
             </p>
           ) : (
             <p>
-              Reviews key removed. Review metrics stop updating; the data
-              already read stays.{" "}
+              {t("removed")}{" "}
               <strong>
-                Revoke key{outcome.keyId ? ` ${outcome.keyId}` : ""} in App
-                Store Connect if nothing else uses it.
+                {outcome.keyId
+                  ? t("revokeRemovedKey", { keyId: outcome.keyId })
+                  : t("revokeRemoved")}
               </strong>{" "}
               <a
-                href={status?.keysUrl ?? REVIEWS_KEY_GUIDE.links[0].url}
+                href={status?.keysUrl ?? guide.links[0]!.url}
                 target="_blank"
                 rel="noreferrer"
               >
-                Open App Store Connect API keys ↗
+                {shared("openKeys")} ↗
               </a>
             </p>
           )}
@@ -237,12 +233,12 @@ export function AppStoreReviewsPanel({
             </div>
           ) : null}
           {status === null && loading ? (
-            <p className="muted">Asking App Store Connect…</p>
+            <p className="muted">{shared("asking")}</p>
           ) : status ? (
             <div className="row">
-              <span className="label">Reviews key</span>
+              <span className="label">{t("reviewsKey")}</span>
               <span className="value">
-                {reviewsStatusLabel(status.status, status.keyId)}
+                {reviewsStatusLabel(status.status, status.keyId, locale)}
                 {status.status === "unknown" && status.message ? (
                   <span className="muted"> {status.message}</span>
                 ) : null}
@@ -252,24 +248,15 @@ export function AppStoreReviewsPanel({
 
           {open ? (
             <form className="stack" onSubmit={onSubmit}>
-              <h3>
-                {configured
-                  ? "Replace the Customer Support key"
-                  : "Add a Customer Support key (optional)"}
-              </h3>
-              <p className="muted">
-                Use a team key of the same App Store Connect team with the{" "}
-                <strong>Customer Support</strong> role. It can also edit App
-                Store details and answer reviews, which netrics never does;
-                netrics only reads reviews with it. Admin keys are refused.
-              </p>
+              <h3>{configured ? t("replaceTitle") : t("addOptional")}</h3>
+              <p className="muted">{t("formIntro")}</p>
               <SignedKeyFields
                 strategy={keyStrategy}
                 values={values}
                 errors={fieldErrors}
                 disabled={pending}
                 guideOpen
-                guide={REVIEWS_KEY_GUIDE}
+                guide={guide}
                 idPrefix="reviews-"
                 onChange={(key, value) => {
                   setValues((current) => ({ ...current, [key]: value }));
@@ -281,27 +268,25 @@ export function AppStoreReviewsPanel({
               />
               <div className="actions">
                 <button type="submit" className="primary" disabled={pending}>
-                  {pending
-                    ? "Checking with App Store Connect…"
-                    : "Check and store the key"}
+                  {pending ? t("checkingKey") : t("checkAndStore")}
                 </button>
                 <button type="button" disabled={pending} onClick={close}>
-                  Cancel
+                  {common("cancel")}
                 </button>
               </div>
               {error ? (
                 <div className="error" role="alert">
                   <p>{error}</p>
-                  <p>Nothing was stored.</p>
+                  <p>{shared("nothingStored")}</p>
                 </div>
               ) : null}
             </form>
           ) : confirmRemove ? (
             <div className="stack">
               <p>
-                Remove the Customer Support key
-                {status?.keyId ? ` ${status.keyId}` : ""}? Review metrics stop
-                updating; sales are not affected.
+                {status?.keyId
+                  ? t("confirmRemoveKey", { keyId: status.keyId })
+                  : t("confirmRemove")}
               </p>
               <div className="actions">
                 <button
@@ -310,14 +295,14 @@ export function AppStoreReviewsPanel({
                   disabled={pending}
                   onClick={() => void remove()}
                 >
-                  {pending ? "Removing…" : "Remove reviews key"}
+                  {pending ? common("removing") : t("remove")}
                 </button>
                 <button
                   type="button"
                   disabled={pending}
                   onClick={() => setConfirmRemove(false)}
                 >
-                  Cancel
+                  {common("cancel")}
                 </button>
               </div>
               {error ? (
@@ -342,10 +327,10 @@ export function AppStoreReviewsPanel({
                 }}
               >
                 {status.status === "not_configured"
-                  ? "Add a Customer Support key (optional)"
+                  ? t("addOptional")
                   : status.status === "paused"
-                    ? "Upload a new reviews key"
-                    : "Replace reviews key"}
+                    ? t("uploadNew")
+                    : t("replace")}
               </button>
               {configured ? (
                 <button
@@ -356,7 +341,7 @@ export function AppStoreReviewsPanel({
                     setConfirmRemove(true);
                   }}
                 >
-                  Remove reviews key
+                  {t("remove")}
                 </button>
               ) : null}
               {configured ? (
@@ -365,7 +350,7 @@ export function AppStoreReviewsPanel({
                   disabled={loading}
                   onClick={() => void load()}
                 >
-                  {loading ? "Checking…" : "Check again"}
+                  {loading ? shared("checking") : shared("checkAgain")}
                 </button>
               ) : null}
             </div>
