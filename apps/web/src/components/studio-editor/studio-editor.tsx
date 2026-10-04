@@ -312,6 +312,7 @@ export function StudioEditor({
           ? logoImage.width / logoImage.height
           : null,
       timeZone,
+      locale,
       labelOf: (entry: DataWidget | { type: string; title?: string | null }) =>
         isDataWidgetType(entry.type)
           ? dataWidgetLabel(

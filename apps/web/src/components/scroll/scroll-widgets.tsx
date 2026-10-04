@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  countdownLabel,
   labelParts,
   othersLabel,
   parseTextWidget,
@@ -55,6 +56,7 @@ import {
   cardUnits,
   scrollChartHeight,
   scrollClockSize,
+  scrollCountdownSizes,
   scrollValue,
 } from "@/lib/scroll-view";
 import { lineChartGeometry } from "@/lib/studio-chart";
@@ -64,6 +66,7 @@ import {
   statusFooterText,
   statusTone,
 } from "@/lib/studio-status";
+import { countdownTargetAt, countdownView } from "@/lib/studio-countdown";
 import { tableRowTexts, tableSubtitle } from "@/lib/studio-table";
 import {
   compareChangeText,
@@ -820,6 +823,111 @@ function LiveScrollBar({
   return <ScrollBarCard {...useLiveBar(widget, env)} {...size} />;
 }
 
+/**
+ * The countdown card (ADR 0019 section 8): one column, compact: the label,
+ * the time left (or the text when reached) and the target line.
+ */
+export function ScrollCountdownCard(
+  props: {
+    now: Date;
+    label: string;
+    options: {
+      target: string;
+      timeZone: string;
+      showTarget: boolean;
+      doneText: string | null;
+      targetAt?: string;
+    };
+  } & ScrollCardSize,
+) {
+  const locale = useLocale();
+  const view = countdownView({
+    now: props.now,
+    label: props.label,
+    targetAt: countdownTargetAt(props.options),
+    timeZone: props.options.timeZone,
+    options: props.options,
+    placement: { x: 0, y: 0, w: 3, h: 2 },
+    showHeader: true,
+    fontScale: 1,
+    locale,
+  });
+  const sizes = scrollCountdownSizes(
+    view.groups,
+    cardUnits(props.width, props.rootPx),
+  );
+  return (
+    <article className="sw sw-countdown scroll-card scroll-card--countdown">
+      <ScrollLabel label={props.label} />
+      {view.done ? (
+        <p
+          className="sw-countdown-done"
+          style={{ fontSize: u(SCROLL_TYPE.valueMin) }}
+          suppressHydrationWarning
+        >
+          {view.doneText}
+        </p>
+      ) : (
+        <p
+          className="sw-countdown-time"
+          style={{ fontSize: u(sizes.value) }}
+          aria-label={view.text}
+          suppressHydrationWarning
+        >
+          {view.groups.map((group, index) => (
+            <span
+              key={`${index}:${group.unit}`}
+              aria-hidden="true"
+              style={index > 0 ? { marginLeft: "0.3em" } : undefined}
+            >
+              {group.value}
+              <span
+                className="sw-countdown-unit"
+                style={{ fontSize: u(sizes.unit), marginLeft: "0.08em" }}
+              >
+                {group.unit}
+              </span>
+            </span>
+          ))}
+        </p>
+      )}
+      {view.target ? (
+        <p
+          className="sw-muted"
+          style={{ fontSize: u(SCROLL_TYPE.small) }}
+          suppressHydrationWarning
+        >
+          {view.target}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
+function LiveScrollCountdown({
+  widget,
+  env,
+  size,
+}: {
+  widget: Extract<StudioWidget, { type: "countdown" }>;
+  env: StudioEnv;
+  size: ScrollCardSize;
+}) {
+  const now = useNow();
+  const locale = useLocale();
+  return (
+    <ScrollCountdownCard
+      now={now}
+      label={countdownLabel(widget.title, locale)}
+      options={{
+        ...widget.options,
+        timeZone: widget.options.timeZone ?? env.timeZone,
+      }}
+      {...size}
+    />
+  );
+}
+
 function LiveScrollClock({
   widget,
   env,
@@ -865,6 +973,8 @@ export function LiveScrollWidget({
       return <LiveScrollCompare widget={widget} env={env} size={size} />;
     case "clock":
       return <LiveScrollClock widget={widget} env={env} size={size} />;
+    case "countdown":
+      return <LiveScrollCountdown widget={widget} env={env} size={size} />;
     case "text":
       return <ScrollTextCard text={widget.text} options={widget.options} />;
     case "image":

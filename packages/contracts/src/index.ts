@@ -22,6 +22,7 @@ import {
   WIDGET_TYPES,
   WORKSPACE_ROLES,
   isValidTimeZone,
+  parseCountdownTarget,
   type ThemeColorToken,
 } from "@netrics/domain";
 
@@ -1632,7 +1633,8 @@ export type SlideLayoutInput = z.input<typeof slideLayoutInputSchema>;
  * widget_too_small (a custom placement below the minimum),
  * header_name_cut (the dashboard name does not fit the header) and
  * clock_parts_hidden (a clock's date or zone line is left out for room,
- * info). Read-only.
+ * info) and countdown_passed (a countdown's target has passed, info, in
+ * the primary format only). Read-only.
  */
 export const formatWarningSchema = z.object({
   format: screenFormatSchema,
@@ -1727,6 +1729,23 @@ export const clockWidgetOptionsSchema = z.object({
   dateStyle: z.enum(["short", "long"]).default("short"),
   /** A zone line below the date: "Berlin · UTC+2". Older screens ignore it. */
   showZone: z.boolean().default(false),
+});
+/**
+ * A countdown (ADR 0019 section 8): the time left to a local date and time.
+ * A target in the past is valid: a dashboard saved after it must still
+ * save (the Studio says so with the info warning `countdown_passed`).
+ */
+export const countdownWidgetOptionsSchema = z.object({
+  /** A local date and time, `YYYY-MM-DDTHH:mm`, in the years 2000–2100. */
+  target: z.string().refine((target) => parseCountdownTarget(target) !== null, {
+    message: "expected a date and time YYYY-MM-DDTHH:mm in 2000–2100",
+  }),
+  /** IANA time zone of the target; null is the workspace's. */
+  timeZone: timeZoneSchema.nullable().default(null),
+  /** The target line below the time left: "Tue 7 Oct · 10:00". */
+  showTarget: z.boolean().default(true),
+  /** Shown at the target; null shows "Now" in the screen's language. */
+  doneText: z.string().trim().min(1).max(40).nullable().default(null),
 });
 
 /**
@@ -1833,6 +1852,11 @@ export const dashboardWidgetInputSchema = z.discriminatedUnion("type", [
     type: z.literal("status"),
     ...widgetInputShape,
     options: statusWidgetOptionsSchema.prefault({}),
+  }),
+  z.object({
+    type: z.literal("countdown"),
+    ...widgetInputShape,
+    options: countdownWidgetOptionsSchema,
   }),
 ]);
 export type DashboardWidgetInput = z.input<typeof dashboardWidgetInputSchema>;
@@ -1970,6 +1994,11 @@ export const dashboardWidgetSchema = z.discriminatedUnion("type", [
     type: z.literal("status"),
     ...widgetShape,
     options: statusWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("countdown"),
+    ...widgetShape,
+    options: countdownWidgetOptionsSchema,
   }),
 ]);
 export type DashboardWidget = z.infer<typeof dashboardWidgetSchema>;
@@ -2821,6 +2850,23 @@ function deviceWidgetUnion<E extends z.ZodRawShape>(
       label: deviceDataLabelSchema,
       options: statusWidgetOptionsSchema,
       data: deviceStatusDataSchema,
+    }),
+    z.object({
+      type: z.literal("countdown"),
+      ...deviceWidgetShape,
+      /** The title, else "Countdown" in the payload's language. */
+      label: z.string().min(1),
+      /**
+       * `timeZone` resolved (the widget's, else the workspace's) and
+       * `targetAt`, the target as an instant in UTC (a time in a
+       * spring-forward gap moves forward, a twice-existing one takes the
+       * earlier offset). Screens count down from their own clock each
+       * minute, so the payload never changes with time (ADR 0019 §8).
+       */
+      options: countdownWidgetOptionsSchema.extend({
+        timeZone: z.string().min(1),
+        targetAt: z.iso.datetime(),
+      }),
     }),
   ]);
 }

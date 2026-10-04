@@ -9,6 +9,7 @@ import {
   SUPPORTED_LOCALES,
   STUDIO_LABEL_MAX_LINES,
   allResourcesName,
+  countdownLabel,
   isDataWidgetType,
   labelFit,
   tileLabel,
@@ -513,6 +514,22 @@ export function labelPreview(
   locale: Locale,
   fontScale = 1,
 ): LabelPreview | null {
+  if (widget.type === "countdown") {
+    // Its title, else "Countdown" (ADR 0019 section 8).
+    const label = countdownLabel(widget.title, locale);
+    const fit = labelFit(label, widget, { fontScale });
+    return {
+      label,
+      defaultLabel: countdownLabel(null, locale),
+      fit,
+      warning: fit.fits
+        ? null
+        : webTranslator(locale, "studio.readability")("labelWarning", {
+            lines: Math.max(fit.titleLines, fit.resourceLines),
+            max: STUDIO_LABEL_MAX_LINES,
+          }),
+    };
+  }
   if (!isDataWidgetType(widget.type)) {
     return null;
   }

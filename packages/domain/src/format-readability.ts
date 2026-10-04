@@ -257,7 +257,9 @@ export type FormatWarningCode =
   /** A clock's date or zone line does not fit, so the screen leaves it out. */
   | "clock_parts_hidden"
   /** A table's `limit` exceeds the rows that fit (see `rows`). */
-  | "rows_cut";
+  | "rows_cut"
+  /** A countdown's target has passed: it shows its text when reached. */
+  | "countdown_passed";
 
 export const FORMAT_WARNING_CODES: readonly FormatWarningCode[] = [
   "label_cut",
@@ -269,6 +271,7 @@ export const FORMAT_WARNING_CODES: readonly FormatWarningCode[] = [
   "header_name_cut",
   "clock_parts_hidden",
   "rows_cut",
+  "countdown_passed",
 ];
 
 /**
@@ -294,6 +297,8 @@ export const FORMAT_WARNING_SEVERITY: Readonly<
   // Tables (ADR 0019 section 6); a status board's is info (section 7,
   // `STATUS_ROWS_CUT_SEVERITY`).
   rows_cut: "attention",
+  // A past target still saves (ADR 0019 section 8): said, not flagged.
+  countdown_passed: "info",
 };
 
 /** A status board's `rows_cut`: "+N more" is expected, so info. */
@@ -332,6 +337,11 @@ export interface ReadabilityWidget extends LayoutWidget {
    * list (the chosen ones, or every connection of the workspace).
    */
   rows?: number | null;
+  /**
+   * Countdowns: the target as an instant (ISO 8601, resolved in the
+   * widget's zone, else the workspace's); null when it does not resolve.
+   */
+  countdown?: { targetAt: string | null } | null;
 }
 
 export interface ReadabilitySlide {
@@ -351,6 +361,8 @@ export interface ReadabilityContext {
   dashboardName: string;
   /** The logo's width / height, null without a logo. */
   logoAspect: number | null;
+  /** The moment of the check, for countdowns whose target has passed. */
+  now?: Date;
 }
 
 /**
@@ -498,6 +510,16 @@ export function formatWarnings(
         ...widget.clock,
       });
       if (fit.hidden) warn("clock_parts_hidden", widget.id);
+    } else if (
+      widget.type === "countdown" &&
+      format === context.primaryFormat &&
+      context.now !== undefined &&
+      widget.countdown?.targetAt
+    ) {
+      // Not a matter of the format: said once, in the primary.
+      if (Date.parse(widget.countdown.targetAt) <= context.now.getTime()) {
+        warn("countdown_passed", widget.id);
+      }
     }
   }
   return warnings;

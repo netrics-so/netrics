@@ -1,6 +1,7 @@
 import {
   clockWidgetOptionsSchema,
   statusWidgetOptionsSchema,
+  countdownWidgetOptionsSchema,
   tableWidgetOptionsSchema,
   textWidgetOptionsSchema,
   type FormatWarning,
@@ -15,11 +16,13 @@ import {
   type Transaction,
 } from "@netrics/database";
 import {
+  countdownLabel,
   effectiveFontScale,
   isDataWidgetType,
   isScreenFormat,
   slideFormatWarnings,
   sourcesLabel,
+  zonedInstant,
   type CustomLayout,
   type Locale,
   type ReadabilityWidget,
@@ -41,8 +44,15 @@ import { resolveThemeTokens } from "../themes/service.js";
 export interface ReadabilityInputs {
   fontScale: number;
   logoAspect: number | null;
-  /** The workspace's time zone: clocks without their own show it. */
+  /**
+   * The workspace's time zone: clocks and countdowns without their own
+   * use it.
+   */
   timeZone: string;
+  /** The reader's language: a countdown's label without a title. */
+  locale: Locale;
+  /** The moment of the read: whether a countdown's target has passed. */
+  now: Date;
   /** The label of a data widget, as screens show it. */
   labelOf(widget: DashboardWidgetRow): string | null;
   /** A status board's label without a title ("Sources"). */
@@ -85,9 +95,13 @@ export async function loadReadabilityInputs(
           true,
     ),
   );
-  const timeZone = hasZoneLine
-    ? ((await findWorkspace(tx, workspaceId))?.timeZone ?? "UTC")
-    : "UTC";
+  const hasCountdown = dashboard.slides.some((slide) =>
+    slide.widgets.some((widget) => widget.type === "countdown"),
+  );
+  const timeZone =
+    hasZoneLine || hasCountdown
+      ? ((await findWorkspace(tx, workspaceId))?.timeZone ?? "UTC")
+      : "UTC";
   // A board of every source lists every connection (ADR 0019 section 7).
   const listsAll = dashboard.slides.some((slide) =>
     slide.widgets.some(
@@ -106,6 +120,8 @@ export async function loadReadabilityInputs(
     timeZone,
     sourcesLabel: sourcesLabel(locale),
     sourceCount,
+    locale,
+    now: new Date(),
     labelOf(widget) {
       if (widget.connectionId === null || widget.metricKey === null) {
         return null;
@@ -133,6 +149,7 @@ export function dashboardFormatWarnings(
     showHeader: dashboard.showHeader,
     dashboardName: dashboard.name,
     logoAspect: inputs.logoAspect,
+    now: inputs.now,
   };
   const result = new Map<string, FormatWarning[]>();
   for (const slide of dashboard.slides) {
@@ -186,6 +203,23 @@ export function dashboardFormatWarnings(
                   : null,
               }
             : null,
+        };
+      }
+      if (type === "countdown") {
+        const countdown = countdownWidgetOptionsSchema.safeParse(
+          widget.options,
+        ).data;
+        return {
+          ...base,
+          label: countdownLabel(widget.title, inputs.locale),
+          countdown: {
+            targetAt: countdown
+              ? (zonedInstant(
+                  countdown.target,
+                  countdown.timeZone ?? inputs.timeZone,
+                )?.toISOString() ?? null)
+              : null,
+          },
         };
       }
       return base;

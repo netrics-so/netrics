@@ -768,6 +768,55 @@ describe("dashboard studio API", () => {
     await admin`delete from connections where id = any(${ids})`;
   });
 
+  it("stores a countdown with its defaults, a past one too, with an info warning (ADR 0019 §8)", async () => {
+    const countdown = (target: string, x: number) => ({
+      type: "countdown",
+      x,
+      y: 0,
+      w: 3,
+      h: 2,
+      title: "Launch in",
+      options: { target },
+    });
+    const response = await createDashboard(owner, {
+      name: "Launch",
+      slides: [
+        {
+          widgets: [
+            countdown("2099-10-07T10:00", 0),
+            countdown("2020-01-01T09:00", 3),
+          ],
+        },
+      ],
+    });
+    expect(response.statusCode).toBe(200);
+    const dashboard = dashboardResponseSchema.parse(response.json()).dashboard;
+    const [future, past] = dashboard.slides[0]!.widgets;
+    expect(future).toMatchObject({
+      type: "countdown",
+      title: "Launch in",
+      options: {
+        target: "2099-10-07T10:00",
+        timeZone: null,
+        showTarget: true,
+        doneText: null,
+      },
+    });
+    // The passed one is said once, in the primary format, as info.
+    expect(dashboard.slides[0]!.formatWarnings).toEqual([
+      {
+        format: "16x9",
+        code: "countdown_passed",
+        severity: "info",
+        widgetId: past!.id,
+        pages: null,
+        rows: null,
+      },
+    ]);
+    // A countdown is no data widget and no tile.
+    expect(dashboard.tiles).toEqual([]);
+  });
+
   it("stores a table with its defaults and warns when its rows do not fit (ADR 0019)", async () => {
     const table = metricWidget({
       type: "table",
@@ -1030,6 +1079,66 @@ describe("dashboard studio API", () => {
       ],
       400,
       "unknown_dimension",
+    ],
+    [
+      "a countdown below its 3 × 2 minimum",
+      [
+        {
+          widgets: [
+            {
+              type: "countdown",
+              x: 0,
+              y: 0,
+              w: 2,
+              h: 2,
+              options: { target: "2026-10-07T10:00" },
+            },
+          ],
+        },
+      ],
+      400,
+      "widget_too_small",
+    ],
+    [
+      "a countdown to a day that does not exist",
+      [
+        {
+          widgets: [
+            {
+              type: "countdown",
+              x: 0,
+              y: 0,
+              w: 3,
+              h: 2,
+              options: { target: "2026-02-30T10:00" },
+            },
+          ],
+        },
+      ],
+      400,
+      "invalid_request",
+    ],
+    [
+      "a countdown with a text when reached over 40 characters",
+      [
+        {
+          widgets: [
+            {
+              type: "countdown",
+              x: 0,
+              y: 0,
+              w: 3,
+              h: 2,
+              options: {
+                target: "2026-10-07T10:00",
+                doneText: "x".repeat(41),
+              },
+            },
+          ],
+        },
+      ],
+      400,
+      "invalid_request",
     ],
     [
       "a table below its 4 × 4 minimum",

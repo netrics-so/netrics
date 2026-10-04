@@ -130,6 +130,27 @@ export function scrollChartHeight(width: number): number {
   return Math.max(SCROLL_CHART_MIN_HEIGHT, Math.round((width * 9) / 16));
 }
 
+/**
+ * A countdown's numbers and letters in units (ADR 0019 section 8): the
+ * numbers as large as fit between the value bounds on their widest digits,
+ * the letters a third of them and never below the change size.
+ */
+export function scrollCountdownSizes(
+  groups: ReadonlyArray<{ value: string; unit: string }>,
+  units: number,
+): { value: number; unit: number } {
+  const sample = groups
+    .map((group) => `${group.value.replace(/\d/g, "0")} ${group.unit}`)
+    .join("  ");
+  const value =
+    fitTextSize(sample, units, {
+      min: SCROLL_TYPE.valueMin,
+      max: SCROLL_TYPE.valueMax,
+      weight: "semibold",
+    }) ?? SCROLL_TYPE.valueMin;
+  return { value, unit: Math.max(SCROLL_TYPE.change, value / 3) };
+}
+
 /** The clock's size in units: as large as fits, at most `SCROLL_TYPE.clock`. */
 export function scrollClockSize(time: string, units: number): number {
   // Widest digits, so the size does not change from minute to minute.

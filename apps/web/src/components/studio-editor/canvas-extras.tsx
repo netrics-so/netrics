@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { DashboardWidget, WorkspaceMetric } from "@netrics/contracts";
-import { isDataWidgetType, sourcesLabel } from "@netrics/domain";
+import {
+  countdownLabel,
+  isDataWidgetType,
+  sourcesLabel,
+} from "@netrics/domain";
 
 import { dataWidgetLabel } from "@/components/studio/metric-widget";
 import {
@@ -46,7 +50,9 @@ export function useUnreadableLabels(
             )
           : widget.type === "status"
             ? (widget.title ?? sourcesLabel(locale))
-            : "",
+            : widget.type === "countdown"
+              ? countdownLabel(widget.title, locale)
+              : "",
       fontScale,
       locale,
     );

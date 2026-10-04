@@ -49,6 +49,11 @@ export const sharedDe: Catalog<SharedMessages> = {
     max: "Höchster Tag",
   },
   weekOf: "Woche vom {date}",
+  countdown: {
+    label: "Countdown",
+    done: "Jetzt",
+    units: { d: "T", h: "Std", m: "Min" },
+  },
   conversion: {
     source: "EZB-Referenzkurse",
     notConverted: "{source} · {currencies} nicht umgerechnet",
