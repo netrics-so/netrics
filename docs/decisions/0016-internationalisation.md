@@ -61,7 +61,7 @@ until someone asks.
 German copy uses "du" (lower case), sentence case like the English copy,
 and keeps product nouns German users know from other tools. Starting
 glossary, extended by each area issue in a comment at the top of
-`apps/web/messages/de.ts`: Workspace, Dashboard, Widget, Studio, Connector
+`apps/web/src/messages/de.ts`: Workspace, Dashboard, Widget, Studio, Connector
 stay; connection → Verbindung, slide → Folie, screen/TV → Bildschirm/TV,
 sign in → anmelden, settings → Einstellungen, owner/admin/member →
 Inhaber/Admin/Mitglied.
@@ -110,7 +110,7 @@ The web app learns the user's setting from `GET /v1/me`, which gains
 `user.locale` (nullable); the root layout reads it once per request through
 a React `cache()`d helper that the nav also uses (so no request is added
 where a page already calls `getMe`). The setting changes with
-`PATCH /v1/me` `{ locale }`. The device payload gains a top-level
+`PATCH /v1/me` `{ locale }`. New response fields default to `null` when absent, so a web app deployed before its API (Vercel and Railway roll out separately) still parses the answer. The device payload gains a top-level
 `locale` (additive, schema 2 stays 2) so the kiosk and tvOS know which
 language the server labelled the payload in and format numbers and their
 own chrome to match.
@@ -141,7 +141,7 @@ MessageFormat, not `next-intl` or FormatJS.
     `tileLabel(…, locale)`) and look up the shared catalog themselves;
     they do not return keys, so every caller gets the finished label the
     way it does today.
-  - `apps/web/messages/{en,de}.ts`: the web UI, nested by area
+  - `apps/web/src/messages/{en,de}.ts`: the web UI, nested by area
     (`nav.*`, `account.*`, `workspaceSettings.*`, `studio.*`, …).
   - `apps/server/src/mail/messages/{en,de}.ts`: email subjects and bodies.
   - tvOS: an Xcode String Catalog (`Localizable.xcstrings`) for the app's
