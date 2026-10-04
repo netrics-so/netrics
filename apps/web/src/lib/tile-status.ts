@@ -1,4 +1,4 @@
-import type { DeviceTileStatus } from "@netrics/contracts";
+import type { ConnectionStateView, DeviceTileStatus } from "@netrics/contracts";
 
 import { relativeTime } from "./relative-time";
 
@@ -34,4 +34,43 @@ export function deviceTileNotice(
     case "ok":
       return null;
   }
+}
+
+/**
+ * Data older than this many poll intervals (at least 15 minutes) is marked
+ * stale: the numbers may no longer reflect the source.
+ */
+const STALE_AFTER_INTERVALS = 3;
+const MIN_STALE_MS = 15 * 60 * 1000;
+
+/**
+ * Why a widget's numbers may be out of date, from its connection's sync
+ * state (signed-in views); null when they are fresh.
+ */
+export function connectionNotice(
+  connection: { state: ConnectionStateView } | undefined,
+  now: number = Date.now(),
+): string | null {
+  if (!connection) {
+    return TILE_NOTICES.removed;
+  }
+  const { state } = connection;
+  if (state.health === "auth_failed") {
+    return TILE_NOTICES.authFailed;
+  }
+  if (state.health === "needs_reauthorization") {
+    return TILE_NOTICES.needsReconnect;
+  }
+  if (state.health === "outage") {
+    return TILE_NOTICES.outage;
+  }
+  if (!state.lastSuccessAt) {
+    return TILE_NOTICES.firstSync;
+  }
+  const age = now - new Date(state.lastSuccessAt).getTime();
+  const limit = Math.max(
+    STALE_AFTER_INTERVALS * state.pollIntervalSeconds * 1000,
+    MIN_STALE_MS,
+  );
+  return age > limit ? lastSyncNotice(state.lastSuccessAt) : null;
 }

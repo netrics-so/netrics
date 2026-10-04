@@ -1,6 +1,6 @@
-import type { CSSProperties } from "react";
-
 import type { ThemeTokens } from "@netrics/domain";
+
+import { themeStyle } from "@/lib/studio-theme";
 
 // A sample slide in a theme (#216): a metric, a line and a bar widget on the
 // theme's canvas, so the editor shows what a TV would. Sample numbers only;
@@ -25,25 +25,6 @@ function points(values: number[], width: number, height: number): string {
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
-}
-
-/** CSS variables for a theme, consumed by .theme-preview rules. */
-export function themeStyle(tokens: ThemeTokens): CSSProperties {
-  return {
-    "--t-background": tokens.background,
-    "--t-surface": tokens.surface,
-    "--t-border": tokens.border,
-    "--t-text": tokens.text,
-    "--t-label": tokens.label,
-    "--t-muted": tokens.muted,
-    "--t-accent": tokens.accent,
-    "--t-up": tokens.up,
-    "--t-down": tokens.down,
-    "--t-warning": tokens.warning,
-    "--t-chart-line": tokens.chartLine,
-    "--t-chart-fill": tokens.chartFill,
-    "--t-font-scale": String(tokens.fontScale),
-  } as CSSProperties;
 }
 
 export function ThemePreview({

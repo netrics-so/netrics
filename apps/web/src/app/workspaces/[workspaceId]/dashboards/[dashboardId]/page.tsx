@@ -6,12 +6,16 @@ import { can } from "@netrics/domain";
 import {
   getCurrencyConversion,
   getDashboard,
+  getTheme,
   getWorkspace,
   listConnections,
+  listStudioImages,
   listWorkspaceMetrics,
   listWorkspaces,
 } from "@/lib/api";
 import { requireSession } from "@/lib/session";
+import { resolveDashboardTheme } from "@/lib/studio-theme";
+import { referencedImageIds } from "@/lib/studio-widgets";
 
 import { DashboardView } from "./dashboard-view";
 import type { TileConnection } from "./metric-tile";
@@ -34,13 +38,27 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
   if (!membership || !dashboardResult) {
     notFound();
   }
-  const [{ metrics }, { connections }, workspaceResult, conversion] =
-    await Promise.all([
-      listWorkspaceMetrics(cookieHeader, workspaceId),
-      listConnections(cookieHeader, workspaceId),
-      getWorkspace(cookieHeader, workspaceId),
-      getCurrencyConversion(cookieHeader, workspaceId),
-    ]);
+  const { dashboard } = dashboardResult;
+  const [
+    { metrics },
+    { connections },
+    workspaceResult,
+    conversion,
+    customTheme,
+    images,
+  ] = await Promise.all([
+    listWorkspaceMetrics(cookieHeader, workspaceId),
+    listConnections(cookieHeader, workspaceId),
+    getWorkspace(cookieHeader, workspaceId),
+    getCurrencyConversion(cookieHeader, workspaceId),
+    dashboard.settings.themeId
+      ? getTheme(cookieHeader, workspaceId, dashboard.settings.themeId)
+      : null,
+    // Only dashboards that show images ask for them.
+    referencedImageIds(dashboard).length > 0
+      ? listStudioImages(cookieHeader, workspaceId)
+      : [],
+  ]);
   const byId: Record<string, TileConnection> = Object.fromEntries(
     connections.map((connection) => [
       connection.id,
@@ -56,7 +74,13 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
       </p>
       <DashboardView
         workspaceId={workspaceId}
-        dashboard={dashboardResult.dashboard}
+        dashboard={dashboard}
+        theme={resolveDashboardTheme(
+          dashboard.settings,
+          customTheme?.theme ?? null,
+        )}
+        timeZone={workspaceResult?.workspace.timeZone ?? "UTC"}
+        images={images}
         metrics={metrics}
         connections={byId}
         currency={{
