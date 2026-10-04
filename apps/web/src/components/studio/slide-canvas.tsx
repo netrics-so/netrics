@@ -12,6 +12,7 @@ import {
 import type { DashboardSlide } from "@netrics/contracts";
 import {
   STUDIO_TEXT_MINIMUMS,
+  headerFit,
   type LayoutPlacement,
   type ScreenFormat,
   type StudioPlacement,
@@ -170,17 +171,33 @@ function HeaderClock({ timeZone }: { timeZone: string }) {
   );
 }
 
+/**
+ * The header band: logo, dashboard name, slide name (and page), clock. The
+ * format's header rule (`headerFit`, ADR 0017 section 6) decides: in narrow
+ * formats (3:4, 9:16) the dashboard name wraps to two lines before it is
+ * cut, and the slide name is shown only when it fits beside a one-line
+ * name, so it is dropped before the dashboard name is cut.
+ */
 function SlideHeader({
   header,
   box,
   images,
+  format,
 }: {
   header: SlideHeaderInfo;
   box: NonNullable<CanvasGeometry["header"]>;
   images: StudioImages;
+  format: ScreenFormat;
 }) {
   const logo = header.logoImageId ? images.get(header.logoImageId) : null;
   const t = useT("screen.widget");
+  const fit = headerFit({
+    name: header.name,
+    slideName: header.slideName,
+    format,
+    logoAspect: logo && logo.height > 0 ? logo.width / logo.height : null,
+  });
+  const wrap = fit.maxNameLines > 1;
   return (
     <header
       className="studio-header"
@@ -201,13 +218,17 @@ function SlideHeader({
         />
       ) : null}
       <span
-        className="studio-header-name"
+        className={
+          wrap
+            ? "studio-header-name studio-header-name--wrap"
+            : "studio-header-name"
+        }
         style={{ fontSize: u(HEADER_NAME) }}
         title={header.name}
       >
         {header.name}
       </span>
-      {header.slideName ? (
+      {header.slideName && fit.showSlideName ? (
         <span
           className="studio-header-slide"
           style={{ fontSize: u(HEADER_META) }}
@@ -390,7 +411,12 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
         </>
       ) : null}
       {geometry.header ? (
-        <SlideHeader header={header} box={geometry.header} images={images} />
+        <SlideHeader
+          header={header}
+          box={geometry.header}
+          images={images}
+          format={format}
+        />
       ) : null}
       {slide.widgets.map((widget) => {
         const placement = byId.get(widget.id);
@@ -408,6 +434,7 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
                 w: placement.w,
                 h: placement.h,
                 unitBox,
+                format,
               };
         return (
           <div

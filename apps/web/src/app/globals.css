@@ -1503,6 +1503,18 @@ a.health-badge:hover {
   min-width: 0;
 }
 
+/* Narrow formats (ADR 0017 section 6): the name wraps to two lines in the
+   band before it is cut. */
+.studio-header-name--wrap {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
 .studio-header-slide {
   color: var(--t-muted);
   white-space: nowrap;

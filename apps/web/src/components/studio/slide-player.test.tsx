@@ -317,6 +317,36 @@ describe("SlidePlayer in screen view on any screen (ADR 0017, #281)", () => {
     );
   });
 
+  it("applies the format's header rule (headerFit)", () => {
+    const header = (name: string, size: ScreenSize) =>
+      renderI18n(
+        <SlidePlayer
+          slides={[slide(1, "Weekly sales by country", [])]}
+          autoAdvance
+          transition="none"
+          tokens={tokens}
+          showHeader
+          header={{ name, logoImageId: null, timeZone: "UTC" }}
+          images={images}
+          renderWidget={(widget) => (
+            <DeviceWidgetView widget={widget} env={env} />
+          )}
+          screen={size}
+        />,
+      );
+    // Landscape, a short name: name and slide name on one line.
+    const wide = header("Wurfel", { width: 1920, height: 1080 });
+    expect(wide).toContain(">Weekly sales by country</span>");
+    expect(wide).not.toContain("studio-header-name--wrap");
+    // Portrait, a long name: it may wrap to two lines; the slide name goes.
+    const tall = header("Wurfel growth across all app stores", {
+      width: 1080,
+      height: 1920,
+    });
+    expect(tall).toContain("studio-header-name studio-header-name--wrap");
+    expect(tall).not.toContain(">Weekly sales by country</span>");
+  });
+
   it("lays out a kiosk turned by 90° in its rotated format", () => {
     // A 1920 × 1080 screen turned 90°: the player measures 1080 × 1920.
     const html = renderI18n(

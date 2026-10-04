@@ -9,6 +9,7 @@ import {
   widgetTypeScale,
   wrappedLineCount,
   type StudioFontWeight,
+  type ScreenFormat,
   type StudioPlacement,
   type StudioTypeScale,
   type StudioWidgetType,
@@ -65,6 +66,8 @@ export function widgetBoxStyle(
  */
 export interface ScreenPlacement extends StudioPlacement {
   unitBox?: { width: number; height: number } | null;
+  /** The format the placement is in (absent: `16x9`). */
+  format?: ScreenFormat;
 }
 
 /** A widget's content box in units: its rect less the widget padding. */
