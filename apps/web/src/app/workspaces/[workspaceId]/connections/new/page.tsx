@@ -68,7 +68,7 @@ export default async function NewConnectionPage({
           {t("roleCannot", { role: roles(membership.role) })}
         </p>
         <p className="muted">
-          <Link href={`/workspaces/${workspaceId}`}>{t("back")}</Link>
+          <Link href={`/workspaces/${workspaceId}/sources`}>{t("back")}</Link>
         </p>
       </>
     );

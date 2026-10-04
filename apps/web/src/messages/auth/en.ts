@@ -14,6 +14,9 @@ export const authEn = {
     withDemo: "Add demo data and a sample dashboard",
     withDemoHint: "— generated numbers to explore with; delete them any time.",
     create: "Create workspace",
+    newTitle: "New workspace",
+    newSubtitle:
+      "A workspace has its own dashboards, sources, screens and team.",
   },
   authFields: {
     name: "Name",

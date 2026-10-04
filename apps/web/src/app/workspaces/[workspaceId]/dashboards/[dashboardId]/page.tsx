@@ -72,8 +72,10 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
   return (
     <div className="dashboard-page">
       <p className="muted">
-        <Link href={`/workspaces/${workspaceId}`}>{membership.name}</Link> /{" "}
-        {t("breadcrumb")}
+        <Link href={`/workspaces/${workspaceId}/dashboards`}>
+          {t("breadcrumb")}
+        </Link>{" "}
+        /
       </p>
       <DashboardView
         workspaceId={workspaceId}

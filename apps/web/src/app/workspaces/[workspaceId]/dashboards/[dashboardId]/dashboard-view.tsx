@@ -133,7 +133,7 @@ export function DashboardView({
     setPending(true);
     try {
       await deleteDashboard(workspaceId, dashboard.id);
-      router.push(`/workspaces/${workspaceId}`);
+      router.push(`/workspaces/${workspaceId}/dashboards`);
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));
       setPending(false);
