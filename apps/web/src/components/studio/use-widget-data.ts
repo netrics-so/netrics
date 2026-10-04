@@ -21,26 +21,98 @@ export interface WidgetData<T> {
   loading: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Shared loads. The same widget can be on the page several times at once
+// (the Studio's canvas and its previews; "All formats" shows a slide in
+// every format, #284): widgets with the same query share one request, and
+// a result stays good for a few seconds, so a refresh is not repeated per
+// copy.
+
+interface SharedLoad {
+  promise: Promise<unknown>;
+  startedAt: number;
+  /** The result once it arrived (for copies mounted afterwards). */
+  data?: unknown;
+  settled: boolean;
+}
+
+/** How long a load is shared: well under the refresh interval. */
+export const SHARED_LOAD_MS = 10_000;
+
+const sharedLoads = new Map<string, SharedLoad>();
+
+/** Forgets every shared load (tests). */
+export function clearSharedLoads(): void {
+  sharedLoads.clear();
+}
+
+/**
+ * `load()` once per `key` within `maxAgeMs`: a caller with the same key
+ * gets the request in flight, or its result while it is fresh. A failure
+ * is not shared beyond the callers already waiting for it.
+ */
+export function sharedLoad<T>(
+  key: string,
+  load: () => Promise<T>,
+  maxAgeMs = SHARED_LOAD_MS,
+  now: () => number = Date.now,
+): Promise<T> {
+  const at = now();
+  for (const [other, entry] of sharedLoads) {
+    if (at - entry.startedAt >= maxAgeMs) sharedLoads.delete(other);
+  }
+  const existing = sharedLoads.get(key);
+  if (existing) return existing.promise as Promise<T>;
+  const entry: SharedLoad = {
+    promise: Promise.resolve(),
+    startedAt: at,
+    settled: false,
+  };
+  entry.promise = load().then(
+    (data) => {
+      entry.data = data;
+      entry.settled = true;
+      return data;
+    },
+    (cause: unknown) => {
+      if (sharedLoads.get(key) === entry) sharedLoads.delete(key);
+      throw cause;
+    },
+  );
+  sharedLoads.set(key, entry);
+  return entry.promise as Promise<T>;
+}
+
+/** A fresh shared result for `key`, if one arrived. */
+function sharedResult<T>(key: string | undefined): T | null {
+  if (!key) return null;
+  const entry = sharedLoads.get(key);
+  return entry?.settled && Date.now() - entry.startedAt < SHARED_LOAD_MS
+    ? (entry.data as T)
+    : null;
+}
+
 /**
  * Loads a widget's numbers and refreshes them every minute while the page
  * is visible. A failure keeps the last good numbers and says why; it never
- * affects the other widgets.
+ * affects the other widgets. With `key`, copies of the same query share
+ * their loads (`sharedLoad`).
  */
 function usePolled<T>(
   load: () => Promise<T>,
   refreshMs: number,
+  key?: string,
 ): WidgetData<T> {
   const locale = useLocale();
-  const [state, setState] = useState<WidgetData<T>>({
-    data: null,
-    error: null,
-    loading: true,
+  const [state, setState] = useState<WidgetData<T>>(() => {
+    const data = sharedResult<T>(key);
+    return { data, error: null, loading: data === null };
   });
 
   useEffect(() => {
     let current = true;
     const run = () => {
-      load()
+      (key ? sharedLoad(key, load) : load())
         .then((data) => {
           if (current) setState({ data, error: null, loading: false });
         })
@@ -62,7 +134,7 @@ function usePolled<T>(
       current = false;
       clearInterval(timer);
     };
-  }, [load, refreshMs]);
+  }, [load, refreshMs, key]);
 
   return state;
 }
@@ -94,7 +166,7 @@ export function useMetricData(
     () => queryMetric(workspaceId, JSON.parse(key)),
     [workspaceId, key],
   );
-  return usePolled(load, refreshMs);
+  return usePolled(load, refreshMs, `metric|${workspaceId}|${key}`);
 }
 
 /** A bar widget's groups. */
@@ -112,5 +184,5 @@ export function useBreakdownData(
     () => queryMetricBreakdown(workspaceId, JSON.parse(key)),
     [workspaceId, key],
   );
-  return usePolled(load, refreshMs);
+  return usePolled(load, refreshMs, `breakdown|${workspaceId}|${key}`);
 }

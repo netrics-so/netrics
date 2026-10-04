@@ -37,6 +37,28 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Dashboards verwenden dieses Design noch. Wähl zuerst ein anderes Design für sie.",
     theme_in_use_by:
       "Diese Dashboards verwenden das Design noch: {names}. Wähl zuerst ein anderes Design für sie.",
+    format_has_overflow:
+      "Dieses Format kann noch nicht das primäre werden: Eine Folie geht dort auf mehr als einer Seite weiter. Ordne jede Folie in diesem Format auf einer Seite an (pass es an oder verschieb Widgets auf eine andere Folie) und versuch es dann noch mal.",
+    format_has_hidden_widgets:
+      "Dieses Format kann noch nicht das primäre werden: Eine Folie blendet dort Widgets aus. Zeig sie in diesem Format wieder an und versuch es dann noch mal.",
+    tiles_primary_format:
+      "Kachel-Dashboards werden immer für TV (16:9) angeordnet.",
+    layout_invalid_page_count:
+      "Ein angepasstes Layout muss zwischen einer und acht Seiten haben.",
+    layout_page_out_of_range:
+      "Ein Widget in einem angepassten Layout liegt auf einer Seite, die es nicht gibt.",
+    layout_widget_out_of_bounds:
+      "Ein Widget in einem angepassten Layout liegt außerhalb des Rasters dieses Formats.",
+    layout_widget_too_small:
+      "Ein Widget in einem angepassten Layout ist kleiner, als sein Typ erlaubt.",
+    layout_widgets_overlap:
+      "Zwei Widgets überlappen sich in einem angepassten Layout.",
+    layout_widget_duplicated:
+      "Ein Widget kommt in einem angepassten Layout doppelt vor.",
+    layout_primary_format:
+      "Das primäre Format kann kein angepasstes Layout haben. Lade das Dashboard neu.",
+    layout_duplicate_format:
+      "Eine Folie hat zwei angepasste Layouts für dasselbe Format. Lade das Dashboard neu.",
     widget_out_of_bounds:
       "Ein Widget liegt außerhalb des Rasters seiner Folie.",
     widget_too_small: "Ein Widget ist kleiner, als sein Typ erlaubt.",

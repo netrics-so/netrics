@@ -7,19 +7,22 @@ import type {
   DashboardWidget,
   DashboardWidgetInput,
   ReplaceDashboardRequest,
+  SlideLayout,
 } from "@netrics/contracts";
 import {
   DEFAULT_THEME_KEY,
+  SCREEN_FORMATS,
   SLIDE_SECONDS,
-  STUDIO_GRID,
   STUDIO_LIMITS,
   STUDIO_MIN_WIDGET_SIZE,
   isBuiltinThemeKey,
   isDataWidgetType,
-  isInsideGrid,
+  isInsideFormatGrid,
   meetsMinimumSize,
   placementsOverlap,
+  type CustomLayout,
   type Locale,
+  type ScreenFormat,
   type StudioPlacement,
   type WidgetType,
 } from "@netrics/domain";
@@ -34,6 +37,22 @@ import {
   samePlacement,
 } from "./studio-grid";
 import { widgetInputProblem } from "./studio-inspector";
+import {
+  addPage,
+  autoAsCustom,
+  confirmPlacements,
+  copyLayouts,
+  customLayoutOf,
+  layoutsForSave,
+  moveInLayout,
+  moveToPage,
+  removePage,
+  setHidden,
+  withLayout,
+  withoutWidget,
+  type LayoutEdit,
+  type LayoutMove,
+} from "./studio-layouts";
 import { slideTitle } from "./studio-widgets";
 
 // The Studio's draft of one dashboard (ADR 0015, section 9): the document
@@ -43,14 +62,15 @@ import { slideTitle } from "./studio-widgets";
 // show a dashboard as soon as it is saved.
 
 /**
- * A slide in the draft; its position is its index. Custom layouts and
- * format warnings (ADR 0017) are not edited here yet: a save without
- * `layouts` keeps the stored ones.
+ * A slide in the draft; its position is its index. Its custom layouts per
+ * format (ADR 0017 section 4, #284) are edited with the document and
+ * saved with it; missing `layouts` (a draft built without them) leaves the
+ * stored ones as they are. Format warnings are computed, not edited.
  */
 export type StudioSlide = Omit<
   DashboardSlide,
   "position" | "layouts" | "formatWarnings"
->;
+> & { layouts?: SlideLayout[] };
 
 /** What a Save sends: name, project, settings, slides and widgets. */
 export interface StudioDocument {
@@ -58,6 +78,16 @@ export interface StudioDocument {
   projectId: string | null;
   settings: DashboardSettings;
   slides: StudioSlide[];
+  /**
+   * The format widgets are placed in (ADR 0017); missing: `16x9`. Changed
+   * only by a save that re-bases the dashboard (see `toReplaceRequest`).
+   */
+  primaryFormat?: ScreenFormat;
+}
+
+/** The document's primary format. */
+export function primaryOf(document: Pick<StudioDocument, "primaryFormat">) {
+  return document.primaryFormat ?? "16x9";
 }
 
 export interface StudioState {
@@ -115,12 +145,66 @@ export type StudioAction =
   | { type: "addWidget"; widget: NewWidget }
   | { type: "updateWidget"; widgetId: string; patch: WidgetPatch }
   | { type: "deleteWidget"; widgetId: string }
-  /** A finished drag on the canvas: one undo step, refused on overlap. */
-  | { type: "placeWidget"; widgetId: string; placement: StudioPlacement }
+  /**
+   * A finished drag on the canvas: one undo step, refused on overlap. With
+   * a `format` other than the primary it moves the widget in the slide's
+   * custom layout of that format (#284), and so do the two below.
+   */
+  | {
+      type: "placeWidget";
+      widgetId: string;
+      placement: StudioPlacement;
+      format?: ScreenFormat;
+    }
   /** Arrow keys: one cell that way (over widgets in the way). */
-  | { type: "nudgeWidget"; widgetId: string; dx: number; dy: number }
+  | {
+      type: "nudgeWidget";
+      widgetId: string;
+      dx: number;
+      dy: number;
+      format?: ScreenFormat;
+    }
   /** Shift+Arrow keys: one cell wider, narrower, taller or shorter. */
-  | { type: "resizeWidgetBy"; widgetId: string; dw: number; dh: number }
+  | {
+      type: "resizeWidgetBy";
+      widgetId: string;
+      dw: number;
+      dh: number;
+      format?: ScreenFormat;
+    }
+  // Custom layouts per format (ADR 0017 section 4, #284)
+  /** "Customize": the format's auto layout becomes the slide's own. */
+  | { type: "customizeFormat"; slideId: string; format: ScreenFormat }
+  /** "Back to automatic": the slide's custom layout is removed. */
+  | { type: "resetFormat"; slideId: string; format: ScreenFormat }
+  | { type: "addLayoutPage"; slideId: string; format: ScreenFormat }
+  | {
+      type: "removeLayoutPage";
+      slideId: string;
+      format: ScreenFormat;
+      page: number;
+    }
+  | {
+      type: "moveWidgetToPage";
+      widgetId: string;
+      format: ScreenFormat;
+      page: number;
+    }
+  /** Hide in (or show again in) one format; `page`: where to show it. */
+  | {
+      type: "setWidgetHidden";
+      widgetId: string;
+      format: ScreenFormat;
+      hidden: boolean;
+      page?: number;
+    }
+  /** "Looks good": one widget's review flag, or every flag of the slide. */
+  | {
+      type: "confirmPlacement";
+      slideId: string;
+      format: ScreenFormat;
+      widgetId: string | null;
+    }
   /** Merges into the widget's type-specific options (#225). */
   | { type: "updateWidgetOptions"; widgetId: string; patch: object }
   /**
@@ -151,10 +235,19 @@ export function toDocument(dashboard: Dashboard): StudioDocument {
     name: dashboard.name,
     projectId: dashboard.projectId,
     settings: { ...dashboard.settings },
-    slides: dashboard.slides.map(({ position: _position, ...slide }) => ({
-      ...slide,
-      widgets: slide.widgets.map((widget) => ({ ...widget })),
-    })),
+    primaryFormat: dashboard.primaryFormat,
+    slides: dashboard.slides.map(
+      ({ position: _position, formatWarnings: _warnings, ...slide }) => ({
+        ...slide,
+        widgets: slide.widgets.map((widget) => ({ ...widget })),
+        layouts: (slide.layouts ?? []).map((layout) => ({
+          ...layout,
+          placements: layout.placements.map((placement) => ({
+            ...placement,
+          })),
+        })),
+      }),
+    ),
   };
 }
 
@@ -243,18 +336,23 @@ export const DEFAULT_WIDGET_SIZE: Readonly<
 /**
  * Where a new widget of `type` goes on a slide: the first free spot in
  * reading order at its default size, else at its minimum size; null when
- * the slide has no room for it.
+ * the slide has no room for it. On the grid of `format` (the primary).
  */
 export function findFreePlacement(
   widgets: readonly StudioPlacement[],
   type: WidgetType,
+  format: ScreenFormat = "16x9",
 ): StudioPlacement | null {
+  const { columns, rows } = SCREEN_FORMATS[format];
   for (const size of [
-    DEFAULT_WIDGET_SIZE[type],
+    {
+      w: Math.min(DEFAULT_WIDGET_SIZE[type].w, columns),
+      h: Math.min(DEFAULT_WIDGET_SIZE[type].h, rows),
+    },
     STUDIO_MIN_WIDGET_SIZE[type],
   ]) {
-    for (let y = 0; y + size.h <= STUDIO_GRID.rows; y++) {
-      for (let x = 0; x + size.w <= STUDIO_GRID.columns; x++) {
+    for (let y = 0; y + size.h <= rows; y++) {
+      for (let x = 0; x + size.w <= columns; x++) {
         const candidate = { x, y, ...size };
         if (!widgets.some((other) => placementsOverlap(candidate, other))) {
           return candidate;
@@ -275,19 +373,21 @@ export function grownPlacement(
   placement: StudioPlacement,
   type: WidgetType,
   others: readonly StudioPlacement[],
+  format: ScreenFormat = "16x9",
 ): StudioPlacement | null {
+  const { columns, rows } = SCREEN_FORMATS[format];
   const minimum = STUDIO_MIN_WIDGET_SIZE[type];
   const w = Math.max(placement.w, minimum.w);
   const h = Math.max(placement.h, minimum.h);
   const candidate = {
-    x: Math.max(0, Math.min(placement.x, STUDIO_GRID.columns - w)),
-    y: Math.max(0, Math.min(placement.y, STUDIO_GRID.rows - h)),
+    x: Math.max(0, Math.min(placement.x, columns - w)),
+    y: Math.max(0, Math.min(placement.y, rows - h)),
     w,
     h,
   };
   if (
-    w > STUDIO_GRID.columns ||
-    h > STUDIO_GRID.rows ||
+    w > columns ||
+    h > rows ||
     others.some((other) => placementsOverlap(candidate, other))
   ) {
     return null;
@@ -306,7 +406,7 @@ export function addWidgetBlocker(
   if (limit) {
     return limit;
   }
-  if (!findFreePlacement(slide.widgets, type)) {
+  if (!findFreePlacement(slide.widgets, type, primaryOf(document))) {
     return messages(locale)("noSpace");
   }
   return null;
@@ -412,7 +512,7 @@ export function documentProblems(
       const at = (message: string) =>
         atSlide(t("problems.atSlide", { slide: title, message }), widget.id);
       const name = widgetName(widget, locale);
-      if (!isInsideGrid(widget)) {
+      if (!isInsideFormatGrid(widget, primaryOf(document))) {
         at(t("problems.outside", { name }));
       } else if (!meetsMinimumSize(widget.type, widget)) {
         const minimum = STUDIO_MIN_WIDGET_SIZE[widget.type];
@@ -493,24 +593,37 @@ function widgetInput(widget: DashboardWidget): DashboardWidgetInput {
   }
 }
 
+/**
+ * The slides as sent. Custom layouts go along completed against the
+ * draft's widgets (`layoutsForSave`); they name widgets by id, so a copy
+ * keeps the ids of widgets on slides with custom layouts (a new dashboard
+ * gets new ids for all of them anyway).
+ */
 function slideInputs(
   document: StudioDocument,
   keepIds: boolean,
 ): DashboardSlideInput[] {
-  return document.slides.map((slide) => ({
-    ...(keepIds ? { id: slide.id } : {}),
-    name: slide.name?.trim() || null,
-    durationSeconds: slide.durationSeconds,
-    enabled: slide.enabled,
-    background: slide.background,
-    widgets: slide.widgets.map((widget) => {
-      const input = widgetInput(widget);
-      if (!keepIds) {
-        delete input.id;
-      }
-      return input;
-    }),
-  }));
+  const primary = primaryOf(document);
+  return document.slides.map((slide) => {
+    const layouts =
+      slide.layouts === undefined ? undefined : layoutsForSave(slide, primary);
+    const keepWidgetIds = keepIds || (layouts?.length ?? 0) > 0;
+    return {
+      ...(keepIds ? { id: slide.id } : {}),
+      name: slide.name?.trim() || null,
+      durationSeconds: slide.durationSeconds,
+      enabled: slide.enabled,
+      background: slide.background,
+      widgets: slide.widgets.map((widget) => {
+        const input = widgetInput(widget);
+        if (!keepWidgetIds) {
+          delete input.id;
+        }
+        return input;
+      }),
+      ...(layouts === undefined ? {} : { layouts }),
+    };
+  });
 }
 
 function settingsInput(settings: DashboardSettings) {
@@ -531,14 +644,26 @@ function settingsInput(settings: DashboardSettings) {
   };
 }
 
-/** The PUT body for a Save: the whole document with its base version. */
-export function toReplaceRequest(state: StudioState): ReplaceDashboardRequest {
+/**
+ * The PUT body for a Save: the whole document with its base version. With
+ * `primaryFormat` (other than the draft's) the save also re-bases the
+ * dashboard on that format (ADR 0017 section 4): the server answers 409
+ * format_has_overflow or format_has_hidden_widgets when it cannot.
+ */
+export function toReplaceRequest(
+  state: StudioState,
+  options: { primaryFormat?: ScreenFormat } = {},
+): ReplaceDashboardRequest {
   const { draft } = state;
+  const rebase =
+    options.primaryFormat !== undefined &&
+    options.primaryFormat !== primaryOf(draft);
   return {
     version: state.version,
     name: draft.name.trim(),
     projectId: draft.projectId,
     settings: settingsInput(draft.settings),
+    ...(rebase ? { primaryFormat: options.primaryFormat } : {}),
     slides: slideInputs(draft, true),
   } as ReplaceDashboardRequest;
 }
@@ -548,10 +673,12 @@ export function toCopyRequest(
   document: StudioDocument,
   name: string,
 ): CreateDashboardRequest {
+  const primary = primaryOf(document);
   return {
     name,
     projectId: document.projectId,
     settings: settingsInput(document.settings),
+    ...(primary === "16x9" ? {} : { primaryFormat: primary }),
     slides: slideInputs(document, false),
   } as CreateDashboardRequest;
 }
@@ -619,6 +746,7 @@ function emptySlide(id: string): StudioSlide {
     enabled: true,
     background: null,
     widgets: [],
+    layouts: [],
   };
 }
 
@@ -728,6 +856,9 @@ export function createStudioReducer(newId: () => string) {
             t("limits.slides", { max: STUDIO_LIMITS.slides }),
           );
         }
+        const renamed = new Map(
+          source.widgets.map((widget) => [widget.id, newId()]),
+        );
         const copy: StudioSlide = {
           ...source,
           id: newId(),
@@ -736,9 +867,13 @@ export function createStudioReducer(newId: () => string) {
             : null,
           widgets: source.widgets.map((widget) => ({
             ...widget,
-            id: newId(),
+            id: renamed.get(widget.id)!,
           })),
         };
+        const layouts = copyLayouts(source.layouts, renamed);
+        if (layouts) {
+          copy.layouts = layouts;
+        }
         const slides = [...draft.slides];
         slides.splice(index + 1, 0, copy);
         const next: StudioDocument = { ...draft, slides };
@@ -821,7 +956,11 @@ export function createStudioReducer(newId: () => string) {
         if (blocker) {
           return announce(state, blocker);
         }
-        const placement = findFreePlacement(slide.widgets, action.widget.type)!;
+        const placement = findFreePlacement(
+          slide.widgets,
+          action.widget.type,
+          primaryOf(draft),
+        )!;
         const widget = {
           ...action.widget,
           id: newId(),
@@ -879,10 +1018,17 @@ export function createStudioReducer(newId: () => string) {
           {
             ...edit(
               state,
-              mapSlide(draft, slide.id, (s) => ({
-                ...s,
-                widgets: s.widgets.filter((w) => w.id !== action.widgetId),
-              })),
+              mapSlide(draft, slide.id, (s) => {
+                const next: StudioSlide = {
+                  ...s,
+                  widgets: s.widgets.filter((w) => w.id !== action.widgetId),
+                };
+                const layouts = withoutWidget(s.layouts, action.widgetId);
+                if (layouts) {
+                  next.layouts = layouts;
+                }
+                return next;
+              }),
             ),
             selectedWidgetId:
               state.selectedWidgetId === action.widgetId
@@ -895,7 +1041,17 @@ export function createStudioReducer(newId: () => string) {
       case "placeWidget":
       case "nudgeWidget":
       case "resizeWidgetBy":
-        return placeWidget(state, action);
+        return action.format !== undefined && action.format !== primaryOf(draft)
+          ? placeInLayout(state, action, action.format)
+          : placeWidget(state, action);
+      case "customizeFormat":
+      case "resetFormat":
+      case "addLayoutPage":
+      case "removeLayoutPage":
+      case "moveWidgetToPage":
+      case "setWidgetHidden":
+      case "confirmPlacement":
+        return editLayout(state, action);
       case "updateWidgetOptions": {
         const slide = draft.slides.find((s) =>
           s.widgets.some((widget) => widget.id === action.widgetId),
@@ -943,6 +1099,7 @@ export function createStudioReducer(newId: () => string) {
           current,
           to,
           slide.widgets.filter((w) => w.id !== current.id),
+          primaryOf(draft),
         );
         if (!placement) {
           const minimum = STUDIO_MIN_WIDGET_SIZE[to];
@@ -1085,6 +1242,7 @@ function placementText(
   widget: DashboardWidget,
   to: StudioPlacement,
   locale: Locale,
+  from: StudioPlacement = widget,
 ): string {
   const t = messages(locale);
   const values = {
@@ -1094,8 +1252,8 @@ function placementText(
     w: to.w,
     h: to.h,
   };
-  const moved = widget.x !== to.x || widget.y !== to.y;
-  const resized = widget.w !== to.w || widget.h !== to.h;
+  const moved = from.x !== to.x || from.y !== to.y;
+  const resized = from.w !== to.w || from.h !== to.h;
   if (moved && resized) {
     return t("announce.resizedAt", values);
   }
@@ -1126,14 +1284,15 @@ function placeWidget(state: StudioState, action: PlacementAction): StudioState {
   const t = messages(locale);
   const name = widgetName(widget, locale);
   const others = slide.widgets.filter((w) => w.id !== widget.id);
+  const format = primaryOf(state.draft);
   let target: StudioPlacement | null;
   if (action.type === "nudgeWidget") {
-    target = nudgePlacement(widget, action.dx, action.dy, others);
+    target = nudgePlacement(widget, action.dx, action.dy, others, format);
     if (!target) {
       return announce(selected, t("announce.cannotMove", { name }));
     }
   } else if (action.type === "resizeWidgetBy") {
-    target = resizePlacement(widget, action.dw, action.dh, widget.type);
+    target = resizePlacement(widget, action.dw, action.dh, widget.type, format);
     if (!target) {
       const minimum = STUDIO_MIN_WIDGET_SIZE[widget.type];
       const shrinking = action.dw < 0 || action.dh < 0;
@@ -1155,7 +1314,7 @@ function placeWidget(state: StudioState, action: PlacementAction): StudioState {
   if (samePlacement(widget, target)) {
     return selected;
   }
-  const blocker = placementBlocker(target, widget.type, others);
+  const blocker = placementBlocker(target, widget.type, others, format);
   const sameSize = widget.w === target.w && widget.h === target.h;
   if (blocker && !(blocker.kind === "tooSmall" && sameSize)) {
     switch (blocker.kind) {
@@ -1262,9 +1421,15 @@ function insertWidget(
   if (blocker) {
     return announce(state, blocker);
   }
+  const format = primaryOf(draft);
   let placement: StudioPlacement | null;
   if (action.type === "addWidgetAt") {
-    placement = placementBlocker(action.placement, source.type, slide.widgets)
+    placement = placementBlocker(
+      action.placement,
+      source.type,
+      slide.widgets,
+      format,
+    )
       ? null
       : action.placement;
     if (!placement) {
@@ -1272,7 +1437,7 @@ function insertWidget(
     }
   } else {
     const from = source as DashboardWidget;
-    placement = nearestFreePlacement(from, from.type, slide.widgets);
+    placement = nearestFreePlacement(from, from.type, slide.widgets, format);
     if (!placement) {
       return announce(state, t("noSpace"));
     }
@@ -1303,3 +1468,263 @@ function insertWidget(
     }),
   );
 }
+
+// ---------------------------------------------------------------------------
+// Custom layouts per format (ADR 0017 section 4, #284)
+
+/** "9:16" for `9x16`. */
+function ratioOf(format: ScreenFormat): string {
+  return format.replace("x", ":");
+}
+
+/** The slide holding a widget, and the widget. */
+function findWidget(document: StudioDocument, widgetId: string) {
+  for (const slide of document.slides) {
+    const widget = slide.widgets.find((entry) => entry.id === widgetId);
+    if (widget) return { slide, widget };
+  }
+  return null;
+}
+
+/** The draft with a slide's custom layout of `format` replaced. */
+function withSlideLayout(
+  document: StudioDocument,
+  slideId: string,
+  format: ScreenFormat,
+  custom: CustomLayout | null,
+): StudioDocument {
+  return mapSlide(document, slideId, (slide) => ({
+    ...slide,
+    layouts: withLayout(slide.layouts, format, custom),
+  }));
+}
+
+/**
+ * A widget moved or resized in a custom layout (a drag or the keyboard on
+ * a non-primary format): refused, announced and without an undo step as on
+ * the primary; on a format without a custom layout, nothing happens.
+ */
+function placeInLayout(
+  state: StudioState,
+  action: PlacementAction,
+  format: ScreenFormat,
+): StudioState {
+  const found = findWidget(state.draft, action.widgetId);
+  if (!found) return state;
+  const { slide, widget } = found;
+  const custom = customLayoutOf(slide, primaryOf(state.draft), format);
+  const from = custom?.placements.find((entry) => entry.id === widget.id);
+  if (!custom || !from) return state;
+  const selected: StudioState = {
+    ...state,
+    selectedSlideId: slide.id,
+    selectedWidgetId: widget.id,
+    lastEditKey: null,
+  };
+  const { locale } = state;
+  const t = messages(locale);
+  const name = widgetName(widget, locale);
+  const move: LayoutMove =
+    action.type === "nudgeWidget"
+      ? { kind: "nudge", dx: action.dx, dy: action.dy }
+      : action.type === "resizeWidgetBy"
+        ? { kind: "resize", dw: action.dw, dh: action.dh }
+        : { kind: "place", placement: action.placement };
+  const result = moveInLayout(custom, widget.id, widget.type, format, move);
+  if (!result.ok) {
+    const { error } = result;
+    switch (error.kind) {
+      case "cannotMove":
+        return announce(selected, t("announce.cannotMove", { name }));
+      case "minimumSize": {
+        const minimum = STUDIO_MIN_WIDGET_SIZE[widget.type];
+        return announce(
+          selected,
+          t("announce.minimumSize", { name, w: minimum.w, h: minimum.h }),
+        );
+      }
+      case "atEdge":
+        return announce(selected, t("announce.atEdge", { name }));
+      case "blocked": {
+        const { blocker } = error;
+        if (blocker.kind === "outside") {
+          return announce(selected, t("announce.mustStay", { name }));
+        }
+        if (blocker.kind === "tooSmall") {
+          return announce(
+            selected,
+            t("problems.tooSmall", {
+              name,
+              w: blocker.minimum.w,
+              h: blocker.minimum.h,
+            }),
+          );
+        }
+        const other = error.otherId
+          ? slide.widgets.find((entry) => entry.id === error.otherId)
+          : undefined;
+        return announce(
+          selected,
+          t("announce.wouldOverlap", {
+            name,
+            other: other ? widgetName(other, locale) : "",
+          }),
+        );
+      }
+      default:
+        return selected;
+    }
+  }
+  const placed = result.placement!;
+  if (result.layout === custom) {
+    return selected;
+  }
+  return announce(
+    edit(
+      selected,
+      withSlideLayout(state.draft, slide.id, format, result.layout),
+    ),
+    placementText(widget, placed, locale, from),
+  );
+}
+
+type LayoutAction = Extract<
+  StudioAction,
+  {
+    type:
+      | "customizeFormat"
+      | "resetFormat"
+      | "addLayoutPage"
+      | "removeLayoutPage"
+      | "moveWidgetToPage"
+      | "setWidgetHidden"
+      | "confirmPlacement";
+  }
+>;
+
+/**
+ * Customize and reset a format, its pages, hiding and the review flags:
+ * each one undo step, announced; refused with the reason announced.
+ */
+function editLayout(state: StudioState, action: LayoutAction): StudioState {
+  const { draft, locale } = state;
+  const t = messages(locale);
+  const primary = primaryOf(draft);
+  const format = action.format;
+  const ratio = ratioOf(format);
+  if (format === primary) return state;
+  const slideId =
+    "slideId" in action
+      ? action.slideId
+      : findWidget(draft, action.widgetId)?.slide.id;
+  const slide = draft.slides.find((entry) => entry.id === slideId);
+  if (!slide) return state;
+  if (action.type === "customizeFormat") {
+    if (customLayoutOf(slide, primary, format)) return state;
+    const custom = autoAsCustom(slide, primary, format);
+    return announce(
+      edit(state, withSlideLayout(draft, slide.id, format, custom)),
+      t("announce.customized", { format: ratio, pages: custom.pages }),
+    );
+  }
+  const custom = customLayoutOf(slide, primary, format);
+  if (!custom) return state;
+  if (action.type === "resetFormat") {
+    return announce(
+      edit(state, withSlideLayout(draft, slide.id, format, null)),
+      t("announce.backToAuto", { format: ratio }),
+    );
+  }
+  if (action.type === "confirmPlacement") {
+    const next = confirmPlacements(custom, action.widgetId);
+    const widget = action.widgetId
+      ? slide.widgets.find((entry) => entry.id === action.widgetId)
+      : undefined;
+    return announce(
+      edit(state, withSlideLayout(draft, slide.id, format, next)),
+      widget
+        ? t("announce.looksGood", {
+            name: widgetName(widget, locale),
+            format: ratio,
+          })
+        : t("announce.looksGoodAll", { format: ratio }),
+    );
+  }
+  let result: LayoutEdit;
+  let text: (placement: CustomLayout) => string;
+  if (action.type === "addLayoutPage") {
+    result = addPage(custom);
+    text = (layout) =>
+      t("announce.pageAdded", { page: layout.pages, format: ratio });
+  } else if (action.type === "removeLayoutPage") {
+    result = removePage(custom, action.page);
+    text = () =>
+      t("announce.pageRemoved", { page: action.page + 1, format: ratio });
+  } else {
+    const widget = slide.widgets.find((entry) => entry.id === action.widgetId);
+    if (!widget) return state;
+    const name = widgetName(widget, locale);
+    if (action.type === "moveWidgetToPage") {
+      result = moveToPage(custom, widget.id, widget.type, format, action.page);
+      text = () => t("announce.movedToPage", { name, page: action.page + 1 });
+    } else {
+      result = setHidden(
+        custom,
+        widget.id,
+        widget.type,
+        format,
+        action.hidden,
+        action.page,
+      );
+      text = (layout) => {
+        const placement = layout.placements.find(
+          (entry) => entry.id === widget.id,
+        );
+        return action.hidden
+          ? t("announce.hidden", { name, format: ratio })
+          : t("announce.shown", {
+              name,
+              format: ratio,
+              page: (placement?.page ?? 0) + 1,
+            });
+      };
+    }
+    if (!result.ok && result.error.kind === "noRoom") {
+      return announce(state, t("announce.noRoomIn", { name, format: ratio }));
+    }
+  }
+  if (!result.ok) {
+    switch (result.error.kind) {
+      case "pageLimit":
+        return announce(
+          state,
+          t("announce.pageLimit", { max: CUSTOM_PAGES, format: ratio }),
+        );
+      case "lastPage":
+        return announce(state, t("announce.lastPage"));
+      case "pageNotEmpty":
+        return announce(
+          state,
+          t("announce.pageNotEmpty", {
+            page: action.type === "removeLayoutPage" ? action.page + 1 : 1,
+          }),
+        );
+      default:
+        return state;
+    }
+  }
+  if (result.layout === custom) return state;
+  const next = edit(
+    state,
+    withSlideLayout(draft, slide.id, format, result.layout),
+  );
+  return announce(
+    "widgetId" in action
+      ? { ...next, selectedWidgetId: action.widgetId }
+      : next,
+    text(result.layout),
+  );
+}
+
+/** At most this many pages per custom layout (ADR 0017). */
+const CUSTOM_PAGES = 8;

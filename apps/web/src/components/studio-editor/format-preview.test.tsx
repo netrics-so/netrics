@@ -279,7 +279,7 @@ describe("FormatPreview", () => {
     expect(html).toMatch(/aria-selected="true"[^>]*>Page 1 of 2</);
     expect(html).toContain("Page 2 of 2");
     expect(html).toContain("Card 0");
-    expect(html).toContain("Laid out automatically from the 16:9 layout.");
+    expect(html).toContain("Laid out automatically from the 16:9 layout:");
   });
 
   it("shows the second page and offers the phone", () => {
@@ -314,7 +314,7 @@ describe("FormatPreview", () => {
     expect(html).toContain(
       "Der Name des Dashboards passt nicht in die Kopfzeile.",
     );
-    expect(html).toContain("Automatisch aus dem Layout in 16:9 angeordnet.");
+    expect(html).toContain("Automatisch aus dem Layout in 16:9 angeordnet:");
     expect(html).toContain(
       'aria-label="Vorschau: Hochformat 9:16, TV hochkant"',
     );

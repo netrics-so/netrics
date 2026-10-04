@@ -6,6 +6,7 @@ import type { WorkspaceMetric } from "@netrics/contracts";
 import {
   WIDGET_TYPES,
   type Locale,
+  type ScreenFormat,
   type StudioPlacement,
   type WidgetType,
 } from "@netrics/domain";
@@ -66,6 +67,7 @@ export function AddWidgetMenu({
   imageIds,
   dispatch,
   showHeader = true,
+  primaryFormat = "16x9",
   onDragNew,
 }: {
   document: StudioDocument;
@@ -75,6 +77,8 @@ export function AddWidgetMenu({
   dispatch: (action: StudioAction) => void;
   /** Whether the canvas shows the header (it moves the grid). */
   showHeader?: boolean;
+  /** The format the canvas edits (its grid). */
+  primaryFormat?: ScreenFormat;
   /** The outline to show on the canvas while dragging, null to clear it. */
   onDragNew?: (outline: CanvasOutline | null) => void;
 }) {
@@ -140,10 +144,15 @@ export function AddWidgetMenu({
     }
     const { placement, blocked } = dropPlacement(
       { x: event.clientX - rect.left, y: event.clientY - rect.top },
-      gridMetrics({ width: rect.width, height: rect.height }, showHeader),
+      gridMetrics(
+        { width: rect.width, height: rect.height },
+        showHeader,
+        primaryFormat,
+      ),
       current.type,
       DEFAULT_WIDGET_SIZE[current.type],
       slide.widgets,
+      primaryFormat,
     );
     current.drop = placement;
     current.blocked = blocked;

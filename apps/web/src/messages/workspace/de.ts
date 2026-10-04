@@ -72,6 +72,11 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       "Deine Rolle kann in diesem Workspace keine Projekte anlegen.",
     newDashboard: {
       legend: "Neues Dashboard",
+      format: "Bildschirmformat",
+      formatHelp:
+        "Das Format, in dem du gestaltest. Alle anderen Formate werden automatisch daraus angeordnet, und du kannst es später im Studio ändern.",
+      templateFormat:
+        "Vorlagen sind für TV (16:9) gestaltet und werden für jedes andere Format automatisch angeordnet.",
       choices: {
         blank: {
           title: "Leer",

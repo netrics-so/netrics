@@ -18,7 +18,7 @@ import type {
   WorkspaceImage,
   WorkspaceMetric,
 } from "@netrics/contracts";
-import { isDataWidgetType } from "@netrics/domain";
+import { isDataWidgetType, type ScreenFormat } from "@netrics/domain";
 
 import {
   ApiError,
@@ -35,6 +35,7 @@ import {
   documentProblems,
   initialStudioState,
   isDirty,
+  primaryOf,
   selectedSlide,
   selectedWidget,
   toCopyRequest,
@@ -42,6 +43,7 @@ import {
 } from "@/lib/studio-document";
 import { dataWidgetLabel } from "@/components/studio/metric-widget";
 import type { SlideLayouts } from "@/lib/screen-view";
+import { rebaseBlockers } from "@/lib/studio-layouts";
 import {
   deviceOf,
   draftFormatWarnings,
@@ -65,13 +67,14 @@ import {
 
 import { AddWidgetMenu } from "./add-widget-menu";
 import { AssignTvs } from "./assign-tvs";
+import { CustomFormatEditor, MakePrimaryButton } from "./custom-format";
 import {
   WidgetClipboardBar,
   useUnreadableLabels,
   useWidgetClipboard,
 } from "./canvas-extras";
 import { EditorCanvas, type CanvasOutline } from "./editor-canvas";
-import { FormatAttention } from "./format-attention";
+import { FormatAttention, formatRatio } from "./format-attention";
 import {
   FormatOverview,
   FormatPreview,
@@ -148,9 +151,11 @@ export function StudioEditor({
   );
   // Readability per format of the saved version (ADR 0017 §6, #280).
   const [savedSlides, setSavedSlides] = useState(dashboard.slides);
-  const primaryFormat = dashboard.primaryFormat;
-  // The format switcher (ADR 0017 section 10, #283): editing stays on the
-  // primary format; every other format is a device-frame preview.
+  // The format widgets are placed in; a save can re-base it (#284).
+  const primaryFormat = primaryOf(state.draft);
+  // The format switcher (ADR 0017 section 10, #283): the primary format
+  // and formats the slide is arranged by hand in are edited (#284); the
+  // others are device-frame previews.
   const [formatView, formatDispatch] = useReducer(
     formatViewReducer,
     primaryFormat,
@@ -234,11 +239,20 @@ export function StudioEditor({
     theme.tokens.fontScale,
   );
   const editing =
-    !formatView.overview && isEditableTarget(formatView.target, primaryFormat);
+    !formatView.overview &&
+    isEditableTarget(formatView.target, primaryFormat, slide);
+  /** A format other than the primary, arranged by hand for this slide. */
+  const customFormat: ScreenFormat | null =
+    editing &&
+    formatView.target !== primaryFormat &&
+    formatView.target !== "scroll"
+      ? formatView.target
+      : null;
+  // Copy, paste and duplicate add widgets: in the primary format only.
   const widgetClipboard = useWidgetClipboard(
     widget,
     dispatch,
-    !playing && editing,
+    !playing && editing && customFormat === null,
   );
   const env: StudioEnv = useMemo(
     () => ({
@@ -260,12 +274,11 @@ export function StudioEditor({
       studioImages,
     ],
   );
-  // The custom layouts as last loaded or saved (ADR 0017): Play and the
-  // previews complete them against the draft. The Studio does not edit
-  // them yet (#284).
-  const savedLayouts: ReadonlyMap<string, SlideLayouts> = useMemo(
-    () => new Map(savedSlides.map((slide) => [slide.id, slide.layouts])),
-    [savedSlides],
+  // The draft's custom layouts (ADR 0017 section 4, #284): Play, the
+  // previews and the warnings complete them against the draft's widgets.
+  const draftLayouts: ReadonlyMap<string, SlideLayouts> = useMemo(
+    () => new Map(draft.slides.map((entry) => [entry.id, entry.layouts ?? []])),
+    [draft.slides],
   );
 
   // Readability per format of the draft (ADR 0017 section 6), as the
@@ -295,7 +308,7 @@ export function StudioEditor({
       draft.slides.map((entry) => [
         entry.id,
         draftFormatWarnings(
-          { ...entry, layouts: savedLayouts.get(entry.id) ?? null },
+          { ...entry, layouts: draftLayouts.get(entry.id) ?? null },
           context,
         ),
       ]),
@@ -306,17 +319,17 @@ export function StudioEditor({
     theme.tokens.fontScale,
     logoImage,
     metricsById,
-    savedLayouts,
+    draftLayouts,
   ]);
   const previewContext: PreviewContext = useMemo(
     () => ({
       document: draft,
       primaryFormat,
-      layouts: savedLayouts,
+      layouts: draftLayouts,
       tokens: theme.tokens,
       env,
     }),
-    [draft, primaryFormat, savedLayouts, theme.tokens, env],
+    [draft, primaryFormat, draftLayouts, theme.tokens, env],
   );
 
   const onUploadImage = useCallback(
@@ -376,35 +389,49 @@ export function StudioEditor({
     [workspaceId, locale, t],
   );
 
-  const save = useCallback(async () => {
-    if (saving) return;
-    if (problems.length > 0) {
-      setShowProblems(true);
-      setError(t("fixProblems"));
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    setConflict(false);
-    try {
-      const { dashboard: saved } = await saveDashboard(
-        workspaceId,
-        state.dashboardId,
-        toReplaceRequest(state),
-      );
-      dispatch({ type: "saved", dashboard: saved });
-      setSavedSlides(saved.slides);
-      setShowProblems(false);
-    } catch (cause) {
-      if (cause instanceof ApiError && cause.code === "version_conflict") {
-        setConflict(true);
-      } else {
-        setError(apiErrorMessage(cause, locale));
+  /**
+   * Saves the draft; with `rebaseTo`, also makes that format the primary
+   * (ADR 0017 section 4), which the server refuses with 409
+   * format_has_overflow or format_has_hidden_widgets.
+   */
+  const save = useCallback(
+    async (rebaseTo?: ScreenFormat) => {
+      if (saving) return;
+      if (problems.length > 0) {
+        setShowProblems(true);
+        setError(t("fixProblems"));
+        return;
       }
-    } finally {
-      setSaving(false);
-    }
-  }, [saving, problems, workspaceId, state, locale, t]);
+      setSaving(true);
+      setError(null);
+      setConflict(false);
+      try {
+        const { dashboard: saved } = await saveDashboard(
+          workspaceId,
+          state.dashboardId,
+          toReplaceRequest(state, rebaseTo ? { primaryFormat: rebaseTo } : {}),
+        );
+        dispatch({ type: "saved", dashboard: saved });
+        setSavedSlides(saved.slides);
+        setShowProblems(false);
+        if (rebaseTo && saved.primaryFormat === rebaseTo) {
+          dispatch({
+            type: "announce",
+            text: formatsT("primaryChanged", { ratio: formatRatio(rebaseTo) }),
+          });
+        }
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.code === "version_conflict") {
+          setConflict(true);
+        } else {
+          setError(apiErrorMessage(cause, locale));
+        }
+      } finally {
+        setSaving(false);
+      }
+    },
+    [saving, problems, workspaceId, state, locale, t, formatsT],
+  );
 
   async function reloadSaved() {
     setSaving(true);
@@ -468,10 +495,30 @@ export function StudioEditor({
   const assignedCount =
     activeDevices?.filter((device) => device.dashboardId === state.dashboardId)
       .length ?? 0;
+  const blockers = useMemo(
+    () =>
+      formatView.target === "scroll" || formatView.overview
+        ? []
+        : rebaseBlockers(draft.slides, primaryFormat, formatView.target),
+    [draft.slides, primaryFormat, formatView.target, formatView.overview],
+  );
+  const makePrimary =
+    formatView.target === "scroll" ||
+    formatView.target === primaryFormat ? null : (
+      <MakePrimaryButton
+        key={formatView.target}
+        format={formatView.target}
+        primaryFormat={primaryFormat}
+        document={draft}
+        blockers={blockers}
+        disabled={saving}
+        onMake={() => void save(formatView.target as ScreenFormat)}
+      />
+    );
   const statuses = targetStatuses({
     primaryFormat,
     slides: draft.slides.map((entry) => ({
-      layouts: savedLayouts.get(entry.id) ?? null,
+      layouts: draftLayouts.get(entry.id) ?? null,
     })),
     warnings: [...draftWarnings.values()].flat(),
     screens: screensByTarget(activeDevices),
@@ -646,6 +693,7 @@ export function StudioEditor({
       <div className="studio-body" inert={saving}>
         <SlideRail
           slides={draft.slides}
+          primaryFormat={primaryFormat}
           selectedSlideId={slide?.id ?? ""}
           tokens={theme.tokens}
           defaultSeconds={draft.settings.defaultSlideSeconds}
@@ -685,6 +733,27 @@ export function StudioEditor({
                   panelId={stagePanelId}
                   onOpen={selectTarget}
                 />
+              ) : customFormat ? (
+                <CustomFormatEditor
+                  slide={slide}
+                  format={customFormat}
+                  primaryFormat={primaryFormat}
+                  page={formatView.page}
+                  document={draft}
+                  settings={draft.settings}
+                  tokens={theme.tokens}
+                  env={env}
+                  selectedWidgetId={state.selectedWidgetId}
+                  widgetsWithProblems={widgetsWithProblems}
+                  warnings={draftWarnings}
+                  panelId={stagePanelId}
+                  dispatch={dispatch}
+                  onPage={(page) => {
+                    formatDispatch({ type: "page", page });
+                    announceTarget(formatView.target, page);
+                  }}
+                  makePrimary={makePrimary}
+                />
               ) : editing ? (
                 <div
                   id={stagePanelId}
@@ -700,6 +769,7 @@ export function StudioEditor({
                       imageIds={images.map((image) => image.id)}
                       dispatch={dispatch}
                       showHeader={draft.settings.showHeader}
+                      primaryFormat={primaryFormat}
                       onDragNew={setIncoming}
                     />
                     <WidgetClipboardBar
@@ -721,6 +791,8 @@ export function StudioEditor({
                     dispatch={dispatch}
                     unreadable={unreadable.byWidget}
                     incoming={incoming}
+                    primaryFormat={primaryFormat}
+                    format={primaryFormat}
                   />
                   <p className="help">
                     {t("canvasHelp", {
@@ -754,12 +826,43 @@ export function StudioEditor({
                     announceTarget(formatView.target, page);
                   }}
                   onShowWarning={showWarning}
+                  actions={
+                    formatView.target === "scroll" ? null : (
+                      <>
+                        <button
+                          type="button"
+                          title={formatsT("customizeHelp", {
+                            ratio: formatRatio(formatView.target),
+                            primary: formatRatio(primaryFormat),
+                          })}
+                          onClick={() => {
+                            dispatch({
+                              type: "customizeFormat",
+                              slideId: slide.id,
+                              format: formatView.target as ScreenFormat,
+                            });
+                            formatDispatch({ type: "page", page: 0 });
+                          }}
+                        >
+                          {formatsT("customize")}
+                        </button>
+                        {makePrimary}
+                      </>
+                    )
+                  }
                 />
               )}
             </>
           ) : null}
         </section>
         <aside className="studio-inspector" aria-label={t("inspector")}>
+          {widget && customFormat ? (
+            <p className="help format-scope-note">
+              {formatsT("contentEverywhere", {
+                ratio: formatRatio(customFormat),
+              })}
+            </p>
+          ) : null}
           {widget ? (
             <WidgetPanel
               widget={widget}
@@ -802,8 +905,8 @@ export function StudioEditor({
           document={draft}
           tokens={theme.tokens}
           env={env}
-          primaryFormat={dashboard.primaryFormat}
-          layouts={savedLayouts}
+          primaryFormat={primaryFormat}
+          layouts={draftLayouts}
           startSlideId={slide.id}
           onClose={stopPlaying}
         />

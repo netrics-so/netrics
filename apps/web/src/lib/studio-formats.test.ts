@@ -93,10 +93,17 @@ describe("previewTargets", () => {
     ]);
   });
 
-  it("edits only the primary format (custom editing is #284)", () => {
+  it("edits the primary, and formats the slide is arranged by hand in", () => {
     expect(isEditableTarget("16x9", "16x9")).toBe(true);
     expect(isEditableTarget("9x16", "16x9")).toBe(false);
     expect(isEditableTarget("scroll", "16x9")).toBe(false);
+    const slide = {
+      layouts: [{ format: "9x16" as const, pages: 1, placements: [] }],
+    };
+    expect(isEditableTarget("9x16", "16x9", slide)).toBe(true);
+    expect(isEditableTarget("4x3", "16x9", slide)).toBe(false);
+    expect(isEditableTarget("scroll", "16x9", slide)).toBe(false);
+    expect(isEditableTarget("9x16", "9x16", { layouts: [] })).toBe(true);
   });
 });
 

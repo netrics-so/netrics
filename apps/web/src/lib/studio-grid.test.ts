@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  SCREEN_FORMATS,
   STUDIO_GRID,
   STUDIO_REFERENCE_CANVAS,
+  placementRect,
+  screenFrame,
   widgetRect,
 } from "@netrics/domain";
 
 import {
   RESIZE_HANDLES,
   dragPlacement,
+  dropPlacement,
   gridMetrics,
+  nearestFreePlacement,
   nudgePlacement,
   pixelsToCells,
   placementBlocker,
@@ -250,5 +255,92 @@ describe("resizePlacement", () => {
         h: 2,
       },
     );
+  });
+});
+
+// Grids of other formats (ADR 0017; #284 edits custom layouts on them).
+describe("format grids", () => {
+  it("measures a portrait canvas like screen view places the cells", () => {
+    const canvas = SCREEN_FORMATS["9x16"].reference;
+    const metrics = gridMetrics(canvas, true, "9x16");
+    const frame = screenFrame(canvas, "9x16", true);
+    const rect = placementRect({ x: 2, y: 5, w: 1, h: 1 }, frame);
+    expect(metrics.left + 2 * (metrics.cellWidth + metrics.gap)).toBeCloseTo(
+      rect.x,
+      6,
+    );
+    expect(metrics.top + 5 * (metrics.cellHeight + metrics.gap)).toBeCloseTo(
+      rect.y,
+      6,
+    );
+    expect(metrics.cellWidth).toBeCloseTo(rect.width, 6);
+    expect(pointToCell({ x: 99999, y: 99999 }, metrics, "9x16")).toEqual({
+      column: 5,
+      row: 13,
+    });
+  });
+
+  it("keeps drags, nudges and resizes inside a 6 × 14 grid", () => {
+    expect(
+      dragPlacement(
+        { x: 0, y: 0, w: 3, h: 2 },
+        "move",
+        { dx: 10, dy: 20 },
+        "metric",
+        "9x16",
+      ),
+    ).toEqual({ x: 3, y: 12, w: 3, h: 2 });
+    expect(nudgePlacement({ x: 3, y: 0, w: 3, h: 2 }, 1, 0, [], "9x16")).toBe(
+      null,
+    );
+    expect(
+      nudgePlacement({ x: 0, y: 11, w: 3, h: 2 }, 0, 1, [], "9x16"),
+    ).toEqual({ x: 0, y: 12, w: 3, h: 2 });
+    expect(
+      resizePlacement({ x: 0, y: 0, w: 6, h: 2 }, 1, 0, "metric", "9x16"),
+    ).toBe(null);
+    expect(
+      placementBlocker({ x: 4, y: 0, w: 3, h: 2 }, "metric", [], "9x16"),
+    ).toEqual({ kind: "outside" });
+    expect(
+      placementBlocker({ x: 0, y: 12, w: 3, h: 2 }, "metric", [], "9x16"),
+    ).toBe(null);
+    // The same placement is outside on the 16:9 grid.
+    expect(placementBlocker({ x: 0, y: 12, w: 3, h: 2 }, "metric", [])).toEqual(
+      { kind: "outside" },
+    );
+  });
+
+  it("finds free spots and drops on the format's grid", () => {
+    expect(
+      nearestFreePlacement(
+        { x: 0, y: 0, w: 12, h: 2 },
+        "metric",
+        [{ x: 0, y: 0, w: 6, h: 13 }],
+        "9x16",
+      ),
+    ).toEqual(null);
+    expect(
+      nearestFreePlacement(
+        { x: 0, y: 0, w: 12, h: 2 },
+        "metric",
+        [{ x: 0, y: 0, w: 6, h: 12 }],
+        "9x16",
+      ),
+    ).toEqual({ x: 0, y: 12, w: 6, h: 2 });
+    const canvas = SCREEN_FORMATS["21x9"].reference;
+    const metrics = gridMetrics(canvas, false, "21x9");
+    const drop = dropPlacement(
+      { x: canvas.width - 1, y: canvas.height - 1 },
+      metrics,
+      "metric",
+      { w: 4, h: 3 },
+      [],
+      "21x9",
+    );
+    expect(drop).toEqual({
+      placement: { x: 12, y: 5, w: 4, h: 3 },
+      blocked: false,
+    });
   });
 });

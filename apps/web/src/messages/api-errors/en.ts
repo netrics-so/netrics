@@ -37,6 +37,25 @@ export const apiErrorsEn = {
     theme_in_use_by:
       "Dashboards still use this theme: {names}. Pick another theme for them first.",
     widget_out_of_bounds: "A widget lies outside its slide's grid.",
+    format_has_overflow:
+      "That format cannot become the primary yet: a slide continues on more than one page there. Arrange every slide to fit one page in that format (customise it, or move widgets to another slide), then try again.",
+    format_has_hidden_widgets:
+      "That format cannot become the primary yet: a slide hides widgets there. Show them in that format, then try again.",
+    tiles_primary_format: "Tile dashboards are always laid out for TV (16:9).",
+    layout_invalid_page_count:
+      "A custom layout must have between one and eight pages.",
+    layout_page_out_of_range:
+      "A widget in a custom layout is on a page that does not exist.",
+    layout_widget_out_of_bounds:
+      "A widget in a custom layout lies outside that format's grid.",
+    layout_widget_too_small:
+      "A widget in a custom layout is smaller than its type allows.",
+    layout_widgets_overlap: "Two widgets overlap in a custom layout.",
+    layout_widget_duplicated: "A widget appears twice in a custom layout.",
+    layout_primary_format:
+      "The primary format cannot have a custom layout. Reload the dashboard.",
+    layout_duplicate_format:
+      "A slide has two custom layouts for the same format. Reload the dashboard.",
     widget_too_small: "A widget is smaller than its type allows.",
     widgets_overlap: "Two widgets on a slide overlap.",
     too_many_data_widgets: "A dashboard shows at most 48 data widgets.",

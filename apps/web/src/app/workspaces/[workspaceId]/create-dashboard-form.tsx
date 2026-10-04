@@ -11,6 +11,7 @@ import {
   BUILTIN_THEMES,
   DEFAULT_THEME_KEY,
   checkAccentContrast,
+  type ScreenFormat,
 } from "@netrics/domain";
 
 import {
@@ -23,6 +24,9 @@ import {
 import { brandAccent } from "@/lib/dominant-color";
 import { readIconPixels } from "@/lib/icon-pixels";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { PREVIEW_FORMAT_ORDER } from "@/lib/studio-formats";
+import { formatRatio } from "@/components/studio-editor/format-attention";
+import { FormatGlyph } from "@/components/studio-editor/format-switcher";
 
 type Choice = "blank" | "overview" | "brand";
 type BrandResource =
@@ -51,6 +55,9 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
   const common = useT("common");
   const router = useRouter();
   const [choice, setChoice] = useState<Choice>("blank");
+  // The primary format of a blank dashboard (ADR 0017); templates are 16:9.
+  const [format, setFormat] = useState<ScreenFormat>("16x9");
+  const formatsT = useT("studio.formats");
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -159,7 +166,10 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
     try {
       const { dashboard } =
         choice === "blank"
-          ? await createDashboard(workspaceId, { name: trimmed })
+          ? await createDashboard(workspaceId, {
+              name: trimmed,
+              ...(format === "16x9" ? {} : { primaryFormat: format }),
+            })
           : choice === "overview"
             ? await createDashboardFromTemplate(workspaceId, {
                 template: "overview",
@@ -203,6 +213,33 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
           </label>
         ))}
       </fieldset>
+
+      {choice === "blank" ? (
+        <fieldset className="new-dashboard-formats" disabled={pending}>
+          <legend>{t("format")}</legend>
+          <div className="new-dashboard-format-list">
+            {PREVIEW_FORMAT_ORDER.map((entry) => (
+              <label key={entry} className="new-dashboard-format">
+                <input
+                  type="radio"
+                  name="primary-format"
+                  value={entry}
+                  checked={format === entry}
+                  onChange={() => setFormat(entry)}
+                />
+                <FormatGlyph target={entry} />
+                <span className="new-dashboard-format-ratio">
+                  {formatRatio(entry)}
+                </span>
+                <span>{formatsT(`names.${entry}`)}</span>
+              </label>
+            ))}
+          </div>
+          <p className="muted">{t("formatHelp")}</p>
+        </fieldset>
+      ) : (
+        <p className="muted">{t("templateFormat")}</p>
+      )}
 
       {choice === "overview" && options ? (
         overviewEmpty ? (
