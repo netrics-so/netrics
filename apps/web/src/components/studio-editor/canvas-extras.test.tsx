@@ -146,7 +146,7 @@ describe("readability badges", () => {
       "1 of 2: Slide 1, 20 seconds, 2 widgets cut off on TVs",
     );
     expect(html.match(/rail-unreadable/g)).toHaveLength(1);
-    expect(cutOffText(1)).toBe("1 widget cut off");
+    expect(cutOffText(1, "en")).toBe("1 widget cut off");
   });
 });
 
@@ -157,7 +157,7 @@ describe("a new widget dragged from the add menu", () => {
       incoming: {
         placement,
         blocked: false,
-        label: incomingLabel(placement, false),
+        label: incomingLabel(placement, false, "en"),
       },
     });
     expect(html).toContain('class="editor-outline"');
@@ -172,7 +172,7 @@ describe("a new widget dragged from the add menu", () => {
       incoming: {
         placement,
         blocked: true,
-        label: incomingLabel(placement, true),
+        label: incomingLabel(placement, true, "en"),
       },
     });
     expect(html).toContain("editor-outline--blocked");

@@ -157,7 +157,9 @@ describe("canvas keys", () => {
 
 describe("drag outline", () => {
   it("shows the size and target cell where the widget may go", () => {
-    expect(dragOutline(drag({ x: 1, y: 3, w: 4, h: 2 }), widgets)).toEqual({
+    expect(
+      dragOutline(drag({ x: 1, y: 3, w: 4, h: 2 }), widgets, "en"),
+    ).toEqual({
       placement: { x: 1, y: 3, w: 4, h: 2 },
       blocked: false,
       label: "4 × 2 · column 2, row 4",
@@ -165,7 +167,9 @@ describe("drag outline", () => {
   });
 
   it("is blocked, naming the widget in the way, over another widget", () => {
-    expect(dragOutline(drag({ x: 4, y: 0, w: 4, h: 2 }), widgets)).toEqual({
+    expect(
+      dragOutline(drag({ x: 4, y: 0, w: 4, h: 2 }), widgets, "en"),
+    ).toEqual({
       placement: { x: 4, y: 0, w: 4, h: 2 },
       blocked: true,
       label: "4 × 2 · overlaps Text",

@@ -95,7 +95,7 @@ const names = (state: StudioState) =>
 
 describe("studio document reducer", () => {
   it("starts clean, on the first slide, with nothing to undo", () => {
-    const state = initialStudioState(dashboard());
+    const state = initialStudioState(dashboard(), "en");
     expect(isDirty(state)).toBe(false);
     expect(state.selectedSlideId).toBe(ID(2));
     expect(state.past).toEqual([]);
@@ -103,7 +103,7 @@ describe("studio document reducer", () => {
 
   it("adds slides after the selected one and selects them", () => {
     const state = run(
-      initialStudioState(dashboard()),
+      initialStudioState(dashboard(), "en"),
       { type: "addSlide" },
       { type: "updateSlide", slideId: ID(1000), patch: { name: "Reviews" } },
       { type: "selectSlide", slideId: ID(2) },
@@ -116,7 +116,7 @@ describe("studio document reducer", () => {
   });
 
   it("stops at the slide limit and says so", () => {
-    let state = initialStudioState(dashboard());
+    let state = initialStudioState(dashboard(), "en");
     for (let i = 0; i < STUDIO_LIMITS.slides + 2; i++) {
       state = run(state, { type: "addSlide" });
     }
@@ -125,7 +125,7 @@ describe("studio document reducer", () => {
   });
 
   it("duplicates a slide with new slide and widget ids", () => {
-    const state = run(initialStudioState(dashboard()), {
+    const state = run(initialStudioState(dashboard(), "en"), {
       type: "duplicateSlide",
       slideId: ID(2),
     });
@@ -139,7 +139,7 @@ describe("studio document reducer", () => {
 
   it("deletes a slide, selects its neighbour, and never the last one", () => {
     let state = run(
-      initialStudioState(dashboard()),
+      initialStudioState(dashboard(), "en"),
       { type: "addSlide" },
       { type: "addSlide" },
     );
@@ -161,7 +161,7 @@ describe("studio document reducer", () => {
 
   it("reorders slides and announces the new position", () => {
     let state = run(
-      initialStudioState(dashboard()),
+      initialStudioState(dashboard(), "en"),
       { type: "addSlide" },
       { type: "updateSlide", slideId: ID(1000), patch: { name: "B" } },
       { type: "addSlide" },
@@ -180,7 +180,7 @@ describe("studio document reducer", () => {
 
   it("is clean again when an edit is reverted by hand", () => {
     const state = run(
-      initialStudioState(dashboard()),
+      initialStudioState(dashboard(), "en"),
       { type: "rename", name: "Overview 2" },
       { type: "rename", name: "Overview" },
     );
@@ -189,7 +189,7 @@ describe("studio document reducer", () => {
 
   it("undoes typing as one step, and redoes it", () => {
     let state = run(
-      initialStudioState(dashboard()),
+      initialStudioState(dashboard(), "en"),
       { type: "rename", name: "O" },
       { type: "rename", name: "Ov" },
       { type: "rename", name: "Ove" },
@@ -213,7 +213,9 @@ describe("studio document reducer", () => {
   });
 
   it("keeps the selection on undo when it still exists", () => {
-    let state = run(initialStudioState(dashboard()), { type: "addSlide" });
+    let state = run(initialStudioState(dashboard(), "en"), {
+      type: "addSlide",
+    });
     const added = state.selectedSlideId;
     state = run(state, { type: "undo" });
     expect(state.draft.slides).toHaveLength(1);
@@ -223,7 +225,7 @@ describe("studio document reducer", () => {
   });
 
   it("adds widgets in the first free spot and selects them", () => {
-    const state = run(initialStudioState(dashboard()), {
+    const state = run(initialStudioState(dashboard(), "en"), {
       type: "addWidget",
       widget: {
         type: "text",
@@ -240,7 +242,7 @@ describe("studio document reducer", () => {
   });
 
   it("edits and deletes a widget", () => {
-    let state = run(initialStudioState(dashboard()), {
+    let state = run(initialStudioState(dashboard(), "en"), {
       type: "updateWidget",
       widgetId: ID(11),
       patch: { title: "Downloads" },
@@ -258,7 +260,7 @@ describe("studio document reducer", () => {
 
   it("discards the draft back to the saved copy", () => {
     const state = run(
-      initialStudioState(dashboard()),
+      initialStudioState(dashboard(), "en"),
       { type: "addSlide" },
       { type: "rename", name: "Other" },
       { type: "discard" },
@@ -269,7 +271,9 @@ describe("studio document reducer", () => {
   });
 
   it("takes the saved dashboard as the new base, keeping the selection by position", () => {
-    let state = run(initialStudioState(dashboard()), { type: "addSlide" });
+    let state = run(initialStudioState(dashboard(), "en"), {
+      type: "addSlide",
+    });
     const saved = dashboard({
       version: 4,
       slides: [
@@ -287,7 +291,7 @@ describe("studio document reducer", () => {
   it("reloads the server copy after a conflict", () => {
     const theirs = dashboard({ version: 5, name: "Theirs" });
     const state = run(
-      initialStudioState(dashboard()),
+      initialStudioState(dashboard(), "en"),
       { type: "rename", name: "Mine" },
       { type: "reload", dashboard: theirs },
     );
@@ -300,7 +304,7 @@ describe("studio document reducer", () => {
 describe("requests", () => {
   it("builds a PUT body the contract accepts, with ids and the base version", () => {
     const state = run(
-      initialStudioState(dashboard()),
+      initialStudioState(dashboard(), "en"),
       { type: "addSlide" },
       {
         type: "addWidget",
@@ -326,7 +330,7 @@ describe("requests", () => {
   });
 
   it("sends a custom theme without a built-in key", () => {
-    const state = run(initialStudioState(dashboard()), {
+    const state = run(initialStudioState(dashboard(), "en"), {
       type: "updateSettings",
       patch: { themeBuiltin: null, themeId: ID(40) },
     });
@@ -337,20 +341,20 @@ describe("requests", () => {
   });
 
   it("copies the draft as a new dashboard without ids", () => {
-    const state = initialStudioState(dashboard());
-    const body = toCopyRequest(state.draft, copyName("Overview"));
+    const state = initialStudioState(dashboard(), "en");
+    const body = toCopyRequest(state.draft, copyName("Overview", "en"));
     expect(body.name).toBe("Overview (copy)");
     expect(body.slides?.[0]).not.toHaveProperty("id");
     expect(body.slides?.[0]?.widgets[0]).not.toHaveProperty("id");
     expect(() => createDashboardRequestSchema.parse(body)).not.toThrow();
-    expect(copyName("x".repeat(100))).toHaveLength(100);
+    expect(copyName("x".repeat(100), "en")).toHaveLength(100);
   });
 });
 
 describe("validation", () => {
   it("flags problems at the dashboard, the slide and the widget", () => {
     const state = run(
-      initialStudioState(dashboard()),
+      initialStudioState(dashboard(), "en"),
       { type: "rename", name: "  " },
       { type: "updateSlide", slideId: ID(2), patch: { durationSeconds: 2 } },
       {
@@ -364,7 +368,7 @@ describe("validation", () => {
       },
       { type: "updateWidget", widgetId: ID(1000), patch: { x: 2 } },
     );
-    const problems = documentProblems(state.draft);
+    const problems = documentProblems(state.draft, "en");
     expect(problems).toContainEqual({
       slideId: null,
       widgetId: null,
@@ -373,7 +377,7 @@ describe("validation", () => {
     expect(problems).toContainEqual({
       slideId: ID(2),
       widgetId: null,
-      message: "Sales: the duration must be between 5 and 3600 seconds.",
+      message: "Sales: the duration must be between 5 and 3,600 seconds.",
     });
     expect(problems).toContainEqual({
       slideId: ID(2),
@@ -386,7 +390,9 @@ describe("validation", () => {
   });
 
   it("has no problems for a valid dashboard", () => {
-    expect(documentProblems(initialStudioState(dashboard()).draft)).toEqual([]);
+    expect(
+      documentProblems(initialStudioState(dashboard(), "en").draft, "en"),
+    ).toEqual([]);
   });
 });
 

@@ -10,6 +10,7 @@ import {
   SlideCanvas,
   useOffline,
 } from "@/components/studio/slide-canvas";
+import { useLocale, useT } from "@/lib/i18n/client";
 import { logoImageId, slideTitle, type StudioEnv } from "@/lib/studio-widgets";
 
 /**
@@ -26,6 +27,8 @@ export function SlideViewer({
   tokens: ThemeTokens;
   env: StudioEnv;
 }) {
+  const locale = useLocale();
+  const t = useT("dashboard");
   const { slides } = dashboard;
   // Keep the selected slide across refreshes (by id), else the first.
   const [selectedId, setSelectedId] = useState(slides[0]?.id ?? null);
@@ -64,12 +67,12 @@ export function SlideViewer({
 
   const panelId = `${baseId}-panel`;
   return (
-    <section className="slide-viewer" aria-label="Slides">
+    <section className="slide-viewer" aria-label={t("slides")}>
       {slides.length > 1 ? (
         <div
           className="slide-tabs"
           role="tablist"
-          aria-label="Slides"
+          aria-label={t("slides")}
           onKeyDown={onKeyDown}
         >
           {slides.map((candidate, candidateIndex) => (
@@ -87,9 +90,9 @@ export function SlideViewer({
               tabIndex={candidateIndex === index ? 0 : -1}
               onClick={() => setSelectedId(candidate.id)}
             >
-              {slideTitle(candidate, candidateIndex)}
+              {slideTitle(candidate, candidateIndex, locale)}
               {candidate.enabled ? null : (
-                <span className="slide-tab-off"> (off)</span>
+                <span className="slide-tab-off"> ({t("slideOff")})</span>
               )}
             </button>
           ))}
@@ -121,7 +124,7 @@ export function SlideViewer({
         />
       </div>
       {slide.widgets.length === 0 ? (
-        <p className="muted">This slide has no widgets yet.</p>
+        <p className="muted">{t("slideEmpty")}</p>
       ) : null}
     </section>
   );

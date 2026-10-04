@@ -11,8 +11,12 @@ import {
   SLIDE_SECONDS,
   checkAccentContrast,
   isHexColor,
+  type Locale,
   type ThemeTokens,
 } from "@netrics/domain";
+
+import { webTranslator } from "@/lib/i18n/catalogs";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 import {
   type StudioAction,
@@ -46,32 +50,32 @@ function parseThemeChoice(
 }
 
 /** What a brand accent's contrast means for TVs, as the inspector says it. */
-export function accentHint(accent: string, tokens: ThemeTokens) {
+export function accentHint(
+  accent: string,
+  tokens: ThemeTokens,
+  locale: Locale,
+) {
+  const t = webTranslator(locale, "studio.settings");
   const check = checkAccentContrast(accent, tokens);
-  const ratio = `${check.ratio.toFixed(2)}:1`;
+  const ratio = `${new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(check.ratio)}:1`;
   switch (check.level) {
     case "fail":
-      return {
-        level: check.level,
-        text: `Contrast ${ratio} against the widget surface: too low to read on a TV. Saving is refused below 3:1.`,
-      };
+      return { level: check.level, text: t("contrastFail", { ratio }) };
     case "warn":
-      return {
-        level: check.level,
-        text: `Contrast ${ratio} against the widget surface: hard to read from a distance (4.5:1 recommended).`,
-      };
+      return { level: check.level, text: t("contrastWarn", { ratio }) };
     default:
-      return {
-        level: check.level,
-        text: `Contrast ${ratio} against the widget surface: readable.`,
-      };
+      return { level: check.level, text: t("contrastOk", { ratio }) };
   }
 }
 
 function Problems({ problems }: { problems: StudioProblem[] }) {
+  const t = useT("studio.settings");
   if (problems.length === 0) return null;
   return (
-    <ul className="inspector-problems" aria-label="Problems">
+    <ul className="inspector-problems" aria-label={t("problems")}>
       {problems.map((problem, index) => (
         <li key={index}>{problem.message}</li>
       ))}
@@ -102,6 +106,8 @@ export function DashboardSettingsPanel({
   dispatch: (action: StudioAction) => void;
   onUploadImage?: (file: File) => Promise<string | null>;
 }) {
+  const locale = useLocale();
+  const t = useT("studio.settings");
   const { settings } = document;
   const update = (patch: Partial<DashboardSettings>) =>
     dispatch({ type: "updateSettings", patch });
@@ -113,7 +119,7 @@ export function DashboardSettingsPanel({
     setAccentText(settings.accentColor ?? "");
   }
   const hint = settings.accentColor
-    ? accentHint(settings.accentColor, baseTokens)
+    ? accentHint(settings.accentColor, baseTokens, locale)
     : null;
 
   return (
@@ -121,10 +127,10 @@ export function DashboardSettingsPanel({
       className="inspector-section"
       aria-labelledby="inspector-dashboard"
     >
-      <h2 id="inspector-dashboard">Dashboard</h2>
+      <h2 id="inspector-dashboard">{t("title")}</h2>
       <Problems problems={problems} />
       <div className="field">
-        <label htmlFor="dashboard-name">Name</label>
+        <label htmlFor="dashboard-name">{t("name")}</label>
         <input
           id="dashboard-name"
           type="text"
@@ -137,7 +143,7 @@ export function DashboardSettingsPanel({
         />
       </div>
       <div className="field">
-        <label htmlFor="dashboard-project">Project</label>
+        <label htmlFor="dashboard-project">{t("project")}</label>
         <select
           id="dashboard-project"
           value={document.projectId ?? ""}
@@ -148,7 +154,7 @@ export function DashboardSettingsPanel({
             })
           }
         >
-          <option value="">No project</option>
+          <option value="">{t("noProject")}</option>
           {projects.map((project) => (
             <option key={project.id} value={project.id}>
               {project.name}
@@ -158,15 +164,15 @@ export function DashboardSettingsPanel({
       </div>
 
       <fieldset>
-        <legend>Look</legend>
+        <legend>{t("look")}</legend>
         <div className="field">
-          <label htmlFor="dashboard-theme">Theme</label>
+          <label htmlFor="dashboard-theme">{t("theme")}</label>
           <select
             id="dashboard-theme"
             value={themeChoice(settings)}
             onChange={(event) => update(parseThemeChoice(event.target.value))}
           >
-            <optgroup label="Built-in">
+            <optgroup label={t("builtIn")}>
               {themes.builtins.map((theme) => (
                 <option key={theme.key} value={`builtin:${theme.key}`}>
                   {theme.name}
@@ -174,7 +180,7 @@ export function DashboardSettingsPanel({
               ))}
             </optgroup>
             {themes.custom.length > 0 ? (
-              <optgroup label="Custom">
+              <optgroup label={t("custom")}>
                 {themes.custom.map((theme) => (
                   <option key={theme.id} value={`custom:${theme.id}`}>
                     {theme.name}
@@ -184,7 +190,7 @@ export function DashboardSettingsPanel({
             ) : null}
           </select>
           <p className="help">
-            <a href={themesHref}>Make or edit custom themes</a>
+            <a href={themesHref}>{t("editThemes")}</a>
           </p>
         </div>
         <div className="field">
@@ -198,13 +204,13 @@ export function DashboardSettingsPanel({
                 })
               }
             />
-            Brand accent colour
+            {t("accent")}
           </label>
           {settings.accentColor !== null ? (
             <div className="accent-row">
               <input
                 type="color"
-                aria-label="Accent colour picker"
+                aria-label={t("accentPicker")}
                 value={settings.accentColor}
                 onChange={(event) =>
                   update({ accentColor: event.target.value.toLowerCase() })
@@ -212,7 +218,7 @@ export function DashboardSettingsPanel({
               />
               <input
                 type="text"
-                aria-label="Accent colour as #rrggbb"
+                aria-label={t("accentHex")}
                 aria-describedby="accent-hint"
                 value={accentText}
                 maxLength={7}
@@ -239,8 +245,8 @@ export function DashboardSettingsPanel({
         </div>
         <ImagePicker
           id="dashboard-logo"
-          label="Logo"
-          noneLabel="No logo"
+          label={t("logo")}
+          noneLabel={t("noLogo")}
           images={images}
           value={settings.logoImageId}
           onChange={(logoImageId) => update({ logoImageId })}
@@ -252,25 +258,25 @@ export function DashboardSettingsPanel({
             checked={settings.showHeader}
             onChange={(event) => update({ showHeader: event.target.checked })}
           />
-          Header with name, slide name and clock
+          {t("header")}
         </label>
       </fieldset>
 
       <fieldset>
-        <legend>Rotation</legend>
+        <legend>{t("rotation")}</legend>
         <label className="check">
           <input
             type="checkbox"
             checked={settings.autoAdvance}
             onChange={(event) => update({ autoAdvance: event.target.checked })}
           />
-          Advance through the slides
+          {t("advance")}
         </label>
         {!settings.autoAdvance ? (
-          <p className="help">Screens show only the first visible slide.</p>
+          <p className="help">{t("firstOnly")}</p>
         ) : null}
         <div className="field">
-          <label htmlFor="dashboard-duration">Default duration (seconds)</label>
+          <label htmlFor="dashboard-duration">{t("duration")}</label>
           <input
             id="dashboard-duration"
             type="number"
@@ -290,7 +296,7 @@ export function DashboardSettingsPanel({
           />
         </div>
         <div className="field">
-          <label htmlFor="dashboard-transition">Transition</label>
+          <label htmlFor="dashboard-transition">{t("transition")}</label>
           <select
             id="dashboard-transition"
             value={settings.transition}
@@ -301,8 +307,8 @@ export function DashboardSettingsPanel({
               })
             }
           >
-            <option value="fade">Fade</option>
-            <option value="none">None</option>
+            <option value="fade">{t("fade")}</option>
+            <option value="none">{t("noTransition")}</option>
           </select>
         </div>
       </fieldset>

@@ -16,6 +16,7 @@ import {
   keptSlideId,
   type SlideRotation,
 } from "@/lib/slide-rotation";
+import { useT } from "@/lib/i18n/client";
 import { themeStyle } from "@/lib/studio-theme";
 import type { StudioImages } from "@/lib/studio-widgets";
 
@@ -95,6 +96,7 @@ export function SlidePlayer<W extends CanvasWidget>({
   controlsRef,
   onSlideChange,
 }: SlidePlayerProps<W>) {
+  const t = useT("dashboard");
   const [currentId, setCurrentId] = useState<string | null>(() =>
     keptSlideId(slides, startSlideId, autoAdvance),
   );
@@ -159,7 +161,7 @@ export function SlidePlayer<W extends CanvasWidget>({
         .filter(Boolean)
         .join(" ")}
       style={themeStyle(tokens)}
-      aria-roledescription="slide show"
+      aria-roledescription={t("slideShow")}
     >
       {slides.length === 0
         ? (empty ?? null)

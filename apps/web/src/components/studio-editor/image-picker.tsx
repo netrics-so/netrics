@@ -20,7 +20,8 @@ import {
   fetchResourceIcon,
   listResourceIcons,
 } from "@/lib/api";
-import { useLocale } from "@/lib/i18n/client";
+import { webTranslator } from "@/lib/i18n/catalogs";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 /** A workspace image as the pickers list it. */
 export interface PickableImage {
@@ -35,12 +36,16 @@ export interface PickableImage {
  * Why a file cannot be uploaded, checked before it is sent (the server
  * checks again, strictly), or null.
  */
-export function uploadProblem(file: { type: string; size: number }) {
+export function uploadProblem(
+  file: { type: string; size: number },
+  locale: Locale,
+) {
+  const t = webTranslator(locale, "studio.images");
   if (!(IMAGE_CONTENT_TYPES as readonly string[]).includes(file.type)) {
-    return "Choose a PNG, JPEG or WebP image.";
+    return t("wrongType");
   }
   if (file.size > IMAGE_MAX_BYTES) {
-    return "That image is larger than 1 MiB. Export it smaller and try again.";
+    return t("tooLarge");
   }
   return null;
 }
@@ -105,7 +110,9 @@ async function storeIconOf(
   locale: Locale,
 ): Promise<{ imageId: string } | { problem: string }> {
   const { workspaceId, onImage } = iconsState;
-  if (!workspaceId) return { problem: "The studio is not open." };
+  if (!workspaceId) {
+    return { problem: webTranslator(locale, "studio.images")("notOpen") };
+  }
   try {
     const { image } = await fetchResourceIcon(
       workspaceId,
@@ -134,6 +141,7 @@ function AppIconChooser({
   disabled: boolean;
 }) {
   const locale = useLocale();
+  const t = useT("studio.images");
   const icons = useSyncExternalStore(
     subscribeIcons,
     () => iconsState,
@@ -149,7 +157,7 @@ function AppIconChooser({
   return (
     <div className="image-picker-icon">
       <label htmlFor={`${id}-icon`} className="visually-hidden">
-        App icon
+        {t("appIcon")}
       </label>
       <select
         id={`${id}-icon`}
@@ -160,7 +168,7 @@ function AppIconChooser({
           setProblem(null);
         }}
       >
-        <option value="">App icon…</option>
+        <option value="">{t("appIconChoose")}</option>
         {icons.sources.map((source) => (
           <option key={sourceKey(source)} value={sourceKey(source)}>
             {source.name}
@@ -183,7 +191,7 @@ function AppIconChooser({
             .finally(() => setBusy(false));
         }}
       >
-        {busy ? "Fetching…" : "Use app icon"}
+        {busy ? t("fetching") : t("useAppIcon")}
       </button>
       {problem ? (
         <span className="error" role="alert">
@@ -218,6 +226,8 @@ export function ImagePicker({
   onChange: (imageId: string | null) => void;
   onUpload?: (file: File) => Promise<string | null>;
 }) {
+  const locale = useLocale();
+  const t = useT("studio.images");
   const [problem, setProblem] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const current = images.find((image) => image.id === value) ?? null;
@@ -226,7 +236,7 @@ export function ImagePicker({
 
   async function onFile(file: File | undefined) {
     if (!file || !onUpload) return;
-    const local = uploadProblem(file);
+    const local = uploadProblem(file, locale);
     setProblem(local);
     if (local) return;
     setUploading(true);
@@ -259,11 +269,15 @@ export function ImagePicker({
           onChange={(event) => onChange(event.target.value || null)}
         >
           {noneLabel !== undefined || !current ? (
-            <option value="">{noneLabel ?? "Choose an image"}</option>
+            <option value="">{noneLabel ?? t("choose")}</option>
           ) : null}
           {images.map((image) => (
             <option key={image.id} value={image.id}>
-              {image.name || "Untitled image"} ({image.width} × {image.height})
+              {t("option", {
+                name: image.name || t("untitled"),
+                width: image.width,
+                height: image.height,
+              })}
             </option>
           ))}
         </select>
@@ -291,8 +305,7 @@ export function ImagePicker({
           }}
         >
           <label htmlFor={`${id}-file`}>
-            Upload a new image, or drop one here{" "}
-            <span className="help">(PNG, JPEG or WebP, at most 1 MiB)</span>
+            {t("upload")} <span className="help">{t("uploadHint")}</span>
           </label>
           <input
             id={`${id}-file`}
@@ -307,7 +320,7 @@ export function ImagePicker({
           />
           {uploading ? (
             <p className="help" role="status">
-              Uploading…
+              {t("uploading")}
             </p>
           ) : null}
         </div>
@@ -337,16 +350,18 @@ export function ImageLibrary({
   /** Resolves to null when deleted, else why not. */
   onDelete: (imageId: string) => Promise<string | null>;
 }) {
+  const t = useT("studio.images");
+  const common = useT("common");
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   if (images.length === 0) return null;
   return (
     <details className="image-library">
-      <summary>Workspace images ({images.length})</summary>
+      <summary>{t("library", { count: images.length })}</summary>
       <ul>
         {images.map((image) => {
           const used = inUse.has(image.id);
-          const name = image.name || "Untitled image";
+          const name = image.name || t("untitled");
           return (
             <li key={image.id}>
               <img src={image.url} alt="" width={48} height={48} />
@@ -355,17 +370,17 @@ export function ImageLibrary({
                 <span className="help">
                   {" "}
                   {image.width} × {image.height}
-                  {used ? " · used here" : ""}
+                  {used ? ` · ${t("usedHere")}` : ""}
                 </span>
               </span>
               <button
                 type="button"
                 className="danger"
                 disabled={used || busy !== null}
-                title={used ? "Used by this dashboard" : undefined}
-                aria-label={`Delete image ${name}`}
+                title={used ? t("usedByDashboard") : undefined}
+                aria-label={t("deleteNamed", { name })}
                 onClick={() => {
-                  if (!window.confirm(`Delete the image “${name}”?`)) return;
+                  if (!window.confirm(t("deleteConfirm", { name }))) return;
                   setBusy(image.id);
                   setProblem(null);
                   void onDelete(image.id)
@@ -373,7 +388,7 @@ export function ImageLibrary({
                     .finally(() => setBusy(null));
                 }}
               >
-                {busy === image.id ? "Deleting…" : "Delete"}
+                {busy === image.id ? common("deleting") : common("delete")}
               </button>
             </li>
           );

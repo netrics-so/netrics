@@ -6,11 +6,13 @@ import {
 import {
   CURRENCY_DIMENSION,
   RESOURCE_DIMENSION,
+  SUPPORTED_LOCALES,
   STUDIO_LABEL_MAX_LINES,
   allResourcesName,
   isDataWidgetType,
   labelFit,
   tileLabel,
+  type Locale,
   type ResourceNoun,
   type StudioLabelFit,
   type WidgetType,
@@ -18,6 +20,7 @@ import {
 
 import type { NewWidget, WidgetPatch } from "./studio-document";
 import { pickableMetrics } from "./format-metric";
+import { webTranslator } from "./i18n/catalogs";
 import { newWidget } from "./studio-new-widget";
 import { needsCurrency, type CurrencyChoice } from "./tile-currency";
 import type { DataWidget } from "./studio-widgets";
@@ -217,11 +220,25 @@ export function scopePatch(
   widget: DataWidget,
   resourceCount: number | null,
   noun: ResourceNoun | null,
+  locale: Locale = "en",
 ): WidgetPatch | null {
   if (resourceCount === null || widget.dimensions[RESOURCE_DIMENSION]) {
     return null;
   }
-  const scope = allResourcesName(noun, resourceCount);
+  // A name already saved in any language stays: opening the Studio in
+  // another language must not change the draft (names are content in the
+  // creator's language, ADR 0016 section 5; screens rebuild their labels).
+  if (
+    widget.allResourcesName !== null &&
+    SUPPORTED_LOCALES.some(
+      (other) =>
+        allResourcesName(noun, resourceCount, other) ===
+        widget.allResourcesName,
+    )
+  ) {
+    return null;
+  }
+  const scope = allResourcesName(noun, resourceCount, locale);
   return scope === widget.allResourcesName ? null : { allResourcesName: scope };
 }
 
@@ -294,6 +311,7 @@ export function convertWidget(
   context: {
     metrics: readonly WorkspaceMetric[];
     imageIds: readonly string[];
+    locale: Locale;
   },
 ): { widget: WidgetFields } | { reason: string } {
   const made = newWidget(to, context);
@@ -332,7 +350,12 @@ export function convertWidget(
       ? startingGroupBy(metric, data.dimensions, null)
       : null;
     if (!grouped) {
-      return { reason: "This metric cannot be broken down into bars." };
+      return {
+        reason: webTranslator(
+          context.locale,
+          "studio.newWidget",
+        )("notBreakable"),
+      };
     }
     return {
       widget: {
@@ -383,6 +406,7 @@ export interface LabelPreview {
 export function labelPreview(
   widget: DashboardWidget,
   metric: { name: string } | undefined,
+  locale: Locale,
   fontScale = 1,
 ): LabelPreview | null {
   if (!isDataWidgetType(widget.type)) {
@@ -405,7 +429,10 @@ export function labelPreview(
     fit,
     warning: fit.fits
       ? null
-      : `On a TV this label needs ${lines} lines at this width and would be cut (at most ${STUDIO_LABEL_MAX_LINES}). Shorten the title or make the widget wider.`,
+      : webTranslator(locale, "studio.readability")("labelWarning", {
+          lines,
+          max: STUDIO_LABEL_MAX_LINES,
+        }),
   };
 }
 

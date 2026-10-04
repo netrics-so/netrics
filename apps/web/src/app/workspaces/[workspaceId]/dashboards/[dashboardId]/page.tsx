@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -12,6 +13,7 @@ import {
   listWorkspaceMetrics,
   listWorkspaces,
 } from "@/lib/api";
+import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
 import { resolveDashboardTheme } from "@/lib/studio-theme";
 import { referencedImageIds } from "@/lib/studio-widgets";
@@ -21,6 +23,11 @@ import type { TileConnection } from "./metric-tile";
 
 export const dynamic = "force-dynamic";
 
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("dashboard");
+  return { title: t("pageTitle") };
+}
+
 interface DashboardPageProps {
   params: Promise<{ workspaceId: string; dashboardId: string }>;
 }
@@ -28,6 +35,7 @@ interface DashboardPageProps {
 export default async function DashboardPage({ params }: DashboardPageProps) {
   const { workspaceId, dashboardId } = await params;
   const { cookieHeader } = await requireSession();
+  const t = await getT("dashboard");
 
   const [{ workspaces }, dashboardResult] = await Promise.all([
     listWorkspaces(cookieHeader),
@@ -61,8 +69,8 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
   return (
     <div className="dashboard-page">
       <p className="muted">
-        <Link href={`/workspaces/${workspaceId}`}>{membership.name}</Link> /
-        Dashboards
+        <Link href={`/workspaces/${workspaceId}`}>{membership.name}</Link> /{" "}
+        {t("breadcrumb")}
       </p>
       <DashboardView
         workspaceId={workspaceId}

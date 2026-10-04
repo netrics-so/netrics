@@ -183,8 +183,8 @@ describe("readability warnings", () => {
   const label = (widget: DashboardWidget) => widget.title ?? "Downloads";
 
   it("flags exactly the widgets studioLayout.fits rejects", () => {
-    const document = initialStudioState(dashboard()).draft;
-    const found = unreadableLabels(document, label, 1);
+    const document = initialStudioState(dashboard(), "en").draft;
+    const found = unreadableLabels(document, label, 1, "en");
     expect(found.map((f) => f.widgetId)).toEqual([ID(13)]);
     for (const widget of document.slides.flatMap((s) => s.widgets)) {
       expect(found.some((f) => f.widgetId === widget.id)).toBe(
@@ -194,8 +194,8 @@ describe("readability warnings", () => {
   });
 
   it("explains the fix: the width that fits, or a shorter title", () => {
-    const document = initialStudioState(dashboard()).draft;
-    const [cut] = unreadableLabels(document, label, 1);
+    const document = initialStudioState(dashboard(), "en").draft;
+    const [cut] = unreadableLabels(document, label, 1, "en");
     const width = widthToFit(LONG, { type: "metric", w: 3, h: 3 }, 1);
     expect(width).not.toBe(null);
     expect(width!).toBeGreaterThan(3);
@@ -212,19 +212,19 @@ describe("readability warnings", () => {
   });
 
   it("uses the theme's font scale, as screens do", () => {
-    const document = initialStudioState(dashboard()).draft;
+    const document = initialStudioState(dashboard(), "en").draft;
     const title = "Downloads of every app this week";
     const widget = { type: "metric" as const, w: 3, h: 3 };
     // Pick a title that fits at scale 1 but not at 1.3.
     expect(studioLayout.fits(title, widget, { fontScale: 1 })).toBe(true);
     expect(studioLayout.fits(title, widget, { fontScale: 1.3 })).toBe(false);
     document.slides[1]!.widgets = [metric(13, 0, 0, title, 3)];
-    expect(unreadableLabels(document, label, 1)).toEqual([]);
-    expect(unreadableLabels(document, label, 1.3)).toHaveLength(1);
+    expect(unreadableLabels(document, label, 1, "en")).toEqual([]);
+    expect(unreadableLabels(document, label, 1.3, "en")).toHaveLength(1);
   });
 
   it("counts cut-off labels per slide and ignores non-data widgets", () => {
-    const document = initialStudioState(dashboard()).draft;
+    const document = initialStudioState(dashboard(), "en").draft;
     document.slides[0]!.widgets.push({
       type: "text",
       id: ID(20),
@@ -236,14 +236,14 @@ describe("readability warnings", () => {
       text: "Hello",
       options: { size: "body", align: "start" },
     });
-    const counts = unreadableCounts(unreadableLabels(document, label, 1));
+    const counts = unreadableCounts(unreadableLabels(document, label, 1, "en"));
     expect([...counts]).toEqual([[ID(3), 1]]);
   });
 });
 
 describe("duplicate, paste and drop", () => {
   it("duplicates next to the source as one undo step", () => {
-    const start = initialStudioState(dashboard());
+    const start = initialStudioState(dashboard(), "en");
     const state = run(start, { type: "duplicateWidget", widgetId: ID(11) });
     expect(slideWidgets(state, 0)).toHaveLength(3);
     const copy = slideWidgets(state, 0)[2]!;
@@ -260,13 +260,13 @@ describe("duplicate, paste and drop", () => {
       "Downloads (metric) duplicated at column 5, row 1.",
     );
     expect(state.past).toHaveLength(1);
-    expect(documentProblems(state.draft)).toEqual([]);
+    expect(documentProblems(state.draft, "en")).toEqual([]);
     const undone = run(state, { type: "undo" });
     expect(isDirty(undone)).toBe(false);
   });
 
   it("pastes onto another slide near the widget's own place", () => {
-    const start = initialStudioState(dashboard());
+    const start = initialStudioState(dashboard(), "en");
     const source = slideWidgets(start, 0)[0]!;
     const state = run(
       start,
@@ -292,7 +292,7 @@ describe("duplicate, paste and drop", () => {
   });
 
   it("refuses at the dashboard's data widget limit", () => {
-    let state = initialStudioState(dashboard());
+    let state = initialStudioState(dashboard(), "en");
     for (let i = 0; i < STUDIO_LIMITS.dataWidgets + 2; i++) {
       state = run(state, { type: "duplicateWidget", widgetId: ID(11) });
     }
@@ -304,7 +304,7 @@ describe("duplicate, paste and drop", () => {
   });
 
   it("adds a dropped widget at its spot, and refuses a taken one", () => {
-    const start = initialStudioState(dashboard());
+    const start = initialStudioState(dashboard(), "en");
     const widget = {
       type: "text" as const,
       title: null,
@@ -350,7 +350,7 @@ describe("text widgets cut off", () => {
   const noLabel = () => "";
 
   it("flags text whose layout overflows, as the renderer does", () => {
-    const document = initialStudioState(dashboard()).draft;
+    const document = initialStudioState(dashboard(), "en").draft;
     document.slides = [
       {
         ...document.slides[0]!,
@@ -370,12 +370,12 @@ describe("text widgets cut off", () => {
         showHeader: true,
       });
       expect(
-        unreadableLabels(document, noLabel, 1).some(
+        unreadableLabels(document, noLabel, 1, "en").some(
           (found) => found.widgetId === widget.id,
         ),
       ).toBe(layout.overflow);
     }
-    const [found] = unreadableLabels(document, noLabel, 1);
+    const [found] = unreadableLabels(document, noLabel, 1, "en");
     expect(found).toMatchObject({ kind: "text", widgetId: ID(30) });
     expect(found!.fitsAtSize).toEqual(
       textSizeToFit(

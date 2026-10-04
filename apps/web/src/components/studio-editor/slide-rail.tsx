@@ -14,6 +14,7 @@ import {
   SLIDE_SECONDS,
   STUDIO_GRID,
   STUDIO_LIMITS,
+  type Locale,
   type ThemeTokens,
 } from "@netrics/domain";
 
@@ -23,6 +24,8 @@ import {
   type StudioAction,
   type StudioSlide,
 } from "@/lib/studio-document";
+import { webTranslator } from "@/lib/i18n/catalogs";
+import { useLocale, useT } from "@/lib/i18n/client";
 import { slideTitle } from "@/lib/studio-widgets";
 
 import type { PickableImage } from "./image-picker";
@@ -83,8 +86,8 @@ interface DragState {
 const NO_COUNTS: ReadonlyMap<string, number> = new Map();
 
 /** "1 widget cut off", "2 widgets cut off" (labels or text). */
-export function cutOffText(count: number): string {
-  return `${count} ${count === 1 ? "widget" : "widgets"} cut off`;
+export function cutOffText(count: number, locale: Locale): string {
+  return webTranslator(locale, "studio.rail")("cutOff", { count });
 }
 
 export function SlideRail({
@@ -109,6 +112,9 @@ export function SlideRail({
   dispatch: (action: StudioAction) => void;
   onUploadImage?: (file: File) => Promise<string | null>;
 }) {
+  const locale = useLocale();
+  const t = useT("studio.rail");
+  const common = useT("common");
   const hintId = useId();
   const items = useRef(new Map<string, HTMLLIElement>());
   const buttons = useRef(new Map<string, HTMLButtonElement>());
@@ -206,30 +212,30 @@ export function SlideRail({
   }
 
   return (
-    <aside className="studio-rail" aria-label="Slides">
+    <aside className="studio-rail" aria-label={t("title")}>
       <div className="rail-head">
-        <h2>Slides</h2>
+        <h2>{t("title")}</h2>
         <button
           type="button"
           onClick={() => dispatch({ type: "addSlide" })}
           disabled={slides.length >= STUDIO_LIMITS.slides}
           title={
             slides.length >= STUDIO_LIMITS.slides
-              ? `At most ${STUDIO_LIMITS.slides} slides`
+              ? t("atMost", { max: STUDIO_LIMITS.slides })
               : undefined
           }
         >
-          Add slide
+          {t("add")}
         </button>
       </div>
       <p id={hintId} className="visually-hidden">
-        Arrow keys move between slides. Alt plus Arrow Up or Down moves the
-        slide. Delete removes it after a confirmation.
+        {t("keyboardHelp")}
       </p>
       <ol className={drag ? "rail-list rail-list--dragging" : "rail-list"}>
         {slides.map((slide, index) => {
           const isSelected = slide.id === selected?.id;
-          const title = slideTitle(slide, index);
+          const title = slideTitle(slide, index, locale);
+          const cutOff = unreadableCounts.get(slide.id);
           const seconds = slide.durationSeconds ?? defaultSeconds;
           const dropBefore =
             drag &&
@@ -261,7 +267,7 @@ export function SlideRail({
               <span
                 className="rail-handle"
                 aria-hidden="true"
-                title="Drag to reorder"
+                title={t("dragHandle")}
                 onPointerDown={(event) => onHandleDown(event, index)}
                 onPointerMove={onHandleMove}
                 onPointerUp={onHandleUp}
@@ -278,7 +284,15 @@ export function SlideRail({
                 }}
                 aria-current={isSelected ? "true" : undefined}
                 aria-describedby={hintId}
-                aria-label={`${index + 1} of ${slides.length}: ${title}, ${seconds} seconds${slide.enabled ? "" : ", hidden on screens"}${slidesWithProblems.has(slide.id) ? ", has problems" : ""}${unreadableCounts.get(slide.id) ? `, ${cutOffText(unreadableCounts.get(slide.id)!)} on TVs` : ""}`}
+                aria-label={t("itemLabel", {
+                  number: index + 1,
+                  count: slides.length,
+                  title,
+                  seconds,
+                  hidden: slide.enabled ? "no" : "yes",
+                  problems: slidesWithProblems.has(slide.id) ? "yes" : "no",
+                  cutOff: cutOff ?? 0,
+                })}
                 onClick={() =>
                   dispatch({ type: "selectSlide", slideId: slide.id })
                 }
@@ -290,14 +304,15 @@ export function SlideRail({
                     {index + 1}. {title}
                   </span>
                   <span className="rail-meta">
-                    {seconds} s{slide.enabled ? "" : " · hidden"}
+                    {t("seconds", { seconds })}
+                    {slide.enabled ? "" : ` · ${t("hidden")}`}
                     {slidesWithProblems.has(slide.id) ? (
-                      <span className="rail-problem"> · ⚠ check</span>
+                      <span className="rail-problem"> · ⚠ {t("check")}</span>
                     ) : null}
-                    {unreadableCounts.get(slide.id) ? (
+                    {cutOff ? (
                       <span className="rail-unreadable">
                         {" "}
-                        · {cutOffText(unreadableCounts.get(slide.id)!)}
+                        · {cutOffText(cutOff, locale)}
                       </span>
                     ) : null}
                   </span>
@@ -309,16 +324,16 @@ export function SlideRail({
       </ol>
 
       {selected ? (
-        <section className="rail-slide" aria-label="Selected slide">
-          <h3>Slide {selectedIndex + 1}</h3>
+        <section className="rail-slide" aria-label={t("selected")}>
+          <h3>{t("slide", { number: selectedIndex + 1 })}</h3>
           <div className="field">
-            <label htmlFor="slide-name">Name</label>
+            <label htmlFor="slide-name">{t("name")}</label>
             <input
               id="slide-name"
               type="text"
               value={selected.name ?? ""}
               maxLength={STUDIO_LIMITS.slideNameLength}
-              placeholder={`Slide ${selectedIndex + 1}`}
+              placeholder={t("slide", { number: selectedIndex + 1 })}
               onChange={(event) =>
                 dispatch({
                   type: "updateSlide",
@@ -331,7 +346,7 @@ export function SlideRail({
             />
           </div>
           <div className="field">
-            <label htmlFor="slide-duration">Duration (seconds)</label>
+            <label htmlFor="slide-duration">{t("duration")}</label>
             <input
               id="slide-duration"
               type="number"
@@ -339,7 +354,7 @@ export function SlideRail({
               min={SLIDE_SECONDS.min}
               max={SLIDE_SECONDS.max}
               value={selected.durationSeconds ?? ""}
-              placeholder={`${defaultSeconds} (dashboard default)`}
+              placeholder={t("durationDefault", { seconds: defaultSeconds })}
               onChange={(event) =>
                 dispatch({
                   type: "updateSlide",
@@ -366,12 +381,12 @@ export function SlideRail({
                 })
               }
             />
-            Show on screens
+            {t("showOnScreens")}
           </label>
           <ImagePicker
             id="slide-background"
-            label="Background image"
-            noneLabel="No background"
+            label={t("background")}
+            noneLabel={t("noBackground")}
             images={images}
             value={selected.background?.imageId ?? null}
             onChange={(imageId) =>
@@ -393,7 +408,7 @@ export function SlideRail({
           {selected.background ? (
             <div className="field">
               <label htmlFor="slide-dim">
-                Dim the background: {selected.background.dim} %
+                {t("dim", { percent: selected.background.dim })}
               </label>
               <input
                 id="slide-dim"
@@ -422,7 +437,7 @@ export function SlideRail({
               type="button"
               onClick={() => move(selected.id, selectedIndex - 1)}
               disabled={selectedIndex === 0}
-              aria-label="Move slide up"
+              aria-label={t("moveUp")}
             >
               ↑
             </button>
@@ -430,7 +445,7 @@ export function SlideRail({
               type="button"
               onClick={() => move(selected.id, selectedIndex + 1)}
               disabled={selectedIndex === slides.length - 1}
-              aria-label="Move slide down"
+              aria-label={t("moveDown")}
             >
               ↓
             </button>
@@ -441,34 +456,29 @@ export function SlideRail({
               }
               disabled={slides.length >= STUDIO_LIMITS.slides}
             >
-              Duplicate
+              {t("duplicate")}
             </button>
             <button
               type="button"
               className="danger"
               onClick={() => setConfirmDelete(selected.id)}
               disabled={slides.length <= 1}
-              title={
-                slides.length <= 1
-                  ? "A dashboard keeps at least one slide"
-                  : undefined
-              }
+              title={slides.length <= 1 ? t("keepOne") : undefined}
             >
-              Delete
+              {common("delete")}
             </button>
           </div>
           {confirmDelete === selected.id ? (
             <div
               className="rail-confirm"
               role="alertdialog"
-              aria-label="Delete slide"
+              aria-label={t("delete")}
             >
               <p>
-                Delete {slideTitle(selected, selectedIndex)}
-                {selected.widgets.length > 0
-                  ? ` and its ${selected.widgets.length} widget${selected.widgets.length === 1 ? "" : "s"}`
-                  : ""}
-                ? You can undo this until you save.
+                {t("deleteConfirm", {
+                  slide: slideTitle(selected, selectedIndex, locale),
+                  widgets: selected.widgets.length,
+                })}
               </p>
               <div className="actions">
                 <button
@@ -480,10 +490,10 @@ export function SlideRail({
                     dispatch({ type: "deleteSlide", slideId: selected.id });
                   }}
                 >
-                  Delete slide
+                  {t("delete")}
                 </button>
                 <button type="button" onClick={() => setConfirmDelete(null)}>
-                  Cancel
+                  {common("cancel")}
                 </button>
               </div>
             </div>

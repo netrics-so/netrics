@@ -5,6 +5,7 @@ import { useRef, type PointerEvent } from "react";
 import type { WorkspaceMetric } from "@netrics/contracts";
 import {
   WIDGET_TYPES,
+  type Locale,
   type StudioPlacement,
   type WidgetType,
 } from "@netrics/domain";
@@ -19,6 +20,8 @@ import {
   type StudioSlide,
 } from "@/lib/studio-document";
 import { dropPlacement, gridMetrics } from "@/lib/studio-grid";
+import { webTranslator } from "@/lib/i18n/catalogs";
+import { useLocale, useT } from "@/lib/i18n/client";
 import { newWidget } from "@/lib/studio-new-widget";
 
 import type { CanvasOutline } from "./editor-canvas";
@@ -41,11 +44,13 @@ interface MenuDrag {
 export function incomingLabel(
   placement: StudioPlacement,
   blocked: boolean,
+  locale: Locale,
 ): string {
-  const size = `${placement.w} × ${placement.h}`;
+  const t = webTranslator(locale, "studio.canvas");
+  const { w, h } = placement;
   return blocked
-    ? `${size} · no room here`
-    : `${size} · column ${placement.x + 1}, row ${placement.y + 1}`;
+    ? t("readoutNoRoom", { w, h })
+    : t("readout", { w, h, column: placement.x + 1, row: placement.y + 1 });
 }
 
 /**
@@ -73,6 +78,9 @@ export function AddWidgetMenu({
   /** The outline to show on the canvas while dragging, null to clear it. */
   onDragNew?: (outline: CanvasOutline | null) => void;
 }) {
+  const locale = useLocale();
+  const t = useT("studio.addMenu");
+  const documentText = useT("studio.document");
   const drag = useRef<MenuDrag | null>(null);
   /** A drag ends with a click on the button: that click adds nothing. */
   const suppressClick = useRef(false);
@@ -139,7 +147,11 @@ export function AddWidgetMenu({
     );
     current.drop = placement;
     current.blocked = blocked;
-    onDragNew({ placement, blocked, label: incomingLabel(placement, blocked) });
+    onDragNew({
+      placement,
+      blocked,
+      label: incomingLabel(placement, blocked, locale),
+    });
   }
 
   function onPointerEnd(event: PointerEvent<HTMLButtonElement>, drop: boolean) {
@@ -157,10 +169,7 @@ export function AddWidgetMenu({
       return;
     }
     if (current.blocked) {
-      dispatch({
-        type: "announce",
-        text: "That spot is taken; the widget was not added.",
-      });
+      dispatch({ type: "announce", text: documentText("spotTaken") });
       return;
     }
     dispatch({
@@ -171,28 +180,23 @@ export function AddWidgetMenu({
   }
 
   return (
-    <div className="add-widget" role="group" aria-label="Add a widget">
+    <div className="add-widget" role="group" aria-label={t("group")}>
       <span className="add-widget-label" aria-hidden="true">
-        Add
+        {t("add")}
       </span>
       {WIDGET_TYPES.map((type) => {
-        const made = newWidget(type, { metrics, imageIds });
+        const made = newWidget(type, { metrics, imageIds, locale });
         const reason =
           "reason" in made
             ? made.reason
-            : addWidgetBlocker(document, slide, type);
+            : addWidgetBlocker(document, slide, type, locale);
         return (
           <button
             key={type}
             type="button"
             disabled={reason !== null}
-            title={
-              reason ??
-              (onDragNew
-                ? "Click to add it in the first free spot, or drag it onto the slide"
-                : undefined)
-            }
-            aria-label={`Add ${widgetTypeName(type).toLowerCase()}${reason ? ` (${reason})` : ""}`}
+            title={reason ?? (onDragNew ? t("hint") : undefined)}
+            aria-label={`${t("addType", { type })}${reason ? ` (${reason})` : ""}`}
             onPointerDown={(event) => {
               if ("widget" in made) {
                 onPointerDown(event, type, made.widget);
@@ -211,7 +215,7 @@ export function AddWidgetMenu({
               }
             }}
           >
-            {widgetTypeName(type)}
+            {widgetTypeName(type, locale)}
           </button>
         );
       })}

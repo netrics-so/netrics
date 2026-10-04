@@ -53,13 +53,13 @@ describe("tile currency choice", () => {
   });
 
   it("names the workspace's choice", () => {
-    expect(workspaceChoiceLabel("EUR", totals)).toBe(
+    expect(workspaceChoiceLabel("EUR", totals, "en")).toBe(
       "Workspace: converted to EUR (≈)",
     );
-    expect(workspaceChoiceLabel(null, totals)).toBe(
+    expect(workspaceChoiceLabel(null, totals, "en")).toBe(
       "Workspace: per currency, the largest (now JPY)",
     );
-    expect(workspaceChoiceLabel(null, [])).toBe(
+    expect(workspaceChoiceLabel(null, [], "en")).toBe(
       "Workspace: per currency, the largest",
     );
   });

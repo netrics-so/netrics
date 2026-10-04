@@ -18,7 +18,7 @@ import type { StudioEnv, StudioImage } from "@/lib/studio-widgets";
 import type { TileConnection } from "./metric-tile";
 import { SlideViewer } from "./slide-viewer";
 import { useServerRefresh } from "./use-server-refresh";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 function metricId(metric: WorkspaceMetric) {
   return `${metric.connectionId}|${metric.key}`;
@@ -56,6 +56,8 @@ export function DashboardView({
   canDelete: boolean;
 }) {
   const locale = useLocale();
+  const t = useT("dashboard");
+  const common = useT("common");
   const router = useRouter();
   useServerRefresh();
   const [dashboard, setDashboard] = useState(initial);
@@ -111,7 +113,7 @@ export function DashboardView({
   }
 
   async function onDelete() {
-    if (!window.confirm(`Delete dashboard "${dashboard.name}"?`)) {
+    if (!window.confirm(t("deleteConfirm", { name: dashboard.name }))) {
       return;
     }
     setPending(true);
@@ -132,14 +134,14 @@ export function DashboardView({
           {canEdit ? (
             <Link href={studioHref}>
               <button type="button" className="primary">
-                Open in Studio
+                {t("openStudio")}
               </button>
             </Link>
           ) : null}
           <Link
             href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}/tv`}
           >
-            <button type="button">TV mode</button>
+            <button type="button">{t("tvMode")}</button>
           </Link>
           {canDuplicate ? (
             <button
@@ -147,7 +149,7 @@ export function DashboardView({
               disabled={pending}
               onClick={() => void onDuplicate()}
             >
-              Duplicate
+              {t("duplicate")}
             </button>
           ) : null}
           {canDelete ? (
@@ -157,7 +159,7 @@ export function DashboardView({
               disabled={pending}
               onClick={() => void onDelete()}
             >
-              Delete
+              {common("delete")}
             </button>
           ) : null}
         </div>
@@ -171,19 +173,24 @@ export function DashboardView({
 
       {widgetCount === 0 ? (
         <div className="card">
-          <p>This dashboard has no widgets yet.</p>
+          <p>{t("empty")}</p>
           {pickable.length === 0 ? (
             <p className="muted">
-              Widgets show metrics from your connections.{" "}
-              <Link href={`/workspaces/${workspaceId}/connections/new`}>
-                Add a connection
-              </Link>{" "}
-              first.
+              {t.rich("needsConnection", {
+                link: (
+                  <Link
+                    key="link"
+                    href={`/workspaces/${workspaceId}/connections/new`}
+                  >
+                    {t("addConnection")}
+                  </Link>
+                ),
+              })}
             </p>
           ) : canEdit ? (
             <Link href={studioHref}>
               <button type="button" className="primary">
-                Open in Studio
+                {t("openStudio")}
               </button>
             </Link>
           ) : null}

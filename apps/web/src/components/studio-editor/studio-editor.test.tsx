@@ -177,7 +177,7 @@ describe("editor canvas", () => {
 });
 
 describe("inspector", () => {
-  const state = initialStudioState(dashboard);
+  const state = initialStudioState(dashboard, "en");
 
   it("shows the dashboard settings as labelled controls", () => {
     const html = renderI18n(
@@ -252,15 +252,19 @@ describe("inspector", () => {
     expect(themeChoice({ themeBuiltin: null, themeId: ID(4) })).toBe(
       `custom:${ID(4)}`,
     );
-    expect(accentHint("#ffffff", dark).level).toBe("pass");
-    expect(accentHint("#20242c", dark).level).toBe("fail");
+    expect(accentHint("#ffffff", dark, "en").level).toBe("pass");
+    expect(accentHint("#20242c", dark, "en").level).toBe("fail");
   });
 });
 
 describe("add widget", () => {
   it("makes every type with defaults the API accepts", () => {
     for (const type of WIDGET_TYPES) {
-      const made = newWidget(type, { metrics: [metric], imageIds: [ID(50)] });
+      const made = newWidget(type, {
+        metrics: [metric],
+        imageIds: [ID(50)],
+        locale: "en",
+      });
       expect("widget" in made).toBe(true);
       if ("widget" in made) {
         const input = { ...made.widget, id: ID(60), x: 0, y: 0, w: 6, h: 4 };
@@ -270,7 +274,7 @@ describe("add widget", () => {
   });
 
   it("says why a type cannot be added yet", () => {
-    const state = initialStudioState(dashboard);
+    const state = initialStudioState(dashboard, "en");
     const html = renderI18n(
       <AddWidgetMenu
         document={state.draft}
@@ -288,13 +292,13 @@ describe("add widget", () => {
   });
 
   it("checks uploads before sending them", () => {
-    expect(uploadProblem({ type: "image/svg+xml", size: 10 })).toMatch(
+    expect(uploadProblem({ type: "image/svg+xml", size: 10 }, "en")).toMatch(
       /PNG, JPEG or WebP/,
     );
-    expect(uploadProblem({ type: "image/png", size: 2_000_000 })).toMatch(
+    expect(uploadProblem({ type: "image/png", size: 2_000_000 }, "en")).toMatch(
       /1 MiB/,
     );
-    expect(uploadProblem({ type: "image/webp", size: 1000 })).toBeNull();
+    expect(uploadProblem({ type: "image/webp", size: 1000 }, "en")).toBeNull();
   });
 });
 

@@ -114,7 +114,15 @@ const I18N_WORKSPACE = [
 ];
 
 // Dashboards, the web TV layout and the Studio (#253).
-const I18N_STUDIO = [];
+const I18N_STUDIO = [
+  "apps/web/src/app/workspaces/[[]workspaceId]/dashboards/**/*.tsx",
+  "apps/web/src/components/studio/**/*.tsx",
+  "apps/web/src/components/studio-editor/**/*.tsx",
+  "apps/web/src/components/tile-view.tsx",
+  "apps/web/src/components/sparkline.tsx",
+  "apps/web/src/components/theme-preview.tsx",
+  "apps/web/src/components/tv-frame.tsx",
+];
 
 // Settings, themes, status, deploy notice and error pages (#254).
 const I18N_SETTINGS = [];
@@ -162,6 +170,27 @@ function i18nRestrictions() {
         message,
       },
     ]),
+  ];
+}
+
+/**
+ * Numbers and dates format in the viewer's language (ADR 0016 sections 8
+ * and 9): no string-literal locale ("en-US", "en-GB", …) as the first
+ * argument of an Intl constructor or toLocale*String.
+ */
+function intlLocaleRestrictions() {
+  const message =
+    "Format with the viewer's locale (useLocale/getLocale), not a fixed one (ADR 0016).";
+  const formatters = String.raw`/^(NumberFormat|DateTimeFormat|RelativeTimeFormat|ListFormat|PluralRules|DisplayNames|Collator|Segmenter)$/`;
+  return [
+    ...["NewExpression", "CallExpression"].map((call) => ({
+      selector: `${call}[callee.object.name='Intl'][callee.property.name=${formatters}] > Literal.arguments:first-child`,
+      message,
+    })),
+    {
+      selector: String.raw`CallExpression[callee.property.name=/^toLocale(Date|Time)?String$/] > Literal.arguments:first-child`,
+      message,
+    },
   ];
 }
 
@@ -222,6 +251,25 @@ const layering = [
         "error",
         ...webApiFetchRestrictions(),
         ...i18nRestrictions(),
+        ...intlLocaleRestrictions(),
+      ],
+    },
+  },
+  // The web helpers format with the caller's locale too (ADR 0016 section
+  // 8). The kiosk's helpers (app/kiosk, lib/kiosk-*) follow with the device
+  // payload's locale (#256); until then they are left out here.
+  {
+    files: ["apps/web/src/lib/**/*.ts"],
+    ignores: [
+      "apps/web/src/lib/api-fetch.ts",
+      "apps/web/src/lib/kiosk-*.ts",
+      "apps/web/src/**/*.test.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...webApiFetchRestrictions(),
+        ...intlLocaleRestrictions(),
       ],
     },
   },

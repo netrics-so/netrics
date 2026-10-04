@@ -58,7 +58,7 @@ import { PlayMode } from "./play-mode";
 import { SlideRail } from "./slide-rail";
 import { useLeaveGuard } from "./use-leave-guard";
 import type { StudioCurrency } from "./widget-panel";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 const reducer = createStudioReducer(() => crypto.randomUUID());
 
@@ -106,8 +106,12 @@ export function StudioEditor({
   currency?: StudioCurrency;
 }) {
   const locale = useLocale();
+  const t = useT("studio.editor");
+  const common = useT("common");
   const router = useRouter();
-  const [state, dispatch] = useReducer(reducer, dashboard, initialStudioState);
+  const [state, dispatch] = useReducer(reducer, dashboard, (initial) =>
+    initialStudioState(initial, locale),
+  );
   const [images, setImages] = useState(initialImages);
   const [devices, setDevices] = useState(initialDevices);
   const [saving, setSaving] = useState(false);
@@ -126,7 +130,10 @@ export function StudioEditor({
   const { draft } = state;
   const slide = selectedSlide(state);
   const widget = selectedWidget(state);
-  const problems = useMemo(() => documentProblems(draft), [draft]);
+  const problems = useMemo(
+    () => documentProblems(draft, locale),
+    [draft, locale],
+  );
   const slidesWithProblems = useMemo(
     () => new Set(problems.flatMap((p) => (p.slideId ? [p.slideId] : []))),
     [problems],
@@ -207,25 +214,34 @@ export function StudioEditor({
           body: file,
         });
         setImages((current) => [image, ...current]);
-        dispatch({ type: "announce", text: `Image “${image.name}” uploaded.` });
+        dispatch({
+          type: "announce",
+          text: t("imageUploaded", { name: image.name }),
+        });
         return image.id;
       } catch (cause) {
         setError(apiErrorMessage(cause, locale));
         return null;
       }
     },
-    [workspaceId],
+    [workspaceId, locale, t],
   );
 
   // "Use app icon" in the pickers (#226): an icon the server stored joins
   // the editor's images like an upload.
-  const onIconImage = useCallback((image: WorkspaceImage) => {
-    setImages((current) => [
-      image,
-      ...current.filter((entry) => entry.id !== image.id),
-    ]);
-    dispatch({ type: "announce", text: `App icon “${image.name}” added.` });
-  }, []);
+  const onIconImage = useCallback(
+    (image: WorkspaceImage) => {
+      setImages((current) => [
+        image,
+        ...current.filter((entry) => entry.id !== image.id),
+      ]);
+      dispatch({
+        type: "announce",
+        text: t("iconAdded", { name: image.name }),
+      });
+    },
+    [t],
+  );
   useResourceIcons(workspaceId, onIconImage);
 
   const imagesInUse = useMemo(
@@ -237,22 +253,20 @@ export function StudioEditor({
       try {
         await deleteImage(workspaceId, imageId);
         setImages((current) => current.filter((image) => image.id !== imageId));
-        dispatch({ type: "announce", text: "Image deleted." });
+        dispatch({ type: "announce", text: t("imageDeleted") });
         return null;
       } catch (cause) {
         return apiErrorMessage(cause, locale);
       }
     },
-    [workspaceId],
+    [workspaceId, locale, t],
   );
 
   const save = useCallback(async () => {
     if (saving) return;
     if (problems.length > 0) {
       setShowProblems(true);
-      setError(
-        "Fix the problems marked on the slides before saving. Nothing was saved.",
-      );
+      setError(t("fixProblems"));
       return;
     }
     setSaving(true);
@@ -275,7 +289,7 @@ export function StudioEditor({
     } finally {
       setSaving(false);
     }
-  }, [saving, problems, workspaceId, state]);
+  }, [saving, problems, workspaceId, state, locale, t]);
 
   async function reloadSaved() {
     setSaving(true);
@@ -299,7 +313,7 @@ export function StudioEditor({
     try {
       const { dashboard: copy } = await createDashboard(
         workspaceId,
-        toCopyRequest(draft, copyName(draft.name)),
+        toCopyRequest(draft, copyName(draft.name, locale)),
       );
       router.push(`/workspaces/${workspaceId}/dashboards/${copy.id}/studio`);
     } catch (cause) {
@@ -344,15 +358,15 @@ export function StudioEditor({
       <div className="studio-toolbar">
         <div className="studio-title">
           <Link href={dashboardHref} className="muted">
-            ← Dashboard
+            ← {t("backToDashboard")}
           </Link>
-          <h1>{draft.name.trim() || "Untitled"}</h1>
+          <h1>{draft.name.trim() || t("untitled")}</h1>
           <span
             className={
               dirty ? "studio-state studio-state--dirty" : "studio-state"
             }
           >
-            {saving ? "Saving…" : dirty ? "Unsaved changes" : "Saved"}
+            {saving ? common("saving") : dirty ? t("unsaved") : t("saved")}
           </span>
         </div>
         <div className="actions studio-actions">
@@ -362,7 +376,7 @@ export function StudioEditor({
             disabled={state.past.length === 0}
             aria-keyshortcuts="Control+Z Meta+Z"
           >
-            Undo
+            {t("undo")}
           </button>
           <button
             type="button"
@@ -370,12 +384,12 @@ export function StudioEditor({
             disabled={state.future.length === 0}
             aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
           >
-            Redo
+            {t("redo")}
           </button>
           <button
             type="button"
             onClick={() => {
-              if (window.confirm("Discard all unsaved changes?")) {
+              if (window.confirm(t("discardConfirm"))) {
                 dispatch({ type: "discard" });
                 setError(null);
                 setShowProblems(false);
@@ -383,7 +397,7 @@ export function StudioEditor({
             }}
             disabled={!dirty || saving}
           >
-            Discard
+            {t("discard")}
           </button>
           <button
             type="button"
@@ -392,14 +406,16 @@ export function StudioEditor({
             disabled={!dirty || saving}
             aria-keyshortcuts="Control+S Meta+S"
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? common("saving") : common("save")}
           </button>
           <button type="button" onClick={() => setPlaying(true)}>
-            ▶ Play
+            ▶ {t("play")}
           </button>
           {activeDevices ? (
             <button type="button" onClick={() => setAssigning(true)}>
-              Show on TVs{assignedCount > 0 ? ` (${assignedCount})` : ""}
+              {assignedCount > 0
+                ? t("showOnTvsCount", { count: assignedCount })
+                : t("showOnTvs")}
             </button>
           ) : null}
         </div>
@@ -407,26 +423,18 @@ export function StudioEditor({
 
       {conflict ? (
         <div className="error studio-banner" role="alert">
-          <p>
-            Someone else saved this dashboard while you were editing. Your
-            changes are not saved.
-          </p>
+          <p>{t("conflict")}</p>
           <div className="actions">
             <button
               type="button"
               onClick={() => {
-                if (
-                  !dirty ||
-                  window.confirm(
-                    "Load the saved version? Your unsaved changes are lost.",
-                  )
-                ) {
+                if (!dirty || window.confirm(t("loadTheirsConfirm"))) {
                   void reloadSaved();
                 }
               }}
               disabled={saving}
             >
-              Load their version
+              {t("loadTheirs")}
             </button>
             <button
               type="button"
@@ -434,7 +442,7 @@ export function StudioEditor({
               onClick={() => void saveAsCopy()}
               disabled={saving}
             >
-              Save mine as a copy
+              {t("saveCopy")}
             </button>
           </div>
         </div>
@@ -487,7 +495,7 @@ export function StudioEditor({
           dispatch={dispatch}
           onUploadImage={onUploadImage}
         />
-        <section className="studio-stage" aria-label="Slide">
+        <section className="studio-stage" aria-label={t("stage")}>
           {slide ? (
             <>
               <div className="stage-toolbar">
@@ -520,16 +528,11 @@ export function StudioEditor({
                 unreadable={unreadable.byWidget}
                 incoming={incoming}
               />
-              <p className="help">
-                {theme.name} theme. Click a widget to edit it, drag it to move
-                it and its edges to resize it (arrow keys and Shift+arrow keys
-                do the same); click the slide&apos;s background for the
-                dashboard settings.
-              </p>
+              <p className="help">{t("canvasHelp", { theme: theme.name })}</p>
             </>
           ) : null}
         </section>
-        <aside className="studio-inspector" aria-label="Inspector">
+        <aside className="studio-inspector" aria-label={t("inspector")}>
           {widget ? (
             <WidgetPanel
               widget={widget}

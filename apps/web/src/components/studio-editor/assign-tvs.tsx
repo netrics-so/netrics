@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Device } from "@netrics/contracts";
 
 import { apiErrorMessage, updateDevice } from "@/lib/api";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 /** The TVs whose assignment changes: newly checked or unchecked. */
 export function assignmentChanges(
@@ -49,6 +49,8 @@ export function AssignTvs({
   onAssigned: (devices: Device[]) => void;
 }) {
   const locale = useLocale();
+  const t = useT("studio.assignTvs");
+  const common = useT("common");
   const dialog = useRef<HTMLDialogElement>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState(false);
@@ -106,23 +108,17 @@ export function AssignTvs({
       onClose={onClose}
     >
       <form onSubmit={(event) => void onSubmit(event)}>
-        <h2 id="assign-title">Show “{dashboardName}” on TVs</h2>
-        {unsaved ? (
-          <p className="notice">
-            TVs show the saved version. Save your changes to show them too.
-          </p>
-        ) : null}
+        <h2 id="assign-title">{t("title", { name: dashboardName })}</h2>
+        {unsaved ? <p className="notice">{t("unsaved")}</p> : null}
         {devices.length === 0 ? (
           <p className="muted">
-            No TVs are paired with this workspace yet.{" "}
-            <a href="/devices/approve">Connect a TV</a>
+            {t("none")} <a href="/devices/approve">{t("connect")}</a>
           </p>
         ) : (
           <ul className="assign-list">
             {devices.map((device) => {
               const current = device.dashboardId
-                ? (dashboardNames.get(device.dashboardId) ??
-                  "another dashboard")
+                ? (dashboardNames.get(device.dashboardId) ?? null)
                 : null;
               const shows = device.dashboardId === dashboardId;
               return (
@@ -142,10 +138,12 @@ export function AssignTvs({
                       <strong>{device.name}</strong>{" "}
                       <span className="muted">
                         {shows
-                          ? "shows this dashboard"
-                          : current
-                            ? `shows ${current}`
-                            : "shows no dashboard"}
+                          ? t("showsThis")
+                          : device.dashboardId
+                            ? current
+                              ? t("showsOther", { name: current })
+                              : t("showsAnother")
+                            : t("showsNone")}
                       </span>
                     </span>
                   </label>
@@ -165,10 +163,10 @@ export function AssignTvs({
             className="primary"
             disabled={pending || changes.length === 0}
           >
-            {pending ? "Assigning…" : "Apply"}
+            {pending ? t("assigning") : t("apply")}
           </button>
           <button type="button" onClick={onClose} disabled={pending}>
-            Cancel
+            {common("cancel")}
           </button>
         </div>
       </form>
