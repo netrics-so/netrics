@@ -1,6 +1,9 @@
 "use client";
 
+import { useRef } from "react";
+
 import type {
+  DeviceTileStatus,
   MetricAggregation,
   MetricPeriod,
   WorkspaceMetric,
@@ -31,8 +34,9 @@ import {
   type StudioEnv,
 } from "@/lib/studio-widgets";
 import { webTranslator, type WebTranslator } from "@/lib/i18n/catalogs";
-import { connectionNotice } from "@/lib/tile-status";
+import { connectionNotice, connectionStatus } from "@/lib/tile-status";
 
+import { useCountUp } from "./enter-motion";
 import { useMetricData } from "./use-widget-data";
 import {
   WidgetFooter,
@@ -52,6 +56,8 @@ export interface MetricWidgetViewProps {
   reading: TileReading | null;
   /** A stale or failure notice, in the warning colour. */
   notice: string | null;
+  /** How far the numbers can be trusted; default ok. */
+  status?: DeviceTileStatus;
   /** The connection's name, under the numbers when there is room. */
   source: string | null;
   /** The data's last successful sync, for the footer; null: unknown. */
@@ -143,6 +149,29 @@ export function metricTexts(
 }
 
 /**
+ * How a counting value is worded on every frame of the enter (ADR 0018
+ * section 6): as the shown text is, in full or compact, with its "≈";
+ * null when the shown text is neither (nothing counts then).
+ */
+export function countFormat(
+  shown: string,
+  texts: { full: string; compact: string },
+  reading: { value: number | null; unit: string; approximate?: boolean } | null,
+  locale: Locale,
+): ((value: number) => string) | null {
+  if (!reading || reading.value === null) return null;
+  const approx = reading.approximate ? "≈ " : "";
+  const { unit } = reading;
+  if (shown === texts.full) {
+    return (value) => `${approx}${formatValue(value, unit, locale)}`;
+  }
+  if (shown === texts.compact) {
+    return (value) => `${approx}${formatCompactValue(value, unit, locale)}`;
+  }
+  return null;
+}
+
+/**
  * The metric widget: today's tile (label, value, change, sparkline) on the
  * studio grid, sized by studioLayout and coloured by the theme tokens.
  */
@@ -174,6 +203,13 @@ export function MetricWidgetView(props: MetricWidgetViewProps) {
     fontScale: props.fontScale,
     showSparkline: props.options.showSparkline && reading !== null,
   });
+  const valueRef = useRef<HTMLParagraphElement>(null);
+  useCountUp(
+    valueRef,
+    reading?.value ?? null,
+    countFormat(layout.value.text, { full, compact }, reading, locale),
+    layout.value.text,
+  );
 
   return (
     <article className="sw sw-metric" aria-busy={props.loading ?? false}>
@@ -196,6 +232,7 @@ export function MetricWidgetView(props: MetricWidgetViewProps) {
         </div>
       ) : null}
       <p
+        ref={valueRef}
         className={reading ? "sw-value" : "sw-value sw-placeholder"}
         style={{ fontSize: u(layout.value.size) }}
         title={layout.value.text !== full ? full : undefined}
@@ -227,7 +264,12 @@ export function MetricWidgetView(props: MetricWidgetViewProps) {
         </p>
       ) : null}
       {props.notice ? (
-        <WidgetNotice size={layout.sizes.small}>{props.notice}</WidgetNotice>
+        <WidgetNotice
+          size={layout.sizes.small}
+          stale={props.status === "stale"}
+        >
+          {props.notice}
+        </WidgetNotice>
       ) : null}
       {layout.showSource && footer ? (
         <WidgetFooter size={layout.sizes.small}>{footer}</WidgetFooter>
@@ -262,6 +304,39 @@ export function dataNotice(
     return hasData ? t("refreshFailed") : t("couldNotLoad");
   }
   return stale;
+}
+
+/**
+ * A live widget's notice and data status (signed-in views): the status by
+ * the server's rule for screens from the connection's state; a failed
+ * query keeps its notice in the warning style (as an outage), and a first
+ * load in flight is not "no data" yet.
+ */
+export function liveDataState(
+  query: {
+    error: string | null;
+    loading: boolean;
+    /** A response arrived (it may have no value). */
+    loaded: boolean;
+    /** It has something to show (a value, a group). */
+    hasData: boolean;
+  },
+  connection: Parameters<typeof connectionStatus>[0],
+  locale: Locale,
+  now: number = Date.now(),
+): { notice: string | null; status: DeviceTileStatus } {
+  const notice = dataNotice(
+    query.error,
+    query.loaded,
+    connectionNotice(connection, now, locale),
+    locale,
+  );
+  const status: DeviceTileStatus = query.error
+    ? "outage"
+    : query.loading && !query.loaded
+      ? "ok"
+      : connectionStatus(connection, query.hasData, now);
+  return { notice, status };
 }
 
 /** A metric widget's props apart from its placement on a slide. */
@@ -302,10 +377,14 @@ export function useLiveMetric(
           approximate: data.conversion !== null,
         }
       : null,
-    notice: dataNotice(
-      error,
-      data !== null,
-      connectionNotice(connection, Date.now(), locale),
+    ...liveDataState(
+      {
+        error,
+        loading,
+        loaded: data !== null,
+        hasData: data !== null && data.value !== null,
+      },
+      connection,
       locale,
     ),
     source: connection?.name ?? null,

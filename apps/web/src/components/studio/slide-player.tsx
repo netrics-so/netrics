@@ -37,6 +37,7 @@ import { themeStyle, themeSurface } from "@/lib/studio-theme";
 import type { StudioImages } from "@/lib/studio-widgets";
 import { useElementSize } from "@/lib/use-screen";
 
+import { SlideEnterProvider, useSlideEnter } from "./enter-motion";
 import {
   SlideCanvas,
   type CanvasSlide,
@@ -166,6 +167,38 @@ export function SlideFooter({
           }}
         />
       </span>
+    </div>
+  );
+}
+
+/**
+ * One slide of the player, stacked with the others: the active one shows,
+ * the rest are hidden and inert. Each time it becomes the active slide its
+ * widgets play the enter motion (ADR 0018 section 6) from its clock.
+ */
+function PlayerSlideFrame({
+  active,
+  slideId,
+  page,
+  children,
+}: {
+  active: boolean;
+  slideId: string;
+  page: number | undefined;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const clock = useSlideEnter(active, ref);
+  return (
+    <div
+      ref={ref}
+      className={active ? "slide-player-slide active" : "slide-player-slide"}
+      aria-hidden={active ? undefined : true}
+      inert={!active}
+      data-slide-id={slideId}
+      data-page={page}
+    >
+      <SlideEnterProvider value={clock}>{children}</SlideEnterProvider>
     </div>
   );
 }
@@ -332,15 +365,11 @@ export function SlidePlayer<W extends CanvasWidget>({
             const active = entry.id === shownId;
             const next = entries[(index + 1) % entries.length]!;
             return (
-              <div
+              <PlayerSlideFrame
                 key={entry.id}
-                className={
-                  active ? "slide-player-slide active" : "slide-player-slide"
-                }
-                aria-hidden={active ? undefined : true}
-                inert={!active}
-                data-slide-id={entry.slide.id}
-                data-page={entry.pages > 1 ? entry.page + 1 : undefined}
+                active={active}
+                slideId={entry.slide.id}
+                page={entry.pages > 1 ? entry.page + 1 : undefined}
               >
                 <SlideCanvas
                   slide={entry.slide}
@@ -371,7 +400,7 @@ export function SlidePlayer<W extends CanvasWidget>({
                     ) : null
                   }
                 />
-              </div>
+              </PlayerSlideFrame>
             );
           })}
     </div>

@@ -67,6 +67,38 @@ const STALE_AFTER_INTERVALS = 3;
 const MIN_STALE_MS = 15 * 60 * 1000;
 
 /**
+ * A widget's data status from its connection's sync state (signed-in
+ * views), by the rule the server applies to screen payloads
+ * (apps/server/src/devices/dashboard.ts): a failing connection first, then
+ * no data, then stale.
+ */
+export function connectionStatus(
+  connection: { state: ConnectionStateView } | undefined,
+  hasData: boolean,
+  now: number = Date.now(),
+): DeviceTileStatus {
+  const state = connection?.state;
+  if (state?.health === "auth_failed" || state?.health === "outage") {
+    return state.health;
+  }
+  if (state?.health === "needs_reauthorization") {
+    return "auth_failed";
+  }
+  if (!state || !hasData) {
+    return "no_data";
+  }
+  if (!state.lastSuccessAt) {
+    return "stale";
+  }
+  const age = now - new Date(state.lastSuccessAt).getTime();
+  const limit = Math.max(
+    STALE_AFTER_INTERVALS * state.pollIntervalSeconds * 1000,
+    MIN_STALE_MS,
+  );
+  return age > limit ? "stale" : "ok";
+}
+
+/**
  * Why a widget's numbers may be out of date, from its connection's sync
  * state (signed-in views); null when they are fresh.
  */

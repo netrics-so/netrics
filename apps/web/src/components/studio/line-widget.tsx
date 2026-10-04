@@ -1,8 +1,8 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useRef, type CSSProperties } from "react";
 
-import type { MetricPeriod } from "@netrics/contracts";
+import type { DeviceTileStatus, MetricPeriod } from "@netrics/contracts";
 import type { StudioPlacement } from "@netrics/domain";
 
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -28,9 +28,9 @@ import {
   type DataWidget,
   type StudioEnv,
 } from "@/lib/studio-widgets";
-import { connectionNotice } from "@/lib/tile-status";
 
-import { dataNotice, dataWidgetLabel } from "./metric-widget";
+import { useCountUp } from "./enter-motion";
+import { countFormat, dataWidgetLabel, liveDataState } from "./metric-widget";
 import { useMetricData } from "./use-widget-data";
 import {
   WidgetFooter,
@@ -54,6 +54,8 @@ export interface LineWidgetViewProps {
   period: MetricPeriod;
   reading: LineReading | null;
   notice: string | null;
+  /** How far the numbers can be trusted; default ok. */
+  status?: DeviceTileStatus;
   /** The connection's name, for the footer; null: none to show. */
   source?: string | null;
   /** The data's last successful sync, for the footer; null: unknown. */
@@ -80,17 +82,15 @@ export function LineWidgetView(props: LineWidgetViewProps) {
     : props.loading
       ? "…"
       : "—";
+  const compact = reading
+    ? `${approx}${formatCompactValue(reading.value, reading.unit, locale)}`
+    : full;
   const candidates = useFooterCandidates(props.updatedAt, props.source);
   const fitted = chartWidgetLayoutWithFooter(
     {
       type: "line",
       label: props.label,
-      value: {
-        full,
-        compact: reading
-          ? `${approx}${formatCompactValue(reading.value, reading.unit, locale)}`
-          : full,
-      },
+      value: { full, compact },
       noticeText: props.notice,
       placement: props.placement,
       showHeader: props.showHeader,
@@ -104,6 +104,14 @@ export function LineWidgetView(props: LineWidgetViewProps) {
     }),
   );
   const { layout, footer } = fitted;
+  const valueRef = useRef<HTMLParagraphElement>(null);
+  const shown = layout.value?.text ?? full;
+  useCountUp(
+    valueRef,
+    layout.value ? (reading?.value ?? null) : null,
+    countFormat(shown, { full, compact }, reading, locale),
+    shown,
+  );
   const { width, height } = layout.chart;
   const geometry = reading
     ? lineChartGeometry({
@@ -133,6 +141,7 @@ export function LineWidgetView(props: LineWidgetViewProps) {
       <WidgetLabel layout={layout.label} />
       {layout.value ? (
         <p
+          ref={valueRef}
           className={reading ? "sw-value" : "sw-value sw-placeholder"}
           style={{ fontSize: u(layout.value.size), marginBottom: u(8) }}
           title={layout.value.text !== full ? full : undefined}
@@ -156,13 +165,21 @@ export function LineWidgetView(props: LineWidgetViewProps) {
         ) : null}
       </div>
       {props.notice ? (
-        <WidgetNotice size={layout.sizes.small}>{props.notice}</WidgetNotice>
+        <WidgetNotice
+          size={layout.sizes.small}
+          stale={props.status === "stale"}
+        >
+          {props.notice}
+        </WidgetNotice>
       ) : footer ? (
         <WidgetFooter size={layout.sizes.small}>{footer}</WidgetFooter>
       ) : null}
     </article>
   );
 }
+
+/** How far the last point's pulse ring reaches, in units (design 14 px). */
+const PULSE_RING = 21;
 
 /**
  * A line chart in units (the slide's widget and the scroll view's card):
@@ -184,6 +201,7 @@ export function LineChartSvg({
   showAxis: boolean;
 }) {
   const gradient = `sw-area-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const radius = Math.max(9, geometry.axisSize * 0.3);
   return (
     <svg
       viewBox={`0 0 ${width.toFixed(1)} ${height.toFixed(1)}`}
@@ -208,7 +226,13 @@ export function LineChartSvg({
         <path key={`p${d}`} className="sw-line-previous" d={d} />
       ))}
       {geometry.current.map((d) => (
-        <path key={`c${d}`} className="sw-line-current" d={d} />
+        <path
+          key={`c${d}`}
+          className="sw-line-current"
+          d={d}
+          // The enter draws it with a dash offset (ADR 0018 section 6).
+          pathLength={100}
+        />
       ))}
       {showAxis ? (
         <line
@@ -220,12 +244,27 @@ export function LineChartSvg({
         />
       ) : null}
       {geometry.last ? (
-        <circle
-          className="sw-line-last"
-          cx={geometry.last.x}
-          cy={geometry.last.y}
-          r={Math.max(9, geometry.axisSize * 0.3)}
-        />
+        <>
+          {/* The last point's pulse: a ring growing 21 units out from the
+              dot and fading (on player slides only, see globals.css). */}
+          <circle
+            className="sw-line-pulse"
+            cx={geometry.last.x}
+            cy={geometry.last.y}
+            r={radius}
+            style={
+              {
+                "--sw-pulse-scale": ((radius + PULSE_RING) / radius).toFixed(3),
+              } as CSSProperties
+            }
+          />
+          <circle
+            className="sw-line-last"
+            cx={geometry.last.x}
+            cy={geometry.last.y}
+            r={radius}
+          />
+        </>
       ) : null}
       {geometry.yLabels.map((label) => (
         <text
@@ -287,14 +326,14 @@ export function useLiveLine(
           approximate: data.conversion !== null,
         }
       : null,
-    notice: dataNotice(
-      error,
-      data !== null,
-      connectionNotice(
-        env.connections[widget.connectionId],
-        Date.now(),
-        locale,
-      ),
+    ...liveDataState(
+      {
+        error,
+        loading,
+        loaded: data !== null,
+        hasData: data !== null && data.value !== null,
+      },
+      env.connections[widget.connectionId],
       locale,
     ),
     source: env.connections[widget.connectionId]?.name ?? null,

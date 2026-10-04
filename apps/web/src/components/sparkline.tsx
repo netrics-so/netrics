@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, type PointerEvent } from "react";
+import { useRef, useState, type PointerEvent } from "react";
 
 import type { MetricPeriod } from "@netrics/contracts";
 
 import { formatValue, sparkBucketLabel } from "@/lib/format-metric";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { useElementSize } from "@/lib/use-screen";
 
 export interface SparkPoint {
   /** The bucket's start; absent when only the values are known (devices). */
@@ -13,8 +14,9 @@ export interface SparkPoint {
   value: number | null;
 }
 
-const WIDTH = 240;
-const HEIGHT = 40;
+/** The drawing's size until the plot is measured (server render). */
+const DEFAULT_WIDTH = 240;
+const DEFAULT_HEIGHT = 40;
 const PAD = 3;
 
 /**
@@ -34,6 +36,15 @@ export function Sparkline({
   timeZone: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  const plot = useRef<HTMLDivElement>(null);
+  // Measured, the viewBox is the plot's own size in pixels: strokes keep
+  // their widths without non-scaling-stroke, which a dash offset drawn
+  // over pathLength (the enter, ADR 0018 section 6) cannot be combined
+  // with. Until then, the stretched default.
+  const measured = useElementSize(plot);
+  const WIDTH = measured?.width ?? DEFAULT_WIDTH;
+  const HEIGHT = measured?.height ?? DEFAULT_HEIGHT;
+  const scaling = measured ? undefined : "non-scaling-stroke";
   const locale = useLocale();
   const t = useT("screen.widget");
   const values = series
@@ -101,9 +112,9 @@ export function Sparkline({
 
   return (
     <div className="sparkline">
-      <div className="sparkline-plot">
+      <div className="sparkline-plot" ref={plot}>
         <svg
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+          viewBox={`0 0 ${round(WIDTH)} ${round(HEIGHT)}`}
           preserveAspectRatio="none"
           role="img"
           aria-label={summary}
@@ -117,7 +128,7 @@ export function Sparkline({
               x2={x(hover)}
               y1={0}
               y2={HEIGHT}
-              vectorEffect="non-scaling-stroke"
+              vectorEffect={scaling}
             />
           ) : null}
           {segments.map((d) => (
@@ -125,12 +136,13 @@ export function Sparkline({
               key={d}
               className="sparkline-line"
               d={d}
-              vectorEffect="non-scaling-stroke"
+              vectorEffect={scaling}
+              pathLength={measured ? 100 : undefined}
             />
           ))}
         </svg>
         {last.value !== null ? (
-          // HTML, not SVG: the stretched viewBox would draw an ellipse.
+          // HTML, not SVG: a stretched viewBox would draw an ellipse.
           <span
             className="sparkline-last"
             style={{
@@ -147,4 +159,8 @@ export function Sparkline({
       </div>
     </div>
   );
+}
+
+function round(value: number): number {
+  return Math.round(value * 100) / 100;
 }

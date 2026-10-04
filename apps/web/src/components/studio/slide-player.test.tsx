@@ -9,7 +9,7 @@ import { slidePages, type ScreenSize } from "@/lib/screen-view";
 import { widgetBoxStyle } from "@/lib/studio-render";
 
 import { DeviceWidgetView, type DeviceWidgetEnv } from "./device-widget";
-import type { SlideHeaderInfo } from "./slide-canvas";
+import { SlideCanvas, type SlideHeaderInfo } from "./slide-canvas";
 import { SlidePlayer } from "./slide-player";
 
 const ID = (n: number) =>
@@ -556,5 +556,76 @@ describe("SlidePlayer polish (ADR 0018 section 5, #309)", () => {
     const paper = player({}, { theme: BUILTIN_THEMES.paper.tokens });
     expect(paper).toContain('data-surface="flat"');
     expect(paper).not.toContain('data-surface="layered"');
+  });
+});
+
+describe("SlidePlayer enter motion (ADR 0018 section 6, #310)", () => {
+  it("renders the final state on the server: values, lines, bars", () => {
+    const html = render([slide(1, "Sales", widgets.slice(0, 3))]);
+    // The values in full: the count-up runs only in the browser.
+    expect(html).toContain(">1,234</p>");
+    expect(html).not.toContain("data-entering");
+    expect(html).not.toContain("--enter-p");
+    // The current line draws over its pathLength; the previous stays dashed.
+    expect(html).toMatch(/class="sw-line-current"[^>]*pathLength="100"/);
+    expect(html).not.toMatch(/class="sw-line-previous"[^>]*pathLength/);
+    // The last point has its pulse ring under the dot, sized in units.
+    expect(html).toMatch(
+      /<circle class="sw-line-pulse"[^>]* r="9" style="--sw-pulse-scale:3.333"><\/circle><circle class="sw-line-last"[^>]* r="9">/,
+    );
+    expect(html).toContain('class="sw-bar-fill" style="width:100.00%"');
+  });
+
+  it("keeps the sparkline's stretched drawing until it is measured", () => {
+    const html = render([slide(1, "Sales", widgets.slice(0, 1))]);
+    expect(html).toContain('class="sparkline-line"');
+    expect(html).toContain('vector-effect="non-scaling-stroke"');
+    expect(html).not.toMatch(/class="sparkline-line"[^>]*pathLength/);
+  });
+
+  it("starts a stale notice with the dot that blinks", () => {
+    const updatedAt = new Date(Date.now() - 3 * 3600_000).toISOString();
+    const stale = {
+      ...widgets[0]!,
+      data: {
+        ...(widgets[0] as { data: object }).data,
+        status: "stale",
+        updatedAt,
+      },
+    } as DeviceWidget;
+    const html = renderI18n(<DeviceWidgetView widget={stale} env={env} />);
+    expect(html).toContain(
+      '<p class="sw-notice sw-notice--stale" style="font-size:calc(var(--u) * 24)"><span class="sw-stale-dot" aria-hidden="true"></span> Last sync 3 hours ago</p>',
+    );
+    const outage = {
+      ...stale,
+      data: { ...(stale as { data: object }).data, status: "outage" },
+    } as DeviceWidget;
+    const failing = renderI18n(<DeviceWidgetView widget={outage} env={env} />);
+    expect(failing).not.toContain("sw-stale-dot");
+    expect(failing).toContain('<span aria-hidden="true">⚠</span>');
+  });
+
+  it("never enters on the Studio canvas", () => {
+    const html = renderI18n(
+      <SlideCanvas
+        slide={slide(1, "Sales", widgets.slice(0, 3))}
+        tokens={tokens}
+        showHeader
+        header={{
+          name: "Wurfel",
+          slideName: "Sales",
+          logoImageId: null,
+          timeZone: "Europe/Berlin",
+        }}
+        images={images}
+        renderWidget={(widget) => (
+          <DeviceWidgetView widget={widget} env={env} />
+        )}
+      />,
+    );
+    expect(html).toContain(">1,234</p>");
+    expect(html).not.toContain("slide-player-slide");
+    expect(html).not.toContain("data-entering");
   });
 });
