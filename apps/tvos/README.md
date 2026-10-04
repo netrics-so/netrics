@@ -33,7 +33,11 @@ xcodebuild -project apps/tvos/NetricsTV.xcodeproj -scheme NetricsTV \
 the shared vectors in `packages/domain/test-vectors/studio-layout.json`
 straight from the repository, so a change on either side must keep both
 suites green; `pnpm vectors:studio` regenerates the vectors from the
-TypeScript.
+TypeScript. Compact numbers ("12.9K", German "12,9 Tsd.", narrow "12,3K")
+follow `packages/domain/src/compact-format.ts` the same way:
+`MetricFormat.compactAmount` runs
+`packages/domain/test-vectors/compact-numbers.json`, which
+`pnpm vectors:compact` regenerates.
 
 To run it, open `NetricsTV.xcodeproj` in Xcode and pick an Apple TV
 simulator. Simulator builds need no signing team.

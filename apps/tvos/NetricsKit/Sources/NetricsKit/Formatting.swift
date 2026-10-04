@@ -46,7 +46,7 @@ public enum MetricFormat {
             let major = value / pow(10, Double(exponent))
             let base = FloatingPointFormatStyle<Double>.Currency(code: code, locale: locale).rounded(rule: rounding)
             if abs(major) >= 10_000 {
-                return major.formatted(base.notation(.compactName).precision(.fractionLength(0...1)))
+                return compactAmount(major, currency: code, language: language)
             }
             // Whole amounts without decimals.
             let digits = major.rounded() == major ? 0 : exponent
@@ -57,10 +57,67 @@ public enum MetricFormat {
             return value.formatted(number.precision(.fractionLength(0...1))) + "%"
         }
         if abs(value) >= 10_000 {
-            return value.formatted(number.notation(.compactName).precision(.fractionLength(0...1)))
+            return compactAmount(value, language: language)
         }
         let maxDigits = abs(value) >= 100 ? 0 : 2
         return value.formatted(number.precision(.fractionLength(0...maxDigits)))
+    }
+
+    /**
+     * Compact suffixes per language, as localeCompactNumber in
+     * packages/domain/src/compact-format.ts writes them: Intl's en-US
+     * compact notation in English, the web's own German suffixes (German
+     * CLDR does not abbreviate thousands: 12.900, not 12,9 Tsd.).
+     */
+    static func compactSuffixes(_ language: ScreenLanguage) -> (suffixes: [String], separator: String, grouping: Bool) {
+        switch language {
+        case .en: return (["", "K", "M", "B", "T"], "", false)
+        case .de: return (["", "Tsd.", "Mio.", "Mrd.", "Bio."], "\u{00A0}", true)
+        }
+    }
+
+    /**
+     * The full compact form of a value (or an amount in the major unit of
+     * `currency`): one decimal at most, rounded half away from zero, as on
+     * the web: 12.9K, €4.2M; German 12,9 Tsd., 4,2 Mio. €. Checked against
+     * packages/domain/test-vectors/compact-numbers.json.
+     */
+    public static func compactAmount(_ value: Double, currency: String? = nil, language: ScreenLanguage = .en) -> String {
+        guard value.isFinite else { return "—" }
+        let (suffixes, separator, grouping) = compactSuffixes(language)
+        let magnitude = abs(value)
+        var tier = 0
+        while tier < suffixes.count - 1 && magnitude >= pow(1000.0, Double(tier + 1)) {
+            tier += 1
+        }
+        var tenths = ((magnitude * 10) / pow(1000.0, Double(tier))).rounded(.toNearestOrAwayFromZero)
+        // 999,950 rounds to 1000 thousand: one million.
+        if tenths >= 10_000 && tier < suffixes.count - 1 {
+            tier += 1
+            tenths = ((magnitude * 10) / pow(1000.0, Double(tier))).rounded(.toNearestOrAwayFromZero)
+        }
+        let scaled = (value < 0 ? -tenths : tenths) / 10
+        let locale = language.numberLocale
+        let text: String
+        if let currency {
+            let style = FloatingPointFormatStyle<Double>.Currency(code: currency, locale: locale)
+                .rounded(rule: rounding).precision(.fractionLength(0...1))
+            // Not `.grouping(.never)`: older Foundation (macOS 15) then drops
+            // the currency sign and the precision.
+            let formatted = scaled.formatted(style)
+            text = grouping ? formatted : formatted.replacingOccurrences(of: locale.groupingSeparator ?? ",", with: "")
+        } else {
+            var style = FloatingPointFormatStyle<Double>(locale: locale)
+                .rounded(rule: rounding).precision(.fractionLength(0...1))
+            if !grouping { style = style.grouping(.never) }
+            text = scaled.formatted(style)
+        }
+        let suffix = suffixes[tier]
+        // The suffix follows the number, before a trailing currency sign.
+        guard !suffix.isEmpty, let last = text.lastIndex(where: { $0.isNumber }) else { return text }
+        var result = text
+        result.insert(contentsOf: separator + suffix, at: result.index(after: last))
+        return result
     }
 
     public enum Direction: String, Sendable, Equatable {
