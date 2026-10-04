@@ -4,12 +4,19 @@ import type {
   MetricPeriod,
 } from "@netrics/contracts";
 import {
+  AGGREGATIONS,
+  PERIODS,
   SERIES_UNITS,
+  aggregationName,
   amountCurrency,
   compactNumber,
+  comparisonLabel,
   currencyExponent,
   isPerCurrencyUnit,
+  periodLabel,
+  sharedTranslator,
   toMajorUnits,
+  type Locale,
   type SeriesUnit,
 } from "@netrics/domain";
 
@@ -17,10 +24,9 @@ import {
  * Number formatting for dashboard tiles. Values are compacted (12.9K, 4.2M);
  * currency metrics arrive in integer minor units named "<ISO 4217>_minor"
  * (ADR 0008) and are shown in the major unit, with the currency's ISO 4217
- * exponent (JPY 0, EUR 2, BHD 3).
+ * exponent (JPY 0, EUR 2, BHD 3). Numbers follow the given language
+ * (ADR 0016 section 8), English when none is given.
  */
-
-const LOCALE = "en-US";
 
 /**
  * The unit a tile formats with. A "currency_minor" amount (ADR 0014) becomes
@@ -34,7 +40,11 @@ export function displayUnit(unit: string, currency?: string | null): string {
   return unit;
 }
 
-export function formatValue(value: number | null, unit: string): string {
+export function formatValue(
+  value: number | null,
+  unit: string,
+  locale: Locale = "en",
+): string {
   if (value === null) {
     return "—";
   }
@@ -43,7 +53,7 @@ export function formatValue(value: number | null, unit: string): string {
     const major = toMajorUnits(value, currency);
     const digits = currencyExponent(currency);
     const compact = Math.abs(major) >= 10_000;
-    return new Intl.NumberFormat(LOCALE, {
+    return new Intl.NumberFormat(locale, {
       style: "currency",
       currency,
       notation: compact ? "compact" : "standard",
@@ -53,21 +63,21 @@ export function formatValue(value: number | null, unit: string): string {
     }).format(major);
   }
   if (unit === "percent") {
-    return `${new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 }).format(value)}%`;
+    return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value)}%`;
   }
   // A share from 0 to 1 (Search Console's click-through rate).
   if (unit === "ratio") {
-    return `${new Intl.NumberFormat(LOCALE, { maximumFractionDigits: Math.abs(value) < 0.1 ? 2 : 1 }).format(value * 100)}%`;
+    return `${new Intl.NumberFormat(locale, { maximumFractionDigits: Math.abs(value) < 0.1 ? 2 : 1 }).format(value * 100)}%`;
   }
   // A rank where 1 is the top (Search Console's average position).
   if (unit === "position") {
-    return new Intl.NumberFormat(LOCALE, {
+    return new Intl.NumberFormat(locale, {
       minimumFractionDigits: 1,
       maximumFractionDigits: 1,
     }).format(value);
   }
   const compact = Math.abs(value) >= 10_000;
-  return new Intl.NumberFormat(LOCALE, {
+  return new Intl.NumberFormat(locale, {
     notation: compact ? "compact" : "standard",
     maximumFractionDigits: compact ? 1 : Math.abs(value) >= 100 ? 0 : 2,
   }).format(value);
@@ -78,13 +88,17 @@ export function formatValue(value: number | null, unit: string): string {
  * the full one (ADR 0015, section 8); percentages and positions are short
  * already and stay as they are.
  */
-export function formatCompactValue(value: number | null, unit: string): string {
+export function formatCompactValue(
+  value: number | null,
+  unit: string,
+  locale: Locale = "en",
+): string {
   if (value === null) {
     return "—";
   }
   const currency = amountCurrency(unit);
   if (currency) {
-    return new Intl.NumberFormat(LOCALE, {
+    return new Intl.NumberFormat(locale, {
       style: "currency",
       currency,
       notation: "compact",
@@ -92,9 +106,23 @@ export function formatCompactValue(value: number | null, unit: string): string {
     }).format(toMajorUnits(value, currency));
   }
   if (unit === "percent" || unit === "ratio" || unit === "position") {
-    return formatValue(value, unit);
+    return formatValue(value, unit, locale);
   }
-  return compactNumber(value);
+  return localCompactNumber(value, locale);
+}
+
+/**
+ * The shared compact form ("12.3K", the studio vectors' text) with the
+ * language's decimal separator ("12,3K" in German). The suffixes stay:
+ * the width the layout measured is the same.
+ */
+export function localCompactNumber(value: number, locale: Locale): string {
+  const text = compactNumber(value);
+  const decimal =
+    new Intl.NumberFormat(locale)
+      .formatToParts(1.5)
+      .find((part) => part.type === "decimal")?.value ?? ".";
+  return decimal === "." ? text : text.replace(".", decimal);
 }
 
 export type ChangeDirection = "up" | "down" | "flat";
@@ -114,6 +142,7 @@ export function formatChange(
   ratio: number | null,
   unit: string,
   better: MetricBetter = "higher",
+  locale: Locale = "en",
 ): ChangeView | null {
   if (delta === null) {
     return null;
@@ -129,7 +158,7 @@ export function formatChange(
   const sign = delta > 0 ? "+" : delta < 0 ? "−" : "±";
   // A change of rank reads in places, not as a percentage of the rank.
   if (ratio !== null && unit !== "position") {
-    const percent = new Intl.NumberFormat(LOCALE, {
+    const percent = new Intl.NumberFormat(locale, {
       maximumFractionDigits: Math.abs(ratio) < 0.1 ? 1 : 0,
     }).format(Math.abs(ratio) * 100);
     return { direction, tone, text: `${sign}${percent}%` };
@@ -137,28 +166,21 @@ export function formatChange(
   return {
     direction,
     tone,
-    text: `${sign}${formatValue(Math.abs(delta), unit)}`,
+    text: `${sign}${formatValue(Math.abs(delta), unit, locale)}`,
   };
 }
 
-export const PERIOD_LABELS: Record<MetricPeriod, string> = {
-  today: "Today",
-  last_7_days: "Last 7 days",
-  last_30_days: "Last 30 days",
-  this_month: "This month",
-  last_90_days: "Last 90 days",
-  last_12_months: "Last 12 months",
-};
+/** English period names; periodLabel (@netrics/domain) for others. */
+export const PERIOD_LABELS = Object.fromEntries(
+  PERIODS.map((period) => [period, periodLabel(period)]),
+) as Record<MetricPeriod, string>;
 
 /** What the change is measured against, e.g. "vs previous 7 days". */
-export const COMPARISON_LABELS: Record<MetricPeriod, string> = {
-  today: "vs yesterday",
-  last_7_days: "vs previous 7 days",
-  last_30_days: "vs previous 30 days",
-  this_month: "vs last month",
-  last_90_days: "vs previous 90 days",
-  last_12_months: "vs previous 12 months",
-};
+export const COMPARISON_LABELS = Object.fromEntries(
+  PERIODS.map((period) => [period, comparisonLabel(period)]),
+) as Record<MetricPeriod, string>;
+
+export { comparisonLabel, periodLabel };
 
 /**
  * A sparkline point's label in the workspace's zone: "14:00" for hours,
@@ -171,6 +193,7 @@ export function sparkBucketLabel(
   bucket: string | undefined,
   period: MetricPeriod,
   timeZone: string,
+  locale: Locale = "en",
 ): string | null {
   if (bucket === undefined) {
     return null;
@@ -178,7 +201,7 @@ export function sparkBucketLabel(
   const step: SeriesUnit = SERIES_UNITS[period];
   const reportingDate = step !== "hour" && bucket.endsWith("T00:00:00.000Z");
   const format = (options: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat(LOCALE, {
+    new Intl.DateTimeFormat(locale, {
       timeZone: reportingDate ? "UTC" : timeZone,
       ...options,
     }).format(new Date(bucket));
@@ -188,19 +211,20 @@ export function sparkBucketLabel(
     case "day":
       return format({ month: "short", day: "numeric" });
     case "week":
-      return `Week of ${format({ month: "short", day: "numeric" })}`;
+      return sharedTranslator(locale)("weekOf", {
+        date: format({ month: "short", day: "numeric" }),
+      });
     case "month":
       return format({ month: "short", year: "numeric" });
   }
 }
 
-export const AGGREGATION_LABELS: Record<MetricAggregation, string> = {
-  sum: "Total",
-  avg: "Average",
-  min: "Minimum",
-  max: "Maximum",
-  last: "Latest",
-};
+export const AGGREGATION_LABELS = Object.fromEntries(
+  AGGREGATIONS.map((aggregation) => [
+    aggregation,
+    aggregationName(aggregation),
+  ]),
+) as Record<MetricAggregation, string>;
 
 /**
  * The editor's name for an aggregation. A daily gauge (e.g. click-through
@@ -210,13 +234,9 @@ export const AGGREGATION_LABELS: Record<MetricAggregation, string> = {
 export function aggregationLabel(
   aggregation: MetricAggregation,
   metric: { kind: string; granularity: string },
+  locale: Locale = "en",
 ): string {
-  if (metric.kind === "gauge" && metric.granularity === "day") {
-    if (aggregation === "last") return "Latest day";
-    if (aggregation === "min") return "Lowest day";
-    if (aggregation === "max") return "Highest day";
-  }
-  return AGGREGATION_LABELS[aggregation];
+  return aggregationName(aggregation, metric, locale);
 }
 
 /**

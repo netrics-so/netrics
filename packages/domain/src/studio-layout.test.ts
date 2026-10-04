@@ -281,6 +281,21 @@ describe("label fit", () => {
     expect(large.resourceLines).toBeGreaterThanOrEqual(normal.resourceLines);
   });
 
+  it("fits German scope labels on the smallest widget (#256)", () => {
+    for (const label of [
+      "Downloads · Alle Apps",
+      "Proceeds · Alle Ressourcen",
+      "Page views · Alle Properties",
+    ]) {
+      for (const fontScale of [1, 1.15, 1.3]) {
+        expect(
+          labelFits(label, { type: "metric", w: 3, h: 2 }, { fontScale }),
+          `${label} @${fontScale}`,
+        ).toBe(true);
+      }
+    }
+  });
+
   it("always fits widgets without a label", () => {
     expect(labelFits("x".repeat(500), { type: "text", w: 2, h: 1 })).toBe(true);
   });

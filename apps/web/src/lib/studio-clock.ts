@@ -27,24 +27,35 @@ function format(
   }
 }
 
-/** "14:05" (or "2:05 PM") and "Sat 4 Oct". */
+/**
+ * "14:05" (or "2:05 PM") and "Sat 4 Oct" ("Sa., 4. Okt." in German): the
+ * date in the screen's language (ADR 0016); English when none is given.
+ */
 export function clockText(
   date: Date,
-  options: { timeZone: string; hour12?: boolean; showDate?: boolean },
+  options: {
+    timeZone: string;
+    hour12?: boolean;
+    showDate?: boolean;
+    locale?: string;
+  },
 ): ClockText {
+  const locale = options.locale ?? "en";
+  // English keeps its regional habits: 12-hour in the US form, 24-hour and
+  // the date in the British one ("Sat 4 Oct").
   const time = options.hour12
-    ? format(date, "en-US", options.timeZone, {
+    ? format(date, locale === "en" ? "en-US" : locale, options.timeZone, {
         hour: "numeric",
         minute: "2-digit",
         hour12: true,
       })
-    : format(date, "en-GB", options.timeZone, {
+    : format(date, locale === "en" ? "en-GB" : locale, options.timeZone, {
         hour: "2-digit",
         minute: "2-digit",
         hourCycle: "h23",
       });
   const day = options.showDate
-    ? format(date, "en-GB", options.timeZone, {
+    ? format(date, locale === "en" ? "en-GB" : locale, options.timeZone, {
         weekday: "short",
         day: "numeric",
         month: "short",

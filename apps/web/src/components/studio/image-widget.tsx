@@ -1,5 +1,8 @@
+"use client";
+
 import { STUDIO_TEXT_MINIMUMS } from "@netrics/domain";
 
+import { useT } from "@/lib/i18n/client";
 import { u } from "@/lib/studio-render";
 import type { ImageWidget, StudioImage } from "@/lib/studio-widgets";
 
@@ -21,11 +24,12 @@ export function ImageWidgetView({
   widget: Pick<ImageWidget, "title" | "options">;
   image: StudioImage | null;
 }) {
+  const t = useT("screen.widget");
   if (!image) {
     return (
       <div className="sw sw-image sw-image--missing">
         <WidgetNotice size={STUDIO_TEXT_MINIMUMS.any}>
-          Image not available
+          {t("imageMissing")}
         </WidgetNotice>
       </div>
     );

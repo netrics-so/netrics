@@ -49,6 +49,8 @@ export const sharedEn = {
     min: "Lowest day",
     max: "Highest day",
   },
+  /** A sparkline point of a week: "Week of Sep 28". */
+  weekOf: "Week of {date}",
   conversion: {
     source: "ECB reference rates",
     notConverted: "{source} · {currencies} not converted",

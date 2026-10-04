@@ -3,8 +3,9 @@
 import type { MetricPeriod } from "@netrics/contracts";
 import type { StudioPlacement } from "@netrics/domain";
 
+import { useLocale, useT } from "@/lib/i18n/client";
 import {
-  COMPARISON_LABELS,
+  comparisonLabel,
   displayUnit,
   formatCompactValue,
   formatValue,
@@ -52,9 +53,11 @@ export interface LineWidgetViewProps {
  */
 export function LineWidgetView(props: LineWidgetViewProps) {
   const { reading } = props;
+  const locale = useLocale();
+  const t = useT("screen.widget");
   const approx = reading?.approximate && reading.value !== null ? "≈ " : "";
   const full = reading
-    ? `${approx}${formatValue(reading.value, reading.unit)}`
+    ? `${approx}${formatValue(reading.value, reading.unit, locale)}`
     : props.loading
       ? "…"
       : "—";
@@ -64,7 +67,7 @@ export function LineWidgetView(props: LineWidgetViewProps) {
     value: {
       full,
       compact: reading
-        ? `${approx}${formatCompactValue(reading.value, reading.unit)}`
+        ? `${approx}${formatCompactValue(reading.value, reading.unit, locale)}`
         : full,
     },
     noticeText: props.notice,
@@ -81,17 +84,19 @@ export function LineWidgetView(props: LineWidgetViewProps) {
         height,
         showAxis: props.options.showAxis,
         axisSize: layout.sizes.axis,
-        formatValue: (value) => formatCompactValue(value, reading.unit),
+        formatValue: (value) => formatCompactValue(value, reading.unit, locale),
         bucketLabel: (bucket) =>
-          sparkBucketLabel(bucket, props.period, reading.timeZone),
+          sparkBucketLabel(bucket, props.period, reading.timeZone, locale),
       })
     : null;
   const summary = reading
-    ? `${props.label}: ${full}${
-        props.options.showPrevious && reading.previous
-          ? `, dashed line ${COMPARISON_LABELS[props.period]}`
-          : ""
-      }.`
+    ? props.options.showPrevious && reading.previous
+      ? t("lineSummaryPrevious", {
+          label: props.label,
+          value: full,
+          comparison: comparisonLabel(props.period, locale),
+        })
+      : t("lineSummary", { label: props.label, value: full })
     : props.label;
 
   return (
@@ -167,7 +172,7 @@ export function LineWidgetView(props: LineWidgetViewProps) {
           </svg>
         ) : reading ? (
           <p className="sw-muted" style={{ fontSize: u(layout.sizes.small) }}>
-            Not enough data for a chart yet
+            {t("notEnoughData")}
           </p>
         ) : null}
       </div>
@@ -187,6 +192,7 @@ export function LiveLineWidget({
   env: StudioEnv;
 }) {
   const { data, error, loading } = useMetricData(env.workspaceId, widget);
+  const locale = useLocale();
   const metric = env.metrics.get(metricKeyOf(widget));
   const unit = displayUnit(
     data?.metric.unit ?? metric?.unit ?? "",
@@ -211,7 +217,12 @@ export function LiveLineWidget({
       notice={dataNotice(
         error,
         data !== null,
-        connectionNotice(env.connections[widget.connectionId]),
+        connectionNotice(
+          env.connections[widget.connectionId],
+          Date.now(),
+          locale,
+        ),
+        locale,
       )}
       placement={widget}
       showHeader={env.showHeader}

@@ -38,7 +38,7 @@ describe("shared catalog", () => {
     expect(aggregationName("sum", null, "de")).toBe("Summe");
     expect(aggregationName("last", gauge)).toBe("Latest day");
     expect(aggregationName("last", gauge, "de")).toBe("Letzter Tag");
-    expect(aggregationName("avg", gauge, "de")).toBe("Durchschnitt");
+    expect(aggregationName("avg", gauge, "de")).toBe("Mittelwert");
   });
 
   it("names the remainder of a breakdown", () => {

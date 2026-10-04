@@ -1,8 +1,9 @@
 "use client";
 
-import type { StudioPlacement } from "@netrics/domain";
+import { othersLabel, type StudioPlacement } from "@netrics/domain";
 
 import { displayUnit, formatValue } from "@/lib/format-metric";
+import { useLocale, useT } from "@/lib/i18n/client";
 import { barLayout, type BarEntry } from "@/lib/studio-chart";
 import { LINE_HEIGHT, chartWidgetLayout, u } from "@/lib/studio-render";
 import {
@@ -41,6 +42,8 @@ export interface BarWidgetViewProps {
  */
 export function BarWidgetView(props: BarWidgetViewProps) {
   const { reading } = props;
+  const locale = useLocale();
+  const t = useT("screen.widget");
   const layout = chartWidgetLayout({
     type: "bar",
     label: props.label,
@@ -58,7 +61,9 @@ export function BarWidgetView(props: BarWidgetViewProps) {
         width: layout.chart.width,
         height: layout.chart.height,
         size: layout.sizes.resource,
-        formatValue: (value) => `${approx}${formatValue(value, reading.unit)}`,
+        othersLabel: othersLabel(locale),
+        formatValue: (value) =>
+          `${approx}${formatValue(value, reading.unit, locale)}`,
       })
     : null;
 
@@ -106,7 +111,7 @@ export function BarWidgetView(props: BarWidgetViewProps) {
           </ol>
         ) : reading ? (
           <p className="sw-muted" style={{ fontSize: u(layout.sizes.small) }}>
-            No data for this period yet
+            {t("noDataYet")}
           </p>
         ) : (
           <p
@@ -133,6 +138,7 @@ export function LiveBarWidget({
   env: StudioEnv;
 }) {
   const { data, error, loading } = useBreakdownData(env.workspaceId, widget);
+  const locale = useLocale();
   const metric = env.metrics.get(metricKeyOf(widget));
   const unit = displayUnit(
     data?.metric.unit ?? metric?.unit ?? "",
@@ -159,7 +165,12 @@ export function LiveBarWidget({
       notice={dataNotice(
         error,
         data !== null,
-        connectionNotice(env.connections[widget.connectionId]),
+        connectionNotice(
+          env.connections[widget.connectionId],
+          Date.now(),
+          locale,
+        ),
+        locale,
       )}
       placement={widget}
       showHeader={env.showHeader}

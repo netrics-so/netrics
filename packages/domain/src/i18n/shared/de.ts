@@ -31,16 +31,17 @@ export const sharedDe: Catalog<SharedMessages> = {
   },
   aggregations: {
     sum: "Summe",
-    avg: "Durchschnitt",
+    avg: "Mittelwert",
     min: "Minimum",
     max: "Maximum",
-    last: "Letzter Wert",
+    last: "Aktuell",
   },
   dailyAggregations: {
     last: "Letzter Tag",
-    min: "Niedrigster Tag",
+    min: "Tiefster Tag",
     max: "Höchster Tag",
   },
+  weekOf: "Woche ab {date}",
   conversion: {
     source: "EZB-Referenzkurse",
     notConverted: "{source} · {currencies} nicht umgerechnet",

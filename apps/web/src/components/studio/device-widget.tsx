@@ -2,6 +2,7 @@
 
 import type { DeviceWidget } from "@netrics/contracts";
 
+import { useLocale } from "@/lib/i18n/client";
 import type { StudioImages } from "@/lib/studio-widgets";
 import { deviceTileNotice } from "@/lib/tile-status";
 
@@ -42,6 +43,7 @@ export function DeviceWidgetView({
   widget: DeviceWidget;
   env: DeviceWidgetEnv;
 }) {
+  const locale = useLocale();
   const common = {
     placement: widget,
     showHeader: env.showHeader,
@@ -70,7 +72,7 @@ export function DeviceWidgetView({
                   approximate: data.conversion !== null,
                 }
           }
-          notice={deviceTileNotice(data.status, data.updatedAt)}
+          notice={deviceTileNotice(data.status, data.updatedAt, locale)}
           source={null}
           options={widget.options}
         />
@@ -105,7 +107,7 @@ export function DeviceWidgetView({
                   approximate: data.conversion !== null,
                 }
           }
-          notice={deviceTileNotice(data.status, data.updatedAt)}
+          notice={deviceTileNotice(data.status, data.updatedAt, locale)}
           options={widget.options}
         />
       );
@@ -131,7 +133,7 @@ export function DeviceWidgetView({
                   approximate: data.conversion !== null,
                 }
           }
-          notice={deviceTileNotice(data.status, data.updatedAt)}
+          notice={deviceTileNotice(data.status, data.updatedAt, locale)}
         />
       );
     }

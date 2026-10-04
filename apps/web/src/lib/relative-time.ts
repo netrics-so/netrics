@@ -29,6 +29,35 @@ export function relativeTime(iso: string | null): string {
   return future ? `in ${text}` : `${text} ago`;
 }
 
+/**
+ * "5 minutes ago", "vor 5 Minuten", "in 2 hours" with Intl in the given
+ * language (ADR 0016 section 8); "now" within 45 seconds. Null without a
+ * time.
+ */
+export function relativeTimeIn(
+  iso: string | null,
+  locale: string,
+  now: number = Date.now(),
+): string | null {
+  if (!iso) {
+    return null;
+  }
+  const deltaSeconds = Math.round((Date.parse(iso) - now) / 1000);
+  const absolute = Math.abs(deltaSeconds);
+  const format = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  if (absolute < 45) {
+    return format.format(0, "second");
+  }
+  const sign = deltaSeconds < 0 ? -1 : 1;
+  if (absolute < HOUR) {
+    return format.format(sign * Math.round(absolute / MINUTE), "minute");
+  }
+  if (absolute < DAY) {
+    return format.format(sign * Math.round(absolute / HOUR), "hour");
+  }
+  return format.format(sign * Math.round(absolute / DAY), "day");
+}
+
 /** "every 5 minutes", "every 6 hours" — a poll interval in words. */
 export function intervalLabel(seconds: number): string {
   const units: Array<[number, string]> = [
