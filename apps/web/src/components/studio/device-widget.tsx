@@ -1,16 +1,18 @@
 "use client";
 
 import type { DeviceWidget } from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
 
 import { useLocale } from "@/lib/i18n/client";
+import type { ScreenPlacement } from "@/lib/studio-render";
 import type { StudioImages } from "@/lib/studio-widgets";
 import { deviceTileNotice } from "@/lib/tile-status";
 
-import { BarWidgetView } from "./bar-widget";
+import { BarWidgetView, type BarReadingProps } from "./bar-widget";
 import { LiveClockWidget } from "./clock-widget";
 import { ImageWidgetView } from "./image-widget";
-import { LineWidgetView } from "./line-widget";
-import { MetricWidgetView } from "./metric-widget";
+import { LineWidgetView, type LineReadingProps } from "./line-widget";
+import { MetricWidgetView, type MetricReadingProps } from "./metric-widget";
 import { WidgetFailed } from "./slide-canvas";
 import { TextWidgetView } from "./text-widget";
 
@@ -23,24 +25,124 @@ export interface DeviceWidgetEnv {
   images: StudioImages;
 }
 
-type DataWidget = Extract<DeviceWidget, { type: "metric" | "line" | "bar" }>;
+export type DeviceDataWidget = Extract<
+  DeviceWidget,
+  { type: "metric" | "line" | "bar" }
+>;
 
-function metricOf(data: DataWidget["data"]) {
+function metricOf(data: DeviceDataWidget["data"]) {
   return data.kind && data.granularity
     ? { kind: data.kind, granularity: data.granularity, better: data.better }
     : null;
 }
 
 /**
- * A widget of a device payload (schema 2, #219) with the data the server
- * computed: the same display components as the signed-in pages, no
- * further requests (images arrive as `blob:` URLs in `env.images`).
+ * A payload metric's reading (the numbers the server computed), shared by
+ * the slide widget and the kiosk's scroll view card.
+ */
+export function deviceMetricReading(
+  widget: Extract<DeviceWidget, { type: "metric" }>,
+  timeZone: string,
+  locale: Locale,
+): MetricReadingProps {
+  const { data } = widget;
+  return {
+    label: widget.label,
+    period: data.period,
+    aggregation: data.aggregation,
+    metric: metricOf(data),
+    reading:
+      data.unit === null
+        ? null
+        : {
+            value: data.value,
+            unit: data.unit,
+            delta: data.change.delta,
+            ratio: data.change.ratio,
+            series: data.spark.map((value) => ({ value })),
+            timeZone,
+            approximate: data.conversion !== null,
+          },
+    notice: deviceTileNotice(data.status, data.updatedAt, locale),
+    source: null,
+    options: widget.options,
+  };
+}
+
+/** A payload line widget's reading. */
+export function deviceLineReading(
+  widget: Extract<DeviceWidget, { type: "line" }>,
+  timeZone: string,
+  locale: Locale,
+): LineReadingProps {
+  const { data } = widget;
+  const previous =
+    data.previous.length > 0
+      ? data.buckets.map((bucket, index) => ({
+          bucket,
+          value: data.previous[index] ?? null,
+        }))
+      : null;
+  return {
+    label: widget.label,
+    period: data.period,
+    reading:
+      data.unit === null
+        ? null
+        : {
+            value: data.value,
+            unit: data.unit,
+            series: data.buckets.map((bucket, index) => ({
+              bucket,
+              value: data.values[index] ?? null,
+            })),
+            previous,
+            timeZone,
+            approximate: data.conversion !== null,
+          },
+    notice: deviceTileNotice(data.status, data.updatedAt, locale),
+    options: widget.options,
+  };
+}
+
+/** A payload bar widget's reading. */
+export function deviceBarReading(
+  widget: Extract<DeviceWidget, { type: "bar" }>,
+  locale: Locale,
+): BarReadingProps {
+  const { data } = widget;
+  return {
+    label: widget.label,
+    reading:
+      data.unit === null
+        ? null
+        : {
+            unit: data.unit,
+            groups: data.bars.map((bar) => ({
+              label: bar.label,
+              value: bar.value,
+            })),
+            others: data.others
+              ? { label: data.others.label, value: data.others.value }
+              : null,
+            approximate: data.conversion !== null,
+          },
+    notice: deviceTileNotice(data.status, data.updatedAt, locale),
+  };
+}
+
+/**
+ * A widget of a device payload (schema 2 or 3, #219, #281) with the data
+ * the server computed: the same display components as the signed-in
+ * pages, no further requests (images arrive as `blob:` URLs in
+ * `env.images`). On a screen view canvas the widget carries its placement
+ * in the screen's format.
  */
 export function DeviceWidgetView({
   widget,
   env,
 }: {
-  widget: DeviceWidget;
+  widget: DeviceWidget & ScreenPlacement;
   env: DeviceWidgetEnv;
 }) {
   const locale = useLocale();
@@ -50,93 +152,24 @@ export function DeviceWidgetView({
     fontScale: env.fontScale,
   };
   switch (widget.type) {
-    case "metric": {
-      const { data } = widget;
+    case "metric":
       return (
         <MetricWidgetView
           {...common}
-          label={widget.label}
-          period={data.period}
-          aggregation={data.aggregation}
-          metric={metricOf(data)}
-          reading={
-            data.unit === null
-              ? null
-              : {
-                  value: data.value,
-                  unit: data.unit,
-                  delta: data.change.delta,
-                  ratio: data.change.ratio,
-                  series: data.spark.map((value) => ({ value })),
-                  timeZone: env.timeZone,
-                  approximate: data.conversion !== null,
-                }
-          }
-          notice={deviceTileNotice(data.status, data.updatedAt, locale)}
-          source={null}
-          options={widget.options}
+          {...deviceMetricReading(widget, env.timeZone, locale)}
         />
       );
-    }
-    case "line": {
-      const { data } = widget;
-      const previous =
-        data.previous.length > 0
-          ? data.buckets.map((bucket, index) => ({
-              bucket,
-              value: data.previous[index] ?? null,
-            }))
-          : null;
+    case "line":
       return (
         <LineWidgetView
           {...common}
-          label={widget.label}
-          period={data.period}
-          reading={
-            data.unit === null
-              ? null
-              : {
-                  value: data.value,
-                  unit: data.unit,
-                  series: data.buckets.map((bucket, index) => ({
-                    bucket,
-                    value: data.values[index] ?? null,
-                  })),
-                  previous,
-                  timeZone: env.timeZone,
-                  approximate: data.conversion !== null,
-                }
-          }
-          notice={deviceTileNotice(data.status, data.updatedAt, locale)}
-          options={widget.options}
+          {...deviceLineReading(widget, env.timeZone, locale)}
         />
       );
-    }
-    case "bar": {
-      const { data } = widget;
+    case "bar":
       return (
-        <BarWidgetView
-          {...common}
-          label={widget.label}
-          reading={
-            data.unit === null
-              ? null
-              : {
-                  unit: data.unit,
-                  groups: data.bars.map((bar) => ({
-                    label: bar.label,
-                    value: bar.value,
-                  })),
-                  others: data.others
-                    ? { label: data.others.label, value: data.others.value }
-                    : null,
-                  approximate: data.conversion !== null,
-                }
-          }
-          notice={deviceTileNotice(data.status, data.updatedAt, locale)}
-        />
+        <BarWidgetView {...common} {...deviceBarReading(widget, locale)} />
       );
-    }
     case "image":
       return (
         <ImageWidgetView

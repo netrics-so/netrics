@@ -585,6 +585,27 @@ describe("kioskScreen", () => {
     expect(kioskScreen(800, 600, Number.NaN)).toMatchObject({ scale: 1 });
   });
 
+  it("reports the rotated sides, their format and the mode", () => {
+    expect(
+      kioskScreen(1920, 1080, 1, { rotation: 90, mode: "screen" }),
+    ).toEqual({
+      width: 1080,
+      height: 1920,
+      scale: 1,
+      format: "9x16",
+      mode: "screen",
+    });
+    expect(
+      kioskScreen(1920, 1080, 1, { rotation: 180, mode: "scroll" }),
+    ).toEqual({
+      width: 1920,
+      height: 1080,
+      scale: 1,
+      format: "16x9",
+      mode: "scroll",
+    });
+  });
+
   it("is null for a viewport without size", () => {
     expect(kioskScreen(0, 1080, 1)).toBeNull();
     expect(kioskScreen(1920, Number.NaN, 1)).toBeNull();

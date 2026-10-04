@@ -182,28 +182,32 @@ function clamp(value: number, min: number, max: number): number {
 
 /**
  * The kiosk's screen as the heartbeat reports it (#276): the viewport in
- * CSS px and the device pixel ratio, kept inside the bounds the API
- * accepts, and the format its screen view renders in (ADR 0017, #281: the
- * viewport's; a rotated kiosk, #277, reports its rotated sides). Null when
- * the viewport is not measurable (zero or not a number).
+ * CSS px after the device's rotation (a quarter turn swaps the sides, ADR
+ * 0017 section 7) and the device pixel ratio, kept inside the bounds the
+ * API accepts; the format its screen view renders in (#281) and the mode
+ * it shows. Null when the viewport is not measurable (zero or not a
+ * number).
  */
 export function kioskScreen(
   width: number,
   height: number,
   devicePixelRatio: number,
+  shown: { rotation?: number; mode?: DeviceScreen["mode"] } = {},
 ): DeviceScreen | null {
   if (!(width > 0) || !(height > 0)) {
     return null;
   }
+  const quarter = shown.rotation === 90 || shown.rotation === 270;
+  const [sideX, sideY] = quarter ? [height, width] : [width, height];
   return {
-    width: clamp(Math.round(width), 1, MAX_SCREEN_SIDE),
-    height: clamp(Math.round(height), 1, MAX_SCREEN_SIDE),
+    width: clamp(Math.round(sideX), 1, MAX_SCREEN_SIDE),
+    height: clamp(Math.round(sideY), 1, MAX_SCREEN_SIDE),
     scale:
       devicePixelRatio > 0
         ? clamp(Math.round(devicePixelRatio * 100) / 100, 0.5, 8)
         : 1,
-    format: formatFor(width, height),
-    mode: "screen",
+    format: formatFor(sideX, sideY),
+    mode: shown.mode ?? "screen",
   };
 }
 

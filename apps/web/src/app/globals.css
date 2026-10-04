@@ -863,6 +863,15 @@ a.tile-stale:hover {
 /* ─── Browser kiosk (#59) ───────────────────────────────────────────── */
 
 /* Pairing and waiting screens: one calm message in the middle. */
+/* A kiosk in scroll view (ADR 0017): the page scrolls inside the screen,
+   which may be rotated. */
+.kiosk-scroll {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--t-background, #07090c);
+}
+
 .kiosk-message {
   align-items: center;
   justify-content: center;
