@@ -147,6 +147,221 @@ export function widgetRect(
 }
 
 // ---------------------------------------------------------------------------
+// Screen formats (ADR 0017, sections 1 and 2)
+
+/** The five format classes; `16x9` is the default primary format. */
+export type ScreenFormat = "16x9" | "21x9" | "4x3" | "3x4" | "9x16";
+
+/** Every format key, widest first. */
+export const SCREEN_FORMAT_KEYS: readonly ScreenFormat[] = [
+  "21x9",
+  "16x9",
+  "4x3",
+  "3x4",
+  "9x16",
+];
+
+export interface ScreenFormatSpec {
+  key: ScreenFormat;
+  /** Grid columns and rows. */
+  columns: number;
+  rows: number;
+  /** The canvas units are defined on (its short edge is always 1080). */
+  reference: StudioCanvas;
+}
+
+/**
+ * Grid and reference canvas per format. A cell is about the same size in
+ * units everywhere, so minimum widget sizes and row heights carry over;
+ * `16x9` is exactly `STUDIO_GRID` and `STUDIO_REFERENCE_CANVAS`.
+ */
+export const SCREEN_FORMATS: Readonly<Record<ScreenFormat, ScreenFormatSpec>> =
+  {
+    "16x9": {
+      key: "16x9",
+      columns: STUDIO_GRID.columns,
+      rows: STUDIO_GRID.rows,
+      reference: STUDIO_REFERENCE_CANVAS,
+    },
+    "21x9": {
+      key: "21x9",
+      columns: 16,
+      rows: 8,
+      reference: { width: 2520, height: 1080 },
+    },
+    "4x3": {
+      key: "4x3",
+      columns: 9,
+      rows: 8,
+      reference: { width: 1440, height: 1080 },
+    },
+    "3x4": {
+      key: "3x4",
+      columns: 6,
+      rows: 10,
+      reference: { width: 1080, height: 1440 },
+    },
+    "9x16": {
+      key: "9x16",
+      columns: 6,
+      rows: 14,
+      reference: { width: 1080, height: 1920 },
+    },
+  };
+
+/** The largest grid of any format (database checks use it). */
+export const SCREEN_FORMAT_MAX_GRID = { columns: 16, rows: 14 } as const;
+
+export function isScreenFormat(value: unknown): value is ScreenFormat {
+  return (
+    typeof value === "string" &&
+    (SCREEN_FORMAT_KEYS as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * The format of a screen of this size (CSS pixels or points, after any
+ * rotation): the closest aspect ratio on a log scale. Boundaries are the
+ * geometric means of neighbours, rounded: 2.04, 1.54, 1.00 and 0.65. An
+ * unusable size (zero, negative, not finite) is `16x9`.
+ */
+export function formatFor(width: number, height: number): ScreenFormat {
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return "16x9";
+  }
+  const aspect = width / height;
+  if (aspect >= 2.04) return "21x9";
+  if (aspect >= 1.54) return "16x9";
+  if (aspect >= 1) return "4x3";
+  if (aspect >= 0.65) return "3x4";
+  return "9x16";
+}
+
+export type ScreenSizeClass = "compact" | "regular" | "large";
+
+/**
+ * Size class by the short edge: compact below 600 (phones), regular below
+ * 1100 (tablets, small windows), else large (desktops, TVs). It picks the
+ * default display mode and the scroll view columns, never a screen view
+ * layout.
+ */
+export function sizeClassFor(width: number, height: number): ScreenSizeClass {
+  const short = Math.min(width, height);
+  if (!(short >= 600)) return "compact";
+  if (short < 1100) return "regular";
+  return "large";
+}
+
+/** A grid stretches at most this much against its format's aspect ratio. */
+export const SCREEN_MAX_STRETCH = 4 / 3;
+
+export interface ScreenFrame {
+  format: ScreenFormat;
+  columns: number;
+  rows: number;
+  /** Screen pixels per unit: min(width / refWidth, height / refHeight). */
+  unit: number;
+  /**
+   * The area the slide fills: the whole screen, or the stretch-capped
+   * canvas centred on it (letterboxed in the theme's background colour).
+   */
+  canvas: StudioRect;
+  /** The header band (0.07 × 1080 units high), null without the header. */
+  header: StudioRect | null;
+  /** The area the cells and their gaps fill. */
+  grid: StudioRect;
+}
+
+/**
+ * Where a format's grid goes on a real screen in screen view: the grid
+ * fills the screen (inset by the padding, below the header band), so cells
+ * stretch in the screen's longer direction, at most by 4/3; beyond that the
+ * capped canvas is centred. At a 16:9 screen and `16x9` this is exactly
+ * `studioFrame`.
+ */
+export function screenFrame(
+  screen: StudioCanvas,
+  format: ScreenFormat,
+  showHeader: boolean,
+): ScreenFrame {
+  const spec = SCREEN_FORMATS[format];
+  const reference = STUDIO_REFERENCE_CANVAS.height;
+  // The unit's length on the screen, computed so that a screen of the
+  // format's exact aspect gives its short edge without rounding error.
+  const unitLength = Math.min(
+    (screen.width * reference) / spec.reference.width,
+    (screen.height * reference) / spec.reference.height,
+  );
+  const unit = unitLength / reference;
+  const width = Math.min(
+    screen.width,
+    spec.reference.width * unit * SCREEN_MAX_STRETCH,
+  );
+  const height = Math.min(
+    screen.height,
+    spec.reference.height * unit * SCREEN_MAX_STRETCH,
+  );
+  const x = (screen.width - width) / 2;
+  const y = (screen.height - height) / 2;
+  const headerHeight = showHeader ? unitLength * STUDIO_HEADER_BAND : 0;
+  const padding = STUDIO_SPACING.padding * unit;
+  return {
+    format,
+    columns: spec.columns,
+    rows: spec.rows,
+    unit,
+    canvas: { x, y, width, height },
+    header: showHeader ? { x, y, width, height: headerHeight } : null,
+    grid: {
+      x: x + padding,
+      y: y + headerHeight + padding,
+      width: width - 2 * padding,
+      height: height - headerHeight - 2 * padding,
+    },
+  };
+}
+
+/** A placement's rect in screen pixels, on a frame from `screenFrame`. */
+export function placementRect(
+  placement: StudioPlacement,
+  frame: ScreenFrame,
+): StudioRect {
+  const { unit, grid, columns, rows } = frame;
+  const gap = STUDIO_SPACING.gap * unit;
+  const cellWidth = (grid.width - gap * (columns - 1)) / columns;
+  const cellHeight = (grid.height - gap * (rows - 1)) / rows;
+  return {
+    x: grid.x + placement.x * (cellWidth + gap),
+    y: grid.y + placement.y * (cellHeight + gap),
+    width: placement.w * cellWidth + (placement.w - 1) * gap,
+    height: placement.h * cellHeight + (placement.h - 1) * gap,
+  };
+}
+
+/** Whole cells, at least 1 × 1, inside the format's grid. */
+export function isInsideFormatGrid(
+  placement: StudioPlacement,
+  format: ScreenFormat,
+): boolean {
+  const { x, y, w, h } = placement;
+  const spec = SCREEN_FORMATS[format];
+  return (
+    [x, y, w, h].every(Number.isInteger) &&
+    x >= 0 &&
+    y >= 0 &&
+    w >= 1 &&
+    h >= 1 &&
+    x + w <= spec.columns &&
+    y + h <= spec.rows
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Placement rules
 
 /** Whole cells, at least 1 × 1, inside the 12 × 8 grid. */
@@ -485,23 +700,25 @@ export interface StudioLabelFit {
 }
 
 /**
- * How a data widget's label wraps at 1080p: the title and the resource line
- * (both semibold, at their minimum times the font scale) in the widget's
- * width less its padding. Widgets without a label always fit.
+ * How a data widget's label wraps at the format's reference canvas (1080p
+ * at `16x9`, the default): the title and the resource line (both semibold,
+ * at their minimum times the font scale) in the widget's width less its
+ * padding. Widgets without a label always fit. A stretched screen only ever
+ * gives a cell more room than the reference (ADR 0017, section 2).
  */
 export function labelFit(
   label: string,
   widget: { type: StudioWidgetType; w: number; h: number },
-  options: { fontScale?: number } = {},
+  options: { fontScale?: number; format?: ScreenFormat } = {},
 ): StudioLabelFit {
   if (!isDataWidget(widget.type)) {
     return { fits: true, titleLines: 0, resourceLines: 0 };
   }
   const scale = effectiveFontScale(options.fontScale);
-  const rect = widgetRect(
+  const format = options.format ?? "16x9";
+  const rect = placementRect(
     { x: 0, y: 0, w: widget.w, h: widget.h },
-    STUDIO_REFERENCE_CANVAS,
-    true,
+    screenFrame(SCREEN_FORMATS[format].reference, format, true),
   );
   const width = rect.width - 2 * STUDIO_SPACING.widgetPadding;
   const parts = labelParts(label);
@@ -533,7 +750,7 @@ export function labelFit(
 export function labelFits(
   label: string,
   widget: { type: StudioWidgetType; w: number; h: number },
-  options: { fontScale?: number } = {},
+  options: { fontScale?: number; format?: ScreenFormat } = {},
 ): boolean {
   return labelFit(label, widget, options).fits;
 }
@@ -807,6 +1024,11 @@ export const studioLayout = {
   canvasUnit,
   studioFrame,
   widgetRect,
+  formatFor,
+  sizeClassFor,
+  screenFrame,
+  placementRect,
+  isInsideFormatGrid,
   isInsideGrid,
   meetsMinimumSize,
   placementsOverlap,

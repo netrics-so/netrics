@@ -24,7 +24,8 @@
     "openapi": "pnpm --filter @netrics/server openapi",
     "openapi:check": "pnpm --filter @netrics/server openapi:check",
     "vectors:compact": "UPDATE_COMPACT_VECTORS=1 vitest run packages/domain/src/compact-format.test.ts -t \"compact number vectors\"",
-    "vectors:studio": "UPDATE_STUDIO_VECTORS=1 vitest run packages/domain/src/studio-layout.test.ts -t \"test vectors\""
+    "vectors:studio": "UPDATE_STUDIO_VECTORS=1 vitest run packages/domain/src/studio-layout.test.ts -t \"test vectors\"",
+    "vectors:formats": "UPDATE_FORMAT_VECTORS=1 vitest run packages/domain/src/screen-formats.test.ts -t \"test vectors\""
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
