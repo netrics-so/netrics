@@ -11,10 +11,11 @@ import {
 
 import {
   BACKGROUND_DIM,
+  SCREEN_FORMATS,
   SLIDE_SECONDS,
-  STUDIO_GRID,
   STUDIO_LIMITS,
   type Locale,
+  type ScreenFormat,
   type ThemeTokens,
 } from "@netrics/domain";
 
@@ -38,25 +39,42 @@ import { ImagePicker } from "./image-picker";
 export function SlideThumbnail({
   slide,
   tokens,
+  primaryFormat = "16x9",
 }: {
   slide: StudioSlide;
   tokens: ThemeTokens;
+  /** The format the widgets are placed in: its grid and shape. */
+  primaryFormat?: ScreenFormat;
 }) {
+  const { columns, rows, reference } = SCREEN_FORMATS[primaryFormat];
+  const aspect = reference.width / reference.height;
+  // As high as a 72 px wide 16:9 thumbnail, at most 72 px wide.
+  const shape =
+    primaryFormat === "16x9"
+      ? {}
+      : {
+          width: `${Math.min(72, Math.round(40.5 * aspect * 10) / 10)}px`,
+          aspectRatio: `${reference.width} / ${reference.height}`,
+        };
   return (
     <span
       className="rail-thumb"
       aria-hidden="true"
-      style={{ background: tokens.background, borderColor: tokens.border }}
+      style={{
+        background: tokens.background,
+        borderColor: tokens.border,
+        ...shape,
+      }}
     >
       {slide.widgets.map((widget) => (
         <span
           key={widget.id}
           className="rail-thumb-widget"
           style={{
-            left: `${(widget.x / STUDIO_GRID.columns) * 100}%`,
-            top: `${(widget.y / STUDIO_GRID.rows) * 100}%`,
-            width: `${(widget.w / STUDIO_GRID.columns) * 100}%`,
-            height: `${(widget.h / STUDIO_GRID.rows) * 100}%`,
+            left: `${(widget.x / columns) * 100}%`,
+            top: `${(widget.y / rows) * 100}%`,
+            width: `${(widget.w / columns) * 100}%`,
+            height: `${(widget.h / rows) * 100}%`,
             background:
               widget.type === "text" || widget.type === "image"
                 ? tokens.muted
@@ -100,6 +118,7 @@ export function SlideRail({
   images,
   dispatch,
   onUploadImage,
+  primaryFormat = "16x9",
 }: {
   slides: StudioSlide[];
   selectedSlideId: string;
@@ -111,6 +130,8 @@ export function SlideRail({
   images: PickableImage[];
   dispatch: (action: StudioAction) => void;
   onUploadImage?: (file: File) => Promise<string | null>;
+  /** The format the slides are designed in (thumbnails). */
+  primaryFormat?: ScreenFormat;
 }) {
   const locale = useLocale();
   const t = useT("studio.rail");
@@ -298,7 +319,11 @@ export function SlideRail({
                 }
                 onKeyDown={(event) => onItemKeyDown(event, index)}
               >
-                <SlideThumbnail slide={slide} tokens={tokens} />
+                <SlideThumbnail
+                  slide={slide}
+                  tokens={tokens}
+                  primaryFormat={primaryFormat}
+                />
                 <span className="rail-text">
                   <span className="rail-title">
                     {index + 1}. {title}

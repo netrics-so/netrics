@@ -1,11 +1,19 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 
 import type { DashboardSettings, DashboardWidget } from "@netrics/contracts";
 import {
-  STUDIO_GRID,
+  SCREEN_FORMATS,
   type Locale,
+  type ScreenFormat,
   type StudioPlacement,
   type ThemeTokens,
 } from "@netrics/domain";
@@ -27,7 +35,7 @@ import {
   type GridMetrics,
 } from "@/lib/studio-grid";
 import type { UnreadableLabel } from "@/lib/studio-readability";
-import { widgetBoxStyle } from "@/lib/studio-render";
+import { canvasGeometry } from "@/lib/screen-view";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { themeStyle } from "@/lib/studio-theme";
 import type { StudioEnv } from "@/lib/studio-widgets";
@@ -64,7 +72,9 @@ export interface CanvasDrag {
  * What a key on a focused widget does: arrows move it by one cell,
  * Shift+arrows resize it, Delete or Backspace removes it (Undo brings it
  * back), Escape goes back to the slide. Keys with Ctrl, Cmd or Alt are left
- * to the editor (undo, save) and the slide rail.
+ * to the editor (undo, save) and the slide rail. In a custom layout
+ * (`format`, #284) the arrows act on that format and Delete hides the
+ * widget there instead of deleting it everywhere.
  */
 export function canvasKeyAction(
   event: Pick<
@@ -72,6 +82,7 @@ export function canvasKeyAction(
     "key" | "shiftKey" | "altKey" | "ctrlKey" | "metaKey"
   >,
   widgetId: string,
+  format?: ScreenFormat,
 ): StudioAction | null {
   if (event.altKey || event.ctrlKey || event.metaKey) {
     return null;
@@ -83,14 +94,17 @@ export function canvasKeyAction(
     ArrowDown: [0, 1],
   };
   const arrow = arrows[event.key];
+  const inFormat = format ? { format } : {};
   if (arrow) {
     const [dx, dy] = arrow;
     return event.shiftKey
-      ? { type: "resizeWidgetBy", widgetId, dw: dx, dh: dy }
-      : { type: "nudgeWidget", widgetId, dx, dy };
+      ? { type: "resizeWidgetBy", widgetId, dw: dx, dh: dy, ...inFormat }
+      : { type: "nudgeWidget", widgetId, dx, dy, ...inFormat };
   }
   if (event.key === "Delete" || event.key === "Backspace") {
-    return { type: "deleteWidget", widgetId };
+    return format
+      ? { type: "setWidgetHidden", widgetId, format, hidden: true }
+      : { type: "deleteWidget", widgetId };
   }
   if (event.key === "Escape") {
     return { type: "selectWidget", widgetId: null };
@@ -103,6 +117,7 @@ export function dragOutline(
   drag: Pick<CanvasDrag, "widgetId" | "placement">,
   widgets: readonly DashboardWidget[],
   locale: Locale,
+  format: ScreenFormat = "16x9",
 ): { placement: StudioPlacement; blocked: boolean; label: string } {
   const t = webTranslator(locale, "studio.canvas");
   const widget = widgets.find((w) => w.id === drag.widgetId);
@@ -112,7 +127,7 @@ export function dragOutline(
     widget.w === drag.placement.w &&
     widget.h === drag.placement.h;
   const blocker = widget
-    ? placementBlocker(drag.placement, widget.type, others)
+    ? placementBlocker(drag.placement, widget.type, others, format)
     : null;
   const blocked =
     blocker !== null && !(blocker.kind === "tooSmall" && sameSize);
@@ -131,9 +146,18 @@ export function dragOutline(
   };
 }
 
+/** A page of a custom layout the canvas edits (#284). */
+export interface CanvasLayoutPage {
+  /** The visible widgets of the page, at their placements in the format. */
+  placements: ReadonlyArray<StudioPlacement & { id: string }>;
+  /** Widgets placed automatically, waiting for review. */
+  review: ReadonlySet<string>;
+}
+
 /**
- * The selected slide on its 16:9 canvas, with live data, as screens show
- * it (the #220 renderers). Every widget has a focusable handle on top: a
+ * The selected slide on its canvas, with live data, as screens show it
+ * (the #220 renderers): the primary format's grid, or (with `layout`) one
+ * page of the slide's custom layout in `format` (ADR 0017 section 4). Every widget has a focusable handle on top: a
  * click, tap or Enter selects it for the inspector. A selected widget is
  * moved by dragging it and resized from its edges and corners (mouse,
  * touch or pen, with pointer capture), snapping to the 12 × 8 cells; while
@@ -155,6 +179,10 @@ export function EditorCanvas({
   unreadable = NO_LABELS,
   incoming = null,
   initialDrag = null,
+  primaryFormat = "16x9",
+  format = primaryFormat,
+  layout = null,
+  pageLabel = null,
 }: {
   slide: StudioSlide;
   dashboardName: string;
@@ -170,9 +198,43 @@ export function EditorCanvas({
   incoming?: CanvasOutline | null;
   /** For tests: render as if a drag were in progress. */
   initialDrag?: CanvasDrag | null;
+  /** The format the slide's widgets are placed in. */
+  primaryFormat?: ScreenFormat;
+  /** The format edited: the primary, or one with a custom layout. */
+  format?: ScreenFormat;
+  /** The page of the custom layout edited, when `format` is not the primary. */
+  layout?: CanvasLayoutPage | null;
+  /** "1/2" in the header for a layout on several pages. */
+  pageLabel?: string | null;
 }) {
   const locale = useLocale();
   const t = useT("studio.canvas");
+  const custom = layout !== null && format !== primaryFormat;
+  const customFormat = custom ? format : undefined;
+  // The widgets as this canvas places them: in a custom layout, the
+  // page's widgets at their placements in the format.
+  const widgets: DashboardWidget[] = useMemo(() => {
+    if (!custom) return slide.widgets;
+    const byId = new Map(slide.widgets.map((widget) => [widget.id, widget]));
+    return layout.placements.flatMap((placement) => {
+      const widget = byId.get(placement.id);
+      return widget
+        ? [
+            {
+              ...widget,
+              x: placement.x,
+              y: placement.y,
+              w: placement.w,
+              h: placement.h,
+            } as DashboardWidget,
+          ]
+        : [];
+    });
+  }, [custom, layout, slide.widgets]);
+  const review = custom ? layout.review : null;
+  const grid = SCREEN_FORMATS[format];
+  const geometry = canvasGeometry(null, format, settings.showHeader);
+  const boxOf = (placement: StudioPlacement) => geometry.widget(placement).box;
   const overlayRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<CanvasDrag | null>(initialDrag);
   /** The element holding pointer capture during a drag. */
@@ -219,6 +281,7 @@ export function EditorCanvas({
       metrics: gridMetrics(
         { width: rect.width, height: rect.height },
         settings.showHeader,
+        format,
       ),
     });
   }
@@ -235,7 +298,7 @@ export function EditorCanvas({
     if (!moved) {
       return;
     }
-    const widget = slide.widgets.find((w) => w.id === drag.widgetId);
+    const widget = widgets.find((w) => w.id === drag.widgetId);
     if (!widget) {
       setDrag(null);
       return;
@@ -245,6 +308,7 @@ export function EditorCanvas({
       drag.handle,
       pixelsToCells(delta, drag.metrics),
       widget.type,
+      format,
     );
     if (!drag.moved || !samePlacement(placement, drag.placement)) {
       setDrag({ ...drag, moved: true, placement });
@@ -262,6 +326,7 @@ export function EditorCanvas({
         type: "placeWidget",
         widgetId: drag.widgetId,
         placement: drag.placement,
+        ...(customFormat ? { format: customFormat } : {}),
       });
     }
   }
@@ -287,24 +352,38 @@ export function EditorCanvas({
       }
       return;
     }
-    const action = canvasKeyAction(event, id);
+    const action = canvasKeyAction(event, id, customFormat);
     if (!action) {
       return;
     }
     event.preventDefault();
     dispatch(action);
-    if (action.type === "deleteWidget") {
+    if (action.type === "deleteWidget" || action.type === "setWidgetHidden") {
       // The widget's button goes away: keep focus on the canvas.
       overlayRef.current?.focus();
     }
   }
 
   const outline: CanvasOutline | null = drag?.moved
-    ? dragOutline(drag, slide.widgets, locale)
+    ? dragOutline(drag, widgets, locale, format)
     : incoming;
+  const reference = grid.reference;
+  const classic = format === "16x9";
+  // Formats other than 16:9 keep their shape and fit the stage's height.
+  const shape: CSSProperties = classic
+    ? {}
+    : {
+        width: "100%",
+        maxWidth: `calc(70vh * ${reference.width} / ${reference.height})`,
+        marginInline: "auto",
+      };
 
   return (
-    <div className="editor-canvas" style={themeStyle(tokens)}>
+    <div
+      className="editor-canvas"
+      data-format={format}
+      style={{ ...themeStyle(tokens), ...shape }}
+    >
       <SlideCanvas
         slide={slide}
         tokens={tokens}
@@ -312,11 +391,23 @@ export function EditorCanvas({
         header={{
           name: dashboardName.trim() || t("untitled"),
           slideName: slide.name,
+          pageLabel,
           logoImageId: settings.logoImageId,
           timeZone: env.timeZone,
         }}
         images={env.images}
         renderWidget={(widget) => <LiveWidget widget={widget} env={env} />}
+        primaryFormat={primaryFormat}
+        format={format}
+        {...(custom ? { placements: layout.placements } : {})}
+        {...(classic
+          ? {}
+          : {
+              screen: { width: reference.width, height: reference.height },
+              style: {
+                aspectRatio: `${reference.width} / ${reference.height}`,
+              },
+            })}
       />
       <div
         ref={overlayRef}
@@ -341,25 +432,25 @@ export function EditorCanvas({
       >
         {outline ? (
           <div className="editor-grid" aria-hidden="true">
-            {Array.from({ length: STUDIO_GRID.rows }, (_, y) =>
-              Array.from({ length: STUDIO_GRID.columns }, (_, x) => (
+            {Array.from({ length: grid.rows }, (_, y) =>
+              Array.from({ length: grid.columns }, (_, x) => (
                 <span
                   key={`${x}-${y}`}
                   className="editor-grid-cell"
-                  style={widgetBoxStyle(
-                    { x, y, w: 1, h: 1 },
-                    settings.showHeader,
-                  )}
+                  style={boxOf({ x, y, w: 1, h: 1 })}
                 />
               )),
             )}
           </div>
         ) : null}
-        {slide.widgets.map((widget) => {
+        {widgets.map((widget) => {
           const selected = widget.id === selectedWidgetId;
           const problem = widgetsWithProblems.has(widget.id);
           const dragging = drag?.moved && drag.widgetId === widget.id;
-          const cut = unreadable.get(widget.id);
+          // Label fit is measured on the primary canvas; a custom format
+          // has its own warnings below the canvas.
+          const cut = custom ? undefined : unreadable.get(widget.id);
+          const toReview = review?.has(widget.id) ?? false;
           return (
             <button
               key={widget.id}
@@ -371,10 +462,11 @@ export function EditorCanvas({
                 problem ? "editor-widget--problem" : "",
                 dragging ? "editor-widget--dragging" : "",
                 cut ? "editor-widget--unreadable" : "",
+                toReview ? "editor-widget--review" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
-              style={widgetBoxStyle(widget, settings.showHeader)}
+              style={boxOf(widget)}
               aria-pressed={selected}
               aria-label={`${t("widgetLabel", {
                 name: widgetName(widget, locale),
@@ -383,7 +475,7 @@ export function EditorCanvas({
                 w: widget.w,
                 h: widget.h,
                 problem: problem ? "yes" : "no",
-              })}${cut ? `. ${cut.hint}` : ""}`}
+              })}${cut ? `. ${cut.hint}` : ""}${toReview ? `. ${t("toReviewLabel")}` : ""}`}
               aria-describedby={HELP_ID}
               onClick={() =>
                 dispatch({ type: "selectWidget", widgetId: widget.id })
@@ -395,7 +487,7 @@ export function EditorCanvas({
                 <span
                   className={
                     selected
-                      ? `editor-badge editor-badge--hint editor-badge--${widget.y + widget.h > STUDIO_GRID.rows - 2 ? "above" : "below"}`
+                      ? `editor-badge editor-badge--hint editor-badge--${widget.y + widget.h > grid.rows - 2 ? "above" : "below"}`
                       : "editor-badge"
                   }
                   title={cut.hint}
@@ -406,6 +498,11 @@ export function EditorCanvas({
                     : cut.kind === "text"
                       ? t("textCut")
                       : t("labelCut")}
+                </span>
+              ) : null}
+              {toReview ? (
+                <span className="editor-review" aria-hidden="true">
+                  {t("toReview")}
                 </span>
               ) : null}
               {selected
@@ -431,7 +528,7 @@ export function EditorCanvas({
                 ? "editor-outline editor-outline--blocked"
                 : "editor-outline"
             }
-            style={widgetBoxStyle(outline.placement, settings.showHeader)}
+            style={boxOf(outline.placement)}
             aria-hidden="true"
           >
             <span className="editor-readout">{outline.label}</span>
@@ -439,10 +536,16 @@ export function EditorCanvas({
         ) : null}
       </div>
       <p id={HELP_ID} className="visually-hidden">
-        {t("keyboardHelp")}
+        {custom ? t("keyboardHelpCustom") : t("keyboardHelp")}
       </p>
-      {slide.widgets.length === 0 ? (
-        <p className="editor-empty">{t("empty")}</p>
+      {widgets.length === 0 ? (
+        <p className="editor-empty">
+          {custom
+            ? slide.widgets.length === 0
+              ? t("emptyCustomSlide")
+              : t("emptyPage")
+            : t("empty")}
+        </p>
       ) : null}
     </div>
   );

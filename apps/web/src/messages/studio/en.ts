@@ -58,6 +58,14 @@ export const studioEn = {
       empty: "This slide is empty. Add a widget above.",
       readoutNoRoom: "{w} × {h} · no room here",
       dragCancelled: "Drag cancelled.",
+      toReview: "To review",
+      toReviewLabel: "Placed automatically, to review",
+      keyboardHelpCustom:
+        "Arrow keys move the widget by one cell in this format, Shift and arrow keys resize it, Delete hides it in this format, Escape goes back to the slide.",
+      emptyPage:
+        "Nothing on this page yet. Move a widget here or remove the page.",
+      emptyCustomSlide:
+        "This slide is empty. Add widgets in the primary format.",
     },
     addMenu: {
       group: "Add a widget",
@@ -309,7 +317,7 @@ export const studioEn = {
       frameLabel: "Preview: {name} {ratio}, {device}",
       scrollFrameLabel: "Preview: scroll view, {device}",
       autoNote:
-        "Laid out automatically from the {primary} layout. Edit in {primary}: your unsaved changes show here right away.",
+        "Laid out automatically from the {primary} layout: your unsaved changes there show here right away. To arrange this slide by hand in this format, choose “Customise this format”.",
       customNote:
         "{count, plural, one {# slide is} other {# slides are}} arranged by hand in this format; the others are laid out automatically. Unsaved changes in {primary} show here right away.",
       scrollNote:
@@ -334,6 +342,37 @@ export const studioEn = {
       showInEditor: "Select in {primary}",
       openFormat: "Open {name} {ratio}",
       overviewHelp: "Every format with this slide; choose one to look closer.",
+      customize: "Customise this format",
+      customizeHelp:
+        "Arrange this slide by hand in {ratio}, starting from the automatic layout. Other slides stay automatic, and widgets you add in {primary} are placed here for you to review.",
+      backToAuto: "Back to automatic",
+      backToAutoConfirm:
+        "Lay out this slide automatically in {ratio} again? Your arrangement for {ratio} is removed (Undo brings it back).",
+      customEditorNote:
+        "Arranged by hand in {ratio} for this slide. Position, size, page and visibility here apply to {ratio} only. Add widgets in {primary}.",
+      contentEverywhere:
+        "Content changes apply to this widget in every format. Its position, size, page and visibility in {ratio} apply only there.",
+      addPage: "Add page",
+      removePage: "Remove page {page}",
+      pageEmpty: "Only an empty page can be removed.",
+      hideIn: "Hide in {ratio}",
+      moveToPage: "Move to page",
+      looksGood: "Looks good",
+      looksGoodAll:
+        "{count, plural, one {Looks good (# widget)} other {Looks good (all #)}}",
+      reviewNote:
+        "{count, plural, one {# widget was placed automatically after a change in {primary}: check it, then choose “Looks good”.} other {# widgets were placed automatically after changes in {primary}: check them, then choose “Looks good”.}}",
+      hiddenTitle: "Hidden in {ratio}",
+      showIn: "Show",
+      showInLabel: "Show {name} in {ratio}",
+      makePrimary: "Make {ratio} the primary format",
+      makePrimaryConfirm:
+        "Make {name} {ratio} the primary format? This saves the dashboard. You then design in {ratio}, and the {primary} layout is kept as a custom layout.",
+      makePrimaryBlocked:
+        "To make {ratio} the primary format, every slide must fit on one page there with every widget shown.",
+      blockedOverflow: "{slide} continues on more than one page.",
+      blockedHidden: "{slide} hides widgets.",
+      primaryChanged: "{ratio} is now the primary format.",
     },
     document: {
       noSpace: "There is no free space on this slide for it.",
@@ -394,6 +433,23 @@ export const studioEn = {
         atEdge: "{name} is at the edge of the slide.",
         mustStay: "{name} must stay on the slide.",
         wouldOverlap: "{name} would overlap {other}; it stays where it was.",
+        customized:
+          "This slide is now arranged by hand in {format}{pages, plural, =1 {} other {, on # pages}}.",
+        backToAuto: "This slide is laid out automatically in {format} again.",
+        looksGood: "{name} looks good in {format}.",
+        looksGoodAll:
+          "Every widget placed automatically looks good in {format}.",
+        pageAdded: "Page {page} added in {format}.",
+        pageRemoved: "Page {page} removed in {format}.",
+        movedToPage: "{name} moved to page {page}.",
+        hidden: "{name} is hidden in {format}.",
+        shown: "{name} is shown again in {format}, on page {page}.",
+        noRoomIn:
+          "There is no room for {name} in {format}. Make room or add a page.",
+        pageLimit: "A slide has at most {max} pages in {format}.",
+        lastPage: "A slide keeps at least one page.",
+        pageNotEmpty:
+          "Page {page} still shows widgets: move them to another page or hide them first.",
       },
     },
   },

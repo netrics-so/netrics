@@ -22,8 +22,9 @@ import {
 // state of each format (primary, auto, custom, warnings) for the draft,
 // and the switcher's own state. Pure, so it is tested without a browser.
 //
-// Editing stays on the primary format here; custom layouts per format
-// (#284) make other formats editable through `isEditableTarget`.
+// The primary format is edited on the canvas; another format is edited
+// once the slide has a custom layout there (#284), else it is a preview
+// with "Customize". `isEditableTarget` is the one switch.
 
 /** A screen format in screen view, or the scroll view (phones, tablets). */
 export type PreviewTarget = ScreenFormat | "scroll";
@@ -46,12 +47,19 @@ export function previewTargets(primaryFormat: ScreenFormat): PreviewTarget[] {
   ];
 }
 
-/** True when the Studio edits the slide in this target (the primary only, until #284). */
+/**
+ * True when the Studio edits the slide in this target: always in the
+ * primary format; in another format when the slide is arranged by hand
+ * there (ADR 0017 section 4). Scroll view is always automatic.
+ */
 export function isEditableTarget(
   target: PreviewTarget,
   primaryFormat: ScreenFormat,
+  slide?: { layouts?: SlideLayouts | null } | null,
 ): boolean {
-  return target === primaryFormat;
+  if (target === primaryFormat) return true;
+  if (target === "scroll") return false;
+  return slide?.layouts?.some((layout) => layout.format === target) ?? false;
 }
 
 // ---------------------------------------------------------------------------

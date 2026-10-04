@@ -1,11 +1,13 @@
 import {
-  STUDIO_GRID,
+  SCREEN_FORMATS,
   STUDIO_MIN_WIDGET_SIZE,
   STUDIO_SPACING,
-  isInsideGrid,
+  isInsideFormatGrid,
   meetsMinimumSize,
   placementsOverlap,
+  screenFrame,
   studioFrame,
+  type ScreenFormat,
   type StudioCanvas,
   type StudioPlacement,
   type WidgetType,
@@ -15,9 +17,17 @@ import {
 // no library). Everything here is pure: pointer positions become cells,
 // drags become snapped placements, keyboard steps become new placements.
 // The canvas measures itself when a drag starts, so the same arithmetic
-// holds at any canvas size, browser zoom or device pixel ratio.
+// holds at any canvas size, browser zoom or device pixel ratio. Every
+// function works on the grid of a screen format (ADR 0017): the primary's,
+// or a custom layout's (#284); `16x9` (12 × 8) by default.
 
-/** The 12 × 8 grid in the pixels of a measured canvas. */
+/** Columns and rows of a format's grid. */
+function gridOf(format: ScreenFormat): { columns: number; rows: number } {
+  const { columns, rows } = SCREEN_FORMATS[format];
+  return { columns, rows };
+}
+
+/** A format's grid in the pixels of a measured canvas. */
 export interface GridMetrics {
   /** The grid's top-left corner, relative to the canvas. */
   left: number;
@@ -27,19 +37,26 @@ export interface GridMetrics {
   gap: number;
 }
 
-/** The grid of a canvas `canvas` pixels large (any 16:9 size). */
+/**
+ * The grid of a canvas `canvas` pixels large: any 16:9 size for `16x9`,
+ * else the format's grid over the canvas as screen view places it.
+ */
 export function gridMetrics(
   canvas: StudioCanvas,
   showHeader: boolean,
+  format: ScreenFormat = "16x9",
 ): GridMetrics {
-  const { unit, grid } = studioFrame(canvas, showHeader);
+  const { columns, rows } = gridOf(format);
+  const { unit, grid } =
+    format === "16x9"
+      ? studioFrame(canvas, showHeader)
+      : screenFrame(canvas, format, showHeader);
   const gap = STUDIO_SPACING.gap * unit;
   return {
     left: grid.x,
     top: grid.y,
-    cellWidth:
-      (grid.width - gap * (STUDIO_GRID.columns - 1)) / STUDIO_GRID.columns,
-    cellHeight: (grid.height - gap * (STUDIO_GRID.rows - 1)) / STUDIO_GRID.rows,
+    cellWidth: (grid.width - gap * (columns - 1)) / columns,
+    cellHeight: (grid.height - gap * (rows - 1)) / rows,
     gap,
   };
 }
@@ -55,7 +72,9 @@ function clamp(value: number, min: number, max: number) {
 export function pointToCell(
   point: { x: number; y: number },
   metrics: GridMetrics,
+  format: ScreenFormat = "16x9",
 ): { column: number; row: number } {
+  const { columns, rows } = gridOf(format);
   const column = Math.floor(
     (point.x - metrics.left) / (metrics.cellWidth + metrics.gap),
   );
@@ -63,8 +82,8 @@ export function pointToCell(
     (point.y - metrics.top) / (metrics.cellHeight + metrics.gap),
   );
   return {
-    column: clamp(column, 0, STUDIO_GRID.columns - 1),
-    row: clamp(row, 0, STUDIO_GRID.rows - 1),
+    column: clamp(column, 0, columns - 1),
+    row: clamp(row, 0, rows - 1),
   };
 }
 
@@ -106,8 +125,9 @@ export function dragPlacement(
   handle: DragHandle,
   delta: { dx: number; dy: number },
   type: WidgetType,
+  format: ScreenFormat = "16x9",
 ): StudioPlacement {
-  const { columns, rows } = STUDIO_GRID;
+  const { columns, rows } = gridOf(format);
   if (handle === "move") {
     const w = Math.min(start.w, columns);
     const h = Math.min(start.h, rows);
@@ -164,8 +184,9 @@ export function placementBlocker(
   placement: StudioPlacement,
   type: WidgetType,
   others: readonly StudioPlacement[],
+  format: ScreenFormat = "16x9",
 ): PlacementBlocker | null {
-  if (!isInsideGrid(placement)) {
+  if (!isInsideFormatGrid(placement, format)) {
     return { kind: "outside" };
   }
   if (!meetsMinimumSize(type, placement)) {
@@ -192,6 +213,7 @@ export function nudgePlacement(
   dx: number,
   dy: number,
   others: readonly StudioPlacement[],
+  format: ScreenFormat = "16x9",
 ): StudioPlacement | null {
   if (dx === 0 && dy === 0) {
     return null;
@@ -202,7 +224,7 @@ export function nudgePlacement(
       x: placement.x + dx * step,
       y: placement.y + dy * step,
     };
-    if (!isInsideGrid(candidate)) {
+    if (!isInsideFormatGrid(candidate, format)) {
       return null;
     }
     if (!others.some((other) => placementsOverlap(candidate, other))) {
@@ -221,13 +243,14 @@ export function resizePlacement(
   dw: number,
   dh: number,
   type: WidgetType,
+  format: ScreenFormat = "16x9",
 ): StudioPlacement | null {
   const candidate = {
     ...placement,
     w: placement.w + dw,
     h: placement.h + dh,
   };
-  if (!isInsideGrid(candidate)) {
+  if (!isInsideFormatGrid(candidate, format)) {
     return null;
   }
   // Shrinking a widget that is already below its minimum stays refused;
@@ -254,20 +277,22 @@ export function nearestFreePlacement(
   target: StudioPlacement,
   type: WidgetType,
   others: readonly StudioPlacement[],
+  format: ScreenFormat = "16x9",
 ): StudioPlacement | null {
+  const { columns, rows } = gridOf(format);
   const minimum = STUDIO_MIN_WIDGET_SIZE[type];
   const sizes = [
     {
-      w: Math.min(Math.max(target.w, minimum.w), STUDIO_GRID.columns),
-      h: Math.min(Math.max(target.h, minimum.h), STUDIO_GRID.rows),
+      w: Math.min(Math.max(target.w, minimum.w), columns),
+      h: Math.min(Math.max(target.h, minimum.h), rows),
     },
     minimum,
   ];
   for (const size of sizes) {
     let best: StudioPlacement | null = null;
     let bestDistance = Infinity;
-    for (let y = 0; y + size.h <= STUDIO_GRID.rows; y++) {
-      for (let x = 0; x + size.w <= STUDIO_GRID.columns; x++) {
+    for (let y = 0; y + size.h <= rows; y++) {
+      for (let x = 0; x + size.w <= columns; x++) {
         const candidate = { x, y, ...size };
         if (others.some((other) => placementsOverlap(candidate, other))) {
           continue;
@@ -301,22 +326,24 @@ export function dropPlacement(
   type: WidgetType,
   size: { w: number; h: number },
   others: readonly StudioPlacement[],
+  format: ScreenFormat = "16x9",
 ): { placement: StudioPlacement; blocked: boolean } {
+  const { columns, rows } = gridOf(format);
   const column = (point.x - metrics.left) / (metrics.cellWidth + metrics.gap);
   const row = (point.y - metrics.top) / (metrics.cellHeight + metrics.gap);
   const around = (w: number, h: number): StudioPlacement => ({
-    x: clamp(Math.round(column - w / 2), 0, STUDIO_GRID.columns - w),
-    y: clamp(Math.round(row - h / 2), 0, STUDIO_GRID.rows - h),
+    x: clamp(Math.round(column - w / 2), 0, columns - w),
+    y: clamp(Math.round(row - h / 2), 0, rows - h),
     w,
     h,
   });
   const minimum = STUDIO_MIN_WIDGET_SIZE[type];
-  const usual = around(size.w, size.h);
-  if (!placementBlocker(usual, type, others)) {
+  const usual = around(Math.min(size.w, columns), Math.min(size.h, rows));
+  if (!placementBlocker(usual, type, others, format)) {
     return { placement: usual, blocked: false };
   }
   const small = around(minimum.w, minimum.h);
-  if (!placementBlocker(small, type, others)) {
+  if (!placementBlocker(small, type, others, format)) {
     return { placement: small, blocked: false };
   }
   return { placement: usual, blocked: true };

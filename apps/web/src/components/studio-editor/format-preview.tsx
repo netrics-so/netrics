@@ -304,6 +304,7 @@ export function FormatPreview({
   onDevice,
   onPage,
   onShowWarning,
+  actions = null,
 }: {
   context: PreviewContext;
   view: FormatViewState;
@@ -314,6 +315,8 @@ export function FormatPreview({
   onDevice: (device: PreviewDeviceId) => void;
   onPage: (page: number) => void;
   onShowWarning: (slideId: string, widgetId: string | null) => void;
+  /** "Customize" and "Make primary" for a format laid out automatically. */
+  actions?: ReactNode;
 }) {
   const t = useT("studio.formats");
   const target = view.target;
@@ -387,6 +390,9 @@ export function FormatPreview({
               </button>
             ))}
           </div>
+        ) : null}
+        {actions ? (
+          <div className="format-layout-actions">{actions}</div>
         ) : null}
       </div>
       <div ref={stage} className="format-preview-stage">

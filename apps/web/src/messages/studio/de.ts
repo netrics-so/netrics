@@ -61,6 +61,14 @@ export const studioDe: Catalog<typeof studioEn> = {
       empty: "Diese Folie ist leer. Füg oben ein Widget hinzu.",
       readoutNoRoom: "{w} × {h} · hier ist kein Platz",
       dragCancelled: "Ziehen abgebrochen.",
+      toReview: "Zu prüfen",
+      toReviewLabel: "Automatisch platziert, zu prüfen",
+      keyboardHelpCustom:
+        "Pfeiltasten verschieben das Widget in diesem Format um eine Zelle, Umschalt und Pfeiltasten ändern seine Größe, Entf blendet es in diesem Format aus, Esc kehrt zur Folie zurück.",
+      emptyPage:
+        "Auf dieser Seite ist noch nichts. Verschieb ein Widget hierher oder entfern die Seite.",
+      emptyCustomSlide:
+        "Diese Folie ist leer. Füg Widgets im primären Format hinzu.",
     },
     addMenu: {
       group: "Widget hinzufügen",
@@ -313,7 +321,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       frameLabel: "Vorschau: {name} {ratio}, {device}",
       scrollFrameLabel: "Vorschau: Scroll-Ansicht, {device}",
       autoNote:
-        "Automatisch aus dem Layout in {primary} angeordnet. Bearbeite in {primary}: Deine ungespeicherten Änderungen erscheinen hier sofort.",
+        "Automatisch aus dem Layout in {primary} angeordnet: Deine ungespeicherten Änderungen dort erscheinen hier sofort. Um diese Folie in diesem Format von Hand anzuordnen, wähl „Dieses Format anpassen“.",
       customNote:
         "{count, plural, one {# Folie ist} other {# Folien sind}} in diesem Format von Hand angeordnet, die anderen automatisch. Ungespeicherte Änderungen in {primary} erscheinen hier sofort.",
       scrollNote:
@@ -340,6 +348,37 @@ export const studioDe: Catalog<typeof studioEn> = {
       openFormat: "{name} {ratio} öffnen",
       overviewHelp:
         "Jedes Format mit dieser Folie; wähl eins, um es genauer anzusehen.",
+      customize: "Dieses Format anpassen",
+      customizeHelp:
+        "Ordne diese Folie in {ratio} von Hand an, ausgehend vom automatischen Layout. Andere Folien bleiben automatisch, und Widgets, die du in {primary} hinzufügst, werden hier für dich zum Prüfen platziert.",
+      backToAuto: "Zurück zu automatisch",
+      backToAutoConfirm:
+        "Diese Folie in {ratio} wieder automatisch anordnen? Deine Anordnung für {ratio} wird entfernt (Rückgängig holt sie zurück).",
+      customEditorNote:
+        "Diese Folie ist in {ratio} von Hand angeordnet. Position, Größe, Seite und Sichtbarkeit gelten hier nur für {ratio}. Widgets fügst du in {primary} hinzu.",
+      contentEverywhere:
+        "Inhaltliche Änderungen gelten für dieses Widget in jedem Format. Position, Größe, Seite und Sichtbarkeit in {ratio} gelten nur dort.",
+      addPage: "Seite hinzufügen",
+      removePage: "Seite {page} entfernen",
+      pageEmpty: "Nur eine leere Seite lässt sich entfernen.",
+      hideIn: "In {ratio} ausblenden",
+      moveToPage: "Auf Seite verschieben",
+      looksGood: "Passt so",
+      looksGoodAll:
+        "{count, plural, one {Passt so (# Widget)} other {Passt so (alle #)}}",
+      reviewNote:
+        "{count, plural, one {# Widget wurde nach einer Änderung in {primary} automatisch platziert: Prüf es und wähl dann „Passt so“.} other {# Widgets wurden nach Änderungen in {primary} automatisch platziert: Prüf sie und wähl dann „Passt so“.}}",
+      hiddenTitle: "In {ratio} ausgeblendet",
+      showIn: "Anzeigen",
+      showInLabel: "{name} in {ratio} anzeigen",
+      makePrimary: "{ratio} zum primären Format machen",
+      makePrimaryConfirm:
+        "{name} {ratio} zum primären Format machen? Das speichert das Dashboard. Du gestaltest dann in {ratio}, und das Layout in {primary} bleibt als angepasstes Layout erhalten.",
+      makePrimaryBlocked:
+        "Damit {ratio} das primäre Format werden kann, muss dort jede Folie auf eine Seite passen und jedes Widget angezeigt werden.",
+      blockedOverflow: "{slide} geht auf mehr als einer Seite weiter.",
+      blockedHidden: "{slide} blendet Widgets aus.",
+      primaryChanged: "{ratio} ist jetzt das primäre Format.",
     },
     document: {
       noSpace: "Auf dieser Folie ist kein Platz mehr dafür.",
@@ -400,6 +439,24 @@ export const studioDe: Catalog<typeof studioEn> = {
         atEdge: "{name} ist am Rand der Folie.",
         mustStay: "{name} muss auf der Folie bleiben.",
         wouldOverlap: "{name} würde {other} überlappen; es bleibt, wo es war.",
+        customized:
+          "Diese Folie ist in {format} jetzt von Hand angeordnet{pages, plural, =1 {} other {, auf # Seiten}}.",
+        backToAuto:
+          "Diese Folie wird in {format} wieder automatisch angeordnet.",
+        looksGood: "{name} passt in {format}.",
+        looksGoodAll:
+          "Alle automatisch platzierten Widgets passen in {format}.",
+        pageAdded: "Seite {page} in {format} hinzugefügt.",
+        pageRemoved: "Seite {page} in {format} entfernt.",
+        movedToPage: "{name} auf Seite {page} verschoben.",
+        hidden: "{name} ist in {format} ausgeblendet.",
+        shown: "{name} wird in {format} wieder angezeigt, auf Seite {page}.",
+        noRoomIn:
+          "In {format} ist kein Platz für {name}. Schaff Platz oder füg eine Seite hinzu.",
+        pageLimit: "Eine Folie hat in {format} höchstens {max} Seiten.",
+        lastPage: "Eine Folie behält mindestens eine Seite.",
+        pageNotEmpty:
+          "Auf Seite {page} sind noch Widgets: Verschieb sie zuerst auf eine andere Seite oder blende sie aus.",
       },
     },
   },

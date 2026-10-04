@@ -63,6 +63,11 @@ export const workspaceEn = {
     cannotCreateProjects: "Your role cannot create projects in this workspace.",
     newDashboard: {
       legend: "New dashboard",
+      format: "Screen format",
+      formatHelp:
+        "The format you design in. Every other format is laid out from it automatically, and you can change it later in the Studio.",
+      templateFormat:
+        "Templates are designed for TV (16:9) and laid out automatically for every other format.",
       choices: {
         blank: { title: "Blank", text: "One empty slide to fill yourself." },
         overview: {
