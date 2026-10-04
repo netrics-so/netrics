@@ -151,8 +151,9 @@ screen**, not a fixed-aspect canvas:
   extreme screens.
 
 The geometry moves into `studioLayout` as `screenFrame(screen, format,
-showHeader)` and `widgetRect(placement, frame)`; the existing 16:9
-functions become the `16x9` case and keep their vectors.
+showHeader)` and `placementRect(placement, frame)`; the existing 16:9
+functions (`studioFrame`, `widgetRect`) are exactly their `16x9` case and
+keep their vectors.
 
 ### 3. Auto layout: the reflow algorithm
 
@@ -191,8 +192,8 @@ one page.
    strips of the page, `to.columns` wide). Every band starts a new shelf, so
    rows of the design stay rows. When a band fits on one shelf, its stacks
    keep their scaled positions (`x` is the stack's rounded scaled left
-   edge, moved right past the previous stack and left so the stack ends
-   inside the grid), so deliberate gaps survive. When it does not,
+   edge, moved right past the previous stack and left so that it and the
+   stacks after it end inside the grid), so deliberate gaps survive. When it does not,
    the band wraps: the greedy count of shelves is kept, the stacks are
    spread over them as evenly as possible by count (earlier shelves take
    the extra one; greedy placement when the even split does not fit), and
