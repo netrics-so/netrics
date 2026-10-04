@@ -162,7 +162,7 @@ describe("kiosk language", () => {
     // Periods, comparisons and numbers in German.
     expect(html).toContain("Letzte 30 Tage · Summe");
     expect(html).toContain("vs. vorherige 30 Tage");
-    expect(html).toContain("12.345,5");
+    expect(html).toContain("12,3\u00a0Tsd.");
     expect(html).toContain("+23%");
     expect(html).toContain("Keine Daten zum Vergleich");
     // Notices and chrome.

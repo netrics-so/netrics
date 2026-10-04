@@ -1,4 +1,3 @@
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -16,6 +15,7 @@ import { AddWidgetMenu, incomingLabel } from "./add-widget-menu";
 import { WidgetClipboardBar, clipboardKey } from "./canvas-extras";
 import { EditorCanvas } from "./editor-canvas";
 import { SlideRail, cutOffText } from "./slide-rail";
+import { renderI18n } from "@/lib/i18n/test-render";
 
 const ID = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -75,7 +75,7 @@ const cut: UnreadableLabel = {
 };
 
 function canvas(extra: Partial<Parameters<typeof EditorCanvas>[0]> = {}) {
-  return renderToStaticMarkup(
+  return renderI18n(
     <EditorCanvas
       slide={slide}
       dashboardName="Overview"
@@ -130,7 +130,7 @@ describe("readability badges", () => {
   });
 
   it("shows the count per slide in the rail", () => {
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <SlideRail
         slides={[slide, { ...slide, id: ID(3), widgets: [] }]}
         selectedSlideId={ID(2)}
@@ -186,7 +186,7 @@ describe("a new widget dragged from the add menu", () => {
       settings,
       slides: [slide],
     };
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <AddWidgetMenu
         document={document}
         slide={slide}
@@ -224,7 +224,7 @@ describe("widget clipboard", () => {
   });
 
   it("offers buttons with their shortcuts, enabled when they apply", () => {
-    const none = renderToStaticMarkup(
+    const none = renderI18n(
       <WidgetClipboardBar
         selected={null}
         clipboard={null}
@@ -234,7 +234,7 @@ describe("widget clipboard", () => {
       />,
     );
     expect(none.match(/disabled=""/g)).toHaveLength(3);
-    const ready = renderToStaticMarkup(
+    const ready = renderI18n(
       <WidgetClipboardBar
         selected={text}
         clipboard={text}

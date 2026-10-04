@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { apiErrorMessage, revokeDevice, updateDevice } from "@/lib/api";
+import { useLocale } from "@/lib/i18n/client";
 
 interface DeviceControlsProps {
   workspaceId: string;
@@ -17,6 +18,7 @@ export function DeviceControls({
   device,
   dashboards,
 }: DeviceControlsProps) {
+  const locale = useLocale();
   const router = useRouter();
   const [name, setName] = useState(device.name);
   const [dashboardId, setDashboardId] = useState(device.dashboardId ?? "");
@@ -36,7 +38,7 @@ export function DeviceControls({
       await action();
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }

@@ -14,6 +14,7 @@ import {
   missingKeyField,
   type SignedKeyStrategy,
 } from "@/lib/signed-key";
+import { useLocale } from "@/lib/i18n/client";
 
 interface SignedKeyPanelProps {
   workspaceId: string;
@@ -44,6 +45,7 @@ export function SignedKeyPanel({
   authFailed,
   canUpdate,
 }: SignedKeyPanelProps) {
+  const locale = useLocale();
   const router = useRouter();
   const name = strategy.providerName ?? "provider";
   const [open, setOpen] = useState(authFailed && canUpdate);
@@ -113,7 +115,7 @@ export function SignedKeyPanel({
       setOpen(false);
       router.refresh();
     } catch (cause) {
-      const message = apiErrorMessage(cause);
+      const message = apiErrorMessage(cause, locale);
       const field = fieldOfMessage(message, strategy.fields);
       if (field) {
         setFieldErrors({ [field]: message });

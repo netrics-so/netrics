@@ -17,6 +17,7 @@ import {
   parseConfigSchema,
 } from "@/lib/config-schema";
 import { signedKeyStrategyOf } from "@/lib/signed-key";
+import { useLocale } from "@/lib/i18n/client";
 
 interface EditConnectionFormProps {
   workspaceId: string;
@@ -29,6 +30,7 @@ export function EditConnectionForm({
   connection,
   connector,
 }: EditConnectionFormProps) {
+  const locale = useLocale();
   const router = useRouter();
   const fields = useMemo(
     () => (connector ? parseConfigSchema(connector.configSchema) : []),
@@ -70,7 +72,7 @@ export function EditConnectionForm({
       setNotice("Connection updated.");
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }

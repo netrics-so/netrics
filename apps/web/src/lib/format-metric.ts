@@ -20,6 +20,8 @@ import {
   type SeriesUnit,
 } from "@netrics/domain";
 
+import { webTranslator } from "./i18n/catalogs";
+
 /**
  * Number formatting for dashboard tiles. Values are compacted (12.9K, 4.2M);
  * currency metrics arrive in integer minor units named "<ISO 4217>_minor"
@@ -40,6 +42,61 @@ export function displayUnit(unit: string, currency?: string | null): string {
   return unit;
 }
 
+/**
+ * Compact suffixes for languages whose `Intl` short compact notation does
+ * not abbreviate thousands (German CLDR writes 12.900, not 12,9 Tsd.).
+ * Languages not listed use `Intl` as it is.
+ */
+const COMPACT_SUFFIXES: Partial<Record<Locale, readonly string[]>> = {
+  de: ["", "Tsd.", "Mio.", "Mrd.", "Bio."],
+};
+
+/**
+ * `value` in compact notation with one decimal at most ("12,9 Tsd.",
+ * "4,2 Mio. $"), or null when the language's `Intl` compact notation is
+ * used as it is.
+ */
+function suffixCompact(
+  value: number,
+  locale: Locale,
+  currency?: string,
+): string | null {
+  const suffixes = COMPACT_SUFFIXES[locale];
+  if (!suffixes) {
+    return null;
+  }
+  const magnitude = Math.abs(value);
+  let tier = 0;
+  while (tier < suffixes.length - 1 && magnitude >= 1000 ** (tier + 1)) {
+    tier += 1;
+  }
+  let scaled = Math.round((value / 1000 ** tier) * 10) / 10;
+  // 999,950 rounds to 1000 thousand: one million.
+  if (Math.abs(scaled) >= 1000 && tier < suffixes.length - 1) {
+    tier += 1;
+    scaled = Math.round((value / 1000 ** tier) * 10) / 10;
+  }
+  const format = new Intl.NumberFormat(locale, {
+    maximumFractionDigits: 1,
+    ...(currency ? { style: "currency", currency } : {}),
+    minimumFractionDigits: 0,
+  });
+  const suffix = suffixes[tier];
+  if (!suffix) {
+    return format.format(scaled);
+  }
+  // The suffix follows the number, before a trailing currency sign.
+  const parts = format.formatToParts(scaled);
+  const lastNumber = parts.findLastIndex((part) =>
+    ["integer", "fraction", "group", "decimal"].includes(part.type),
+  );
+  return parts
+    .map((part, index) =>
+      index === lastNumber ? `${part.value}\u00a0${suffix}` : part.value,
+    )
+    .join("");
+}
+
 export function formatValue(
   value: number | null,
   unit: string,
@@ -53,6 +110,10 @@ export function formatValue(
     const major = toMajorUnits(value, currency);
     const digits = currencyExponent(currency);
     const compact = Math.abs(major) >= 10_000;
+    const local = compact ? suffixCompact(major, locale, currency) : null;
+    if (local !== null) {
+      return local;
+    }
     return new Intl.NumberFormat(locale, {
       style: "currency",
       currency,
@@ -77,6 +138,10 @@ export function formatValue(
     }).format(value);
   }
   const compact = Math.abs(value) >= 10_000;
+  const local = compact ? suffixCompact(value, locale) : null;
+  if (local !== null) {
+    return local;
+  }
   return new Intl.NumberFormat(locale, {
     notation: compact ? "compact" : "standard",
     maximumFractionDigits: compact ? 1 : Math.abs(value) >= 100 ? 0 : 2,
@@ -268,14 +333,24 @@ export function pickableMetrics<
  * down by, e.g. "Clicks by breakdown (per page / query / country / device)",
  * so it cannot be mistaken for the total.
  */
-export function metricPickerLabel(metric: {
-  name: string;
-  dimensions: readonly string[];
-}): string {
-  const breakdown = breakdownDimensions(metric.dimensions);
+export function metricPickerLabel(
+  metric: {
+    name: string;
+    dimensions: readonly string[];
+    /** Dimension names in the viewer's language, from the API. */
+    dimensionNames?: Readonly<Record<string, string>>;
+  },
+  locale: Locale,
+): string {
+  const breakdown = breakdownDimensions(metric.dimensions).map(
+    (dimension) => metric.dimensionNames?.[dimension] ?? dimension,
+  );
   return breakdown.length === 0
     ? metric.name
-    : `${metric.name} (per ${breakdown.join(" / ")})`;
+    : webTranslator(locale, "formats.metric")("perBreakdown", {
+        name: metric.name,
+        dimensions: breakdown.join(" / "),
+      });
 }
 
 /**

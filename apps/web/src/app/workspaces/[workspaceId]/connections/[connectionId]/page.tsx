@@ -21,6 +21,7 @@ import {
   listWorkspaceMetrics,
   listWorkspaces,
 } from "@/lib/api";
+import { getLocale } from "@/lib/i18n/server";
 import {
   parseOAuthOutcome,
   providerName,
@@ -55,6 +56,7 @@ export default async function ConnectionDetailPage({
   const { workspaceId, connectionId } = await params;
   const query = await searchParams;
   const { cookieHeader } = await requireSession();
+  const locale = await getLocale();
 
   const [{ workspaces }, workspaceResult, detail] = await Promise.all([
     listWorkspaces(cookieHeader),
@@ -187,17 +189,19 @@ export default async function ConnectionDetailPage({
         <div className="row">
           <span className="label">Last success</span>
           <span className="value">
-            {relativeTime(connection.state.lastSuccessAt)}
+            {relativeTime(connection.state.lastSuccessAt, locale)}
           </span>
         </div>
         <div className="row">
           <span className="label">Next sync due</span>
-          <span className="value">{nextSyncLabel(connection.state)}</span>
+          <span className="value">
+            {nextSyncLabel(connection.state, locale)}
+          </span>
         </div>
         <div className="row">
           <span className="label">Poll interval</span>
           <span className="value">
-            {intervalLabel(connection.state.pollIntervalSeconds)}
+            {intervalLabel(connection.state.pollIntervalSeconds, locale)}
           </span>
         </div>
         {oauth ? (
@@ -386,8 +390,12 @@ export default async function ConnectionDetailPage({
                       ? `${run.errorClass}: ${run.errorMessage ?? ""}`
                       : "—"}
                   </td>
-                  <td className="muted">{relativeTime(run.startedAt)}</td>
-                  <td className="muted">{relativeTime(run.finishedAt)}</td>
+                  <td className="muted">
+                    {relativeTime(run.startedAt, locale)}
+                  </td>
+                  <td className="muted">
+                    {relativeTime(run.finishedAt, locale)}
+                  </td>
                 </tr>
               ))}
             </tbody>

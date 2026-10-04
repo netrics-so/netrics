@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { summarizeHeartbeat } from "@/lib/device-heartbeat";
 import { parseDisconnected, parseOAuthOutcome } from "@/lib/oauth-connection";
+import { getLocale } from "@/lib/i18n/server";
 import { relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
 import { parseKeyRemoved } from "@/lib/signed-key";
@@ -42,6 +43,7 @@ export default async function WorkspacePage({
   const disconnected = parseDisconnected(query);
   const keyRemoved = parseKeyRemoved(query);
   const { cookieHeader } = await requireSession();
+  const locale = await getLocale();
 
   const [{ workspaces }, workspaceResult] = await Promise.all([
     listWorkspaces(cookieHeader),
@@ -144,7 +146,7 @@ export default async function WorkspacePage({
                   {dashboard.slideCount === 1 ? "" : "s"} ·{" "}
                   {dashboard.widgetCount} widget
                   {dashboard.widgetCount === 1 ? "" : "s"} · updated{" "}
-                  {relativeTime(dashboard.updatedAt)}
+                  {relativeTime(dashboard.updatedAt, locale)}
                 </span>
                 {can(role, "dashboards:update") ? (
                   <>
@@ -175,7 +177,7 @@ export default async function WorkspacePage({
           ) : (
             <ul className="workspace-list device-list">
               {devices.map((device) => {
-                const heartbeat = summarizeHeartbeat(device.heartbeat);
+                const heartbeat = summarizeHeartbeat(device.heartbeat, locale);
                 return (
                   <li key={device.id}>
                     <strong>{device.name}</strong>{" "}
@@ -186,7 +188,7 @@ export default async function WorkspacePage({
                       {(device.dashboardId &&
                         dashboardNames.get(device.dashboardId)) ??
                         "No dashboard"}{" "}
-                      · last seen {relativeTime(device.lastSeenAt)}
+                      · last seen {relativeTime(device.lastSeenAt, locale)}
                       {heartbeat
                         ? ` · ${heartbeat.version}, heartbeat ${heartbeat.at}`
                         : null}
@@ -256,9 +258,11 @@ export default async function WorkspacePage({
                     )}
                   </td>
                   <td className="muted">
-                    {relativeTime(connection.state.lastSuccessAt)}
+                    {relativeTime(connection.state.lastSuccessAt, locale)}
                   </td>
-                  <td className="muted">{nextSyncLabel(connection.state)}</td>
+                  <td className="muted">
+                    {nextSyncLabel(connection.state, locale)}
+                  </td>
                 </tr>
               ))}
             </tbody>

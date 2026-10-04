@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 
 import { acceptInvitation, apiErrorMessage } from "@/lib/api";
 import { signOut, signUp } from "@/lib/auth";
+import { useLocale } from "@/lib/i18n/client";
 
 // Must match INVITATION_TOKEN_HEADER in apps/server/src/auth/index.ts.
 const INVITATION_TOKEN_HEADER = "x-netrics-invitation-token";
@@ -18,6 +19,7 @@ export function InvitationActions({
   invitedEmail: string;
   signedInEmail: string | null;
 }) {
+  const locale = useLocale();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -34,7 +36,7 @@ export function InvitationActions({
     try {
       await action();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
       setPending(false);
     }
   }

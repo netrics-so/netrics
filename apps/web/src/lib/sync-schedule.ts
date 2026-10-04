@@ -1,5 +1,7 @@
 import type { ConnectionAuthState } from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
 
+import { webTranslator } from "./i18n/catalogs";
 import { relativeTime } from "./relative-time";
 
 /**
@@ -7,15 +9,19 @@ import { relativeTime } from "./relative-time";
  * connections whose credentials failed or whose grant needs reconnecting, so
  * their stored due time would be misleading.
  */
-export function nextSyncLabel(state: {
-  authState: ConnectionAuthState;
-  nextDueAt: string | null;
-}): string {
+export function nextSyncLabel(
+  state: {
+    authState: ConnectionAuthState;
+    nextDueAt: string | null;
+  },
+  locale: Locale,
+): string {
+  const t = webTranslator(locale, "formats.nextSync");
   if (state.authState === "needs_reauthorization") {
-    return "Paused until reconnected";
+    return t("pausedReconnect");
   }
   if (state.authState === "auth_failed") {
-    return "Paused until the credentials work";
+    return t("pausedCredentials");
   }
-  return relativeTime(state.nextDueAt);
+  return relativeTime(state.nextDueAt, locale);
 }

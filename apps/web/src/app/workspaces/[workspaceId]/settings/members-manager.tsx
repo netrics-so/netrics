@@ -13,6 +13,7 @@ import {
   revokeInvitation,
   updateMemberRole,
 } from "@/lib/api";
+import { useLocale } from "@/lib/i18n/client";
 
 const ALL_ROLES: WorkspaceRole[] = ["owner", "admin", "editor", "viewer"];
 
@@ -38,6 +39,7 @@ export function InviteMemberForm({
   workspaceId: string;
   actorRole: WorkspaceRole;
 }) {
+  const locale = useLocale();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -64,7 +66,7 @@ export function InviteMemberForm({
       formEl.reset();
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }
@@ -136,6 +138,7 @@ function InvitationRow({
   invitation: Invitation;
   actorRole: WorkspaceRole;
 }) {
+  const locale = useLocale();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -148,7 +151,7 @@ function InvitationRow({
       await revokeInvitation(workspaceId, invitation.id);
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }
@@ -187,6 +190,7 @@ function MemberRow({
   actorRole: WorkspaceRole;
   currentUserId: string;
 }) {
+  const locale = useLocale();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -203,7 +207,7 @@ function MemberRow({
       await action();
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }

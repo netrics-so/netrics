@@ -1,4 +1,3 @@
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { DeviceSlide, DeviceWidget } from "@netrics/contracts";
@@ -6,6 +5,7 @@ import { BUILTIN_THEMES } from "@netrics/domain";
 
 import { DeviceWidgetView, type DeviceWidgetEnv } from "./device-widget";
 import { SlidePlayer } from "./slide-player";
+import { renderI18n } from "@/lib/i18n/test-render";
 
 const ID = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -142,7 +142,7 @@ function render(
   autoAdvance = true,
   startSlideId: string | null = null,
 ) {
-  return renderToStaticMarkup(
+  return renderI18n(
     <SlidePlayer
       slides={slides}
       autoAdvance={autoAdvance}
@@ -213,7 +213,7 @@ describe("SlidePlayer", () => {
 
 describe("DeviceWidgetView", () => {
   const html = (widget: DeviceWidget) =>
-    renderToStaticMarkup(<DeviceWidgetView widget={widget} env={env} />);
+    renderI18n(<DeviceWidgetView widget={widget} env={env} />);
 
   it("renders a metric from the payload's numbers", () => {
     const markup = html(widgets[0]!);
@@ -239,7 +239,7 @@ describe("DeviceWidgetView", () => {
 
   it("shows an image from its blob URL, or a notice when not loaded", () => {
     expect(html(widgets[3]!)).toContain('src="blob:kiosk/1"');
-    const missing = renderToStaticMarkup(
+    const missing = renderI18n(
       <DeviceWidgetView
         widget={widgets[3]!}
         env={{ ...env, images: new Map() }}

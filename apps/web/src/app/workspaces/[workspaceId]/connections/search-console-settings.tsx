@@ -24,6 +24,7 @@ import {
   type PropertyView,
   type SearchConsoleDimension,
 } from "@/lib/oauth-connection";
+import { useLocale } from "@/lib/i18n/client";
 
 interface SearchConsoleSettingsProps {
   workspaceId: string;
@@ -50,6 +51,7 @@ export function SearchConsoleSettings({
   connectorName,
   mode,
 }: SearchConsoleSettingsProps) {
+  const locale = useLocale();
   const router = useRouter();
   const config = connection.config;
   const [properties, setProperties] = useState<Properties>({
@@ -101,7 +103,7 @@ export function SearchConsoleSettings({
           cause.code === "oauth_reauthorization_required";
         setProperties({
           status: "error",
-          message: apiErrorMessage(cause),
+          message: apiErrorMessage(cause, locale),
           reconnect,
         });
         if (reconnect) {
@@ -184,7 +186,7 @@ export function SearchConsoleSettings({
       );
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }

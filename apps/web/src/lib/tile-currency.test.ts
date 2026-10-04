@@ -65,7 +65,7 @@ describe("tile currency choice", () => {
   });
 
   it("labels each currency with its own total in its currency", () => {
-    expect(totals.map(currencyOptionLabel)).toEqual([
+    expect(totals.map((option) => currencyOptionLabel(option, "en"))).toEqual([
       "JPY · ¥1.2M",
       "EUR · €3,456",
       "USD · $0",
@@ -108,18 +108,21 @@ describe("tile currency choice", () => {
   });
 
   it("marks converted values approximate, cites the ECB and lists what was left out", () => {
-    const note = conversionNote({
-      displayCurrency: "EUR",
-      approximate: true,
-      source: {
-        name: "ECB euro foreign exchange reference rates",
-        url: "https://www.ecb.europa.eu/",
+    const note = conversionNote(
+      {
+        displayCurrency: "EUR",
+        approximate: true,
+        source: {
+          name: "ECB euro foreign exchange reference rates",
+          url: "https://www.ecb.europa.eu/",
+        },
+        unconverted: [
+          { currency: "TWD", value: 3_000, previousValue: null },
+          { currency: "AED", value: null, previousValue: 100 },
+        ],
       },
-      unconverted: [
-        { currency: "TWD", value: 3_000, previousValue: null },
-        { currency: "AED", value: null, previousValue: 100 },
-      ],
-    });
+      "en",
+    );
     expect(note.text).toBe("≈ EUR, ECB reference rates");
     expect(note.title).toContain("ECB reference rate of each day");
     expect(note.unconverted).toEqual(["NT$30 not converted"]);

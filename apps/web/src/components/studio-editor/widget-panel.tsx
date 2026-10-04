@@ -12,18 +12,18 @@ import {
   DEFAULT_RESOURCE_NOUN,
   RESOURCE_DIMENSION,
   STUDIO_LIMITS,
+  PERIODS,
   WIDGET_TYPES,
+  aggregationName,
   allResourcesName,
+  periodLabel,
   isDataWidgetType,
   parseTextWidget,
 } from "@netrics/domain";
 
 import { Spans } from "@/components/studio/text-widget";
-import {
-  PERIOD_LABELS,
-  aggregationLabel,
-  metricPickerLabel,
-} from "@/lib/format-metric";
+import { metricPickerLabel } from "@/lib/format-metric";
+import { useLocale } from "@/lib/i18n/client";
 import {
   widgetTypeName,
   type StudioAction,
@@ -70,8 +70,6 @@ import {
   useDimensionValues,
   useResources,
 } from "./use-metric-choices";
-
-const PERIODS = Object.keys(PERIOD_LABELS) as MetricPeriod[];
 
 /** The workspace's display currency and the currencies rates exist for. */
 export interface StudioCurrency {
@@ -258,6 +256,7 @@ function DataFields({
   currency,
   dispatch,
 }: WidgetPanelProps & { widget: DataWidget; metric?: WorkspaceMetric }) {
+  const locale = useLocale();
   const update = (patch: WidgetPatch) =>
     dispatch({ type: "updateWidget", widgetId: widget.id, patch });
   const updateOptions = (patch: object) =>
@@ -365,13 +364,13 @@ function DataFields({
           >
             {missing ? (
               <option value={`${widget.connectionId}|${widget.metricKey}`}>
-                {metric ? metricPickerLabel(metric) : widget.metricKey} (not
-                available)
+                {metric ? metricPickerLabel(metric, locale) : widget.metricKey}{" "}
+                (not available)
               </option>
             ) : null}
             {ofConnection.map((candidate) => (
               <option key={metricIdOf(candidate)} value={metricIdOf(candidate)}>
-                {metricPickerLabel(candidate)}
+                {metricPickerLabel(candidate, locale)}
               </option>
             ))}
           </select>
@@ -397,7 +396,7 @@ function DataFields({
           >
             {(metric?.aggregations ?? [widget.aggregation]).map((option) => (
               <option key={option} value={option}>
-                {metric ? aggregationLabel(option, metric) : option}
+                {metric ? aggregationName(option, metric, locale) : option}
               </option>
             ))}
           </select>
@@ -413,7 +412,7 @@ function DataFields({
           >
             {PERIODS.map((option) => (
               <option key={option} value={option}>
-                {PERIOD_LABELS[option]}
+                {periodLabel(option, locale)}
               </option>
             ))}
           </select>
@@ -503,7 +502,7 @@ function DataFields({
                     key={option.currency}
                     value={`only:${option.currency}`}
                   >
-                    {currencyOptionLabel(option)}
+                    {currencyOptionLabel(option, locale)}
                   </option>
                 ))}
               </optgroup>

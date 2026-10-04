@@ -30,7 +30,7 @@ export function lastSyncNotice(
   locale: Locale = "en",
 ): string {
   if (locale === "en") {
-    return `Last sync ${relativeTime(lastSuccessAt)}`;
+    return `Last sync ${relativeTime(lastSuccessAt, "en")}`;
   }
   const t = webTranslator(locale, "screen.notices");
   return t("lastSync", {

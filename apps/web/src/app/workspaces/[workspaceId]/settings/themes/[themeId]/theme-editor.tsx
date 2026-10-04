@@ -18,6 +18,7 @@ import {
 
 import { ThemePreview } from "@/components/theme-preview";
 import { apiErrorMessage, deleteTheme, updateTheme } from "@/lib/api";
+import { useLocale } from "@/lib/i18n/client";
 
 const TOKEN_LABELS: Record<ThemeColorToken, [string, string]> = {
   background: ["Background", "The canvas behind the widgets"],
@@ -71,6 +72,7 @@ export function ThemeEditor({
   baseName: string;
   canEdit: boolean;
 }) {
+  const locale = useLocale();
   const router = useRouter();
   const [name, setName] = useState(theme.name);
   const [tokens, setTokens] = useState<ThemeTokens>(
@@ -126,7 +128,7 @@ export function ThemeEditor({
       setSaved(true);
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }
@@ -143,7 +145,7 @@ export function ThemeEditor({
       router.push(`/workspaces/${workspaceId}/settings/themes`);
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
       setPending(false);
     }
   }

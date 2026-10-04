@@ -12,6 +12,7 @@ import {
 
 import { apiErrorMessage, setWorkspaceScreenLocale } from "@/lib/api";
 import { useT } from "@/lib/i18n/client";
+import { useLocale } from "@/lib/i18n/client";
 
 /** The language of the workspace's kiosks and Apple TVs (ADR 0016). */
 export function ScreenLanguageForm({
@@ -24,6 +25,7 @@ export function ScreenLanguageForm({
   /** The instance default's name, what "unset" means for screens. */
   instanceDefaultName: string;
 }) {
+  const locale = useLocale();
   const t = useT("workspaceSettings.screenLanguage");
   const common = useT("common");
   const router = useRouter();
@@ -42,7 +44,7 @@ export function ScreenLanguageForm({
       );
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }

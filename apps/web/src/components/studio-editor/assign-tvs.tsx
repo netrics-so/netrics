@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Device } from "@netrics/contracts";
 
 import { apiErrorMessage, updateDevice } from "@/lib/api";
+import { useLocale } from "@/lib/i18n/client";
 
 /** The TVs whose assignment changes: newly checked or unchecked. */
 export function assignmentChanges(
@@ -47,6 +48,7 @@ export function AssignTvs({
   onClose: () => void;
   onAssigned: (devices: Device[]) => void;
 }) {
+  const locale = useLocale();
   const dialog = useRef<HTMLDialogElement>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState(false);
@@ -90,7 +92,7 @@ export function AssignTvs({
       if (updated.size > 0) {
         onAssigned(devices.map((device) => updated.get(device.id) ?? device));
       }
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }

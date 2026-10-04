@@ -22,6 +22,7 @@ import {
 } from "@/lib/api";
 import { brandAccent } from "@/lib/dominant-color";
 import { readIconPixels } from "@/lib/icon-pixels";
+import { useLocale } from "@/lib/i18n/client";
 
 type Choice = "blank" | "overview" | "brand";
 type BrandResource =
@@ -57,6 +58,7 @@ function resourceKey(resource: { connectionId: string; resourceId: string }) {
  * opens the new dashboard in the Studio.
  */
 export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
+  const locale = useLocale();
   const router = useRouter();
   const [choice, setChoice] = useState<Choice>("blank");
   const [name, setName] = useState("");
@@ -81,7 +83,7 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
         if (!cancelled) setOptions(loaded);
       })
       .catch((cause: unknown) => {
-        if (!cancelled) setError(apiErrorMessage(cause));
+        if (!cancelled) setError(apiErrorMessage(cause, locale));
       });
     return () => {
       cancelled = true;
@@ -185,7 +187,7 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
         `/workspaces/${workspaceId}/dashboards/${dashboard.id}/studio`,
       );
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
       setPending(false);
     }
   }

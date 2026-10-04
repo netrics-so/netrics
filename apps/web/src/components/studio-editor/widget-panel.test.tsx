@@ -1,4 +1,3 @@
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { DashboardWidget, WorkspaceMetric } from "@netrics/contracts";
@@ -9,6 +8,7 @@ import {
   WidgetPanel,
   type WidgetPanelProps,
 } from "./widget-panel";
+import { renderI18n } from "@/lib/i18n/test-render";
 
 const ID = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -63,7 +63,7 @@ function render(
   widget: DashboardWidget,
   extra: Partial<WidgetPanelProps> = {},
 ) {
-  return renderToStaticMarkup(
+  return renderI18n(
     <WidgetPanel
       widget={widget}
       workspaceId={ID(3)}
@@ -224,7 +224,7 @@ describe("widget panel", () => {
     expect(html).toContain(
       '<option value="center" selected="">Centre</option>',
     );
-    const preview = renderToStaticMarkup(
+    const preview = renderI18n(
       <TextPreview text={"## Wurfel\n**Daily** <b>numbers</b>"} />,
     );
     expect(preview).toContain("<h4><span>Wurfel</span></h4>");
@@ -259,7 +259,7 @@ describe("widget panel", () => {
   });
 
   it("never offers to delete an image the draft uses", () => {
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <ImageLibrary
         images={[
           { id: ID(50), name: "logo.png", url: "/v1/a", width: 1, height: 1 },

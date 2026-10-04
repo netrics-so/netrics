@@ -14,6 +14,7 @@ import { tileLabel } from "@netrics/domain";
 import { TileNotice, TileView } from "@/components/tile-view";
 import { apiErrorMessage, queryMetric } from "@/lib/api";
 import { displayUnit } from "@/lib/format-metric";
+import { useLocale } from "@/lib/i18n/client";
 import { conversionNote } from "@/lib/tile-currency";
 import { connectionNotice } from "@/lib/tile-status";
 
@@ -38,6 +39,7 @@ export function MetricTile({
   /** "tv": sized by its grid cell for reading at a distance (#52). */
   variant?: "default" | "tv";
 }) {
+  const locale = useLocale();
   const [data, setData] = useState<MetricQueryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,7 +63,7 @@ export function MetricTile({
     } catch (cause) {
       // Keep showing the last good numbers; the error explains why they
       // did not update.
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setLoading(false);
     }
@@ -91,10 +93,12 @@ export function MetricTile({
     data?.metric.unit ?? metric?.unit ?? "",
     data?.currency ?? tile.dimensions.currency,
   );
-  const stale = connectionNotice(connection);
+  const stale = connectionNotice(connection, Date.now(), locale);
   // Converted amounts are approximate and cite the ECB (#191); amounts
   // without a rate are listed apart, never dropped.
-  const conversion = data?.conversion ? conversionNote(data.conversion) : null;
+  const conversion = data?.conversion
+    ? conversionNote(data.conversion, locale)
+    : null;
 
   return (
     <TileView

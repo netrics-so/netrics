@@ -18,6 +18,7 @@ import type { StudioEnv, StudioImage } from "@/lib/studio-widgets";
 import type { TileConnection } from "./metric-tile";
 import { SlideViewer } from "./slide-viewer";
 import { useServerRefresh } from "./use-server-refresh";
+import { useLocale } from "@/lib/i18n/client";
 
 function metricId(metric: WorkspaceMetric) {
   return `${metric.connectionId}|${metric.key}`;
@@ -54,6 +55,7 @@ export function DashboardView({
   canDuplicate: boolean;
   canDelete: boolean;
 }) {
+  const locale = useLocale();
   const router = useRouter();
   useServerRefresh();
   const [dashboard, setDashboard] = useState(initial);
@@ -103,7 +105,7 @@ export function DashboardView({
       const copy = await duplicateDashboard(workspaceId, dashboard.id);
       router.push(`/workspaces/${workspaceId}/dashboards/${copy.dashboard.id}`);
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
       setPending(false);
     }
   }
@@ -117,7 +119,7 @@ export function DashboardView({
       await deleteDashboard(workspaceId, dashboard.id);
       router.push(`/workspaces/${workspaceId}`);
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
       setPending(false);
     }
   }

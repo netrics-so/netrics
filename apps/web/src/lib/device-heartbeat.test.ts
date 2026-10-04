@@ -59,17 +59,20 @@ describe("shortenError", () => {
 
 describe("summarizeHeartbeat", () => {
   it("is null until the device sends a heartbeat", () => {
-    expect(summarizeHeartbeat(null)).toBeNull();
+    expect(summarizeHeartbeat(null, "en")).toBeNull();
   });
 
   it("gives the version and how long ago the heartbeat came", () => {
     expect(
-      summarizeHeartbeat({
-        at: new Date(NOW - 2 * 60 * 1000).toISOString(),
-        appVersion: "web 0.1.0",
-        uptimeSeconds: 600,
-        lastError: null,
-      }),
+      summarizeHeartbeat(
+        {
+          at: new Date(NOW - 2 * 60 * 1000).toISOString(),
+          appVersion: "web 0.1.0",
+          uptimeSeconds: 600,
+          lastError: null,
+        },
+        "en",
+      ),
     ).toEqual({
       version: "web 0.1.0",
       at: "2 minutes ago",
@@ -80,12 +83,15 @@ describe("summarizeHeartbeat", () => {
 
   it("includes the last error, shortened, with the full text kept", () => {
     const error = `TypeError: fetch failed <script>alert(1)</script> ${"y".repeat(300)}`;
-    const summary = summarizeHeartbeat({
-      at: new Date(NOW - 3 * 3600 * 1000).toISOString(),
-      appVersion: "tvos 0.1.0",
-      uptimeSeconds: 10,
-      lastError: error,
-    });
+    const summary = summarizeHeartbeat(
+      {
+        at: new Date(NOW - 3 * 3600 * 1000).toISOString(),
+        appVersion: "tvos 0.1.0",
+        uptimeSeconds: 10,
+        lastError: error,
+      },
+      "en",
+    );
     expect(summary).toMatchObject({ version: "tvOS 0.1.0", at: "3 hours ago" });
     expect(
       summary!.lastError!.startsWith("TypeError: fetch failed <script>"),
@@ -98,12 +104,29 @@ describe("summarizeHeartbeat", () => {
 
   it("treats a blank error as none", () => {
     expect(
-      summarizeHeartbeat({
-        at: new Date(NOW).toISOString(),
-        appVersion: "web 0.1.0",
-        uptimeSeconds: 0,
-        lastError: "   ",
-      }),
+      summarizeHeartbeat(
+        {
+          at: new Date(NOW).toISOString(),
+          appVersion: "web 0.1.0",
+          uptimeSeconds: 0,
+          lastError: "   ",
+        },
+        "en",
+      ),
     ).toMatchObject({ at: "just now", lastError: null, lastErrorFull: null });
+  });
+
+  it("words the time in German", () => {
+    expect(
+      summarizeHeartbeat(
+        {
+          at: new Date(NOW - 2 * 60 * 1000).toISOString(),
+          appVersion: "web 0.1.0",
+          uptimeSeconds: 600,
+          lastError: null,
+        },
+        "de",
+      )?.at,
+    ).toBe("vor 2 Minuten");
   });
 });

@@ -29,6 +29,7 @@ import {
   missingKeyField,
   type SignedKeyStrategy,
 } from "@/lib/signed-key";
+import { useLocale } from "@/lib/i18n/client";
 
 interface AppStoreReviewsPanelProps {
   workspaceId: string;
@@ -54,6 +55,7 @@ export function AppStoreReviewsPanel({
   strategy,
   canUpdate,
 }: AppStoreReviewsPanelProps) {
+  const locale = useLocale();
   const keyStrategy = useMemo(() => reviewsKeyStrategy(strategy), [strategy]);
   const [status, setStatus] = useState<AppStoreReviewsStatusResponse | null>(
     null,
@@ -76,7 +78,7 @@ export function AppStoreReviewsPanel({
     try {
       setStatus(await getAppStoreReviews(workspaceId, connectionId));
     } catch (cause) {
-      setLoadError(apiErrorMessage(cause));
+      setLoadError(apiErrorMessage(cause, locale));
     } finally {
       setLoading(false);
     }
@@ -123,7 +125,7 @@ export function AppStoreReviewsPanel({
       close();
       await load();
     } catch (cause) {
-      const message = apiErrorMessage(cause);
+      const message = apiErrorMessage(cause, locale);
       const field = fieldOfMessage(message, keyStrategy.fields);
       if (field) {
         setFieldErrors({ [field]: message });
@@ -147,7 +149,7 @@ export function AppStoreReviewsPanel({
       setOutcome({ kind: "removed", keyId });
       await load();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }

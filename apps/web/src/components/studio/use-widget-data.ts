@@ -9,6 +9,7 @@ import type {
 
 import { apiErrorMessage, queryMetric, queryMetricBreakdown } from "@/lib/api";
 import type { DataWidget } from "@/lib/studio-widgets";
+import { useLocale } from "@/lib/i18n/client";
 
 /** How often a widget refreshes its numbers while the page is visible. */
 export const WIDGET_REFRESH_MS = 60_000;
@@ -29,6 +30,7 @@ function usePolled<T>(
   load: () => Promise<T>,
   refreshMs: number,
 ): WidgetData<T> {
+  const locale = useLocale();
   const [state, setState] = useState<WidgetData<T>>({
     data: null,
     error: null,
@@ -46,7 +48,7 @@ function usePolled<T>(
           if (current) {
             setState((previous) => ({
               data: previous.data,
-              error: apiErrorMessage(cause),
+              error: apiErrorMessage(cause, locale),
               loading: false,
             }));
           }

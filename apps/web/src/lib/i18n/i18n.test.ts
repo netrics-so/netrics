@@ -4,7 +4,7 @@ import { SUPPORTED_LOCALES, compareCatalogs } from "@netrics/domain";
 
 import { WEB_CATALOGS, webTranslator } from "./catalogs";
 import { instanceDefaultLocale, requestLocale } from "./locale";
-import { en } from "@/messages/en";
+import { EN_AREAS, en } from "@/messages/en";
 
 describe("web catalogs", () => {
   it.each(SUPPORTED_LOCALES.filter((locale) => locale !== "en"))(
@@ -13,6 +13,21 @@ describe("web catalogs", () => {
       expect(compareCatalogs(en, WEB_CATALOGS[locale])).toEqual([]);
     },
   );
+
+  it("keeps each area's top-level groups apart", () => {
+    // The catalog spreads the areas into one object: a group two areas
+    // both define would silently lose one of them.
+    const owners = new Map<string, string>();
+    const clashes: string[] = [];
+    for (const [area, messages] of Object.entries(EN_AREAS)) {
+      for (const group of Object.keys(messages)) {
+        const owner = owners.get(group);
+        if (owner) clashes.push(`${group}: ${owner} and ${area}`);
+        owners.set(group, area);
+      }
+    }
+    expect(clashes).toEqual([]);
+  });
 
   it("English parses and formats (no syntax errors in the source)", () => {
     expect(compareCatalogs(en, en)).toEqual([]);
