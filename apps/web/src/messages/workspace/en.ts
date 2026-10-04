@@ -32,9 +32,6 @@ export const workspaceEn = {
     current: "{name} (current, {role})",
     settings: "Workspace settings",
     dashboards: "Dashboards",
-    noDashboards: "No dashboards yet.",
-    dashboardMeta:
-      "{slides, plural, one {# slide} other {# slides}} · {widgets, plural, one {# widget} other {# widgets}} · updated {updated}",
     openInStudio: "Open {name} in Studio",
     studio: "Studio",
     tvs: "TVs",
