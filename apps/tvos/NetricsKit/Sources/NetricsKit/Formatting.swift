@@ -100,10 +100,12 @@ public enum MetricFormat {
         let locale = language.numberLocale
         let text: String
         if let currency {
-            var style = FloatingPointFormatStyle<Double>.Currency(code: currency, locale: locale)
+            let style = FloatingPointFormatStyle<Double>.Currency(code: currency, locale: locale)
                 .rounded(rule: rounding).precision(.fractionLength(0...1))
-            if !grouping { style = style.grouping(.never) }
-            text = scaled.formatted(style)
+            // Not `.grouping(.never)`: older Foundation (macOS 15) then drops
+            // the currency sign and the precision.
+            let formatted = scaled.formatted(style)
+            text = grouping ? formatted : formatted.replacingOccurrences(of: locale.groupingSeparator ?? ",", with: "")
         } else {
             var style = FloatingPointFormatStyle<Double>(locale: locale)
                 .rounded(rule: rounding).precision(.fractionLength(0...1))
