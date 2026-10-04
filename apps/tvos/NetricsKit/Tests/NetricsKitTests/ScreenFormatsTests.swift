@@ -53,9 +53,10 @@ private func placement(_ any: Any?) -> StudioPlacement {
 
 private func widgets(_ any: Any?) -> [LayoutWidget] {
     (any as! [[String: Any]]).map {
-        LayoutWidget(
+        let minimum = ($0["min"] as? [String: Any]).map { StudioMinimum(w: int($0["w"]), h: int($0["h"])) }
+        return LayoutWidget(
             id: string($0["id"]), type: StudioWidgetType(rawValue: string($0["type"]))!,
-            x: int($0["x"]), y: int($0["y"]), w: int($0["w"]), h: int($0["h"]))
+            x: int($0["x"]), y: int($0["y"]), w: int($0["w"]), h: int($0["h"]), minimum: minimum)
     }
 }
 

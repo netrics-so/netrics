@@ -7,6 +7,7 @@ import {
   imageWidgetOptionsSchema,
   lineWidgetOptionsSchema,
   metricWidgetOptionsSchema,
+  tableWidgetOptionsSchema,
   textWidgetOptionsSchema,
   themeTokensSchema,
   type ConnectionStateView,
@@ -47,6 +48,7 @@ import {
   RESOURCE_DIMENSION,
   SCREEN_FORMATS,
   STUDIO_GRID,
+  STUDIO_MIN_WIDGET_SIZE,
   isBuiltinThemeKey,
   isScreenFormat,
   slideLayoutFor,
@@ -516,6 +518,9 @@ async function dataWidgetOf(
       },
     };
   }
+  if (widget.type === "table") {
+    return tableWidgetOf(tx, widget, context, placement, state);
+  }
   const query = await queryWidget(tx, widget, context);
   const { id: _id, label, ...tile } = tileOf(widget, query, context);
   if (widget.type === "line") {
@@ -542,6 +547,83 @@ async function dataWidgetOf(
     label,
     options: parsedOptions(metricWidgetOptionsSchema, widget.options),
     data: tile,
+  };
+}
+
+/**
+ * A table widget (ADR 0019 section 6): the breakdown of its metric over the
+ * current window, each group with its value over the previous window (a
+ * second grouped query restricted to the groups returned, same
+ * aggregation, conversion and names), and the column heads in the
+ * payload's language. "Others" only with `showOthers`.
+ */
+async function tableWidgetOf(
+  tx: Transaction,
+  widget: DataWidget,
+  context: DataContext,
+  placement: { id: string; x: number; y: number; w: number; h: number },
+  state: ConnectionStateView | null,
+): Promise<DeviceWidget> {
+  const options = parsedOptions(tableWidgetOptionsSchema, widget.options, {
+    groupBy: RESOURCE_DIMENSION,
+  });
+  const request = metricRequest(widget);
+  const breakdown: MetricBreakdownResponse | null = await guarded(
+    tx,
+    widget,
+    context,
+    (savepoint) =>
+      queryMetricBreakdown(
+        savepoint,
+        context.workspaceId,
+        {
+          ...request,
+          groupBy: options.groupBy,
+          limit: options.limit,
+          withPrevious: options.showChange,
+        },
+        context.options.now,
+        queryOptions(context.options),
+      ),
+  );
+  const others = options.showOthers ? (breakdown?.others ?? null) : null;
+  const hasData =
+    breakdown !== null && (breakdown.groups.length > 0 || others !== null);
+  const metricName = breakdown?.metric.name ?? widget.metricKey;
+  return {
+    type: "table",
+    ...placement,
+    label: context.label(widget, breakdown?.metric.name),
+    options,
+    data: {
+      period: request.period,
+      aggregation: breakdown?.aggregation ?? request.aggregation,
+      unit: unitOf(breakdown),
+      conversion: conversionOf(breakdown?.conversion ?? null),
+      kind: breakdown?.metric.kind ?? null,
+      granularity: breakdown?.metric.granularity ?? null,
+      better: breakdown?.metric.better ?? "higher",
+      status: tileStatus(
+        state,
+        hasData,
+        context.options.now,
+        context.backfilling.has(widget.connectionId),
+      ),
+      updatedAt: state?.lastSuccessAt ?? null,
+      groupBy: options.groupBy,
+      columns: {
+        label: breakdown?.groupByName ?? options.groupBy,
+        value: metricName,
+      },
+      rows: (breakdown?.groups ?? []).map((group) => ({
+        key: group.key,
+        label: group.label,
+        value: group.value,
+        previousValue: group.previousValue ?? null,
+        ratio: group.ratio ?? null,
+      })),
+      others,
+    },
   };
 }
 
@@ -884,7 +966,12 @@ export async function buildDeviceDashboardV3(
       const ids = new Set(widgets.map((widget) => widget.id));
       return {
         ...head,
-        widgets,
+        // Each with its type's minimum, so screens that do not know a
+        // type reflow it exactly (ADR 0019 section 2).
+        widgets: widgets.map((widget) => ({
+          ...widget,
+          min: { ...STUDIO_MIN_WIDGET_SIZE[widget.type] },
+        })),
         layouts: slide.layouts
           .filter((layout) => layout.format !== built.primaryFormat)
           .map((layout) => ({

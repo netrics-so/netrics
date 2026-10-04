@@ -488,6 +488,31 @@ public enum EnterMotion {
         return 1 - pow(1 - clamped, 3)
     }
 
+    /** How far a table or status row rises while it enters, in units (ADR 0019 §2). */
+    public static let rowRise = 14.0
+    /** Row i starts this much after row i − 1. */
+    public static let rowStagger: TimeInterval = 0.09
+    /** Each row's own rise and fade. */
+    public static let rowDuration: TimeInterval = 0.4
+
+    /** The linear progress behind an eased one (the inverse of `easeOutCubic`). */
+    public static func linearProgress(eased p: Double) -> Double {
+        if p >= 1 { return 1 }
+        if p <= 0 { return 0 }
+        return 1 - cbrt(1 - p)
+    }
+
+    /**
+     * A row's own eased progress at the slide's eased enter progress `p`:
+     * row `index` starts `index × 90 ms` into the enter and takes 400 ms,
+     * ease-out cubic (web: `rowRiseProgress`). 1 once the enter is done.
+     */
+    public static func rowProgress(_ index: Int, eased p: Double) -> Double {
+        if p >= 1 { return 1 }
+        let elapsed = linearProgress(eased: p) * duration
+        return easeOutCubic((elapsed - Double(Swift.max(0, index)) * rowStagger) / rowDuration)
+    }
+
     /** Decimal places of a number as written (at most 6). */
     static func decimals(_ value: Double) -> Int {
         for places in 0..<6 {

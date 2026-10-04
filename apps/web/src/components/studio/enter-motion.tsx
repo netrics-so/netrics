@@ -12,6 +12,7 @@ import {
   EnterClock,
   countUpText,
   enterMotionAllowed,
+  rowRiseProgress,
 } from "@/lib/enter-motion";
 
 /**
@@ -44,6 +45,34 @@ export function useSlideEnter(
   }, [active, clock, ref]);
   useLayoutEffect(() => () => clock.finish(), [clock]);
   return clock;
+}
+
+/**
+ * Lets the rows under `ref` (marked `data-rise`) rise into place while the
+ * slide enters (ADR 0019 section 2): each row's eased progress as
+ * `--rise-p`, which the CSS turns into a 14 unit rise and a fade. Without
+ * the slide's clock (the Studio canvas, reduced motion) nothing is set and
+ * the rows are at rest.
+ */
+export function useRowRise(ref: RefObject<HTMLElement | null>): void {
+  const clock = useContext(SlideEnterContext);
+  useLayoutEffect(() => {
+    if (!clock) return;
+    // The rows may arrive after the enter started (their data loads): the
+    // element is looked up on every frame, so they join in mid-enter.
+    return clock.subscribe((t) => {
+      const element = ref.current;
+      if (!element) return;
+      element.querySelectorAll<HTMLElement>("[data-rise]").forEach((row) => {
+        if (t >= 1) {
+          row.style.removeProperty("--rise-p");
+          return;
+        }
+        const index = Number(row.dataset.rise ?? 0);
+        row.style.setProperty("--rise-p", rowRiseProgress(index, t).toFixed(4));
+      });
+    });
+  }, [clock, ref]);
 }
 
 /**

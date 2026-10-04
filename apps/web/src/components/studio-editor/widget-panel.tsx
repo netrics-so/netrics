@@ -352,7 +352,8 @@ function DataFields({
   }, [scopeKey, widget.id, dispatch]);
   const resourceId = widget.dimensions[RESOURCE_DIMENSION] ?? null;
   const groupedByResource =
-    widget.type === "bar" && widget.options.groupBy === RESOURCE_DIMENSION;
+    (widget.type === "bar" || widget.type === "table") &&
+    widget.options.groupBy === RESOURCE_DIMENSION;
 
   const perCurrency = needsCurrency(metric);
   const currencies = useCurrencies(
@@ -441,6 +442,8 @@ function DataFields({
           ) : null}
           {widget.type === "bar" ? (
             <p className="help">{t("barMetrics")}</p>
+          ) : widget.type === "table" ? (
+            <p className="help">{t("tableMetrics")}</p>
           ) : null}
         </div>
         <div className="field-pair">
@@ -608,9 +611,9 @@ function DataFields({
         ) : null}
       </fieldset>
 
-      {widget.type === "bar" ? (
+      {widget.type === "bar" || widget.type === "table" ? (
         <fieldset>
-          <legend>{t("bars")}</legend>
+          <legend>{widget.type === "table" ? t("rows") : t("bars")}</legend>
           <div className="field">
             <label htmlFor="widget-group-by">{t("groupBy")}</label>
             <select
@@ -634,7 +637,9 @@ function DataFields({
           </div>
           <div className="field">
             <label htmlFor="widget-limit">
-              {t("barsShown", { count: widget.options.limit })}
+              {widget.type === "table"
+                ? t("rowsShown", { count: widget.options.limit })
+                : t("barsShown", { count: widget.options.limit })}
             </label>
             <input
               id="widget-limit"
@@ -649,7 +654,7 @@ function DataFields({
               }
             />
             <p id="widget-limit-help" className="help">
-              {t("barsHelp")}
+              {widget.type === "table" ? t("rowsHelp") : t("barsHelp")}
             </p>
           </div>
         </fieldset>
@@ -890,6 +895,24 @@ function StyleFields({
       );
     case "bar":
       return null;
+    case "table":
+      return (
+        <fieldset>
+          <legend>{t("style")}</legend>
+          <Check
+            checked={widget.options.showChange}
+            onChange={(showChange) => options({ showChange })}
+          >
+            {t("showChange")}
+          </Check>
+          <Check
+            checked={widget.options.showOthers}
+            onChange={(showOthers) => options({ showOthers })}
+          >
+            {t("showOthers")}
+          </Check>
+        </fieldset>
+      );
     case "text":
       return (
         <fieldset>

@@ -331,6 +331,8 @@ export const DEFAULT_WIDGET_SIZE: Readonly<
   image: { w: 3, h: 3 },
   text: { w: 4, h: 2 },
   clock: { w: 3, h: 2 },
+  // Its minimum (ADR 0019 section 2).
+  table: { w: 4, h: 4 },
 };
 
 /**
@@ -578,7 +580,8 @@ function widgetInput(widget: DashboardWidget): DashboardWidgetInput {
   switch (widget.type) {
     case "metric":
     case "line":
-    case "bar": {
+    case "bar":
+    case "table": {
       const {
         resourceName: _resourceName,
         allResourcesName: _allResourcesName,

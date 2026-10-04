@@ -7,6 +7,7 @@ import {
   deviceBarReading,
   deviceLineReading,
   deviceMetricReading,
+  deviceTableReading,
   type DeviceWidgetEnv,
 } from "@/components/studio/device-widget";
 import { WidgetFailed } from "@/components/studio/slide-canvas";
@@ -18,6 +19,7 @@ import {
   ScrollImageCard,
   ScrollLineCard,
   ScrollMetricCard,
+  ScrollTableCard,
   ScrollTextCard,
   type ScrollCardSize,
 } from "./scroll-widgets";
@@ -74,6 +76,10 @@ export function DeviceScrollWidget({
       );
     case "bar":
       return <ScrollBarCard {...deviceBarReading(widget, locale)} {...size} />;
+    case "table":
+      return (
+        <ScrollTableCard {...deviceTableReading(widget, locale)} {...size} />
+      );
     case "clock":
       return <DeviceScrollClock widget={widget} env={env} size={size} />;
     case "text":

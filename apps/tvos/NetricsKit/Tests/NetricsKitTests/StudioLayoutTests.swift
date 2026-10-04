@@ -196,6 +196,66 @@ private func weight(_ any: Any?) -> StudioFontWeight {
         }
     }
 
+    @Test func tableLayouts() {
+        let cases = StudioVectors.cases("tableLayouts")
+        #expect(!cases.isEmpty)
+        for c in cases {
+            let values = (c["values"] as! [[String: Any]]).map {
+                StudioLayout.TableValueText(full: $0["full"] as! String, compact: $0["compact"] as! String)
+            }
+            let layout = StudioLayout.tableLayout(
+                label: c["label"] as! String, width: double(c["width"]), height: double(c["height"]),
+                fontScale: double(c["fontScale"]), values: values, showChange: bool(c["showChange"]))
+            let e = c["layout"] as! [String: Any]
+            let sizes = e["sizes"] as! [String: Any]
+            #expect(close(layout.sizes.title, double(sizes["title"])), "\(c)")
+            #expect(close(layout.sizes.resource, double(sizes["resource"])), "\(c)")
+            #expect(close(layout.sizes.subtitle, double(sizes["subtitle"])), "\(c)")
+            #expect(close(layout.sizes.columnHead, double(sizes["columnHead"])), "\(c)")
+            #expect(close(layout.sizes.cell, double(sizes["cell"])), "\(c)")
+            #expect(close(layout.sizes.cellMin, double(sizes["cellMin"])), "\(c)")
+            #expect(layout.titleLines == int(e["titleLines"]), "\(c)")
+            #expect(layout.resourceLines == int(e["resourceLines"]), "\(c)")
+            #expect(close(layout.headHeight, double(e["headHeight"])), "\(c)")
+            #expect(close(layout.footerHeight, double(e["footerHeight"])), "\(c)")
+            #expect(close(layout.rowPitch, double(e["rowPitch"])), "\(c)")
+            #expect(layout.rowCapacity == int(e["rowCapacity"]), "\(c)")
+            let columns = e["columns"] as! [String: Any]
+            #expect(close(layout.columns.label, double(columns["label"])), "\(c)")
+            #expect(close(layout.columns.value, double(columns["value"])), "\(c)")
+            #expect(close(layout.columns.change, double(columns["change"])), "\(c)")
+            #expect(close(layout.columns.gap, double(columns["gap"])), "\(c)")
+            #expect(layout.compact == bool(e["compact"]), "\(c)")
+        }
+    }
+
+    @Test func tableRowsShown() {
+        for c in StudioVectors.cases("tableRowsShown") {
+            #expect(
+                StudioLayout.tableRowsShown(limit: int(c["limit"]), rows: int(c["rows"]), rowCapacity: int(c["capacity"]))
+                    == int(c["shown"]), "\(c)")
+        }
+    }
+
+    @Test func tableRowLabels() {
+        for c in StudioVectors.cases("tableRowLabels") {
+            let label = StudioLayout.tableRowLabel(
+                c["text"] as! String, labelWidth: double(c["labelWidth"]), cell: double(c["cell"]),
+                cellMin: double(c["cellMin"]))
+            #expect(close(label.size, double(c["size"])), "\(c)")
+            #expect(label.truncated == bool(c["truncated"]), "\(c)")
+        }
+    }
+
+    @Test func tableChanges() {
+        func optional(_ any: Any?) -> Double? { any is NSNull ? nil : double(any) }
+        for c in StudioVectors.cases("tableChanges") {
+            let kind = StudioLayout.tableChangeKind(
+                value: optional(c["value"]), previousValue: optional(c["previousValue"]), ratio: optional(c["ratio"]))
+            #expect(kind.rawValue == c["kind"] as! String, "\(c)")
+        }
+    }
+
     @Test func legacy() {
         for c in StudioVectors.cases("legacy") {
             let tiles = int(c["tiles"])

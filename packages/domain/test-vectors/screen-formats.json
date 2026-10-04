@@ -14877,6 +14877,900 @@
           ]
         }
       ]
+    },
+    {
+      "name": "tables beside metrics",
+      "format": "16x9",
+      "widgets": [
+        {
+          "id": "routes",
+          "type": "table",
+          "x": 0,
+          "y": 0,
+          "w": 6,
+          "h": 5
+        },
+        {
+          "id": "m1",
+          "type": "metric",
+          "x": 6,
+          "y": 0,
+          "w": 3,
+          "h": 2
+        },
+        {
+          "id": "m2",
+          "type": "metric",
+          "x": 9,
+          "y": 0,
+          "w": 3,
+          "h": 2
+        },
+        {
+          "id": "countries",
+          "type": "table",
+          "x": 6,
+          "y": 2,
+          "w": 4,
+          "h": 4
+        },
+        {
+          "id": "note",
+          "type": "text",
+          "x": 0,
+          "y": 5,
+          "w": 6,
+          "h": 3
+        }
+      ],
+      "readingOrder": [
+        "routes",
+        "note",
+        "m1",
+        "m2",
+        "countries"
+      ],
+      "reflow": {
+        "21x9": [
+          [
+            {
+              "id": "routes",
+              "x": 0,
+              "y": 0,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "note",
+              "x": 0,
+              "y": 5,
+              "w": 8,
+              "h": 3
+            },
+            {
+              "id": "m1",
+              "x": 8,
+              "y": 0,
+              "w": 8,
+              "h": 2
+            },
+            {
+              "id": "m2",
+              "x": 8,
+              "y": 2,
+              "w": 8,
+              "h": 2
+            },
+            {
+              "id": "countries",
+              "x": 8,
+              "y": 4,
+              "w": 8,
+              "h": 4
+            }
+          ]
+        ],
+        "16x9": [
+          [
+            {
+              "id": "routes",
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 5
+            },
+            {
+              "id": "note",
+              "x": 0,
+              "y": 5,
+              "w": 6,
+              "h": 3
+            },
+            {
+              "id": "m1",
+              "x": 6,
+              "y": 0,
+              "w": 3,
+              "h": 2
+            },
+            {
+              "id": "m2",
+              "x": 9,
+              "y": 0,
+              "w": 3,
+              "h": 2
+            },
+            {
+              "id": "countries",
+              "x": 6,
+              "y": 2,
+              "w": 4,
+              "h": 4
+            }
+          ]
+        ],
+        "4x3": [
+          [
+            {
+              "id": "routes",
+              "x": 0,
+              "y": 0,
+              "w": 5,
+              "h": 5
+            },
+            {
+              "id": "note",
+              "x": 0,
+              "y": 5,
+              "w": 5,
+              "h": 3
+            },
+            {
+              "id": "m1",
+              "x": 5,
+              "y": 0,
+              "w": 4,
+              "h": 2
+            },
+            {
+              "id": "m2",
+              "x": 5,
+              "y": 2,
+              "w": 4,
+              "h": 2
+            },
+            {
+              "id": "countries",
+              "x": 5,
+              "y": 4,
+              "w": 4,
+              "h": 4
+            }
+          ]
+        ],
+        "3x4": [
+          [
+            {
+              "id": "routes",
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 5
+            },
+            {
+              "id": "note",
+              "x": 0,
+              "y": 5,
+              "w": 6,
+              "h": 5
+            }
+          ],
+          [
+            {
+              "id": "m1",
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 2
+            },
+            {
+              "id": "m2",
+              "x": 0,
+              "y": 2,
+              "w": 6,
+              "h": 2
+            },
+            {
+              "id": "countries",
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 6
+            }
+          ]
+        ],
+        "9x16": [
+          [
+            {
+              "id": "routes",
+              "x": 0,
+              "y": 1,
+              "w": 6,
+              "h": 5
+            },
+            {
+              "id": "note",
+              "x": 0,
+              "y": 6,
+              "w": 6,
+              "h": 7
+            }
+          ],
+          [
+            {
+              "id": "m1",
+              "x": 0,
+              "y": 1,
+              "w": 6,
+              "h": 2
+            },
+            {
+              "id": "m2",
+              "x": 0,
+              "y": 3,
+              "w": 6,
+              "h": 2
+            },
+            {
+              "id": "countries",
+              "x": 0,
+              "y": 5,
+              "w": 6,
+              "h": 8
+            }
+          ]
+        ]
+      },
+      "scroll": [
+        {
+          "width": 320,
+          "columns": 1,
+          "contentWidth": 320,
+          "items": [
+            {
+              "id": "routes",
+              "type": "table",
+              "row": 0,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "note",
+              "type": "text",
+              "row": 1,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "m1",
+              "type": "metric",
+              "row": 2,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "m2",
+              "type": "metric",
+              "row": 3,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "countries",
+              "type": "table",
+              "row": 4,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            }
+          ]
+        },
+        {
+          "width": 599,
+          "columns": 1,
+          "contentWidth": 599,
+          "items": [
+            {
+              "id": "routes",
+              "type": "table",
+              "row": 0,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "note",
+              "type": "text",
+              "row": 1,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "m1",
+              "type": "metric",
+              "row": 2,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "m2",
+              "type": "metric",
+              "row": 3,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "countries",
+              "type": "table",
+              "row": 4,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            }
+          ]
+        },
+        {
+          "width": 600,
+          "columns": 2,
+          "contentWidth": 600,
+          "items": [
+            {
+              "id": "routes",
+              "type": "table",
+              "row": 0,
+              "column": 0,
+              "span": 2,
+              "height": "content"
+            },
+            {
+              "id": "note",
+              "type": "text",
+              "row": 1,
+              "column": 0,
+              "span": 2,
+              "height": "content"
+            },
+            {
+              "id": "m1",
+              "type": "metric",
+              "row": 2,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "m2",
+              "type": "metric",
+              "row": 2,
+              "column": 1,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "countries",
+              "type": "table",
+              "row": 3,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            }
+          ]
+        },
+        {
+          "width": 1023,
+          "columns": 2,
+          "contentWidth": 1023,
+          "items": [
+            {
+              "id": "routes",
+              "type": "table",
+              "row": 0,
+              "column": 0,
+              "span": 2,
+              "height": "content"
+            },
+            {
+              "id": "note",
+              "type": "text",
+              "row": 1,
+              "column": 0,
+              "span": 2,
+              "height": "content"
+            },
+            {
+              "id": "m1",
+              "type": "metric",
+              "row": 2,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "m2",
+              "type": "metric",
+              "row": 2,
+              "column": 1,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "countries",
+              "type": "table",
+              "row": 3,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            }
+          ]
+        },
+        {
+          "width": 1024,
+          "columns": 3,
+          "contentWidth": 1024,
+          "items": [
+            {
+              "id": "routes",
+              "type": "table",
+              "row": 0,
+              "column": 0,
+              "span": 3,
+              "height": "content"
+            },
+            {
+              "id": "note",
+              "type": "text",
+              "row": 1,
+              "column": 0,
+              "span": 3,
+              "height": "content"
+            },
+            {
+              "id": "m1",
+              "type": "metric",
+              "row": 2,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "m2",
+              "type": "metric",
+              "row": 2,
+              "column": 1,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "countries",
+              "type": "table",
+              "row": 2,
+              "column": 2,
+              "span": 1,
+              "height": "content"
+            }
+          ]
+        },
+        {
+          "width": 1440,
+          "columns": 3,
+          "contentWidth": 1200,
+          "items": [
+            {
+              "id": "routes",
+              "type": "table",
+              "row": 0,
+              "column": 0,
+              "span": 3,
+              "height": "content"
+            },
+            {
+              "id": "note",
+              "type": "text",
+              "row": 1,
+              "column": 0,
+              "span": 3,
+              "height": "content"
+            },
+            {
+              "id": "m1",
+              "type": "metric",
+              "row": 2,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "m2",
+              "type": "metric",
+              "row": 2,
+              "column": 1,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "countries",
+              "type": "table",
+              "row": 2,
+              "column": 2,
+              "span": 1,
+              "height": "content"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a later type with its minimum",
+      "format": "16x9",
+      "widgets": [
+        {
+          "id": "later",
+          "type": "image",
+          "x": 0,
+          "y": 0,
+          "w": 6,
+          "h": 4,
+          "min": {
+            "w": 4,
+            "h": 3
+          }
+        },
+        {
+          "id": "m1",
+          "type": "metric",
+          "x": 6,
+          "y": 0,
+          "w": 3,
+          "h": 2
+        },
+        {
+          "id": "chart",
+          "type": "line",
+          "x": 6,
+          "y": 2,
+          "w": 6,
+          "h": 6
+        }
+      ],
+      "readingOrder": [
+        "later",
+        "m1",
+        "chart"
+      ],
+      "reflow": {
+        "21x9": [
+          [
+            {
+              "id": "later",
+              "x": 0,
+              "y": 0,
+              "w": 8,
+              "h": 8
+            },
+            {
+              "id": "m1",
+              "x": 8,
+              "y": 0,
+              "w": 8,
+              "h": 2
+            },
+            {
+              "id": "chart",
+              "x": 8,
+              "y": 2,
+              "w": 8,
+              "h": 6
+            }
+          ]
+        ],
+        "16x9": [
+          [
+            {
+              "id": "later",
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            {
+              "id": "m1",
+              "x": 6,
+              "y": 0,
+              "w": 3,
+              "h": 2
+            },
+            {
+              "id": "chart",
+              "x": 6,
+              "y": 2,
+              "w": 6,
+              "h": 6
+            }
+          ]
+        ],
+        "4x3": [
+          [
+            {
+              "id": "later",
+              "x": 0,
+              "y": 0,
+              "w": 5,
+              "h": 8
+            },
+            {
+              "id": "m1",
+              "x": 5,
+              "y": 0,
+              "w": 4,
+              "h": 2
+            },
+            {
+              "id": "chart",
+              "x": 5,
+              "y": 2,
+              "w": 4,
+              "h": 6
+            }
+          ]
+        ],
+        "3x4": [
+          [
+            {
+              "id": "later",
+              "x": 0,
+              "y": 2,
+              "w": 6,
+              "h": 6
+            }
+          ],
+          [
+            {
+              "id": "m1",
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 2
+            },
+            {
+              "id": "chart",
+              "x": 0,
+              "y": 2,
+              "w": 6,
+              "h": 8
+            }
+          ]
+        ],
+        "9x16": [
+          [
+            {
+              "id": "later",
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 5
+            },
+            {
+              "id": "m1",
+              "x": 0,
+              "y": 5,
+              "w": 6,
+              "h": 2
+            },
+            {
+              "id": "chart",
+              "x": 0,
+              "y": 7,
+              "w": 6,
+              "h": 7
+            }
+          ]
+        ]
+      },
+      "scroll": [
+        {
+          "width": 320,
+          "columns": 1,
+          "contentWidth": 320,
+          "items": [
+            {
+              "id": "later",
+              "type": "image",
+              "row": 0,
+              "column": 0,
+              "span": 1,
+              "height": "image"
+            },
+            {
+              "id": "m1",
+              "type": "metric",
+              "row": 1,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "chart",
+              "type": "line",
+              "row": 2,
+              "column": 0,
+              "span": 1,
+              "height": "chart"
+            }
+          ]
+        },
+        {
+          "width": 599,
+          "columns": 1,
+          "contentWidth": 599,
+          "items": [
+            {
+              "id": "later",
+              "type": "image",
+              "row": 0,
+              "column": 0,
+              "span": 1,
+              "height": "image"
+            },
+            {
+              "id": "m1",
+              "type": "metric",
+              "row": 1,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "chart",
+              "type": "line",
+              "row": 2,
+              "column": 0,
+              "span": 1,
+              "height": "chart"
+            }
+          ]
+        },
+        {
+          "width": 600,
+          "columns": 2,
+          "contentWidth": 600,
+          "items": [
+            {
+              "id": "later",
+              "type": "image",
+              "row": 0,
+              "column": 0,
+              "span": 2,
+              "height": "image"
+            },
+            {
+              "id": "m1",
+              "type": "metric",
+              "row": 1,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "chart",
+              "type": "line",
+              "row": 2,
+              "column": 0,
+              "span": 2,
+              "height": "chart"
+            }
+          ]
+        },
+        {
+          "width": 1023,
+          "columns": 2,
+          "contentWidth": 1023,
+          "items": [
+            {
+              "id": "later",
+              "type": "image",
+              "row": 0,
+              "column": 0,
+              "span": 2,
+              "height": "image"
+            },
+            {
+              "id": "m1",
+              "type": "metric",
+              "row": 1,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "chart",
+              "type": "line",
+              "row": 2,
+              "column": 0,
+              "span": 2,
+              "height": "chart"
+            }
+          ]
+        },
+        {
+          "width": 1024,
+          "columns": 3,
+          "contentWidth": 1024,
+          "items": [
+            {
+              "id": "later",
+              "type": "image",
+              "row": 0,
+              "column": 0,
+              "span": 3,
+              "height": "image"
+            },
+            {
+              "id": "m1",
+              "type": "metric",
+              "row": 1,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "chart",
+              "type": "line",
+              "row": 2,
+              "column": 0,
+              "span": 3,
+              "height": "chart"
+            }
+          ]
+        },
+        {
+          "width": 1440,
+          "columns": 3,
+          "contentWidth": 1200,
+          "items": [
+            {
+              "id": "later",
+              "type": "image",
+              "row": 0,
+              "column": 0,
+              "span": 3,
+              "height": "image"
+            },
+            {
+              "id": "m1",
+              "type": "metric",
+              "row": 1,
+              "column": 0,
+              "span": 1,
+              "height": "content"
+            },
+            {
+              "id": "chart",
+              "type": "line",
+              "row": 2,
+              "column": 0,
+              "span": 3,
+              "height": "chart"
+            }
+          ]
+        }
+      ]
     }
   ],
   "sync": [

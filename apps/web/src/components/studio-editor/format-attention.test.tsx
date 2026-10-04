@@ -15,7 +15,7 @@ function warning(
   code: FormatWarning["code"],
   severity: FormatWarning["severity"],
 ): FormatWarning {
-  return { format, code, severity, widgetId: ID, pages: null };
+  return { format, code, severity, widgetId: ID, pages: null, rows: null };
 }
 
 const slides = [

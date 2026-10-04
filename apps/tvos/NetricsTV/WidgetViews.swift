@@ -40,6 +40,13 @@ struct WidgetView: View {
                 BarWidgetView(label: widget.label ?? "", placement: placement, data: data, env: env, now: context.date)
             }
             .surface(env, state: SurfaceState(data.status))
+        case .table(let options, let data):
+            TimelineView(.everyMinute) { context in
+                TableWidgetView(
+                    label: widget.label ?? "", placement: placement, options: options, data: data, env: env,
+                    now: context.date)
+            }
+            .surface(env, state: SurfaceState(data.status))
         case .image(_, let options):
             ImageWidgetView(stored: image, options: options, label: widget.label, env: env)
         case .text(let text, let options):
@@ -640,6 +647,232 @@ struct BarTrack: View {
             }
         }
         .accessibilityHidden(true)
+    }
+}
+
+// MARK: Table
+
+/**
+ * The table widget (ADR 0019 section 6; web: `TableWidgetView`): the label,
+ * "Top N · Last 30 days", the column heads (caps, muted), then one row per
+ * group with its value (tabular, compact when the label column would get
+ * too narrow, never cut) and its Δ coloured by `better`. Rows shown are
+ * min(limit, rows, rowCapacity), and the subtitle says how many; a last,
+ * dimmed "Others" row only while a slot is left. Row labels shrink to
+ * 24 u and only then end with an ellipsis (data text). On slide enter the
+ * rows rise 14 u and fade in, 90 ms apart; values do not count.
+ */
+struct TableWidgetView: View {
+    let label: String
+    let placement: ScreenPlacement
+    let options: TableWidgetOptions
+    let data: TableWidgetData
+    let env: WidgetEnv
+    var now = Date()
+
+    private struct ShownRow {
+        var label: String
+        var full: String
+        var compact: String
+        var change: (text: String, color: Color)?
+        var others: Bool
+    }
+
+    var body: some View {
+        let unit = data.unit ?? "count"
+        let language = env.language
+        let approx = data.conversion != nil ? "≈ " : ""
+        let box = StudioRender.contentBox(placement.cells, showHeader: env.showHeader, unitBox: placement.unitBox)
+        let sizes = StudioLayout.typeScale(
+            .table, placement: placement.cells, fontScale: env.fontScale, showHeader: env.showHeader)
+        let labelLayout = StudioRender.labelLayout(label, width: box.width, sizes: sizes)
+        let capacity = StudioLayout.tableLayout(
+            label: label, width: box.width, height: box.height, fontScale: env.fontScale,
+            showChange: options.showChange
+        ).rowCapacity
+        let shownCount = StudioLayout.tableRowsShown(
+            limit: options.limit, rows: data.rows.count, rowCapacity: capacity)
+        let rows: [ShownRow] =
+            data.rows.prefix(shownCount).map { row in
+                ShownRow(
+                    label: row.label,
+                    full: approx + MetricFormat.value(row.value, unit: unit, language: language),
+                    compact: approx + MetricFormat.compactValue(row.value, unit: unit, language: language),
+                    change: options.showChange ? change(row, unit: unit) : nil,
+                    others: false)
+            }
+            + (options.showOthers && shownCount < capacity
+                ? data.others.map {
+                    [
+                        ShownRow(
+                            label: $0.label,
+                            full: approx + MetricFormat.value($0.value, unit: unit, language: language),
+                            compact: approx + MetricFormat.compactValue($0.value, unit: unit, language: language),
+                            change: nil, others: true)
+                    ]
+                } ?? [] : [])
+        let layout = StudioLayout.tableLayout(
+            label: label, width: box.width, height: box.height, fontScale: env.fontScale,
+            values: rows.map { StudioLayout.TableValueText(full: $0.full, compact: $0.compact) },
+            showChange: options.showChange)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: language)
+        let footer =
+            notice != nil
+            ? nil
+            : WidgetFooter.line(
+                WidgetFooter.candidates(updatedAt: data.updatedAt, source: nil, now: now, language: language),
+                type: .table, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
+                unitBox: placement.unitBox)
+        let small = sizes[.any] ?? StudioLayout.Minimum.any
+
+        if let surface = DataSurface(data.status) {
+            DataStateView(
+                surface: surface, type: .table, label: labelLayout, small: small, updatedAt: data.updatedAt,
+                placement: placement, env: env, now: now)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                WidgetLabelView(layout: labelLayout, env: env)
+                Text(
+                    KitStrings.text(.tableTop, language, shownCount) + " · "
+                        + MetricFormat.periodLabel(data.period, language: language)
+                )
+                .font(env.font(layout.sizes.subtitle))
+                .foregroundStyle(env.colors.muted)
+                .lineLimit(1)
+                .padding(.bottom, env.pt(StudioLayout.TableSpacing.stack))
+                TableHeadRow(
+                    label: data.columns.label, value: data.columns.value, showChange: options.showChange,
+                    layout: layout, env: env)
+                if rows.isEmpty {
+                    Text(data.unit == nil ? "—" : KitStrings.text(.noDataForPeriod, language))
+                        .font(env.font(small))
+                        .foregroundStyle(env.colors.muted)
+                        .padding(.top, env.pt(StudioLayout.TableSpacing.rowGap))
+                } else {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                        TableRowView(
+                            label: row.label, value: layout.compact ? row.compact : row.full, change: row.change,
+                            others: row.others, showChange: options.showChange, layout: layout, env: env
+                        )
+                        .modifier(RowRise(progress: progressValue, index: index, rise: env.pt(EnterMotion.rowRise)))
+                    }
+                }
+                Spacer(minLength: 0)
+                if let notice {
+                    NoticeLine(text: notice, size: small, env: env, stale: data.status == .stale)
+                } else if let footer {
+                    FooterLine(text: footer, size: small, env: env)
+                }
+            }
+        }
+    }
+
+    @Environment(\.enterProgress) private var progressValue
+
+    /** A row's Δ: "+12 %" in `up`/`down` by `better`, "new", or "–". */
+    private func change(_ row: TableRow, unit: String) -> (text: String, color: Color) {
+        switch StudioLayout.tableChangeKind(value: row.value, previousValue: row.previousValue, ratio: row.ratio) {
+        case .ratio:
+            let delta = row.previousValue.map { row.value - $0 } ?? row.ratio ?? 0
+            if let change = MetricFormat.change(delta: delta, ratio: row.ratio, unit: unit, language: env.language) {
+                let tone = MetricFormat.tone(change.direction, better: data.better)
+                return (change.text, env.colors.tone(tone))
+            }
+            return ("–", env.colors.muted)
+        case .new:
+            return (KitStrings.text(.tableNew, env.language), env.colors.muted)
+        case .none:
+            return ("–", env.colors.muted)
+        }
+    }
+}
+
+/** The column heads: 24 u caps, muted, tracked; value and Δ right-aligned over their columns. */
+struct TableHeadRow: View {
+    let label: String
+    let value: String
+    let showChange: Bool
+    let layout: StudioLayout.TableLayout
+    let env: WidgetEnv
+
+    var body: some View {
+        let size = layout.sizes.columnHead
+        HStack(alignment: .firstTextBaseline, spacing: env.pt(layout.columns.gap)) {
+            Text(label.uppercased())
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(value.uppercased())
+                .lineLimit(1)
+                .fixedSize()
+            if showChange {
+                Text(verbatim: "Δ")
+                    .frame(width: env.pt(layout.columns.change), alignment: .trailing)
+            }
+        }
+        .font(env.font(size, .semibold))
+        .tracking(env.pt(size * 0.06))
+        .foregroundStyle(env.colors.muted)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/** One row: label (shrunk, then cut), value (tabular), Δ. */
+struct TableRowView: View {
+    let label: String
+    let value: String
+    let change: (text: String, color: Color)?
+    let others: Bool
+    let showChange: Bool
+    let layout: StudioLayout.TableLayout
+    let env: WidgetEnv
+
+    var body: some View {
+        let sizes = layout.sizes
+        let fitted = StudioLayout.tableRowLabel(
+            label, labelWidth: layout.columns.label, cell: sizes.cell, cellMin: sizes.cellMin)
+        HStack(alignment: .firstTextBaseline, spacing: env.pt(layout.columns.gap)) {
+            Text(label)
+                .font(env.font(fitted.size))
+                .foregroundStyle(others ? env.colors.muted : env.colors.label)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(value)
+                .font(env.font(sizes.cell, .semibold).monospacedDigit())
+                .foregroundStyle(others ? env.colors.muted : env.colors.text)
+                .lineLimit(1)
+                .fixedSize()
+            if showChange {
+                Text(change?.text ?? "")
+                    .font(env.font(sizes.cell, .semibold).monospacedDigit())
+                    .foregroundStyle(change?.color ?? env.colors.muted)
+                    .lineLimit(1)
+                    .frame(width: env.pt(layout.columns.change), alignment: .trailing)
+            }
+        }
+        .frame(height: env.pt(sizes.cell * 1.15))
+        .padding(.top, env.pt(StudioLayout.TableSpacing.rowGap))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/** A row rising 14 u and fading in during the enter, `index` × 90 ms after the first (animatable). */
+struct RowRise: ViewModifier, Animatable {
+    var progress: Double
+    let index: Int
+    let rise: CGFloat
+
+    nonisolated var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let p = EnterMotion.rowProgress(index, eased: progress)
+        content
+            .offset(y: rise * CGFloat(1 - p))
+            .opacity(p)
     }
 }
 

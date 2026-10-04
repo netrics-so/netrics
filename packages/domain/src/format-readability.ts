@@ -26,12 +26,13 @@ import {
   STUDIO_MIN_WIDGET_SIZE,
   STUDIO_SPACING,
   estimateTextWidth,
-  isDataWidget,
+  hasWidgetLabel,
   isInsideFormatGrid,
   labelFit,
   parseTextWidget,
   placementRect,
   screenFrame,
+  tableLayout,
   textWidgetSizes,
   wrappedLineCount,
   type ClockDateStyle,
@@ -252,7 +253,9 @@ export type FormatWarningCode =
   /** The dashboard name does not fit the header. */
   | "header_name_cut"
   /** A clock's date or zone line does not fit, so the screen leaves it out. */
-  | "clock_parts_hidden";
+  | "clock_parts_hidden"
+  /** A table's `limit` exceeds the rows that fit (see `rows`). */
+  | "rows_cut";
 
 export const FORMAT_WARNING_CODES: readonly FormatWarningCode[] = [
   "label_cut",
@@ -263,6 +266,7 @@ export const FORMAT_WARNING_CODES: readonly FormatWarningCode[] = [
   "widget_too_small",
   "header_name_cut",
   "clock_parts_hidden",
+  "rows_cut",
 ];
 
 /**
@@ -285,6 +289,8 @@ export const FORMAT_WARNING_SEVERITY: Readonly<
   widget_too_small: "attention",
   header_name_cut: "attention",
   clock_parts_hidden: "info",
+  // Tables (ADR 0019 section 6); a status board's will be info.
+  rows_cut: "attention",
 };
 
 export interface FormatWarningItem {
@@ -295,6 +301,8 @@ export interface FormatWarningItem {
   widgetId: string | null;
   /** `continues`: how many pages the slide takes; else null. */
   pages: number | null;
+  /** `rows_cut`: the rows shown of the rows asked for ("4 of 8"); else null. */
+  rows: { shown: number; limit: number } | null;
 }
 
 /** A widget of a slide as the checks need it. */
@@ -313,6 +321,8 @@ export interface ReadabilityWidget extends LayoutWidget {
     dateStyle: ClockDateStyle;
     zone: string | null;
   } | null;
+  /** Tables: the rows asked for (`limit`). */
+  rows?: number | null;
 }
 
 export interface ReadabilitySlide {
@@ -337,10 +347,11 @@ export interface ReadabilityContext {
 /**
  * The readability warnings of a slide in one format, in a stable order:
  * the header, continuation pages, then the widgets in the primary's reading
- * order (hidden, to review, too small, label or text cut off, clock
- * lines left out). Labels and
- * text are measured at the format's reference canvas with the size the
- * widget has in that format's layout (auto or custom).
+ * order (hidden, to review, too small, label, text or rows cut off,
+ * clock lines left out).
+ * Labels, text and table rows are measured at the format's reference
+ * canvas with the size the widget has in that format's layout (auto or
+ * custom).
  */
 export function formatWarnings(
   slide: ReadabilitySlide,
@@ -352,6 +363,7 @@ export function formatWarnings(
     code: FormatWarningCode,
     widgetId: string | null,
     pages: number | null = null,
+    rows: FormatWarningItem["rows"] = null,
   ) =>
     warnings.push({
       format,
@@ -359,6 +371,7 @@ export function formatWarnings(
       severity: FORMAT_WARNING_SEVERITY[code],
       widgetId,
       pages,
+      rows,
     });
 
   if (
@@ -413,13 +426,28 @@ export function formatWarnings(
     ) {
       warn("widget_too_small", widget.id);
     }
-    if (isDataWidget(widget.type) && widget.label) {
+    if (hasWidgetLabel(widget.type) && widget.label) {
       const fit = labelFit(
         widget.label,
         { type: widget.type, w: placement.w, h: placement.h },
         { fontScale: context.fontScale, format },
       );
       if (!fit.fits) warn("label_cut", widget.id);
+    }
+    if (widget.type === "table" && widget.rows) {
+      const box = contentBoxIn(placement, format, context.showHeader);
+      const { rowCapacity } = tableLayout({
+        label: widget.label ?? "",
+        width: box.width,
+        height: box.height,
+        fontScale: context.fontScale,
+      });
+      if (widget.rows > rowCapacity) {
+        warn("rows_cut", widget.id, null, {
+          shown: rowCapacity,
+          limit: widget.rows,
+        });
+      }
     } else if (widget.type === "text" && widget.text) {
       const fit = textWidgetFit({
         text: widget.text,

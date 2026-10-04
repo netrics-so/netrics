@@ -18,6 +18,10 @@ import {
   useLiveLine,
   type LineReadingProps,
 } from "@/components/studio/line-widget";
+import {
+  useLiveTable,
+  type TableReadingProps,
+} from "@/components/studio/table-widget";
 import { WidgetFailed } from "@/components/studio/slide-canvas";
 import { Spans } from "@/components/studio/text-widget";
 import {
@@ -42,6 +46,7 @@ import {
 } from "@/lib/scroll-view";
 import { lineChartGeometry } from "@/lib/studio-chart";
 import { clockText } from "@/lib/studio-clock";
+import { tableRowTexts, tableSubtitle } from "@/lib/studio-table";
 import { LINE_HEIGHT, u } from "@/lib/studio-render";
 import {
   type ImageWidget,
@@ -461,6 +466,110 @@ export function ScrollImageCard({
   );
 }
 
+/**
+ * The table card (ADR 0019 section 6): every row the widget asks for, then
+ * Others when it shows them. Labels and values are shown in full; the card
+ * grows instead of cutting anything.
+ */
+export function ScrollTableCard(props: TableReadingProps & ScrollCardSize) {
+  const { reading } = props;
+  const locale = useLocale();
+  const t = useT("screen.widget");
+  const [footer] = useFooterCandidates(props.updatedAt, props.source);
+  const rows = reading ? tableRowTexts(reading, props.options, locale) : [];
+  const shown = rows.filter((row) => !row.others).length;
+  const columns = {
+    gridTemplateColumns: props.options.showChange
+      ? "minmax(0, 1fr) auto auto"
+      : "minmax(0, 1fr) auto",
+    columnGap: u(16),
+  };
+  return (
+    <article
+      className="sw scroll-card scroll-card--table"
+      aria-busy={props.loading ?? false}
+    >
+      <ScrollLabel label={props.label} />
+      <p
+        className="sw-muted sw-table-subtitle"
+        style={{ fontSize: u(SCROLL_TYPE.small) }}
+      >
+        {tableSubtitle(shown, props.period, locale)}
+      </p>
+      {rows.length > 0 && reading ? (
+        // One grid for the heads and every row, so the columns line up
+        // whatever each value's width.
+        <div className="scroll-table" style={columns}>
+          <div
+            className="sw-table-head"
+            style={{ fontSize: u(SCROLL_TYPE.small) }}
+            aria-hidden="true"
+          >
+            <span className="sw-table-head-label">{reading.columns.label}</span>
+            <span className="sw-table-head-value">{reading.columns.value}</span>
+            {props.options.showChange ? (
+              <span className="sw-table-head-value">
+                {t("tableChangeHead")}
+              </span>
+            ) : null}
+          </div>
+          <ol
+            className="sw-table-rows scroll-table-rows"
+            style={{ fontSize: u(SCROLL_TYPE.resource) }}
+          >
+            {rows.map((row, index) => (
+              <li
+                key={`${index}:${row.label}`}
+                className={row.others ? "sw-table-row others" : "sw-table-row"}
+              >
+                <span className="scroll-table-label">{row.label}</span>
+                <span className="sw-table-value">{row.value.full}</span>
+                {row.change !== null ? (
+                  <span
+                    className={`sw-table-change sw-change${row.tone === "neutral" ? "" : ` ${row.tone}`}`}
+                  >
+                    {row.change}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : reading ? (
+        <p className="sw-muted" style={{ fontSize: u(SCROLL_TYPE.small) }}>
+          {t("noDataYet")}
+        </p>
+      ) : (
+        <p
+          className="scroll-value sw-placeholder"
+          style={{ fontSize: u(SCROLL_TYPE.resource) }}
+        >
+          {props.loading ? "…" : "—"}
+        </p>
+      )}
+      {props.notice ? (
+        <WidgetNotice size={SCROLL_TYPE.small} stale={props.status === "stale"}>
+          {props.notice}
+        </WidgetNotice>
+      ) : footer ? (
+        <WidgetFooter size={SCROLL_TYPE.small}>{footer}</WidgetFooter>
+      ) : null}
+    </article>
+  );
+}
+
+function LiveScrollTable({
+  widget,
+  env,
+  size,
+}: {
+  widget: Extract<StudioWidget, { type: "table" }>;
+  env: StudioEnv;
+  size: ScrollCardSize;
+}) {
+  return <ScrollTableCard {...useLiveTable(widget, env)} {...size} />;
+}
+
 function LiveScrollMetric({
   widget,
   env,
@@ -534,6 +643,8 @@ export function LiveScrollWidget({
       return <LiveScrollLine widget={widget} env={env} size={size} />;
     case "bar":
       return <LiveScrollBar widget={widget} env={env} size={size} />;
+    case "table":
+      return <LiveScrollTable widget={widget} env={env} size={size} />;
     case "clock":
       return <LiveScrollClock widget={widget} env={env} size={size} />;
     case "text":

@@ -166,6 +166,53 @@ describe("formatWarnings", () => {
     ).toEqual(["16x9 label_cut l"]);
   });
 
+  it("rows_cut: eight rows on a 4 × 4 table at font scale 1.3 show four", () => {
+    const table = (rows: number): ReadabilityWidget => ({
+      id: "t",
+      type: "table",
+      x: 0,
+      y: 0,
+      w: 4,
+      h: 4,
+      label: "Page views",
+      rows,
+    });
+    const at13 = { ...context, fontScale: 1.3 };
+    const warnings = formatWarnings(slide([table(8)]), "16x9", at13);
+    expect(codes(warnings)).toEqual(["16x9 rows_cut t"]);
+    expect(warnings[0]).toMatchObject({
+      severity: "attention",
+      rows: { shown: 4, limit: 8 },
+    });
+    // The rows that fit, or fewer, never warn; at font scale 1 six fit.
+    expect(formatWarnings(slide([table(4)]), "16x9", at13)).toEqual([]);
+    expect(formatWarnings(slide([table(6)]), "16x9", context)).toEqual([]);
+    expect(codes(formatWarnings(slide([table(7)]), "16x9", context))).toEqual([
+      "16x9 rows_cut t",
+    ]);
+  });
+
+  it("label_cut is checked on tables like on every type with a label", () => {
+    const warnings = formatWarnings(
+      slide([
+        {
+          id: "t",
+          type: "table",
+          x: 0,
+          y: 0,
+          w: 4,
+          h: 6,
+          label:
+            "Durchschnittliche Bestellwerte aller Neukunden und Bestandskunden im Vergleichszeitraum",
+          rows: 3,
+        },
+      ]),
+      "16x9",
+      context,
+    );
+    expect(codes(warnings)).toEqual(["16x9 label_cut t"]);
+  });
+
   it("text_cut: text that fits the primary box overflows the narrower auto box", () => {
     const text = Array.from(
       { length: 7 },

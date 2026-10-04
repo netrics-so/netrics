@@ -276,6 +276,7 @@ describe("targetStatuses", () => {
       severity: "attention",
       widgetId: ID(1),
       pages: null,
+      rows: null,
     },
     {
       format: "9x16",
@@ -283,6 +284,7 @@ describe("targetStatuses", () => {
       severity: "attention",
       widgetId: ID(2),
       pages: null,
+      rows: null,
     },
     {
       format: "9x16",
@@ -290,6 +292,7 @@ describe("targetStatuses", () => {
       severity: "info",
       widgetId: null,
       pages: 2,
+      rows: null,
     },
     {
       format: "3x4",
@@ -297,6 +300,7 @@ describe("targetStatuses", () => {
       severity: "attention",
       widgetId: null,
       pages: null,
+      rows: null,
     },
   ];
   const statuses = targetStatuses({

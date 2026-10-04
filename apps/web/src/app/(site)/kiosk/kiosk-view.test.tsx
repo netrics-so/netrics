@@ -6,7 +6,12 @@ import type {
   DeviceDashboardV2Response,
   DeviceDashboardV3Response,
 } from "@netrics/contracts";
-import { BUILTIN_THEMES, SCREEN_FORMATS, type Locale } from "@netrics/domain";
+import {
+  BUILTIN_THEMES,
+  SCREEN_FORMATS,
+  STUDIO_MIN_WIDGET_SIZE,
+  type Locale,
+} from "@netrics/domain";
 
 import { WEB_CATALOGS } from "@/lib/i18n/catalogs";
 import { I18nProvider } from "@/lib/i18n/client";
@@ -327,7 +332,14 @@ function formats(
     primaryFormat,
     formats: table,
     device,
-    slides: v2.slides.map((slide) => ({ ...slide, layouts: [] })),
+    slides: v2.slides.map((slide) => ({
+      ...slide,
+      widgets: slide.widgets.map((widget) => ({
+        ...widget,
+        min: STUDIO_MIN_WIDGET_SIZE[widget.type],
+      })),
+      layouts: [],
+    })),
   } as DeviceDashboardV3Response;
 }
 

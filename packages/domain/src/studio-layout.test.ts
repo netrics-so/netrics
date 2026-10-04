@@ -25,6 +25,10 @@ import {
   placementsOverlap,
   studioFrame,
   studioLayout,
+  tableChangeKind,
+  tableLayout,
+  tableRowLabel,
+  tableRowsShown,
   textWidgetSizes,
   widgetRect,
   widgetTypeScale,
@@ -107,6 +111,7 @@ describe("placement rules", () => {
       image: { w: 1, h: 1 },
       text: { w: 2, h: 1 },
       clock: { w: 2, h: 1 },
+      table: { w: 4, h: 4 },
     });
     expect(meetsMinimumSize("metric", { x: 0, y: 0, w: 3, h: 2 })).toBe(true);
     expect(meetsMinimumSize("metric", { x: 0, y: 0, w: 2, h: 4 })).toBe(false);
@@ -303,6 +308,110 @@ describe("label fit", () => {
 
   it("always fits widgets without a label", () => {
     expect(labelFits("x".repeat(500), { type: "text", w: 2, h: 1 })).toBe(true);
+  });
+});
+
+describe("tableLayout (ADR 0019 section 6)", () => {
+  // A 4 × 4 widget's content box at 16:9 with the header.
+  const box = { width: 560, height: 414.2 };
+
+  it("fits six rows at font scale 1 and four at 1.3 on a 4 × 4 table", () => {
+    expect(tableLayout({ label: "Page views", ...box }).rowCapacity).toBe(6);
+    expect(
+      tableLayout({ label: "Page views", ...box, fontScale: 1.3 }).rowCapacity,
+    ).toBe(4);
+    // The smallest limit (3) fits at every font scale with a resource line.
+    expect(
+      tableLayout({ label: "Page views · netrics.so", ...box, fontScale: 1.3 })
+        .rowCapacity,
+    ).toBe(3);
+  });
+
+  it("uses the cell and column head roles of the type scale", () => {
+    const layout = tableLayout({ label: "Page views", ...box });
+    expect(layout.sizes).toMatchObject({ cell: 28, columnHead: 24 });
+    expect(layout.rowPitch).toBeCloseTo(28 * 1.15 + 12, 9);
+    expect(STUDIO_TEXT_MINIMUMS.cell).toBe(28);
+    expect(
+      widgetTypeScale("table", { x: 0, y: 0, w: 4, h: 4 }, { fontScale: 1.3 }),
+    ).toMatchObject({ cell: 28 * 1.3, columnHead: 24 * 1.3, any: 24 * 1.3 });
+  });
+
+  it("sizes the value column to the widest value and gives the label the rest", () => {
+    const values = [
+      { full: "8,120", compact: "8.1K" },
+      { full: "512", compact: "512" },
+    ];
+    const layout = tableLayout({ label: "Page views", ...box, values });
+    const value = estimateTextWidth("8,120", 28, "semibold");
+    const change = estimateTextWidth("+999 %", 28, "semibold");
+    expect(layout.compact).toBe(false);
+    expect(layout.columns.value).toBeCloseTo(value, 9);
+    expect(layout.columns.change).toBeCloseTo(change, 9);
+    expect(layout.columns.label).toBeCloseTo(560 - value - change - 32, 9);
+    const without = tableLayout({
+      label: "Page views",
+      ...box,
+      values,
+      showChange: false,
+    });
+    expect(without.columns.change).toBe(0);
+    expect(without.columns.label).toBeCloseTo(560 - value - 16, 9);
+  });
+
+  it("switches to compact values when the label column would get too narrow", () => {
+    const layout = tableLayout({
+      label: "Revenue",
+      width: 404,
+      height: 414.2,
+      values: [{ full: "$1,234,567.89", compact: "$1.2M" }],
+    });
+    expect(layout.compact).toBe(true);
+    expect(layout.columns.value).toBeCloseTo(
+      estimateTextWidth("$1.2M", 28, "semibold"),
+      9,
+    );
+  });
+
+  it("shows the least of limit, rows and capacity", () => {
+    expect(tableRowsShown(8, 10, 4)).toBe(4);
+    expect(tableRowsShown(5, 3, 6)).toBe(3);
+    expect(tableRowsShown(5, 8, 6)).toBe(5);
+  });
+
+  it("shrinks a row label to 24 u before it ends with an ellipsis", () => {
+    const sizes = { cell: 28, cellMin: 24 };
+    expect(tableRowLabel("/pricing", 370, sizes)).toEqual({
+      size: 28,
+      truncated: false,
+    });
+    const long = "/blog/how-we-built-a-dashboard";
+    const shrunk = tableRowLabel(long, 400, sizes);
+    expect(shrunk.truncated).toBe(false);
+    expect(shrunk.size).toBeLessThan(28);
+    expect(shrunk.size).toBeGreaterThanOrEqual(24);
+    expect(tableRowLabel(`${long}-for-the-office-tv`, 370, sizes)).toEqual({
+      size: 24,
+      truncated: true,
+    });
+  });
+
+  it("tells a ratio, a new row and no change apart", () => {
+    expect(
+      tableChangeKind({ value: 8120, previousValue: 7250, ratio: 0.12 }),
+    ).toBe("ratio");
+    expect(tableChangeKind({ value: 5, previousValue: 0, ratio: null })).toBe(
+      "new",
+    );
+    expect(
+      tableChangeKind({ value: 5, previousValue: null, ratio: null }),
+    ).toBe("new");
+    expect(
+      tableChangeKind({ value: 0, previousValue: null, ratio: null }),
+    ).toBe("none");
+    expect(
+      tableChangeKind({ value: null, previousValue: 3, ratio: null }),
+    ).toBe("none");
   });
 });
 

@@ -407,48 +407,43 @@ export async function queryMetricBreakdown(
       ? (request.displayCurrency ?? workspace.displayCurrency ?? null)
       : null;
 
-  let rows: Awaited<ReturnType<typeof queryMetricGroupBuckets>> = [];
-  if (current.end > current.start) {
-    try {
-      rows = await queryMetricGroupBuckets(tx, {
-        workspaceId,
-        connectionId: metric.connectionId,
-        metricKey: metric.key,
-        ...(request.dimensions ? { dimensions: request.dimensions } : {}),
-        from: current.start,
-        to: current.end,
-        unit: plan.unit,
-        timeZone,
-        combination: bucketCombination(metric.kind),
-        groupBy: request.groupBy,
-        byCurrency,
-      });
-    } catch (err) {
-      if (isQueryCanceled(err)) {
-        return { ok: false, status: 503, error: "query_timeout" };
-      }
-      throw err;
-    }
-  }
+  // One grouped read per window; the previous one only for the groups the
+  // current one ranks (a table's Δ, ADR 0019 section 6).
+  const readGroups = (range: InstantRange, groups?: readonly string[]) =>
+    range.end > range.start
+      ? queryMetricGroupBuckets(tx, {
+          workspaceId,
+          connectionId: metric.connectionId,
+          metricKey: metric.key,
+          ...(request.dimensions ? { dimensions: request.dimensions } : {}),
+          from: range.start,
+          to: range.end,
+          unit: plan.unit,
+          timeZone,
+          combination: bucketCombination(metric.kind),
+          groupBy: request.groupBy,
+          byCurrency,
+          ...(groups ? { groups } : {}),
+        })
+      : Promise.resolve([]);
+  type GroupRow = Awaited<ReturnType<typeof queryMetricGroupBuckets>>[number];
+  type GroupValue = { key: string | null; bucket: string; value: number };
 
-  let currency = amountCurrency(metric.unit, filtered);
-  let conversion: MetricBreakdownResponse["conversion"] = null;
-  let values: { key: string | null; bucket: string; value: number }[] =
-    rows.map(({ group, bucket, value }) => ({ key: group, bucket, value }));
-  if (byCurrency && displayCurrency === null) {
-    const currencies = [...new Set(rows.map((row) => row.currency!))];
-    if (currencies.length > 1) {
-      return { ok: false, status: 400, error: "currency_required" };
-    }
-    currency = currencies[0] ?? null;
-  } else if (displayCurrency !== null) {
+  /** Rows converted into the display currency, and what could not be. */
+  const converted = async (
+    rows: readonly GroupRow[],
+    target: string,
+  ): Promise<{
+    values: GroupValue[];
+    unconverted: Map<string, BucketValue[]>;
+  }> => {
     const dated = rows.map((row) => ({
       ...row,
       currency: row.currency!,
       date: civilDate(new Date(row.bucket), timeZone),
     }));
     const currencies = [
-      ...new Set([displayCurrency, ...dated.map((row) => row.currency)]),
+      ...new Set([target, ...dated.map((row) => row.currency)]),
     ].filter((code) => code !== RATE_BASE_CURRENCY);
     const dates = dated.map((row) => row.date).sort();
     const rates = new RateTable(
@@ -466,15 +461,44 @@ export async function queryMetricBreakdown(
       members.push(row);
       byGroup.set(row.group, members);
     }
-    values = [];
+    const values: GroupValue[] = [];
     const unconverted = new Map<string, BucketValue[]>();
     for (const [key, members] of byGroup) {
-      const result = convertBuckets(members, displayCurrency, rates);
+      const result = convertBuckets(members, target, rates);
       values.push(...result.converted.map((b) => ({ key, ...b })));
       for (const [code, buckets] of result.unconverted) {
         unconverted.set(code, (unconverted.get(code) ?? []).concat(buckets));
       }
     }
+    return { values, unconverted };
+  };
+
+  let rows: GroupRow[];
+  try {
+    rows = await readGroups(current);
+  } catch (err) {
+    if (isQueryCanceled(err)) {
+      return { ok: false, status: 503, error: "query_timeout" };
+    }
+    throw err;
+  }
+
+  let currency = amountCurrency(metric.unit, filtered);
+  let conversion: MetricBreakdownResponse["conversion"] = null;
+  let values: GroupValue[] = rows.map(({ group, bucket, value }) => ({
+    key: group,
+    bucket,
+    value,
+  }));
+  if (byCurrency && displayCurrency === null) {
+    const currencies = [...new Set(rows.map((row) => row.currency!))];
+    if (currencies.length > 1) {
+      return { ok: false, status: 400, error: "currency_required" };
+    }
+    currency = currencies[0] ?? null;
+  } else if (displayCurrency !== null) {
+    const result = await converted(rows, displayCurrency);
+    values = result.values;
     currency = displayCurrency;
     conversion = {
       displayCurrency,
@@ -483,11 +507,11 @@ export async function queryMetricBreakdown(
         name: EXCHANGE_RATE_SOURCE.name,
         url: EXCHANGE_RATE_SOURCE.url,
       },
-      unconverted: [...unconverted.keys()].sort().map((code) => ({
+      unconverted: [...result.unconverted.keys()].sort().map((code) => ({
         currency: code,
         value: aggregateBuckets(
           aggregation,
-          addUpBuckets(unconverted.get(code) ?? []),
+          addUpBuckets(result.unconverted.get(code) ?? []),
         ),
         previousValue: null,
       })),
@@ -495,6 +519,41 @@ export async function queryMetricBreakdown(
   }
 
   const breakdown = rankBreakdown(aggregation, values, limit);
+
+  // The previous window's value of each ranked group, formed the same way:
+  // the same aggregation, the same currency (a per-currency amount keeps
+  // the current window's currency; converted amounts convert again).
+  let previousOf: Map<string, number> | null = null;
+  if (request.withPrevious) {
+    const keys = breakdown.groups.map((group) => group.key);
+    const previousRange =
+      plan.selection === "dates"
+        ? datesToRange(window.previousDates)
+        : window.previous;
+    let previousRows: GroupRow[];
+    try {
+      previousRows = await readGroups(previousRange, keys);
+    } catch (err) {
+      if (isQueryCanceled(err)) {
+        return { ok: false, status: 503, error: "query_timeout" };
+      }
+      throw err;
+    }
+    let previousValues: GroupValue[];
+    if (displayCurrency !== null) {
+      previousValues = (await converted(previousRows, displayCurrency)).values;
+    } else {
+      previousValues = previousRows
+        .filter((row) => !byCurrency || row.currency === currency)
+        .map(({ group, bucket, value }) => ({ key: group, bucket, value }));
+    }
+    previousOf = new Map(
+      rankBreakdown(aggregation, previousValues, keys.length).groups.map(
+        (group) => [group.key, group.value],
+      ),
+    );
+  }
+
   const resourceNames =
     request.groupBy === RESOURCE_DIMENSION
       ? await findResourceNames(
@@ -506,6 +565,19 @@ export async function queryMetricBreakdown(
           })),
         )
       : new Map<string, string>();
+  // A column head: "Site" rather than "Resource" (the connector's noun).
+  const noun =
+    request.groupBy === RESOURCE_DIMENSION
+      ? ((await findConnectionResourceNoun(
+          tx,
+          workspaceId,
+          metric.connectionId,
+          options.locale,
+        )) ?? DEFAULT_RESOURCE_NOUN)
+      : null;
+  const groupByName = noun
+    ? noun.singular.charAt(0).toUpperCase() + noun.singular.slice(1)
+    : (metric.dimensionNames[request.groupBy] ?? request.groupBy);
   return {
     ok: true,
     value: {
@@ -514,6 +586,7 @@ export async function queryMetricBreakdown(
       timeZone: workspace.timeZone,
       aggregation,
       groupBy: request.groupBy,
+      groupByName,
       currency,
       conversion,
       groups: breakdown.groups.map((group) => ({
@@ -525,6 +598,18 @@ export async function queryMetricBreakdown(
           options.locale,
         ),
         value: group.value,
+        ...(previousOf
+          ? (() => {
+              const change = compare(
+                group.value,
+                previousOf.get(group.key) ?? null,
+              );
+              return {
+                previousValue: change.previousValue,
+                ratio: change.ratio,
+              };
+            })()
+          : {}),
       })),
       others: breakdown.others && {
         label: othersLabel(options.locale),

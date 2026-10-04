@@ -16,6 +16,27 @@ export function easeOutCubic(t: number): number {
   return 1 - (1 - clamped) ** 3;
 }
 
+/**
+ * Table and status rows on slide enter (ADR 0019 section 2, ADR 0018
+ * section 6): each rises 14 units and fades in over 400 ms, ease-out
+ * cubic, row i starting i × 90 ms into the enter.
+ */
+export const ROW_RISE = { distance: 14, staggerMs: 90, durationMs: 400 };
+
+/**
+ * Row `index`'s eased progress at the enter's linear progress `t`: 0
+ * before it starts, 1 once it is done and from `t = 1` on.
+ */
+export function rowRiseProgress(
+  index: number,
+  t: number,
+  duration: number = ENTER_MS,
+): number {
+  if (t >= 1) return 1;
+  const elapsed = t * duration - index * ROW_RISE.staggerMs;
+  return easeOutCubic(elapsed / ROW_RISE.durationMs);
+}
+
 /** Decimal places of a number as written (at most 6). */
 function decimalsOf(value: number): number {
   for (let places = 0; places < 6; places += 1) {

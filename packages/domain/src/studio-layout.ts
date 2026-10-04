@@ -15,7 +15,7 @@
  */
 
 export type StudioWidgetType =
-  "metric" | "line" | "bar" | "image" | "text" | "clock";
+  "metric" | "line" | "bar" | "image" | "text" | "clock" | "table";
 
 export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "metric",
@@ -24,6 +24,7 @@ export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "image",
   "text",
   "clock",
+  "table",
 ];
 
 /** A widget's cells: 0-based column and row, width and height in cells. */
@@ -78,11 +79,23 @@ export const STUDIO_MIN_WIDGET_SIZE: Readonly<
   image: { w: 1, h: 1 },
   text: { w: 2, h: 1 },
   clock: { w: 2, h: 1 },
+  table: { w: 4, h: 4 },
 };
 
 /** Widgets with a title and resource line (bound to a metric). */
 export function isDataWidget(type: StudioWidgetType): boolean {
-  return type === "metric" || type === "line" || type === "bar";
+  return (
+    type === "metric" || type === "line" || type === "bar" || type === "table"
+  );
+}
+
+/**
+ * Widgets that show a label (a title, and a resource line for metric-bound
+ * types), which `labelFit` checks (ADR 0019 section 2). Every new type with
+ * a label joins here; image, text and clock have none.
+ */
+export function hasWidgetLabel(type: StudioWidgetType): boolean {
+  return type !== "image" && type !== "text" && type !== "clock";
 }
 
 // ---------------------------------------------------------------------------
@@ -427,6 +440,10 @@ export const STUDIO_TEXT_MINIMUMS = {
   clock: 56,
   /** The clock's zone line (ADR 0019, section 9). */
   zone: 24,
+  /** Table rows (ADR 0019 section 13). */
+  cell: 28,
+  /** Table column heads, in caps. */
+  columnHead: 24,
 } as const;
 
 /** The theme font scales (ADR 0015, section 6). */
@@ -459,7 +476,9 @@ export type StudioTextRole =
   | "clockMin"
   | "clockMax"
   | "date"
-  | "zone";
+  | "zone"
+  | "cell"
+  | "columnHead";
 
 export type StudioTypeScale = Partial<Record<StudioTextRole, number>>;
 
@@ -526,6 +545,14 @@ export function widgetTypeScale(
         body: m.body * scale,
         heading: m.heading * scale,
         display: m.display * scale,
+      };
+    case "table":
+      return {
+        any,
+        title: m.title * scale,
+        resource: m.resource * scale,
+        columnHead: m.columnHead * scale,
+        cell: m.cell * scale,
       };
     case "clock": {
       const clockMin = m.clock * scale;
@@ -716,7 +743,7 @@ export function labelFit(
   widget: { type: StudioWidgetType; w: number; h: number },
   options: { fontScale?: number; format?: ScreenFormat } = {},
 ): StudioLabelFit {
-  if (!isDataWidget(widget.type)) {
+  if (!hasWidgetLabel(widget.type)) {
     return { fits: true, titleLines: 0, resourceLines: 0 };
   }
   const scale = effectiveFontScale(options.fontScale);
@@ -758,6 +785,215 @@ export function labelFits(
   options: { fontScale?: number; format?: ScreenFormat } = {},
 ): boolean {
   return labelFit(label, widget, options).fits;
+}
+
+// ---------------------------------------------------------------------------
+// Table (ADR 0019 section 6)
+
+/** Line height of a table's text, as `STUDIO_LINE_HEIGHT`. */
+const TABLE_LINE_HEIGHT = 1.15;
+
+/** A table's spacing in units. */
+export const TABLE_SPACING = {
+  /** Between the label, the subtitle, the column heads and the footer. */
+  stack: 8,
+  /** Above every row: the row pitch is the cell line plus this. */
+  rowGap: 12,
+  /** Between the label, value and change columns. */
+  columnGap: 16,
+} as const;
+
+/** The widest change the Δ column reserves room for. */
+export const TABLE_CHANGE_SAMPLE = "+999 %";
+
+/**
+ * Below this share of the content width the label column is too narrow
+ * for full values: the value column switches to the compact form.
+ */
+export const TABLE_MIN_LABEL_SHARE = 0.4;
+
+export interface TableLayoutInput {
+  /** The widget's label as screens show it ("Page views · netrics.so"). */
+  label: string;
+  /** The content box in units: the widget's rect less its padding. */
+  width: number;
+  height: number;
+  fontScale?: number;
+  /** The rows' values as shown, full and compact ("12,345", "12.3K"). */
+  values?: ReadonlyArray<{ full: string; compact: string }>;
+  /** The Δ column (`showChange`); default true. */
+  showChange?: boolean;
+}
+
+export interface TableLayout {
+  /** Text sizes in units; `cellMin` is what a row label shrinks to. */
+  sizes: {
+    title: number;
+    resource: number;
+    subtitle: number;
+    columnHead: number;
+    cell: number;
+    cellMin: number;
+  };
+  /** Lines of the title (1–2) and of the resource line (0–2). */
+  titleLines: number;
+  resourceLines: number;
+  /** Label, subtitle, column heads and their gaps, in units. */
+  headHeight: number;
+  /** The footer line and its gap, in units. */
+  footerHeight: number;
+  /** A row's line plus the gap above it, in units. */
+  rowPitch: number;
+  /** Rows that fit between the column heads and the footer. */
+  rowCapacity: number;
+  /** Column widths in units; `change` is 0 without the Δ column. */
+  columns: { label: number; value: number; change: number; gap: number };
+  /** The values are shown in their compact form. */
+  compact: boolean;
+}
+
+/**
+ * A table widget's layout: the label (title and resource line, at most two
+ * lines each), the subtitle ("Top 5 · Last 30 days"), the column heads
+ * (24 u, caps), the rows (cell role, 28 u, each a line plus a 12 u gap)
+ * and the footer. `rowCapacity` is how many rows fit; a screen shows
+ * `min(limit, rows, rowCapacity)`. The value column is as wide as the
+ * widest value (the compact forms when the full ones would leave the label
+ * column under 40 % of the width), the Δ column as wide as "+999 %", the
+ * label column takes the rest.
+ */
+export function tableLayout(input: TableLayoutInput): TableLayout {
+  const scale = effectiveFontScale(input.fontScale);
+  const m = STUDIO_TEXT_MINIMUMS;
+  const sizes = {
+    title: m.title * scale,
+    resource: m.resource * scale,
+    subtitle: m.any * scale,
+    columnHead: m.columnHead * scale,
+    cell: m.cell * scale,
+    cellMin: m.any * scale,
+  };
+  const width = Math.max(0, input.width);
+  const parts = labelParts(input.label);
+  const titleLines = Math.min(
+    STUDIO_LABEL_MAX_LINES,
+    Math.max(1, wrappedLineCount(parts.title, width, sizes.title, "semibold")),
+  );
+  const resourceLines =
+    parts.resource === null
+      ? 0
+      : Math.min(
+          STUDIO_LABEL_MAX_LINES,
+          Math.max(
+            1,
+            wrappedLineCount(parts.resource, width, sizes.resource, "semibold"),
+          ),
+        );
+  const headHeight =
+    titleLines * sizes.title * TABLE_LINE_HEIGHT +
+    resourceLines * sizes.resource * TABLE_LINE_HEIGHT +
+    TABLE_SPACING.stack +
+    sizes.subtitle * TABLE_LINE_HEIGHT +
+    TABLE_SPACING.stack +
+    sizes.columnHead * TABLE_LINE_HEIGHT;
+  const footerHeight = TABLE_SPACING.stack + sizes.subtitle * TABLE_LINE_HEIGHT;
+  const rowPitch = sizes.cell * TABLE_LINE_HEIGHT + TABLE_SPACING.rowGap;
+  const rowCapacity = Math.max(
+    0,
+    Math.floor((input.height - headHeight - footerHeight) / rowPitch),
+  );
+
+  const gap = TABLE_SPACING.columnGap;
+  const change =
+    (input.showChange ?? true)
+      ? estimateTextWidth(TABLE_CHANGE_SAMPLE, sizes.cell, "semibold")
+      : 0;
+  const widest = (compactForm: boolean) => {
+    let max = 0;
+    for (const entry of input.values ?? []) {
+      const text = compactForm ? entry.compact : entry.full;
+      max = Math.max(max, estimateTextWidth(text, sizes.cell, "semibold"));
+    }
+    return max;
+  };
+  const reserved = (value: number) =>
+    value + gap + (change > 0 ? change + gap : 0);
+  let value = widest(false);
+  let compact = false;
+  if (width - reserved(value) < width * TABLE_MIN_LABEL_SHARE) {
+    const compactWidth = widest(true);
+    if (compactWidth < value) {
+      value = compactWidth;
+      compact = true;
+    }
+  }
+  return {
+    sizes,
+    titleLines,
+    resourceLines,
+    headHeight,
+    footerHeight,
+    rowPitch,
+    rowCapacity,
+    columns: {
+      label: Math.max(0, width - reserved(value)),
+      value,
+      change,
+      gap,
+    },
+    compact,
+  };
+}
+
+/** Rows a table shows: its limit, its rows and the room, whichever is least. */
+export function tableRowsShown(
+  limit: number,
+  rows: number,
+  rowCapacity: number,
+): number {
+  return Math.max(0, Math.min(limit, rows, rowCapacity));
+}
+
+/**
+ * A row label's size: the cell size when it fits the label column on one
+ * line, else shrunk down to `cellMin` (24 u); `truncated` when even that
+ * does not fit and the label ends with an ellipsis (data text, ADR 0019
+ * section 2).
+ */
+export function tableRowLabel(
+  text: string,
+  labelWidth: number,
+  sizes: { cell: number; cellMin: number },
+): { size: number; truncated: boolean } {
+  const size = fitTextSize(text, labelWidth, {
+    min: sizes.cellMin,
+    max: sizes.cell,
+  });
+  return size === null
+    ? { size: sizes.cellMin, truncated: true }
+    : { size, truncated: false };
+}
+
+export type TableChangeKind = "ratio" | "new" | "none";
+
+/**
+ * What a row's Δ shows: the ratio ("+12 %", "−3 %"); "new" when there is
+ * no previous value (or it is zero) and the value is not zero; else "–".
+ */
+export function tableChangeKind(row: {
+  value: number | null;
+  previousValue: number | null;
+  ratio: number | null;
+}): TableChangeKind {
+  if (row.ratio !== null && Number.isFinite(row.ratio)) return "ratio";
+  if (
+    row.value !== null &&
+    row.value !== 0 &&
+    (row.previousValue === null || row.previousValue === 0)
+  ) {
+    return "new";
+  }
+  return "none";
 }
 
 // ---------------------------------------------------------------------------
@@ -1230,6 +1466,10 @@ export const studioLayout = {
   labelParts,
   labelFit,
   fits: labelFits,
+  tableLayout,
+  tableRowsShown,
+  tableRowLabel,
+  tableChangeKind,
   legacyGrid,
   legacyLayout,
   parseTextWidget,

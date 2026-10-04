@@ -258,6 +258,31 @@ public struct BarWidgetOptions: Codable, Sendable, Equatable {
     }
 }
 
+/** A table's options (ADR 0019 section 6). */
+public struct TableWidgetOptions: Codable, Sendable, Equatable {
+    public var groupBy: String
+    public var limit: Int
+    public var showChange: Bool
+    public var showOthers: Bool
+
+    public init(groupBy: String = "resource", limit: Int = 5, showChange: Bool = true, showOthers: Bool = false) {
+        self.groupBy = groupBy
+        self.limit = limit
+        self.showChange = showChange
+        self.showOthers = showOthers
+    }
+
+    private enum CodingKeys: String, CodingKey { case groupBy, limit, showChange, showOthers }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        groupBy = c.lenient(String.self, .groupBy) ?? "resource"
+        limit = min(max(c.lenient(Int.self, .limit) ?? 5, 1), 10)
+        showChange = c.lenient(Bool.self, .showChange) ?? true
+        showOthers = c.lenient(Bool.self, .showOthers) ?? false
+    }
+}
+
 public enum ImageFit: String, OpenAPIEnum {
     case contain, cover
     public static var fallback: ImageFit { .contain }
@@ -519,12 +544,101 @@ public struct BarWidgetData: Codable, Sendable, Equatable {
     }
 }
 
+/** A table's column heads in the payload's language. */
+public struct TableColumnHeads: Codable, Sendable, Equatable {
+    public var label: String
+    public var value: String
+
+    public init(label: String, value: String) {
+        self.label = label
+        self.value = value
+    }
+
+    private enum CodingKeys: String, CodingKey { case label, value }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = c.lenient(String.self, .label) ?? ""
+        value = c.lenient(String.self, .value) ?? ""
+    }
+}
+
+/** A table row: a group's value and its value over the previous window. */
+public struct TableRow: Codable, Sendable, Equatable {
+    public var key: String?
+    public var label: String
+    public var value: Double
+    public var previousValue: Double?
+    public var ratio: Double?
+
+    public init(key: String? = nil, label: String, value: Double, previousValue: Double? = nil, ratio: Double? = nil) {
+        self.key = key
+        self.label = label
+        self.value = value
+        self.previousValue = previousValue
+        self.ratio = ratio
+    }
+}
+
+/** A table widget's data (ADR 0019 section 6). */
+public struct TableWidgetData: Codable, Sendable, Equatable {
+    public var period: MetricPeriod
+    public var aggregation: MetricAggregation
+    public var unit: String?
+    public var groupBy: String?
+    public var columns: TableColumnHeads
+    public var rows: [TableRow]
+    public var others: BarOthers?
+    public var status: DeviceTileStatus
+    public var updatedAt: String?
+    public var conversion: TileConversion?
+    public var better: MetricBetter
+
+    public init(
+        period: MetricPeriod, aggregation: MetricAggregation, unit: String?, groupBy: String?,
+        columns: TableColumnHeads, rows: [TableRow], others: BarOthers?, status: DeviceTileStatus,
+        updatedAt: String?, conversion: TileConversion? = nil, better: MetricBetter = .higher
+    ) {
+        self.period = period
+        self.aggregation = aggregation
+        self.unit = unit
+        self.groupBy = groupBy
+        self.columns = columns
+        self.rows = rows
+        self.others = others
+        self.status = status
+        self.updatedAt = updatedAt
+        self.conversion = conversion
+        self.better = better
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case period, aggregation, unit, groupBy, columns, rows, others, status, updatedAt, conversion, better
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        period = c.lenient(MetricPeriod.self, .period) ?? .unknown
+        aggregation = c.lenient(MetricAggregation.self, .aggregation) ?? .unknown
+        unit = c.lenient(String.self, .unit)
+        groupBy = c.lenient(String.self, .groupBy)
+        columns = c.lenient(TableColumnHeads.self, .columns) ?? TableColumnHeads(label: "", value: "")
+        rows = c.lossyArray(TableRow.self, .rows)
+        others = c.lenient(BarOthers.self, .others)
+        status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
+        updatedAt = c.lenient(String.self, .updatedAt)
+        conversion = c.lenient(TileConversion.self, .conversion)
+        better = c.lenient(MetricBetter.self, .better) ?? .higher
+    }
+}
+
 // MARK: Widgets and slides
 
 public enum WidgetContent: Sendable, Equatable {
     case metric(MetricWidgetOptions, MetricWidgetData)
     case line(LineWidgetOptions, LineWidgetData)
     case bar(BarWidgetOptions, BarWidgetData)
+    case table(TableWidgetOptions, TableWidgetData)
     case image(imageId: String, ImageWidgetOptions)
     case text(String, TextWidgetOptions)
     case clock(ClockWidgetOptions)
@@ -540,17 +654,26 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
     /** Data widgets: the resolved label ("Downloads · Wurfel"); others: the title or nil. */
     public var label: String?
     public var content: WidgetContent
+    /**
+     * The type's minimum size (schema 3, ADR 0019 section 2); nil on schema
+     * 2 and older servers. A type this build does not know reflows with it.
+     */
+    public var minimum: StudioMinimum?
 
-    public init(id: String, type: String, placement: StudioPlacement, label: String?, content: WidgetContent) {
+    public init(
+        id: String, type: String, placement: StudioPlacement, label: String?, content: WidgetContent,
+        minimum: StudioMinimum? = nil
+    ) {
         self.id = id
         self.type = type
         self.placement = placement
         self.label = label
         self.content = content
+        self.minimum = minimum
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, type, x, y, w, h, label, options, data, imageId, text
+        case id, type, x, y, w, h, min, label, options, data, imageId, text
     }
 
     public init(from decoder: Decoder) throws {
@@ -571,6 +694,7 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
         type = c.lenient(String.self, .type) ?? ""
         label = c.lenient(String.self, .label)
         content = Self.content(type: type, c)
+        minimum = c.lenient(StudioMinimum.self, .min).flatMap { $0.w >= 1 && $0.h >= 1 ? $0 : nil }
     }
 
     private static func content(type: String, _ c: KeyedDecodingContainer<CodingKeys>) -> WidgetContent {
@@ -584,6 +708,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
         case "bar":
             guard let data = c.lenient(BarWidgetData.self, .data) else { return .unsupported }
             return .bar(c.lenient(BarWidgetOptions.self, .options) ?? .init(), data)
+        case "table":
+            guard let data = c.lenient(TableWidgetData.self, .data) else { return .unsupported }
+            return .table(c.lenient(TableWidgetOptions.self, .options) ?? .init(), data)
         case "image":
             guard let imageId = c.lenient(String.self, .imageId) else { return .unsupported }
             return .image(imageId: imageId, c.lenient(ImageWidgetOptions.self, .options) ?? .init())
@@ -605,6 +732,7 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
         try c.encode(placement.y, forKey: .y)
         try c.encode(placement.w, forKey: .w)
         try c.encode(placement.h, forKey: .h)
+        try c.encodeIfPresent(minimum, forKey: .min)
         try c.encode(label, forKey: .label)
         switch content {
         case .metric(let options, let data):
@@ -614,6 +742,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .bar(let options, let data):
+            try c.encode(options, forKey: .options)
+            try c.encode(data, forKey: .data)
+        case .table(let options, let data):
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .image(let imageId, let options):

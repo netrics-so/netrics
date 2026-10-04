@@ -25,6 +25,7 @@ import {
   textOverflows,
   textSizeToFit,
   unreadableCounts,
+  tableRowsCut,
   unreadableLabels,
   widthToFit,
 } from "./studio-readability";
@@ -419,5 +420,17 @@ describe("text widgets cut off", () => {
     }
     const endless = { ...widget, text: "word ".repeat(3000) };
     expect(textSizeToFit(endless, 1, true)).toBe(null);
+  });
+});
+
+describe("table rows on the canvas (ADR 0019 section 6)", () => {
+  it("says how many rows a 4 × 4 table shows when more are asked for", () => {
+    const size = { w: 4, h: 4 };
+    expect(tableRowsCut("Page views", size, 8, 1.3, true)).toEqual({
+      shown: 4,
+      limit: 8,
+    });
+    expect(tableRowsCut("Page views", size, 6, 1, true)).toBeNull();
+    expect(tableRowsCut("Page views", { w: 4, h: 6 }, 8, 1.3, true)).toBeNull();
   });
 });

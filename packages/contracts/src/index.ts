@@ -1171,6 +1171,12 @@ export const metricBreakdownRequestSchema = z.object({
     .record(z.string().min(1).max(100), z.string().max(200))
     .optional(),
   displayCurrency: currencyCodeSchema.optional(),
+  /**
+   * Also each group's value over the previous window (a table's Δ, ADR
+   * 0019 section 6): a second grouped query restricted to the groups
+   * returned, with the same aggregation, conversion and currency.
+   */
+  withPrevious: z.boolean().optional(),
 });
 export type MetricBreakdownRequest = z.infer<
   typeof metricBreakdownRequestSchema
@@ -1182,6 +1188,12 @@ export const metricBreakdownResponseSchema = z.object({
   timeZone: z.string().min(1),
   aggregation: metricAggregationSchema,
   groupBy: z.string().min(1),
+  /**
+   * The dimension's name in the request's language, for a column head
+   * (a table, ADR 0019): the connector's resource noun for "resource"
+   * ("Site", "App"), else the dimension's name ("Territory", "Land").
+   */
+  groupByName: z.string().min(1),
   /** As in a metric query: the amounts' ISO 4217 code, else null. */
   currency: z.string().nullable(),
   /** As in a metric query; `previousValue` of `unconverted` is null. */
@@ -1198,6 +1210,13 @@ export const metricBreakdownResponseSchema = z.object({
       /** A resource's name, a territory's name ("Germany"), else the key. */
       label: z.string().min(1),
       value: z.number(),
+      /**
+       * With `withPrevious` only: the group's value over the previous
+       * window (null without data there) and the change against it (null
+       * without a previous value or against zero).
+       */
+      previousValue: z.number().nullable().optional(),
+      ratio: z.number().nullable().optional(),
     }),
   ),
   /**
@@ -1626,6 +1645,16 @@ export const formatWarningSchema = z.object({
   widgetId: z.uuid().nullable(),
   /** continues: the number of pages; else null. */
   pages: z.number().int().min(2).nullable(),
+  /**
+   * rows_cut (ADR 0019): the rows a table shows in the format of the rows
+   * it asks for ("Shows 4 of 8 rows"); else null.
+   */
+  rows: z
+    .object({
+      shown: z.number().int().nonnegative(),
+      limit: z.number().int().positive(),
+    })
+    .nullable(),
 });
 export type FormatWarning = z.infer<typeof formatWarningSchema>;
 
@@ -1651,6 +1680,17 @@ export const barWidgetOptionsSchema = z.object({
   groupBy: z.string().min(1).max(100),
   /** Bars shown, the rest add up to "Other". */
   limit: z.number().int().min(3).max(10).default(5),
+});
+/** A table (ADR 0019 section 6): one metric by a dimension, ranked. */
+export const tableWidgetOptionsSchema = z.object({
+  /** A dimension of the metric, e.g. "route" or "territory"; not currency. */
+  groupBy: z.string().min(1).max(100),
+  /** Rows asked for; a screen shows those that fit and says how many. */
+  limit: z.number().int().min(3).max(10).default(5),
+  /** The Δ column: each row against the previous period. */
+  showChange: z.boolean().default(true),
+  /** A last, dimmed "Others" row with the rest added up. */
+  showOthers: z.boolean().default(false),
 });
 export const textWidgetOptionsSchema = z.object({
   size: z.enum(["body", "heading", "display"]).default("body"),
@@ -1717,6 +1757,12 @@ export const dashboardWidgetInputSchema = z.discriminatedUnion("type", [
     ...widgetInputShape,
     ...dataBindingInputShape,
     options: barWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("table"),
+    ...widgetInputShape,
+    ...dataBindingInputShape,
+    options: tableWidgetOptionsSchema,
   }),
   z.object({
     type: z.literal("image"),
@@ -1827,6 +1873,12 @@ export const dashboardWidgetSchema = z.discriminatedUnion("type", [
     ...widgetShape,
     ...dataBindingShape,
     options: barWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("table"),
+    ...widgetShape,
+    ...dataBindingShape,
+    options: tableWidgetOptionsSchema,
   }),
   z.object({
     type: z.literal("image"),
@@ -2484,6 +2536,40 @@ export const deviceBarDataSchema = z.object({
 });
 export type DeviceBarData = z.infer<typeof deviceBarDataSchema>;
 
+/**
+ * A table widget's data (ADR 0019 section 6): the largest groups, largest
+ * first, each with its value over the previous window, and the rest.
+ */
+export const deviceTableDataSchema = z.object({
+  ...deviceWidgetDataShape,
+  /** The dimension grouped by (e.g. "route", "territory"). */
+  groupBy: z.string().min(1),
+  /** The column heads in the payload's language: dimension and metric. */
+  columns: z.object({ label: z.string().min(1), value: z.string().min(1) }),
+  rows: z.array(
+    z.object({
+      /** The dimension value. */
+      key: z.string(),
+      /** A resource's or territory's name, else the key. */
+      label: z.string().min(1),
+      value: z.number(),
+      /** Over the previous window; null without data there. */
+      previousValue: z.number().nullable(),
+      /** The change; null without a previous value, or against zero. */
+      ratio: z.number().nullable(),
+    }),
+  ),
+  /** The rest added up ("Others") with `showOthers`; else null. */
+  others: z
+    .object({
+      label: z.string().min(1),
+      value: z.number(),
+      groups: z.number().int().nonnegative(),
+    })
+    .nullable(),
+});
+export type DeviceTableData = z.infer<typeof deviceTableDataSchema>;
+
 /** A widget's id and placement in a grid of `columns` × `rows`. */
 function deviceWidgetPlacementShape(grid: { columns: number; rows: number }) {
   return {
@@ -2503,9 +2589,27 @@ function deviceWidgetPlacementShape(grid: { columns: number; rows: number }) {
  */
 const deviceDataLabelSchema = z.string().min(1);
 
-/** The widget union with placements in the given grid. */
-function deviceWidgetUnion(grid: { columns: number; rows: number }) {
-  const deviceWidgetShape = deviceWidgetPlacementShape(grid);
+/**
+ * A widget type's minimum size (schema 3, ADR 0019 section 2): a screen
+ * that does not know the type reflows it with this one.
+ */
+const deviceWidgetMinSchema = z.object({
+  w: z.number().int().min(1),
+  h: z.number().int().min(1),
+});
+
+/**
+ * The widget union with placements in the given grid, every widget with
+ * the `extra` fields (schema 3: its type's minimum size).
+ */
+function deviceWidgetUnion<E extends z.ZodRawShape>(
+  grid: { columns: number; rows: number },
+  extra: E,
+) {
+  const deviceWidgetShape = {
+    ...deviceWidgetPlacementShape(grid),
+    ...extra,
+  };
   return z.discriminatedUnion("type", [
     z.object({
       type: z.literal("metric"),
@@ -2527,6 +2631,13 @@ function deviceWidgetUnion(grid: { columns: number; rows: number }) {
       label: deviceDataLabelSchema,
       options: barWidgetOptionsSchema,
       data: deviceBarDataSchema,
+    }),
+    z.object({
+      type: z.literal("table"),
+      ...deviceWidgetShape,
+      label: deviceDataLabelSchema,
+      options: tableWidgetOptionsSchema,
+      data: deviceTableDataSchema,
     }),
     z.object({
       type: z.literal("image"),
@@ -2565,7 +2676,7 @@ function deviceWidgetUnion(grid: { columns: number; rows: number }) {
 }
 
 /** A schema 2 widget: placed in the 12 × 8 grid of the `16x9` layout. */
-export const deviceWidgetSchema = deviceWidgetUnion(STUDIO_GRID);
+export const deviceWidgetSchema = deviceWidgetUnion(STUDIO_GRID, {});
 export type DeviceWidget = z.infer<typeof deviceWidgetSchema>;
 
 export const deviceSlideSchema = z.object({
@@ -2657,7 +2768,9 @@ export type DeviceDashboardV2Response = z.infer<
 // dashboard reduced to the `16x9` layout, for screens that know no formats.
 
 /** A widget placed in the primary format's grid. */
-export const deviceWidgetV3Schema = deviceWidgetUnion(SCREEN_FORMAT_MAX_GRID);
+export const deviceWidgetV3Schema = deviceWidgetUnion(SCREEN_FORMAT_MAX_GRID, {
+  min: deviceWidgetMinSchema,
+});
 export type DeviceWidgetV3 = z.infer<typeof deviceWidgetV3Schema>;
 
 /** A widget's place in a custom layout, as screens get it. */

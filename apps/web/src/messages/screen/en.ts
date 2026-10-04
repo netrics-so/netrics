@@ -58,6 +58,11 @@ export const screenEn = {
       reconnectHint:
         "Access was rejected. An admin can fix this under Connections.",
       loadingHistory: "Loading history…",
+      /** Table widgets (ADR 0019 section 6). */
+      tableTop: "Top {count}",
+      tableNew: "new",
+      tableNoChange: "–",
+      tableChangeHead: "Δ",
     },
     /** What a playing screen shows around its slides (ADR 0018, section 5). */
     player: {

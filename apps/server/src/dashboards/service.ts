@@ -1,5 +1,6 @@
 import {
   barWidgetOptionsSchema,
+  tableWidgetOptionsSchema,
   clockWidgetOptionsSchema,
   imageWidgetOptionsSchema,
   lineWidgetOptionsSchema,
@@ -127,6 +128,8 @@ function optionsOf(widget: DashboardWidgetRow) {
       return lineWidgetOptionsSchema.parse(options);
     case "bar":
       return barWidgetOptionsSchema.parse(options);
+    case "table":
+      return tableWidgetOptionsSchema.parse(options);
     case "image":
       return imageWidgetOptionsSchema.parse(options);
     case "text":
@@ -453,6 +456,14 @@ async function validateWidget(
   if (
     widget.type === "bar" &&
     !metricDimensions.includes(widget.options.groupBy)
+  ) {
+    return fail(400, "unknown_dimension");
+  }
+  // A table groups like a bar chart, never by currency (ADR 0019 §6).
+  if (
+    widget.type === "table" &&
+    (!metricDimensions.includes(widget.options.groupBy) ||
+      widget.options.groupBy === CURRENCY_DIMENSION)
   ) {
     return fail(400, "unknown_dimension");
   }

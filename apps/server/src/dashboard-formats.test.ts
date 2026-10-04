@@ -894,6 +894,7 @@ describe("readability per format (#280)", () => {
       severity: "attention",
       widgetId: a!.id,
       pages: null,
+      rows: null,
     });
     expect(time!.formatWarnings).toEqual([]);
     expect(await get(dashboard.id)).toEqual(dashboard);
@@ -973,6 +974,7 @@ describe("readability per format (#280)", () => {
         severity: "info",
         widgetId: small!.id,
         pages: null,
+        rows: null,
       },
     ]);
     // The 3 × 3 clock shows all three lines in the primary format.
@@ -1011,6 +1013,7 @@ describe("readability per format (#280)", () => {
         severity: "attention",
         widgetId: null,
         pages: null,
+        rows: null,
       })),
     );
     expect(
@@ -1021,6 +1024,7 @@ describe("readability per format (#280)", () => {
       severity: "info",
       widgetId: null,
       pages: 2,
+      rows: null,
     });
     // Without the header only the pages remain.
     const hidden = parsed(

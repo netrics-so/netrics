@@ -1763,6 +1763,79 @@ describe("chart queries (#218)", () => {
       });
     });
 
+    it("adds each ranked group's previous window for a table (withPrevious)", async () => {
+      const response = await breakdown({
+        metricKey: "chart.downloads",
+        groupBy: "resource",
+        limit: 3,
+        withPrevious: true,
+      });
+      expect(response.statusCode).toBe(200);
+      const result = metricBreakdownResponseSchema.parse(response.json());
+      // The week before: app-1 6 (07-02), app-2 9 (07-08), app-3 nothing.
+      expect(result.groupByName).toBe("Resource");
+      expect(result.groups).toEqual([
+        {
+          key: "app-1",
+          label: "Wurfel",
+          value: 45,
+          previousValue: 6,
+          ratio: (45 - 6) / 6,
+        },
+        {
+          key: "app-2",
+          label: "Dicey",
+          value: 25,
+          previousValue: 9,
+          ratio: (25 - 9) / 9,
+        },
+        {
+          key: "app-3",
+          label: "Quiet",
+          value: 12,
+          previousValue: null,
+          ratio: null,
+        },
+      ]);
+      expect(result.others).toEqual({ label: "Others", value: 11, groups: 2 });
+
+      // By territory: DE 55 against 6 + 9 the week before.
+      const territories = metricBreakdownResponseSchema.parse(
+        (
+          await breakdown({
+            metricKey: "chart.downloads",
+            groupBy: "territory",
+            limit: 3,
+            withPrevious: true,
+          })
+        ).json(),
+      );
+      expect(territories.groupByName).toBe("Territory");
+      expect(territories.groups[0]).toEqual({
+        key: "DE",
+        label: "Germany",
+        value: 55,
+        previousValue: 15,
+        ratio: (55 - 15) / 15,
+      });
+    });
+
+    it("converts the previous window like the current one", async () => {
+      const response = await breakdown({
+        metricKey: "chart.proceeds",
+        groupBy: "resource",
+        displayCurrency: "EUR",
+        period: "last_30_days",
+        withPrevious: true,
+      });
+      const result = metricBreakdownResponseSchema.parse(response.json());
+      expect(result.currency).toBe("EUR");
+      expect(result.groups).toMatchObject([
+        { key: "app-1", value: 1_200, previousValue: null, ratio: null },
+        { key: "app-2", value: 300, previousValue: null, ratio: null },
+      ]);
+    });
+
     it("shows every group within the limit and no Others", async () => {
       const response = await breakdown({
         metricKey: "chart.downloads",

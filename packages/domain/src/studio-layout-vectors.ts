@@ -27,6 +27,10 @@ import {
   parseTextWidget,
   clockLayout,
   studioFrame,
+  tableChangeKind,
+  tableLayout,
+  tableRowLabel,
+  tableRowsShown,
   textWidgetSizes,
   widgetRect,
   widgetTypeScale,
@@ -357,7 +361,9 @@ export function buildStudioLayoutVectors() {
         { type: "metric", w: 4, h: 3 },
         { type: "line", w: 6, h: 4 },
         { type: "bar", w: 12, h: 8 },
+        { type: "table", w: 4, h: 4 },
         { type: "text", w: 2, h: 1 },
+        { type: "clock", w: 2, h: 1 },
       ] as const
     ).flatMap((widget) =>
       [1, 1.3].map((fontScale) => ({
@@ -370,6 +376,95 @@ export function buildStudioLayoutVectors() {
       })),
     ),
   );
+
+  // Tables (ADR 0019 section 6): content boxes of 4 × 4, 3 wide and 3
+  // high, 6 × 6 and 12 × 8 at 16:9 with the header, and odd ones.
+  const tableBoxes = [
+    { width: 560, height: 414.2 },
+    { width: 404, height: 414.2 },
+    { width: 560, height: 294.65 },
+    { width: 872, height: 652.1 },
+    { width: 1808, height: 892.4 },
+    { width: 200, height: 100 },
+    { width: 0, height: 0 },
+  ];
+  const tableValues = [
+    [],
+    [
+      { full: "8,120", compact: "8.1K" },
+      { full: "7,250", compact: "7.3K" },
+      { full: "512", compact: "512" },
+    ],
+    [
+      { full: "$1,234,567.89", compact: "$1.2M" },
+      { full: "$98,765.43", compact: "$98.8K" },
+    ],
+  ];
+  const tableLayouts = tableBoxes.flatMap((box) =>
+    ["Page views", "Page views · netrics.so", LABELS[5]!].flatMap((label) =>
+      FONT_SCALES.flatMap((fontScale) =>
+        tableValues.flatMap((values) =>
+          [true, false].map((showChange) => ({
+            label,
+            width: box.width,
+            height: box.height,
+            fontScale,
+            values,
+            showChange,
+            layout: tableLayout({
+              label,
+              width: box.width,
+              height: box.height,
+              fontScale,
+              values,
+              showChange,
+            }),
+          })),
+        ),
+      ),
+    ),
+  );
+  const tableRowsShownCases = [
+    [5, 8, 4],
+    [3, 2, 6],
+    [10, 10, 10],
+    [5, 0, 6],
+    [5, 6, 0],
+  ].map(([limit, rows, capacity]) => ({
+    limit: limit!,
+    rows: rows!,
+    capacity: capacity!,
+    shown: tableRowsShown(limit!, rows!, capacity!),
+  }));
+  const tableRowLabels = [
+    "/pricing",
+    "/blog/how-we-built-a-dashboard-for-the-office-tv",
+    "Germany",
+    "United States of America",
+    "日本語のアプリ",
+    "",
+  ].flatMap((text) =>
+    [100, 250, 370].flatMap((labelWidth) =>
+      [1, 1.3].map((fontScale) => {
+        const sizes = { cell: 28 * fontScale, cellMin: 24 * fontScale };
+        return {
+          text,
+          labelWidth,
+          ...sizes,
+          ...tableRowLabel(text, labelWidth, sizes),
+        };
+      }),
+    ),
+  );
+  const tableChanges = [
+    { value: 8120, previousValue: 7250, ratio: 0.12 },
+    { value: 10, previousValue: 0, ratio: null },
+    { value: 10, previousValue: null, ratio: null },
+    { value: 0, previousValue: null, ratio: null },
+    { value: 0, previousValue: 0, ratio: null },
+    { value: null, previousValue: 5, ratio: null },
+    { value: 3, previousValue: 4, ratio: -0.25 },
+  ].map((row) => ({ ...row, kind: tableChangeKind(row) }));
 
   const legacy = Array.from({ length: 41 }, (_, tiles) => ({
     tiles,
@@ -439,6 +534,10 @@ export function buildStudioLayoutVectors() {
     wrapping,
     fitSizes,
     labelFits,
+    tableLayouts,
+    tableRowsShown: tableRowsShownCases,
+    tableRowLabels,
+    tableChanges,
     legacy,
     markdown,
     compact,

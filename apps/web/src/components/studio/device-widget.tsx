@@ -13,6 +13,7 @@ import { LiveClockWidget } from "./clock-widget";
 import { ImageWidgetView } from "./image-widget";
 import { LineWidgetView, type LineReadingProps } from "./line-widget";
 import { MetricWidgetView, type MetricReadingProps } from "./metric-widget";
+import { TableWidgetView, type TableReadingProps } from "./table-widget";
 import { WidgetFailed } from "./slide-canvas";
 import { TextWidgetView } from "./text-widget";
 
@@ -27,7 +28,7 @@ export interface DeviceWidgetEnv {
 
 export type DeviceDataWidget = Extract<
   DeviceWidget,
-  { type: "metric" | "line" | "bar" }
+  { type: "metric" | "line" | "bar" | "table" }
 >;
 
 function metricOf(data: DeviceDataWidget["data"]) {
@@ -137,6 +138,40 @@ export function deviceBarReading(
   };
 }
 
+/** A payload table widget's reading (ADR 0019 section 6). */
+export function deviceTableReading(
+  widget: Extract<DeviceWidget, { type: "table" }>,
+  locale: Locale,
+): TableReadingProps {
+  const { data } = widget;
+  return {
+    label: widget.label,
+    period: data.period,
+    options: widget.options,
+    reading:
+      data.unit === null
+        ? null
+        : {
+            unit: data.unit,
+            better: data.better,
+            columns: data.columns,
+            rows: data.rows.map((row) => ({
+              label: row.label,
+              value: row.value,
+              previousValue: row.previousValue,
+              ratio: row.ratio,
+            })),
+            others: data.others
+              ? { label: data.others.label, value: data.others.value }
+              : null,
+            approximate: data.conversion !== null,
+          },
+    notice: deviceTileNotice(data.status, data.updatedAt, locale),
+    status: data.status,
+    updatedAt: data.updatedAt,
+  };
+}
+
 /**
  * A widget of a device payload (schema 2 or 3, #219, #281) with the data
  * the server computed: the same display components as the signed-in
@@ -175,6 +210,10 @@ export function DeviceWidgetView({
     case "bar":
       return (
         <BarWidgetView {...common} {...deviceBarReading(widget, locale)} />
+      );
+    case "table":
+      return (
+        <TableWidgetView {...common} {...deviceTableReading(widget, locale)} />
       );
     case "image":
       return (

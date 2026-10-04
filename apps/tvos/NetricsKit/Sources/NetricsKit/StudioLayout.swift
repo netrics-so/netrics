@@ -9,10 +9,16 @@ import Foundation
 // canvas answer in canvas points; the type scale answers in units.
 
 public enum StudioWidgetType: String, Sendable, Equatable, CaseIterable, Codable {
-    case metric, line, bar, image, text, clock
+    case metric, line, bar, image, text, clock, table
 
     /** Widgets with a title and resource line (bound to a metric). */
-    public var isData: Bool { self == .metric || self == .line || self == .bar }
+    public var isData: Bool { self == .metric || self == .line || self == .bar || self == .table }
+
+    /**
+     * Widgets that show a label, which labelFit checks (ADR 0019 section 2);
+     * image, text and clock have none.
+     */
+    public var hasLabel: Bool { self != .image && self != .text && self != .clock }
 }
 
 /** A widget's cells: 0-based column and row, width and height in cells. */
@@ -67,6 +73,7 @@ public struct StudioFrame: Sendable, Equatable {
 public enum StudioTextRole: String, Sendable, CaseIterable, Codable {
     case any, title, resource, change, axis, body, heading, display
     case valueMin, valueMax, clockMin, clockMax, date, zone
+    case cell, columnHead
 }
 
 public enum StudioFontWeight: String, Sendable, Codable {
@@ -138,6 +145,7 @@ public enum StudioLayout {
         case .line, .bar: return (4, 3)
         case .image: return (1, 1)
         case .text, .clock: return (2, 1)
+        case .table: return (4, 4)
         }
     }
 
@@ -217,6 +225,10 @@ public enum StudioLayout {
         public static let clock = 56.0
         /** The clock's zone line (ADR 0019, section 9). */
         public static let zone = 24.0
+        /** Table rows (ADR 0019 section 13). */
+        public static let cell = 28.0
+        /** Table column heads, in caps. */
+        public static let columnHead = 24.0
     }
 
     /** A font scale never lowers a minimum: anything below 1 is 1. */
@@ -255,6 +267,11 @@ public enum StudioLayout {
                 sizes[.axis] = Minimum.axis * scale
             }
             return sizes
+        case .table:
+            return [
+                .any: any, .title: Minimum.title * scale, .resource: Minimum.resource * scale,
+                .columnHead: Minimum.columnHead * scale, .cell: Minimum.cell * scale,
+            ]
         case .image:
             return [.any: any]
         case .text:
@@ -483,7 +500,7 @@ public enum StudioLayout {
         _ label: String, type: StudioWidgetType, w: Int, h: Int, fontScale: Double? = nil,
         format: ScreenFormat = .widescreen
     ) -> StudioLabelFit {
-        guard type.isData else { return StudioLabelFit(fits: true, titleLines: 0, resourceLines: 0) }
+        guard type.hasLabel else { return StudioLabelFit(fits: true, titleLines: 0, resourceLines: 0) }
         let scale = effectiveFontScale(fontScale)
         let rect = placementRect(
             StudioPlacement(x: 0, y: 0, w: w, h: h),
@@ -507,6 +524,156 @@ public enum StudioLayout {
         format: ScreenFormat = .widescreen
     ) -> Bool {
         labelFit(label, type: type, w: w, h: h, fontScale: fontScale, format: format).fits
+    }
+
+    // MARK: Table (ADR 0019 section 6)
+
+    /** Line height of a table's text, as STUDIO_LINE_HEIGHT. */
+    static let tableLineHeight = 1.15
+
+    /** A table's spacing in units. */
+    public enum TableSpacing {
+        /** Between the label, the subtitle, the column heads and the footer. */
+        public static let stack = 8.0
+        /** Above every row: the row pitch is the cell line plus this. */
+        public static let rowGap = 12.0
+        /** Between the label, value and change columns. */
+        public static let columnGap = 16.0
+    }
+
+    /** The widest change the Δ column reserves room for. */
+    public static let tableChangeSample = "+999 %"
+
+    /** Below this share of the width the value column goes compact. */
+    public static let tableMinLabelShare = 0.4
+
+    public struct TableValueText: Sendable, Equatable {
+        public var full: String
+        public var compact: String
+        public init(full: String, compact: String) {
+            self.full = full
+            self.compact = compact
+        }
+    }
+
+    public struct TableSizes: Sendable, Equatable {
+        public var title: Double
+        public var resource: Double
+        public var subtitle: Double
+        public var columnHead: Double
+        public var cell: Double
+        public var cellMin: Double
+    }
+
+    public struct TableColumns: Sendable, Equatable {
+        public var label: Double
+        public var value: Double
+        public var change: Double
+        public var gap: Double
+    }
+
+    public struct TableLayout: Sendable, Equatable {
+        public var sizes: TableSizes
+        public var titleLines: Int
+        public var resourceLines: Int
+        public var headHeight: Double
+        public var footerHeight: Double
+        public var rowPitch: Double
+        public var rowCapacity: Int
+        public var columns: TableColumns
+        public var compact: Bool
+    }
+
+    /**
+     * A table widget's layout (tableLayout in the TypeScript): label,
+     * subtitle, column heads, rows and footer in a content box in units.
+     */
+    public static func tableLayout(
+        label: String, width inputWidth: Double, height: Double, fontScale: Double? = nil,
+        values: [TableValueText] = [], showChange: Bool = true
+    ) -> TableLayout {
+        let scale = effectiveFontScale(fontScale)
+        let sizes = TableSizes(
+            title: Minimum.title * scale,
+            resource: Minimum.resource * scale,
+            subtitle: Minimum.any * scale,
+            columnHead: Minimum.columnHead * scale,
+            cell: Minimum.cell * scale,
+            cellMin: Minimum.any * scale)
+        let width = Swift.max(0, inputWidth)
+        let parts = labelParts(label)
+        let titleLines = Swift.min(
+            labelMaxLines,
+            Swift.max(1, wrappedLineCount(parts.title, maxWidth: width, fontSize: sizes.title, weight: .semibold)))
+        let resourceLines = parts.resource.map {
+            Swift.min(
+                labelMaxLines,
+                Swift.max(1, wrappedLineCount($0, maxWidth: width, fontSize: sizes.resource, weight: .semibold)))
+        } ?? 0
+        let headHeight =
+            Double(titleLines) * sizes.title * tableLineHeight
+            + Double(resourceLines) * sizes.resource * tableLineHeight
+            + TableSpacing.stack
+            + sizes.subtitle * tableLineHeight
+            + TableSpacing.stack
+            + sizes.columnHead * tableLineHeight
+        let footerHeight = TableSpacing.stack + sizes.subtitle * tableLineHeight
+        let rowPitch = sizes.cell * tableLineHeight + TableSpacing.rowGap
+        let rowCapacity = Swift.max(0, Int(((height - headHeight - footerHeight) / rowPitch).rounded(.down)))
+
+        let gap = TableSpacing.columnGap
+        let change = showChange ? estimateTextWidth(tableChangeSample, fontSize: sizes.cell, weight: .semibold) : 0
+        func widest(_ compactForm: Bool) -> Double {
+            var result = 0.0
+            for entry in values {
+                let text = compactForm ? entry.compact : entry.full
+                result = Swift.max(result, estimateTextWidth(text, fontSize: sizes.cell, weight: .semibold))
+            }
+            return result
+        }
+        func reserved(_ value: Double) -> Double {
+            value + gap + (change > 0 ? change + gap : 0)
+        }
+        var value = widest(false)
+        var compact = false
+        if width - reserved(value) < width * tableMinLabelShare {
+            let compactWidth = widest(true)
+            if compactWidth < value {
+                value = compactWidth
+                compact = true
+            }
+        }
+        return TableLayout(
+            sizes: sizes, titleLines: titleLines, resourceLines: resourceLines, headHeight: headHeight,
+            footerHeight: footerHeight, rowPitch: rowPitch, rowCapacity: rowCapacity,
+            columns: TableColumns(label: Swift.max(0, width - reserved(value)), value: value, change: change, gap: gap),
+            compact: compact)
+    }
+
+    /** Rows a table shows: its limit, its rows and the room, whichever is least. */
+    public static func tableRowsShown(limit: Int, rows: Int, rowCapacity: Int) -> Int {
+        Swift.max(0, Swift.min(limit, rows, rowCapacity))
+    }
+
+    /** A row label's size: shrunk down to cellMin, then truncated. */
+    public static func tableRowLabel(_ text: String, labelWidth: Double, cell: Double, cellMin: Double)
+        -> (size: Double, truncated: Bool)
+    {
+        if let size = fitTextSize(text, maxWidth: labelWidth, min: cellMin, max: cell) {
+            return (size, false)
+        }
+        return (cellMin, true)
+    }
+
+    public enum TableChangeKind: String, Sendable, Equatable {
+        case ratio, new, none
+    }
+
+    /** What a row's Δ shows: the ratio, "new", or "–". */
+    public static func tableChangeKind(value: Double?, previousValue: Double?, ratio: Double?) -> TableChangeKind {
+        if let ratio, ratio.isFinite { return .ratio }
+        if let value, value != 0, previousValue == nil || previousValue == 0 { return .new }
+        return .none
     }
 
     // MARK: Legacy layout (tile migration)

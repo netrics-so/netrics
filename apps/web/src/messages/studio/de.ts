@@ -56,6 +56,7 @@ export const studioDe: Catalog<typeof studioEn> = {
         "{name}, Spalte {column}, Zeile {row}, {w} × {h} Zellen{problem, select, yes {, hat ein Problem} other {}}",
       textCut: "Text abgeschnitten",
       labelCut: "Beschriftung abgeschnitten",
+      rowsCut: "Zeilen gekürzt",
       keyboardHelp:
         "Pfeiltasten verschieben das Widget um eine Zelle, Umschalt und Pfeiltasten ändern seine Größe, Entf entfernt es, Esc kehrt zur Folie zurück. Strg oder Befehl mit D dupliziert es, mit C kopiert es und mit V fügt eine Kopie ein.",
       empty: "Diese Folie ist leer. Füg unter „Widget hinzufügen“ eins hinzu.",
@@ -75,7 +76,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       add: "Widget hinzufügen",
       hint: "Klick, um es am ersten freien Platz einzufügen, oder zieh es auf die Folie",
       addType:
-        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} image {Bild} text {Text} clock {Uhr} other {Widget}} hinzufügen",
+        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} image {Bild} text {Text} clock {Uhr} other {Widget}} hinzufügen",
     },
     assignTvs: {
       title: "„{name}“ auf TVs zeigen",
@@ -208,6 +209,8 @@ export const studioDe: Catalog<typeof studioEn> = {
       notAvailable: "{name} (nicht verfügbar)",
       barMetrics:
         "Balkendiagramme bieten Metriken an, die sich aufschlüsseln lassen.",
+      tableMetrics:
+        "Tabellen bieten Metriken an, die sich aufschlüsseln lassen.",
       show: "Anzeigen",
       period: "Zeitraum",
       resourceHelp:
@@ -227,6 +230,11 @@ export const studioDe: Catalog<typeof studioEn> = {
       groupBy: "Gruppieren nach",
       barsShown: "Angezeigte Balken: {count}",
       barsHelp: "Die größten Gruppen, der Rest zusammengefasst als „Andere“.",
+      rows: "Zeilen",
+      rowsShown: "Zeilen: {count}",
+      rowsHelp:
+        "Die größten Gruppen. Ein Bildschirm zeigt die Zeilen, die passen, und sagt, wie viele.",
+      showOthers: "Zeile „Andere“ mit dem Rest zusammengefasst",
       all: "Alle",
       filter: "Filter",
       filterChip: "{name} = {value}",
@@ -318,6 +326,8 @@ export const studioDe: Catalog<typeof studioEn> = {
       shorterTitle:
         "{title, select, shorten {Kürze den Titel.} other {Gib einen kürzeren Titel ein.}}",
       fewerResources: "Zeig weniger Ressourcen darin.",
+      rowsCut:
+        "Zeigt auf TVs {shown} von {limit} Zeilen. Mach es höher oder zeig weniger Zeilen.",
       textCutResize:
         "Der Text wird auf TVs abgeschnitten. Mach es {w} × {h} Zellen groß oder kürze den Text.",
       textCut: "Der Text wird auf TVs abgeschnitten. Kürze den Text.",
@@ -389,6 +399,7 @@ export const studioDe: Catalog<typeof studioEn> = {
           "Der Name des Dashboards passt nicht in die Kopfzeile.",
         clock_parts_hidden:
           "{widget}: Datum oder Zeitzone passen nicht, die Uhr zeigt nur einen Teil.",
+        rows_cut: "{widget}: Zeigt {shown} von {limit} Zeilen.",
       },
       showInEditor: "In {primary} auswählen",
       openFormat: "{name} {ratio} öffnen",
@@ -454,9 +465,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} image {Bild} text {Text} clock {Uhr} other {Widget}}",
+        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} image {Bild} text {Text} clock {Uhr} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} image {Bild} text {Text} clock {Uhr} other {Widget}})",
+        "{title} ({type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} image {Bild} text {Text} clock {Uhr} other {Widget}})",
       copyOf: "{name} (Kopie)",
       slide: "Folie {number}",
       quoted: "„{name}“",
@@ -468,9 +479,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         widgetPlaced:
           "{name} in Spalte {column}, Zeile {row} {verb, select, duplicated {dupliziert} pasted {eingefügt} other {hinzugefügt}}.",
         typeNoRoom:
-          "{type, select, metric {Eine Metrik} line {Ein Liniendiagramm} bar {Ein Balkendiagramm} image {Ein Bild} text {Ein Text} clock {Eine Uhr} other {Ein Widget}} braucht mindestens {w} × {h} Zellen; hier ist kein Platz dafür.",
+          "{type, select, metric {Eine Metrik} line {Ein Liniendiagramm} bar {Ein Balkendiagramm} table {Eine Tabelle} image {Ein Bild} text {Ein Text} clock {Eine Uhr} other {Ein Widget}} braucht mindestens {w} × {h} Zellen; hier ist kein Platz dafür.",
         typeChanged:
-          "{name} ist jetzt {type, select, metric {eine Metrik} line {ein Liniendiagramm} bar {ein Balkendiagramm} image {ein Bild} text {ein Text} clock {eine Uhr} other {ein Widget}}.",
+          "{name} ist jetzt {type, select, metric {eine Metrik} line {ein Liniendiagramm} bar {ein Balkendiagramm} table {eine Tabelle} image {ein Bild} text {ein Text} clock {eine Uhr} other {ein Widget}}.",
         undone: "Rückgängig gemacht.",
         redone: "Wiederholt.",
         discarded: "Änderungen verworfen.",

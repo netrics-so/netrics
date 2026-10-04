@@ -309,6 +309,20 @@ enum BuiltinThemes {
         #expect(EnterMotion.easeOutCubic(2) == 1)
     }
 
+    @Test func staggersTableRowsBy90msEach400msLong() {
+        // At 450 ms into the enter (eased progress of t = 0.375): row 0 has
+        // risen for 450 ms (done), row 1 for 360 ms, row 5 just starts.
+        let eased = EnterMotion.easeOutCubic(0.375)
+        #expect(abs(EnterMotion.linearProgress(eased: eased) - 0.375) < 1e-9)
+        #expect(EnterMotion.rowProgress(0, eased: eased) == 1)
+        #expect(abs(EnterMotion.rowProgress(1, eased: eased) - EnterMotion.easeOutCubic(0.9)) < 1e-9)
+        #expect(EnterMotion.rowProgress(5, eased: eased) == 0)
+        #expect(EnterMotion.rowProgress(0, eased: 0) == 0)
+        // Every row is at rest once the enter is (Reduce Motion: progress 1).
+        #expect(EnterMotion.rowProgress(9, eased: 1) == 1)
+        #expect(EnterMotion.rowRise == 14)
+    }
+
     @Test func countsFromZeroToExactlyTheTarget() {
         #expect(EnterMotion.countUpValue(1248, 0) == 0)
         #expect(EnterMotion.countUpValue(1248, 0.5) == 1092)

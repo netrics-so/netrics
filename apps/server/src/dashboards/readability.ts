@@ -1,5 +1,6 @@
 import {
   clockWidgetOptionsSchema,
+  tableWidgetOptionsSchema,
   textWidgetOptionsSchema,
   type FormatWarning,
 } from "@netrics/contracts";
@@ -124,6 +125,13 @@ export function dashboardFormatWarnings(
         w: widget.w,
         h: widget.h,
       };
+      if (type === "table") {
+        return {
+          ...base,
+          label: inputs.labelOf(widget),
+          rows: tableWidgetOptionsSchema.safeParse(widget.options).data?.limit,
+        };
+      }
       if (isDataWidgetType(type)) {
         return { ...base, label: inputs.labelOf(widget) };
       }
