@@ -7806,7 +7806,23 @@
                                       ]
                                     },
                                     "code": {
-                                      "type": "string"
+                                      "type": "string",
+                                      "enum": [
+                                        "label_cut",
+                                        "text_cut",
+                                        "continues",
+                                        "widget_hidden",
+                                        "widget_to_review",
+                                        "widget_too_small",
+                                        "header_name_cut"
+                                      ]
+                                    },
+                                    "severity": {
+                                      "type": "string",
+                                      "enum": [
+                                        "attention",
+                                        "info"
+                                      ]
                                     },
                                     "widgetId": {
                                       "anyOf": [
@@ -7819,12 +7835,26 @@
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "pages": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 2,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
                                     }
                                   },
                                   "required": [
                                     "format",
                                     "code",
-                                    "widgetId"
+                                    "severity",
+                                    "widgetId",
+                                    "pages"
                                   ],
                                   "additionalProperties": false
                                 }
@@ -9044,7 +9074,23 @@
                                       ]
                                     },
                                     "code": {
-                                      "type": "string"
+                                      "type": "string",
+                                      "enum": [
+                                        "label_cut",
+                                        "text_cut",
+                                        "continues",
+                                        "widget_hidden",
+                                        "widget_to_review",
+                                        "widget_too_small",
+                                        "header_name_cut"
+                                      ]
+                                    },
+                                    "severity": {
+                                      "type": "string",
+                                      "enum": [
+                                        "attention",
+                                        "info"
+                                      ]
                                     },
                                     "widgetId": {
                                       "anyOf": [
@@ -9057,12 +9103,26 @@
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "pages": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 2,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
                                     }
                                   },
                                   "required": [
                                     "format",
                                     "code",
-                                    "widgetId"
+                                    "severity",
+                                    "widgetId",
+                                    "pages"
                                   ],
                                   "additionalProperties": false
                                 }
@@ -11260,7 +11320,23 @@
                                       ]
                                     },
                                     "code": {
-                                      "type": "string"
+                                      "type": "string",
+                                      "enum": [
+                                        "label_cut",
+                                        "text_cut",
+                                        "continues",
+                                        "widget_hidden",
+                                        "widget_to_review",
+                                        "widget_too_small",
+                                        "header_name_cut"
+                                      ]
+                                    },
+                                    "severity": {
+                                      "type": "string",
+                                      "enum": [
+                                        "attention",
+                                        "info"
+                                      ]
                                     },
                                     "widgetId": {
                                       "anyOf": [
@@ -11273,12 +11349,26 @@
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "pages": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 2,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
                                     }
                                   },
                                   "required": [
                                     "format",
                                     "code",
-                                    "widgetId"
+                                    "severity",
+                                    "widgetId",
+                                    "pages"
                                   ],
                                   "additionalProperties": false
                                 }
@@ -12633,7 +12723,23 @@
                                       ]
                                     },
                                     "code": {
-                                      "type": "string"
+                                      "type": "string",
+                                      "enum": [
+                                        "label_cut",
+                                        "text_cut",
+                                        "continues",
+                                        "widget_hidden",
+                                        "widget_to_review",
+                                        "widget_too_small",
+                                        "header_name_cut"
+                                      ]
+                                    },
+                                    "severity": {
+                                      "type": "string",
+                                      "enum": [
+                                        "attention",
+                                        "info"
+                                      ]
                                     },
                                     "widgetId": {
                                       "anyOf": [
@@ -12646,12 +12752,26 @@
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "pages": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 2,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
                                     }
                                   },
                                   "required": [
                                     "format",
                                     "code",
-                                    "widgetId"
+                                    "severity",
+                                    "widgetId",
+                                    "pages"
                                   ],
                                   "additionalProperties": false
                                 }
@@ -24389,7 +24509,23 @@
                                       ]
                                     },
                                     "code": {
-                                      "type": "string"
+                                      "type": "string",
+                                      "enum": [
+                                        "label_cut",
+                                        "text_cut",
+                                        "continues",
+                                        "widget_hidden",
+                                        "widget_to_review",
+                                        "widget_too_small",
+                                        "header_name_cut"
+                                      ]
+                                    },
+                                    "severity": {
+                                      "type": "string",
+                                      "enum": [
+                                        "attention",
+                                        "info"
+                                      ]
                                     },
                                     "widgetId": {
                                       "anyOf": [
@@ -24402,12 +24538,26 @@
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "pages": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 2,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
                                     }
                                   },
                                   "required": [
                                     "format",
                                     "code",
-                                    "widgetId"
+                                    "severity",
+                                    "widgetId",
+                                    "pages"
                                   ],
                                   "additionalProperties": false
                                 }
