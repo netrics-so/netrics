@@ -137,6 +137,15 @@ public struct DerivedSurfaces: Sendable, Equatable {
     public var barEnd: ThemeColor
     /** The accent's glow from the top of a layered canvas; nil on flat themes. */
     public var canvasGlow: TintedColor?
+    /**
+     * A reached goal's surface (ADR 0019 section 5, design 4b): the widget
+     * background tinted towards `up`, top to bottom, a border of `up` at
+     * 35 % and a glow of `up` only on layered themes.
+     */
+    public var reachedTop: ThemeColor
+    public var reachedBottom: ThemeColor
+    public var reachedBorder: TintedColor
+    public var reachedGlow: TintedColor?
 
     /** The danger hue's red (GitHub's danger, as the web). */
     static let red = ThemeColor.parse("#f85149")!
@@ -177,6 +186,11 @@ public struct DerivedSurfaces: Sendable, Equatable {
         barStart = layered ? chartFill.mixed(0.75, with: .black) : chartFill
         barEnd = chartFill
         canvasGlow = layered ? TintedColor(accent, 0.1) : nil
+        let up = color(tokens.up, fallback.up)
+        reachedTop = (layered ? surface.mixed(0.95, with: accent) : surface).mixed(0.9, with: up)
+        reachedBottom = layered ? sunk.mixed(0.92, with: up) : reachedTop
+        reachedBorder = TintedColor(up, 0.35)
+        reachedGlow = layered ? TintedColor(up, 0.15) : nil
     }
 }
 

@@ -22,6 +22,7 @@ export const WIDGET_TYPES = [
   "status",
   "compare",
   "countdown",
+  "gauge",
 ] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 
@@ -41,11 +42,13 @@ export function isDataWidgetType(type: string): type is DataWidgetType {
 
 /**
  * What a widget counts toward `STUDIO_LIMITS.dataWidgets`: one per metric
- * query, so a compare widget (numerator and denominator) counts twice
- * (ADR 0019 section 2); widgets without a metric count nothing.
+ * query, so a compare widget (numerator and denominator) counts twice and
+ * a goal widget (its goal's metric) once (ADR 0019 section 2); widgets
+ * without a metric count nothing.
  */
 export function dataWidgetCost(type: string): number {
   if (type === "compare") return 2;
+  if (type === "gauge") return 1;
   return isDataWidgetType(type) ? 1 : 0;
 }
 

@@ -24,7 +24,8 @@ export type StudioWidgetType =
   | "table"
   | "status"
   | "compare"
-  | "countdown";
+  | "countdown"
+  | "gauge";
 
 export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "metric",
@@ -37,6 +38,7 @@ export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "status",
   "compare",
   "countdown",
+  "gauge",
 ];
 
 /** A widget's cells: 0-based column and row, width and height in cells. */
@@ -96,6 +98,7 @@ export const STUDIO_MIN_WIDGET_SIZE: Readonly<
   // Two five-character operands at 48 u and the separator (ADR 0019 §10).
   compare: { w: 4, h: 3 },
   countdown: { w: 3, h: 2 },
+  gauge: { w: 3, h: 3 },
 };
 
 /** Widgets with a title and resource line (bound to a metric). */
@@ -604,6 +607,19 @@ export function widgetTypeScale(
         ),
       };
     }
+    case "gauge":
+      // The value sits inside the ring, which `gaugeLayout` sizes.
+      return {
+        any,
+        title: m.title * scale,
+        resource: m.resource * scale,
+        change: m.change * scale,
+        valueMin: m.value * scale,
+        valueMax: Math.max(
+          m.value * scale,
+          contentHeight(placement, showHeader) * VALUE_HEIGHT_SHARE.metric,
+        ),
+      };
     case "countdown": {
       // ADR 0019 section 8: numbers in the value role, unit letters in the
       // change role, the text when reached at heading size.
@@ -1229,6 +1245,244 @@ export function statusAge(
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return { amount: hours, unit: "h" };
   return { amount: Math.floor(hours / 24), unit: "d" };
+}
+
+// ---------------------------------------------------------------------------
+// Goal widget: a full ring (ADR 0019 section 5)
+
+/** Line height of a gauge's text, as `STUDIO_LINE_HEIGHT`. */
+const GAUGE_LINE_HEIGHT = 1.15;
+
+/** The gauge's spacing and ring rules, in units. */
+export const GAUGE_SPACING = {
+  /** Between the label, target line, ring, progress line and footer. */
+  stack: 8,
+  /** Between the text column and the ring in the side layout. */
+  side: 16,
+  /** The ring is at least this wide (ADR 0019 §5 and §13). */
+  ringMin: 160,
+  /** Its stroke is this share of the diameter, at least `strokeMin`. */
+  strokeShare: 0.1,
+  strokeMin: 16,
+  /** The value may take this share of the ring's inner diameter. */
+  valueWidthShare: 0.86,
+  /** Space before the suffix ("%"), as a share of its size. */
+  suffixGap: 0.1,
+  /** The side layout from this content aspect (width ÷ height) on. */
+  sideAspect: 1.6,
+} as const;
+
+export interface GaugeLayoutInput {
+  /** The label as screens show it (the title, or the goal's name). */
+  label: string;
+  /** The content box in units: the widget's rect less its padding. */
+  width: number;
+  height: number;
+  fontScale?: number;
+  /**
+   * The text inside the ring, full and compact: the percent in progress
+   * ("83", with "%" as `suffix`), the value once reached ("15,612",
+   * "15.6K"). Sized on its widest digits, so a count-up keeps one size.
+   */
+  value?: { full: string; compact: string } | null;
+  /** A smaller unit after the value ("%"), in the change role. */
+  suffix?: string | null;
+  /** The progress line as shown; it wraps to at most two lines. */
+  progress?: string | null;
+}
+
+export interface GaugeLayout {
+  /** `side`: the ring right of the text, from a 1.6:1 content box. */
+  orientation: "stack" | "side";
+  /** Text sizes in units. */
+  sizes: {
+    title: number;
+    resource: number;
+    /** The target line ("Goal 15,000"), resource role. */
+    target: number;
+    /** The progress line, change role. */
+    progress: number;
+    footer: number;
+    /** The value inside the ring and its suffix. */
+    value: number;
+    suffix: number;
+  };
+  titleLines: number;
+  resourceLines: number;
+  /** The target line is shown (it goes second when height runs short). */
+  showTarget: boolean;
+  /** The footer is shown (it goes first). */
+  showFooter: boolean;
+  /** Lines of the progress line (1–2). */
+  progressLines: number;
+  /** The width of the text: the content width, or the side column. */
+  textWidth: number;
+  ring: { diameter: number; stroke: number };
+  /** The value is shown in its compact form. */
+  compact: boolean;
+  /** The ring reaches its minimum of 160 u. */
+  fits: boolean;
+}
+
+/**
+ * A goal widget's layout: the label (title and resource line, at most two
+ * lines each), the target line (resource role, one line), a full ring with
+ * the value inside (its diameter what is left, at most the content width,
+ * at least 160 u; stroke 10 % of it, at least 16 u), the progress line
+ * (change role, at most two lines) and the footer. When the ring would be
+ * under 160 u the footer goes first, then the target line. From a content
+ * box 1.6 times as wide as high the ring sits right of the text, as high as
+ * the box and at most half its width. The value inside is at least the
+ * value minimum and as large as fits the ring's inner diameter, its compact
+ * form when the full one does not fit, and only then smaller (the ring's
+ * interior is the limit, never below the smallest text).
+ */
+export function gaugeLayout(input: GaugeLayoutInput): GaugeLayout {
+  const scale = effectiveFontScale(input.fontScale);
+  const m = STUDIO_TEXT_MINIMUMS;
+  const width = Math.max(0, input.width);
+  const height = Math.max(0, input.height);
+  const base = {
+    title: m.title * scale,
+    resource: m.resource * scale,
+    target: m.resource * scale,
+    progress: m.change * scale,
+    footer: m.any * scale,
+  };
+  const gap = GAUGE_SPACING.stack;
+  const side = height > 0 && width >= GAUGE_SPACING.sideAspect * height;
+  const sideDiameter = side
+    ? Math.max(0, Math.min(height, (width - GAUGE_SPACING.side) / 2))
+    : 0;
+  const textWidth = side
+    ? Math.max(0, width - sideDiameter - GAUGE_SPACING.side)
+    : width;
+
+  const parts = labelParts(input.label);
+  const titleLines = Math.min(
+    STUDIO_LABEL_MAX_LINES,
+    Math.max(
+      1,
+      wrappedLineCount(parts.title, textWidth, base.title, "semibold"),
+    ),
+  );
+  const resourceLines =
+    parts.resource === null
+      ? 0
+      : Math.min(
+          STUDIO_LABEL_MAX_LINES,
+          Math.max(
+            1,
+            wrappedLineCount(
+              parts.resource,
+              textWidth,
+              base.resource,
+              "semibold",
+            ),
+          ),
+        );
+  const progressLines = Math.min(
+    2,
+    Math.max(
+      1,
+      input.progress
+        ? wrappedLineCount(input.progress, textWidth, base.progress, "semibold")
+        : 1,
+    ),
+  );
+  const labelHeight =
+    titleLines * base.title * GAUGE_LINE_HEIGHT +
+    resourceLines * base.resource * GAUGE_LINE_HEIGHT;
+  const targetHeight = base.target * GAUGE_LINE_HEIGHT;
+  const progressHeight = progressLines * base.progress * GAUGE_LINE_HEIGHT;
+  const footerHeight = base.footer * GAUGE_LINE_HEIGHT;
+
+  /** The text's height with these parts (the ring and its gap aside). */
+  const textHeight = (target: boolean, footer: boolean) =>
+    labelHeight +
+    (target ? gap + targetHeight : 0) +
+    gap +
+    progressHeight +
+    (footer ? gap + footerHeight : 0);
+  const ringRoom = (target: boolean, footer: boolean) =>
+    side
+      ? sideDiameter
+      : Math.min(width, height - textHeight(target, footer) - gap);
+  const fitsWith = (target: boolean, footer: boolean) =>
+    side
+      ? textHeight(target, footer) <= height &&
+        sideDiameter >= GAUGE_SPACING.ringMin
+      : ringRoom(target, footer) >= GAUGE_SPACING.ringMin;
+  // The footer goes first, then the target line.
+  const candidates: Array<[boolean, boolean]> = [
+    [true, true],
+    [true, false],
+    [false, false],
+  ];
+  const [showTarget, showFooter] = candidates.find(([target, footer]) =>
+    fitsWith(target, footer),
+  ) ?? [false, false];
+  const diameter = Math.max(0, ringRoom(showTarget, showFooter));
+  const ring = {
+    diameter,
+    stroke: Math.max(
+      GAUGE_SPACING.strokeMin,
+      diameter * GAUGE_SPACING.strokeShare,
+    ),
+  };
+
+  // The value inside the ring.
+  const valueMin = m.value * scale;
+  const anyMin = m.any * scale;
+  const suffixSize = base.progress;
+  const inner = Math.max(0, diameter - 2 * ring.stroke);
+  // The suffix follows the value after a tenth of its size ("83%").
+  const suffixWidth = input.suffix
+    ? estimateTextWidth(input.suffix, suffixSize, "semibold") +
+      suffixSize * GAUGE_SPACING.suffixGap
+    : 0;
+  const room = Math.max(0, inner * GAUGE_SPACING.valueWidthShare - suffixWidth);
+  const valueMax = Math.max(valueMin, inner * 0.45);
+  // Widest digits, so a count-up and tomorrow's value keep one size.
+  const sized = (text: string, min: number) =>
+    fitTextSize(text.replace(/\d/g, "0"), room, {
+      min,
+      max: valueMax,
+      weight: "semibold",
+    });
+  let value = valueMin;
+  let compact = false;
+  if (input.value) {
+    const full = sized(input.value.full, valueMin);
+    const short =
+      input.value.compact === input.value.full
+        ? null
+        : sized(input.value.compact, valueMin);
+    if (full !== null) {
+      value = full;
+    } else if (short !== null) {
+      value = short;
+      compact = true;
+    } else {
+      // The ring's interior is the limit: the compact form as large as it
+      // fits there, never below the smallest text.
+      value = Math.max(anyMin, sized(input.value.compact, 0) ?? anyMin);
+      compact = input.value.compact !== input.value.full;
+    }
+  }
+  return {
+    orientation: side ? "side" : "stack",
+    sizes: { ...base, value, suffix: suffixSize },
+    titleLines,
+    resourceLines,
+    showTarget,
+    showFooter,
+    progressLines,
+    textWidth,
+    ring,
+    compact,
+    fits: diameter >= GAUGE_SPACING.ringMin,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -2043,6 +2297,7 @@ export const studioLayout = {
   statusRowsShown,
   statusRowLabel,
   statusAge,
+  gaugeLayout,
   legacyGrid,
   legacyLayout,
   parseTextWidget,

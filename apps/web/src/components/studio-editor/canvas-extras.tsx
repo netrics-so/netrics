@@ -10,6 +10,7 @@ import {
 } from "@netrics/domain";
 
 import { dataWidgetLabel } from "@/components/studio/metric-widget";
+import { gaugeLabel } from "@/lib/studio-gauge";
 import {
   widgetName,
   type StudioAction,
@@ -43,16 +44,18 @@ export function useUnreadableLabels(
     const labels = unreadableLabels(
       document,
       (widget) =>
-        isDataWidgetType(widget.type)
-          ? dataWidgetLabel(
-              widget as DataWidget,
-              metrics.get(metricKeyOf(widget as DataWidget)),
-            )
-          : widget.type === "status"
-            ? (widget.title ?? sourcesLabel(locale))
-            : widget.type === "countdown"
-              ? countdownLabel(widget.title, locale)
-              : "",
+        widget.type === "gauge"
+          ? gaugeLabel(widget, locale)
+          : isDataWidgetType(widget.type)
+            ? dataWidgetLabel(
+                widget as DataWidget,
+                metrics.get(metricKeyOf(widget as DataWidget)),
+              )
+            : widget.type === "status"
+              ? (widget.title ?? sourcesLabel(locale))
+              : widget.type === "countdown"
+                ? countdownLabel(widget.title, locale)
+                : "",
       fontScale,
       locale,
     );

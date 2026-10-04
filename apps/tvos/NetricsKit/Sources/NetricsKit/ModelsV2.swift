@@ -879,6 +879,100 @@ public struct CompareWidgetData: Codable, Sendable, Equatable {
     }
 }
 
+/** A goal widget's options (ADR 0019 section 5). */
+public struct GaugeWidgetOptions: Codable, Sendable, Equatable {
+    /** "9 days left" in progress, "2 days early" once reached. */
+    public var showTimeLeft: Bool
+
+    public init(showTimeLeft: Bool = true) {
+        self.showTimeLeft = showTimeLeft
+    }
+
+    private enum CodingKeys: String, CodingKey { case showTimeLeft }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        showTimeLeft = c.lenient(Bool.self, .showTimeLeft) ?? true
+    }
+}
+
+/** The goal a goal widget shows. */
+public struct GoalReference: Codable, Sendable, Equatable {
+    public var id: String
+    public var name: String
+
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+}
+
+/**
+ * A goal widget's data (ADR 0019 section 5): the goal's metric fields and
+ * where the goal stands. `goal` nil: the goal was deleted ("Goal deleted").
+ * Screens word the time left from `periodEnd`, `reachedAt` and their clock.
+ */
+public struct GaugeWidgetData: Codable, Sendable, Equatable {
+    /** The goal's period; nil when the goal was deleted. */
+    public var period: MetricPeriod?
+    public var aggregation: MetricAggregation?
+    public var unit: String?
+    public var status: DeviceTileStatus
+    public var updatedAt: String?
+    public var conversion: TileConversion?
+    public var better: MetricBetter
+    public var goal: GoalReference?
+    public var value: Double?
+    public var target: Double?
+    /** value ÷ target, not clipped. */
+    public var progress: Double?
+    public var reachedAt: String?
+    /** Exclusive end of the period, ISO 8601 with the zone's offset. */
+    public var periodEnd: String?
+
+    public init(
+        period: MetricPeriod?, aggregation: MetricAggregation?, unit: String?, status: DeviceTileStatus,
+        updatedAt: String?, conversion: TileConversion? = nil, better: MetricBetter = .higher, goal: GoalReference?,
+        value: Double?, target: Double?, progress: Double?, reachedAt: String?, periodEnd: String?
+    ) {
+        self.period = period
+        self.aggregation = aggregation
+        self.unit = unit
+        self.status = status
+        self.updatedAt = updatedAt
+        self.conversion = conversion
+        self.better = better
+        self.goal = goal
+        self.value = value
+        self.target = target
+        self.progress = progress
+        self.reachedAt = reachedAt
+        self.periodEnd = periodEnd
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case period, aggregation, unit, status, updatedAt, conversion, better, goal, value, target, progress
+        case reachedAt, periodEnd
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        period = c.lenient(MetricPeriod.self, .period)
+        aggregation = c.lenient(MetricAggregation.self, .aggregation)
+        unit = c.lenient(String.self, .unit)
+        status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
+        updatedAt = c.lenient(String.self, .updatedAt)
+        conversion = c.lenient(TileConversion.self, .conversion)
+        better = c.lenient(MetricBetter.self, .better) ?? .higher
+        goal = c.lenient(GoalReference.self, .goal)
+        value = c.lenient(Double.self, .value)
+        target = c.lenient(Double.self, .target)
+        progress = c.lenient(Double.self, .progress)
+        reachedAt = c.lenient(String.self, .reachedAt)
+        periodEnd = c.lenient(String.self, .periodEnd)
+    }
+}
+
 // MARK: Widgets and slides
 
 public enum WidgetContent: Sendable, Equatable {
@@ -892,6 +986,7 @@ public enum WidgetContent: Sendable, Equatable {
     case text(String, TextWidgetOptions)
     case clock(ClockWidgetOptions)
     case countdown(CountdownWidgetOptions)
+    case gauge(GaugeWidgetOptions, GaugeWidgetData)
     /** A type this build does not know, or fields it cannot read. */
     case unsupported
 }
@@ -978,6 +1073,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
         case "countdown":
             guard let options = c.lenient(CountdownWidgetOptions.self, .options) else { return .unsupported }
             return .countdown(options)
+        case "gauge":
+            guard let data = c.lenient(GaugeWidgetData.self, .data) else { return .unsupported }
+            return .gauge(c.lenient(GaugeWidgetOptions.self, .options) ?? .init(), data)
         default:
             return .unsupported
         }
@@ -1010,6 +1108,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .compare(let options, let data):
+            try c.encode(options, forKey: .options)
+            try c.encode(data, forKey: .data)
+        case .gauge(let options, let data):
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .image(let imageId, let options):

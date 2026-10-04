@@ -21,6 +21,7 @@ import {
   estimateTextWidth,
   findOverlaps,
   fitTextSize,
+  gaugeLayout,
   isInsideGrid,
   labelFit,
   legacyGrid,
@@ -50,6 +51,7 @@ import {
   type StudioTextSize,
 } from "./studio-layout.js";
 import { compareChange, compareLayout, ratioOf } from "./compare.js";
+import { goalPercent, goalReached, goalTimeText } from "./goals.js";
 
 const CANVASES: StudioCanvas[] = [
   { width: 1920, height: 1080 },
@@ -625,6 +627,219 @@ export function buildStudioLayoutVectors() {
     ),
   );
 
+  // Goal widgets (ADR 0019 section 5): content boxes of 3 × 3, 3 × 4,
+  // 6 × 3 (side by side), 4 × 4 and 12 × 8 at 16:9 with the header, and
+  // odd ones.
+  const gaugeBoxes = [
+    { width: 404, height: 294.65 },
+    { width: 404, height: 414.2 },
+    { width: 872, height: 294.65 },
+    { width: 560, height: 414.2 },
+    { width: 1808, height: 892.4 },
+    { width: 250, height: 175 },
+    { width: 200, height: 900 },
+    { width: 0, height: 0 },
+  ];
+  const gaugeValues = [
+    { value: null, suffix: null },
+    { value: { full: "83", compact: "83" }, suffix: "%" },
+    { value: { full: "612", compact: "612" }, suffix: null },
+    { value: { full: "€1,234,567", compact: "€1.2M" }, suffix: null },
+  ];
+  const gaugeLayouts = gaugeBoxes.flatMap((box) =>
+    ["Monthly downloads", "Downloads · Wurfel", LABELS[5]!].flatMap((label) =>
+      [1, 1.3].flatMap((fontScale) =>
+        gaugeValues.flatMap(({ value, suffix }) =>
+          [
+            null,
+            "2,520 to go · 9 days left",
+            "2.520 noch bis zum Ziel · noch 9 Tage übrig",
+          ].map((progress) => {
+            const input = {
+              label,
+              width: box.width,
+              height: box.height,
+              fontScale,
+              value,
+              suffix,
+              progress,
+            };
+            return { ...input, layout: gaugeLayout(input) };
+          }),
+        ),
+      ),
+    ),
+  );
+  const goalPercents = [
+    0,
+    0.004,
+    0.29,
+    0.5,
+    0.832,
+    0.99,
+    0.9999,
+    1,
+    1.224,
+    3,
+    null,
+  ].map((progress) => ({
+    progress,
+    percent: goalPercent(progress),
+    reached: goalReached(progress),
+  }));
+  const goalTimeCases = [
+    // In progress this month, Berlin (the month ends after the DST change).
+    [
+      "this_month",
+      "2026-11-01T00:00:00+01:00",
+      null,
+      0.83,
+      "2026-10-22T13:00:00Z",
+      "Europe/Berlin",
+    ],
+    [
+      "this_month",
+      "2026-11-01T00:00:00+01:00",
+      null,
+      0.83,
+      "2026-10-21T22:30:00Z",
+      "Europe/Berlin",
+    ],
+    [
+      "this_month",
+      "2026-11-01T00:00:00+01:00",
+      null,
+      0.83,
+      "2026-10-31T22:59:00Z",
+      "Europe/Berlin",
+    ],
+    [
+      "this_month",
+      "2026-11-01T00:00:00+01:00",
+      null,
+      0.83,
+      "2026-10-31T23:00:00Z",
+      "Europe/Berlin",
+    ],
+    [
+      "this_month",
+      "2026-11-01T00:00:00+01:00",
+      null,
+      null,
+      "2026-10-22T13:00:00Z",
+      "Europe/Berlin",
+    ],
+    // Today: hours.
+    [
+      "today",
+      "2026-10-23T00:00:00+02:00",
+      null,
+      0.4,
+      "2026-10-22T16:30:00Z",
+      "Europe/Berlin",
+    ],
+    [
+      "today",
+      "2026-10-23T00:00:00+02:00",
+      null,
+      0.4,
+      "2026-10-22T21:20:00Z",
+      "Europe/Berlin",
+    ],
+    [
+      "today",
+      "2026-10-23T00:00:00+02:00",
+      null,
+      0.4,
+      "2026-10-21T22:00:00Z",
+      "Europe/Berlin",
+    ],
+    [
+      "today",
+      "2026-10-23T00:00:00+02:00",
+      "2026-10-22T00:00:00Z",
+      1.5,
+      "2026-10-22T16:30:00Z",
+      "Europe/Berlin",
+    ],
+    // Reached this week, this quarter and this year.
+    [
+      "this_week",
+      "2026-10-26T00:00:00+01:00",
+      "2026-10-21T22:00:00.000Z",
+      1.22,
+      "2026-10-24T10:00:00Z",
+      "Europe/Berlin",
+    ],
+    [
+      "this_week",
+      "2026-10-26T00:00:00+01:00",
+      "2026-10-24T23:00:00.000Z",
+      1.22,
+      "2026-10-25T10:00:00Z",
+      "Europe/Berlin",
+    ],
+    [
+      "this_week",
+      "2026-10-26T00:00:00+01:00",
+      null,
+      1,
+      "2026-10-24T10:00:00Z",
+      "Europe/Berlin",
+    ],
+    [
+      "this_quarter",
+      "2027-01-01T00:00:00-08:00",
+      "2026-11-30T08:00:00.000Z",
+      1.01,
+      "2026-12-02T10:00:00Z",
+      "America/Los_Angeles",
+    ],
+    [
+      "this_year",
+      "2027-01-01T00:00:00+00:00",
+      "2026-06-01T00:00:00.000Z",
+      1.4,
+      "2026-12-02T10:00:00Z",
+      "UTC",
+    ],
+    // In progress over a year, and in a half-hour zone.
+    [
+      "this_year",
+      "2027-01-01T00:00:00+05:30",
+      null,
+      0.2,
+      "2026-03-01T12:00:00Z",
+      "Asia/Kolkata",
+    ],
+    [
+      "this_week",
+      "2026-03-30T00:00:00+02:00",
+      null,
+      0.2,
+      "2026-03-28T23:30:00Z",
+      "Europe/Berlin",
+    ],
+  ] as const;
+  const goalTimeTexts = goalTimeCases.map(
+    ([period, periodEnd, reachedAt, progress, now, timeZone]) => ({
+      period,
+      periodEnd,
+      reachedAt,
+      progress,
+      now,
+      timeZone,
+      text: goalTimeText({
+        period,
+        periodEnd,
+        reachedAt,
+        progress,
+        now: new Date(now),
+        timeZone,
+      }),
+    }),
+  );
+
   const legacy = Array.from({ length: 41 }, (_, tiles) => ({
     tiles,
     grid: legacyGrid(tiles),
@@ -703,6 +918,9 @@ export function buildStudioLayoutVectors() {
     ratios,
     compareChanges,
     compareLayouts,
+    gaugeLayouts,
+    goalPercents,
+    goalTimeTexts,
     legacy,
     markdown,
     compact,

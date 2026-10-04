@@ -11,6 +11,7 @@ import {
   listConnections,
   listDashboards,
   listDevices,
+  listGoals,
   listImages,
   listProjects,
   listThemes,
@@ -63,6 +64,7 @@ export default async function StudioPage({ params }: StudioPageProps) {
     { dashboards },
     devices,
     conversion,
+    { goals },
   ] = await Promise.all([
     listWorkspaceMetrics(cookieHeader, workspaceId),
     listConnections(cookieHeader, workspaceId),
@@ -73,6 +75,7 @@ export default async function StudioPage({ params }: StudioPageProps) {
     listDashboards(cookieHeader, workspaceId),
     canManageDevices ? listDevices(cookieHeader, workspaceId) : null,
     getCurrencyConversion(cookieHeader, workspaceId),
+    listGoals(cookieHeader, workspaceId),
   ]);
   const byId: Record<string, StudioConnection> = Object.fromEntries(
     connections.map((connection) => [
@@ -104,6 +107,8 @@ export default async function StudioPage({ params }: StudioPageProps) {
           displayCurrency: workspaceResult?.workspace.displayCurrency ?? null,
           convertible: conversion.enabled ? conversion.currencies : [],
         }}
+        goals={goals}
+        canCreateGoals={can(role, "dashboards:create")}
         dashboardNames={Object.fromEntries(
           dashboards.map((dashboard) => [dashboard.id, dashboard.name]),
         )}

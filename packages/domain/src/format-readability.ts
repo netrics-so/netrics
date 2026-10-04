@@ -259,7 +259,9 @@ export type FormatWarningCode =
   /** A table's `limit` exceeds the rows that fit (see `rows`). */
   | "rows_cut"
   /** A countdown's target has passed: it shows its text when reached. */
-  | "countdown_passed";
+  | "countdown_passed"
+  /** A goal widget's goal was deleted: screens show "Goal deleted". */
+  | "goal_missing";
 
 export const FORMAT_WARNING_CODES: readonly FormatWarningCode[] = [
   "label_cut",
@@ -272,6 +274,7 @@ export const FORMAT_WARNING_CODES: readonly FormatWarningCode[] = [
   "clock_parts_hidden",
   "rows_cut",
   "countdown_passed",
+  "goal_missing",
 ];
 
 /**
@@ -299,6 +302,7 @@ export const FORMAT_WARNING_SEVERITY: Readonly<
   rows_cut: "attention",
   // A past target still saves (ADR 0019 section 8): said, not flagged.
   countdown_passed: "info",
+  goal_missing: "attention",
 };
 
 /** A status board's `rows_cut`: "+N more" is expected, so info. */
@@ -342,6 +346,8 @@ export interface ReadabilityWidget extends LayoutWidget {
    * widget's zone, else the workspace's); null when it does not resolve.
    */
   countdown?: { targetAt: string | null } | null;
+  /** Goal widgets: their goal was deleted (or none is chosen). */
+  goalMissing?: boolean;
 }
 
 export interface ReadabilitySlide {
@@ -369,7 +375,7 @@ export interface ReadabilityContext {
  * The readability warnings of a slide in one format, in a stable order:
  * the header, continuation pages, then the widgets in the primary's reading
  * order (hidden, to review, too small, label, text or rows cut off,
- * clock lines left out).
+ * clock lines left out, a goal widget's goal deleted).
  * Labels, text and table rows are measured at the format's reference
  * canvas with the size the widget has in that format's layout (auto or
  * custom).
@@ -455,6 +461,9 @@ export function formatWarnings(
         { fontScale: context.fontScale, format },
       );
       if (!fit.fits) warn("label_cut", widget.id);
+    }
+    if (widget.type === "gauge" && widget.goalMissing) {
+      warn("goal_missing", widget.id);
     }
     if (widget.type === "table" && widget.rows) {
       const box = contentBoxIn(placement, format, context.showHeader);

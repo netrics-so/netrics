@@ -2580,6 +2580,166 @@ a.health-badge:hover {
   overflow-wrap: anywhere;
 }
 
+/* Goal widgets (ADR 0019 §5): the label, target line, a full ring with
+   the value inside, the progress line and the footer, stacked; from a
+   1.6:1 content box the ring sits right of the text. The sizes come from
+   gaugeLayout. */
+.sw-gauge {
+  background: var(--sw-surface, var(--t-surface));
+  border: max(1px, calc(var(--u) * 1.5)) solid var(--t-border);
+  box-shadow: var(--sw-shadow, none);
+}
+
+.sw-gauge--side {
+  display: grid;
+  align-items: center;
+}
+
+.sw-gauge-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+}
+
+.sw-gauge-target {
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: calc(var(--u) * 8);
+}
+
+/* The layout's gaps: the label's margin above, this one below. */
+.sw-gauge-ring {
+  position: relative;
+  flex: none;
+  align-self: center;
+  margin-bottom: calc(var(--u) * 8);
+}
+
+.sw-gauge--side .sw-gauge-ring {
+  margin: 0;
+}
+
+.sw-gauge-ring svg {
+  display: block;
+  overflow: visible;
+}
+
+.sw-gauge-track,
+.sw-gauge-fill {
+  fill: none;
+}
+
+.sw-gauge-track {
+  stroke: var(--t-border);
+}
+
+/* Filled to min(progress, 1) from 12 o'clock over its pathLength (100). */
+.sw-gauge-fill {
+  stroke: var(--t-chart-line);
+  stroke-linecap: round;
+  stroke-dasharray: calc(var(--gauge-p, 0) * 1px) 100px;
+}
+
+.sw-gauge-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sw-gauge-suffix {
+  font-weight: 600;
+  color: var(--t-muted);
+}
+
+.sw-gauge-progress {
+  line-height: 1.15;
+  color: var(--t-muted);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.sw-gauge--side .sw-gauge-progress {
+  margin-top: auto;
+}
+
+.sw-gauge > .sw-notice,
+.sw-gauge > .sw-footer,
+.sw-gauge-text > .sw-notice,
+.sw-gauge-text > .sw-footer {
+  margin-top: auto;
+}
+
+.sw-gauge--side .sw-gauge-text > .sw-notice,
+.sw-gauge--side .sw-gauge-text > .sw-footer {
+  margin-top: calc(var(--u) * 8);
+}
+
+/* Goal reached (design 4b): the ring, the value and the line in `up`, on
+   a surface tinted towards it with a border of `up` at 35 %; the glow only
+   on layered themes. Stale data never gets here (the stale surface wins). */
+.sw.sw-gauge--reached {
+  background: linear-gradient(
+    180deg,
+    color-mix(
+      in srgb,
+      color-mix(in srgb, var(--t-surface) 95%, var(--t-accent)) 90%,
+      var(--t-up)
+    ),
+    color-mix(
+      in srgb,
+      color-mix(in srgb, var(--t-surface) 80%, var(--t-background)) 92%,
+      var(--t-up)
+    )
+  );
+  border-color: color-mix(in srgb, var(--t-up) 35%, transparent);
+}
+
+[data-surface="layered"] .sw.sw-gauge--reached {
+  box-shadow:
+    var(--sw-shadow, none),
+    0 0 calc(var(--u) * 40) color-mix(in srgb, var(--t-up) 15%, transparent);
+}
+
+[data-surface="flat"] .sw.sw-gauge--reached {
+  background: color-mix(in srgb, var(--t-surface) 90%, var(--t-up));
+  box-shadow: none;
+}
+
+.sw-gauge--reached .sw-gauge-fill,
+.sw-gauge--reached .sw-gauge-value,
+.sw-gauge--reached .sw-gauge-suffix {
+  stroke: var(--t-up);
+  color: var(--t-up);
+}
+
+.sw-gauge-progress--reached {
+  color: var(--t-up);
+  font-weight: 500;
+}
+
+/* Stale: the ring and the value in muted, never the reached colours. */
+.sw--stale .sw-gauge-fill {
+  stroke: var(--t-muted);
+}
+
+.sw-gauge-deleted {
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+/* The scroll view's card: the ring centred under the target line. */
+.scroll-card--gauge .sw-gauge-ring {
+  margin: 4px 0;
+}
+
 /* Images and text sit on the slide itself, without a box. */
 .sw-image {
   padding: 0;
@@ -2777,6 +2937,13 @@ a.health-badge:hover {
 
 .slide-player-slide[data-entering] .sw-line-previous {
   opacity: calc(0.8 * var(--enter-p, 1));
+}
+
+/* The goal ring fills from 12 o'clock with flat ends; its round end cap
+   appears when the draw completes. */
+.slide-player-slide[data-entering] .sw-gauge-fill {
+  stroke-dasharray: calc(var(--gauge-p, 0) * var(--enter-p, 1) * 1px) 100px;
+  stroke-linecap: butt;
 }
 
 .slide-player-slide[data-entering] .sw-bar-fill {

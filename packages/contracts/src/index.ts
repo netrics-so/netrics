@@ -26,6 +26,7 @@ import {
   type ThemeColorToken,
 } from "@netrics/domain";
 
+import { goalProgressSchema } from "./goals.js";
 import { imageContentTypeSchema } from "./images.js";
 
 export const processRoleSchema = z.enum(["api", "worker", "scheduler"]);
@@ -1708,6 +1709,11 @@ export const compareWidgetOptionsSchema = z.object({
   /** The ratio's change: points for percent, relative for ratio. */
   showChange: z.boolean().default(true),
 });
+/** A goal widget (ADR 0019 section 5): the goal is `goalId`. */
+export const gaugeWidgetOptionsSchema = z.object({
+  /** "9 days left" (in progress) and "2 days early" (reached). */
+  showTimeLeft: z.boolean().default(true),
+});
 export const textWidgetOptionsSchema = z.object({
   size: z.enum(["body", "heading", "display"]).default("body"),
   align: alignSchema.default("start"),
@@ -1802,6 +1808,17 @@ export const dashboardWidgetInputSchema = z.discriminatedUnion("type", [
     ...widgetInputShape,
     ...dataBindingInputShape,
     options: metricWidgetOptionsSchema.prefault({}),
+  }),
+  z.object({
+    type: z.literal("gauge"),
+    ...widgetInputShape,
+    /**
+     * A goal of this workspace (GET /v1/workspaces/:w/goals). Null keeps a
+     * gauge whose goal was deleted, so its dashboard still saves; an id
+     * that is no longer a goal of the workspace is stored as null too.
+     */
+    goalId: z.uuid().nullable(),
+    options: gaugeWidgetOptionsSchema.prefault({}),
   }),
   z.object({
     type: z.literal("line"),
@@ -1936,6 +1953,15 @@ export const dashboardWidgetSchema = z.discriminatedUnion("type", [
     ...widgetShape,
     ...dataBindingShape,
     options: metricWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("gauge"),
+    ...widgetShape,
+    /** Null: the goal was deleted (screens show "Goal deleted"). */
+    goalId: z.uuid().nullable(),
+    /** The goal's name, the label of an untitled gauge. Read-only. */
+    goalName: z.string().nullable(),
+    options: gaugeWidgetOptionsSchema,
   }),
   z.object({
     type: z.literal("line"),
@@ -2734,6 +2760,26 @@ export const deviceCompareDataSchema = z.object({
 });
 export type DeviceCompareData = z.infer<typeof deviceCompareDataSchema>;
 
+/**
+ * A goal widget's data (ADR 0019 section 5), resolved on the server from
+ * its goal: the shared data fields of the goal's metric and where the goal
+ * stands. Screens compute "9 days left" and "2 days early" from
+ * `periodEnd`, `reachedAt` and their own clock (`goalTimeText`), so a
+ * cached payload stays right. A deleted goal sends `goal: null`, status
+ * `no_data` and null for everything the goal would give.
+ */
+export const deviceGaugeDataSchema = z.object({
+  ...deviceWidgetDataShape,
+  /** The goal's period; null when the goal was deleted. */
+  period: metricPeriodSchema.nullable(),
+  aggregation: metricAggregationSchema.nullable(),
+  goal: z.object({ id: z.uuid(), name: z.string().min(1) }).nullable(),
+  ...goalProgressSchema.shape,
+  target: goalProgressSchema.shape.target.nullable(),
+  periodEnd: goalProgressSchema.shape.periodEnd.nullable(),
+});
+export type DeviceGaugeData = z.infer<typeof deviceGaugeDataSchema>;
+
 /** A widget's id and placement in a grid of `columns` × `rows`. */
 function deviceWidgetPlacementShape(grid: { columns: number; rows: number }) {
   return {
@@ -2781,6 +2827,14 @@ function deviceWidgetUnion<E extends z.ZodRawShape>(
       label: deviceDataLabelSchema,
       options: metricWidgetOptionsSchema,
       data: deviceMetricDataSchema,
+    }),
+    z.object({
+      type: z.literal("gauge"),
+      ...deviceWidgetShape,
+      /** The title, else the goal's name ("Goal" when it was deleted). */
+      label: deviceDataLabelSchema,
+      options: gaugeWidgetOptionsSchema,
+      data: deviceGaugeDataSchema,
     }),
     z.object({
       type: z.literal("line"),

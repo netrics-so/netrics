@@ -699,7 +699,7 @@ describe("slide canvas", () => {
   it("keeps a widget it does not know as a notice, not a blank slide", () => {
     const unknown = {
       ...widgets[0]!,
-      type: "gauge",
+      type: "heatmap",
     } as unknown as StudioWidget;
     const html = renderI18n(<LiveWidget widget={unknown} env={env} />);
     expect(html).toContain("This widget could not be shown");

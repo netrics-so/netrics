@@ -233,6 +233,17 @@ export const studioEn = {
       rowsHelp:
         "The largest groups. A screen shows the rows that fit and says how many.",
       showOthers: "“Others” row with the rest added up",
+      /** Goal widgets (ADR 0019 section 5). */
+      goal: "Goal",
+      goalHelp: "The goal and its progress this period, as on the Goals page.",
+      goalDeleted: "Goal deleted",
+      goalDeletedHelp:
+        "This goal was deleted, so screens show “Goal deleted”. Pick another goal.",
+      noGoals: "No goals yet: create one with “New goal…”.",
+      newGoal: "New goal…",
+      newGoalTitle: "New goal",
+      editGoal: "Edit goal",
+      showTimeLeft: "Show time left",
       numerator: "Numerator",
       denominator: "Denominator",
       sharedPeriod: "Both sides use the numerator’s period.",
@@ -315,6 +326,7 @@ export const studioEn = {
       noImage: "Upload an image first (dashboard settings, Logo).",
       text: "## Heading\nSome text",
       notBreakable: "This metric cannot be broken down into bars.",
+      noGoals: "Create a goal first (Goals page).",
     },
     status: {
       liveOn: "Live on {screens}",
@@ -430,6 +442,7 @@ export const studioEn = {
         countdown_passed:
           "{widget}: the target has passed, so it shows its text when reached.",
         rows_cut: "{widget}: shows {shown} of {limit} rows.",
+        goal_missing: "{widget}: its goal was deleted. Pick another goal.",
       },
       showInEditor: "Select in {primary}",
       openFormat: "Open {name} {ratio}",
@@ -494,9 +507,9 @@ export const studioEn = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} table {Table} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} countdown {Countdown} other {Widget}}",
+        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} table {Table} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} countdown {Countdown} gauge {Goal} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} other {widget}})",
+        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} gauge {goal} other {widget}})",
       copyOf: "{name} (copy)",
       slide: "Slide {number}",
       quoted: "“{name}”",

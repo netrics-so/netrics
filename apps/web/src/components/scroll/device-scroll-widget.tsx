@@ -5,6 +5,7 @@ import type { DeviceWidget } from "@netrics/contracts";
 import { useNow } from "@/components/studio/clock-widget";
 import {
   deviceBarReading,
+  deviceGaugeReading,
   deviceLineReading,
   deviceMetricReading,
   deviceStatusReading,
@@ -19,6 +20,7 @@ import {
   ScrollBarCard,
   ScrollClockCard,
   ScrollCountdownCard,
+  ScrollGaugeCard,
   ScrollImageCard,
   ScrollLineCard,
   ScrollMetricCard,
@@ -109,6 +111,13 @@ export function DeviceScrollWidget({
       return (
         <ScrollCompareCard
           {...deviceCompareReading(widget, locale)}
+          {...size}
+        />
+      );
+    case "gauge":
+      return (
+        <ScrollGaugeCard
+          {...deviceGaugeReading(widget, env.timeZone, locale)}
           {...size}
         />
       );

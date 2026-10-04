@@ -434,7 +434,7 @@ export function chartWidgetLayout(input: {
 export function footerLine(
   candidates: ReadonlyArray<string | null>,
   input: {
-    type: "metric" | "line" | "bar" | "table" | "compare";
+    type: "metric" | "line" | "bar" | "table" | "compare" | "gauge";
     placement: ScreenPlacement;
     showHeader: boolean;
     fontScale: number;

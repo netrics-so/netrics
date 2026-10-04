@@ -1261,7 +1261,7 @@ describe("dashboard studio API", () => {
     ],
     [
       "an unknown widget type",
-      [{ widgets: [{ type: "gauge", x: 0, y: 0, w: 3, h: 3 }] }],
+      [{ widgets: [{ type: "heatmap", x: 0, y: 0, w: 3, h: 3 }] }],
       400,
       "invalid_request",
     ],

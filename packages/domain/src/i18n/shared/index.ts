@@ -66,6 +66,11 @@ export function aggregationName(
   return t(`aggregations.${aggregation}`);
 }
 
+/** A goal widget's label without a title or goal: "Goal", "Ziel". */
+export function goalLabel(locale: Locale = "en"): string {
+  return sharedTranslator(locale)("goal");
+}
+
 /** A breakdown's remainder: "Others", "Andere". */
 export function othersLabel(locale: Locale = "en"): string {
   return sharedTranslator(locale)("others");

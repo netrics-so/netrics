@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { isDuplicateGoalNameError, type Transaction } from "./context.js";
 import * as schema from "./schema.js";
@@ -134,15 +134,57 @@ export async function updateGoal(
 }
 
 /**
- * The dashboards whose gauge widgets show a goal. Gauges arrive with #339
- * (`dashboard_widgets.goal_id`); until then no dashboard can use a goal.
+ * The dashboards whose goal widgets show a goal (#339), by name, each once.
  */
 export async function findDashboardsUsingGoal(
-  _tx: Transaction,
-  _workspaceId: string,
-  _goalId: string,
+  tx: Transaction,
+  workspaceId: string,
+  goalId: string,
 ): Promise<GoalUser[]> {
-  return [];
+  return tx
+    .selectDistinct({
+      id: schema.dashboards.id,
+      name: schema.dashboards.name,
+    })
+    .from(schema.dashboardWidgets)
+    .innerJoin(
+      schema.dashboards,
+      and(
+        eq(schema.dashboards.id, schema.dashboardWidgets.dashboardId),
+        eq(schema.dashboards.workspaceId, workspaceId),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.dashboardWidgets.workspaceId, workspaceId),
+        eq(schema.dashboardWidgets.goalId, goalId),
+      ),
+    )
+    .orderBy(asc(schema.dashboards.name), asc(schema.dashboards.id));
+}
+
+/**
+ * The goals of this workspace among `goalIds` with their names, by id (goal
+ * widgets' labels; an id not found is a deleted goal).
+ */
+export async function findGoalsByIds(
+  tx: Transaction,
+  workspaceId: string,
+  goalIds: readonly string[],
+): Promise<Map<string, GoalRow>> {
+  if (goalIds.length === 0) {
+    return new Map();
+  }
+  const rows = await tx
+    .select()
+    .from(schema.goals)
+    .where(
+      and(
+        eq(schema.goals.workspaceId, workspaceId),
+        inArray(schema.goals.id, [...new Set(goalIds)]),
+      ),
+    );
+  return new Map(rows.map((row) => [row.id, row]));
 }
 
 export type DeleteGoalResult =

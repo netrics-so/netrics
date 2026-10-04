@@ -63,6 +63,18 @@ export const screenEn = {
       tableNew: "new",
       tableNoChange: "–",
       tableChangeHead: "Δ",
+      /** Goal widgets (ADR 0019 section 5). */
+      gaugeTarget: "Goal {target}",
+      gaugeToGo: "{amount} to go",
+      gaugeDaysLeft: "{count, plural, one {# day left} other {# days left}}",
+      gaugeLastDay: "last day",
+      gaugeHoursLeft: "{count} h left",
+      gaugeUnderHour: "< 1 h left",
+      gaugeReached: "✓ Reached",
+      gaugeEarly: "{count, plural, one {# day early} other {# days early}}",
+      gaugeSummary: "{label}: {progress}. {target}.",
+      goalDeleted: "Goal deleted",
+      goalDeletedHint: "Pick another goal in the Studio.",
       /** Status boards (ADR 0019 section 7). */
       statusEmpty: "No sources connected",
       statusMore: "+{count} more",

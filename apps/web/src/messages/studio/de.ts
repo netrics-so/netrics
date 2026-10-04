@@ -238,6 +238,17 @@ export const studioDe: Catalog<typeof studioEn> = {
       rowsHelp:
         "Die größten Gruppen. Ein Bildschirm zeigt die Zeilen, die passen, und sagt, wie viele.",
       showOthers: "Zeile „Andere“ mit dem Rest zusammengefasst",
+      goal: "Ziel",
+      goalHelp:
+        "Das Ziel und sein Fortschritt in diesem Zeitraum, wie auf der Seite Ziele.",
+      goalDeleted: "Ziel gelöscht",
+      goalDeletedHelp:
+        "Dieses Ziel wurde gelöscht, deshalb zeigen Bildschirme „Ziel gelöscht“. Wähl ein anderes Ziel.",
+      noGoals: "Noch keine Ziele: Leg eins mit „Neues Ziel …“ an.",
+      newGoal: "Neues Ziel …",
+      newGoalTitle: "Neues Ziel",
+      editGoal: "Ziel bearbeiten",
+      showTimeLeft: "Verbleibende Zeit zeigen",
       numerator: "Zähler",
       denominator: "Nenner",
       sharedPeriod: "Beide Seiten nutzen den Zeitraum des Zählers.",
@@ -319,6 +330,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       noImage: "Lade zuerst ein Bild hoch (Dashboard-Einstellungen, Logo).",
       text: "## Überschrift\nEtwas Text",
       notBreakable: "Diese Metrik lässt sich nicht in Balken aufschlüsseln.",
+      noGoals: "Leg zuerst ein Ziel an (Seite Ziele).",
     },
     status: {
       liveOn: "Live auf {screens}",
@@ -436,6 +448,8 @@ export const studioDe: Catalog<typeof studioEn> = {
         countdown_passed:
           "{widget}: Das Ziel ist vorbei, es zeigt seinen Text, wenn erreicht.",
         rows_cut: "{widget}: Zeigt {shown} von {limit} Zeilen.",
+        goal_missing:
+          "{widget}: Das Ziel wurde gelöscht. Wähl ein anderes Ziel.",
       },
       showInEditor: "In {primary} auswählen",
       openFormat: "{name} {ratio} öffnen",
@@ -501,9 +515,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} other {Widget}}",
+        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} other {Widget}})",
+        "{title} ({type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}})",
       copyOf: "{name} (Kopie)",
       slide: "Folie {number}",
       quoted: "„{name}“",

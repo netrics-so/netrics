@@ -3,11 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
+  Goal,
   MetricBreakdownResponse,
   MetricQueryResponse,
 } from "@netrics/contracts";
 
-import { apiErrorMessage, queryMetric, queryMetricBreakdown } from "@/lib/api";
+import {
+  apiErrorMessage,
+  fetchGoal,
+  queryMetric,
+  queryMetricBreakdown,
+} from "@/lib/api";
 import type { RefreshCycle } from "@/lib/refresh-countdown";
 import type { DataWidget } from "@/lib/studio-widgets";
 import { useLocale } from "@/lib/i18n/client";
@@ -202,4 +208,21 @@ export function useBreakdownData(
     [workspaceId, key],
   );
   return usePolled(load, refreshMs, `breakdown|${workspaceId}|${key}`);
+}
+
+/**
+ * A goal widget's goal with its current progress (ADR 0019 section 5);
+ * null when it has none or it was deleted. Copies of one goal share loads.
+ */
+export function useGoalData(
+  workspaceId: string,
+  goalId: string | null,
+  refreshMs = WIDGET_REFRESH_MS,
+): WidgetData<Goal | null> {
+  const load = useCallback(
+    () =>
+      goalId === null ? Promise.resolve(null) : fetchGoal(workspaceId, goalId),
+    [workspaceId, goalId],
+  );
+  return usePolled(load, refreshMs, `goal|${workspaceId}|${goalId}`);
 }

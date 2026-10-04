@@ -137,11 +137,12 @@ describe("the table widget migration", () => {
         ${connectionId}, 'visits', 'sum', 'today', 'x')`).rejects.toThrow(
       /dashboard_widgets_type_columns/,
     );
-    // Each later type widens the check in its own migration (ADR 0019 §2).
+    // A type no migration admits (each type widens the check in its own
+    // migration, ADR 0019 §2).
     await expect(owner`
       insert into dashboard_widgets (slide_id, dashboard_id, workspace_id,
         type, x, y, w, h)
-      values (${slideId}, ${dashboardId}, ${workspaceId}, 'gauge', 8, 4, 3,
+      values (${slideId}, ${dashboardId}, ${workspaceId}, 'heatmap', 8, 4, 3,
         3)`).rejects.toThrow(/dashboard_widgets_type_valid/);
   });
 });

@@ -236,3 +236,89 @@ export function goalProgress(input: {
     periodEnd,
   };
 }
+
+// ─── What screens show ──────────────────────────────────────────────────────
+
+/**
+ * The goal is reached: progress at or above the target. Screens show the
+ * reached state only on fresh data (the stale surface wins, ADR 0019 §5).
+ */
+export function goalReached(progress: number | null): boolean {
+  return progress !== null && Number.isFinite(progress) && progress >= 1;
+}
+
+/**
+ * The whole percent a goal widget shows: rounded down, so "100 %" never
+ * appears before the goal is reached (99.9 % is "99 %"); 1.224 is 122.
+ * Null without progress.
+ */
+export function goalPercent(progress: number | null): number | null {
+  if (progress === null || !Number.isFinite(progress)) return null;
+  // A hair over the float error, so 0.29 × 100 = 28.999… is 29.
+  const percent = Math.floor(progress * 100 + 1e-9);
+  return progress < 1 ? Math.min(99, Math.max(0, percent)) : percent;
+}
+
+/**
+ * The time part of a goal's progress line, for the client to word:
+ * `days` ("9 days left"), `last_day`, `hours` ("5 h left") and
+ * `under_hour` ("< 1 h left") while in progress; `early` ("2 days early")
+ * once reached.
+ */
+export type GoalTimeText =
+  | { kind: "days"; days: number }
+  | { kind: "last_day" }
+  | { kind: "hours"; hours: number }
+  | { kind: "under_hour" }
+  | { kind: "early"; days: number };
+
+/** Whole days from one civil date to another. */
+function daysBetween(from: CivilDate, to: CivilDate): number {
+  const [fy, fm, fd] = parts(from);
+  const [ty, tm, td] = parts(to);
+  return Math.round(
+    (Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000,
+  );
+}
+
+/**
+ * What a goal widget says about time (ADR 0019 §5), from the payload and
+ * the screen's own clock, so a cached payload stays right offline and its
+ * ETag does not change at midnight.
+ *
+ * In progress: whole days after today until the period ends ("9 days
+ * left"), "last day" on its last day; for `today` the whole hours left
+ * ("5 h left"), "< 1 h left" in the last hour. Reached: the whole days
+ * after the day it was reached until the period ends ("2 days early"),
+ * only with `reachedAt` and not for `today`. Null when there is nothing to
+ * say: no progress, the period is over (a payload from before its end), or
+ * reached on its last day. Dates are the workspace zone's (`timeZone`).
+ */
+export function goalTimeText(input: {
+  period: string;
+  /** Exclusive end of the period, ISO 8601. */
+  periodEnd: string;
+  reachedAt: string | null;
+  progress: number | null;
+  now: Date;
+  timeZone: string;
+}): GoalTimeText | null {
+  const end = new Date(input.periodEnd);
+  if (input.progress === null || Number.isNaN(end.getTime())) return null;
+  const endDate = civilDate(end, input.timeZone);
+  if (goalReached(input.progress)) {
+    if (input.period === "today" || input.reachedAt === null) return null;
+    const reached = new Date(input.reachedAt);
+    if (Number.isNaN(reached.getTime())) return null;
+    const days = daysBetween(civilDate(reached, input.timeZone), endDate) - 1;
+    return days >= 1 ? { kind: "early", days } : null;
+  }
+  const left = end.getTime() - input.now.getTime();
+  if (left <= 0) return null;
+  if (input.period === "today") {
+    const hours = Math.floor(left / 3_600_000);
+    return hours >= 1 ? { kind: "hours", hours } : { kind: "under_hour" };
+  }
+  const days = daysBetween(civilDate(input.now, input.timeZone), endDate) - 1;
+  return days >= 1 ? { kind: "days", days } : { kind: "last_day" };
+}

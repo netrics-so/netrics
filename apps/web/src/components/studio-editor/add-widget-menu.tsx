@@ -2,7 +2,7 @@
 
 import { useRef, type PointerEvent } from "react";
 
-import type { WorkspaceMetric } from "@netrics/contracts";
+import type { Goal, WorkspaceMetric } from "@netrics/contracts";
 import {
   WIDGET_TYPES,
   type Locale,
@@ -65,6 +65,7 @@ export function AddWidgetMenu({
   slide,
   metrics,
   imageIds,
+  goals = [],
   dispatch,
   showHeader = true,
   primaryFormat = "16x9",
@@ -74,6 +75,8 @@ export function AddWidgetMenu({
   slide: StudioSlide;
   metrics: readonly WorkspaceMetric[];
   imageIds: readonly string[];
+  /** The workspace's goals: a new goal widget shows the first. */
+  goals?: readonly Goal[];
   dispatch: (action: StudioAction) => void;
   /** Whether the canvas shows the header (it moves the grid). */
   showHeader?: boolean;
@@ -194,7 +197,7 @@ export function AddWidgetMenu({
         {t("add")}
       </span>
       {WIDGET_TYPES.map((type) => {
-        const made = newWidget(type, { metrics, imageIds, locale });
+        const made = newWidget(type, { metrics, imageIds, locale, goals });
         const reason =
           "reason" in made
             ? made.reason

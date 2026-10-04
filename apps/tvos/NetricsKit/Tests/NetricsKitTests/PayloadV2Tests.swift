@@ -57,7 +57,7 @@ import Testing
 
     @Test func unknownTypesAndUnreadableWidgetsArePlaceholders() {
         let widgets = v2Payload().slides[0].widgets
-        #expect(widgets[3].type == "gauge")
+        #expect(widgets[3].type == "heatmap")
         #expect(widgets[3].content == .unsupported)
         #expect(widgets[3].placement == StudioPlacement(x: 4, y: 4, w: 2, h: 2))
         #expect(widgets[4].type == "metric")

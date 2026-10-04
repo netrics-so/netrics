@@ -42,7 +42,8 @@ extension Animation {
 
 /** How a widget's box looks for its data status (web: `.sw--stale`, `.sw--auth`, `.sw--empty`). */
 enum SurfaceState {
-    case normal, stale, auth, empty
+    /** `reached`: a goal widget whose goal is reached on fresh data (ADR 0019 §5). */
+    case normal, stale, auth, empty, reached
 
     init(_ status: DeviceTileStatus) {
         switch status {
@@ -81,17 +82,23 @@ extension View {
         let radius = env.pt(SurfaceMetrics.radius)
         let shape = RoundedRectangle(cornerRadius: radius)
         let line = max(1, env.pt(SurfaceMetrics.border))
-        let fill = state == .auth
-            ? LinearGradient(colors: [Color(derived.authTop), Color(derived.authBottom)], startPoint: .top, endPoint: .bottom)
-            : LinearGradient(
-                colors: [Color(derived.widgetTop), Color(derived.widgetBottom)], startPoint: .top, endPoint: .bottom)
+        let colors: [Color] =
+            switch state {
+            case .auth: [Color(derived.authTop), Color(derived.authBottom)]
+            case .reached: [Color(derived.reachedTop), Color(derived.reachedBottom)]
+            default: [Color(derived.widgetTop), Color(derived.widgetBottom)]
+            }
+        let fill = LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
         let border: Color =
             switch state {
             case .normal: env.colors.border
             case .stale: Color(derived.staleBorder)
             case .auth: Color(derived.authBorder)
             case .empty: Color(derived.emptyBorder)
+            case .reached: Color(derived.reachedBorder)
             }
+        // A reached goal glows in `up` on layered themes (`0 0 40u`).
+        let glow = state == .reached ? derived.reachedGlow : nil
         let depth = layered && state != .empty
         return self
             .padding(padded ? env.pt(StudioLayout.widgetPadding) : 0)
@@ -110,6 +117,7 @@ extension View {
                         color: depth ? .black.opacity(SurfaceMetrics.shadowOpacity) : .clear,
                         radius: depth ? env.pt(SurfaceMetrics.shadowBlur / 2) : 0, x: 0,
                         y: depth ? env.pt(SurfaceMetrics.shadowY) : 0)
+                    .shadow(color: glow.map { Color($0) } ?? .clear, radius: glow == nil ? 0 : env.pt(20))
             }
             .overlay {
                 shape.strokeBorder(

@@ -26,7 +26,6 @@ import {
   DEFAULT_LOCALE,
   RESOURCE_DIMENSION,
   goalBindingProblem,
-  goalProgress,
   type GoalAggregation,
   type GoalPeriod,
   type Locale,
@@ -35,9 +34,9 @@ import {
 import { validateBinding } from "../dashboards/service.js";
 import {
   findAllResourcesNames,
-  queryMetric,
   tileAllResourcesName,
 } from "../metrics/query.js";
+import { readGoal } from "./progress.js";
 
 /**
  * Goals (ADR 0019 section 4, #335): a named target for one metric in a
@@ -148,57 +147,17 @@ export function createGoalService(deps: GoalServiceDeps) {
     row: GoalRow,
     at: Date,
   ): Promise<GoalCurrent | null> {
-    try {
-      const result = await tx.transaction((inner) =>
-        queryMetric(
-          inner,
-          actor.workspaceId,
-          {
-            connectionId: row.connectionId,
-            metricKey: row.metricKey,
-            period: row.period as GoalPeriod,
-            aggregation: row.aggregation as GoalAggregation,
-            dimensions: dimensionsOf(row),
-            ...(row.displayCurrency
-              ? { displayCurrency: row.displayCurrency }
-              : {}),
-          },
-          at,
-          {
-            exchangeRates: deps.exchangeRates ?? false,
-            locale: actor.locale ?? DEFAULT_LOCALE,
-          },
-        ),
-      );
-      if (!result.ok) {
-        return null;
-      }
-      const read = result.value;
-      // Without rates on this instance a converted goal cannot be read in
-      // its currency; its target would mean something else.
-      if (
-        row.displayCurrency !== null &&
-        read.currency !== row.displayCurrency
-      ) {
-        return null;
-      }
-      return {
-        ...goalProgress({
-          target: row.target,
-          aggregation: row.aggregation as GoalAggregation,
-          kind: read.metric.kind,
-          value: read.value,
-          series: read.series,
-          period: row.period as GoalPeriod,
-          now: at,
-          timeZone: read.timeZone,
-        }),
-        currency: read.currency,
-        approximate: read.conversion !== null,
-      };
-    } catch {
-      return null;
-    }
+    const reading = await readGoal(tx, actor.workspaceId, row, at, {
+      exchangeRates: deps.exchangeRates ?? false,
+      locale: actor.locale ?? DEFAULT_LOCALE,
+    });
+    return reading
+      ? {
+          ...reading.progress,
+          currency: reading.read.currency,
+          approximate: reading.read.conversion !== null,
+        }
+      : null;
   }
 
   /** Goals as the API returns them, named in the caller's language. */

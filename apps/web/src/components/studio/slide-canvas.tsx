@@ -46,6 +46,7 @@ import { LiveBarWidget } from "./bar-widget";
 import { LiveStatusWidget } from "./status-widget";
 import { LiveTableWidget } from "./table-widget";
 import { LiveCompareWidget } from "./compare-widget";
+import { LiveGaugeWidget } from "./gauge-widget";
 import { LiveClockWidget, useNow } from "./clock-widget";
 import { LiveCountdownWidget } from "./countdown-widget";
 import { ImageWidgetView } from "./image-widget";
@@ -117,6 +118,8 @@ export function LiveWidget({
       return <LiveStatusWidget widget={widget} env={env} />;
     case "compare":
       return <LiveCompareWidget widget={widget} env={env} />;
+    case "gauge":
+      return <LiveGaugeWidget widget={widget} env={env} />;
     case "image":
       return (
         <ImageWidgetView
