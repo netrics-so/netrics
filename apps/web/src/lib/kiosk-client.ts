@@ -4,8 +4,10 @@ import type {
   DeviceDashboardResponse,
   DeviceDashboardV2Response,
   DeviceImage,
+  DeviceScreen,
   PollPairingResponse,
 } from "@netrics/contracts";
+import { MAX_SCREEN_SIDE } from "@netrics/contracts";
 
 /**
  * The browser kiosk's side of the device API (#59, ADR 0010, ADR 0011):
@@ -118,6 +120,11 @@ export interface KioskClientOptions {
   imageCache?: KioskImageCache | null;
   /** Defaults to URL.createObjectURL / revokeObjectURL. */
   blobUrls?: KioskBlobUrls;
+  /**
+   * The screen to report with each heartbeat (#276), read when it is sent;
+   * null (or no function) sends none.
+   */
+  screen?: () => DeviceScreen | null;
 }
 
 export interface KioskClient {
@@ -145,6 +152,36 @@ const systemClock: KioskClock = {
 export function backoffMs(failures: number): number {
   const exponent = Math.max(failures - 1, 0);
   return Math.min(BACKOFF_MIN_MS * 2 ** exponent, BACKOFF_MAX_MS);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * The kiosk's screen as the heartbeat reports it (#276): the viewport in
+ * CSS px and the device pixel ratio, kept inside the bounds the API
+ * accepts. The kiosk renders Screen view; it does not know the formats yet
+ * (ADR 0017, #281), so it sends no `format`. Null when the viewport is not
+ * measurable (zero or not a number).
+ */
+export function kioskScreen(
+  width: number,
+  height: number,
+  devicePixelRatio: number,
+): DeviceScreen | null {
+  if (!(width > 0) || !(height > 0)) {
+    return null;
+  }
+  return {
+    width: clamp(Math.round(width), 1, MAX_SCREEN_SIDE),
+    height: clamp(Math.round(height), 1, MAX_SCREEN_SIDE),
+    scale:
+      devicePixelRatio > 0
+        ? clamp(Math.round(devicePixelRatio * 100) / 100, 0.5, 8)
+        : 1,
+    mode: "screen",
+  };
 }
 
 /** The heartbeat's appVersion field accepts at most this many characters. */
@@ -853,6 +890,15 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
     }, ms);
   }
 
+  function screenReport(): { screen?: DeviceScreen } {
+    try {
+      const screen = options.screen?.() ?? null;
+      return screen ? { screen } : {};
+    } catch {
+      return {};
+    }
+  }
+
   async function sendHeartbeat(): Promise<void> {
     if (!credentials) {
       return;
@@ -868,6 +914,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
             0,
           ),
           lastError: state.lastError,
+          ...screenReport(),
         },
       });
     } catch {

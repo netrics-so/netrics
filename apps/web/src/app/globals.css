@@ -954,6 +954,17 @@ a.tile-stale:hover {
   margin-top: 8px;
 }
 
+/* The screen a device reported and its orientation (#276). */
+.device-list .device-screen {
+  margin: 4px 0 0;
+}
+
+/* Apple TV: the mode is fixed, shown where the mode menu would be. */
+.device-list .device-mode-fixed {
+  display: block;
+  padding: 8px 0;
+}
+
 .device-list .actions {
   align-items: center;
   margin: 8px 0 0;

@@ -117,6 +117,8 @@ public actor DeviceClient {
     private let images: any ImageCache
     private let appVersion: String
     private let now: @Sendable () -> Date
+    /** Measures the screen for the heartbeat (#276); nil sends none. */
+    private let screen: (@Sendable () async -> DeviceScreenReport?)?
 
     public private(set) var state = DeviceState()
     public nonisolated let updates: AsyncStream<DeviceState>
@@ -144,7 +146,8 @@ public actor DeviceClient {
         cache: any DashboardCache,
         images: any ImageCache = InMemoryImageCache(),
         appVersion: String,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        screen: (@Sendable () async -> DeviceScreenReport?)? = nil
     ) {
         self.server = server
         self.transport = transport
@@ -153,6 +156,7 @@ public actor DeviceClient {
         self.images = images
         self.appVersion = appVersion
         self.now = now
+        self.screen = screen
         (updates, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(16))
     }
 
@@ -683,19 +687,21 @@ public actor DeviceClient {
     }
 
     /**
-     * Reports version, uptime and the last error (best effort; the dashboard
-     * loop reports outages), and picks up a renamed device. Returns whether
-     * the TV was paired.
+     * Reports version, uptime, the last error and, when the app measures
+     * it, the screen (best effort; the dashboard loop reports outages), and
+     * picks up a renamed device. Returns whether the TV was paired.
      */
     @discardableResult
     public func sendHeartbeat() async -> Bool {
         guard running, state.phase == .paired, let credentials else { return false }
         let at = epoch
         let uptime = max(Int(now().timeIntervalSince(startedAt)), 0)
+        let measured = await screen?()
         let body = DeviceHeartbeatRequest(
             appVersion: Self.reportedAppVersion(appVersion),
             uptimeSeconds: uptime,
-            lastError: state.lastError
+            lastError: state.lastError,
+            screen: measured
         )
         let authorization = ["authorization": "Bearer \(credentials.accessToken)"]
         _ = try? await send("POST", "/v1/device/heartbeat", body: body, headers: authorization)

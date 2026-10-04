@@ -376,12 +376,20 @@ export async function touchDevice(
     );
 }
 
-/** Renames a device or changes its dashboard; null when it does not exist. */
+/**
+ * Renames a device, changes its dashboard or its screen settings; null when
+ * it does not exist.
+ */
 export async function updateDevice(
   tx: Transaction,
   workspaceId: string,
   deviceId: string,
-  changes: { name?: string; dashboardId?: string | null },
+  changes: {
+    name?: string;
+    dashboardId?: string | null;
+    rotation?: number;
+    displayMode?: string;
+  },
 ): Promise<DeviceRow | null> {
   const [row] = await tx
     .update(schema.devices)
@@ -397,7 +405,8 @@ export async function updateDevice(
 }
 
 /**
- * Stores a device's heartbeat and records the contact. False when the device
+ * Stores a device's heartbeat and records the contact. `screen` replaces the
+ * stored screen when given and keeps it when absent. False when the device
  * does not exist or is revoked.
  */
 export async function recordDeviceHeartbeat(
@@ -408,6 +417,7 @@ export async function recordDeviceHeartbeat(
     appVersion: string;
     uptimeSeconds: number;
     lastError: string | null;
+    screen?: schema.DeviceScreenColumn;
   },
 ): Promise<boolean> {
   const rows = await tx

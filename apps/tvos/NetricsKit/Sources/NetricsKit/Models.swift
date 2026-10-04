@@ -170,6 +170,10 @@ public struct DeviceSelfResponse: Codable, Sendable, Equatable {
         public var id: String
         public var name: String
         public var dashboardId: String?
+        /** Degrees the screen is turned (#276): 0, 90, 180 or 270; nil from older servers. */
+        public var rotation: Int?
+        /** "screen" or "scroll" (#276); tvOS always shows screen view. Nil from older servers. */
+        public var displayMode: String?
     }
 
     public var device: Device
@@ -411,25 +415,80 @@ public struct DeviceDashboard: Codable, Sendable, Equatable {
     }
 }
 
+/**
+ * The screen a device reports in its heartbeat (#276, ADR 0017 section 7):
+ * the size after the rotation setting in points, the scale, and the format
+ * and mode it shows. The server refuses sides outside 1–16384 and scales
+ * outside 0.5–8; `measured` keeps a measurement inside those bounds.
+ */
+public struct DeviceScreenReport: Codable, Sendable, Equatable {
+    public static let maxSide = 16_384
+    public static let scaleRange: ClosedRange<Double> = 0.5...8
+
+    public var width: Int
+    public var height: Int
+    public var scale: Double
+    /** A format key ("16x9", "9x16", …); nil until the app knows the formats. */
+    public var format: String?
+    /** "screen" (always, on tvOS) or "scroll". */
+    public var mode: String
+
+    public init(width: Int, height: Int, scale: Double, format: String? = nil, mode: String = "screen") {
+        self.width = width
+        self.height = height
+        self.scale = scale
+        self.format = format
+        self.mode = mode
+    }
+
+    /** A measured screen inside the API's bounds; nil when it has no size. */
+    public static func measured(
+        width: Double, height: Double, scale: Double, format: String? = nil, mode: String = "screen"
+    ) -> DeviceScreenReport? {
+        guard width.isFinite, height.isFinite, width > 0, height > 0 else { return nil }
+        func side(_ value: Double) -> Int { min(max(Int(value.rounded()), 1), maxSide) }
+        let rounded = scale.isFinite && scale > 0 ? (scale * 100).rounded() / 100 : 1
+        return DeviceScreenReport(
+            width: side(width), height: side(height),
+            scale: min(max(rounded, scaleRange.lowerBound), scaleRange.upperBound),
+            format: format, mode: mode)
+    }
+
+    private enum CodingKeys: String, CodingKey { case width, height, scale, format, mode }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(width, forKey: .width)
+        try container.encode(height, forKey: .height)
+        try container.encode(scale, forKey: .scale)
+        try container.encodeIfPresent(format, forKey: .format)
+        try container.encode(mode, forKey: .mode)
+    }
+}
+
 /** Body of POST /v1/device/heartbeat */
 public struct DeviceHeartbeatRequest: Codable, Sendable, Equatable {
     public var appVersion: String
     public var uptimeSeconds: Int
     public var lastError: String?
+    /** The screen (#276); left out when nil, as older apps send it. */
+    public var screen: DeviceScreenReport?
 
-    public init(appVersion: String, uptimeSeconds: Int, lastError: String?) {
+    public init(appVersion: String, uptimeSeconds: Int, lastError: String?, screen: DeviceScreenReport? = nil) {
         self.appVersion = appVersion
         self.uptimeSeconds = uptimeSeconds
         self.lastError = lastError
+        self.screen = screen
     }
 
-    private enum CodingKeys: String, CodingKey { case appVersion, uptimeSeconds, lastError }
+    private enum CodingKeys: String, CodingKey { case appVersion, uptimeSeconds, lastError, screen }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(appVersion, forKey: .appVersion)
         try container.encode(uptimeSeconds, forKey: .uptimeSeconds)
         try container.encode(lastError, forKey: .lastError)
+        try container.encodeIfPresent(screen, forKey: .screen)
     }
 }
 
