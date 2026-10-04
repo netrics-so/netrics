@@ -9,6 +9,7 @@ import type {
   PollPairingResponse,
 } from "@netrics/contracts";
 import { MAX_SCREEN_SIDE } from "@netrics/contracts";
+import { formatFor } from "@netrics/domain";
 
 /**
  * The browser kiosk's side of the device API (#59, ADR 0010, ADR 0011):
@@ -182,9 +183,9 @@ function clamp(value: number, min: number, max: number): number {
 /**
  * The kiosk's screen as the heartbeat reports it (#276): the viewport in
  * CSS px and the device pixel ratio, kept inside the bounds the API
- * accepts. The kiosk renders Screen view; it does not know the formats yet
- * (ADR 0017, #281), so it sends no `format`. Null when the viewport is not
- * measurable (zero or not a number).
+ * accepts, and the format its screen view renders in (ADR 0017, #281: the
+ * viewport's; a rotated kiosk, #277, reports its rotated sides). Null when
+ * the viewport is not measurable (zero or not a number).
  */
 export function kioskScreen(
   width: number,
@@ -201,6 +202,7 @@ export function kioskScreen(
       devicePixelRatio > 0
         ? clamp(Math.round(devicePixelRatio * 100) / 100, 0.5, 8)
         : 1,
+    format: formatFor(width, height),
     mode: "screen",
   };
 }
