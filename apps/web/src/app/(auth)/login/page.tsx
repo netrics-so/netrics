@@ -34,16 +34,13 @@ export default async function LoginPage({
   const t = await getT("login");
   return (
     <>
-      <h1>{t("title")}</h1>
-      <p className="subtitle">{t("subtitle")}</p>
-      <div className="card">
-        <LoginForm next={next} />
-      </div>
-      <p className="muted">
-        <Link href="/forgot-password">{t("forgot")}</Link>
-      </p>
+      <header>
+        <h1>{t("heading")}</h1>
+        <p className="subtitle">{t("subtitle")}</p>
+      </header>
+      <LoginForm next={next} />
       {setup.signup === "open" ? (
-        <p className="muted">
+        <p className="auth-links">
           {t.rich("noAccount", {
             link: (
               <Link key="link" href="/signup">

@@ -23,9 +23,61 @@ export const authDe: Catalog<typeof authEn> = {
     email: "E-Mail",
     password: "Passwort",
   },
+  onboarding: {
+    pageTitle: "Los geht’s",
+    tagline: "Deine erste Zahl auf einem Bildschirm in etwa fünf Minuten.",
+    stepsLabel: "Einrichtungsschritte",
+    steps: {
+      workspace: "Workspace erstellen",
+      source: "Quelle verbinden",
+      screen: "Auf einem Bildschirm zeigen",
+    },
+    done: "(erledigt)",
+    railNote:
+      "Du kannst jeden Schritt überspringen – mit Demodaten ist dein erstes Dashboard nicht leer.",
+    source: {
+      title: "Verbinde deine erste Quelle",
+      subtitle:
+        "Wähle eine für den Anfang. Weitere kannst du später unter Quellen hinzufügen.",
+      choicesLabel: "Quellen",
+      demoName: "Mit Demodaten ausprobieren",
+      demoText: "Erzeugte Zahlen und ein Beispiel-Dashboard",
+      demoReady: "Schon in diesem Workspace",
+      unavailable: "Auf dieser Installation nicht eingerichtet",
+      explainOAuth:
+        "netrics bittet {name} um Lesezugriff. Im nächsten Schritt wählst du, was synchronisiert wird, und du kannst den Zugriff jederzeit widerrufen: Trenne die Quelle hier oder entferne netrics in deinem Konto beim Anbieter.",
+      explainKey:
+        "netrics liest nur Kennzahlen von {name}, mit dem Schlüssel, den du im nächsten Schritt eingibst. Der Schlüssel wird verschlüsselt gespeichert; wenn du die Quelle löschst, wird er entfernt.",
+      explainNone:
+        "netrics liest nur Kennzahlen von {name} und ändert dort nichts. Du kannst die Quelle jederzeit löschen.",
+      explainDemo:
+        "Demodaten erzeugt netrics selbst: kein Konto und kein Zugriff auf deine Daten. Du kannst sie jederzeit unter Quellen entfernen.",
+      skip: "Überspringen, Demodaten nutzen",
+      continue: "Weiter",
+      continueWith: "Weiter mit {name}",
+      adding: "Demodaten werden hinzugefügt…",
+      demoFailed:
+        "Die Demodaten konnten nicht hinzugefügt werden. Versuch es noch einmal oder verbinde stattdessen eine Quelle.",
+    },
+    screen: {
+      title: "Auf einem Bildschirm zeigen",
+      subtitle:
+        "Kopple einen TV oder einen beliebigen Browser mit diesem Workspace. Er zeigt dein Dashboard im Vollbild und hält es aktuell.",
+      open: "Öffne auf dem TV die netrics-App (Apple TV) oder einen Browser mit {url}.",
+      code: "Der Bildschirm zeigt einen Kopplungscode.",
+      enter: "Gib den Code unter „TV verbinden“ ein und wähle das Dashboard.",
+      askAdmin:
+        "Bitte einen Inhaber oder Admin dieses Workspaces, einen TV zu verbinden.",
+      connectTv: "TV verbinden",
+      openDashboard: "Mein Dashboard öffnen",
+      connectSource: "Quelle verbinden",
+    },
+  },
   login: {
     title: "Anmelden",
-    subtitle: "Melde dich bei deinem netrics-Konto an",
+    heading: "Willkommen zurück",
+    subtitle:
+      "Deine Bildschirme laufen. Melde dich an, um zu ändern, was sie zeigen.",
     submit: "Anmelden",
     pending: "Wird angemeldet…",
     forgot: "Passwort vergessen?",

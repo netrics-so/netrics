@@ -3,6 +3,7 @@ import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  addDemoContentResponseSchema,
   createWorkspaceResponseSchema,
   dashboardResponseSchema,
   metricQueryResponseSchema,
@@ -25,6 +26,7 @@ import { createAuthService } from "./auth/index.js";
 import { loadConfig, type Config } from "./env.js";
 import { createTestDatabase, type TestDatabase } from "./test-db.js";
 import { createJobHandlers } from "./jobs/handlers.js";
+import { addMemberViaInvitation } from "./test-helpers.js";
 import { createWorker } from "./worker.js";
 
 let testDb: TestDatabase;
@@ -231,6 +233,71 @@ describe("workspace onboarding", () => {
       select (select count(*)::int from connections where workspace_id = ${workspace.id}) as connections,
              (select count(*)::int from dashboards where workspace_id = ${workspace.id}) as dashboards`;
     expect(counts).toEqual({ connections: 0, dashboards: 0 });
+  });
+
+  describe("adding the demo to an existing workspace (#308)", () => {
+    function addDemo(target: FastifyInstance, session: string, id: string) {
+      return target.inject({
+        method: "POST",
+        url: `/v1/workspaces/${id}/demo`,
+        headers: { cookie: session },
+      });
+    }
+
+    async function counts(workspaceId: string) {
+      const [row] = await admin`
+        select (select count(*)::int from connections where workspace_id = ${workspaceId}) as connections,
+               (select count(*)::int from dashboards where workspace_id = ${workspaceId}) as dashboards`;
+      return row;
+    }
+
+    it("adds the demo connection and dashboard for an admin", async () => {
+      const created = await createWorkspace(app, cookie, {});
+      const { workspace } = createWorkspaceResponseSchema.parse(created.json());
+      const response = await addDemo(app, cookie, workspace.id);
+      expect(response.statusCode).toBe(200);
+      const { demoDashboardId } = addDemoContentResponseSchema.parse(
+        response.json(),
+      );
+      expect(demoDashboardId).not.toBeNull();
+      const read = await app.inject({
+        method: "GET",
+        url: `/v1/workspaces/${workspace.id}/dashboards/${demoDashboardId}`,
+        headers: { cookie },
+      });
+      expect(dashboardResponseSchema.parse(read.json()).dashboard.name).toBe(
+        "Demo dashboard",
+      );
+      expect(await counts(workspace.id)).toEqual({
+        connections: 1,
+        dashboards: 1,
+      });
+    });
+
+    it("refuses another workspace's members and viewers", async () => {
+      const created = await createWorkspace(app, cookie, {});
+      const { workspace } = createWorkspaceResponseSchema.parse(created.json());
+      // A member of another workspace: 404, so the workspace is not leaked.
+      const stranger = await signUp(app, "onboarding-stranger@example.com");
+      await createWorkspace(app, stranger, {});
+      expect((await addDemo(app, stranger, workspace.id)).statusCode).toBe(404);
+      // A viewer may not create connections or dashboards.
+      const viewer = await signUp(app, "onboarding-viewer@example.com");
+      const added = await addMemberViaInvitation(
+        app,
+        db,
+        cookie,
+        workspace.id,
+        "onboarding-viewer@example.com",
+        "viewer",
+      );
+      expect(added.statusCode).toBe(200);
+      expect((await addDemo(app, viewer, workspace.id)).statusCode).toBe(403);
+      expect(await counts(workspace.id)).toEqual({
+        connections: 0,
+        dashboards: 0,
+      });
+    });
   });
 
   it("still creates the workspace when the demo cannot be added", async () => {

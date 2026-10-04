@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Locale } from "@netrics/domain";
 
-import { CreateWorkspaceForm } from "./create-workspace-form";
+import { CreateWorkspaceForm } from "../(onboarding)/create-workspace-form";
 import { ForgotPasswordForm } from "./forgot-password/forgot-password-form";
 import { InvitationActions } from "./invite/[token]/invitation-actions";
 import { LoginForm } from "./login/login-form";

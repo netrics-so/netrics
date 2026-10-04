@@ -17,12 +17,12 @@ export default async function ForgotPasswordPage() {
   const t = await getT("passwordReset");
   return (
     <>
-      <h1>{t("forgotTitle")}</h1>
-      <p className="subtitle">{t("forgotSubtitle")}</p>
-      <div className="card">
-        <ForgotPasswordForm />
-      </div>
-      <p className="muted">
+      <header>
+        <h1>{t("forgotTitle")}</h1>
+        <p className="subtitle">{t("forgotSubtitle")}</p>
+      </header>
+      <ForgotPasswordForm />
+      <p className="auth-links">
         {t.rich("remembered", {
           link: (
             <Link key="link" href="/login">

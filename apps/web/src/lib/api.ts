@@ -16,6 +16,8 @@ import {
   type ImageResponse,
   createWorkspaceResponseSchema,
   type CreateWorkspaceResponse,
+  addDemoContentResponseSchema,
+  type AddDemoContentResponse,
   createDashboardRequestSchema,
   dashboardListResponseSchema,
   approveDeviceRequestSchema,
@@ -471,6 +473,21 @@ export function createWorkspace(
       withDemo,
       ...(timeZone ? { timeZone } : {}),
     }),
+  );
+}
+
+/**
+ * The demo connection and a sample dashboard for an existing workspace
+ * (onboarding's "Skip, use demo data", #308). `demoDashboardId` is null
+ * when they could not be added.
+ */
+export function addDemoContent(
+  workspaceId: string,
+): Promise<AddDemoContentResponse> {
+  return browserSend(
+    addDemoContentResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/demo`,
   );
 }
 

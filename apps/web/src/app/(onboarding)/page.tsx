@@ -2,10 +2,13 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { CreateWorkspaceForm } from "./create-workspace-form";
+import { OnboardingFrame } from "@/components/onboarding/onboarding-frame";
 import { listWorkspaces } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
 import { parseOAuthOutcome } from "@/lib/oauth-connection";
 import { requireSession } from "@/lib/session";
+
+import "@/app/styles/auth.css";
 
 export const dynamic = "force-dynamic";
 
@@ -36,12 +39,16 @@ export default async function Home({
 
   const t = await getT("home");
   return (
-    <>
-      <h1>{first ? t("newTitle") : t("title", { name: user.name })}</h1>
-      <p className="subtitle">{first ? t("newSubtitle") : t("noWorkspace")}</p>
-      <div className="card">
+    <OnboardingFrame step="workspace">
+      <div className="onboarding-panel">
+        <header>
+          <h1>{first ? t("newTitle") : t("title", { name: user.name })}</h1>
+          <p className="subtitle">
+            {first ? t("newSubtitle") : t("noWorkspace")}
+          </p>
+        </header>
         <CreateWorkspaceForm />
       </div>
-    </>
+    </OnboardingFrame>
   );
 }

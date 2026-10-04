@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 
 import { apiErrorMessage, createWorkspace } from "@/lib/api";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { welcomePath } from "@/lib/onboarding";
 
 export function CreateWorkspaceForm() {
   const locale = useLocale();
@@ -20,16 +21,13 @@ export function CreateWorkspaceForm() {
     setPending(true);
     const form = new FormData(event.currentTarget);
     try {
-      const { workspace, demoDashboardId } = await createWorkspace(
+      const { workspace } = await createWorkspace(
         String(form.get("name") ?? ""),
         form.get("withDemo") === "on",
       );
-      // Straight to something useful when the demo was added.
-      router.push(
-        demoDashboardId
-          ? `/workspaces/${workspace.id}/dashboards/${demoDashboardId}`
-          : `/workspaces/${workspace.id}`,
-      );
+      // On to onboarding's next step (#308): connect a source, then a
+      // screen. With the demo added, its dashboard is one click away there.
+      router.push(welcomePath(workspace.id));
       router.refresh();
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));

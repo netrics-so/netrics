@@ -201,6 +201,19 @@ export type CreateWorkspaceResponse = z.infer<
   typeof createWorkspaceResponseSchema
 >;
 
+/**
+ * POST /v1/workspaces/:workspaceId/demo (#308): the demo connection and a
+ * sample dashboard for an existing workspace, as `withDemo` adds them to a
+ * new one. Null when the demo connector is not installed or they could not
+ * be added.
+ */
+export const addDemoContentResponseSchema = z.object({
+  demoDashboardId: z.uuid().nullable(),
+});
+export type AddDemoContentResponse = z.infer<
+  typeof addDemoContentResponseSchema
+>;
+
 export const workspaceListResponseSchema = z.object({
   workspaces: z.array(
     z.object({

@@ -27,23 +27,21 @@ export default async function ResetPasswordPage({
 
   return (
     <>
-      <h1>{t("resetTitle")}</h1>
-      <p className="subtitle">{t("resetSubtitle")}</p>
-      <div className="card">
-        {link.kind === "ready" ? (
-          <ResetPasswordForm token={link.token} />
-        ) : (
-          <div className="error" role="alert">
-            <p>
-              {link.kind === "invalid" ? t("invalidLink") : t("missingLink")}
-            </p>
-            <p>
-              <Link href="/forgot-password">{t("requestNew")}</Link>
-            </p>
-          </div>
-        )}
-      </div>
-      <p className="muted">
+      <header>
+        <h1>{t("resetTitle")}</h1>
+        <p className="subtitle">{t("resetSubtitle")}</p>
+      </header>
+      {link.kind === "ready" ? (
+        <ResetPasswordForm token={link.token} />
+      ) : (
+        <div className="error" role="alert">
+          <p>{link.kind === "invalid" ? t("invalidLink") : t("missingLink")}</p>
+          <p>
+            <Link href="/forgot-password">{t("requestNew")}</Link>
+          </p>
+        </div>
+      )}
+      <p className="auth-links">
         <Link href="/login">{t("backToSignIn")}</Link>
       </p>
     </>
