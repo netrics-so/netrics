@@ -15,6 +15,7 @@ import { LineWidgetView, type LineReadingProps } from "./line-widget";
 import { MetricWidgetView, type MetricReadingProps } from "./metric-widget";
 import { StatusWidgetView, type StatusReadingProps } from "./status-widget";
 import { TableWidgetView, type TableReadingProps } from "./table-widget";
+import { CompareWidgetView, type CompareReadingProps } from "./compare-widget";
 import { WidgetFailed } from "./slide-canvas";
 import { TextWidgetView } from "./text-widget";
 
@@ -29,7 +30,7 @@ export interface DeviceWidgetEnv {
 
 export type DeviceDataWidget = Extract<
   DeviceWidget,
-  { type: "metric" | "line" | "bar" | "table" }
+  { type: "metric" | "line" | "bar" | "table" | "compare" }
 >;
 
 function metricOf(data: DeviceDataWidget["data"]) {
@@ -185,6 +186,40 @@ export function deviceStatusReading(
 }
 
 /**
+ * A payload compare widget's reading (ADR 0019 section 10): the operands
+ * and the ratio the server computed. A side whose query failed has no
+ * unit; the widget then shows no numbers.
+ */
+export function deviceCompareReading(
+  widget: Extract<DeviceWidget, { type: "compare" }>,
+  locale: Locale,
+): CompareReadingProps {
+  const { data } = widget;
+  const { numerator, denominator } = data;
+  return {
+    label: widget.label,
+    period: data.period,
+    options: widget.options,
+    reading:
+      numerator.unit === null || denominator.unit === null
+        ? null
+        : {
+            numerator: { ...numerator, unit: numerator.unit },
+            denominator: { ...denominator, unit: denominator.unit },
+            ratio: {
+              value: data.ratio.value,
+              previousValue: data.ratio.previousValue,
+            },
+            unit: data.unit,
+            better: data.better,
+          },
+    notice: deviceTileNotice(data.status, data.updatedAt, locale),
+    status: data.status,
+    updatedAt: data.updatedAt,
+  };
+}
+
+/**
  * A widget of a device payload (schema 2 or 3, #219, #281) with the data
  * the server computed: the same display components as the signed-in
  * pages, no further requests (images arrive as `blob:` URLs in
@@ -229,6 +264,13 @@ export function DeviceWidgetView({
       );
     case "status":
       return <StatusWidgetView {...common} {...deviceStatusReading(widget)} />;
+    case "compare":
+      return (
+        <CompareWidgetView
+          {...common}
+          {...deviceCompareReading(widget, locale)}
+        />
+      );
     case "image":
       return (
         <ImageWidgetView

@@ -73,7 +73,7 @@ export const studioEn = {
       add: "Add widget",
       hint: "Click to add it in the first free spot, or drag it onto the slide",
       addType:
-        "Add {type, select, metric {metric} line {line chart} bar {bar chart} table {table} image {image} text {text} clock {clock} status {status board} other {widget}}",
+        "Add {type, select, metric {metric} line {line chart} bar {bar chart} table {table} compare {comparison} image {image} text {text} clock {clock} status {status board} other {widget}}",
     },
     assignTvs: {
       title: "Show “{name}” on TVs",
@@ -233,6 +233,19 @@ export const studioEn = {
       rowsHelp:
         "The largest groups. A screen shows the rows that fit and says how many.",
       showOthers: "“Others” row with the rest added up",
+      numerator: "Numerator",
+      denominator: "Denominator",
+      sharedPeriod: "Both sides use the numerator’s period.",
+      compare: "Ratio",
+      format: "Format",
+      formatPercent: "Percent (32.7 %)",
+      formatRatio: "Number or amount (4.62, €0.42)",
+      formatHelp:
+        "Percent needs two sides without currency; an amount over a count is an amount per unit.",
+      ratioLabel: "Ratio label",
+      ratioLabelPlaceholder: "ratio",
+      ratioLabelHelp: "Beside the ratio, e.g. “conversion”.",
+      compareChange: "Change against the previous period",
       all: "All",
       filter: "Filter",
       filterChip: "{name} = {value}",
@@ -468,9 +481,9 @@ export const studioEn = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} table {Table} image {Image} text {Text} clock {Clock} status {Status} other {Widget}}",
+        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} table {Table} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} image {image} text {text} clock {clock} status {status board} other {widget}})",
+        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} compare {comparison} image {image} text {text} clock {clock} status {status board} other {widget}})",
       copyOf: "{name} (copy)",
       slide: "Slide {number}",
       quoted: "“{name}”",
@@ -482,9 +495,9 @@ export const studioEn = {
         widgetPlaced:
           "{name} {verb, select, duplicated {duplicated} pasted {pasted} other {added}} at column {column}, row {row}.",
         typeNoRoom:
-          "{type, select, metric {A metric} line {A line chart} bar {A bar chart} table {A table} image {An image} text {A text} clock {A clock} status {A status board} other {A widget}} needs at least {w} × {h} cells; there is no room for it here.",
+          "{type, select, metric {A metric} line {A line chart} bar {A bar chart} table {A table} compare {A comparison} image {An image} text {A text} clock {A clock} status {A status board} other {A widget}} needs at least {w} × {h} cells; there is no room for it here.",
         typeChanged:
-          "{name} is now {type, select, metric {a metric} line {a line chart} bar {a bar chart} table {a table} image {an image} text {a text} clock {a clock} status {a status board} other {a widget}}.",
+          "{name} is now {type, select, metric {a metric} line {a line chart} bar {a bar chart} table {a table} compare {a comparison} image {an image} text {a text} clock {a clock} status {a status board} other {a widget}}.",
         undone: "Undone.",
         redone: "Redone.",
         discarded: "Changes discarded.",

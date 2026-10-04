@@ -283,6 +283,29 @@ public struct TableWidgetOptions: Codable, Sendable, Equatable {
     }
 }
 
+/** A compare widget's options (ADR 0019 section 10). */
+public struct CompareWidgetOptions: Codable, Sendable, Equatable {
+    public var format: CompareFormat
+    /** Beside the ratio ("conversion"); nil shows the localized "ratio". */
+    public var ratioLabel: String?
+    public var showChange: Bool
+
+    public init(format: CompareFormat = .percent, ratioLabel: String? = nil, showChange: Bool = true) {
+        self.format = format
+        self.ratioLabel = ratioLabel
+        self.showChange = showChange
+    }
+
+    private enum CodingKeys: String, CodingKey { case format, ratioLabel, showChange }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        format = c.lenient(CompareFormat.self, .format) ?? .percent
+        ratioLabel = c.lenient(String.self, .ratioLabel).flatMap { $0.isEmpty ? nil : $0 }
+        showChange = c.lenient(Bool.self, .showChange) ?? true
+    }
+}
+
 public enum ImageFit: String, OpenAPIEnum {
     case contain, cover
     public static var fallback: ImageFit { .contain }
@@ -706,6 +729,103 @@ public struct StatusWidgetData: Codable, Sendable, Equatable {
     }
 }
 
+/** One side of a compare widget: its metric's name, value and unit. */
+public struct CompareOperand: Codable, Sendable, Equatable {
+    public var label: String
+    public var value: Double?
+    public var unit: String?
+
+    public init(label: String, value: Double?, unit: String?) {
+        self.label = label
+        self.value = value
+        self.unit = unit
+    }
+
+    private enum CodingKeys: String, CodingKey { case label, value, unit }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = c.lenient(String.self, .label) ?? ""
+        value = c.lenient(Double.self, .value)
+        unit = c.lenient(String.self, .unit)
+    }
+}
+
+/** A compare widget's ratio: A ÷ B now and over the previous period. */
+public struct CompareRatio: Codable, Sendable, Equatable {
+    public var value: Double?
+    public var previousValue: Double?
+    public var format: CompareFormat
+
+    public init(value: Double?, previousValue: Double?, format: CompareFormat) {
+        self.value = value
+        self.previousValue = previousValue
+        self.format = format
+    }
+
+    private enum CodingKeys: String, CodingKey { case value, previousValue, format }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        value = c.lenient(Double.self, .value).flatMap { $0.isFinite ? $0 : nil }
+        previousValue = c.lenient(Double.self, .previousValue).flatMap { $0.isFinite ? $0 : nil }
+        format = c.lenient(CompareFormat.self, .format) ?? .percent
+    }
+}
+
+/**
+ * A compare widget's data (ADR 0019 section 10). `unit` is the ratio's: nil
+ * (unitless) or the currency of an amount per unit ("EUR_minor").
+ */
+public struct CompareWidgetData: Codable, Sendable, Equatable {
+    public var period: MetricPeriod
+    public var aggregation: MetricAggregation
+    public var unit: String?
+    public var numerator: CompareOperand
+    public var denominator: CompareOperand
+    public var ratio: CompareRatio
+    public var status: DeviceTileStatus
+    public var updatedAt: String?
+    public var conversion: TileConversion?
+    public var better: MetricBetter
+
+    public init(
+        period: MetricPeriod, aggregation: MetricAggregation, unit: String?, numerator: CompareOperand,
+        denominator: CompareOperand, ratio: CompareRatio, status: DeviceTileStatus, updatedAt: String?,
+        conversion: TileConversion? = nil, better: MetricBetter = .higher
+    ) {
+        self.period = period
+        self.aggregation = aggregation
+        self.unit = unit
+        self.numerator = numerator
+        self.denominator = denominator
+        self.ratio = ratio
+        self.status = status
+        self.updatedAt = updatedAt
+        self.conversion = conversion
+        self.better = better
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case period, aggregation, unit, numerator, denominator, ratio, status, updatedAt, conversion, better
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        period = c.lenient(MetricPeriod.self, .period) ?? .unknown
+        aggregation = c.lenient(MetricAggregation.self, .aggregation) ?? .unknown
+        unit = c.lenient(String.self, .unit)
+        numerator = c.lenient(CompareOperand.self, .numerator) ?? CompareOperand(label: "", value: nil, unit: nil)
+        denominator =
+            c.lenient(CompareOperand.self, .denominator) ?? CompareOperand(label: "", value: nil, unit: nil)
+        ratio = c.lenient(CompareRatio.self, .ratio) ?? CompareRatio(value: nil, previousValue: nil, format: .percent)
+        status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
+        updatedAt = c.lenient(String.self, .updatedAt)
+        conversion = c.lenient(TileConversion.self, .conversion)
+        better = c.lenient(MetricBetter.self, .better) ?? .higher
+    }
+}
+
 // MARK: Widgets and slides
 
 public enum WidgetContent: Sendable, Equatable {
@@ -714,6 +834,7 @@ public enum WidgetContent: Sendable, Equatable {
     case bar(BarWidgetOptions, BarWidgetData)
     case table(TableWidgetOptions, TableWidgetData)
     case status(StatusWidgetOptions, StatusWidgetData)
+    case compare(CompareWidgetOptions, CompareWidgetData)
     case image(imageId: String, ImageWidgetOptions)
     case text(String, TextWidgetOptions)
     case clock(ClockWidgetOptions)
@@ -789,6 +910,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
         case "status":
             guard let data = c.lenient(StatusWidgetData.self, .data) else { return .unsupported }
             return .status(c.lenient(StatusWidgetOptions.self, .options) ?? .init(), data)
+        case "compare":
+            guard let data = c.lenient(CompareWidgetData.self, .data) else { return .unsupported }
+            return .compare(c.lenient(CompareWidgetOptions.self, .options) ?? .init(), data)
         case "image":
             guard let imageId = c.lenient(String.self, .imageId) else { return .unsupported }
             return .image(imageId: imageId, c.lenient(ImageWidgetOptions.self, .options) ?? .init())
@@ -826,6 +950,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .status(let options, let data):
+            try c.encode(options, forKey: .options)
+            try c.encode(data, forKey: .data)
+        case .compare(let options, let data):
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .image(let imageId, let options):

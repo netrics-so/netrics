@@ -4,6 +4,7 @@ import {
   DEVICE_REFRESH_AFTER_SECONDS,
   barWidgetOptionsSchema,
   clockWidgetOptionsSchema,
+  compareWidgetOptionsSchema,
   imageWidgetOptionsSchema,
   lineWidgetOptionsSchema,
   metricWidgetOptionsSchema,
@@ -51,6 +52,8 @@ import {
   SCREEN_FORMATS,
   STUDIO_GRID,
   STUDIO_MIN_WIDGET_SIZE,
+  amountCurrency,
+  compareRatioUnit,
   isBuiltinThemeKey,
   isScreenFormat,
   slideLayoutFor,
@@ -61,6 +64,7 @@ import {
   sortSourceItems,
   sourceItemStatus,
   sourcesLabel,
+  ratioOf,
   tileLabel,
   type Locale,
   type ThemeTokens,
@@ -552,6 +556,9 @@ async function dataWidgetOf(
   if (widget.type === "table") {
     return tableWidgetOf(tx, widget, context, placement, state);
   }
+  if (widget.type === "compare") {
+    return compareWidgetOf(tx, widget, context, placement);
+  }
   const query = await queryWidget(tx, widget, context);
   const { id: _id, label, ...tile } = tileOf(widget, query, context);
   if (widget.type === "line") {
@@ -681,6 +688,122 @@ function statusWidgetOf(
       items: chosen
         ? context.sources.filter((item) => chosen.has(item.connectionId))
         : context.sources,
+    },
+  };
+}
+
+/** Worst last: a compare widget shows the worse of its two sides. */
+const STATUS_SEVERITY: readonly DeviceTileStatus[] = [
+  "ok",
+  "stale",
+  "backfilling",
+  "no_data",
+  "outage",
+  "auth_failed",
+];
+
+function worseStatus(
+  a: DeviceTileStatus,
+  b: DeviceTileStatus,
+): DeviceTileStatus {
+  return STATUS_SEVERITY.indexOf(a) >= STATUS_SEVERITY.indexOf(b) ? a : b;
+}
+
+/** The older of two sync times; null when either side never synced. */
+function olderSync(a: string | null, b: string | null): string | null {
+  if (a === null || b === null) return null;
+  return new Date(a).getTime() <= new Date(b).getTime() ? a : b;
+}
+
+/**
+ * A compare widget (ADR 0019 section 10): two metric queries over the
+ * widget's period (the numerator's binding and the denominator's), and
+ * their ratio by `ratioOf`, now and over the previous period. The status
+ * is the worse side's and `updatedAt` the older side's; the shared fields
+ * describe the ratio (`unit` null, or the currency of an amount per unit).
+ * Two amounts that came back in different currencies have no ratio.
+ */
+async function compareWidgetOf(
+  tx: Transaction,
+  widget: DataWidget,
+  context: DataContext,
+  placement: { id: string; x: number; y: number; w: number; h: number },
+): Promise<DeviceWidget> {
+  const options = parsedOptions(compareWidgetOptionsSchema, widget.options);
+  const denominatorWidget: DataWidget | null =
+    widget.denominatorConnectionId !== null &&
+    widget.denominatorMetricKey !== null &&
+    widget.denominatorAggregation !== null
+      ? {
+          ...widget,
+          connectionId: widget.denominatorConnectionId,
+          metricKey: widget.denominatorMetricKey,
+          aggregation: widget.denominatorAggregation,
+          dimensions: widget.denominatorDimensions,
+        }
+      : null;
+  const numerator = await queryWidget(tx, widget, context);
+  const denominator = denominatorWidget
+    ? await queryWidget(tx, denominatorWidget, context)
+    : null;
+  const side = (
+    binding: DataWidget | null,
+    query: MetricQueryResponse | null,
+  ) => {
+    const state = binding
+      ? (context.states.get(binding.connectionId) ?? null)
+      : null;
+    const value = query?.value ?? null;
+    return {
+      operand: {
+        label: query?.metric.name ?? binding?.metricKey ?? widget.metricKey,
+        value,
+        unit: unitOf(query),
+      },
+      previousValue: query?.previousValue ?? null,
+      status: tileStatus(
+        state,
+        value !== null,
+        context.options.now,
+        binding ? context.backfilling.has(binding.connectionId) : false,
+      ),
+      updatedAt: state?.lastSuccessAt ?? null,
+    };
+  };
+  const a = side(widget, numerator);
+  const b = side(denominatorWidget, denominator);
+  // Amounts over amounts must be in one currency to have a ratio.
+  const currencyA = a.operand.unit ? amountCurrency(a.operand.unit) : null;
+  const currencyB = b.operand.unit ? amountCurrency(b.operand.unit) : null;
+  const comparable =
+    currencyB === null || (currencyA !== null && currencyA === currencyB);
+  const request = metricRequest(widget);
+  return {
+    type: "compare",
+    ...placement,
+    label: context.label(widget, numerator?.metric.name),
+    options,
+    data: {
+      period: request.period,
+      aggregation: numerator?.aggregation ?? request.aggregation,
+      unit: compareRatioUnit(a.operand.unit, b.operand.unit),
+      conversion: conversionOf(
+        numerator?.conversion ?? denominator?.conversion ?? null,
+      ),
+      kind: numerator?.metric.kind ?? null,
+      granularity: numerator?.metric.granularity ?? null,
+      better: numerator?.metric.better ?? "higher",
+      status: worseStatus(a.status, b.status),
+      updatedAt: olderSync(a.updatedAt, b.updatedAt),
+      numerator: a.operand,
+      denominator: b.operand,
+      ratio: {
+        value: comparable ? ratioOf(a.operand.value, b.operand.value) : null,
+        previousValue: comparable
+          ? ratioOf(a.previousValue, b.previousValue)
+          : null,
+        format: options.format,
+      },
     },
   };
 }

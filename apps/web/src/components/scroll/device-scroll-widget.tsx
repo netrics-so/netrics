@@ -9,6 +9,7 @@ import {
   deviceMetricReading,
   deviceStatusReading,
   deviceTableReading,
+  deviceCompareReading,
   type DeviceWidgetEnv,
 } from "@/components/studio/device-widget";
 import { WidgetFailed } from "@/components/studio/slide-canvas";
@@ -22,6 +23,7 @@ import {
   ScrollMetricCard,
   ScrollStatusCard,
   ScrollTableCard,
+  ScrollCompareCard,
   ScrollTextCard,
   type ScrollCardSize,
 } from "./scroll-widgets";
@@ -84,6 +86,13 @@ export function DeviceScrollWidget({
       );
     case "status":
       return <ScrollStatusCard {...deviceStatusReading(widget)} {...size} />;
+    case "compare":
+      return (
+        <ScrollCompareCard
+          {...deviceCompareReading(widget, locale)}
+          {...size}
+        />
+      );
     case "clock":
       return <DeviceScrollClock widget={widget} env={env} size={size} />;
     case "text":

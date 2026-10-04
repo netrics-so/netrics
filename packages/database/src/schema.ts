@@ -984,6 +984,14 @@ export const dashboardWidgets = pgTable(
     imageId: uuid("image_id"),
     /** Type-specific style, validated per type by the API contract. */
     options: jsonb("options").notNull().default({}),
+    // Compare widgets (ADR 0019 section 10): the second metric, the
+    // denominator; the period and display currency are the widget's.
+    denominatorConnectionId: uuid("denominator_connection_id"),
+    denominatorMetricKey: text("denominator_metric_key"),
+    denominatorAggregation: text("denominator_aggregation"),
+    denominatorDimensions: jsonb("denominator_dimensions")
+      .notNull()
+      .default({}),
   },
   (table) => [
     foreignKey({
@@ -1010,6 +1018,15 @@ export const dashboardWidgets = pgTable(
     index("dashboard_widgets_slide_idx").on(table.slideId),
     index("dashboard_widgets_dashboard_idx").on(table.dashboardId),
     index("dashboard_widgets_connection_idx").on(table.connectionId),
+    // A compare widget goes with either of its connections.
+    foreignKey({
+      name: "dashboard_widgets_denominator_connection_fk",
+      columns: [table.denominatorConnectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("cascade"),
+    index("dashboard_widgets_denominator_connection_idx").on(
+      table.denominatorConnectionId,
+    ),
     foreignKey({
       name: "dashboard_widgets_image_fk",
       columns: [table.imageId, table.workspaceId],
@@ -1018,7 +1035,7 @@ export const dashboardWidgets = pgTable(
     index("dashboard_widgets_image_idx").on(table.imageId),
     check(
       "dashboard_widgets_type_valid",
-      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table', 'status')`,
+      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table', 'status', 'compare')`,
     ),
     // An image widget names its image; no other widget does.
     check(
@@ -1047,10 +1064,15 @@ export const dashboardWidgets = pgTable(
       "dashboard_widgets_period_valid",
       sql`${table.period} is null or ${table.period} in ('today', 'last_7_days', 'last_30_days', 'this_month', 'last_90_days', 'last_12_months', 'this_week', 'this_quarter', 'this_year')`,
     ),
+    // A compare widget has a denominator binding; no other widget does.
+    check(
+      "dashboard_widgets_denominator_columns",
+      sql`case when ${table.type} = 'compare' then ${table.denominatorConnectionId} is not null and ${table.denominatorMetricKey} is not null and ${table.denominatorAggregation} in ('sum', 'avg', 'min', 'max', 'last') else ${table.denominatorConnectionId} is null and ${table.denominatorMetricKey} is null and ${table.denominatorAggregation} is null and ${table.denominatorDimensions} = '{}'::jsonb end`,
+    ),
     // Data widgets have a metric binding and no text; the others neither.
     check(
       "dashboard_widgets_type_columns",
-      sql`case when ${table.type} in ('metric', 'line', 'bar', 'table') then ${table.connectionId} is not null and ${table.metricKey} is not null and ${table.aggregation} is not null and ${table.period} is not null and ${table.text} is null else ${table.connectionId} is null and ${table.metricKey} is null and ${table.aggregation} is null and ${table.period} is null and ${table.displayCurrency} is null and ${table.dimensions} = '{}'::jsonb and (${table.text} is not null) = (${table.type} = 'text') end`,
+      sql`case when ${table.type} in ('metric', 'line', 'bar', 'table', 'compare') then ${table.connectionId} is not null and ${table.metricKey} is not null and ${table.aggregation} is not null and ${table.period} is not null and ${table.text} is null else ${table.connectionId} is null and ${table.metricKey} is null and ${table.aggregation} is null and ${table.period} is null and ${table.displayCurrency} is null and ${table.dimensions} = '{}'::jsonb and (${table.text} is not null) = (${table.type} = 'text') end`,
     ),
   ],
 );

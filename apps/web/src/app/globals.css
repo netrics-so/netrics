@@ -2015,6 +2015,7 @@ a.health-badge:hover {
 .sw-bar,
 .sw-table,
 .sw-status,
+.sw-compare,
 .sw-clock,
 .sw-failed {
   background: var(--sw-surface, var(--t-surface));
@@ -2108,6 +2109,7 @@ a.health-badge:hover {
 .sw-table > .sw-notice,
 .sw-table > .sw-footer,
 .sw-status > .sw-footer,
+.sw-compare > .sw-notice,
 .sw-footer {
   margin-top: auto;
 }
@@ -2360,6 +2362,91 @@ a.health-badge:hover {
 
 .sw-table-row.others .sw-table-label,
 .sw-table-row.others .sw-table-value {
+  color: var(--t-muted);
+}
+
+/* Compare (ADR 0019 section 10, design 4b): the operands side by side with
+   "/" between them and their captions, the ratio in the chart colour with
+   its label and change. The numbers sit at the bottom, as a metric's. */
+.sw-compare-period {
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-compare-body {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 8);
+  min-height: 0;
+}
+
+.sw-compare-operands {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.sw-compare-operand {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sw-compare-number {
+  line-height: 1.15;
+}
+
+.sw-compare-caption {
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-compare-separator {
+  line-height: 1.15;
+  color: var(--t-muted);
+}
+
+.sw-compare-ratio-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.sw-compare-ratio-row--below {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.sw-compare-ratio {
+  line-height: 1.15;
+  color: var(--t-chart-line);
+}
+
+.sw-compare-ratio-below {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 16);
+  width: 100%;
+}
+
+.sw-compare-ratio-label {
+  color: var(--t-muted);
+  white-space: nowrap;
+}
+
+.sw-compare-change {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.sw--stale .sw-compare-ratio,
+.sw--stale .sw-compare-change {
   color: var(--t-muted);
 }
 

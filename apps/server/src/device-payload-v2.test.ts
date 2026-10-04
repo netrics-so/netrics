@@ -63,6 +63,7 @@ const IMAGES = {
 };
 const THEME = id(7, 1);
 const TABLES = id(9, 0);
+const COMPARES = id(9, 200);
 
 const fixture = (name: string) =>
   readFileSync(path.join(import.meta.dirname, "images", "fixtures", name));
@@ -393,6 +394,72 @@ beforeAll(async () => {
     ...downloads(),
     options: { groupBy: "resource", limit: 3, showChange: false },
   });
+
+  // Compare widgets (ADR 0019 section 10): a share, a ratio, a second
+  // source that synced longer ago, and a denominator without data.
+  const [second] = await owner`
+    insert into connections (workspace_id, connector_id, name)
+    values (${workspaceId}, 'snap', 'Store 2') returning id`;
+  const secondId = second!.id as string;
+  await owner`
+    insert into connection_state (connection_id, workspace_id,
+      last_success_at, poll_interval_seconds)
+    values (${secondId}, ${workspaceId}, '2026-10-04T08:00:00Z', 300)`;
+  for (let day = 0; day < 14; day++) {
+    const date = new Date(Date.UTC(2026, 8, 21 + day))
+      .toISOString()
+      .slice(0, 10);
+    await owner`
+      insert into observations (workspace_id, connection_id,
+        metric_definition_id, dimensions, source_timestamp, value)
+      select ${workspaceId}, ${secondId}, m.id,
+             ${owner.json({ resource: "app-1" })},
+             ${`${date}T00:00:00Z`}::timestamptz, ${day < 7 ? 10 : 40}
+      from metric_definitions m where m.key = 'snap.downloads'`;
+  }
+  const denominator = (fields: Record<string, unknown> = {}) => ({
+    denominator_connection_id: connectionId,
+    denominator_metric_key: "snap.downloads",
+    denominator_aggregation: "sum",
+    ...fields,
+  });
+  await insertDashboard(COMPARES, "Compares");
+  await insertSlide(id(9, 300), COMPARES, 0);
+  await insertWidget(id(9, 301), id(9, 300), COMPARES, {
+    type: "compare",
+    x: 0,
+    y: 0,
+    w: 4,
+    h: 3,
+    title: "Wurfel's share",
+    ...downloads({ dimensions: { resource: "app-3" } }),
+    ...denominator(),
+    options: { ratioLabel: "share" },
+  });
+  await insertWidget(id(9, 302), id(9, 300), COMPARES, {
+    type: "compare",
+    x: 4,
+    y: 0,
+    w: 4,
+    h: 3,
+    ...downloads({ dimensions: { resource: "app-1" } }),
+    ...denominator({ denominator_connection_id: secondId }),
+    options: { format: "ratio" },
+  });
+  await insertWidget(id(9, 303), id(9, 300), COMPARES, {
+    type: "compare",
+    x: 8,
+    y: 0,
+    w: 4,
+    h: 3,
+    ...downloads(),
+    ...denominator(),
+    options: { showChange: false },
+  });
+  await owner`
+    update dashboard_widgets
+    set denominator_dimensions = ${owner.json({ resource: "app-404" })}
+    where id = ${id(9, 303)}`;
 
   await insertDashboard(OTHER, "Other", {}, otherWorkspaceId);
   await insertSlide(id(5, 100), OTHER, 0, {}, otherWorkspaceId);
@@ -969,6 +1036,58 @@ describe("device payload schema 2", () => {
       [null, null],
       [null, null],
     ]);
+  });
+
+  it("carries a compare widget's operands and ratio (ADR 0019 §10)", async () => {
+    const payload = deviceDashboardV2ResponseSchema.parse(await v2(COMPARES));
+    const [share, sources, missing] = widgetsOf(payload);
+    if (
+      share?.type !== "compare" ||
+      sources?.type !== "compare" ||
+      missing?.type !== "compare"
+    ) {
+      throw new Error("expected three compare widgets");
+    }
+    // paperstand over all apps: factors 1 of 1 + 3 + 10 in both weeks.
+    expect(share).toMatchObject({
+      label: "Wurfel's share",
+      options: { format: "percent", ratioLabel: "share", showChange: true },
+      data: {
+        status: "ok",
+        unit: null,
+        better: "higher",
+        updatedAt: "2026-10-04T09:55:00.000Z",
+        numerator: { label: "Downloads", unit: "count" },
+        denominator: { label: "Downloads", unit: "count" },
+        ratio: { format: "percent" },
+      },
+    });
+    const { numerator, denominator, ratio } = share.data;
+    expect(numerator.value! * 14).toBe(denominator.value);
+    expect(ratio.value).toBeCloseTo(1 / 14, 12);
+    expect(ratio.previousValue).toBeCloseTo(1 / 14, 12);
+
+    // Over the second store, which synced two hours ago: the ratio's status
+    // is the worse side's (stale) and its time the older.
+    expect(sources.data).toMatchObject({
+      status: "stale",
+      updatedAt: "2026-10-04T08:00:00.000Z",
+      ratio: { format: "ratio" },
+    });
+    expect(sources.data.ratio.value).toBeCloseTo(
+      sources.data.numerator.value! / sources.data.denominator.value!,
+      12,
+    );
+    expect(sources.data.ratio.previousValue).not.toBeNull();
+    expect(sources.data.ratio.previousValue).not.toBe(sources.data.ratio.value);
+
+    // A denominator without data: no ratio, never infinity.
+    expect(missing.data).toMatchObject({
+      status: "no_data",
+      denominator: { value: null },
+      ratio: { value: null, previousValue: null },
+    });
+    expect(missing.data.numerator.value).toBeGreaterThan(0);
   });
 
   it("hashes the schema: versions differ between schema 1 and 2", async () => {

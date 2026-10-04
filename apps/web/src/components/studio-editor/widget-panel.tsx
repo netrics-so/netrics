@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type {
   DashboardWidget,
@@ -41,6 +41,9 @@ import {
   convertWidget,
   currencyChoiceOf,
   currencyPatch,
+  denominatorPatch,
+  denominatorView,
+  type CompareWidget,
   dimensionLabel,
   dimensionPatch,
   filterDimensions,
@@ -187,7 +190,9 @@ export function WidgetPanel(props: WidgetPanelProps) {
         ) : null}
       </div>
 
-      {isDataWidgetType(widget.type) ? (
+      {widget.type === "compare" ? (
+        <CompareFields {...props} widget={widget} metric={metric} />
+      ) : isDataWidgetType(widget.type) ? (
         <DataFields {...props} widget={widget as DataWidget} metric={metric} />
       ) : null}
       <StyleFields {...props} />
@@ -308,6 +313,45 @@ function TypeField({ widget, metrics, images, dispatch }: WidgetPanelProps) {
 // Data binding
 
 /**
+ * A compare widget's two binding blocks (ADR 0019 section 10): the
+ * numerator with the shared period and display currency, then the
+ * denominator, edited through `denominatorView` so the same fields serve
+ * both sides.
+ */
+function CompareFields(
+  props: WidgetPanelProps & { widget: CompareWidget; metric?: WorkspaceMetric },
+) {
+  const { widget, metrics, dispatch } = props;
+  const denominator = denominatorView(widget);
+  const denominatorDispatch = useCallback(
+    (action: StudioAction) => {
+      if (action.type === "updateWidget") {
+        dispatch({
+          type: "updateWidget",
+          widgetId: action.widgetId,
+          patch: denominatorPatch(widget, action.patch),
+        });
+      } else {
+        dispatch(action);
+      }
+    },
+    [dispatch, widget],
+  );
+  return (
+    <>
+      <DataFields {...props} widget={widget} side="numerator" />
+      <DataFields
+        {...props}
+        widget={denominator}
+        metric={findMetric(metrics, denominator)}
+        side="denominator"
+        dispatch={denominatorDispatch}
+      />
+    </>
+  );
+}
+
+/**
  * The metric binding of a data widget. Exported for the goal form
  * (ADR 0019 §4), which binds a goal with the same picker: with `goal`, only
  * metrics, periods and aggregations a goal can have are offered, and an
@@ -321,6 +365,7 @@ export function DataFields({
   currency,
   dispatch,
   goal = false,
+  side,
 }: Pick<
   WidgetPanelProps,
   "metrics" | "workspaceId" | "currency" | "dispatch"
@@ -328,9 +373,13 @@ export function DataFields({
   widget: DataWidget;
   metric?: WorkspaceMetric | undefined;
   goal?: boolean;
+  /** A compare widget's side; its fields get ids of their own. */
+  side?: "numerator" | "denominator" | undefined;
 }) {
   const locale = useLocale();
   const t = useT("studio.widgetPanel");
+  const id = (name: string) =>
+    side === "denominator" ? `widget-denominator-${name}` : `widget-${name}`;
   const update = (patch: WidgetPatch) =>
     dispatch({ type: "updateWidget", widgetId: widget.id, patch });
   const updateOptions = (patch: object) =>
@@ -404,13 +453,13 @@ export function DataFields({
   return (
     <>
       <fieldset>
-        <legend>{t("data")}</legend>
+        <legend>{side ? t(side) : t("data")}</legend>
         <div className="field">
-          <label htmlFor="widget-connection">{t("connection")}</label>
+          <label htmlFor={id("connection")}>{t("connection")}</label>
           <span className="field-swatch-row">
             <span className="field-swatch" aria-hidden="true" />
             <select
-              id="widget-connection"
+              id={id("connection")}
               value={widget.connectionId}
               onChange={(event) =>
                 bind(
@@ -435,9 +484,9 @@ export function DataFields({
           </span>
         </div>
         <div className="field">
-          <label htmlFor="widget-metric">{t("metric")}</label>
+          <label htmlFor={id("metric")}>{t("metric")}</label>
           <select
-            id="widget-metric"
+            id={id("metric")}
             value={`${widget.connectionId}|${widget.metricKey}`}
             onChange={(event) =>
               bind(
@@ -472,26 +521,36 @@ export function DataFields({
           ) : null}
         </div>
         <div className="field-pair">
+          {side === "denominator" ? null : (
+            <div className="field">
+              <label htmlFor="widget-period">{t("period")}</label>
+              <select
+                id="widget-period"
+                value={widget.period}
+                aria-describedby={
+                  side === "numerator" ? "widget-period-shared" : undefined
+                }
+                onChange={(event) =>
+                  update({ period: event.target.value as MetricPeriod })
+                }
+              >
+                {(goal ? GOAL_PERIODS : PERIODS).map((option) => (
+                  <option key={option} value={option}>
+                    {periodLabel(option, locale)}
+                  </option>
+                ))}
+              </select>
+              {side === "numerator" ? (
+                <p id="widget-period-shared" className="help">
+                  {t("sharedPeriod")}
+                </p>
+              ) : null}
+            </div>
+          )}
           <div className="field">
-            <label htmlFor="widget-period">{t("period")}</label>
+            <label htmlFor={id("aggregation")}>{t("show")}</label>
             <select
-              id="widget-period"
-              value={widget.period}
-              onChange={(event) =>
-                update({ period: event.target.value as MetricPeriod })
-              }
-            >
-              {(goal ? GOAL_PERIODS : PERIODS).map((option) => (
-                <option key={option} value={option}>
-                  {periodLabel(option, locale)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="widget-aggregation">{t("show")}</label>
-            <select
-              id="widget-aggregation"
+              id={id("aggregation")}
               value={widget.aggregation}
               onChange={(event) =>
                 update({
@@ -514,9 +573,9 @@ export function DataFields({
           resources.error ||
           resourceId) ? (
           <div className="field">
-            <label htmlFor="widget-resource">{resourceFieldLabel(noun)}</label>
+            <label htmlFor={id("resource")}>{resourceFieldLabel(noun)}</label>
             <select
-              id="widget-resource"
+              id={id("resource")}
               value={resourceId ?? ""}
               disabled={!resources.resources}
               onChange={(event) => {
@@ -562,9 +621,9 @@ export function DataFields({
         ) : null}
         {perCurrency ? (
           <div className="field">
-            <label htmlFor="widget-currency">{t("currency")}</label>
+            <label htmlFor={id("currency")}>{t("currency")}</label>
             <select
-              id="widget-currency"
+              id={id("currency")}
               value={choiceValue(choice)}
               onChange={(event) => {
                 const [kind, code] = event.target.value.split(":");
@@ -636,7 +695,8 @@ export function DataFields({
         ) : null}
         {metric ? (
           <FilterFields
-            key={widget.id}
+            key={`${widget.id}:${side ?? ""}`}
+            idPrefix={id("filter")}
             workspaceId={workspaceId}
             widget={widget}
             metric={metric}
@@ -705,11 +765,14 @@ export function DataFields({
  * show at once while nothing is filtered.
  */
 function FilterFields({
+  idPrefix,
   workspaceId,
   widget,
   metric,
   onChange,
 }: {
+  /** Ids of this binding's pickers ("widget-filter"). */
+  idPrefix: string;
   workspaceId: string;
   widget: DataWidget;
   metric: WorkspaceMetric;
@@ -723,7 +786,7 @@ function FilterFields({
     (dimension) => (widget.dimensions[dimension] ?? null) !== null,
   );
   const [open, setOpen] = useState(active.length === 0);
-  const pickersId = `widget-filters-${widget.id}`;
+  const pickersId = `${idPrefix}s-${widget.id}`;
   if (dimensions.length === 0) {
     return null;
   }
@@ -766,6 +829,7 @@ function FilterFields({
           {dimensions.map((dimension) => (
             <DimensionFilter
               key={dimension}
+              id={`${idPrefix}-${dimension}`}
               workspaceId={workspaceId}
               widget={widget}
               dimension={dimension}
@@ -780,12 +844,14 @@ function FilterFields({
 }
 
 function DimensionFilter({
+  id,
   workspaceId,
   widget,
   dimension,
   label,
   onChange,
 }: {
+  id: string;
   workspaceId: string;
   widget: DataWidget;
   dimension: string;
@@ -796,7 +862,6 @@ function DimensionFilter({
   const t = useT("studio.widgetPanel");
   const current = widget.dimensions[dimension] ?? null;
   const { values, error } = useDimensionValues(workspaceId, widget, dimension);
-  const id = `widget-filter-${dimension}`;
   return (
     <div className="field">
       <label htmlFor={id}>{label}</label>
@@ -1025,6 +1090,59 @@ function StyleFields({
       );
     case "bar":
       return null;
+    case "compare":
+      return (
+        <fieldset>
+          <legend>{t("compare")}</legend>
+          <div className="field">
+            <label htmlFor="widget-compare-format">{t("format")}</label>
+            <select
+              id="widget-compare-format"
+              value={widget.options.format}
+              aria-describedby="widget-compare-format-help"
+              onChange={(event) =>
+                options({
+                  format: event.target.value === "ratio" ? "ratio" : "percent",
+                })
+              }
+            >
+              <option value="percent">{t("formatPercent")}</option>
+              <option value="ratio">{t("formatRatio")}</option>
+            </select>
+            <p id="widget-compare-format-help" className="help">
+              {t("formatHelp")}
+            </p>
+          </div>
+          <div className="field">
+            <label htmlFor="widget-ratio-label">{t("ratioLabel")}</label>
+            <input
+              id="widget-ratio-label"
+              type="text"
+              maxLength={30}
+              value={widget.options.ratioLabel ?? ""}
+              placeholder={t("ratioLabelPlaceholder")}
+              aria-describedby="widget-ratio-label-help"
+              onChange={(event) =>
+                options({
+                  ratioLabel:
+                    event.target.value.trim() === ""
+                      ? null
+                      : event.target.value,
+                })
+              }
+            />
+            <p id="widget-ratio-label-help" className="help">
+              {t("ratioLabelHelp")}
+            </p>
+          </div>
+          <Check
+            checked={widget.options.showChange}
+            onChange={(showChange) => options({ showChange })}
+          >
+            {t("compareChange")}
+          </Check>
+        </fieldset>
+      );
     case "status":
       return (
         <StatusFields

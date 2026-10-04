@@ -1,6 +1,8 @@
 import type { WorkspaceMetric } from "@netrics/contracts";
 import {
   RESOURCE_DIMENSION,
+  amountCurrency,
+  isPerCurrencyUnit,
   type Locale,
   type WidgetType,
 } from "@netrics/domain";
@@ -117,6 +119,49 @@ export function newWidget(
               },
             },
           };
+    }
+    case "compare": {
+      // Two metrics without currency, so the default percent format fits
+      // (ADR 0019 section 10): the first as numerator, another one (if
+      // there is one) as denominator.
+      const plain = startingMetrics(input.metrics).filter(
+        (metric) =>
+          amountCurrency(metric.unit) === null &&
+          !isPerCurrencyUnit(metric.unit),
+      );
+      const numerator = plain[0];
+      if (!numerator) {
+        return { reason: t("noMetrics") };
+      }
+      const denominator =
+        plain.find(
+          (metric) =>
+            metric.key !== numerator.key ||
+            metric.connectionId !== numerator.connectionId,
+        ) ?? numerator;
+      return {
+        widget: {
+          type,
+          title: null,
+          connectionId: numerator.connectionId,
+          metricKey: numerator.key,
+          aggregation: numerator.aggregations[0]!,
+          period: "last_7_days",
+          dimensions: {},
+          displayCurrency: null,
+          resourceName: null,
+          allResourcesName: null,
+          denominator: {
+            connectionId: denominator.connectionId,
+            metricKey: denominator.key,
+            aggregation: denominator.aggregations[0]!,
+            dimensions: {},
+            resourceName: null,
+            allResourcesName: null,
+          },
+          options: { format: "percent", ratioLabel: null, showChange: true },
+        },
+      };
     }
     case "image": {
       const imageId = input.imageIds[0];

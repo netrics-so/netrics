@@ -54,6 +54,13 @@ struct WidgetView: View {
                     now: context.date)
             }
             .surface(env, state: SurfaceState(data.status))
+        case .compare(let options, let data):
+            TimelineView(.everyMinute) { context in
+                CompareWidgetView(
+                    label: widget.label ?? "", placement: placement, options: options, data: data, env: env,
+                    now: context.date)
+            }
+            .surface(env, state: SurfaceState(data.status))
         case .image(_, let options):
             ImageWidgetView(stored: image, options: options, label: widget.label, env: env)
         case .text(let text, let options):
@@ -995,6 +1002,170 @@ struct RowRise: ViewModifier, Animatable {
         content
             .offset(y: rise * CGFloat(1 - p))
             .opacity(p)
+    }
+}
+
+// MARK: Compare
+
+/**
+ * The compare widget (ADR 0019 section 10, design 4b): the label, the
+ * period line, the two operands side by side with "/" between them and
+ * their captions, the ratio in the chart colour with its label and change,
+ * and the footer "derived · updated …". The layout is StudioLayout's
+ * compareLayout (shared vectors with the web); operands and ratio count up
+ * on slide enter. A zero or missing denominator shows "–".
+ */
+struct CompareWidgetView: View {
+    let label: String
+    let placement: ScreenPlacement
+    let options: CompareWidgetOptions
+    let data: CompareWidgetData
+    let env: WidgetEnv
+    var now = Date()
+
+    var body: some View {
+        let language = env.language
+        let box = StudioRender.contentBox(placement.cells, showHeader: env.showHeader, unitBox: placement.unitBox)
+        let sizes = StudioLayout.typeScale(
+            .compare, placement: placement.cells, fontScale: env.fontScale, showHeader: env.showHeader)
+        let labelLayout = StudioRender.labelLayout(label, width: box.width, sizes: sizes)
+        let numerator = CompareText.operand(data.numerator, language: language)
+        let denominator = CompareText.operand(data.denominator, language: language)
+        let ratioText = CompareText.ratio(
+            data.ratio.value, format: data.ratio.format, unit: data.unit, language: language)
+        let ratioLabel = CompareText.ratioLabel(options, language: language)
+        let change =
+            options.showChange
+            ? StudioLayout.compareChange(
+                value: data.ratio.value, previousValue: data.ratio.previousValue, format: data.ratio.format)
+            : nil
+        let changeText = change.map { CompareText.change($0, language: language) }
+        let layout = StudioLayout.compareLayout(
+            label: label, width: box.width, height: box.height, fontScale: env.fontScale, numerator: numerator,
+            denominator: denominator, ratio: ratioText, ratioLabel: ratioLabel, change: changeText)
+        let notice = dataNotice(
+            status: data.status, updatedAt: data.updatedAt,
+            unit: data.numerator.unit == nil || data.denominator.unit == nil ? nil : "count", language: language)
+        let footer =
+            notice != nil || !layout.showFooter
+            ? nil
+            : WidgetFooter.line(
+                CompareText.footerCandidates(updatedAt: data.updatedAt, now: now, language: language),
+                type: .compare, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
+                unitBox: placement.unitBox)
+        let small = layout.sizes.small
+        let stale = data.status == .stale
+        let tone = change.map {
+            MetricFormat.tone(MetricFormat.Direction(rawValue: $0.direction.rawValue) ?? .flat, better: data.better)
+        }
+
+        if let surface = DataSurface(data.status) {
+            DataStateView(
+                surface: surface, type: .compare, label: labelLayout, small: small, updatedAt: data.updatedAt,
+                placement: placement, env: env, now: now)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                WidgetLabelView(layout: labelLayout, env: env)
+                if layout.showPeriod {
+                    Text(MetricFormat.periodLabel(data.period, language: language))
+                        .font(env.font(small))
+                        .foregroundStyle(env.colors.muted)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                HStack(alignment: .top, spacing: env.pt(StudioLayout.CompareSpacing.operandGap)) {
+                    operandView(data.numerator, text: numerator, layout: layout, stale: stale)
+                    Text(verbatim: StudioLayout.compareSeparator)
+                        .font(env.font(layout.sizes.operand))
+                        .foregroundStyle(env.colors.muted)
+                        .lineLimit(1)
+                        .fixedSize()
+                    operandView(data.denominator, text: denominator, layout: layout, stale: stale)
+                }
+                .padding(.top, env.pt(StudioLayout.CompareSpacing.stack))
+                ratioRow(
+                    text: ratioText, label: ratioLabel, change: changeText, tone: tone, layout: layout, stale: stale
+                )
+                .padding(.top, env.pt(StudioLayout.CompareSpacing.stack))
+                if let notice {
+                    NoticeLine(text: notice, size: small, env: env, stale: stale)
+                        .padding(.top, env.pt(StudioLayout.CompareSpacing.stack))
+                } else if let footer {
+                    FooterLine(text: footer, size: small, env: env)
+                        .padding(.top, env.pt(StudioLayout.CompareSpacing.stack))
+                }
+            }
+        }
+    }
+
+    /** One operand: the number (counting up) over its caption. */
+    private func operandView(
+        _ operand: CompareOperand, text: StudioLayout.TableValueText, layout: StudioLayout.CompareLayout, stale: Bool
+    ) -> some View {
+        let shown = layout.compact ? text.compact : text.full
+        return VStack(alignment: .leading, spacing: 0) {
+            CountingValue(
+                final: shown, target: operand.value,
+                format: countFormat(
+                    shown: shown, full: text.full, compact: text.compact, value: operand.value, unit: operand.unit,
+                    approximate: false, language: env.language)
+            )
+            .font(env.font(layout.sizes.operand, .semibold).monospacedDigit())
+            .foregroundStyle(operand.value == nil || stale ? env.colors.muted : env.colors.text)
+            .lineLimit(1)
+            .fixedSize()
+            Text(operand.label)
+                .font(env.font(layout.sizes.caption))
+                .foregroundStyle(env.colors.muted)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: env.pt(layout.captionWidth), alignment: .leading)
+        }
+    }
+
+    /** The ratio in the chart colour, with its label and change beside or below it. */
+    @ViewBuilder
+    private func ratioRow(
+        text: String, label: String, change: String?, tone: MetricFormat.Direction?,
+        layout: StudioLayout.CompareLayout, stale: Bool
+    ) -> some View {
+        let ratio = CountingValue(
+            final: text, target: data.ratio.value,
+            format: data.ratio.value == nil
+                ? nil
+                : { [format = data.ratio.format, unit = data.unit, language = env.language] in
+                    CompareText.ratio($0, format: format, unit: unit, language: language)
+                }
+        )
+        .font(env.font(layout.sizes.ratio, .semibold).monospacedDigit())
+        .tracking(-0.01 * env.pt(layout.sizes.ratio))
+        .foregroundStyle(data.ratio.value == nil || stale ? env.colors.muted : env.colors.chartLine)
+        .lineLimit(1)
+        .fixedSize()
+        let caption = HStack(alignment: .firstTextBaseline, spacing: env.pt(StudioLayout.CompareSpacing.ratioGap)) {
+            Text(label)
+                .foregroundStyle(env.colors.muted)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if let change {
+                Text(change)
+                    .foregroundStyle(stale || tone == nil ? env.colors.muted : env.colors.tone(tone!))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .font(env.font(layout.sizes.change))
+        if layout.ratioLine == .beside {
+            HStack(alignment: .firstTextBaseline, spacing: env.pt(StudioLayout.CompareSpacing.ratioGap)) {
+                ratio
+                caption
+            }
+        } else {
+            VStack(alignment: .leading, spacing: env.pt(StudioLayout.CompareSpacing.stack)) {
+                ratio
+                caption
+            }
+        }
     }
 }
 

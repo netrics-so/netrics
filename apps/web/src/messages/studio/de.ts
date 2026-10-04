@@ -76,7 +76,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       add: "Widget hinzufügen",
       hint: "Klick, um es am ersten freien Platz einzufügen, oder zieh es auf die Folie",
       addType:
-        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} image {Bild} text {Text} clock {Uhr} status {Status} other {Widget}} hinzufügen",
+        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} other {Widget}} hinzufügen",
     },
     assignTvs: {
       title: "„{name}“ auf TVs zeigen",
@@ -238,6 +238,19 @@ export const studioDe: Catalog<typeof studioEn> = {
       rowsHelp:
         "Die größten Gruppen. Ein Bildschirm zeigt die Zeilen, die passen, und sagt, wie viele.",
       showOthers: "Zeile „Andere“ mit dem Rest zusammengefasst",
+      numerator: "Zähler",
+      denominator: "Nenner",
+      sharedPeriod: "Beide Seiten nutzen den Zeitraum des Zählers.",
+      compare: "Verhältnis",
+      format: "Format",
+      formatPercent: "Prozent (32,7 %)",
+      formatRatio: "Zahl oder Betrag (4,62; 0,42 €)",
+      formatHelp:
+        "Prozent braucht zwei Seiten ohne Währung; ein Betrag geteilt durch eine Anzahl ist ein Betrag pro Stück.",
+      ratioLabel: "Bezeichnung",
+      ratioLabelPlaceholder: "Verhältnis",
+      ratioLabelHelp: "Neben dem Verhältnis, z. B. „Conversion“.",
+      compareChange: "Veränderung zum vorherigen Zeitraum",
       all: "Alle",
       filter: "Filter",
       filterChip: "{name} = {value}",
@@ -475,9 +488,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} image {Bild} text {Text} clock {Uhr} status {Status} other {Widget}}",
+        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} image {Bild} text {Text} clock {Uhr} status {Status} other {Widget}})",
+        "{title} ({type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} other {Widget}})",
       copyOf: "{name} (Kopie)",
       slide: "Folie {number}",
       quoted: "„{name}“",
@@ -489,9 +502,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         widgetPlaced:
           "{name} in Spalte {column}, Zeile {row} {verb, select, duplicated {dupliziert} pasted {eingefügt} other {hinzugefügt}}.",
         typeNoRoom:
-          "{type, select, metric {Eine Metrik} line {Ein Liniendiagramm} bar {Ein Balkendiagramm} table {Eine Tabelle} image {Ein Bild} text {Ein Text} clock {Eine Uhr} status {Eine Statusübersicht} other {Ein Widget}} braucht mindestens {w} × {h} Zellen; hier ist kein Platz dafür.",
+          "{type, select, metric {Eine Metrik} line {Ein Liniendiagramm} bar {Ein Balkendiagramm} table {Eine Tabelle} compare {Ein Vergleich} image {Ein Bild} text {Ein Text} clock {Eine Uhr} status {Eine Statusübersicht} other {Ein Widget}} braucht mindestens {w} × {h} Zellen; hier ist kein Platz dafür.",
         typeChanged:
-          "{name} ist jetzt {type, select, metric {eine Metrik} line {ein Liniendiagramm} bar {ein Balkendiagramm} table {eine Tabelle} image {ein Bild} text {ein Text} clock {eine Uhr} status {eine Statusübersicht} other {ein Widget}}.",
+          "{name} ist jetzt {type, select, metric {eine Metrik} line {ein Liniendiagramm} bar {ein Balkendiagramm} table {eine Tabelle} compare {ein Vergleich} image {ein Bild} text {ein Text} clock {eine Uhr} status {eine Statusübersicht} other {ein Widget}}.",
         undone: "Rückgängig gemacht.",
         redone: "Wiederholt.",
         discarded: "Änderungen verworfen.",

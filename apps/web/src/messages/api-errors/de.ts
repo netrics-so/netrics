@@ -112,6 +112,8 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Wähl eine Währung für diesen Betrag: Beträge in verschiedenen Währungen werden nicht addiert.",
     metric_not_per_currency:
       "Diese Metrik ist kein Betrag in mehreren Währungen.",
+    compare_units_incompatible:
+      "Aus diesen beiden Metriken lässt sich dieses Verhältnis nicht bilden: Eine Währung wird nur durch dieselbe Währung geteilt, und Prozent braucht zwei Seiten ohne Währung.",
     currency_choice_conflict:
       "Eine Kachel zeigt entweder genau eine Währung oder rechnet in eine Anzeigewährung um, nicht beides.",
     currency_not_covered:

@@ -5983,7 +5983,8 @@
                                         "text",
                                         "clock",
                                         "table",
-                                        "status"
+                                        "status",
+                                        "compare"
                                       ]
                                     },
                                     "x": {
@@ -6836,6 +6837,194 @@
                                   "metricKey",
                                   "period",
                                   "options"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "compare"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "x": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 16
+                                  },
+                                  "y": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 14
+                                  },
+                                  "w": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 16
+                                  },
+                                  "h": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 14
+                                  },
+                                  "title": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "connectionId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "metricKey": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "aggregation": {
+                                    "type": "string",
+                                    "enum": [
+                                      "sum",
+                                      "avg",
+                                      "min",
+                                      "max",
+                                      "last"
+                                    ]
+                                  },
+                                  "period": {
+                                    "type": "string",
+                                    "enum": [
+                                      "today",
+                                      "this_week",
+                                      "last_7_days",
+                                      "this_month",
+                                      "last_30_days",
+                                      "this_quarter",
+                                      "last_90_days",
+                                      "this_year",
+                                      "last_12_months"
+                                    ]
+                                  },
+                                  "dimensions": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "maxLength": 200
+                                    }
+                                  },
+                                  "displayCurrency": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "denominator": {
+                                    "type": "object",
+                                    "properties": {
+                                      "connectionId": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      "metricKey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 200
+                                      },
+                                      "aggregation": {
+                                        "type": "string",
+                                        "enum": [
+                                          "sum",
+                                          "avg",
+                                          "min",
+                                          "max",
+                                          "last"
+                                        ]
+                                      },
+                                      "dimensions": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 100
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string",
+                                          "maxLength": 200
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "connectionId",
+                                      "metricKey"
+                                    ]
+                                  },
+                                  "options": {
+                                    "default": {},
+                                    "type": "object",
+                                    "properties": {
+                                      "format": {
+                                        "default": "percent",
+                                        "type": "string",
+                                        "enum": [
+                                          "percent",
+                                          "ratio"
+                                        ]
+                                      },
+                                      "ratioLabel": {
+                                        "default": null,
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 30
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "showChange": {
+                                        "default": true,
+                                        "type": "boolean"
+                                      }
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "x",
+                                  "y",
+                                  "w",
+                                  "h",
+                                  "connectionId",
+                                  "metricKey",
+                                  "period",
+                                  "denominator"
                                 ]
                               },
                               {
@@ -8146,6 +8335,218 @@
                                         "displayCurrency",
                                         "resourceName",
                                         "allResourcesName",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "compare"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "connectionId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "metricKey": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "aggregation": {
+                                          "type": "string",
+                                          "enum": [
+                                            "sum",
+                                            "avg",
+                                            "min",
+                                            "max",
+                                            "last"
+                                          ]
+                                        },
+                                        "period": {
+                                          "type": "string",
+                                          "enum": [
+                                            "today",
+                                            "this_week",
+                                            "last_7_days",
+                                            "this_month",
+                                            "last_30_days",
+                                            "this_quarter",
+                                            "last_90_days",
+                                            "this_year",
+                                            "last_12_months"
+                                          ]
+                                        },
+                                        "dimensions": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "displayCurrency": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "resourceName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "allResourcesName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "denominator": {
+                                          "type": "object",
+                                          "properties": {
+                                            "connectionId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "metricKey": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "aggregation": {
+                                              "type": "string",
+                                              "enum": [
+                                                "sum",
+                                                "avg",
+                                                "min",
+                                                "max",
+                                                "last"
+                                              ]
+                                            },
+                                            "dimensions": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "resourceName": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "allResourcesName": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "connectionId",
+                                            "metricKey",
+                                            "aggregation",
+                                            "dimensions",
+                                            "resourceName",
+                                            "allResourcesName"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "format": {
+                                              "default": "percent",
+                                              "type": "string",
+                                              "enum": [
+                                                "percent",
+                                                "ratio"
+                                              ]
+                                            },
+                                            "ratioLabel": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 30
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "showChange": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "format",
+                                            "ratioLabel",
+                                            "showChange"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "connectionId",
+                                        "metricKey",
+                                        "aggregation",
+                                        "period",
+                                        "dimensions",
+                                        "displayCurrency",
+                                        "resourceName",
+                                        "allResourcesName",
+                                        "denominator",
                                         "options"
                                       ],
                                       "additionalProperties": false
@@ -9717,6 +10118,218 @@
                                         "type": {
                                           "type": "string",
                                           "enum": [
+                                            "compare"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "connectionId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "metricKey": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "aggregation": {
+                                          "type": "string",
+                                          "enum": [
+                                            "sum",
+                                            "avg",
+                                            "min",
+                                            "max",
+                                            "last"
+                                          ]
+                                        },
+                                        "period": {
+                                          "type": "string",
+                                          "enum": [
+                                            "today",
+                                            "this_week",
+                                            "last_7_days",
+                                            "this_month",
+                                            "last_30_days",
+                                            "this_quarter",
+                                            "last_90_days",
+                                            "this_year",
+                                            "last_12_months"
+                                          ]
+                                        },
+                                        "dimensions": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "displayCurrency": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "resourceName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "allResourcesName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "denominator": {
+                                          "type": "object",
+                                          "properties": {
+                                            "connectionId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "metricKey": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "aggregation": {
+                                              "type": "string",
+                                              "enum": [
+                                                "sum",
+                                                "avg",
+                                                "min",
+                                                "max",
+                                                "last"
+                                              ]
+                                            },
+                                            "dimensions": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "resourceName": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "allResourcesName": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "connectionId",
+                                            "metricKey",
+                                            "aggregation",
+                                            "dimensions",
+                                            "resourceName",
+                                            "allResourcesName"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "format": {
+                                              "default": "percent",
+                                              "type": "string",
+                                              "enum": [
+                                                "percent",
+                                                "ratio"
+                                              ]
+                                            },
+                                            "ratioLabel": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 30
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "showChange": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "format",
+                                            "ratioLabel",
+                                            "showChange"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "connectionId",
+                                        "metricKey",
+                                        "aggregation",
+                                        "period",
+                                        "dimensions",
+                                        "displayCurrency",
+                                        "resourceName",
+                                        "allResourcesName",
+                                        "denominator",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
                                             "image"
                                           ]
                                         },
@@ -11184,6 +11797,194 @@
                                   "type": {
                                     "type": "string",
                                     "enum": [
+                                      "compare"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "x": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 16
+                                  },
+                                  "y": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 14
+                                  },
+                                  "w": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 16
+                                  },
+                                  "h": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 14
+                                  },
+                                  "title": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "connectionId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "metricKey": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "aggregation": {
+                                    "type": "string",
+                                    "enum": [
+                                      "sum",
+                                      "avg",
+                                      "min",
+                                      "max",
+                                      "last"
+                                    ]
+                                  },
+                                  "period": {
+                                    "type": "string",
+                                    "enum": [
+                                      "today",
+                                      "this_week",
+                                      "last_7_days",
+                                      "this_month",
+                                      "last_30_days",
+                                      "this_quarter",
+                                      "last_90_days",
+                                      "this_year",
+                                      "last_12_months"
+                                    ]
+                                  },
+                                  "dimensions": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "maxLength": 200
+                                    }
+                                  },
+                                  "displayCurrency": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "denominator": {
+                                    "type": "object",
+                                    "properties": {
+                                      "connectionId": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      "metricKey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 200
+                                      },
+                                      "aggregation": {
+                                        "type": "string",
+                                        "enum": [
+                                          "sum",
+                                          "avg",
+                                          "min",
+                                          "max",
+                                          "last"
+                                        ]
+                                      },
+                                      "dimensions": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 100
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string",
+                                          "maxLength": 200
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "connectionId",
+                                      "metricKey"
+                                    ]
+                                  },
+                                  "options": {
+                                    "default": {},
+                                    "type": "object",
+                                    "properties": {
+                                      "format": {
+                                        "default": "percent",
+                                        "type": "string",
+                                        "enum": [
+                                          "percent",
+                                          "ratio"
+                                        ]
+                                      },
+                                      "ratioLabel": {
+                                        "default": null,
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 30
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "showChange": {
+                                        "default": true,
+                                        "type": "boolean"
+                                      }
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "x",
+                                  "y",
+                                  "w",
+                                  "h",
+                                  "connectionId",
+                                  "metricKey",
+                                  "period",
+                                  "denominator"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
                                       "image"
                                     ]
                                   },
@@ -12496,6 +13297,218 @@
                                         "displayCurrency",
                                         "resourceName",
                                         "allResourcesName",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "compare"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "connectionId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "metricKey": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "aggregation": {
+                                          "type": "string",
+                                          "enum": [
+                                            "sum",
+                                            "avg",
+                                            "min",
+                                            "max",
+                                            "last"
+                                          ]
+                                        },
+                                        "period": {
+                                          "type": "string",
+                                          "enum": [
+                                            "today",
+                                            "this_week",
+                                            "last_7_days",
+                                            "this_month",
+                                            "last_30_days",
+                                            "this_quarter",
+                                            "last_90_days",
+                                            "this_year",
+                                            "last_12_months"
+                                          ]
+                                        },
+                                        "dimensions": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "displayCurrency": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "resourceName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "allResourcesName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "denominator": {
+                                          "type": "object",
+                                          "properties": {
+                                            "connectionId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "metricKey": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "aggregation": {
+                                              "type": "string",
+                                              "enum": [
+                                                "sum",
+                                                "avg",
+                                                "min",
+                                                "max",
+                                                "last"
+                                              ]
+                                            },
+                                            "dimensions": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "resourceName": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "allResourcesName": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "connectionId",
+                                            "metricKey",
+                                            "aggregation",
+                                            "dimensions",
+                                            "resourceName",
+                                            "allResourcesName"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "format": {
+                                              "default": "percent",
+                                              "type": "string",
+                                              "enum": [
+                                                "percent",
+                                                "ratio"
+                                              ]
+                                            },
+                                            "ratioLabel": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 30
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "showChange": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "format",
+                                            "ratioLabel",
+                                            "showChange"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "connectionId",
+                                        "metricKey",
+                                        "aggregation",
+                                        "period",
+                                        "dimensions",
+                                        "displayCurrency",
+                                        "resourceName",
+                                        "allResourcesName",
+                                        "denominator",
                                         "options"
                                       ],
                                       "additionalProperties": false
@@ -14192,6 +15205,218 @@
                                         "displayCurrency",
                                         "resourceName",
                                         "allResourcesName",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "compare"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "connectionId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "metricKey": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "aggregation": {
+                                          "type": "string",
+                                          "enum": [
+                                            "sum",
+                                            "avg",
+                                            "min",
+                                            "max",
+                                            "last"
+                                          ]
+                                        },
+                                        "period": {
+                                          "type": "string",
+                                          "enum": [
+                                            "today",
+                                            "this_week",
+                                            "last_7_days",
+                                            "this_month",
+                                            "last_30_days",
+                                            "this_quarter",
+                                            "last_90_days",
+                                            "this_year",
+                                            "last_12_months"
+                                          ]
+                                        },
+                                        "dimensions": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "displayCurrency": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "resourceName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "allResourcesName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "denominator": {
+                                          "type": "object",
+                                          "properties": {
+                                            "connectionId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "metricKey": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "aggregation": {
+                                              "type": "string",
+                                              "enum": [
+                                                "sum",
+                                                "avg",
+                                                "min",
+                                                "max",
+                                                "last"
+                                              ]
+                                            },
+                                            "dimensions": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "resourceName": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "allResourcesName": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "connectionId",
+                                            "metricKey",
+                                            "aggregation",
+                                            "dimensions",
+                                            "resourceName",
+                                            "allResourcesName"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "format": {
+                                              "default": "percent",
+                                              "type": "string",
+                                              "enum": [
+                                                "percent",
+                                                "ratio"
+                                              ]
+                                            },
+                                            "ratioLabel": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 30
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "showChange": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "format",
+                                            "ratioLabel",
+                                            "showChange"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "connectionId",
+                                        "metricKey",
+                                        "aggregation",
+                                        "period",
+                                        "dimensions",
+                                        "displayCurrency",
+                                        "resourceName",
+                                        "allResourcesName",
+                                        "denominator",
                                         "options"
                                       ],
                                       "additionalProperties": false
@@ -21529,6 +22754,339 @@
                                         "type": {
                                           "type": "string",
                                           "enum": [
+                                            "compare"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 12
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 8
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 12
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 8
+                                        },
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "format": {
+                                              "default": "percent",
+                                              "type": "string",
+                                              "enum": [
+                                                "percent",
+                                                "ratio"
+                                              ]
+                                            },
+                                            "ratioLabel": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 30
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "showChange": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "format",
+                                            "ratioLabel",
+                                            "showChange"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "data": {
+                                          "type": "object",
+                                          "properties": {
+                                            "period": {
+                                              "type": "string",
+                                              "enum": [
+                                                "today",
+                                                "this_week",
+                                                "last_7_days",
+                                                "this_month",
+                                                "last_30_days",
+                                                "this_quarter",
+                                                "last_90_days",
+                                                "this_year",
+                                                "last_12_months"
+                                              ]
+                                            },
+                                            "aggregation": {
+                                              "type": "string",
+                                              "enum": [
+                                                "sum",
+                                                "avg",
+                                                "min",
+                                                "max",
+                                                "last"
+                                              ]
+                                            },
+                                            "unit": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "conversion": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "displayCurrency": {
+                                                      "type": "string",
+                                                      "minLength": 3,
+                                                      "maxLength": 3
+                                                    },
+                                                    "source": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "unconverted": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "currency": {
+                                                            "type": "string",
+                                                            "minLength": 3,
+                                                            "maxLength": 3
+                                                          },
+                                                          "value": {
+                                                            "type": [
+                                                              "number",
+                                                              "null"
+                                                            ]
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "currency",
+                                                          "value"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "displayCurrency",
+                                                    "source",
+                                                    "unconverted"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "kind": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "gauge",
+                                                    "delta",
+                                                    "counter"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "granularity": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "day",
+                                                    "hour",
+                                                    "instant"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "better": {
+                                              "type": "string",
+                                              "enum": [
+                                                "higher",
+                                                "lower"
+                                              ]
+                                            },
+                                            "status": {
+                                              "type": "string",
+                                              "enum": [
+                                                "ok",
+                                                "stale",
+                                                "auth_failed",
+                                                "outage",
+                                                "no_data",
+                                                "backfilling"
+                                              ]
+                                            },
+                                            "updatedAt": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "numerator": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "value": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "unit": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label",
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "denominator": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "value": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "unit": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label",
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "ratio": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "previousValue": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "format": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "percent",
+                                                    "ratio"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "previousValue",
+                                                "format"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "period",
+                                            "aggregation",
+                                            "unit",
+                                            "conversion",
+                                            "kind",
+                                            "granularity",
+                                            "better",
+                                            "status",
+                                            "updatedAt",
+                                            "numerator",
+                                            "denominator",
+                                            "ratio"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "label",
+                                        "options",
+                                        "data"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
                                             "image"
                                           ]
                                         },
@@ -23775,6 +25333,360 @@
                                             "columns",
                                             "rows",
                                             "others"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "min",
+                                        "label",
+                                        "options",
+                                        "data"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "compare"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "min": {
+                                          "type": "object",
+                                          "properties": {
+                                            "w": {
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "h": {
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 9007199254740991
+                                            }
+                                          },
+                                          "required": [
+                                            "w",
+                                            "h"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "format": {
+                                              "default": "percent",
+                                              "type": "string",
+                                              "enum": [
+                                                "percent",
+                                                "ratio"
+                                              ]
+                                            },
+                                            "ratioLabel": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 30
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "showChange": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "format",
+                                            "ratioLabel",
+                                            "showChange"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "data": {
+                                          "type": "object",
+                                          "properties": {
+                                            "period": {
+                                              "type": "string",
+                                              "enum": [
+                                                "today",
+                                                "this_week",
+                                                "last_7_days",
+                                                "this_month",
+                                                "last_30_days",
+                                                "this_quarter",
+                                                "last_90_days",
+                                                "this_year",
+                                                "last_12_months"
+                                              ]
+                                            },
+                                            "aggregation": {
+                                              "type": "string",
+                                              "enum": [
+                                                "sum",
+                                                "avg",
+                                                "min",
+                                                "max",
+                                                "last"
+                                              ]
+                                            },
+                                            "unit": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "conversion": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "displayCurrency": {
+                                                      "type": "string",
+                                                      "minLength": 3,
+                                                      "maxLength": 3
+                                                    },
+                                                    "source": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "unconverted": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "currency": {
+                                                            "type": "string",
+                                                            "minLength": 3,
+                                                            "maxLength": 3
+                                                          },
+                                                          "value": {
+                                                            "type": [
+                                                              "number",
+                                                              "null"
+                                                            ]
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "currency",
+                                                          "value"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "displayCurrency",
+                                                    "source",
+                                                    "unconverted"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "kind": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "gauge",
+                                                    "delta",
+                                                    "counter"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "granularity": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "day",
+                                                    "hour",
+                                                    "instant"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "better": {
+                                              "type": "string",
+                                              "enum": [
+                                                "higher",
+                                                "lower"
+                                              ]
+                                            },
+                                            "status": {
+                                              "type": "string",
+                                              "enum": [
+                                                "ok",
+                                                "stale",
+                                                "auth_failed",
+                                                "outage",
+                                                "no_data",
+                                                "backfilling"
+                                              ]
+                                            },
+                                            "updatedAt": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "numerator": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "value": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "unit": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label",
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "denominator": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "value": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "unit": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label",
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "ratio": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "previousValue": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "format": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "percent",
+                                                    "ratio"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "previousValue",
+                                                "format"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "period",
+                                            "aggregation",
+                                            "unit",
+                                            "conversion",
+                                            "kind",
+                                            "granularity",
+                                            "better",
+                                            "status",
+                                            "updatedAt",
+                                            "numerator",
+                                            "denominator",
+                                            "ratio"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -30951,6 +32863,218 @@
                                         "displayCurrency",
                                         "resourceName",
                                         "allResourcesName",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "compare"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "connectionId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "metricKey": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "aggregation": {
+                                          "type": "string",
+                                          "enum": [
+                                            "sum",
+                                            "avg",
+                                            "min",
+                                            "max",
+                                            "last"
+                                          ]
+                                        },
+                                        "period": {
+                                          "type": "string",
+                                          "enum": [
+                                            "today",
+                                            "this_week",
+                                            "last_7_days",
+                                            "this_month",
+                                            "last_30_days",
+                                            "this_quarter",
+                                            "last_90_days",
+                                            "this_year",
+                                            "last_12_months"
+                                          ]
+                                        },
+                                        "dimensions": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "displayCurrency": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "resourceName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "allResourcesName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "denominator": {
+                                          "type": "object",
+                                          "properties": {
+                                            "connectionId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "metricKey": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "aggregation": {
+                                              "type": "string",
+                                              "enum": [
+                                                "sum",
+                                                "avg",
+                                                "min",
+                                                "max",
+                                                "last"
+                                              ]
+                                            },
+                                            "dimensions": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "resourceName": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "allResourcesName": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "connectionId",
+                                            "metricKey",
+                                            "aggregation",
+                                            "dimensions",
+                                            "resourceName",
+                                            "allResourcesName"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "format": {
+                                              "default": "percent",
+                                              "type": "string",
+                                              "enum": [
+                                                "percent",
+                                                "ratio"
+                                              ]
+                                            },
+                                            "ratioLabel": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 30
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "showChange": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "format",
+                                            "ratioLabel",
+                                            "showChange"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "connectionId",
+                                        "metricKey",
+                                        "aggregation",
+                                        "period",
+                                        "dimensions",
+                                        "displayCurrency",
+                                        "resourceName",
+                                        "allResourcesName",
+                                        "denominator",
                                         "options"
                                       ],
                                       "additionalProperties": false

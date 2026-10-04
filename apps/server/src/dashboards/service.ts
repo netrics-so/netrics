@@ -1,5 +1,6 @@
 import {
   barWidgetOptionsSchema,
+  compareWidgetOptionsSchema,
   tableWidgetOptionsSchema,
   clockWidgetOptionsSchema,
   imageWidgetOptionsSchema,
@@ -52,7 +53,9 @@ import {
   RESOURCE_DIMENSION,
   checkAccentContrast,
   STUDIO_LIMITS,
+  compareUnitsProblem,
   compatibleAggregations,
+  dataWidgetCost,
   isCurrencyCode,
   isDataWidgetType,
   isPerCurrencyUnit,
@@ -120,6 +123,28 @@ function dimensionsOf(widget: DashboardWidgetRow): Record<string, string> {
   return widget.dimensions as Record<string, string>;
 }
 
+/**
+ * A compare widget's denominator as a binding row of its own (same id,
+ * title and period), so it is named and labelled like any binding; null
+ * for every other widget.
+ */
+function denominatorOf(widget: DashboardWidgetRow): DataWidgetRow | null {
+  if (
+    widget.denominatorConnectionId === null ||
+    widget.denominatorMetricKey === null
+  ) {
+    return null;
+  }
+  return {
+    ...widget,
+    connectionId: widget.denominatorConnectionId,
+    metricKey: widget.denominatorMetricKey,
+    aggregation: widget.denominatorAggregation,
+    dimensions: widget.denominatorDimensions,
+    displayCurrency: null,
+  };
+}
+
 /** Options as stored, with each type's defaults filled in. */
 function optionsOf(widget: DashboardWidgetRow) {
   const options = widget.options as Record<string, unknown>;
@@ -132,6 +157,8 @@ function optionsOf(widget: DashboardWidgetRow) {
       return barWidgetOptionsSchema.parse(options);
     case "table":
       return tableWidgetOptionsSchema.parse(options);
+    case "compare":
+      return compareWidgetOptionsSchema.parse(options);
     case "image":
       return imageWidgetOptionsSchema.parse(options);
     case "text":
@@ -170,10 +197,15 @@ export async function presentDashboard(
   const data = dashboard.slides.flatMap((slide) =>
     slide.widgets.filter(isDataRow),
   );
+  // A compare widget's denominator is labelled like a binding of its own.
+  const denominators = data.flatMap((widget) => {
+    const denominator = denominatorOf(widget);
+    return denominator ? [denominator] : [];
+  });
   const names = await findResourceNames(
     tx,
     workspaceId,
-    data.flatMap((widget) => {
+    [...data, ...denominators].flatMap((widget) => {
       const resourceId = dimensionsOf(widget)[RESOURCE_DIMENSION];
       return resourceId === undefined
         ? []
@@ -185,7 +217,7 @@ export async function presentDashboard(
   const scopes = await findAllResourcesNames(
     tx,
     workspaceId,
-    data.map((widget) => ({
+    [...data, ...denominators].map((widget) => ({
       connectionId: widget.connectionId,
       metricKey: widget.metricKey,
       dimensions: dimensionsOf(widget),
@@ -246,6 +278,24 @@ export async function presentDashboard(
       title: widget.title,
     };
     if (isDataRow(widget)) {
+      const denominator = denominatorOf(widget);
+      if (widget.type === "compare" && denominator) {
+        const side = binding(denominator);
+        return {
+          type: "compare",
+          ...base,
+          ...binding(widget),
+          denominator: {
+            connectionId: side.connectionId,
+            metricKey: side.metricKey,
+            aggregation: side.aggregation,
+            dimensions: side.dimensions,
+            resourceName: side.resourceName,
+            allResourcesName: side.allResourcesName,
+          },
+          options: compareWidgetOptionsSchema.parse(widget.options),
+        };
+      }
       return {
         type: widget.type,
         ...base,
@@ -351,6 +401,8 @@ interface ValidBinding {
   displayCurrency: string | null;
   /** The metric's dimension keys. */
   metricDimensions: readonly string[];
+  /** The metric's unit ("count", "currency_minor"). */
+  unit: string;
 }
 
 /**
@@ -415,6 +467,7 @@ export async function validateBinding(
     dimensions,
     displayCurrency,
     metricDimensions: metric.dimensions,
+    unit: metric.unit,
   });
 }
 
@@ -530,11 +583,14 @@ async function validateWidget(
       options: widget.options,
     });
   }
+  if (widget.type === "compare") {
+    return validateCompare(tx, workspaceId, widget, base);
+  }
   const binding = await validateBinding(tx, workspaceId, widget);
   if (!binding.ok) {
     return binding;
   }
-  const { metricDimensions, ...valid } = binding.value;
+  const { metricDimensions, unit: _unit, ...valid } = binding.value;
   if (
     widget.type === "bar" &&
     !metricDimensions.includes(widget.options.groupBy)
@@ -559,6 +615,67 @@ async function validateWidget(
 }
 
 /**
+ * A compare widget (ADR 0019 section 10): the numerator and the
+ * denominator each checked as a binding over the shared period, then the
+ * units against the format and the shared display currency
+ * (`compareUnitsProblem`: 400 compare_units_incompatible or
+ * currency_choice_conflict).
+ */
+async function validateCompare(
+  tx: Transaction,
+  workspaceId: string,
+  widget: Extract<DashboardWidgetInputParsed, { type: "compare" }>,
+  base: Pick<WidgetInput, "id" | "type" | "x" | "y" | "w" | "h" | "title">,
+): Promise<Result<WidgetInput>> {
+  // The display currency is checked below for both sides together: it
+  // converts whichever side is a per-currency amount without a filter.
+  const numerator = await validateBinding(tx, workspaceId, {
+    ...widget,
+    displayCurrency: null,
+  });
+  if (!numerator.ok) {
+    return numerator;
+  }
+  const denominator = await validateBinding(tx, workspaceId, {
+    ...widget.denominator,
+    period: widget.period,
+    displayCurrency: null,
+  });
+  if (!denominator.ok) {
+    return denominator;
+  }
+  const displayCurrency = widget.displayCurrency ?? null;
+  const problem = compareUnitsProblem({
+    numerator: numerator.value,
+    denominator: denominator.value,
+    displayCurrency,
+    format: widget.options.format,
+  });
+  if (problem) {
+    return fail(400, problem);
+  }
+  const {
+    metricDimensions: _numeratorDimensions,
+    unit: _numeratorUnit,
+    ...valid
+  } = numerator.value;
+  return ok({
+    ...base,
+    ...valid,
+    displayCurrency,
+    text: null,
+    imageId: null,
+    options: widget.options,
+    denominator: {
+      connectionId: denominator.value.connectionId,
+      metricKey: denominator.value.metricKey,
+      aggregation: denominator.value.aggregation,
+      dimensions: denominator.value.dimensions,
+    },
+  });
+}
+
+/**
  * Slides as sent, checked: limits, layout in the primary format's grid,
  * every data widget's metric, and the custom layouts (ADR 0017), completed
  * against the widgets. `stored` is the saved dashboard on replace: a slide
@@ -571,9 +688,10 @@ async function validateSlides(
   primary: ScreenFormat,
   stored: Dashboard | null = null,
 ): Promise<Result<SlideInput[]>> {
+  // A compare widget runs two metric queries and counts twice.
   const dataWidgets = slides
     .flatMap((slide) => slide.widgets)
-    .filter((widget) => isDataWidgetType(widget.type)).length;
+    .reduce((sum, widget) => sum + dataWidgetCost(widget.type), 0);
   if (dataWidgets > STUDIO_LIMITS.dataWidgets) {
     return fail(400, "too_many_data_widgets");
   }
@@ -667,7 +785,7 @@ async function tilesToSlides(
     if (!binding.ok) {
       return binding;
     }
-    const { metricDimensions: _, ...valid } = binding.value;
+    const { metricDimensions: _, unit: _unit, ...valid } = binding.value;
     const { slide, x, y, w, h } = placements[index]!;
     slides[slide]!.widgets.push({
       type: "metric",
@@ -865,6 +983,21 @@ async function checkProject(
   projectId: string | null | undefined,
 ): Promise<boolean> {
   return !projectId || (await findProject(tx, workspaceId, projectId)) !== null;
+}
+
+/** A stored compare widget's denominator, to copy it; else null. */
+function denominatorInputOf(
+  widget: DashboardWidgetRow,
+): WidgetInput["denominator"] {
+  const denominator = denominatorOf(widget);
+  return denominator
+    ? {
+        connectionId: denominator.connectionId,
+        metricKey: denominator.metricKey,
+        aggregation: denominator.aggregation!,
+        dimensions: dimensionsOf(denominator),
+      }
+    : null;
 }
 
 function counts(dashboard: Dashboard) {
@@ -1165,6 +1298,7 @@ export function createDashboardService(deps: { db: Database }) {
               text: widget.text,
               imageId: widget.imageId,
               options: widget.options as Record<string, unknown>,
+              denominator: denominatorInputOf(widget),
             })),
             layouts: copyLayouts(slide),
           })),

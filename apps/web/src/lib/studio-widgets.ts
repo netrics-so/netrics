@@ -25,7 +25,7 @@ export type StudioWidget = DashboardWidget;
 
 export type DataWidget = Extract<
   StudioWidget,
-  { type: "metric" | "line" | "bar" | "table" }
+  { type: "metric" | "line" | "bar" | "table" | "compare" }
 >;
 
 /** A workspace image as the renderers need it (#217). */

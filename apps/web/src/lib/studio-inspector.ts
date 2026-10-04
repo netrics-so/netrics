@@ -295,6 +295,69 @@ export function currencyPatch(
 }
 
 // ---------------------------------------------------------------------------
+// Compare: the denominator's binding block (ADR 0019 section 10)
+
+export type CompareWidget = Extract<DataWidget, { type: "compare" }>;
+
+/**
+ * The compare widget with its denominator as its binding, so the
+ * inspector's binding fields (metric, aggregation, resource, filters,
+ * currency) edit the denominator as they edit the numerator. The period
+ * and display currency stay the widget's: both sides share them.
+ */
+export function denominatorView(widget: CompareWidget): CompareWidget {
+  const { denominator } = widget;
+  return {
+    ...widget,
+    connectionId: denominator.connectionId,
+    metricKey: denominator.metricKey,
+    aggregation: denominator.aggregation,
+    dimensions: denominator.dimensions,
+    resourceName: denominator.resourceName,
+    allResourcesName: denominator.allResourcesName,
+  };
+}
+
+const DENOMINATOR_KEYS = [
+  "connectionId",
+  "metricKey",
+  "aggregation",
+  "dimensions",
+  "resourceName",
+  "allResourcesName",
+] as const;
+
+/**
+ * A patch made on `denominatorView` as a patch of the widget: binding
+ * fields go to `denominator`; the period and display currency are shared
+ * and stay top-level. Binding another metric never clears the shared
+ * display currency (only a currency choice changes it).
+ */
+export function denominatorPatch(
+  widget: CompareWidget,
+  patch: WidgetPatch,
+): WidgetPatch {
+  const fields = patch as Record<string, unknown>;
+  const denominator: Record<string, unknown> = { ...widget.denominator };
+  let changed = false;
+  for (const key of DENOMINATOR_KEYS) {
+    if (fields[key] !== undefined) {
+      denominator[key] = fields[key];
+      changed = true;
+    }
+  }
+  const shared: Record<string, unknown> = {};
+  if (fields.period !== undefined) shared.period = fields.period;
+  if (fields.displayCurrency !== undefined && fields.metricKey === undefined) {
+    shared.displayCurrency = fields.displayCurrency;
+  }
+  return {
+    ...shared,
+    ...(changed ? { denominator } : {}),
+  } as WidgetPatch;
+}
+
+// ---------------------------------------------------------------------------
 // Changing the type
 
 const BINDING_KEYS = [
@@ -351,6 +414,27 @@ export function convertWidget(
         widget: {
           ...fields,
           options: { showPrevious: true, showAxis: true },
+        } as WidgetFields,
+      };
+    }
+    if (to === "compare") {
+      // The binding becomes the numerator; the denominator is a new
+      // widget's (ADR 0019 section 10).
+      if ("reason" in made || made.widget.type !== "compare") {
+        return "reason" in made
+          ? made
+          : {
+              reason: webTranslator(
+                context.locale,
+                "studio.newWidget",
+              )("noMetrics"),
+            };
+      }
+      return {
+        widget: {
+          ...fields,
+          denominator: made.widget.denominator,
+          options: made.widget.options,
         } as WidgetFields,
       };
     }

@@ -20,15 +20,32 @@ export const WIDGET_TYPES = [
   "clock",
   "table",
   "status",
+  "compare",
 ] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 
 /** Widgets that show a metric of a connection. */
-export const DATA_WIDGET_TYPES = ["metric", "line", "bar", "table"] as const;
+export const DATA_WIDGET_TYPES = [
+  "metric",
+  "line",
+  "bar",
+  "table",
+  "compare",
+] as const;
 export type DataWidgetType = (typeof DATA_WIDGET_TYPES)[number];
 
 export function isDataWidgetType(type: string): type is DataWidgetType {
   return (DATA_WIDGET_TYPES as readonly string[]).includes(type);
+}
+
+/**
+ * What a widget counts toward `STUDIO_LIMITS.dataWidgets`: one per metric
+ * query, so a compare widget (numerator and denominator) counts twice
+ * (ADR 0019 section 2); widgets without a metric count nothing.
+ */
+export function dataWidgetCost(type: string): number {
+  if (type === "compare") return 2;
+  return isDataWidgetType(type) ? 1 : 0;
 }
 
 /** Server-validated limits; they bound payload size and query cost. */
