@@ -8,20 +8,30 @@ import {
 } from "@netrics/domain";
 
 import type { StudioDocument } from "./studio-document";
+import { textWidgetLayout } from "./studio-widgets";
 
 // Readability warnings on the Studio canvas (ADR 0015, section 8; #241): a
 // data widget whose title or resource line would need more than two lines
 // at 1080p, and so be cut off on the TVs. The rule is studioLayout's
 // labelFit, the same one the tvOS app and the web renderers use, so the
 // canvas warns exactly where screens truncate.
+//
+// Text widgets too: text that does not fit its box even at body size is cut
+// off at the bottom. That is textWidgetLayout's `overflow` (wrappedLineCount
+// over the parsed blocks), the flag the web renderer sets as data-overflow
+// and the tvOS TextLayout computes the same way.
 
 export interface UnreadableLabel {
+  /** A data widget's title or resource line, or a text widget's text. */
+  kind: "label" | "text";
   slideId: string;
   widgetId: string;
   label: string;
   fit: StudioLabelFit;
   /** The narrowest width (cells, at the same height) that fits, or null. */
   fitsAtWidth: number | null;
+  /** Text widgets: the smallest size (cells) that fits, or null. */
+  fitsAtSize?: { w: number; h: number } | null;
   /** What to do about it, for the badge and screen readers. */
   hint: string;
 }
@@ -65,8 +75,58 @@ function hintFor(
     : `${cut} Show fewer resources in it.`;
 }
 
+/** Whether a text widget's text overflows its box (as screens render it). */
+export function textOverflows(
+  widget: { text: string; options: { size: "body" | "heading" | "display" } },
+  size: { w: number; h: number },
+  fontScale: number,
+  showHeader: boolean,
+): boolean {
+  return textWidgetLayout({
+    text: widget.text,
+    size: widget.options.size,
+    placement: { x: 0, y: 0, ...size },
+    fontScale,
+    showHeader,
+  }).overflow;
+}
+
 /**
- * Every data widget in `document` whose label truncates at its size.
+ * The smallest size, from the widget's own up to the full grid, at which
+ * its text fits: fewest cells, then the shorter one. Null when even the
+ * whole slide is too small.
+ */
+export function textSizeToFit(
+  widget: {
+    text: string;
+    options: { size: "body" | "heading" | "display" };
+    w: number;
+    h: number;
+  },
+  fontScale: number,
+  showHeader: boolean,
+): { w: number; h: number } | null {
+  let best: { w: number; h: number } | null = null;
+  for (let h = widget.h; h <= STUDIO_GRID.rows; h++) {
+    for (let w = widget.w; w <= STUDIO_GRID.columns; w++) {
+      if (best && w * h > best.w * best.h) break;
+      if (textOverflows(widget, { w, h }, fontScale, showHeader)) continue;
+      if (!best || w * h < best.w * best.h) best = { w, h };
+      break;
+    }
+  }
+  return best;
+}
+
+function textHint(fitsAtSize: { w: number; h: number } | null): string {
+  return fitsAtSize
+    ? `The text is cut off on TVs. Make it ${fitsAtSize.w} × ${fitsAtSize.h} cells or shorten the text.`
+    : "The text is cut off on TVs. Shorten the text.";
+}
+
+/**
+ * Every data widget in `document` whose label truncates at its size, and
+ * every text widget whose text is cut off.
  * `labelOf` gives the label as the renderers show it ("Downloads · Wurfel");
  * `fontScale` is the theme's.
  */
@@ -78,6 +138,24 @@ export function unreadableLabels(
   const found: UnreadableLabel[] = [];
   for (const slide of document.slides) {
     for (const widget of slide.widgets) {
+      if (widget.type === "text") {
+        const showHeader = document.settings.showHeader;
+        if (!textOverflows(widget, widget, fontScale, showHeader)) {
+          continue;
+        }
+        const fitsAtSize = textSizeToFit(widget, fontScale, showHeader);
+        found.push({
+          kind: "text",
+          slideId: slide.id,
+          widgetId: widget.id,
+          label: widget.text,
+          fit: { fits: false, titleLines: 0, resourceLines: 0 },
+          fitsAtWidth: null,
+          fitsAtSize,
+          hint: textHint(fitsAtSize),
+        });
+        continue;
+      }
       if (!isDataWidget(widget.type)) {
         continue;
       }
@@ -88,6 +166,7 @@ export function unreadableLabels(
       }
       const fitsAtWidth = widthToFit(label, widget, fontScale);
       found.push({
+        kind: "label",
         slideId: slide.id,
         widgetId: widget.id,
         label,
@@ -100,7 +179,7 @@ export function unreadableLabels(
   return found;
 }
 
-/** Unreadable labels per slide id, for the slide rail. */
+/** Cut-off labels and texts per slide id, for the slide rail. */
 export function unreadableCounts(
   labels: readonly UnreadableLabel[],
 ): Map<string, number> {

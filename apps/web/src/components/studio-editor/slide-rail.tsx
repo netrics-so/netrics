@@ -82,9 +82,9 @@ interface DragState {
  */
 const NO_COUNTS: ReadonlyMap<string, number> = new Map();
 
-/** "1 label cut off", "2 labels cut off". */
+/** "1 widget cut off", "2 widgets cut off" (labels or text). */
 export function cutOffText(count: number): string {
-  return `${count} ${count === 1 ? "label" : "labels"} cut off`;
+  return `${count} ${count === 1 ? "widget" : "widgets"} cut off`;
 }
 
 export function SlideRail({

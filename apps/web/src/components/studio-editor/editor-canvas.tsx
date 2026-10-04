@@ -375,11 +375,19 @@ export function EditorCanvas({
             >
               {cut ? (
                 <span
-                  className="editor-badge"
+                  className={
+                    selected
+                      ? `editor-badge editor-badge--hint editor-badge--${widget.y + widget.h > STUDIO_GRID.rows - 2 ? "above" : "below"}`
+                      : "editor-badge"
+                  }
                   title={cut.hint}
                   aria-hidden="true"
                 >
-                  {selected ? cut.hint : "Label cut off"}
+                  {selected
+                    ? cut.hint
+                    : cut.kind === "text"
+                      ? "Text cut off"
+                      : "Label cut off"}
                 </span>
               ) : null}
               {selected

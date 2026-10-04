@@ -22,10 +22,13 @@ import {
   nearestFreePlacement,
 } from "./studio-grid";
 import {
+  textOverflows,
+  textSizeToFit,
   unreadableCounts,
   unreadableLabels,
   widthToFit,
 } from "./studio-readability";
+import { textWidgetLayout } from "./studio-widgets";
 
 // #241: free spots, readability warnings, and duplicate / paste / drop.
 
@@ -324,5 +327,92 @@ describe("duplicate, paste and drop", () => {
     expect(taken.announcement?.text).toBe(
       "That spot is taken; the widget was not added.",
     );
+  });
+});
+
+describe("text widgets cut off", () => {
+  const text = (
+    id: number,
+    w: number,
+    h: number,
+    body: string,
+  ): DashboardWidget => ({
+    type: "text",
+    id: ID(id),
+    x: 0,
+    y: 0,
+    w,
+    h,
+    title: null,
+    text: body,
+    options: { size: "body", align: "start" },
+  });
+  const noLabel = () => "";
+
+  it("flags text whose layout overflows, as the renderer does", () => {
+    const document = initialStudioState(dashboard()).draft;
+    document.slides = [
+      {
+        ...document.slides[0]!,
+        widgets: [
+          text(30, 2, 1, "# Wurfel\nDaily numbers"),
+          text(31, 3, 2, "# Wurfel\nDaily numbers"),
+        ],
+      },
+    ];
+    // The same flag the text renderer sets as data-overflow.
+    for (const widget of document.slides[0]!.widgets) {
+      const layout = textWidgetLayout({
+        text: (widget as Extract<DashboardWidget, { type: "text" }>).text,
+        size: "body",
+        placement: widget,
+        fontScale: 1,
+        showHeader: true,
+      });
+      expect(
+        unreadableLabels(document, noLabel, 1).some(
+          (found) => found.widgetId === widget.id,
+        ),
+      ).toBe(layout.overflow);
+    }
+    const [found] = unreadableLabels(document, noLabel, 1);
+    expect(found).toMatchObject({ kind: "text", widgetId: ID(30) });
+    expect(found!.fitsAtSize).toEqual(
+      textSizeToFit(
+        {
+          text: "# Wurfel\nDaily numbers",
+          options: { size: "body" },
+          w: 2,
+          h: 1,
+        },
+        1,
+        true,
+      ),
+    );
+    const size = found!.fitsAtSize!;
+    expect(found!.hint).toBe(
+      `The text is cut off on TVs. Make it ${size.w} × ${size.h} cells or shorten the text.`,
+    );
+  });
+
+  it("suggests the smallest size that fits, and nothing when none does", () => {
+    const widget = {
+      text: "# Wurfel\nDaily numbers",
+      options: { size: "body" as const },
+      w: 2,
+      h: 1,
+    };
+    const size = textSizeToFit(widget, 1, true)!;
+    expect(textOverflows(widget, size, 1, true)).toBe(false);
+    // Nothing with fewer cells (at least as wide and tall as now) fits.
+    for (let h = 1; h <= 8; h++) {
+      for (let w = 2; w <= 12; w++) {
+        if (w * h < size.w * size.h) {
+          expect(textOverflows(widget, { w, h }, 1, true)).toBe(true);
+        }
+      }
+    }
+    const endless = { ...widget, text: "word ".repeat(3000) };
+    expect(textSizeToFit(endless, 1, true)).toBe(null);
   });
 });

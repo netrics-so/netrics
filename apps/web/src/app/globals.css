@@ -2400,7 +2400,7 @@ a.health-badge:hover {
   white-space: nowrap;
 }
 
-/* A label cut off on TVs (#241): a badge in the warning colour; on the
+/* A label or text cut off on TVs (#241): a badge in the warning colour; on the
    selected widget it spells out the fix. */
 .editor-widget--unreadable:not(.editor-widget--selected) {
   border-color: var(--t-warning);
@@ -2420,6 +2420,26 @@ a.health-badge:hover {
   line-height: 1.35;
   text-align: left;
   pointer-events: none;
+}
+
+/* On the selected widget the hint sits outside the box, so it reads even
+   on a 1-row widget: below it, or above it near the slide's bottom. */
+.editor-badge--hint {
+  right: auto;
+  left: 0;
+  bottom: auto;
+  z-index: 2;
+  width: max-content;
+  max-width: 320px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 40%);
+}
+
+.editor-badge--below {
+  top: calc(100% + 6px);
+}
+
+.editor-badge--above {
+  bottom: calc(100% + 6px);
 }
 
 .editor-outline--blocked .editor-readout {

@@ -65,6 +65,7 @@ const env: StudioEnv = {
 };
 
 const cut: UnreadableLabel = {
+  kind: "label",
   slideId: ID(2),
   widgetId: ID(21),
   label: "A long title",
@@ -108,6 +109,22 @@ describe("readability badges", () => {
     expect(html).toContain(`>${cut.hint}</span>`);
   });
 
+  it("says when a text widget's text is cut off", () => {
+    const html = canvas({
+      unreadable: new Map([
+        [
+          ID(21),
+          {
+            ...cut,
+            kind: "text" as const,
+            hint: "The text is cut off on TVs. Make it 3 × 2 cells or shorten the text.",
+          },
+        ],
+      ]),
+    });
+    expect(html).toContain(">Text cut off</span>");
+  });
+
   it("shows no badge on readable widgets", () => {
     expect(canvas()).not.toContain("editor-badge");
   });
@@ -126,10 +143,10 @@ describe("readability badges", () => {
       />,
     );
     expect(html).toContain(
-      "1 of 2: Slide 1, 20 seconds, 2 labels cut off on TVs",
+      "1 of 2: Slide 1, 20 seconds, 2 widgets cut off on TVs",
     );
     expect(html.match(/rail-unreadable/g)).toHaveLength(1);
-    expect(cutOffText(1)).toBe("1 label cut off");
+    expect(cutOffText(1)).toBe("1 widget cut off");
   });
 });
 
