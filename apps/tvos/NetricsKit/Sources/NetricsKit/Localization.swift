@@ -47,6 +47,8 @@ public enum KitText: String, Sendable, CaseIterable {
     case periodToday, periodLast7Days, periodLast30Days, periodThisMonth, periodLast90Days, periodLast12Months
     case comparisonToday, comparisonLast7Days, comparisonLast30Days, comparisonThisMonth, comparisonLast90Days
     case comparisonLast12Months, comparisonUnknown
+    case periodThisWeek, periodThisQuarter, periodThisYear
+    case comparisonThisWeek, comparisonThisQuarter, comparisonThisYear
     case aggregationSum, aggregationAvg, aggregationMin, aggregationMax, aggregationLast
     case noDataForPeriod, noDataYet, noDataToCompare, noComparison, couldNotLoad
     case noticeAuthFailed, noticeOutage, noticeFirstSync, noticeLastSync
@@ -77,6 +79,12 @@ public enum KitStrings {
         .comparisonThisMonth: "vs last month",
         .comparisonLast90Days: "vs previous 90 days",
         .comparisonLast12Months: "vs previous 12 months",
+        .periodThisWeek: "This week",
+        .periodThisQuarter: "This quarter",
+        .periodThisYear: "This year",
+        .comparisonThisWeek: "vs last week to date",
+        .comparisonThisQuarter: "vs last quarter to date",
+        .comparisonThisYear: "vs last year to date",
         .comparisonUnknown: "vs previous period",
         .aggregationSum: "Total",
         .aggregationAvg: "Average",
@@ -152,6 +160,12 @@ public enum KitStrings {
         .comparisonThisMonth: "vs. Vormonat",
         .comparisonLast90Days: "vs. vorherige 90 Tage",
         .comparisonLast12Months: "vs. vorherige 12 Monate",
+        .periodThisWeek: "Diese Woche",
+        .periodThisQuarter: "Dieses Quartal",
+        .periodThisYear: "Dieses Jahr",
+        .comparisonThisWeek: "vs. Vorwoche bis heute",
+        .comparisonThisQuarter: "vs. Vorquartal bis heute",
+        .comparisonThisYear: "vs. Vorjahr bis heute",
         .comparisonUnknown: "vs. vorheriger Zeitraum",
         .aggregationSum: "Summe",
         .aggregationAvg: "Mittelwert",

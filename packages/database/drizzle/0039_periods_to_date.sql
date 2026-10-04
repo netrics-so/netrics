@@ -1,0 +1,4 @@
+ALTER TABLE "dashboard_tiles" DROP CONSTRAINT "dashboard_tiles_period_valid";--> statement-breakpoint
+ALTER TABLE "dashboard_widgets" DROP CONSTRAINT "dashboard_widgets_period_valid";--> statement-breakpoint
+ALTER TABLE "dashboard_tiles" ADD CONSTRAINT "dashboard_tiles_period_valid" CHECK ("dashboard_tiles"."period" in ('today', 'last_7_days', 'last_30_days', 'this_month', 'last_90_days', 'last_12_months', 'this_week', 'this_quarter', 'this_year'));--> statement-breakpoint
+ALTER TABLE "dashboard_widgets" ADD CONSTRAINT "dashboard_widgets_period_valid" CHECK ("dashboard_widgets"."period" is null or "dashboard_widgets"."period" in ('today', 'last_7_days', 'last_30_days', 'this_month', 'last_90_days', 'last_12_months', 'this_week', 'this_quarter', 'this_year'));

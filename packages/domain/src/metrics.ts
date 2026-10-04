@@ -27,12 +27,19 @@ export type Aggregation = (typeof AGGREGATIONS)[number];
 export const GRANULARITIES = ["day", "hour", "instant"] as const;
 export type Granularity = (typeof GRANULARITIES)[number];
 
+/**
+ * In the order pickers offer them: each period to date before the rolling
+ * period of about its length (ADR 0019 §3 added the week, quarter and year).
+ */
 export const PERIODS = [
   "today",
+  "this_week",
   "last_7_days",
-  "last_30_days",
   "this_month",
+  "last_30_days",
+  "this_quarter",
   "last_90_days",
+  "this_year",
   "last_12_months",
 ] as const;
 export type Period = (typeof PERIODS)[number];
@@ -42,8 +49,9 @@ export type SeriesUnit = "hour" | "day" | "week" | "month";
 
 /**
  * Sparkline points per period, within MAX_BUCKETS: hours today, days up to a
- * month, weeks (starting Monday) for 90 days, calendar months for 12 months.
- * A daily metric has one point today.
+ * month (and this week), weeks (starting Monday) for 90 days and this
+ * quarter, calendar months for 12 months and this year. A daily metric has
+ * one point today.
  */
 export const SERIES_UNITS: Record<Period, SeriesUnit> = {
   today: "hour",
@@ -52,6 +60,9 @@ export const SERIES_UNITS: Record<Period, SeriesUnit> = {
   this_month: "day",
   last_90_days: "week",
   last_12_months: "month",
+  this_week: "day",
+  this_quarter: "week",
+  this_year: "month",
 };
 
 /** Aggregations that mean something for each kind, in preference order. */
@@ -246,6 +257,20 @@ export function startOfDay(date: CivilDate, timeZone: string): Date {
   return new Date(instant);
 }
 
+/**
+ * The instant on `date` at `now`'s wall-clock time in the zone. A time a DST
+ * change skips moves forward by the gap; a repeated one takes the second.
+ */
+function atTimeOfDay(date: CivilDate, now: Date, timeZone: string): Date {
+  const [year, month, day] = parseCivil(date);
+  const f = zonedFields(now, timeZone);
+  const wall =
+    Date.UTC(year, month - 1, day, f.hour, f.minute, f.second) +
+    (now.getTime() % 1000);
+  const guess = wall - offsetAt(wall, timeZone);
+  return new Date(wall - offsetAt(guess, timeZone));
+}
+
 export interface DateRange {
   /** Inclusive. */
   from: CivilDate;
@@ -267,7 +292,10 @@ export interface PeriodWindow {
   previousDates: DateRange;
   /** Instants; hourly and instant metrics are selected by these. */
   current: InstantRange;
-  /** Same elapsed length as `current`, immediately before it. */
+  /**
+   * The previous window: the same elapsed length as `current` immediately
+   * before it, or for periods to date the same span of the previous period.
+   */
   previous: InstantRange;
   /** Read bucket for hourly and instant metrics. */
   bucket: "hour" | "day";
@@ -293,11 +321,82 @@ function sameDayIn(monthStart: CivilDate, day: number): CivilDate {
   return addDays(monthStart, Math.min(day, daysInMonth(year, month)) - 1);
 }
 
+function dayOfWeek(date: CivilDate): number {
+  const [year, month, day] = parseCivil(date);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+}
+
+function daysBetween(from: CivilDate, to: CivilDate): number {
+  const [y1, m1, d1] = parseCivil(from);
+  const [y2, m2, d2] = parseCivil(to);
+  return Math.round(
+    (Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) /
+      (24 * 60 * 60 * 1000),
+  );
+}
+
+/** Monday of `date`'s ISO week. */
+function startOfWeek(date: CivilDate): CivilDate {
+  return addDays(date, -((dayOfWeek(date) + 6) % 7));
+}
+
+/** The first day of `date`'s quarter (1 January, April, July or October). */
+function startOfQuarter(date: CivilDate): CivilDate {
+  const [, month] = parseCivil(date);
+  return addMonths(date, -((month - 1) % 3));
+}
+
+/**
+ * Reporting dates of a period to date (ADR 0019 §3) and of the same span of
+ * the previous period: the previous week up to the same weekday, the
+ * previous quarter up to the same day of the quarter (capped at its last
+ * day), the previous year up to the same date (29 February becomes 28
+ * February). `sameTimeOfDay` is false where the previous span was capped:
+ * it then runs to the end of its last day.
+ */
+function toDateWindows(
+  period: "this_week" | "this_quarter" | "this_year",
+  today: CivilDate,
+): { dates: DateRange; previousDates: DateRange; sameTimeOfDay: boolean } {
+  switch (period) {
+    case "this_week": {
+      const from = startOfWeek(today);
+      return {
+        dates: { from, to: today },
+        previousDates: { from: addDays(from, -7), to: addDays(today, -7) },
+        sameTimeOfDay: true,
+      };
+    }
+    case "this_quarter": {
+      const from = startOfQuarter(today);
+      const previousFrom = addMonths(from, -3);
+      const previousLast = addDays(from, -1);
+      const sameDay = addDays(previousFrom, daysBetween(from, today));
+      const to = sameDay < previousLast ? sameDay : previousLast;
+      return {
+        dates: { from, to: today },
+        previousDates: { from: previousFrom, to },
+        sameTimeOfDay: sameDay <= previousLast,
+      };
+    }
+    case "this_year": {
+      const [year, , day] = parseCivil(today);
+      const to = sameDayIn(addMonths(today, -12), day);
+      return {
+        dates: { from: `${year}-01-01`, to: today },
+        previousDates: { from: `${year - 1}-01-01`, to },
+        sameTimeOfDay: parseCivil(to)[2] === day,
+      };
+    }
+  }
+}
+
 /**
  * The current and previous window of a period at `now` in the zone. The
  * previous window is the same length: yesterday up to the same time of day,
  * the 7, 30 or 90 days before, the same first days of the previous month, or
- * the 12 calendar months before up to the same day a year ago.
+ * the 12 calendar months before up to the same day a year ago; for this
+ * week, quarter and year, the same span of the previous one (toDateWindows).
  */
 export function resolvePeriod(
   period: Period,
@@ -307,6 +406,7 @@ export function resolvePeriod(
   const today = civilDate(now, timeZone);
   let dates: DateRange;
   let previousDates: DateRange;
+  let sameTimeOfDay = false;
   switch (period) {
     case "today":
       dates = { from: today, to: today };
@@ -344,15 +444,27 @@ export function resolvePeriod(
       };
       break;
     }
+    case "this_week":
+    case "this_quarter":
+    case "this_year": {
+      const toDate = toDateWindows(period, today);
+      dates = toDate.dates;
+      previousDates = toDate.previousDates;
+      sameTimeOfDay = toDate.sameTimeOfDay;
+      break;
+    }
   }
 
   const start = startOfDay(dates.from, timeZone);
-  const elapsed = now.getTime() - start.getTime();
   const previousStart = startOfDay(previousDates.from, timeZone);
   const previousLimit = startOfDay(addDays(previousDates.to, 1), timeZone);
-  const previousEnd = new Date(
-    Math.min(previousStart.getTime() + elapsed, previousLimit.getTime()),
-  );
+  // Period to date (week, quarter, year) ends on the matching date at the
+  // same wall-clock time, so a DST change in between does not shift it; the
+  // others keep the same elapsed time.
+  const reach = sameTimeOfDay
+    ? atTimeOfDay(previousDates.to, now, timeZone).getTime()
+    : previousStart.getTime() + (now.getTime() - start.getTime());
+  const previousEnd = new Date(Math.min(reach, previousLimit.getTime()));
 
   return {
     period,
@@ -398,11 +510,6 @@ export interface BucketPlan {
   from: CivilDate;
 }
 
-function dayOfWeek(date: CivilDate): number {
-  const [year, month, day] = parseCivil(date);
-  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-}
-
 /** The first day of the week (Monday) or month holding `date`, not before `from`. */
 function seriesDate(
   date: CivilDate,
@@ -411,7 +518,7 @@ function seriesDate(
 ): CivilDate {
   const start =
     series === "week"
-      ? addDays(date, -((dayOfWeek(date) + 6) % 7))
+      ? startOfWeek(date)
       : series === "month"
         ? addMonths(date, 0)
         : date;
@@ -521,16 +628,8 @@ export function seriesPoints(
 const PREVIOUS_MONTHS: Partial<Record<Period, number>> = {
   this_month: 1,
   last_12_months: 12,
+  this_year: 12,
 };
-
-function daysBetween(from: CivilDate, to: CivilDate): number {
-  const [y1, m1, d1] = parseCivil(from);
-  const [y2, m2, d2] = parseCivil(to);
-  return Math.round(
-    (Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) /
-      (24 * 60 * 60 * 1000),
-  );
-}
 
 /**
  * The current window's date at the same position as `date` of the previous

@@ -46,6 +46,9 @@ import Testing
         #expect(MetricFormat.comparisonLabel(.last30Days, language: .de) == "vs. vorherige 30 Tage")
         #expect(MetricFormat.comparisonLabel(.thisMonth, language: .de) == "vs. Vormonat")
         #expect(MetricFormat.comparisonLabel(.today, language: .de) == "vs. gestern")
+        #expect(MetricFormat.periodLabel(.thisQuarter, language: .de) == "Dieses Quartal")
+        #expect(MetricFormat.comparisonLabel(.thisWeek, language: .de) == "vs. Vorwoche bis heute")
+        #expect(MetricFormat.comparisonLabel(.thisYear, language: .de) == "vs. Vorjahr bis heute")
         #expect(MetricFormat.aggregationLabel(.last, language: .de) == "Aktuell")
         #expect(MetricFormat.subtitle(tile, language: .de) == "Letzte 30 Tage · Mittelwert")
         // English stays the default.

@@ -995,7 +995,7 @@ export const dashboardWidgets = pgTable(
     ),
     check(
       "dashboard_widgets_period_valid",
-      sql`${table.period} is null or ${table.period} in ('today', 'last_7_days', 'last_30_days', 'this_month', 'last_90_days', 'last_12_months')`,
+      sql`${table.period} is null or ${table.period} in ('today', 'last_7_days', 'last_30_days', 'this_month', 'last_90_days', 'last_12_months', 'this_week', 'this_quarter', 'this_year')`,
     ),
     // Data widgets have a metric binding and no text; the others neither.
     check(
@@ -1159,7 +1159,7 @@ export const dashboardTiles = pgTable(
     ),
     check(
       "dashboard_tiles_period_valid",
-      sql`${table.period} in ('today', 'last_7_days', 'last_30_days', 'this_month', 'last_90_days', 'last_12_months')`,
+      sql`${table.period} in ('today', 'last_7_days', 'last_30_days', 'this_month', 'last_90_days', 'last_12_months', 'this_week', 'this_quarter', 'this_year')`,
     ),
     check("dashboard_tiles_position_valid", sql`${table.position} >= 0`),
   ],

@@ -183,6 +183,12 @@ describe("sparkBucketLabel", () => {
     ["2026-09-28T00:00:00.000Z", "last_90_days", "Week of Sep 28"],
     ["2026-08-31T22:00:00.000Z", "last_12_months", "Sep 2026"],
     ["2026-09-01T00:00:00.000Z", "last_12_months", "Sep 2026"],
+    // Periods to date (#331): days this week, weeks this quarter, months
+    // this year.
+    ["2026-09-29T00:00:00.000Z", "this_week", "Sep 29"],
+    ["2026-10-01T00:00:00.000Z", "this_quarter", "Week of Oct 1"],
+    ["2026-10-04T22:00:00.000Z", "this_quarter", "Week of Oct 5"],
+    ["2026-03-01T00:00:00.000Z", "this_year", "Mar 2026"],
   ] as const)("%s in %s → %s", (bucket, period, expected) => {
     expect(sparkBucketLabel(bucket, period, "Europe/Berlin", "en")).toBe(
       expected,

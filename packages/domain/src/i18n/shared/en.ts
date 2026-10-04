@@ -26,6 +26,9 @@ export const sharedEn = {
     this_month: "This month",
     last_90_days: "Last 90 days",
     last_12_months: "Last 12 months",
+    this_week: "This week",
+    this_quarter: "This quarter",
+    this_year: "This year",
   },
   /** What a change is measured against. */
   comparisons: {
@@ -35,6 +38,9 @@ export const sharedEn = {
     this_month: "vs last month",
     last_90_days: "vs previous 90 days",
     last_12_months: "vs previous 12 months",
+    this_week: "vs last week to date",
+    this_quarter: "vs last quarter to date",
+    this_year: "vs last year to date",
   },
   aggregations: {
     sum: "Total",

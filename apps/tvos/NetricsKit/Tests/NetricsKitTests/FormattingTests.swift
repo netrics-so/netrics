@@ -66,6 +66,15 @@ import Testing
         tile.period = .last12Months
         #expect(MetricFormat.changeLine(tile).text == "▲ +25% vs previous 12 months")
         #expect(MetricFormat.subtitle(tile).hasPrefix("Last 12 months · "))
+        // Periods to date (ADR 0019 §3).
+        tile.period = .thisWeek
+        #expect(MetricFormat.changeLine(tile).text == "▲ +25% vs last week to date")
+        #expect(MetricFormat.subtitle(tile).hasPrefix("This week · "))
+        tile.period = .thisQuarter
+        #expect(MetricFormat.changeLine(tile).text == "▲ +25% vs last quarter to date")
+        tile.period = .thisYear
+        #expect(MetricFormat.changeLine(tile).text == "▲ +25% vs last year to date")
+        #expect(MetricFormat.subtitle(tile).hasPrefix("This year · "))
         // A period this build does not know keeps the tile readable.
         tile.period = .unknown
         #expect(MetricFormat.changeLine(tile).text == "▲ +25% vs previous period")
@@ -207,6 +216,9 @@ import Testing
         ("last_90_days", MetricPeriod.last90Days),
         ("last_12_months", .last12Months),
         ("this_month", .thisMonth),
+        ("this_week", .thisWeek),
+        ("this_quarter", .thisQuarter),
+        ("this_year", .thisYear),
     ])
     func decodesLongerPeriods(_ raw: String, _ period: MetricPeriod) throws {
         let body = """
