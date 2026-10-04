@@ -1,7 +1,15 @@
 import type { FastifyBaseLogger } from "fastify";
 import nodemailer, { type Transporter } from "nodemailer";
 
+import type { Locale } from "@netrics/domain";
+
 import type { Config } from "../env.js";
+import {
+  renderInvitationEmail,
+  renderPasswordResetEmail,
+  renderVerificationEmail,
+  type RenderedEmail,
+} from "./render.js";
 
 /**
  * Every email netrics sends contains a bearer link: whoever holds it can
@@ -11,11 +19,14 @@ import type { Config } from "../env.js";
 export interface LinkEmail {
   to: string;
   url: string;
+  /** The recipient's language (see ./locale.ts for the rules). */
+  locale: Locale;
 }
 
 export interface InvitationEmail extends LinkEmail {
   workspaceName: string;
-  inviterName: string;
+  /** Null when unknown: the email then names "a workspace admin". */
+  inviterName: string | null;
 }
 
 export interface Mailer {
@@ -57,8 +68,8 @@ export function createMailer(
 export function createLoggingMailer(logger: FastifyBaseLogger): Mailer {
   const log =
     (kind: string) =>
-    async ({ to, url }: LinkEmail) => {
-      logger.info({ to, url }, `email: ${kind} (dev log mailer)`);
+    async ({ to, url, locale }: LinkEmail) => {
+      logger.info({ to, url, locale }, `email: ${kind} (dev log mailer)`);
     };
   return {
     delivers: false,
@@ -100,14 +111,20 @@ export function createSmtpMailer(options: SmtpMailerOptions): Mailer {
       ? nodemailer.createTransport(options.transport)
       : options.transport;
 
-  const send = async (to: string, subject: string, text: string) => {
+  const send = async (kind: string, to: string, email: RenderedEmail) => {
     try {
-      await transporter.sendMail({ from: options.from, to, subject, text });
+      await transporter.sendMail({
+        from: options.from,
+        to,
+        subject: email.subject,
+        text: email.text,
+        html: email.html,
+      });
     } catch (error) {
       // Log the failure without the message body (it contains the link).
       options.logger.error(
         { to, err: error instanceof Error ? error.message : String(error) },
-        `email delivery failed: ${subject}`,
+        `email delivery failed (${kind})`,
       );
       throw error;
     }
@@ -115,30 +132,11 @@ export function createSmtpMailer(options: SmtpMailerOptions): Mailer {
 
   return {
     delivers: true,
-    sendVerificationEmail: ({ to, url }) =>
-      send(
-        to,
-        "Verify your email address",
-        `Confirm your email address for netrics:\n\n${url}\n\n` +
-          "If you did not create an account, you can ignore this email.",
-      ),
-    sendPasswordResetEmail: ({ to, url }) =>
-      send(
-        to,
-        "Reset your password",
-        `Reset your netrics password:\n\n${url}\n\n` +
-          "The link expires in 1 hour and works once. If you did not " +
-          "request a reset, you can ignore this email; your password " +
-          "stays the same.",
-      ),
-    sendInvitationEmail: ({ to, url, workspaceName, inviterName }) =>
-      send(
-        to,
-        `${inviterName} invited you to ${workspaceName} on netrics`,
-        `${inviterName} invited you to join the workspace "${workspaceName}" ` +
-          `on netrics.\n\nAccept the invitation:\n\n${url}\n\n` +
-          "The link expires in 7 days. If you did not expect this " +
-          "invitation, you can ignore this email.",
-      ),
+    sendVerificationEmail: (email) =>
+      send("verification", email.to, renderVerificationEmail(email)),
+    sendPasswordResetEmail: (email) =>
+      send("password reset", email.to, renderPasswordResetEmail(email)),
+    sendInvitationEmail: (email) =>
+      send("invitation", email.to, renderInvitationEmail(email)),
   };
 }

@@ -88,6 +88,12 @@ order and returns the first supported one:
 | Invitation email (recipient has no user) | recipient's setting if the address has an account → inviter's language → `en` |
 | The web TV layout of a signed-in member  | as "web, signed in" (it is the member's browser)                              |
 
+- **Inviter's language** (invitations): the language the inviter uses
+  netrics in, by the same chain the web app applies to them: their
+  setting → the instance default → the `Accept-Language` of the request
+  that sends the invitation. The recipient's browser is unknown when the
+  email is written, so the inviter's is the best guess for a colleague
+  (#255).
 - **User setting**: `users.locale`, nullable. Sign-up stores the language
   the sign-up page was shown in (that is, the instance default, else
   `Accept-Language`), so a new account keeps the language it signed up in.
@@ -187,7 +193,10 @@ reverse because the catalogs are ICU.
   on every email; better-auth's `sendResetPassword` and
   `sendVerificationEmail` callbacks look up the domain user by auth user id
   to find it. Links stay the same; dates in emails ("expires in 7 days")
-  are plural messages.
+  are plural messages. Every email has a plain-text and an HTML part
+  rendered from the same messages (`mail/render.ts`); the HTML escapes the
+  catalog text and every argument (workspace and inviter names are user
+  input), and links are added by the renderer, never inside a message.
 - **Device payload labels** are built in the workspace's screen language:
   metric names and the resource noun from the connector translations
   (section 6), "All {plural}" and "Others" from the shared catalog.

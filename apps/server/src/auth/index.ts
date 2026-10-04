@@ -28,6 +28,8 @@ import {
 
 /** Header carrying an invitation token on sign-up (see routes/invitations.ts). */
 export const INVITATION_TOKEN_HEADER = "x-netrics-invitation-token";
+import { PASSWORD_RESET_TTL_SECONDS } from "../link-lifetimes.js";
+import { recipientEmailLocale } from "../mail/locale.js";
 import { createMailer, type Mailer } from "../mail/mailer.js";
 
 export interface SessionIdentity {
@@ -60,6 +62,14 @@ export function createAuthService(
 ): AuthService {
   const logger = deps.logger.child({ module: "auth" });
   const mailer = deps.mailer ?? createMailer(config, logger);
+
+  // The recipient's language for an auth email (ADR 0016 section 3); the
+  // domain user may not exist yet in the middle of sign-up.
+  const emailLocaleFor = async (authUserId: string) =>
+    recipientEmailLocale({
+      recipientLocale: (await findUserByAuthUserId(db, authUserId))?.locale,
+      defaultLocale: config.defaultLocale,
+    });
 
   const auth = betterAuth({
     baseURL: config.betterAuthUrl,
@@ -94,15 +104,23 @@ export function createAuthService(
       // Stated as "1 hour" in the reset email and on the web pages, and the
       // same minimum the web forms enforce; keep them in step.
       minPasswordLength: 8,
-      resetPasswordTokenExpiresIn: 60 * 60,
+      resetPasswordTokenExpiresIn: PASSWORD_RESET_TTL_SECONDS,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => {
-        await mailer.sendPasswordResetEmail({ to: user.email, url });
+        await mailer.sendPasswordResetEmail({
+          to: user.email,
+          url,
+          locale: await emailLocaleFor(user.id),
+        });
       },
     },
     emailVerification: {
       sendVerificationEmail: async ({ user, url }) => {
-        await mailer.sendVerificationEmail({ to: user.email, url });
+        await mailer.sendVerificationEmail({
+          to: user.email,
+          url,
+          locale: await emailLocaleFor(user.id),
+        });
       },
     },
     databaseHooks: {
