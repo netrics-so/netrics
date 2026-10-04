@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { DeployWatcher } from "@/components/deploy-watcher";
 import { Nav } from "@/components/nav";
+import { fontVariables } from "@/fonts/fonts";
 import { WEB_CATALOGS } from "@/lib/i18n/catalogs";
 import { I18nProvider } from "@/lib/i18n/client";
 import { getLocale, getT } from "@/lib/i18n/server";
@@ -21,7 +22,7 @@ export default async function RootLayout({
 }) {
   const locale = await getLocale();
   return (
-    <html lang={locale}>
+    <html lang={locale} className={fontVariables}>
       <body>
         <I18nProvider locale={locale} messages={WEB_CATALOGS[locale]}>
           <Nav />
