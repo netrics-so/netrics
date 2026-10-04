@@ -31,6 +31,9 @@ function connector(
     version: "0.1.0",
     description: `${name} metrics.`,
     metricsCount: 2,
+    category: "other",
+    brandColor: null,
+    metrics: [],
     minRefreshIntervalSeconds: 300,
     supportsBackfill: true,
     configSchema: { type: "object", properties: {} },
@@ -39,7 +42,7 @@ function connector(
     unavailable: available
       ? null
       : { reason: "oauth_provider_not_configured", provider: "google" },
-  } as ConnectorCatalogEntry;
+  };
 }
 
 const DEMO = connector("demo", "Demo", "none");
@@ -261,11 +264,12 @@ describe("new-connection wizard", () => {
         initialConnectorId="vercel"
       />,
     );
-    expect(html).toMatch(
-      /class="connector-card selected [^"]*"[^>]*><h3>Vercel/,
-    );
-    expect(html).not.toMatch(
-      /class="connector-card selected [^"]*"[^>]*><h3>Demo/,
-    );
+    const selected = [
+      ...html.matchAll(
+        /<article class="catalogue-card catalogue-card--selected"[\s\S]*?<\/article>/g,
+      ),
+    ].map((match) => match[0]);
+    expect(selected).toHaveLength(1);
+    expect(selected[0]).toContain("Vercel");
   });
 });
