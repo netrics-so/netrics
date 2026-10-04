@@ -8,7 +8,6 @@ import type {
 
 import {
   imageContentUrl,
-  isTileDashboard,
   logoImageId,
   referencedImageIds,
   slideBackground,
@@ -127,17 +126,6 @@ describe("image references", () => {
     expect(imageContentUrl("w1", { id: "i1", sha256: "ab" })).toBe(
       "/v1/workspaces/w1/images/i1/content?v=ab",
     );
-  });
-});
-
-describe("isTileDashboard", () => {
-  it("is a single slide of metric widgets, which tile saves keep", () => {
-    expect(isTileDashboard({ slides: [slide([metric])] })).toBe(true);
-    expect(isTileDashboard({ slides: [slide([])] })).toBe(true);
-    expect(isTileDashboard({ slides: [slide([metric, image])] })).toBe(false);
-    expect(
-      isTileDashboard({ slides: [slide([metric]), slide([metric])] }),
-    ).toBe(false);
   });
 });
 

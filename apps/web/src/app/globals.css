@@ -714,30 +714,6 @@ a.tile-stale:hover {
   font-variant-numeric: tabular-nums;
 }
 
-.tile-edit-list {
-  list-style: none;
-  margin: 0 0 16px;
-  padding: 0;
-}
-
-.tile-edit-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid #1b1f26;
-  font-size: 14px;
-}
-
-.tile-edit-list .actions {
-  margin: 0;
-}
-
-.add-tile {
-  padding-top: 8px;
-}
-
 /* ─── TV layout (#52) ────────────────────────────────────────────────── */
 
 /* Covers the page (nav included): nothing but the dashboard on screen. */
@@ -2562,4 +2538,74 @@ a.health-badge:hover {
   color: #7aa2f7;
   font-size: 13px;
   font-weight: normal;
+}
+
+/* ─── Studio inspector (#225) ────────────────────────────────────────── */
+
+.label-preview strong {
+  color: #e6e9ed;
+  font-weight: 600;
+}
+
+.image-picker-upload--drop {
+  outline: 2px dashed #7aa2f7;
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.text-preview {
+  border: 1px solid #23272e;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #0b0d10;
+  font-size: 13px;
+  line-height: 1.35;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.text-preview h3,
+.text-preview h4,
+.text-preview p {
+  margin: 0 0 6px;
+}
+
+.text-preview h3 {
+  font-size: 18px;
+}
+
+.text-preview h4 {
+  font-size: 15px;
+}
+
+.image-library summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.image-library ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.image-library li {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.image-library img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border: 1px solid #23272e;
+  border-radius: 4px;
+  background: #0b0d10;
 }

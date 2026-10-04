@@ -5,7 +5,7 @@ import type { StudioPlacement, StudioTextSpan } from "@netrics/domain";
 import { LINE_HEIGHT, u } from "@/lib/studio-render";
 import { textWidgetLayout } from "@/lib/studio-widgets";
 
-function Spans({ spans }: { spans: readonly StudioTextSpan[] }) {
+export function Spans({ spans }: { spans: readonly StudioTextSpan[] }) {
   return (
     <>
       {spans.map((span, index) => {

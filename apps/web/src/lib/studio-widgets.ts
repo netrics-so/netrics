@@ -137,20 +137,6 @@ export function slideTitle(slide: { name: string | null }, index: number) {
   return slide.name ?? `Slide ${index + 1}`;
 }
 
-/**
- * Whether the tile editor can still edit the dashboard: one slide with
- * metric widgets only, the shape a tile save keeps (ADR 0015, section 3).
- * Anything else is a studio dashboard, edited in the Studio (#223).
- */
-export function isTileDashboard(dashboard: { slides: DashboardSlide[] }) {
-  return (
-    dashboard.slides.length <= 1 &&
-    dashboard.slides.every((slide) =>
-      slide.widgets.every((widget) => widget.type === "metric"),
-    )
-  );
-}
-
 const SMALLER: Record<StudioTextSize, StudioTextSize | null> = {
   display: "heading",
   heading: "body",

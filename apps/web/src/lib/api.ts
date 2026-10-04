@@ -213,8 +213,12 @@ export function apiErrorMessage(error: unknown): string {
         return "A widget shows an app or project its connection no longer has.";
       case "image_not_found":
         return "An image this dashboard uses no longer exists.";
-      case "image_in_use":
-        return "Dashboards still use this image.";
+      case "image_in_use": {
+        const names = error.details.dashboards?.map((d) => d.name) ?? [];
+        return names.length > 0
+          ? `Dashboards still use this image: ${names.join(", ")}. Remove it from them first.`
+          : "Dashboards still use this image.";
+      }
       case "image_too_large":
         return "That image is larger than 1 MiB. Export it smaller and try again.";
       case "image_dimensions_too_large":
@@ -1011,6 +1015,23 @@ export function uploadImage(
     },
     body: file.body,
   }).then((response) => parseResponse(imageResponseSchema, response));
+}
+
+/**
+ * Deletes an unused image. Throws ApiError image_in_use (with the
+ * dashboards that use it in `details.dashboards`) while one still does.
+ */
+export async function deleteImage(
+  workspaceId: string,
+  imageId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/v1/workspaces/${workspaceId}/images/${imageId}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw await readError(response);
+  }
 }
 
 /** One tile's numbers (browser; tiles refresh themselves). */

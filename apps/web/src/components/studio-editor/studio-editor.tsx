@@ -16,6 +16,7 @@ import {
   ApiError,
   apiErrorMessage,
   createDashboard,
+  deleteImage,
   loadDashboard,
   saveDashboard,
   uploadImage,
@@ -33,6 +34,7 @@ import {
 } from "@/lib/studio-document";
 import { resolveDashboardTheme } from "@/lib/studio-theme";
 import {
+  referencedImageIds,
   toStudioImage,
   type StudioConnection,
   type StudioEnv,
@@ -50,6 +52,7 @@ import {
 import { PlayMode } from "./play-mode";
 import { SlideRail } from "./slide-rail";
 import { useLeaveGuard } from "./use-leave-guard";
+import type { StudioCurrency } from "./widget-panel";
 
 const reducer = createStudioReducer(() => crypto.randomUUID());
 
@@ -79,6 +82,7 @@ export function StudioEditor({
   projects,
   devices: initialDevices,
   dashboardNames,
+  currency,
 }: {
   workspaceId: string;
   dashboard: Dashboard;
@@ -92,6 +96,8 @@ export function StudioEditor({
   devices: Device[] | null;
   /** Every dashboard of the workspace by id (what TVs show now). */
   dashboardNames: Record<string, string>;
+  /** Display currency and convertible currencies for amounts (#191). */
+  currency?: StudioCurrency;
 }) {
   const router = useRouter();
   const [state, dispatch] = useReducer(reducer, dashboard, initialStudioState);
@@ -191,6 +197,24 @@ export function StudioEditor({
       } catch (cause) {
         setError(apiErrorMessage(cause));
         return null;
+      }
+    },
+    [workspaceId],
+  );
+
+  const imagesInUse = useMemo(
+    () => new Set(referencedImageIds(draft)),
+    [draft],
+  );
+  const onDeleteImage = useCallback(
+    async (imageId: string): Promise<string | null> => {
+      try {
+        await deleteImage(workspaceId, imageId);
+        setImages((current) => current.filter((image) => image.id !== imageId));
+        dispatch({ type: "announce", text: "Image deleted." });
+        return null;
+      } catch (cause) {
+        return apiErrorMessage(cause);
       }
     },
     [workspaceId],
@@ -469,11 +493,17 @@ export function StudioEditor({
           {widget ? (
             <WidgetPanel
               widget={widget}
+              workspaceId={workspaceId}
               metrics={metrics}
               images={pickable}
+              imagesInUse={imagesInUse}
               problems={widgetProblems}
+              timeZone={timeZone}
+              fontScale={theme.tokens.fontScale}
+              currency={currency}
               dispatch={dispatch}
               onUploadImage={onUploadImage}
+              onDeleteImage={onDeleteImage}
             />
           ) : (
             <DashboardSettingsPanel
