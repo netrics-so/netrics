@@ -2,6 +2,8 @@ import { hostname } from "node:os";
 
 import pino, { type Logger } from "pino";
 
+import { logSerializers } from "./log-serializers.js";
+
 import { sql } from "drizzle-orm";
 
 import {
@@ -255,6 +257,7 @@ export function exchangeRateJobFor(
 /** Process entry for NETRICS_ROLE=scheduler (called from src/index.ts). */
 export async function startScheduler(config: Config): Promise<void> {
   const logger = pino({
+    serializers: logSerializers,
     level: config.logLevel,
     base: { service: "netrics-server", role: config.role },
   });

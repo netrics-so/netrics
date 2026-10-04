@@ -263,7 +263,7 @@ browsers and tvOS ImageIO. Image bytes and names never reach logs.
   so a device credential cannot enumerate the workspace's images.
 
 Both answer with the stored `Content-Type`, `X-Content-Type-Options:
-nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`,
+nosniff`, `Content-Security-Policy: default-src 'none'; sandbox; frame-ancestors 'none'`,
 `Content-Disposition: inline; filename="image.<ext>"`,
 `Cross-Origin-Resource-Policy: same-origin`, `ETag: "<sha256>"` (304 on
 `If-None-Match`) and `Cache-Control: private, max-age=31536000, immutable`.
@@ -273,6 +273,11 @@ for the kiosk (below).
 
 A referenced image cannot be deleted: 409 `image_in_use` with the
 dashboards that use it.
+The references (`dashboards.logo_image_id`,
+`dashboard_slides.background_image_id`, `dashboard_widgets.image_id`) are
+composite foreign keys `(image, workspace)`, deferred to the end of the
+transaction so that deleting a workspace (images and dashboards in one
+statement) still works; deleting an image checks them immediately (#217).
 
 **Resource icons ("use app icon").** An image widget, a slide background or
 the dashboard logo can use a connection resource's icon instead of an

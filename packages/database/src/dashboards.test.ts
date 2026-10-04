@@ -44,6 +44,7 @@ function metric(
     dimensions: {},
     displayCurrency: null,
     text: null,
+    imageId: null,
     options: {},
     ...overrides,
   };
@@ -57,6 +58,8 @@ function slide(
     name: null,
     durationSeconds: null,
     enabled: true,
+    backgroundImageId: null,
+    backgroundDim: 0,
     widgets,
     ...overrides,
   };

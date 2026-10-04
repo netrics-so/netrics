@@ -64,6 +64,9 @@ services:
       # Display currency (#191): "ecb" (default) or "off". Set the same on
       # the scheduler.
       NETRICS_EXCHANGE_RATES: ${NETRICS_EXCHANGE_RATES:-ecb}
+      # Workspace image quota (#217): images and MiB per workspace.
+      NETRICS_IMAGE_QUOTA_COUNT: ${NETRICS_IMAGE_QUOTA_COUNT:-100}
+      NETRICS_IMAGE_QUOTA_MIB: ${NETRICS_IMAGE_QUOTA_MIB:-50}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   worker:

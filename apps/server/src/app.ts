@@ -16,6 +16,7 @@ import type { ConnectorRegistry } from "@netrics/connector-runtime";
 
 import { createAuthService, type AuthService } from "./auth/index.js";
 import { registerClientAddress } from "./client-address.js";
+import { logSerializers } from "./log-serializers.js";
 import { createDefaultRegistry } from "./connectors.js";
 import { createOnboarding } from "./onboarding.js";
 import { createCredentialKeyring } from "./credentials.js";
@@ -37,6 +38,7 @@ import { registerAdminRoutes } from "./routes/admin.js";
 import { registerConnectionRoutes } from "./routes/connections.js";
 import { registerDashboardRoutes } from "./routes/dashboards.js";
 import { registerDeviceRoutes } from "./routes/devices.js";
+import { registerImageRoutes } from "./routes/images.js";
 import { registerInvitationRoutes } from "./routes/invitations.js";
 import { registerMetricRoutes } from "./routes/metrics.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
@@ -74,9 +76,15 @@ export async function buildApp(
 
   const app = Fastify({
     ...(deps.logger
-      ? { loggerInstance: deps.logger }
+      ? {
+          loggerInstance: deps.logger.child(
+            {},
+            { serializers: logSerializers },
+          ),
+        }
       : {
           logger: {
+            serializers: logSerializers,
             level: config.logLevel,
             base: { service: "netrics-server", role: config.role },
           },
@@ -166,6 +174,7 @@ export async function buildApp(
   });
   registerDashboardRoutes(app, { authService, db });
   registerThemeRoutes(app, { authService, db });
+  registerImageRoutes(app, { authService, db, quota: config.imageQuota });
   registerDeviceRoutes(app, {
     authService,
     db,

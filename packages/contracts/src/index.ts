@@ -6,6 +6,7 @@ import {
   GRANULARITIES,
   METRIC_KINDS,
   PERIODS,
+  BACKGROUND_DIM,
   SLIDE_SECONDS,
   SLIDE_TRANSITIONS,
   STUDIO_GRID,
@@ -912,6 +913,9 @@ export {
   type ConfigValidation,
 } from "./config-schema.js";
 
+// Workspace images (ADR 0015, #217).
+export * from "./images.js";
+
 // ─── Metrics (#48) ──────────────────────────────────────────────────────────
 
 export const metricPeriodSchema = z.enum(PERIODS);
@@ -1403,6 +1407,8 @@ export const dashboardSettingsSchema = z.object({
   themeId: z.uuid().nullable(),
   /** Overrides the theme accent (a brand colour), else null. */
   accentColor: z.string().nullable(),
+  /** A workspace image shown in the header before the name (#217). */
+  logoImageId: z.uuid().nullable(),
 });
 export type DashboardSettings = z.infer<typeof dashboardSettingsSchema>;
 
@@ -1471,6 +1477,11 @@ export const textWidgetOptionsSchema = z.object({
   size: z.enum(["body", "heading", "display"]).default("body"),
   align: alignSchema.default("start"),
 });
+export const imageWidgetOptionsSchema = z.object({
+  /** contain: the whole image; cover: fills the widget, cropped. */
+  fit: z.enum(["contain", "cover"]).default("contain"),
+  align: alignSchema.default("center"),
+});
 export const clockWidgetOptionsSchema = z.object({
   showDate: z.boolean().default(true),
   hour12: z.boolean().default(false),
@@ -1522,6 +1533,13 @@ export const dashboardWidgetInputSchema = z.discriminatedUnion("type", [
     options: barWidgetOptionsSchema,
   }),
   z.object({
+    type: z.literal("image"),
+    ...widgetInputShape,
+    /** An image of this workspace (GET /v1/workspaces/:w/images). */
+    imageId: z.uuid(),
+    options: imageWidgetOptionsSchema.prefault({}),
+  }),
+  z.object({
     type: z.literal("text"),
     ...widgetInputShape,
     /** Markdown-lite: paragraphs, #/## headings, **bold**, *italic*. */
@@ -1538,6 +1556,19 @@ export type DashboardWidgetInput = z.input<typeof dashboardWidgetInputSchema>;
 export type DashboardWidgetInputParsed = z.infer<
   typeof dashboardWidgetInputSchema
 >;
+
+/** A workspace image behind a slide's widgets, dimmed for contrast. */
+export const slideBackgroundSchema = z.object({
+  imageId: z.uuid(),
+  /** Percent of theme background laid over the image, 0–80. */
+  dim: z
+    .number()
+    .int()
+    .min(BACKGROUND_DIM.min)
+    .max(BACKGROUND_DIM.max)
+    .default(BACKGROUND_DIM.default),
+});
+export type SlideBackground = z.infer<typeof slideBackgroundSchema>;
 
 export const dashboardSlideInputSchema = z.object({
   /**
@@ -1556,6 +1587,8 @@ export const dashboardSlideInputSchema = z.object({
   durationSeconds: slideSecondsSchema.nullable().optional(),
   /** Screens skip disabled slides. Default true. */
   enabled: z.boolean().optional(),
+  /** A full-slide image behind the widgets; null or missing: none. */
+  background: slideBackgroundSchema.nullable().optional(),
   widgets: z
     .array(dashboardWidgetInputSchema)
     .max(STUDIO_LIMITS.widgetsPerSlide),
@@ -1601,6 +1634,12 @@ export const dashboardWidgetSchema = z.discriminatedUnion("type", [
     options: barWidgetOptionsSchema,
   }),
   z.object({
+    type: z.literal("image"),
+    ...widgetShape,
+    imageId: z.uuid(),
+    options: imageWidgetOptionsSchema,
+  }),
+  z.object({
     type: z.literal("text"),
     ...widgetShape,
     text: z.string(),
@@ -1620,6 +1659,7 @@ export const dashboardSlideSchema = z.object({
   name: z.string().nullable(),
   durationSeconds: z.number().int().nullable(),
   enabled: z.boolean(),
+  background: slideBackgroundSchema.nullable(),
   /** In reading order: top to bottom, then left to right. */
   widgets: z.array(dashboardWidgetSchema),
 });

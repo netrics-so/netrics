@@ -9,8 +9,15 @@ import {
 // and validates. Placement rules, sizes and the tile migration's automatic
 // layout live in studio-layout.ts (#215), shared with tvOS.
 
-/** Widget types the server accepts (image follows with #217). */
-export const WIDGET_TYPES = ["metric", "line", "bar", "text", "clock"] as const;
+/** Widget types the server accepts. */
+export const WIDGET_TYPES = [
+  "metric",
+  "line",
+  "bar",
+  "image",
+  "text",
+  "clock",
+] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 
 /** Widgets that show a metric of a connection. */
@@ -30,6 +37,9 @@ export const STUDIO_LIMITS = {
   slideNameLength: 60,
   widgetTitleLength: 100,
 } as const;
+
+/** A slide background's dim overlay, in percent (ADR 0015). */
+export const BACKGROUND_DIM = { min: 0, max: 80, default: 40 } as const;
 
 /** How long a slide stays on screen (seconds). */
 export const SLIDE_SECONDS = { min: 5, max: 3600, default: 20 } as const;

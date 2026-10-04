@@ -161,6 +161,47 @@ describe("api proxy requests", () => {
     expect(response.headers.get("etag")).toBe('"v1"');
   });
 
+  it("passes image uploads and image bytes with their headers through (#217)", async () => {
+    vi.stubEnv("NETRICS_API_URL", "http://api.internal:3001");
+    const png = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 255,
+    ]);
+    const imageHeaders = {
+      "content-type": "image/png",
+      "x-content-type-options": "nosniff",
+      "content-security-policy":
+        "default-src 'none'; sandbox; frame-ancestors 'none'",
+      "content-disposition": 'inline; filename="image.png"',
+      "cross-origin-resource-policy": "same-origin",
+      etag: '"abc"',
+      "cache-control": "private, max-age=31536000, immutable",
+    };
+    const upstream = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(png, { status: 200, headers: imageHeaders }),
+    );
+    vi.stubGlobal("fetch", upstream);
+
+    const response = await proxyToApi(
+      new Request("https://netrics.example.com/v1/workspaces/w/images", {
+        method: "POST",
+        headers: {
+          "content-type": "image/png",
+          "x-netrics-image-name": "Logo%20%C3%BC.png",
+        },
+        body: png,
+      }),
+    );
+
+    const [, init] = upstream.mock.calls[0]!;
+    const sent = new Headers(init!.headers);
+    expect(sent.get("content-type")).toBe("image/png");
+    expect(sent.get("x-netrics-image-name")).toBe("Logo%20%C3%BC.png");
+    expect(Buffer.from(init!.body as Uint8Array)).toEqual(Buffer.from(png));
+    expect(Object.fromEntries(response.headers)).toMatchObject(imageHeaders);
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from(png));
+  });
+
   it("answers 502 when the API cannot be reached", async () => {
     vi.stubGlobal(
       "fetch",
