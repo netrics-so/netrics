@@ -295,6 +295,13 @@
       "when": 1791129644821,
       "tag": "0041_table_widget",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791134233369,
+      "tag": "0042_goals",
+      "breakpoints": true
     }
   ]
 }

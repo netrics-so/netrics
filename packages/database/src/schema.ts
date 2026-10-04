@@ -1445,3 +1445,68 @@ export const connectionOAuth = pgTable(
     index("connection_oauth_workspace_idx").on(table.workspaceId),
   ],
 );
+
+// Goals (ADR 0019 section 4, #335): a named target for one metric in a
+// period to date, shared by gauge widgets and later alert rules. The metric
+// binding is a widget's; a goal goes with its connection (cascade), like a
+// widget. `id, workspace_id` is unique so gauges can reference a goal of
+// their own workspace.
+export const goals = pgTable(
+  "goals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    metricKey: text("metric_key").notNull(),
+    aggregation: text("aggregation").notNull(),
+    dimensions: jsonb("dimensions").notNull().default({}),
+    displayCurrency: text("display_currency"),
+    period: text("period").notNull(),
+    /** In the unit the metric's values use (minor units, 0–1 for a ratio). */
+    target: doublePrecision("target").notNull(),
+    version: integer("version").notNull().default(1),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "goals_connection_fk",
+      columns: [table.connectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("cascade"),
+    unique("goals_id_workspace_unique").on(table.id, table.workspaceId),
+    uniqueIndex("goals_name_unique").on(
+      table.workspaceId,
+      sql`lower(${table.name})`,
+    ),
+    index("goals_connection_idx").on(table.connectionId),
+    check("goals_name_valid", sql`char_length(${table.name}) between 1 and 60`),
+    check(
+      "goals_aggregation_valid",
+      sql`${table.aggregation} in ('sum', 'last')`,
+    ),
+    check(
+      "goals_period_valid",
+      sql`${table.period} in ('today', 'this_week', 'this_month', 'this_quarter', 'this_year')`,
+    ),
+    check(
+      "goals_target_valid",
+      sql`${table.target} > 0 and ${table.target} <= 1e15`,
+    ),
+    check(
+      "goals_dimensions_object",
+      sql`jsonb_typeof(${table.dimensions}) = 'object'`,
+    ),
+    check("goals_version_positive", sql`${table.version} >= 1`),
+  ],
+);

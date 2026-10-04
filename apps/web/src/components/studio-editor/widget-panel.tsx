@@ -12,8 +12,10 @@ import {
   DEFAULT_RESOURCE_NOUN,
   RESOURCE_DIMENSION,
   STUDIO_LIMITS,
+  GOAL_PERIODS,
   PERIODS,
   WIDGET_TYPES,
+  isGoalAggregation,
   aggregationName,
   allResourcesName,
   periodLabel,
@@ -23,6 +25,7 @@ import {
 
 import { Spans } from "@/components/studio/text-widget";
 import { metricPickerLabel } from "@/lib/format-metric";
+import { goalMetrics } from "@/lib/goals";
 import { useLocale, useT } from "@/lib/i18n/client";
 import {
   widgetTypeName,
@@ -301,14 +304,28 @@ function TypeField({ widget, metrics, images, dispatch }: WidgetPanelProps) {
 // ---------------------------------------------------------------------------
 // Data binding
 
-function DataFields({
+/**
+ * The metric binding of a data widget. Exported for the goal form
+ * (ADR 0019 §4), which binds a goal with the same picker: with `goal`, only
+ * metrics, periods and aggregations a goal can have are offered, and an
+ * amount needs one fixed currency.
+ */
+export function DataFields({
   widget,
   metric,
   metrics,
   workspaceId,
   currency,
   dispatch,
-}: WidgetPanelProps & { widget: DataWidget; metric?: WorkspaceMetric }) {
+  goal = false,
+}: Pick<
+  WidgetPanelProps,
+  "metrics" | "workspaceId" | "currency" | "dispatch"
+> & {
+  widget: DataWidget;
+  metric?: WorkspaceMetric | undefined;
+  goal?: boolean;
+}) {
   const locale = useLocale();
   const t = useT("studio.widgetPanel");
   const update = (patch: WidgetPatch) =>
@@ -316,8 +333,12 @@ function DataFields({
   const updateOptions = (patch: object) =>
     dispatch({ type: "updateWidgetOptions", widgetId: widget.id, patch });
 
-  const candidates = metricsForType(metrics, widget.type);
-  const connections = connectionsForType(metrics, widget.type);
+  const candidates = goal
+    ? goalMetrics(metricsForType(metrics, widget.type))
+    : metricsForType(metrics, widget.type);
+  const connections = goal
+    ? connectionsForType(candidates, widget.type)
+    : connectionsForType(metrics, widget.type);
   const ofConnection = candidates.filter(
     (candidate) => candidate.connectionId === widget.connectionId,
   );
@@ -366,9 +387,10 @@ function DataFields({
   const workspaceCurrency =
     conversion.convertible.length > 0 ? conversion.displayCurrency : null;
   const saved = currencyChoiceOf(widget);
-  // A saved choice stays selectable while its options load.
+  // A saved choice stays selectable while its options load; a goal keeps
+  // its currency even in a period without amounts in it yet.
   const choice =
-    currencies.totals === null
+    goal || currencies.totals === null
       ? saved
       : effectiveChoice(
           choiceValue(saved),
@@ -456,7 +478,7 @@ function DataFields({
                 update({ period: event.target.value as MetricPeriod })
               }
             >
-              {PERIODS.map((option) => (
+              {(goal ? GOAL_PERIODS : PERIODS).map((option) => (
                 <option key={option} value={option}>
                   {periodLabel(option, locale)}
                 </option>
@@ -474,11 +496,13 @@ function DataFields({
                 })
               }
             >
-              {(metric?.aggregations ?? [widget.aggregation]).map((option) => (
-                <option key={option} value={option}>
-                  {metric ? aggregationName(option, metric, locale) : option}
-                </option>
-              ))}
+              {(metric?.aggregations ?? [widget.aggregation])
+                .filter((option) => !goal || isGoalAggregation(option))
+                .map((option) => (
+                  <option key={option} value={option}>
+                    {metric ? aggregationName(option, metric, locale) : option}
+                  </option>
+                ))}
             </select>
           </div>
         </div>
@@ -551,13 +575,20 @@ function DataFields({
                 );
               }}
             >
-              <option value="">
-                {workspaceChoiceLabel(
-                  workspaceCurrency,
-                  currencies.totals,
-                  locale,
-                )}
-              </option>
+              {goal ? (
+                // A goal's target is in one currency (ADR 0019 §4).
+                <option value="" disabled>
+                  {t("pickCurrency")}
+                </option>
+              ) : (
+                <option value="">
+                  {workspaceChoiceLabel(
+                    workspaceCurrency,
+                    currencies.totals,
+                    locale,
+                  )}
+                </option>
+              )}
               {conversion.convertible.length > 0 ? (
                 <optgroup label={t("convertedGroup")}>
                   {conversion.convertible.map((code) => (
@@ -589,12 +620,14 @@ function DataFields({
                 ? currencies.error
                 : !currencies.totals
                   ? t("loadingCurrencies")
-                  : choice.kind === "only"
-                    ? t("onlyCurrency", { currency: choice.currency })
-                    : choice.kind === "convert" ||
-                        (choice.kind === "workspace" && workspaceCurrency)
-                      ? t("approximate")
-                      : t("largestCurrency")}
+                  : goal && choice.kind === "workspace"
+                    ? t("pickCurrencyHelp")
+                    : choice.kind === "only"
+                      ? t("onlyCurrency", { currency: choice.currency })
+                      : choice.kind === "convert" ||
+                          (choice.kind === "workspace" && workspaceCurrency)
+                        ? t("approximate")
+                        : t("largestCurrency")}
             </p>
           </div>
         ) : null}

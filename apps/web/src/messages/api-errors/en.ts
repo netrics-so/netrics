@@ -28,6 +28,12 @@ export const apiErrorsEn = {
       "This dashboard now has slides or widgets that the tile editor cannot keep. Reload it before editing.",
     dashboard_not_found: "This dashboard no longer exists.",
     theme_not_found: "That theme no longer exists.",
+    goal_not_found: "That goal no longer exists.",
+    goal_name_taken: "A goal with that name already exists in this workspace.",
+    period_not_supported:
+      "A goal needs a period with an end: today, this week, month, quarter or year.",
+    goal_direction_unsupported:
+      "A goal cannot follow a metric where lower is better, such as average position.",
     theme_name_taken:
       "A theme with that name already exists in this workspace.",
     contrast_too_low:

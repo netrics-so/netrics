@@ -24,6 +24,7 @@ export const shellEn = {
     items: {
       home: "Home",
       dashboards: "All dashboards",
+      goals: "Goals",
       themes: "Themes",
       sources: "Connected",
       addSource: "Add source",
@@ -35,6 +36,7 @@ export const shellEn = {
     railItems: {
       home: "Home",
       dashboards: "Dashboards",
+      goals: "Goals",
       themes: "Themes",
       sources: "Sources",
       addSource: "Add source",

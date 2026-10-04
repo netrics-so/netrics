@@ -29,6 +29,13 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Dieses Dashboard enthält jetzt Folien oder Widgets, die der Kachel-Editor nicht beibehalten kann. Lade es neu, bevor du es bearbeitest.",
     dashboard_not_found: "Dieses Dashboard existiert nicht mehr.",
     theme_not_found: "Dieses Design existiert nicht mehr.",
+    goal_not_found: "Dieses Ziel existiert nicht mehr.",
+    goal_name_taken:
+      "In diesem Workspace gibt es schon ein Ziel mit diesem Namen.",
+    period_not_supported:
+      "Ein Ziel braucht einen Zeitraum mit Ende: heute, diese Woche, diesen Monat, dieses Quartal oder dieses Jahr.",
+    goal_direction_unsupported:
+      "Ein Ziel kann keiner Metrik folgen, bei der weniger besser ist, etwa der durchschnittlichen Position.",
     theme_name_taken:
       "In diesem Workspace gibt es schon ein Design mit diesem Namen.",
     contrast_too_low:

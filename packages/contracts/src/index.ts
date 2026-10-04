@@ -991,6 +991,7 @@ export {
 
 // Workspace images (ADR 0015, #217).
 export * from "./images.js";
+export * from "./goals.js";
 
 // ─── Metrics (#48) ──────────────────────────────────────────────────────────
 

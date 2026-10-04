@@ -174,6 +174,15 @@ export function isDuplicateMembershipError(error: unknown): boolean {
   );
 }
 
+/** Unique violation on a workspace's goal names (#335). */
+export function isDuplicateGoalNameError(error: unknown): boolean {
+  return findPgError(
+    error,
+    (code, message) =>
+      code === "23505" && message.includes("goals_name_unique"),
+  );
+}
+
 /** Unique violation on a workspace's theme names (#216). */
 export function isDuplicateThemeNameError(error: unknown): boolean {
   return findPgError(

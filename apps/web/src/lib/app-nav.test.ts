@@ -17,6 +17,7 @@ describe("workspaceNav (#302)", () => {
     expect(workspaceNav(W, ALL).map((item) => [item.key, item.href])).toEqual([
       ["home", `/workspaces/${W}`],
       ["dashboards", `/workspaces/${W}/dashboards`],
+      ["goals", `/workspaces/${W}/goals`],
       ["themes", `/workspaces/${W}/settings/themes`],
       ["sources", `/workspaces/${W}/sources`],
       ["addSource", `/workspaces/${W}/connections/new`],
@@ -44,6 +45,7 @@ describe("activeNavKey", () => {
     ["/dashboards", "dashboards"],
     ["/dashboards/d1", "dashboards"],
     ["/dashboards/d1/studio", "dashboards"],
+    ["/goals", "goals"],
     ["/settings/themes", "themes"],
     ["/settings/themes/t1", "themes"],
     ["/settings", "settings"],

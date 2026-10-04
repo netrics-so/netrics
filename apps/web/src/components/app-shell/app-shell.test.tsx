@@ -56,6 +56,7 @@ describe("app shell (#302)", () => {
     expect(sidebarLinks(html).map(([href]) => href)).toEqual([
       BASE,
       `${BASE}/dashboards`,
+      `${BASE}/goals`,
       `${BASE}/settings/themes`,
       `${BASE}/sources`,
       `${BASE}/connections/new`,
@@ -78,6 +79,7 @@ describe("app shell (#302)", () => {
       "Home",
       "Dashboards",
       "All dashboards",
+      "Goals",
       "Themes",
       "Sources",
       "Connected",
@@ -107,6 +109,10 @@ describe("app shell (#302)", () => {
     ]);
     expect(sidebarLinks(render(`${BASE}/settings/themes`))).toContainEqual([
       `${BASE}/settings/themes`,
+      "page",
+    ]);
+    expect(sidebarLinks(render(`${BASE}/goals`))).toContainEqual([
+      `${BASE}/goals`,
       "page",
     ]);
     expect(sidebarLinks(render(BASE))).toContainEqual([BASE, "page"]);

@@ -456,6 +456,7 @@ const RAIL_KEYS: readonly NavKey[] = [
 /** The area a rail button stands for (Themes under Dashboards, …). */
 function railArea(key: NavKey | null): NavKey | null {
   switch (key) {
+    case "goals":
     case "themes":
       return "dashboards";
     case "addSource":

@@ -342,8 +342,10 @@ interface ValidBinding {
   metricDimensions: readonly string[];
 }
 
-/** A tile's or data widget's metric, checked against the workspace. */
-async function validateBinding(
+/**
+ * A tile's, data widget's or goal's metric, checked against the workspace.
+ */
+export async function validateBinding(
   tx: Transaction,
   workspaceId: string,
   binding: Binding,
