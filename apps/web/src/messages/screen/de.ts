@@ -47,6 +47,11 @@ export const screenDe: Catalog<typeof screenEn> = {
       trendAt: "Verlauf von {min} bis {max}, zuletzt {latest} ({date}).",
       updated: "aktualisiert {time}",
       updatedFrom: "aktualisiert {time} · {source}",
+      reconnect: "{source} neu verbinden",
+      reconnectSource: "Quelle neu verbinden",
+      reconnectHint:
+        "Der Zugriff wurde abgelehnt. Ein Admin kann das unter Verbindungen beheben.",
+      loadingHistory: "Verlauf wird geladen …",
     },
     player: {
       nextRefresh: "nächste Aktualisierung in {seconds} s",

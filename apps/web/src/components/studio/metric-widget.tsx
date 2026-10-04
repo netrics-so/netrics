@@ -39,9 +39,12 @@ import { connectionNotice, connectionStatus } from "@/lib/tile-status";
 import { useCountUp } from "./enter-motion";
 import { useMetricData } from "./use-widget-data";
 import {
+  DataStateWidget,
   WidgetFooter,
   WidgetLabel,
   WidgetNotice,
+  dataSurfaceOf,
+  statusClass,
   useFooterCandidates,
 } from "./widget-parts";
 
@@ -210,9 +213,28 @@ export function MetricWidgetView(props: MetricWidgetViewProps) {
     countFormat(layout.value.text, { full, compact }, reading, locale),
     layout.value.text,
   );
+  const surface = dataSurfaceOf(props.status);
+  if (surface) {
+    return (
+      <DataStateWidget
+        type="metric"
+        surface={surface}
+        label={layout.label}
+        small={layout.sizes.small}
+        source={props.source}
+        updatedAt={props.updatedAt}
+        placement={props.placement}
+        showHeader={props.showHeader}
+        fontScale={props.fontScale}
+      />
+    );
+  }
 
   return (
-    <article className="sw sw-metric" aria-busy={props.loading ?? false}>
+    <article
+      className={`sw sw-metric${statusClass(props.status)}`}
+      aria-busy={props.loading ?? false}
+    >
       <WidgetLabel layout={layout.label} />
       {layout.showPeriod ? (
         <p className="sw-muted" style={{ fontSize: u(layout.sizes.small) }}>
@@ -331,11 +353,14 @@ export function liveDataState(
     connectionNotice(connection, now, locale),
     locale,
   );
-  const status: DeviceTileStatus = query.error
-    ? "outage"
-    : query.loading && !query.loaded
-      ? "ok"
-      : connectionStatus(connection, query.hasData, now);
+  // A failed query or a removed connection keeps its notice, as an
+  // outage does (no data surface in its place).
+  const status: DeviceTileStatus =
+    query.error || !connection
+      ? "outage"
+      : query.loading && !query.loaded
+        ? "ok"
+        : connectionStatus(connection, query.hasData, now);
   return { notice, status };
 }
 

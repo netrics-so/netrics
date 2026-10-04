@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 
-import type { Locale } from "@netrics/domain";
+import type { DeviceTileStatus } from "@netrics/contracts";
+import type { Locale, StudioPlacement } from "@netrics/domain";
 
 import type { WebTranslator } from "@/lib/i18n/catalogs";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { relativeTimeIn } from "@/lib/relative-time";
 import {
+  footerLine,
   u,
   type FittedLabel,
   type WidgetLabelLayout,
@@ -131,5 +133,125 @@ export function WidgetNotice({
       )}{" "}
       {children}
     </p>
+  );
+}
+
+/** The data states with a surface of their own (ADR 0018 section 5). */
+export type DataSurface = "auth_failed" | "no_data" | "backfilling";
+
+/**
+ * Which surface a widget's data status takes: auth failed, no data and
+ * backfilling replace the numbers; null keeps the widget (ok, outage with
+ * its notice, stale with its warning border and dimmed value).
+ */
+export function dataSurfaceOf(
+  status: DeviceTileStatus | undefined,
+): DataSurface | null {
+  return status === "auth_failed" ||
+    status === "no_data" ||
+    status === "backfilling"
+    ? status
+    : null;
+}
+
+/** The class a data widget's box adds for its status. */
+export function statusClass(status: DeviceTileStatus | undefined): string {
+  switch (status) {
+    case "stale":
+      return " sw--stale";
+    case "auth_failed":
+      return " sw--auth";
+    case "no_data":
+    case "backfilling":
+      return " sw--empty";
+    default:
+      return "";
+  }
+}
+
+/** "Reconnect …" in units: the design's 19 px at 2/3 scale. */
+const RECONNECT_SIZE = 28.5;
+/** The skeleton block's height in units (the design's 40 px). */
+const SKELETON_HEIGHT = 60;
+
+/**
+ * A data widget whose numbers cannot be shown (design 4b): its label, then
+ * for auth failed "Reconnect {source}" with a hint and the last good
+ * sync in the footer; for no data and backfilling a skeleton block (with
+ * the sweep while the history loads) and what is going on. No value, no
+ * chart. The label and the sizes are the widget's own layout's, so the
+ * shared layout math is unchanged.
+ */
+export function DataStateWidget({
+  type,
+  surface,
+  label,
+  small,
+  source,
+  updatedAt,
+  placement,
+  showHeader,
+  fontScale,
+}: {
+  type: "metric" | "line" | "bar";
+  surface: DataSurface;
+  label: WidgetLabelLayout;
+  /** The layout's smallest text size (at least 24 units). */
+  small: number;
+  source: string | null | undefined;
+  updatedAt: string | null | undefined;
+  placement: StudioPlacement;
+  showHeader: boolean;
+  fontScale: number;
+}) {
+  const t = useT("screen.widget");
+  // The source is in "Reconnect …": the footer says when it last worked.
+  const candidates = useFooterCandidates(updatedAt, null);
+  const name = source?.trim() || null;
+  if (surface === "auth_failed") {
+    const footer = footerLine(candidates, {
+      type,
+      placement,
+      showHeader,
+      fontScale,
+    });
+    return (
+      <article className={`sw sw-${type} sw--auth`}>
+        <WidgetLabel layout={label} />
+        <div className="sw-state">
+          <p
+            className="sw-reconnect"
+            style={{ fontSize: u(Math.max(RECONNECT_SIZE, small * 1.1875)) }}
+          >
+            {name ? t("reconnect", { source: name }) : t("reconnectSource")}
+          </p>
+          <p className="sw-muted sw-state-hint" style={{ fontSize: u(small) }}>
+            {t("reconnectHint")}
+          </p>
+        </div>
+        {footer ? <WidgetFooter size={small}>{footer}</WidgetFooter> : null}
+      </article>
+    );
+  }
+  const backfilling = surface === "backfilling";
+  return (
+    <article
+      className={`sw sw-${type} sw--empty`}
+      aria-busy={backfilling ? true : undefined}
+    >
+      <WidgetLabel layout={label} />
+      <div className="sw-state">
+        <span
+          className="sw-skeleton"
+          style={{ height: u(SKELETON_HEIGHT) }}
+          aria-hidden="true"
+        >
+          {backfilling ? <span className="sw-skeleton-sweep" /> : null}
+        </span>
+        <p className="sw-muted sw-state-hint" style={{ fontSize: u(small) }}>
+          {backfilling ? t("loadingHistory") : t("noDataShort")}
+        </p>
+      </div>
+    </article>
   );
 }

@@ -109,7 +109,11 @@ Within ADR 0015 (12 × 8 grid, slides, themes, readability minimums):
   heads) is below 24 u, it is set at 24 u.
 - **Data states** get their own surfaces: stale (warning border, dimmed
   value), auth failed (danger surface, "Reconnect …"), no data and
-  backfilling (dashed border, skeleton).
+  backfilling (dashed border, skeleton). `backfilling` joins the widget
+  data status (#311): a widget without data whose connection has not
+  synced yet or has a backfill queued or running. Every payload schema
+  carries it: tvOS builds since the first release decode a status they
+  do not know as `ok`, which they show exactly as `no_data`.
 - Grid geometry (`STUDIO_SPACING`, header band) is **unchanged** in this
   milestone; it is shared with tvOS through test vectors, and the design
   fits the current spacing.

@@ -9,6 +9,7 @@ import { slidePages, type ScreenSize } from "@/lib/screen-view";
 import { widgetBoxStyle } from "@/lib/studio-render";
 
 import { DeviceWidgetView, type DeviceWidgetEnv } from "./device-widget";
+import { MetricWidgetView } from "./metric-widget";
 import { SlideCanvas, type SlideHeaderInfo } from "./slide-canvas";
 import { SlidePlayer } from "./slide-player";
 
@@ -426,7 +427,9 @@ describe("DeviceWidgetView", () => {
         status: "no_data",
       },
     } as DeviceWidget;
-    expect(html(failed)).toContain("—");
+    // No data: the empty surface (#311) instead of a dash.
+    expect(html(failed)).toContain("sw--empty");
+    expect(html(failed)).toContain(">No data yet</p>");
     const unknown = { ...widgets[5]!, type: "map" } as unknown as DeviceWidget;
     expect(html(unknown)).toContain("This widget could not be shown");
   });
@@ -627,5 +630,133 @@ describe("SlidePlayer enter motion (ADR 0018 section 6, #310)", () => {
     expect(html).toContain(">1,234</p>");
     expect(html).not.toContain("slide-player-slide");
     expect(html).not.toContain("data-entering");
+  });
+});
+
+describe("data states (ADR 0018 section 5, #311)", () => {
+  const withStatus = (
+    widget: DeviceWidget,
+    status: string,
+    extra: Record<string, unknown> = {},
+  ) =>
+    ({
+      ...widget,
+      data: { ...(widget as { data: object }).data, status, ...extra },
+    }) as DeviceWidget;
+  const html = (widget: DeviceWidget, locale: "en" | "de" = "en") =>
+    renderI18n(<DeviceWidgetView widget={widget} env={env} />, locale);
+
+  it("marks stale data with a warning border and a dimmed value", () => {
+    const updatedAt = new Date(Date.now() - 3 * 3600_000).toISOString();
+    const markup = html(withStatus(widgets[0]!, "stale", { updatedAt }));
+    expect(markup).toContain('<article class="sw sw-metric sw--stale"');
+    // The value stays (dimmed by CSS), the notice has the blinking dot.
+    expect(markup).toContain(">1,234</p>");
+    expect(markup).toContain('class="sw-stale-dot"');
+    expect(markup).toContain("Last sync 3 hours ago");
+  });
+
+  it("asks to reconnect instead of the numbers when access failed", () => {
+    for (const widget of widgets.slice(0, 3)) {
+      const markup = html(withStatus(widget, "auth_failed"));
+      expect(markup).toContain(
+        `<article class="sw sw-${widget.type} sw--auth"`,
+      );
+      // Screens have no source name: the generic wording.
+      expect(markup).toContain(
+        '<p class="sw-reconnect" style="font-size:calc(var(--u) * 28.5)">Reconnect the source</p>',
+      );
+      expect(markup).toContain(
+        '<p class="sw-muted sw-state-hint" style="font-size:calc(var(--u) * 24)">Access was rejected. An admin can fix this under Connections.</p>',
+      );
+      expect(markup).not.toContain("sw-value");
+      expect(markup).not.toContain("<svg");
+      expect(markup).not.toContain("sw-bars");
+      expect(markup).not.toContain("sw-notice");
+    }
+    expect(html(withStatus(widgets[0]!, "auth_failed"), "de")).toContain(
+      "Quelle neu verbinden</p>",
+    );
+  });
+
+  it("names the source to reconnect where it is known", () => {
+    const markup = renderI18n(
+      <MetricWidgetView
+        label="Visitors"
+        period="today"
+        aggregation="sum"
+        metric={null}
+        reading={null}
+        notice="Connection needs new credentials"
+        status="auth_failed"
+        source="Google Analytics"
+        updatedAt={new Date(Date.now() - 2 * 86_400_000).toISOString()}
+        placement={{ x: 0, y: 0, w: 4, h: 3 }}
+        showHeader
+        fontScale={1}
+        options={{ showSparkline: true, showChange: true }}
+      />,
+    );
+    expect(markup).toContain(">Reconnect Google Analytics</p>");
+    // The footer says when it last worked; the name is in "Reconnect".
+    expect(markup).toContain(">updated 2 days ago</p>");
+    const de = renderI18n(
+      <MetricWidgetView
+        label="Besucher"
+        period="today"
+        aggregation="sum"
+        metric={null}
+        reading={null}
+        notice={null}
+        status="auth_failed"
+        source="Google Analytics"
+        placement={{ x: 0, y: 0, w: 4, h: 3 }}
+        showHeader
+        fontScale={1}
+        options={{ showSparkline: true, showChange: true }}
+      />,
+      "de",
+    );
+    expect(de).toContain(">Google Analytics neu verbinden</p>");
+  });
+
+  it("shows a skeleton with the sweep while the history loads", () => {
+    for (const widget of widgets.slice(0, 3)) {
+      const markup = html(
+        withStatus(widget, "backfilling", { unit: null, value: null }),
+      );
+      expect(markup).toContain(
+        `<article class="sw sw-${widget.type} sw--empty" aria-busy="true"`,
+      );
+      expect(markup).toContain(
+        '<span class="sw-skeleton" style="height:calc(var(--u) * 60)" aria-hidden="true"><span class="sw-skeleton-sweep"></span></span>',
+      );
+      expect(markup).toContain(">Loading history…</p>");
+      expect(markup).not.toContain("sw-value");
+    }
+    expect(
+      html(
+        withStatus(widgets[0]!, "backfilling", { unit: null, value: null }),
+        "de",
+      ),
+    ).toContain(">Verlauf wird geladen …</p>");
+  });
+
+  it("shows a still skeleton without data", () => {
+    const markup = html(
+      withStatus(widgets[1]!, "no_data", { unit: null, value: null }),
+    );
+    expect(markup).toContain('<article class="sw sw-line sw--empty"');
+    expect(markup).toContain('class="sw-skeleton"');
+    expect(markup).not.toContain("sw-skeleton-sweep");
+    expect(markup).toContain(">No data yet</p>");
+  });
+
+  it("keeps the outage notice in the warning style", () => {
+    const markup = html(withStatus(widgets[0]!, "outage"));
+    expect(markup).toContain('<article class="sw sw-metric"');
+    expect(markup).toContain(">1,234</p>");
+    expect(markup).toContain('<p class="sw-notice"');
+    expect(markup).toContain("Source unreachable");
   });
 });

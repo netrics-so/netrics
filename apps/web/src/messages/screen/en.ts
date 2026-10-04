@@ -52,6 +52,12 @@ export const screenEn = {
       trendAt: "Trend from {min} to {max}, latest {latest} ({date}).",
       updated: "updated {time}",
       updatedFrom: "updated {time} · {source}",
+      /** Data states (ADR 0018 section 5, #311). */
+      reconnect: "Reconnect {source}",
+      reconnectSource: "Reconnect the source",
+      reconnectHint:
+        "Access was rejected. An admin can fix this under Connections.",
+      loadingHistory: "Loading history…",
     },
     /** What a playing screen shows around its slides (ADR 0018, section 5). */
     player: {

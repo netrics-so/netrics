@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BUILTIN_THEMES } from "@netrics/domain";
+import { BUILTIN_THEMES, contrastRatio } from "@netrics/domain";
 
 import {
   resolveDashboardTheme,
@@ -85,4 +85,40 @@ describe("themeSurface (ADR 0018, section 5)", () => {
     expect(themeSurface({ ...dark, background: "#fafafa" })).toBe("flat");
     expect(themeSurface({ ...dark, surface: "#202020" })).toBe("layered");
   });
+});
+
+/** CSS `color-mix(in srgb, a p%, b)` of two #rrggbb colours. */
+function mix(a: string, p: number, b: string): string {
+  const channels = (hex: string) =>
+    [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const [x, y] = [channels(a), channels(b)];
+  return `#${x
+    .map((value, i) =>
+      Math.round(value * p + y[i]! * (1 - p))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
+describe("the auth failed surface (globals.css, #311)", () => {
+  // As the CSS derives it: the danger hue leans `down` towards red; the
+  // surface takes 6 % of it (flat themes: plain), 4 % at the bottom.
+  it.each(Object.entries(BUILTIN_THEMES))(
+    "keeps Reconnect and the hint readable on %s",
+    (_key, { tokens }) => {
+      const danger = mix(tokens.down, 0.4, "#f85149");
+      const surfaces =
+        themeSurface(tokens) === "layered"
+          ? [
+              mix(tokens.surface, 0.94, danger),
+              mix(mix(tokens.surface, 0.8, tokens.background), 0.96, danger),
+            ]
+          : [mix(tokens.surface, 0.94, danger)];
+      for (const surface of surfaces) {
+        expect(contrastRatio(tokens.down, surface)).toBeGreaterThanOrEqual(3);
+        expect(contrastRatio(tokens.muted, surface)).toBeGreaterThanOrEqual(3);
+      }
+    },
+  );
 });
