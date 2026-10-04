@@ -62,8 +62,29 @@ export function ApproveDeviceForm({
 
   if (paired) {
     return (
-      <div className="notice" role="status">
-        <strong>{t("connected", { name: paired })}</strong> {t("showsSoon")}
+      <div className="pairing-done" role="status">
+        <svg
+          className="pairing-done-mark"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <circle cx="12" cy="12" r="12" fill="currentColor" />
+          <path
+            d="M7 12.5l3.2 3.2L17 9"
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <div>
+          <p className="pairing-done-title">
+            {t("connected", { name: paired })}
+          </p>
+          <p className="pairing-done-text">{t("showsSoon")}</p>
+        </div>
       </div>
     );
   }
@@ -74,6 +95,7 @@ export function ApproveDeviceForm({
         <label htmlFor="pairing-code">{t("code")}</label>
         <input
           id="pairing-code"
+          className="pairing-code-input"
           type="text"
           value={code}
           required

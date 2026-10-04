@@ -16,9 +16,11 @@ export const screenEn = {
       noDashboardTitle: "No dashboard assigned yet",
       noDashboardText:
         "Choose one under TVs in netrics; this screen picks it up on its own.",
-      pairingPrompt: "Show a netrics dashboard on this screen",
+      pairingLabel: "Add this screen",
       pairingCode: "Pairing code",
       pairingGoTo: "Go to {url} and enter the code.",
+      pairingScan: "or scan",
+      pairingQr: "QR code to approve this screen at {url}",
       unreachable: "Cannot reach netrics — retrying",
       offline: "Offline",
       offlineSince: "Offline — last update {time}",

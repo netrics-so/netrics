@@ -11,6 +11,7 @@ import { BUILTIN_THEMES, SCREEN_FORMATS, type Locale } from "@netrics/domain";
 import { WEB_CATALOGS } from "@/lib/i18n/catalogs";
 import { I18nProvider } from "@/lib/i18n/client";
 import type { KioskState } from "@/lib/kiosk-client";
+import { encodeQr, qrPath } from "@/lib/qr-code";
 import { widgetBoxStyle } from "@/lib/studio-render";
 
 import {
@@ -215,12 +216,62 @@ describe("kiosk language", () => {
       lastError: null,
     };
     const html = render(state, "de");
-    expect(html).toContain("Zeig ein netrics-Dashboard auf diesem Bildschirm");
+    expect(html).toContain('<div class="kiosk-message kiosk-pairing">');
+    expect(html).toContain("Diesen Bildschirm hinzufügen");
     expect(html).toContain('aria-label="Kopplungscode"');
     expect(html).toMatch(
       /Öffne <strong class="kiosk-url">app\.example\/devices\/approve<\/strong> und gib den Code ein\./,
     );
+    // The QR code of the approval URL, named, next to "or scan".
+    expect(html).toContain(
+      'role="img" aria-label="QR-Code, um diesen Bildschirm unter app.example/devices/approve freizugeben"',
+    );
+    expect(html).toContain('shape-rendering="crispEdges"');
+    expect(html).toContain("oder scannen");
     expect(html).toContain("netrics ist nicht erreichbar");
+  });
+
+  it("encodes the approval URL with the code in the QR code", () => {
+    const approveUrl = "https://app.example/devices/approve?code=ABCD-EFGH";
+    const state: KioskState = {
+      phase: "pairing",
+      pairing: {
+        code: "ABCD-EFGH",
+        pairingUrl: "https://app.example/devices/approve",
+        approveUrl,
+        expiresAt: "2026-10-04T10:10:00Z",
+      },
+      dashboard: null,
+      images: new Map(),
+      updatedAt: null,
+      offline: false,
+      lastError: null,
+    };
+    const html = render(state);
+    const path = /<svg[^>]*><rect[^>]*><\/rect><path d="([^"]+)"/.exec(
+      html,
+    )?.[1];
+    expect(path).toBe(qrPath(encodeQr(approveUrl), 4));
+    expect(html).toContain("Add this screen");
+    expect(html).toContain("or scan");
+    expect(html).not.toContain("netrics ist nicht erreichbar");
+  });
+
+  it("shows waiting screens in the light kiosk style", () => {
+    const state: KioskState = {
+      phase: "starting",
+      pairing: null,
+      dashboard: null,
+      images: new Map(),
+      updatedAt: null,
+      offline: true,
+      lastError: null,
+    };
+    const html = render(state);
+    expect(html).toContain(
+      '<div class="kiosk-message"><h1 class="kiosk-title">',
+    );
+    expect(html).not.toContain('class="tv');
   });
 
   it("labels schema 1 tiles in German", () => {

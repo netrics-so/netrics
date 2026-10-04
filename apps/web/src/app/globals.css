@@ -1110,19 +1110,44 @@ a.tile-stale:hover {
   background: var(--t-background, #07090c);
 }
 
+/* Pairing, waiting and "nothing assigned" (design 1d, #307): light Signal
+   paper, sized by the viewport so they read across a room. --kiosk-unit is
+   1vh on a landscape screen and narrows with the width on a portrait one. */
 .kiosk-message {
+  --kiosk-unit: min(1vh, 1vw);
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3vh;
+  gap: calc(var(--kiosk-unit) * 3);
+  padding: calc(var(--kiosk-unit) * 4);
+  overflow: hidden;
   text-align: center;
+  background: var(--paper);
+  color: var(--text);
+  color-scheme: light;
 }
 
 .kiosk-title {
   margin: 0;
-  font-size: 5vh;
-  font-weight: 600;
+  font-size: calc(var(--kiosk-unit) * 5);
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
+.kiosk-label {
+  margin: 0;
+  font-size: calc(var(--kiosk-unit) * 2.2);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The dark slide screen's "no slides" line. */
 .kiosk-text {
   margin: 0;
   max-width: 70vw;
@@ -1130,27 +1155,66 @@ a.tile-stale:hover {
   color: #8a919c;
 }
 
-.kiosk-text strong {
-  color: #e6e9ed;
-  font-weight: 500;
+.kiosk-message .kiosk-text {
+  max-width: min(70vw, 60em);
+  font-size: calc(var(--kiosk-unit) * 3);
+  line-height: 1.4;
+  color: var(--text-2);
+}
+
+.kiosk-message .kiosk-text strong {
+  color: var(--text);
+  font-weight: 700;
 }
 
 .kiosk-url {
   overflow-wrap: anywhere;
 }
 
-/* Read from across the room: large, monospaced, easy to type. */
+/* Read from across the room: large, monospaced, easy to type. 14vh as
+   before, capped by the width so the 9 characters (JetBrains Mono, 0.6em
+   each plus tracking) fit a portrait screen too. */
 .kiosk-code {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 14vh;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: #e6e9ed;
+  font-size: min(14vh, 12vw);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  /* The tracking trails the last character; balance it so the code
+     centres. */
+  padding-left: 0.14em;
+  white-space: nowrap;
+  color: var(--accent);
 }
 
 .kiosk-code--pending {
-  color: #3a404a;
+  color: var(--border-strong);
+}
+
+.kiosk-scan {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--kiosk-unit) * 2);
+  margin-top: calc(var(--kiosk-unit) * 1);
+  font-size: calc(var(--kiosk-unit) * 2.2);
+  color: var(--muted);
+}
+
+/* Big enough for a phone at a few metres; the SVG brings its quiet zone. */
+.kiosk-qr {
+  display: block;
+  padding: calc(var(--kiosk-unit) * 0.6);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--kiosk-unit) * 1.2);
+  background: #ffffff;
+  color: var(--text);
+}
+
+.kiosk-qr svg {
+  display: block;
+  width: calc(var(--kiosk-unit) * 22);
+  height: calc(var(--kiosk-unit) * 22);
 }
 
 /* Unobtrusive: the last numbers stay the focus while the API is away. */
@@ -1161,7 +1225,54 @@ a.tile-stale:hover {
 
 .kiosk-message .kiosk-offline {
   display: block;
-  margin-top: 1.6vh;
+  margin: calc(var(--kiosk-unit) * 1.6) 0 0;
+  font-size: calc(var(--kiosk-unit) * 2);
+  font-weight: 600;
+  color: var(--warning-text);
+}
+
+/* Approving a TV (/devices/approve, #307): the code as the TV shows it,
+   and an unmistakable confirmation. */
+input.pairing-code-input {
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: var(--size-26);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+input.pairing-code-input::placeholder {
+  color: var(--muted);
+}
+
+.pairing-done {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pairing-done-mark {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  color: var(--accent-fill);
+}
+
+.pairing-done p {
+  margin: 0;
+}
+
+.pairing-done-title {
+  font-size: var(--size-20);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.pairing-done-text {
+  font-size: var(--size-14);
+  color: var(--text-2);
 }
 
 /* Inline checkbox with its label text (e.g. workspace creation). */

@@ -11,9 +11,11 @@ export const screenDe: Catalog<typeof screenEn> = {
       noDashboardTitle: "Noch kein Dashboard zugewiesen",
       noDashboardText:
         "Wähle eines unter TVs in netrics aus; dieser Bildschirm übernimmt es von selbst.",
-      pairingPrompt: "Zeig ein netrics-Dashboard auf diesem Bildschirm",
+      pairingLabel: "Diesen Bildschirm hinzufügen",
       pairingCode: "Kopplungscode",
       pairingGoTo: "Öffne {url} und gib den Code ein.",
+      pairingScan: "oder scannen",
+      pairingQr: "QR-Code, um diesen Bildschirm unter {url} freizugeben",
       unreachable: "netrics ist nicht erreichbar – neuer Versuch läuft",
       offline: "Offline",
       offlineSince: "Offline – letzte Aktualisierung {time}",

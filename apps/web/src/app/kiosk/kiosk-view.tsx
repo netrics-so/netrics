@@ -15,6 +15,7 @@ import {
   screenRotationOf,
   type ScreenRotation,
 } from "@/components/screen-rotation";
+import { QrCode } from "@/components/qr-code";
 import { DeviceScrollWidget } from "@/components/scroll/device-scroll-widget";
 import { ScrollView } from "@/components/scroll/scroll-view";
 import { DeviceWidgetView } from "@/components/studio/device-widget";
@@ -166,21 +167,31 @@ export function KioskScreen({ state }: { state: KioskState }) {
   );
 }
 
+/**
+ * The kiosk's own screens around a dashboard (pairing, waiting, nothing
+ * assigned) are light like the admin (ADR 0018, #307); only a playing
+ * dashboard is dark.
+ */
 function Message({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="tv kiosk-message">
+    <div className="kiosk-message">
       <h1 className="kiosk-title">{title}</h1>
       <p className="kiosk-text">{children}</p>
     </div>
   );
 }
 
+/**
+ * Design 1d: the code first, for typing on any device, and a QR code of
+ * the approval URL (with the code filled in) for a phone.
+ */
 function PairingScreen({ state }: { state: KioskState }) {
   const { pairing } = state;
   const t = useT("screen.kiosk");
+  const address = pairing ? pairingAddress(pairing.pairingUrl) : "";
   return (
-    <div className="tv kiosk-message">
-      <p className="kiosk-text">{t("pairingPrompt")}</p>
+    <div className="kiosk-message kiosk-pairing">
+      <p className="kiosk-label">{t("pairingLabel")}</p>
       {pairing ? (
         <>
           <p className="kiosk-code" aria-label={t("pairingCode")}>
@@ -190,11 +201,20 @@ function PairingScreen({ state }: { state: KioskState }) {
             {t.rich("pairingGoTo", {
               url: (
                 <strong key="url" className="kiosk-url">
-                  {pairingAddress(pairing.pairingUrl)}
+                  {address}
                 </strong>
               ),
             })}
           </p>
+          <div className="kiosk-scan">
+            <span className="kiosk-qr">
+              <QrCode
+                text={pairing.approveUrl}
+                label={t("pairingQr", { url: address })}
+              />
+            </span>
+            <span className="kiosk-scan-text">{t("pairingScan")}</span>
+          </div>
         </>
       ) : (
         <p className="kiosk-code kiosk-code--pending" aria-hidden="true">
