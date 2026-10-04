@@ -1,5 +1,8 @@
+import type { Metadata } from "next";
+
 import { fetchApiHealth } from "@/lib/api";
 import { buildInfo } from "@/lib/build-info";
+import { getLocale, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +21,17 @@ function StatusValue({
   );
 }
 
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("statusPage");
+  return { title: `${t("title")} · netrics` };
+}
+
 export default async function StatusPage() {
-  const health = await fetchApiHealth();
+  const [health, t, locale] = await Promise.all([
+    fetchApiHealth(),
+    getT("statusPage"),
+    getLocale(),
+  ]);
 
   const liveState = health.live ? "up" : "down";
   const readyState = health.ready
@@ -34,57 +46,75 @@ export default async function StatusPage() {
     : "unknown";
 
   const { version: webVersion, commit: webCommit } = buildInfo();
-  const apiVersion = health.live ? health.live.version : "unknown";
-  const apiCommit = health.live ? health.live.commit : "unknown";
+  const apiVersion = health.live ? health.live.version : t("unknown");
+  const apiCommit = health.live ? health.live.commit : t("unknown");
 
   return (
     <>
-      <h1>Status</h1>
-      <p className="subtitle">API status — milestone 00 foundation check</p>
+      <h1>{t("title")}</h1>
+      <p className="subtitle">{t("subtitle")}</p>
 
       <div className="card">
         <div className="row">
-          <span className="label">Web version</span>
+          <span className="label">{t("webVersion")}</span>
           <span className="value">
             {webVersion} ({webCommit})
           </span>
         </div>
         <div className="row">
-          <span className="label">API version</span>
+          <span className="label">{t("apiVersion")}</span>
           <span className="value">
             {apiVersion} ({apiCommit})
           </span>
         </div>
         <div className="row">
-          <span className="label">API process (live)</span>
+          <span className="label">{t("apiLive")}</span>
           <StatusValue
             state={liveState}
-            text={health.live ? "live" : "unreachable"}
+            text={health.live ? t("live") : t("unreachable")}
           />
         </div>
         <div className="row">
-          <span className="label">API readiness</span>
+          <span className="label">{t("apiReady")}</span>
           <StatusValue
             state={readyState}
-            text={health.ready ? health.ready.status : "unknown"}
+            text={
+              health.ready
+                ? health.ready.status === "ready"
+                  ? t("ready")
+                  : t("notReady")
+                : t("unknown")
+            }
           />
         </div>
         <div className="row">
-          <span className="label">PostgreSQL</span>
+          <span className="label">{t("database")}</span>
           <StatusValue
             state={databaseState}
-            text={health.ready ? health.ready.database : "unknown"}
+            text={
+              health.ready
+                ? health.ready.database === "up"
+                  ? t("up")
+                  : t("down")
+                : t("unknown")
+            }
           />
         </div>
       </div>
 
       {health.error ? (
-        <div className="error">API unreachable: {health.error}</div>
+        <div className="error">
+          {t("apiUnreachable", { error: health.error })}
+        </div>
       ) : null}
 
       <p className="meta">
-        Rendered server-side at {new Date().toISOString()} — refresh to
-        re-check.
+        {t("renderedAt", {
+          time: new Intl.DateTimeFormat(locale, {
+            dateStyle: "medium",
+            timeStyle: "medium",
+          }).format(new Date()),
+        })}
       </p>
     </>
   );

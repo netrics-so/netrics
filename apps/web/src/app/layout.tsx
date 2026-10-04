@@ -5,14 +5,14 @@ import { DeployWatcher } from "@/components/deploy-watcher";
 import { Nav } from "@/components/nav";
 import { WEB_CATALOGS } from "@/lib/i18n/catalogs";
 import { I18nProvider } from "@/lib/i18n/client";
-import { getLocale } from "@/lib/i18n/server";
+import { getLocale, getT } from "@/lib/i18n/server";
 
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "netrics",
-  description: "netrics — metrics on every screen",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("appMeta");
+  return { title: "netrics", description: t("description") };
+}
 
 export default async function RootLayout({
   children,

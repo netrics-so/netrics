@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { apiErrorMessage, renameWorkspace } from "@/lib/api";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 export function RenameWorkspaceForm({
   workspaceId,
@@ -14,6 +14,8 @@ export function RenameWorkspaceForm({
   currentName: string;
 }) {
   const locale = useLocale();
+  const t = useT("workspaceSettings.workspace");
+  const common = useT("common");
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -36,7 +38,7 @@ export function RenameWorkspaceForm({
   return (
     <form className="inline" onSubmit={onSubmit}>
       <div className="field">
-        <label htmlFor="workspace-name">Workspace name</label>
+        <label htmlFor="workspace-name">{t("nameLabel")}</label>
         <input
           id="workspace-name"
           name="name"
@@ -48,7 +50,7 @@ export function RenameWorkspaceForm({
         />
       </div>
       <button type="submit" disabled={pending}>
-        {pending ? "Saving…" : "Rename"}
+        {pending ? common("saving") : t("rename")}
       </button>
       {error ? <div className="error">{error}</div> : null}
     </form>

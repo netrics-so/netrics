@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -5,7 +6,9 @@ import { can } from "@netrics/domain";
 
 import { ThemePreview } from "@/components/theme-preview";
 import { listThemes, listWorkspaces } from "@/lib/api";
+import { getLocale, getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
+import { builtinThemeName } from "@/lib/theme-name";
 
 import { CopyBuiltinButton } from "./copy-builtin-button";
 
@@ -13,6 +16,11 @@ export const dynamic = "force-dynamic";
 
 interface ThemesPageProps {
   params: Promise<{ workspaceId: string }>;
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("themes");
+  return { title: t("metaTitle") };
 }
 
 /** Built-in and custom dashboard themes (#216). */
@@ -27,26 +35,23 @@ export default async function ThemesPage({ params }: ThemesPageProps) {
   const canEdit = can(membership.role, "dashboards:update");
   const { builtins, themes } = await listThemes(cookieHeader, workspaceId);
   const takenNames = themes.map((theme) => theme.name);
+  const [t, locale] = await Promise.all([getT("themes"), getLocale()]);
 
   return (
     <div className="themes-page">
-      <h1>Themes</h1>
-      <p className="subtitle">
-        How dashboards look on TVs and in the browser. Custom themes start as a
-        copy of a built-in.
-      </p>
+      <h1>{t("title")}</h1>
+      <p className="subtitle">{t("subtitle")}</p>
       <p className="muted">
         <Link href={`/workspaces/${workspaceId}/settings`}>
-          Back to settings
+          {t("backToSettings")}
         </Link>
       </p>
 
       <div className="card">
-        <h2>Custom themes</h2>
+        <h2>{t("custom")}</h2>
         {themes.length === 0 ? (
           <p className="muted">
-            None yet.{" "}
-            {canEdit ? "Copy a built-in below to make your own." : null}
+            {t("noneYet")} {canEdit ? t("copyHint") : null}
           </p>
         ) : (
           <ul className="theme-list">
@@ -61,10 +66,10 @@ export default async function ThemesPage({ params }: ThemesPageProps) {
                   </Link>
                   {theme.warnings.length > 0 ? (
                     <span className="contrast-badge warn">
-                      {theme.warnings.length} below AA
+                      {t("belowAa", { count: theme.warnings.length })}
                     </span>
                   ) : (
-                    <span className="contrast-badge pass">AA</span>
+                    <span className="contrast-badge pass">{t("aa")}</span>
                   )}
                 </div>
               </li>
@@ -74,18 +79,18 @@ export default async function ThemesPage({ params }: ThemesPageProps) {
       </div>
 
       <div className="card">
-        <h2>Built-in themes</h2>
+        <h2>{t("builtins")}</h2>
         <ul className="theme-list">
           {builtins.map((theme) => (
             <li key={theme.key}>
               <ThemePreview tokens={theme.tokens} />
               <div className="theme-list-meta">
-                <span>{theme.name}</span>
+                <span>{builtinThemeName(theme.key, locale)}</span>
                 {canEdit ? (
                   <CopyBuiltinButton
                     workspaceId={workspaceId}
                     base={theme.key}
-                    baseName={theme.name}
+                    baseName={builtinThemeName(theme.key, locale)}
                     takenNames={takenNames}
                   />
                 ) : null}

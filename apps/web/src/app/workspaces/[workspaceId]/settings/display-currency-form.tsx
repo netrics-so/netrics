@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 import type { CurrencyConversionOptionsResponse } from "@netrics/contracts";
 
 import { apiErrorMessage, setWorkspaceDisplayCurrency } from "@/lib/api";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 const PER_CURRENCY = "";
 
@@ -24,17 +24,14 @@ export function DisplayCurrencyForm({
   options: CurrencyConversionOptionsResponse;
 }) {
   const locale = useLocale();
+  const t = useT("workspaceSettings.currency");
+  const common = useT("common");
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   if (!options.enabled) {
-    return (
-      <p className="muted">
-        Amounts in several currencies are shown per currency. This instance does
-        not fetch exchange rates, so they cannot be converted.
-      </p>
-    );
+    return <p className="muted">{t("off")}</p>;
   }
   const currencies =
     currentDisplayCurrency &&
@@ -66,35 +63,39 @@ export function DisplayCurrencyForm({
     <>
       <form className="inline" onSubmit={onSubmit}>
         <div className="field">
-          <label htmlFor="workspace-display-currency">Amounts</label>
+          <label htmlFor="workspace-display-currency">{t("label")}</label>
           <select
             id="workspace-display-currency"
             name="displayCurrency"
             defaultValue={currentDisplayCurrency ?? PER_CURRENCY}
             disabled={pending}
           >
-            <option value={PER_CURRENCY}>Per currency (exact)</option>
+            <option value={PER_CURRENCY}>{t("perCurrency")}</option>
             {currencies.map((currency) => (
               <option key={currency} value={currency}>
-                Converted to {currency} (≈)
+                {t("convertedTo", { currency })}
               </option>
             ))}
           </select>
         </div>
         <button type="submit" disabled={pending}>
-          {pending ? "Saving…" : "Save"}
+          {pending ? common("saving") : common("save")}
         </button>
         {error ? <div className="error">{error}</div> : null}
       </form>
       <p className="muted">
-        Converted amounts are approximate: each day at the{" "}
-        <a href={options.source.url} target="_blank" rel="noreferrer">
-          {options.source.name}
-        </a>{" "}
-        of that day (the last published rate on weekends and holidays).
-        Apple&rsquo;s own reports use different rates. Currencies the ECB does
-        not publish stay unconverted and are shown apart. A tile can override
-        this.
+        {t.rich("hint", {
+          source: (
+            <a
+              key="source"
+              href={options.source.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {options.source.name}
+            </a>
+          ),
+        })}
       </p>
     </>
   );
