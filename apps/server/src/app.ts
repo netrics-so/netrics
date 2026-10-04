@@ -168,6 +168,7 @@ export async function buildApp(
     db,
     mailer,
     webOrigin: config.webOrigin,
+    defaultLocale: config.defaultLocale,
   });
   registerMetricRoutes(app, {
     authService,
