@@ -1887,3 +1887,529 @@ a.health-badge:hover {
   border-radius: 8px;
   overflow: hidden;
 }
+
+/* ─── Studio editor (ADR 0015 section 9, #223) ───────────────────────── */
+
+/* The Studio uses the whole window width: rail, canvas, inspector. */
+.container:has(.studio-page) {
+  max-width: none;
+}
+
+.studio .help {
+  margin: 0;
+  font-size: 12px;
+  color: #8a919c;
+}
+
+.studio fieldset {
+  min-width: 0;
+  border: 1px solid #23272e;
+  border-radius: 8px;
+  padding: 10px 12px 12px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.studio .field > input:not([type="range"]),
+.studio .field > select,
+.studio .field > textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.studio legend {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.studio label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #e6e9ed;
+}
+
+.studio :focus-visible {
+  outline: 2px solid #7aa2f7;
+  outline-offset: 2px;
+}
+
+.studio-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.studio-title {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.studio-title h1 {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-state {
+  font-size: 12px;
+  color: #8a919c;
+  white-space: nowrap;
+}
+
+.studio-state--dirty {
+  color: #e3b341;
+}
+
+.studio-actions {
+  margin: 0;
+}
+
+.studio-banner {
+  margin-bottom: 12px;
+}
+
+.studio-banner ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.studio-banner .actions {
+  margin: 8px 0 0;
+}
+
+.studio-body {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .studio-body {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .studio-inspector {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .studio-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.studio-rail,
+.studio-inspector {
+  border: 1px solid #23272e;
+  border-radius: 8px;
+  background: #11141a;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.studio-rail h2,
+.studio-rail h3,
+.studio-inspector h2 {
+  margin: 0;
+}
+
+.studio-rail h3 {
+  font-size: 14px;
+}
+
+.rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rail-list--dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.rail-item {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.rail-item--dragged {
+  opacity: 0.5;
+}
+
+.rail-item--drop-before::before,
+.rail-item--drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: #7aa2f7;
+}
+
+.rail-item--drop-before::before {
+  top: -5px;
+}
+
+.rail-item--drop-after::after {
+  bottom: -5px;
+}
+
+.rail-handle {
+  display: flex;
+  align-items: center;
+  padding: 0 2px;
+  color: #59606b;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  font-size: 12px;
+  letter-spacing: -2px;
+}
+
+.rail-select {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+}
+
+.rail-item--selected .rail-select {
+  border-color: #7aa2f7;
+  background: #161b24;
+}
+
+.rail-item--off .rail-thumb {
+  opacity: 0.4;
+}
+
+.rail-thumb {
+  position: relative;
+  flex: none;
+  width: 72px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.rail-thumb-widget {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid;
+  border-radius: 2px;
+  transform: scale(0.9);
+}
+
+.rail-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rail-title {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-meta {
+  font-size: 12px;
+  color: #8a919c;
+}
+
+.rail-problem {
+  color: #e3b341;
+}
+
+.rail-slide {
+  border-top: 1px solid #23272e;
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rail-actions {
+  margin: 0;
+}
+
+.rail-actions button {
+  padding: 6px 10px;
+}
+
+.rail-confirm {
+  border: 1px solid #5a2c2c;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 13px;
+}
+
+.rail-confirm p {
+  margin: 0;
+}
+
+.rail-confirm .actions {
+  margin: 8px 0 0;
+}
+
+.studio-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.add-widget {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.add-widget-label {
+  font-size: 13px;
+  color: #8a919c;
+  margin-right: 2px;
+}
+
+.add-widget button {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.editor-canvas {
+  position: relative;
+  border: 1px solid #23272e;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.editor-overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.editor-widget {
+  position: absolute;
+  padding: 0;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.editor-widget:hover:not(:disabled) {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--t-accent) 50%, transparent);
+}
+
+.editor-widget:focus-visible,
+.editor-widget--selected {
+  outline: none;
+  border-color: var(--t-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--t-accent) 35%, transparent);
+}
+
+.editor-widget--problem {
+  border-color: var(--t-warning);
+  border-style: dashed;
+}
+
+.editor-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--t-muted);
+  pointer-events: none;
+}
+
+.inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.inspector-problems {
+  margin: 0;
+  padding: 8px 8px 8px 24px;
+  border: 1px solid #5a4a1f;
+  border-radius: 6px;
+  color: #e3b341;
+  font-size: 13px;
+}
+
+.accent-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.accent-row input[type="color"] {
+  width: 44px;
+  height: 38px;
+  padding: 2px;
+}
+
+.accent-row input[type="text"] {
+  width: 110px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.studio .contrast-fail {
+  color: #f0a3a3;
+}
+
+.studio .contrast-warn {
+  color: #e3b341;
+}
+
+.image-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-picker-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.image-picker-preview {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border: 1px solid #23272e;
+  border-radius: 4px;
+  background: #0b0d10;
+}
+
+.image-picker-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.image-picker-upload input[type="file"] {
+  font-size: 12px;
+  padding: 4px;
+}
+
+/* Play: the rotation full-screen, the canvas as large as fits. */
+.play-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.play-mode:focus {
+  outline: none;
+}
+
+.play-stage {
+  width: min(100vw, calc(100vh * 16 / 9));
+}
+
+.play-empty {
+  color: #e6e9ed;
+}
+
+.play-controls {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #c7ccd4;
+  opacity: 0.25;
+  transition: opacity 150ms;
+}
+
+.play-controls:hover,
+.play-controls:focus-within {
+  opacity: 1;
+}
+
+.play-controls button {
+  padding: 4px 10px;
+  background: rgba(20, 24, 30, 0.85);
+}
+
+.studio-dialog {
+  max-width: 480px;
+  width: calc(100% - 32px);
+  border: 1px solid #23272e;
+  border-radius: 10px;
+  background: #11141a;
+  color: #e6e9ed;
+  padding: 20px;
+}
+
+.studio-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.assign-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.assign-list label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-list a.studio-link {
+  color: #7aa2f7;
+  font-size: 13px;
+  font-weight: normal;
+}

@@ -242,7 +242,7 @@ export function SlideCanvas({
 }) {
   const background = slideBackground(slide);
   const backgroundImage = background ? images.get(background.imageId) : null;
-  const widgets = slide.widgets as StudioWidget[];
+  const widgets: StudioWidget[] = slide.widgets;
   return (
     <div
       className={className ? `studio-canvas ${className}` : "studio-canvas"}

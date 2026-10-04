@@ -13,6 +13,8 @@ import {
   referencedImageIds,
   slideBackground,
   slideTitle,
+  studioImageUrl,
+  toStudioImage,
   textWidgetLayout,
   type StudioWidget,
 } from "./studio-widgets";
@@ -99,6 +101,26 @@ describe("image references", () => {
     expect(referencedImageIds({ settings, slides: [slide([metric])] })).toEqual(
       [],
     );
+  });
+
+  it("loads images only from same-origin /v1/ paths", () => {
+    const image = { id: "i1", sha256: "ab" };
+    const built = "/v1/workspaces/w1/images/i1/content?v=ab";
+    expect(studioImageUrl("w1", { ...image, url: built })).toBe(built);
+    for (const url of [
+      "https://evil.example/x.png",
+      "//evil.example/x.png",
+      "/\\evil.example/x.png",
+      "javascript:alert(1)",
+      "/api/other",
+      "",
+      null,
+    ]) {
+      expect(studioImageUrl("w1", { ...image, url })).toBe(built);
+    }
+    expect(
+      toStudioImage("w1", { ...image, url: built, width: 4, height: 3 }),
+    ).toEqual({ id: "i1", url: built, width: 4, height: 3 });
   });
 
   it("builds the content URL with the hash as cache key", () => {

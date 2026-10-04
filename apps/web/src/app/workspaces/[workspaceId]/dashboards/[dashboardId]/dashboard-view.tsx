@@ -292,6 +292,15 @@ export function DashboardView({
             </>
           ) : (
             <>
+              {canEdit ? (
+                <Link
+                  href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}/studio`}
+                >
+                  <button type="button" className="primary">
+                    Open in Studio
+                  </button>
+                </Link>
+              ) : null}
               <Link
                 href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}/tv`}
               >
@@ -299,7 +308,7 @@ export function DashboardView({
               </Link>
               {tileEditable ? (
                 <button type="button" onClick={startEditing}>
-                  Edit
+                  Edit tiles
                 </button>
               ) : null}
               {canDuplicate ? (
@@ -354,10 +363,14 @@ export function DashboardView({
               </Link>{" "}
               first.
             </p>
-          ) : tileEditable ? (
-            <button type="button" className="primary" onClick={startEditing}>
-              Add tiles
-            </button>
+          ) : canEdit ? (
+            <Link
+              href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}/studio`}
+            >
+              <button type="button" className="primary">
+                Open in Studio
+              </button>
+            </Link>
           ) : null}
         </div>
       ) : null}
