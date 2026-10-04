@@ -153,7 +153,14 @@ describe("session contracts", () => {
 
 describe("metric periods (#212)", () => {
   it("accepts the longer periods for queries and tiles", () => {
-    for (const period of ["last_90_days", "last_12_months"]) {
+    for (const period of [
+      "last_90_days",
+      "last_12_months",
+      // Periods to date (#331, ADR 0019 §3).
+      "this_week",
+      "this_quarter",
+      "this_year",
+    ]) {
       expect(metricPeriodSchema.parse(period)).toBe(period);
       const query = {
         connectionId: "00000000-0000-4000-8000-000000000000",

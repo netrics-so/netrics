@@ -103,6 +103,14 @@ describe("widget panel", () => {
     expect(html).toContain(
       '<option value="last_90_days">Last 90 days</option>',
     );
+    // Periods to date sit before the rolling period of their length.
+    expect(html).toMatch(
+      /value="this_week">This week<\/option><option value="last_7_days">/,
+    );
+    expect(html).toContain(
+      '<option value="this_quarter">This quarter</option>',
+    );
+    expect(html).toContain('<option value="this_year">This year</option>');
     expect(html).toContain("Shown as <strong>Downloads · All apps</strong>");
     expect(html).toContain('placeholder="Downloads · All apps"');
     expect(html).toContain("Sparkline");

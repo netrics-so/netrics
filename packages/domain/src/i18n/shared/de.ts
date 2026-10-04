@@ -20,6 +20,9 @@ export const sharedDe: Catalog<SharedMessages> = {
     this_month: "Dieser Monat",
     last_90_days: "Letzte 90 Tage",
     last_12_months: "Letzte 12 Monate",
+    this_week: "Diese Woche",
+    this_quarter: "Dieses Quartal",
+    this_year: "Dieses Jahr",
   },
   comparisons: {
     today: "vs. gestern",
@@ -28,6 +31,9 @@ export const sharedDe: Catalog<SharedMessages> = {
     this_month: "vs. Vormonat",
     last_90_days: "vs. vorherige 90 Tage",
     last_12_months: "vs. vorherige 12 Monate",
+    this_week: "vs. Vorwoche bis heute",
+    this_quarter: "vs. Vorquartal bis heute",
+    this_year: "vs. Vorjahr bis heute",
   },
   aggregations: {
     sum: "Summe",

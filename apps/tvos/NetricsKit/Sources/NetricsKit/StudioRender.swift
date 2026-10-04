@@ -515,9 +515,9 @@ extension MetricFormat {
     public static func seriesStep(_ period: MetricPeriod) -> SeriesStep {
         switch period {
         case .today: return .hour
-        case .last7Days, .last30Days, .thisMonth, .unknown: return .day
-        case .last90Days: return .week
-        case .last12Months: return .month
+        case .last7Days, .last30Days, .thisMonth, .thisWeek, .unknown: return .day
+        case .last90Days, .thisQuarter: return .week
+        case .last12Months, .thisYear: return .month
         }
     }
 

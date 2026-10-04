@@ -339,6 +339,18 @@ private func at(_ seconds: TimeInterval) -> Date { T0.addingTimeInterval(seconds
         #expect(MetricFormat.bucketLabel("2026-09-01T00:00:00.000Z", period: .last12Months, timeZone: "UTC") == "Sep 2026")
         #expect(MetricFormat.bucketLabel("2026-09-28T12:00:00.000Z", period: .today, timeZone: "Europe/Berlin") == "14:00")
         #expect(MetricFormat.bucketLabel("garbage", period: .today, timeZone: "UTC") == nil)
+        // Periods to date step by days, weeks and months (SERIES_UNITS).
+        #expect(MetricFormat.seriesStep(.thisWeek) == .day)
+        #expect(MetricFormat.seriesStep(.thisQuarter) == .week)
+        #expect(MetricFormat.seriesStep(.thisYear) == .month)
+        #expect(MetricFormat.bucketLabel("2026-09-29T00:00:00.000Z", period: .thisWeek, timeZone: "Europe/Berlin") == "Sep 29")
+        #expect(
+            MetricFormat.bucketLabel("2026-10-01T00:00:00.000Z", period: .thisQuarter, timeZone: "Europe/Berlin")
+                == "Week of Oct 1")
+        #expect(
+            MetricFormat.bucketLabel("2026-10-04T22:00:00.000Z", period: .thisQuarter, timeZone: "Europe/Berlin")
+                == "Week of Oct 5")
+        #expect(MetricFormat.bucketLabel("2026-03-01T00:00:00.000Z", period: .thisYear, timeZone: "UTC") == "Mar 2026")
     }
 
     @Test func clockWidgetText() {

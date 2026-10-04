@@ -162,6 +162,9 @@ public enum MetricFormat {
         case .thisMonth: key = .periodThisMonth
         case .last90Days: key = .periodLast90Days
         case .last12Months: key = .periodLast12Months
+        case .thisWeek: key = .periodThisWeek
+        case .thisQuarter: key = .periodThisQuarter
+        case .thisYear: key = .periodThisYear
         case .unknown: return ""
         }
         return KitStrings.text(key, language)
@@ -177,6 +180,9 @@ public enum MetricFormat {
         case .thisMonth: key = .comparisonThisMonth
         case .last90Days: key = .comparisonLast90Days
         case .last12Months: key = .comparisonLast12Months
+        case .thisWeek: key = .comparisonThisWeek
+        case .thisQuarter: key = .comparisonThisQuarter
+        case .thisYear: key = .comparisonThisYear
         case .unknown: key = .comparisonUnknown
         }
         return KitStrings.text(key, language)

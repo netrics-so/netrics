@@ -159,6 +159,7 @@ describe("the Studio in German", () => {
     expect(html).toContain(
       '<option value="last_90_days">Letzte 90 Tage</option>',
     );
+    expect(html).toContain('<option value="this_week">Diese Woche</option>');
     expect(html).toContain(
       "Angezeigt als <strong>Downloads · Alle Apps</strong>",
     );

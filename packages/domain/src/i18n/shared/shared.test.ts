@@ -30,6 +30,13 @@ describe("shared catalog", () => {
     expect(comparisonLabel("last_30_days")).toBe("vs previous 30 days");
     expect(comparisonLabel("last_30_days", "de")).toBe("vs. vorherige 30 Tage");
     expect(comparisonLabel("this_month", "de")).toBe("vs. Vormonat");
+    // Periods to date (ADR 0019 §3).
+    expect(periodLabel("this_week")).toBe("This week");
+    expect(comparisonLabel("this_week")).toBe("vs last week to date");
+    expect(comparisonLabel("this_quarter")).toBe("vs last quarter to date");
+    expect(comparisonLabel("this_year")).toBe("vs last year to date");
+    expect(periodLabel("this_quarter", "de")).toBe("Dieses Quartal");
+    expect(comparisonLabel("this_year", "de")).toBe("vs. Vorjahr bis heute");
   });
 
   it("names aggregations, a daily gauge's by day", () => {

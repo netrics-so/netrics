@@ -304,6 +304,296 @@ describe("resolvePeriod, longer periods (#212)", () => {
   });
 });
 
+describe("resolvePeriod, periods to date (ADR 0019 §3)", () => {
+  const berlin = "Europe/Berlin";
+  const iso = (date: Date) => date.toISOString();
+
+  it("this week: Monday to now, against last week up to the same weekday and time", () => {
+    // Thursday 2026-10-01, 10:30 in Berlin (UTC+2).
+    const window = resolvePeriod(
+      "this_week",
+      at("2026-10-01T08:30:00Z"),
+      berlin,
+    );
+    expect(window.dates).toEqual({ from: "2026-09-28", to: "2026-10-01" });
+    expect(window.previousDates).toEqual({
+      from: "2026-09-21",
+      to: "2026-09-24",
+    });
+    expect(iso(window.current.start)).toBe("2026-09-27T22:00:00.000Z");
+    expect(iso(window.previous.start)).toBe("2026-09-20T22:00:00.000Z");
+    expect(iso(window.previous.end)).toBe("2026-09-24T08:30:00.000Z");
+    expect(window.bucket).toBe("day");
+    expect(window.series).toBe("day");
+    expect(planBuckets(window, "day").starts).toEqual([
+      "2026-09-28T00:00:00.000Z",
+      "2026-09-29T00:00:00.000Z",
+      "2026-09-30T00:00:00.000Z",
+      "2026-10-01T00:00:00.000Z",
+    ]);
+  });
+
+  it("this week starts at Monday 00:00 in the workspace zone", () => {
+    // Monday 00:00 in Berlin: a new, empty week against an empty one.
+    const monday = resolvePeriod(
+      "this_week",
+      at("2026-09-27T22:00:00Z"),
+      berlin,
+    );
+    expect(monday.dates).toEqual({ from: "2026-09-28", to: "2026-09-28" });
+    expect(monday.previousDates).toEqual({
+      from: "2026-09-21",
+      to: "2026-09-21",
+    });
+    expect(iso(monday.previous.end)).toBe(iso(monday.previous.start));
+    // A minute before, it is still Sunday: the whole week but one minute.
+    const sunday = resolvePeriod(
+      "this_week",
+      at("2026-09-27T21:59:00Z"),
+      berlin,
+    );
+    expect(sunday.dates).toEqual({ from: "2026-09-21", to: "2026-09-27" });
+    expect(sunday.previousDates).toEqual({
+      from: "2026-09-14",
+      to: "2026-09-20",
+    });
+    expect(iso(sunday.previous.end)).toBe("2026-09-20T21:59:00.000Z");
+  });
+
+  it("this week compares at the same wall-clock time across a DST change", () => {
+    // Tuesday 2026-10-27, 10:00 CET; last Tuesday 10:00 was CEST.
+    const window = resolvePeriod(
+      "this_week",
+      at("2026-10-27T09:00:00Z"),
+      berlin,
+    );
+    expect(window.previousDates).toEqual({
+      from: "2026-10-19",
+      to: "2026-10-20",
+    });
+    expect(iso(window.current.start)).toBe("2026-10-25T23:00:00.000Z");
+    expect(iso(window.previous.start)).toBe("2026-10-18T22:00:00.000Z");
+    expect(iso(window.previous.end)).toBe("2026-10-20T08:00:00.000Z");
+    // On the day of the change itself: Sunday 12:00 CET is 13 hours after
+    // midnight, the Sunday before at 12:00 CEST.
+    const sunday = resolvePeriod(
+      "this_week",
+      at("2026-10-25T11:00:00Z"),
+      berlin,
+    );
+    expect(iso(sunday.previous.end)).toBe("2026-10-18T10:00:00.000Z");
+  });
+
+  it("this quarter: from the quarter's first day, against the same day of the previous quarter", () => {
+    // 2026-08-15 is day 46 of Q3; day 46 of Q2 is 05-16.
+    const window = resolvePeriod(
+      "this_quarter",
+      at("2026-08-15T12:00:00Z"),
+      "UTC",
+    );
+    expect(window.dates).toEqual({ from: "2026-07-01", to: "2026-08-15" });
+    expect(window.previousDates).toEqual({
+      from: "2026-04-01",
+      to: "2026-05-16",
+    });
+    expect(iso(window.previous.end)).toBe("2026-05-16T12:00:00.000Z");
+    expect(window.series).toBe("week");
+  });
+
+  it("this quarter starts on 1 January, April, July and October", () => {
+    for (const [now, from, previousFrom] of [
+      ["2026-01-01T00:00:00Z", "2026-01-01", "2025-10-01"],
+      ["2026-04-01T00:00:00Z", "2026-04-01", "2026-01-01"],
+      ["2026-07-01T00:00:00Z", "2026-07-01", "2026-04-01"],
+      ["2026-10-01T00:00:00Z", "2026-10-01", "2026-07-01"],
+      ["2026-12-31T23:59:00Z", "2026-10-01", "2026-07-01"],
+    ] as const) {
+      const window = resolvePeriod("this_quarter", at(now), "UTC");
+      expect(window.dates.from).toBe(from);
+      expect(window.previousDates.from).toBe(previousFrom);
+    }
+    // Midnight on 1 October in Berlin is still 30 September in UTC.
+    const berlinStart = resolvePeriod(
+      "this_quarter",
+      at("2026-09-30T22:00:00Z"),
+      berlin,
+    );
+    expect(berlinStart.dates).toEqual({ from: "2026-10-01", to: "2026-10-01" });
+    expect(berlinStart.previousDates).toEqual({
+      from: "2026-07-01",
+      to: "2026-07-01",
+    });
+  });
+
+  it("this quarter caps the previous quarter at its last day", () => {
+    // 30 September is day 92 of Q3; Q2 has 91 days.
+    const september = resolvePeriod(
+      "this_quarter",
+      at("2026-09-30T12:00:00Z"),
+      "UTC",
+    );
+    expect(september.previousDates).toEqual({
+      from: "2026-04-01",
+      to: "2026-06-30",
+    });
+    // A capped previous quarter runs to the end of its last day, never into
+    // the current quarter.
+    expect(iso(september.previous.end)).toBe("2026-07-01T00:00:00.000Z");
+    // 30 June is day 91 of Q2; Q1 2026 has 90 days.
+    const june = resolvePeriod(
+      "this_quarter",
+      at("2026-06-30T12:00:00Z"),
+      "UTC",
+    );
+    expect(june.previousDates).toEqual({
+      from: "2026-01-01",
+      to: "2026-03-31",
+    });
+    // Q1 of a leap year has 91 days; Q4 before it 92.
+    const leap = resolvePeriod(
+      "this_quarter",
+      at("2028-03-31T12:00:00Z"),
+      "UTC",
+    );
+    expect(leap.previousDates).toEqual({
+      from: "2027-10-01",
+      to: "2027-12-30",
+    });
+  });
+
+  it("this quarter across a DST change: weeks from local Mondays, same wall time", () => {
+    // Tuesday 2026-11-10, 12:00 CET is day 41 of Q4; day 41 of Q3 is 08-10,
+    // 12:00 CEST.
+    const window = resolvePeriod(
+      "this_quarter",
+      at("2026-11-10T11:00:00Z"),
+      berlin,
+    );
+    expect(window.previousDates).toEqual({
+      from: "2026-07-01",
+      to: "2026-08-10",
+    });
+    expect(iso(window.current.start)).toBe("2026-09-30T22:00:00.000Z");
+    expect(iso(window.previous.end)).toBe("2026-08-10T10:00:00.000Z");
+    const plan = planBuckets(window, "hour");
+    expect(plan).toMatchObject({ unit: "day", series: "week" });
+    // Thursday 1 October (partial first week), then Mondays at local
+    // midnight, in summer and in winter time.
+    expect(plan.starts.slice(0, 2)).toEqual([
+      "2026-09-30T22:00:00.000Z",
+      "2026-10-04T22:00:00.000Z",
+    ]);
+    expect(plan.starts).toContain("2026-10-25T23:00:00.000Z");
+    expect(plan.starts.at(-1)).toBe("2026-11-08T23:00:00.000Z");
+    expect(plan.starts).toHaveLength(7);
+  });
+
+  it("this year: from 1 January, against last year up to the same date", () => {
+    const window = resolvePeriod(
+      "this_year",
+      at("2026-09-28T12:00:00Z"),
+      berlin,
+    );
+    expect(window.dates).toEqual({ from: "2026-01-01", to: "2026-09-28" });
+    expect(window.previousDates).toEqual({
+      from: "2025-01-01",
+      to: "2025-09-28",
+    });
+    // 14:00 CEST on both dates.
+    expect(iso(window.previous.end)).toBe("2025-09-28T12:00:00.000Z");
+    expect(window.series).toBe("month");
+    expect(planBuckets(window, "day").starts).toHaveLength(9);
+  });
+
+  it("this year starts at 1 January 00:00 in the workspace zone", () => {
+    const window = resolvePeriod(
+      "this_year",
+      at("2026-12-31T23:00:00Z"),
+      berlin,
+    );
+    expect(window.dates).toEqual({ from: "2027-01-01", to: "2027-01-01" });
+    expect(window.previousDates).toEqual({
+      from: "2026-01-01",
+      to: "2026-01-01",
+    });
+    expect(iso(window.current.start)).toBe("2026-12-31T23:00:00.000Z");
+    expect(iso(window.previous.end)).toBe("2025-12-31T23:00:00.000Z");
+  });
+
+  it("this year turns 29 February into 28 February", () => {
+    const leap = resolvePeriod("this_year", at("2028-02-29T12:00:00Z"), "UTC");
+    expect(leap.dates).toEqual({ from: "2028-01-01", to: "2028-02-29" });
+    expect(leap.previousDates).toEqual({
+      from: "2027-01-01",
+      to: "2027-02-28",
+    });
+    expect(iso(leap.previous.end)).toBe("2027-03-01T00:00:00.000Z");
+    // The year after a leap year compares up to the same date, the leap
+    // day included.
+    const after = resolvePeriod("this_year", at("2029-03-01T12:00:00Z"), "UTC");
+    expect(after.previousDates).toEqual({
+      from: "2028-01-01",
+      to: "2028-03-01",
+    });
+    expect(iso(after.previous.end)).toBe("2028-03-01T12:00:00.000Z");
+  });
+
+  it("this year compares at the same wall-clock time across a DST change", () => {
+    // 1 April 2026 10:00 CEST against 1 April 2025 10:00 CEST, though the
+    // year started in winter time.
+    const window = resolvePeriod(
+      "this_year",
+      at("2026-04-01T08:00:00Z"),
+      berlin,
+    );
+    expect(iso(window.current.start)).toBe("2025-12-31T23:00:00.000Z");
+    expect(iso(window.previous.end)).toBe("2025-04-01T08:00:00.000Z");
+  });
+
+  it("aligns previous points by weekday, day of the quarter and month", () => {
+    const day = (date: string, value: number) => ({
+      bucket: `${date}T00:00:00.000Z`,
+      value,
+    });
+    const week = resolvePeriod("this_week", at("2026-10-01T12:00:00Z"), "UTC");
+    const weekPoints = alignedPreviousSeries(
+      week,
+      planBuckets(week, "day"),
+      "sum",
+      [day("2026-09-21", 1), day("2026-09-24", 4)],
+    );
+    expect(weekPoints.map((p) => p.value)).toEqual([1, null, null, 4]);
+
+    // Q3's 07-01 and 07-04 sit where Q4's 10-01 and 10-04 do (the partial
+    // first week, Thursday to Sunday), 07-06 where 10-06 does (a Tuesday).
+    const quarter = resolvePeriod(
+      "this_quarter",
+      at("2026-10-14T12:00:00Z"),
+      "UTC",
+    );
+    const quarterPoints = alignedPreviousSeries(
+      quarter,
+      planBuckets(quarter, "day"),
+      "sum",
+      [day("2026-07-01", 1), day("2026-07-04", 2), day("2026-07-06", 5)],
+    );
+    expect(quarterPoints).toEqual([
+      { bucket: "2026-10-01T00:00:00.000Z", value: 3 },
+      { bucket: "2026-10-05T00:00:00.000Z", value: 5 },
+      { bucket: "2026-10-12T00:00:00.000Z", value: null },
+    ]);
+
+    const year = resolvePeriod("this_year", at("2026-03-15T12:00:00Z"), "UTC");
+    const yearPoints = alignedPreviousSeries(
+      year,
+      planBuckets(year, "day"),
+      "sum",
+      [day("2025-01-31", 1), day("2025-03-15", 2), day("2025-03-16", 9)],
+    );
+    expect(yearPoints.map((p) => p.value)).toEqual([1, null, 2]);
+  });
+});
+
 describe("planBuckets", () => {
   it("selects daily metrics by reporting date at UTC midnight", () => {
     const window = resolvePeriod(

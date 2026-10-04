@@ -1376,6 +1376,177 @@ describe("longer periods (#212)", () => {
   });
 });
 
+describe("periods to date (#331, ADR 0019 §3)", () => {
+  // Its own Berlin workspace. Tuesday 2026-11-10, 12:00 CET: this week is
+  // 11-09..11-10 against 11-02..11-03; this quarter 10-01..11-10 against
+  // 07-01..08-10 (day 41 of each, across the end of summer time); this year
+  // 2026-01-01..11-10 against 2025-01-01..2025-11-10.
+  const now = new Date("2026-11-10T11:00:00Z");
+  let toDateWorkspace: string;
+  let toDate: string;
+  const run = (
+    period: "this_week" | "this_quarter" | "this_year",
+    at: Date = now,
+    workspace = () => toDateWorkspace,
+    connection = () => toDate,
+  ) =>
+    withWorkspace(db, { workspaceId: workspace() }, (tx) =>
+      queryMetric(
+        tx,
+        workspace(),
+        {
+          connectionId: connection(),
+          metricKey: "demo.signups",
+          period,
+          aggregation: "sum",
+        },
+        at,
+      ),
+    );
+  const points = (
+    result: Awaited<ReturnType<typeof run>>,
+  ): Array<[string, number | null]> =>
+    result.ok
+      ? result.value.series.map((point) => [
+          point.bucket.slice(0, 10),
+          point.value,
+        ])
+      : [];
+
+  beforeAll(async () => {
+    toDateWorkspace = (await createWorkspace(owner, BERLIN)).id;
+    toDate = await createConnection(toDateWorkspace);
+    for (const [date, value] of [
+      ["2025-01-01", 1_000],
+      ["2025-11-10", 50],
+      ["2025-11-11", 9_999],
+      ["2026-07-01", 2],
+      ["2026-08-10", 3],
+      ["2026-08-11", 500],
+      ["2026-09-30", 7],
+      ["2026-10-01", 10],
+      ["2026-10-04", 20],
+      ["2026-11-02", 4],
+      ["2026-11-03", 6],
+      ["2026-11-04", 100],
+      ["2026-11-09", 1],
+      ["2026-11-10", 5],
+    ] as const) {
+      await observe(toDateWorkspace, toDate, "demo.signups", date, value);
+    }
+  });
+
+  it("this week: Monday to today in days, against last week to the same weekday", async () => {
+    const result = await run("this_week");
+    expect(result).toMatchObject({
+      ok: true,
+      value: { value: 6, previousValue: 10, delta: -4 },
+    });
+    expect(points(result)).toEqual([
+      ["2026-11-09", 1],
+      ["2026-11-10", 5],
+    ]);
+  });
+
+  it("this quarter: weeks from Monday, against the same days of last quarter", async () => {
+    const result = await run("this_quarter");
+    expect(result).toMatchObject({
+      ok: true,
+      value: { value: 146, previousValue: 5 },
+    });
+    expect(points(result)).toEqual([
+      ["2026-10-01", 30],
+      ["2026-10-05", null],
+      ["2026-10-12", null],
+      ["2026-10-19", null],
+      ["2026-10-26", null],
+      ["2026-11-02", 110],
+      ["2026-11-09", 6],
+    ]);
+    // The dashed line: 07-01 sits under 10-01, 08-10 under 11-10.
+    expect(
+      result.ok && result.value.previousSeries?.map((point) => point.value),
+    ).toEqual([2, null, null, null, null, null, 3]);
+  });
+
+  it("this year: months from January, against last year to the same date", async () => {
+    const result = await run("this_year");
+    expect(result).toMatchObject({
+      ok: true,
+      value: { value: 658, previousValue: 1_050 },
+    });
+    expect(
+      points(result).map(([bucket, value]) => [bucket.slice(0, 7), value]),
+    ).toEqual([
+      ["2026-01", null],
+      ["2026-02", null],
+      ["2026-03", null],
+      ["2026-04", null],
+      ["2026-05", null],
+      ["2026-06", null],
+      ["2026-07", 2],
+      ["2026-08", 503],
+      ["2026-09", 7],
+      ["2026-10", 30],
+      ["2026-11", 116],
+    ]);
+  });
+
+  it("this year on 29 February compares up to 28 February", async () => {
+    const leapWorkspace = (await createWorkspace(owner, "UTC")).id;
+    const leap = await createConnection(leapWorkspace);
+    for (const [date, value] of [
+      ["2027-02-28", 8],
+      ["2027-03-01", 900],
+      ["2028-01-01", 2],
+      ["2028-02-29", 1],
+    ] as const) {
+      await observe(leapWorkspace, leap, "demo.signups", date, value);
+    }
+    const result = await run(
+      "this_year",
+      new Date("2028-02-29T12:00:00Z"),
+      () => leapWorkspace,
+      () => leap,
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      value: { value: 3, previousValue: 8 },
+    });
+  });
+
+  it("saves tiles of the new periods and shows them on screens", async () => {
+    const periods = ["this_week", "this_quarter", "this_year"] as const;
+    const response = await call(
+      "POST",
+      `/v1/workspaces/${toDateWorkspace}/dashboards`,
+      owner,
+      {
+        name: "To date",
+        tiles: periods.map((period) => ({
+          connectionId: toDate,
+          metricKey: "demo.signups",
+          period,
+        })),
+      },
+    );
+    expect(response.statusCode).toBe(200);
+    const { dashboard } = dashboardResponseSchema.parse(response.json());
+    const device = await withWorkspace(
+      db,
+      { workspaceId: toDateWorkspace },
+      (tx) => buildDeviceDashboard(tx, toDateWorkspace, dashboard.id, { now }),
+    );
+    expect(
+      device.tiles.map((tile) => [tile.period, tile.value, tile.spark.length]),
+    ).toEqual([
+      ["this_week", 6, 2],
+      ["this_quarter", 146, 7],
+      ["this_year", 658, 11],
+    ]);
+  });
+});
+
 describe("chart queries (#218)", () => {
   // Its own UTC workspace and connector. NOW is Tuesday 2025-07-15: the
   // last 7 days are 07-09..07-15, the previous ones 07-02..07-08.

@@ -199,6 +199,10 @@ public enum MetricPeriod: String, OpenAPIEnum {
     case thisMonth = "this_month"
     case last90Days = "last_90_days"
     case last12Months = "last_12_months"
+    // Periods to date (ADR 0019 §3); builds before them decode `.unknown`.
+    case thisWeek = "this_week"
+    case thisQuarter = "this_quarter"
+    case thisYear = "this_year"
     // A period a newer server adds: no period label, "vs previous period".
     case unknown
 
