@@ -18,6 +18,8 @@ import {
   type Database,
 } from "@netrics/database";
 
+import { DEFAULT_LOCALE, type Locale } from "@netrics/domain";
+
 import type { ResourceIconService } from "../images/resource-icons.js";
 import type { createDashboardService } from "./service.js";
 import {
@@ -41,6 +43,11 @@ import {
 interface Actor {
   workspaceId: string;
   callerId: string;
+  /**
+   * The creator's language (their session's, ADR 0016 section 3): the
+   * template's names and titles are created in it (section 5, #268).
+   */
+  locale?: Locale;
 }
 
 type DashboardService = ReturnType<typeof createDashboardService>;
@@ -137,8 +144,12 @@ export function createTemplateService(deps: TemplateServiceDeps) {
       actor: Actor,
       body: CreateDashboardFromTemplateRequest,
     ): Promise<DashboardResult> {
+      const locale = actor.locale ?? DEFAULT_LOCALE;
       if (body.template === "overview") {
-        const built = buildOverviewTemplate(await sources(actor), body.name);
+        const built = buildOverviewTemplate(await sources(actor), {
+          name: body.name,
+          locale,
+        });
         if (!built) {
           return { ok: false, status: 409, error: "none_connected" };
         }
@@ -205,6 +216,7 @@ export function createTemplateService(deps: TemplateServiceDeps) {
         ...(body.name ? { name: body.name } : {}),
         logoImageId,
         accentColor: body.accentColor ?? null,
+        locale,
       });
       if (!built) {
         return { ok: false, status: 400, error: "template_unsupported" };

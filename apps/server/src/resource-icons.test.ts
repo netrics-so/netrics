@@ -623,6 +623,17 @@ describe("dashboard templates", () => {
       ["line", "app_store_connect.downloads"],
       ["bar", "app_store_connect.downloads"],
     ]);
+    // English: metrics untitled (their automatic label follows the screen
+    // language), charts titled with their period (#268).
+    expect(widgets.map((widget) => widget.title ?? null)).toEqual([
+      null,
+      null,
+      "Downloads, 30 days",
+      "Downloads by app",
+    ]);
+    expect(
+      "allResourcesName" in widgets[0]! && widgets[0].allResourcesName,
+    ).toBe("All apps");
     expect(slideLayoutProblem(widgets)).toBeNull();
     // No reviews key: no reviews widget.
     expect(JSON.stringify(dashboard)).not.toContain("reviews");
@@ -753,5 +764,100 @@ describe("dashboard templates", () => {
       select id from workspace_images
       where workspace_id = ${workspaceId} and resource_id = ${WURFEL}`;
     expect(kept!.id).toBe(fresh);
+  });
+
+  describe("in the creator's language (#268)", () => {
+    function patchLocale(locale: string | null) {
+      return app.inject({
+        method: "PATCH",
+        url: "/v1/me",
+        headers: { cookie: owner },
+        payload: { locale },
+      });
+    }
+
+    function create(
+      payload: Record<string, unknown>,
+      acceptLanguage?: string,
+    ): Promise<InjectResponse> {
+      return app.inject({
+        method: "POST",
+        url: `/v1/workspaces/${workspaceId}/dashboard-templates`,
+        headers: {
+          cookie: owner,
+          ...(acceptLanguage ? { "accept-language": acceptLanguage } : {}),
+        },
+        payload,
+      });
+    }
+
+    function titlesOf(dashboard: { slides: { widgets: unknown[] }[] }) {
+      return dashboard.slides.flatMap((slide) =>
+        (slide.widgets as { title?: string | null }[]).map(
+          (widget) => widget.title ?? null,
+        ),
+      );
+    }
+
+    afterAll(async () => {
+      expect((await patchLocale("en")).statusCode).toBe(200);
+    });
+
+    it("creates Overview and Brand in the user's language", async () => {
+      expect((await patchLocale("de")).statusCode).toBe(200);
+      // The user's setting wins over the browser's.
+      const overview = await create({ template: "overview" }, "en");
+      expect(overview.statusCode, overview.body).toBe(200);
+      const { dashboard } = dashboardResponseSchema.parse(overview.json());
+      expect(dashboard.name).toBe("Übersicht");
+      expect(dashboard.slides.map((slide) => slide.name)).toEqual([
+        "App Store",
+      ]);
+      expect(titlesOf(dashboard)).toEqual([
+        null,
+        null,
+        "Downloads, 30 Tage",
+        "Downloads nach App",
+      ]);
+      // The untitled widgets' scope is in the reader's language too.
+      const first = dashboard.slides[0]!.widgets[0]!;
+      expect("allResourcesName" in first && first.allResourcesName).toBe(
+        "Alle Apps",
+      );
+
+      const brandDe = await create({
+        template: "brand",
+        connectionId,
+        resourceId: PAPERSTAND,
+        logoImageId: null,
+      });
+      expect(brandDe.statusCode, brandDe.body).toBe(200);
+      const created = dashboardResponseSchema.parse(brandDe.json()).dashboard;
+      expect(created.slides.map((slide) => slide.name)).toEqual([
+        "Heute",
+        "Verlauf",
+      ]);
+      expect(titlesOf(created)).toEqual([
+        "Downloads, 7 Tage",
+        "Erlöse, 30 Tage",
+        "Downloads, 30 Tage",
+        "Top-Länder",
+        "Downloads, 90 Tage",
+        "Erlöse, 90 Tage",
+      ]);
+    });
+
+    it("follows the browser's language when the user has none", async () => {
+      expect((await patchLocale(null)).statusCode).toBe(200);
+      const german = await create({ template: "overview" }, "de-DE,de;q=0.9");
+      expect(german.statusCode, german.body).toBe(200);
+      expect(dashboardResponseSchema.parse(german.json()).dashboard.name).toBe(
+        "Übersicht",
+      );
+      const english = await create({ template: "overview" }, "en-US");
+      expect(dashboardResponseSchema.parse(english.json()).dashboard.name).toBe(
+        "Overview",
+      );
+    });
   });
 });
