@@ -5931,6 +5931,16 @@
                       }
                     }
                   },
+                  "primaryFormat": {
+                    "type": "string",
+                    "enum": [
+                      "21x9",
+                      "16x9",
+                      "4x3",
+                      "3x4",
+                      "9x16"
+                    ]
+                  },
                   "slides": {
                     "maxItems": 12,
                     "type": "array",
@@ -6017,22 +6027,22 @@
                                   "x": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "y": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "w": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "h": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "title": {
                                     "anyOf": [
@@ -6143,22 +6153,22 @@
                                   "x": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "y": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "w": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "h": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "title": {
                                     "anyOf": [
@@ -6269,22 +6279,22 @@
                                   "x": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "y": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "w": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "h": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "title": {
                                     "anyOf": [
@@ -6401,22 +6411,22 @@
                                   "x": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "y": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "w": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "h": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "title": {
                                     "anyOf": [
@@ -6485,22 +6495,22 @@
                                   "x": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "y": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "w": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "h": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "title": {
                                     "anyOf": [
@@ -6570,22 +6580,22 @@
                                   "x": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "y": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "w": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "h": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "title": {
                                     "anyOf": [
@@ -6635,6 +6645,90 @@
                                   "h"
                                 ]
                               }
+                            ]
+                          }
+                        },
+                        "layouts": {
+                          "maxItems": 4,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "format": {
+                                "type": "string",
+                                "enum": [
+                                  "21x9",
+                                  "16x9",
+                                  "4x3",
+                                  "3x4",
+                                  "9x16"
+                                ]
+                              },
+                              "pages": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 8
+                              },
+                              "placements": {
+                                "maxItems": 16,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "widgetId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    },
+                                    "page": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 7
+                                    },
+                                    "x": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 16
+                                    },
+                                    "y": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 14
+                                    },
+                                    "w": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 16
+                                    },
+                                    "h": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 14
+                                    },
+                                    "hidden": {
+                                      "default": false,
+                                      "type": "boolean"
+                                    },
+                                    "autoPlaced": {
+                                      "default": false,
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "widgetId",
+                                    "page",
+                                    "x",
+                                    "y",
+                                    "w",
+                                    "h"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "format",
+                              "pages",
+                              "placements"
                             ]
                           }
                         }
@@ -6864,6 +6958,16 @@
                           ],
                           "additionalProperties": false
                         },
+                        "primaryFormat": {
+                          "type": "string",
+                          "enum": [
+                            "21x9",
+                            "16x9",
+                            "4x3",
+                            "3x4",
+                            "9x16"
+                          ]
+                        },
                         "slides": {
                           "type": "array",
                           "items": {
@@ -6949,22 +7053,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -7085,22 +7189,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -7221,22 +7325,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -7360,22 +7464,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -7446,22 +7550,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -7531,22 +7635,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -7601,6 +7705,129 @@
                                     }
                                   ]
                                 }
+                              },
+                              "layouts": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "format": {
+                                      "type": "string",
+                                      "enum": [
+                                        "21x9",
+                                        "16x9",
+                                        "4x3",
+                                        "3x4",
+                                        "9x16"
+                                      ]
+                                    },
+                                    "pages": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 8
+                                    },
+                                    "placements": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "widgetId": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "page": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 7
+                                          },
+                                          "x": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 16
+                                          },
+                                          "y": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 14
+                                          },
+                                          "w": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 16
+                                          },
+                                          "h": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 14
+                                          },
+                                          "hidden": {
+                                            "type": "boolean"
+                                          },
+                                          "autoPlaced": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "widgetId",
+                                          "page",
+                                          "x",
+                                          "y",
+                                          "w",
+                                          "h",
+                                          "hidden",
+                                          "autoPlaced"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "format",
+                                    "pages",
+                                    "placements"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "formatWarnings": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "format": {
+                                      "type": "string",
+                                      "enum": [
+                                        "21x9",
+                                        "16x9",
+                                        "4x3",
+                                        "3x4",
+                                        "9x16"
+                                      ]
+                                    },
+                                    "code": {
+                                      "type": "string"
+                                    },
+                                    "widgetId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "format",
+                                    "code",
+                                    "widgetId"
+                                  ],
+                                  "additionalProperties": false
+                                }
                               }
                             },
                             "required": [
@@ -7610,7 +7837,9 @@
                               "durationSeconds",
                               "enabled",
                               "background",
-                              "widgets"
+                              "widgets",
+                              "layouts",
+                              "formatWarnings"
                             ],
                             "additionalProperties": false
                           }
@@ -7719,6 +7948,7 @@
                         "createdAt",
                         "updatedAt",
                         "settings",
+                        "primaryFormat",
                         "slides",
                         "tiles"
                       ],
@@ -7966,6 +8196,16 @@
                           ],
                           "additionalProperties": false
                         },
+                        "primaryFormat": {
+                          "type": "string",
+                          "enum": [
+                            "21x9",
+                            "16x9",
+                            "4x3",
+                            "3x4",
+                            "9x16"
+                          ]
+                        },
                         "slides": {
                           "type": "array",
                           "items": {
@@ -8051,22 +8291,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -8187,22 +8427,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -8323,22 +8563,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -8462,22 +8702,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -8548,22 +8788,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -8633,22 +8873,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -8703,6 +8943,129 @@
                                     }
                                   ]
                                 }
+                              },
+                              "layouts": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "format": {
+                                      "type": "string",
+                                      "enum": [
+                                        "21x9",
+                                        "16x9",
+                                        "4x3",
+                                        "3x4",
+                                        "9x16"
+                                      ]
+                                    },
+                                    "pages": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 8
+                                    },
+                                    "placements": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "widgetId": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "page": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 7
+                                          },
+                                          "x": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 16
+                                          },
+                                          "y": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 14
+                                          },
+                                          "w": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 16
+                                          },
+                                          "h": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 14
+                                          },
+                                          "hidden": {
+                                            "type": "boolean"
+                                          },
+                                          "autoPlaced": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "widgetId",
+                                          "page",
+                                          "x",
+                                          "y",
+                                          "w",
+                                          "h",
+                                          "hidden",
+                                          "autoPlaced"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "format",
+                                    "pages",
+                                    "placements"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "formatWarnings": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "format": {
+                                      "type": "string",
+                                      "enum": [
+                                        "21x9",
+                                        "16x9",
+                                        "4x3",
+                                        "3x4",
+                                        "9x16"
+                                      ]
+                                    },
+                                    "code": {
+                                      "type": "string"
+                                    },
+                                    "widgetId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "format",
+                                    "code",
+                                    "widgetId"
+                                  ],
+                                  "additionalProperties": false
+                                }
                               }
                             },
                             "required": [
@@ -8712,7 +9075,9 @@
                               "durationSeconds",
                               "enabled",
                               "background",
-                              "widgets"
+                              "widgets",
+                              "layouts",
+                              "formatWarnings"
                             ],
                             "additionalProperties": false
                           }
@@ -8821,6 +9186,7 @@
                         "createdAt",
                         "updatedAt",
                         "settings",
+                        "primaryFormat",
                         "slides",
                         "tiles"
                       ],
@@ -9009,6 +9375,16 @@
                       }
                     }
                   },
+                  "primaryFormat": {
+                    "type": "string",
+                    "enum": [
+                      "21x9",
+                      "16x9",
+                      "4x3",
+                      "3x4",
+                      "9x16"
+                    ]
+                  },
                   "slides": {
                     "maxItems": 12,
                     "type": "array",
@@ -9095,22 +9471,22 @@
                                   "x": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "y": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "w": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "h": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "title": {
                                     "anyOf": [
@@ -9221,22 +9597,22 @@
                                   "x": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "y": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "w": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "h": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "title": {
                                     "anyOf": [
@@ -9347,22 +9723,22 @@
                                   "x": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "y": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "w": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "h": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "title": {
                                     "anyOf": [
@@ -9479,22 +9855,22 @@
                                   "x": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "y": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "w": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "h": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "title": {
                                     "anyOf": [
@@ -9563,22 +9939,22 @@
                                   "x": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "y": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "w": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "h": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "title": {
                                     "anyOf": [
@@ -9648,22 +10024,22 @@
                                   "x": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "y": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "w": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 12
+                                    "maximum": 16
                                   },
                                   "h": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 8
+                                    "maximum": 14
                                   },
                                   "title": {
                                     "anyOf": [
@@ -9713,6 +10089,90 @@
                                   "h"
                                 ]
                               }
+                            ]
+                          }
+                        },
+                        "layouts": {
+                          "maxItems": 4,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "format": {
+                                "type": "string",
+                                "enum": [
+                                  "21x9",
+                                  "16x9",
+                                  "4x3",
+                                  "3x4",
+                                  "9x16"
+                                ]
+                              },
+                              "pages": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 8
+                              },
+                              "placements": {
+                                "maxItems": 16,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "widgetId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    },
+                                    "page": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 7
+                                    },
+                                    "x": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 16
+                                    },
+                                    "y": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 14
+                                    },
+                                    "w": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 16
+                                    },
+                                    "h": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 14
+                                    },
+                                    "hidden": {
+                                      "default": false,
+                                      "type": "boolean"
+                                    },
+                                    "autoPlaced": {
+                                      "default": false,
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "widgetId",
+                                    "page",
+                                    "x",
+                                    "y",
+                                    "w",
+                                    "h"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "format",
+                              "pages",
+                              "placements"
                             ]
                           }
                         }
@@ -9952,6 +10412,16 @@
                           ],
                           "additionalProperties": false
                         },
+                        "primaryFormat": {
+                          "type": "string",
+                          "enum": [
+                            "21x9",
+                            "16x9",
+                            "4x3",
+                            "3x4",
+                            "9x16"
+                          ]
+                        },
                         "slides": {
                           "type": "array",
                           "items": {
@@ -10037,22 +10507,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -10173,22 +10643,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -10309,22 +10779,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -10448,22 +10918,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -10534,22 +11004,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -10619,22 +11089,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -10689,6 +11159,129 @@
                                     }
                                   ]
                                 }
+                              },
+                              "layouts": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "format": {
+                                      "type": "string",
+                                      "enum": [
+                                        "21x9",
+                                        "16x9",
+                                        "4x3",
+                                        "3x4",
+                                        "9x16"
+                                      ]
+                                    },
+                                    "pages": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 8
+                                    },
+                                    "placements": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "widgetId": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "page": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 7
+                                          },
+                                          "x": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 16
+                                          },
+                                          "y": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 14
+                                          },
+                                          "w": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 16
+                                          },
+                                          "h": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 14
+                                          },
+                                          "hidden": {
+                                            "type": "boolean"
+                                          },
+                                          "autoPlaced": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "widgetId",
+                                          "page",
+                                          "x",
+                                          "y",
+                                          "w",
+                                          "h",
+                                          "hidden",
+                                          "autoPlaced"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "format",
+                                    "pages",
+                                    "placements"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "formatWarnings": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "format": {
+                                      "type": "string",
+                                      "enum": [
+                                        "21x9",
+                                        "16x9",
+                                        "4x3",
+                                        "3x4",
+                                        "9x16"
+                                      ]
+                                    },
+                                    "code": {
+                                      "type": "string"
+                                    },
+                                    "widgetId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "format",
+                                    "code",
+                                    "widgetId"
+                                  ],
+                                  "additionalProperties": false
+                                }
                               }
                             },
                             "required": [
@@ -10698,7 +11291,9 @@
                               "durationSeconds",
                               "enabled",
                               "background",
-                              "widgets"
+                              "widgets",
+                              "layouts",
+                              "formatWarnings"
                             ],
                             "additionalProperties": false
                           }
@@ -10807,6 +11402,7 @@
                         "createdAt",
                         "updatedAt",
                         "settings",
+                        "primaryFormat",
                         "slides",
                         "tiles"
                       ],
@@ -11189,6 +11785,16 @@
                           ],
                           "additionalProperties": false
                         },
+                        "primaryFormat": {
+                          "type": "string",
+                          "enum": [
+                            "21x9",
+                            "16x9",
+                            "4x3",
+                            "3x4",
+                            "9x16"
+                          ]
+                        },
                         "slides": {
                           "type": "array",
                           "items": {
@@ -11274,22 +11880,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -11410,22 +12016,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -11546,22 +12152,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -11685,22 +12291,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -11771,22 +12377,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -11856,22 +12462,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -11926,6 +12532,129 @@
                                     }
                                   ]
                                 }
+                              },
+                              "layouts": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "format": {
+                                      "type": "string",
+                                      "enum": [
+                                        "21x9",
+                                        "16x9",
+                                        "4x3",
+                                        "3x4",
+                                        "9x16"
+                                      ]
+                                    },
+                                    "pages": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 8
+                                    },
+                                    "placements": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "widgetId": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "page": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 7
+                                          },
+                                          "x": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 16
+                                          },
+                                          "y": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 14
+                                          },
+                                          "w": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 16
+                                          },
+                                          "h": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 14
+                                          },
+                                          "hidden": {
+                                            "type": "boolean"
+                                          },
+                                          "autoPlaced": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "widgetId",
+                                          "page",
+                                          "x",
+                                          "y",
+                                          "w",
+                                          "h",
+                                          "hidden",
+                                          "autoPlaced"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "format",
+                                    "pages",
+                                    "placements"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "formatWarnings": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "format": {
+                                      "type": "string",
+                                      "enum": [
+                                        "21x9",
+                                        "16x9",
+                                        "4x3",
+                                        "3x4",
+                                        "9x16"
+                                      ]
+                                    },
+                                    "code": {
+                                      "type": "string"
+                                    },
+                                    "widgetId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "format",
+                                    "code",
+                                    "widgetId"
+                                  ],
+                                  "additionalProperties": false
+                                }
                               }
                             },
                             "required": [
@@ -11935,7 +12664,9 @@
                               "durationSeconds",
                               "enabled",
                               "background",
-                              "widgets"
+                              "widgets",
+                              "layouts",
+                              "formatWarnings"
                             ],
                             "additionalProperties": false
                           }
@@ -12044,6 +12775,7 @@
                         "createdAt",
                         "updatedAt",
                         "settings",
+                        "primaryFormat",
                         "slides",
                         "tiles"
                       ],
@@ -22452,6 +23184,16 @@
                           ],
                           "additionalProperties": false
                         },
+                        "primaryFormat": {
+                          "type": "string",
+                          "enum": [
+                            "21x9",
+                            "16x9",
+                            "4x3",
+                            "3x4",
+                            "9x16"
+                          ]
+                        },
                         "slides": {
                           "type": "array",
                           "items": {
@@ -22537,22 +23279,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -22673,22 +23415,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -22809,22 +23551,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -22948,22 +23690,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -23034,22 +23776,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -23119,22 +23861,22 @@
                                         "x": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "y": {
                                           "type": "integer",
                                           "minimum": 0,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "w": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 12
+                                          "maximum": 16
                                         },
                                         "h": {
                                           "type": "integer",
                                           "minimum": 1,
-                                          "maximum": 8
+                                          "maximum": 14
                                         },
                                         "title": {
                                           "type": [
@@ -23189,6 +23931,129 @@
                                     }
                                   ]
                                 }
+                              },
+                              "layouts": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "format": {
+                                      "type": "string",
+                                      "enum": [
+                                        "21x9",
+                                        "16x9",
+                                        "4x3",
+                                        "3x4",
+                                        "9x16"
+                                      ]
+                                    },
+                                    "pages": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 8
+                                    },
+                                    "placements": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "widgetId": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "page": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 7
+                                          },
+                                          "x": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 16
+                                          },
+                                          "y": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 14
+                                          },
+                                          "w": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 16
+                                          },
+                                          "h": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 14
+                                          },
+                                          "hidden": {
+                                            "type": "boolean"
+                                          },
+                                          "autoPlaced": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "widgetId",
+                                          "page",
+                                          "x",
+                                          "y",
+                                          "w",
+                                          "h",
+                                          "hidden",
+                                          "autoPlaced"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "format",
+                                    "pages",
+                                    "placements"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "formatWarnings": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "format": {
+                                      "type": "string",
+                                      "enum": [
+                                        "21x9",
+                                        "16x9",
+                                        "4x3",
+                                        "3x4",
+                                        "9x16"
+                                      ]
+                                    },
+                                    "code": {
+                                      "type": "string"
+                                    },
+                                    "widgetId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "format",
+                                    "code",
+                                    "widgetId"
+                                  ],
+                                  "additionalProperties": false
+                                }
                               }
                             },
                             "required": [
@@ -23198,7 +24063,9 @@
                               "durationSeconds",
                               "enabled",
                               "background",
-                              "widgets"
+                              "widgets",
+                              "layouts",
+                              "formatWarnings"
                             ],
                             "additionalProperties": false
                           }
@@ -23307,6 +24174,7 @@
                         "createdAt",
                         "updatedAt",
                         "settings",
+                        "primaryFormat",
                         "slides",
                         "tiles"
                       ],

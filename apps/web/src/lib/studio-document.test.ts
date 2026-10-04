@@ -78,8 +78,11 @@ function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
         enabled: true,
         background: null,
         widgets: [metric],
+        layouts: [],
+        formatWarnings: [],
       },
     ],
+    primaryFormat: "16x9",
     tiles: [],
     ...overrides,
   };

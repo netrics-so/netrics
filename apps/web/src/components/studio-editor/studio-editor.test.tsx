@@ -87,7 +87,15 @@ const dashboard: Dashboard = {
     accentColor: null,
     logoImageId: null,
   },
-  slides: [{ ...slide(2, { widgets: [textWidget] }), position: 0 }],
+  primaryFormat: "16x9",
+  slides: [
+    {
+      ...slide(2, { widgets: [textWidget] }),
+      position: 0,
+      layouts: [],
+      formatWarnings: [],
+    },
+  ],
   tiles: [],
 };
 

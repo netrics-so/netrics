@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { StudioPlacement } from "./studio-layout.js";
+import type { ScreenFormat, StudioPlacement } from "./studio-layout.js";
 import { slideLayoutProblem, type WidgetType } from "./studio.js";
 
 const metric = (rect: StudioPlacement) => ({
@@ -90,5 +90,29 @@ describe("slideLayoutProblem", () => {
     ],
   ])("%s", (_, widgets, problem) => {
     expect(slideLayoutProblem(widgets)).toBe(problem);
+  });
+});
+
+describe("slideLayoutProblem in a primary format (ADR 0017)", () => {
+  it.each<[string, StudioPlacement, ScreenFormat, string | null]>([
+    ["12 columns on 16x9", { x: 9, y: 0, w: 3, h: 2 }, "16x9", null],
+    [
+      "column 13 on 16x9",
+      { x: 10, y: 0, w: 3, h: 2 },
+      "16x9",
+      "widget_out_of_bounds",
+    ],
+    ["column 13 on 21x9", { x: 10, y: 0, w: 3, h: 2 }, "21x9", null],
+    [
+      "7 columns on 9x16",
+      { x: 4, y: 0, w: 3, h: 2 },
+      "9x16",
+      "widget_out_of_bounds",
+    ],
+    ["row 14 on 9x16", { x: 0, y: 12, w: 3, h: 2 }, "9x16", null],
+    ["row 9 on 4x3", { x: 0, y: 7, w: 3, h: 2 }, "4x3", "widget_out_of_bounds"],
+    ["row 10 on 3x4", { x: 3, y: 8, w: 3, h: 2 }, "3x4", null],
+  ])("%s", (_, placement, format, problem) => {
+    expect(slideLayoutProblem([metric(placement)], format)).toBe(problem);
   });
 });

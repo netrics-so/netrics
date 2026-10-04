@@ -92,6 +92,8 @@ function dashboard(): Dashboard {
         enabled: true,
         background: null,
         widgets: [metric(11, 0, 0, "Downloads"), metric(12, 8, 0)],
+        layouts: [],
+        formatWarnings: [],
       },
       {
         id: ID(3),
@@ -101,8 +103,11 @@ function dashboard(): Dashboard {
         enabled: true,
         background: null,
         widgets: [metric(13, 0, 0, LONG, 3)],
+        layouts: [],
+        formatWarnings: [],
       },
     ],
+    primaryFormat: "16x9",
     tiles: [],
   };
 }
