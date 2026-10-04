@@ -279,6 +279,9 @@ gate; #190 tracks them as an optional stretch. Sales never require this key.
   average is derived (milestone 11) or computed by the tile. Review text
   and nicknames are not stored. The API has no aggregate store rating, so
   the UI does not present these numbers as the App Store's star rating.
+  Amended by [ADR 0019](./0019-signal-widget-types.md) §11: the title,
+  body and nickname of recent reviews are fetched and stored for the
+  latest-review widget.
 - **Implementation (#190).** The provider declares the reviews key as an
   optional additional key; the connector receives its token as
   `credentials.reviewsAccessToken` (no SDK change: credentials are opaque).

@@ -20,8 +20,9 @@ cross-source metrics without writing code.
 - Unit, currency, dimension, time-window, and aggregation validation
 - Missing-value, zero-division, and stale-input behavior
 - Preview with sample and historical data
-- Additional table, gauge, and health widgets on the Dashboard Studio widget
-  model (milestone 09 ships the bar chart)
+- "Save as derived metric" from a compare widget, reusing its ratio rules
+  (table, gauge, status and compare widgets ship in milestone 09.3,
+  [ADR 0019](../decisions/0019-signal-widget-types.md))
 
 ## Out of scope
 
@@ -38,7 +39,7 @@ cross-source metrics without writing code.
 4. Add query planning for aligned time windows and dimensions.
 5. Implement unit, currency, and aggregation compatibility.
 6. Build derived-metric creation, preview, and error UX.
-7. Add the remaining v1 widgets.
+7. Convert compare widgets into derived metrics (ADR 0019 section 10).
 8. Add cross-project and cross-connection scenarios.
 
 ## Verification
