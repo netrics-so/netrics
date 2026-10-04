@@ -1,5 +1,12 @@
 import { sql } from "drizzle-orm";
 
+import {
+  DEFAULT_LOCALE,
+  localizedDimensionName,
+  localizedMetric,
+  type ConnectorTranslations,
+} from "@netrics/domain";
+
 import type { Transaction } from "./context.js";
 
 // Metric reads for dashboards (#48), as netrics_app inside withWorkspace.
@@ -20,57 +27,100 @@ export interface ConnectionMetric {
   aggregations: string[];
   better: string;
   role: string;
+  /**
+   * A display name for each dimension, in the requested locale: the
+   * connector's translation, else the key in sentence case (#257).
+   */
+  dimensionNames: Record<string, string>;
 }
 
-function toMetric(row: Record<string, unknown>): ConnectionMetric {
+/**
+ * A catalog row in `locale` (ADR 0016 section 6, #257): name, description
+ * and dimension names from the connector's stored translations (the
+ * manifest's `translations`, SDK 0.2.6), each falling back to English.
+ */
+function toMetric(
+  row: Record<string, unknown>,
+  locale: string,
+): ConnectionMetric {
+  const key = row.key as string;
+  const dimensions = row.dimensions as string[];
+  const manifest = {
+    translations: (row.translations ?? null) as ConnectorTranslations | null,
+  };
+  const text = localizedMetric(
+    manifest,
+    {
+      key,
+      name: row.name as string,
+      description: row.description as string,
+    },
+    locale,
+  );
   return {
     connectionId: row.connection_id as string,
     connectionName: row.connection_name as string,
-    key: row.key as string,
-    name: row.name as string,
-    description: row.description as string,
+    key,
+    name: text.name,
+    description: text.description,
     kind: row.kind as string,
     unit: row.unit as string,
     granularity: row.granularity as string,
-    dimensions: row.dimensions as string[],
+    dimensions,
     aggregations: row.aggregations as string[],
     better: row.better as string,
     role: row.role as string,
+    dimensionNames: Object.fromEntries(
+      dimensions.map((dimension) => [
+        dimension,
+        localizedDimensionName(manifest, dimension, locale),
+      ]),
+    ),
   };
 }
 
-/** Every metric the workspace's connections provide. */
+/**
+ * Every metric the workspace's connections provide, named in `locale`
+ * (default English).
+ */
 export async function listWorkspaceMetrics(
   tx: Transaction,
   workspaceId: string,
+  locale: string = DEFAULT_LOCALE,
 ): Promise<ConnectionMetric[]> {
   const rows = await tx.execute(sql`
     select c.id as connection_id, c.name as connection_name, m.key, m.name,
            m.description, m.kind, m.unit, m.granularity, m.dimensions,
-           m.aggregations, m.better, m.role
+           m.aggregations, m.better, m.role,
+           k.manifest -> 'translations' as translations
     from connections c
     join metric_definitions m on m.connector_id = c.connector_id
+    join connectors k on k.id = c.connector_id
     where c.workspace_id = ${workspaceId}
     order by c.created_at, m.key`);
-  return rows.map(toMetric);
+  return rows.map((row) => toMetric(row, locale));
 }
 
+/** One metric of a connection, named in `locale` (default English). */
 export async function findConnectionMetric(
   tx: Transaction,
   workspaceId: string,
   connectionId: string,
   metricKey: string,
+  locale: string = DEFAULT_LOCALE,
 ): Promise<ConnectionMetric | null> {
   const rows = await tx.execute(sql`
     select c.id as connection_id, c.name as connection_name, m.key, m.name,
            m.description, m.kind, m.unit, m.granularity, m.dimensions,
-           m.aggregations, m.better, m.role
+           m.aggregations, m.better, m.role,
+           k.manifest -> 'translations' as translations
     from connections c
     join metric_definitions m on m.connector_id = c.connector_id
+    join connectors k on k.id = c.connector_id
     where c.workspace_id = ${workspaceId}
       and c.id = ${connectionId}
       and m.key = ${metricKey}`);
-  return rows[0] ? toMetric(rows[0]) : null;
+  return rows[0] ? toMetric(rows[0], locale) : null;
 }
 
 export interface MetricBucketQuery {

@@ -437,6 +437,10 @@ const jsonSchemaObjectSchema = z.record(z.string(), z.unknown());
 
 export const connectorCatalogEntrySchema = z.object({
   id: z.string().min(1),
+  /**
+   * Name, description, and the titles and descriptions in `configSchema`
+   * and the auth strategies, in the caller's language, else English (#257).
+   */
   name: z.string().min(1),
   version: z.string().min(1),
   description: z.string().min(1),
@@ -969,6 +973,7 @@ export const workspaceMetricSchema = z.object({
   connectionId: z.uuid(),
   connectionName: z.string(),
   key: z.string().min(1),
+  /** Name and description in the caller's language, else English (#257). */
   name: z.string().min(1),
   description: z.string(),
   kind: z.enum(METRIC_KINDS),
@@ -981,6 +986,12 @@ export const workspaceMetricSchema = z.object({
   unit: z.string().min(1),
   granularity: z.enum(GRANULARITIES),
   dimensions: z.array(z.string()),
+  /**
+   * A display name for each dimension in the caller's language: the
+   * connector's translation, else the key in sentence case (#257). Absent
+   * from an API older than the field: empty.
+   */
+  dimensionNames: z.record(z.string(), z.string()).default({}),
   /** Aggregations a tile may use, default first. Empty: not displayable. */
   aggregations: z.array(metricAggregationSchema),
   better: metricBetterSchema,

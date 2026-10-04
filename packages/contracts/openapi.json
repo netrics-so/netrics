@@ -4005,6 +4005,16 @@
                               "type": "string"
                             }
                           },
+                          "dimensionNames": {
+                            "default": {},
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
                           "aggregations": {
                             "type": "array",
                             "items": {
@@ -4043,6 +4053,7 @@
                           "unit",
                           "granularity",
                           "dimensions",
+                          "dimensionNames",
                           "aggregations",
                           "better",
                           "role"
@@ -4266,6 +4277,16 @@
                             "type": "string"
                           }
                         },
+                        "dimensionNames": {
+                          "default": {},
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
                         "aggregations": {
                           "type": "array",
                           "items": {
@@ -4304,6 +4325,7 @@
                         "unit",
                         "granularity",
                         "dimensions",
+                        "dimensionNames",
                         "aggregations",
                         "better",
                         "role"
@@ -4752,6 +4774,16 @@
                             "type": "string"
                           }
                         },
+                        "dimensionNames": {
+                          "default": {},
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
                         "aggregations": {
                           "type": "array",
                           "items": {
@@ -4790,6 +4822,7 @@
                         "unit",
                         "granularity",
                         "dimensions",
+                        "dimensionNames",
                         "aggregations",
                         "better",
                         "role"

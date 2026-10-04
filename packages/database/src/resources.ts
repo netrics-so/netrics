@@ -1,5 +1,11 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 
+import {
+  DEFAULT_LOCALE,
+  localizedResourceNoun,
+  type ConnectorTranslations,
+} from "@netrics/domain";
+
 import type { Transaction } from "./context.js";
 import * as schema from "./schema.js";
 
@@ -209,27 +215,44 @@ export async function findResourceNames(
 
 /**
  * What the connection's connector calls its resources (its manifest's
- * `resourceNoun`, SDK 0.2.4), or null when it does not say (#208).
+ * `resourceNoun`, SDK 0.2.4), in `locale` when the connector translates it
+ * (SDK 0.2.6, #257), or null when it does not say (#208).
  */
 export async function findConnectionResourceNoun(
   tx: Transaction,
   workspaceId: string,
   connectionId: string,
+  locale: string = DEFAULT_LOCALE,
 ): Promise<{ singular: string; plural: string } | null> {
   const rows = await tx.execute(sql`
-    select k.manifest -> 'resourceNoun' ->> 'singular' as singular,
-           k.manifest -> 'resourceNoun' ->> 'plural' as plural
+    select k.manifest -> 'resourceNoun' as resource_noun,
+           k.manifest -> 'translations' as translations
     from connections c
     join connectors k on k.id = c.connector_id
     where c.workspace_id = ${workspaceId} and c.id = ${connectionId}`);
-  const singular = rows[0]?.singular;
-  const plural = rows[0]?.plural;
-  return typeof singular === "string" &&
-    singular !== "" &&
-    typeof plural === "string" &&
-    plural !== ""
-    ? { singular, plural }
-    : null;
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+  const stored = row.resource_noun as {
+    singular?: unknown;
+    plural?: unknown;
+  } | null;
+  const english =
+    stored &&
+    typeof stored.singular === "string" &&
+    stored.singular !== "" &&
+    typeof stored.plural === "string" &&
+    stored.plural !== ""
+      ? { singular: stored.singular, plural: stored.plural }
+      : undefined;
+  return localizedResourceNoun(
+    {
+      resourceNoun: english,
+      translations: (row.translations ?? null) as ConnectorTranslations | null,
+    },
+    locale,
+  );
 }
 
 /** The key of a resource in `findResourceNames`' result. */

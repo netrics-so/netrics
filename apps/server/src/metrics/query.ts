@@ -31,6 +31,7 @@ import {
 } from "@netrics/database";
 import {
   CURRENCY_DIMENSION,
+  DEFAULT_LOCALE,
   DEFAULT_RESOURCE_NOUN,
   EXCHANGE_RATE_SOURCE,
   RATE_BASE_CURRENCY,
@@ -60,6 +61,7 @@ import {
   type DateRange,
   type Granularity,
   type InstantRange,
+  type Locale,
   type MetricKind,
 } from "@netrics/domain";
 
@@ -86,11 +88,13 @@ function present(metric: ConnectionMetric): WorkspaceMetric {
   };
 }
 
+/** The workspace's metrics, named in `locale` (#257). */
 export async function listMetrics(
   tx: Transaction,
   workspaceId: string,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<WorkspaceMetric[]> {
-  return (await listWorkspaceMetrics(tx, workspaceId)).map(present);
+  return (await listWorkspaceMetrics(tx, workspaceId, locale)).map(present);
 }
 
 /** Reporting dates as a UTC instant range (dates.to inclusive). */
@@ -108,6 +112,11 @@ export interface QueryOptions {
    * NETRICS_EXCHANGE_RATES. Off, every amount stays per currency.
    */
   exchangeRates?: boolean;
+  /**
+   * The language of the response's metric name and description: the
+   * caller's, or a screen's (#257). Default English.
+   */
+  locale?: Locale;
 }
 
 /**
@@ -136,6 +145,7 @@ export async function queryMetric(
     workspaceId,
     request.connectionId,
     request.metricKey,
+    options.locale,
   );
   if (!workspace || !found) {
     return { ok: false, status: 404, error: "metric_not_found" };
@@ -361,6 +371,7 @@ export async function queryMetricBreakdown(
     workspaceId,
     request.connectionId,
     request.metricKey,
+    options.locale,
   );
   if (!workspace || !found) {
     return { ok: false, status: 404, error: "metric_not_found" };
@@ -688,6 +699,8 @@ export async function listResourcesOfMetric(
   tx: Transaction,
   workspaceId: string,
   request: MetricResourcesRequest,
+  /** The language of the resource noun (#257). */
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<MetricResult<MetricResourcesResponse>> {
   const metric = await findConnectionMetric(
     tx,
@@ -699,8 +712,12 @@ export async function listResourcesOfMetric(
     return { ok: false, status: 404, error: "metric_not_found" };
   }
   const resourceNoun =
-    (await findConnectionResourceNoun(tx, workspaceId, metric.connectionId)) ??
-    DEFAULT_RESOURCE_NOUN;
+    (await findConnectionResourceNoun(
+      tx,
+      workspaceId,
+      metric.connectionId,
+      locale,
+    )) ?? DEFAULT_RESOURCE_NOUN;
   if (!metric.dimensions.includes(RESOURCE_DIMENSION)) {
     return { ok: true, value: { resources: [], resourceNoun } };
   }

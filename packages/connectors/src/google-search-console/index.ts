@@ -3,6 +3,7 @@ import type {
   ConnectionContext,
   Connector,
   ConnectorManifest,
+  ManifestTranslation,
   ConnectorRuntime,
   Observation,
   Resource,
@@ -58,10 +59,86 @@ export const DIMENSION_CHOICES: string[] = [
 const PREFIX = "google-search-console";
 const BREAKDOWN_DIMENSIONS = ["resource", ...DIMENSIONS];
 
+/**
+ * German texts of the manifest (ADR 0016, #257): "du" where the text
+ * addresses the reader; product names and stored values stay as they are.
+ */
+const searchConsoleDe: ManifestTranslation = {
+  name: "Google Search Console",
+  description:
+    "Klicks, Impressionen, Klickrate und durchschnittliche Position in der Google-Suche, pro Search-Console-Property.",
+  resourceNoun: { singular: "Property", plural: "Properties" },
+  config: {
+    siteUrl: {
+      title: "Property",
+      description:
+        "Die Search-Console-Property, die gelesen werden soll: eine URL-Präfix-Property („https://example.com/“) oder eine Domain-Property („sc-domain:example.com“).",
+    },
+    dimensions: {
+      title: "Aufschlüsselung",
+      description:
+        "Optionale Aufschlüsselung zusätzlich zu den Tagessummen: keine oder eine bis zwei von Seite, Suchanfrage, Land und Gerät.",
+    },
+    rowLimit: {
+      title: "Zeilen pro Tag",
+      description: `Wie viele Zeilen der Aufschlüsselung pro Tag behalten werden, die mit den meisten Klicks zuerst (höchstens ${MAX_ROWS_PER_DAY.toLocaleString("de")}).`,
+    },
+  },
+  metrics: {
+    [`${PREFIX}.clicks`]: {
+      name: "Klicks",
+      description:
+        "Klicks aus den Google-Suchergebnissen pro Tag und Property.",
+    },
+    [`${PREFIX}.impressions`]: {
+      name: "Impressionen",
+      description:
+        "Wie oft eine Seite der Property in den Google-Suchergebnissen erschien, pro Tag.",
+    },
+    [`${PREFIX}.ctr`]: {
+      name: "Klickrate",
+      description:
+        "Klicks geteilt durch Impressionen an einem Tag (0–1); kein Wert an Tagen ohne Impressionen. Über mehrere Tage ist die Rate die Summe der Klicks geteilt durch die Summe der Impressionen, nicht der Durchschnitt der Tageswerte.",
+    },
+    [`${PREFIX}.position`]: {
+      name: "Durchschnittliche Position",
+      description:
+        "Durchschnittliche oberste Position in den Google-Suchergebnissen an einem Tag (1 ist ganz oben); kein Wert an Tagen ohne Impressionen. Über mehrere Tage nach Impressionen gewichtet: Positionssumme geteilt durch Impressionen.",
+    },
+    [`${PREFIX}.position_sum`]: {
+      name: "Positionssumme",
+      description:
+        "Durchschnittliche Position × Impressionen pro Tag. Geteilt durch die Impressionen beliebiger Tage ergibt sie die nach Impressionen gewichtete durchschnittliche Position.",
+    },
+    [`${PREFIX}.breakdown_clicks`]: {
+      name: "Klicks nach Aufschlüsselung",
+      description:
+        "Klicks pro Tag für die eingestellte Aufschlüsselung (Seite, Suchanfrage, Land oder Gerät), die Zeilen mit den meisten Klicks. Anonymisierte Suchanfragen und das Zeilenlimit lassen die Summen unter den Gesamtwerten.",
+    },
+    [`${PREFIX}.breakdown_impressions`]: {
+      name: "Impressionen nach Aufschlüsselung",
+      description:
+        "Impressionen pro Tag für die eingestellte Aufschlüsselung, die Zeilen mit den meisten Klicks. Anonymisierte Suchanfragen und das Zeilenlimit lassen die Summen unter den Gesamtwerten.",
+    },
+    [`${PREFIX}.breakdown_position_sum`]: {
+      name: "Positionssumme nach Aufschlüsselung",
+      description:
+        "Durchschnittliche Position × Impressionen pro Tag für die eingestellte Aufschlüsselung. Geteilt durch die Impressionen der Aufschlüsselung ergibt sie die nach Impressionen gewichtete durchschnittliche Position jeder Gruppe.",
+    },
+  },
+  dimensions: {
+    resource: "Property",
+    page: "Seite",
+    query: "Suchanfrage",
+    country: "Land",
+    device: "Gerät",
+  },
+};
+
 export const searchConsoleManifest: ConnectorManifest = {
   id: PREFIX,
-  version: "0.1.0",
-  sdkVersion: "^0.2.1",
+  version: "0.1.1",
+  sdkVersion: "^0.2.6",
   name: "Google Search Console",
   description:
     "Clicks, impressions, click-through rate and average position in Google Search, per Search Console property.",
@@ -205,6 +282,7 @@ export const searchConsoleManifest: ConnectorManifest = {
   backfillDays: 490,
   outboundDomains: ["searchconsole.googleapis.com"],
   resourceNoun: { singular: "property", plural: "properties" },
+  translations: { de: searchConsoleDe },
   // Google's per-property and per-user limit for Search Analytics queries.
   rateLimit: { maxRequests: 1200, windowSeconds: 60, scope: "property" },
 };

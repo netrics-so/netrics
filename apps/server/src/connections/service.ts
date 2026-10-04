@@ -29,6 +29,11 @@ import type {
 } from "@netrics/connector-sdk";
 import { ANALYTICS_METRIC_KEYS } from "@netrics/connectors";
 import {
+  DEFAULT_LOCALE,
+  localizedManifest,
+  type Locale,
+} from "@netrics/domain";
+import {
   deleteConnection as deleteConnectionRow,
   enqueueJob,
   findConnection,
@@ -120,6 +125,8 @@ export interface ConnectionServiceDeps {
 export interface Actor {
   workspaceId: string;
   callerId: string;
+  /** The caller's language, for connector names (#257). Default English. */
+  locale?: Locale;
 }
 
 export type Result<T> =
@@ -978,21 +985,25 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 
   return {
     /** The installation's catalog, from the deployed bundle. */
-    listConnectors() {
-      return registry.list().map(({ manifest }) => ({
-        id: manifest.id,
-        name: manifest.name,
-        version: manifest.version,
-        description: manifest.description,
-        metricsCount: manifest.metrics.length,
-        minRefreshIntervalSeconds: manifest.minRefreshIntervalSeconds,
-        supportsBackfill: manifest.supportsBackfill,
-        configSchema: { ...manifest.configSchema },
-        authStrategies: manifest.authStrategies.map((strategy) =>
-          presentAuthStrategy(strategy, signedKeys),
-        ),
-        ...oauthProviders.connectorAvailability(manifest, signedKeys),
-      }));
+    /** The catalog, its texts in `locale` (#257). */
+    listConnectors(locale: Locale = DEFAULT_LOCALE) {
+      return registry.list().map(({ manifest: english }) => {
+        const manifest = localizedManifest(english, locale);
+        return {
+          id: manifest.id,
+          name: manifest.name,
+          version: manifest.version,
+          description: manifest.description,
+          metricsCount: manifest.metrics.length,
+          minRefreshIntervalSeconds: manifest.minRefreshIntervalSeconds,
+          supportsBackfill: manifest.supportsBackfill,
+          configSchema: { ...manifest.configSchema },
+          authStrategies: manifest.authStrategies.map((strategy) =>
+            presentAuthStrategy(strategy, signedKeys),
+          ),
+          ...oauthProviders.connectorAvailability(manifest, signedKeys),
+        };
+      });
     },
 
     async create(
@@ -1076,6 +1087,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             registry,
             created,
             signedKeyView(actor.workspaceId, created.row),
+            actor.locale,
           ),
         );
       });
@@ -1270,7 +1282,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       const rows = await inWorkspace(actor, (tx) =>
         listConnectionRows(tx, actor.workspaceId),
       );
-      return rows.map((loaded) => presentConnection(registry, loaded));
+      return rows.map((loaded) =>
+        presentConnection(registry, loaded, actor.locale),
+      );
     },
 
     /** The connection with its 20 most recent sync runs. */
@@ -1300,6 +1314,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           registry,
           found,
           signedKeyView(actor.workspaceId, found.row),
+          actor.locale,
         ),
         syncRuns: found.syncRuns.map(presentSyncRun),
       });
@@ -1586,6 +1601,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               oauth: existing.oauth,
             },
             signedKeyView(actor.workspaceId, row),
+            actor.locale,
           ),
         );
       });

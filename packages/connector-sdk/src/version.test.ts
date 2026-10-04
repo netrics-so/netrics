@@ -56,8 +56,8 @@ describe("assertManifestCompatible", () => {
     ).toThrow();
   });
 
-  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.5", () => {
-    expect(SDK_VERSION).toBe("0.2.5");
+  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.6", () => {
+    expect(SDK_VERSION).toBe("0.2.6");
     for (const sdkVersion of [
       "^0.2.0",
       "^0.2.1",
@@ -65,6 +65,7 @@ describe("assertManifestCompatible", () => {
       "^0.2.3",
       "^0.2.4",
       "^0.2.5",
+      "^0.2.6",
     ]) {
       expect(
         assertManifestCompatible({ ...validManifest(), sdkVersion }).id,
@@ -87,6 +88,103 @@ describe("assertManifestCompatible", () => {
         resourceNoun: { singular: "app", plural: "" },
       }),
     ).toThrow();
+  });
+
+  describe("translations (0.2.6)", () => {
+    function translatable() {
+      const base = validManifest();
+      return {
+        ...base,
+        configSchema: {
+          type: "object",
+          properties: { teamId: { type: "string", title: "Team ID" } },
+        },
+        authStrategies: [
+          {
+            strategy: "token",
+            credentialsSchema: {
+              type: "object",
+              properties: { token: { type: "string", title: "Token" } },
+            },
+            setup: { steps: ["Open settings.", "Copy the token."] },
+          },
+        ],
+        metrics: [
+          {
+            ...base.metrics[0]!,
+            dimensions: ["resource", "territory"],
+          },
+        ],
+      };
+    }
+    const de = {
+      name: "Acme-Analyse",
+      description: "Testmanifest.",
+      resourceNoun: { singular: "Website", plural: "Websites" },
+      metrics: {
+        "acme.visitors": { name: "Besucher", description: "Pro Tag." },
+      },
+      dimensions: { territory: "Land", resource: "Website" },
+      config: { teamId: { title: "Team-ID" } },
+      credentials: { token: { title: "Token", description: "Geheim." } },
+      setupSteps: ["Öffne die Einstellungen.", "Kopiere das Token."],
+    };
+
+    it("validates manifests with and without translations", () => {
+      expect(assertManifestCompatible(translatable()).translations).toBe(
+        undefined,
+      );
+      const manifest = assertManifestCompatible({
+        ...translatable(),
+        translations: { de },
+      });
+      expect(manifest.translations).toEqual({ de });
+      // Partial translations are fine: everything falls back to English.
+      expect(
+        assertManifestCompatible({
+          ...translatable(),
+          translations: { de: { metrics: { "acme.visitors": {} } }, fr: {} },
+        }).translations,
+      ).toEqual({ de: { metrics: { "acme.visitors": {} } }, fr: {} });
+    });
+
+    it("rejects keys the manifest does not have", () => {
+      const cases: [unknown, RegExp][] = [
+        [{ metrics: { "acme.unknown": { name: "x" } } }, /unknown metric/],
+        [{ dimensions: { page: "Seite" } }, /unknown dimension/],
+        [{ config: { siteUrl: { title: "x" } } }, /unknown config field/],
+        [{ credentials: { apiKey: { title: "x" } } }, /unknown credential/],
+        [{ setupSteps: ["Nur einer."] }, /one step for each/],
+      ];
+      for (const [translation, message] of cases) {
+        expect(
+          () =>
+            assertManifestCompatible({
+              ...translatable(),
+              translations: { de: translation },
+            }),
+          JSON.stringify(translation),
+        ).toThrow(message);
+      }
+    });
+
+    it("rejects malformed translations", () => {
+      for (const translations of [
+        { en: { name: "Acme" } },
+        { DE: { name: "Acme" } },
+        { "de-AT": { name: "Acme" } },
+        { de: { name: "" } },
+        { de: { title: "typo" } },
+        { de: { metrics: { "acme.visitors": { label: "x" } } } },
+        { de: { resourceNoun: { singular: "App" } } },
+        { de: "Acme" },
+      ]) {
+        expect(
+          () => assertManifestCompatible({ ...translatable(), translations }),
+          JSON.stringify(translations),
+        ).toThrow();
+      }
+    });
   });
 
   it("accepts a signed-key strategy that names only its provider", () => {

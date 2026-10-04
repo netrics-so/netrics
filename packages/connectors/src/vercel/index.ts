@@ -3,6 +3,7 @@ import type {
   ConnectionContext,
   Connector,
   ConnectorManifest,
+  ManifestTranslation,
   ConnectorRuntime,
   Observation,
   Resource,
@@ -26,10 +27,71 @@ const INCREMENTAL_LOOKBACK_DAYS = 1;
 export const TOP_LIMIT = 10;
 const MAX_PROJECT_PAGES = 10;
 
+/**
+ * German texts of the manifest (ADR 0016, #257): "du" where the text
+ * addresses the reader; product names and stored values stay as they are.
+ */
+const vercelDe: ManifestTranslation = {
+  name: "Vercel Web Analytics",
+  description:
+    "Besucher, Seitenaufrufe und eigene Events aus Vercel Web Analytics, pro Projekt.",
+  resourceNoun: { singular: "Projekt", plural: "Projekte" },
+  credentials: {
+    token: {
+      title: "Vercel-Zugriffstoken",
+      description:
+        "netrics liest damit nur Projektdetails und Web Analytics. Das Token wird verschlüsselt gespeichert und nie wieder angezeigt.",
+    },
+  },
+  // Vercel's own interface is English: its labels stay as they appear there.
+  setupSteps: [
+    "Öffne in Vercel Account Settings → Tokens.",
+    "Gib dem Token einen Namen (zum Beispiel „netrics“) und setze seinen Scope auf das Projekt, das du sehen willst, oder auf das Team, dem es gehört, wenn du zwischen mehreren Projekten wählen willst.",
+    "Wähle ein Ablaufdatum. Wenn das Token abläuft, fragt diese Verbindung nach einem neuen.",
+    "Klicke auf Create, kopiere das Token und füge es unten ein. Vercel zeigt es nur einmal an.",
+  ],
+  config: {
+    teamId: {
+      title: "Team-ID",
+      description:
+        "Lass das Feld leer, außer das Token sieht mehrere Vercel-Teams. Gib dann die ID des Teams ein, das gelesen werden soll: Team Settings → General, sie beginnt mit team_.",
+    },
+  },
+  metrics: {
+    "vercel.pageviews": {
+      name: "Seitenaufrufe",
+      description: "Seitenaufrufe pro Tag und Projekt.",
+    },
+    "vercel.visitors": {
+      name: "Tägliche Besucher",
+      description:
+        "Eindeutige Besucher pro Tag und Projekt. Über mehrere Tage summiert zählt ein wiederkehrender Besucher einmal pro Tag.",
+    },
+    "vercel.route_pageviews": {
+      name: "Seitenaufrufe nach Route",
+      description: `Seitenaufrufe pro Tag für die ${TOP_LIMIT} meistbesuchten Routen jedes Kalendermonats; andere Routen werden als „Others“ zusammengefasst.`,
+    },
+    "vercel.country_visitors": {
+      name: "Besucher nach Land",
+      description: `Eindeutige Besucher pro Tag für die ${TOP_LIMIT} größten Länder jedes Kalendermonats (ISO-Codes); andere Länder werden als „Others“ zusammengefasst.`,
+    },
+    "vercel.events": {
+      name: "Eigene Events",
+      description: `Eigene Events pro Tag für die ${TOP_LIMIT} häufigsten Event-Namen jedes Kalendermonats; andere Events werden als „Others“ zusammengefasst.`,
+    },
+  },
+  dimensions: {
+    resource: "Projekt",
+    route: "Route",
+    country: "Land",
+    event: "Event",
+  },
+};
+
 export const vercelManifest: ConnectorManifest = {
   id: "vercel",
-  version: "0.1.1",
-  sdkVersion: "^0.2.0",
+  version: "0.1.2",
+  sdkVersion: "^0.2.6",
   name: "Vercel Web Analytics",
   description:
     "Visitors, page views and custom events from Vercel Web Analytics, per project.",
@@ -134,6 +196,7 @@ export const vercelManifest: ConnectorManifest = {
   backfillDays: 366,
   outboundDomains: ["api.vercel.com"],
   resourceNoun: { singular: "project", plural: "projects" },
+  translations: { de: vercelDe },
   rateLimit: { maxRequests: 400, windowSeconds: 60 },
 };
 

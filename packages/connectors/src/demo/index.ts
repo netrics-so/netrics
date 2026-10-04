@@ -3,6 +3,7 @@ import type {
   ConnectionContext,
   Connector,
   ConnectorManifest,
+  ManifestTranslation,
   Observation,
   Resource,
   SyncRequest,
@@ -20,10 +21,32 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 const EARLIEST_ZONE_OFFSET_MS = 14 * 60 * 60 * 1000;
 
+/**
+ * German texts of the manifest (ADR 0016, #257): "du" where the text
+ * addresses the reader; product names and stored values stay as they are.
+ */
+const demoDe: ManifestTranslation = {
+  name: "Demo-Connector",
+  description:
+    "Deterministischer Demo-Connector für das Onboarding und für Tests. Erzeugt plausible Tageswerte lokal, ohne Netzwerkzugriff.",
+  resourceNoun: { singular: "Website", plural: "Websites" },
+  metrics: {
+    "demo.visitors": {
+      name: "Besucher",
+      description: "Eindeutige Besucher pro Tag und Demo-Website.",
+    },
+    "demo.signups": {
+      name: "Registrierungen",
+      description: "Neue Registrierungen pro Tag und Demo-Website.",
+    },
+  },
+  dimensions: { resource: "Website" },
+};
+
 export const demoManifest: ConnectorManifest = {
   id: "demo",
-  version: "0.1.0",
-  sdkVersion: "^0.2.0",
+  version: "0.1.1",
+  sdkVersion: "^0.2.6",
   name: "Demo Connector",
   description:
     "Deterministic demo connector for onboarding and tests. Generates plausible daily metrics locally without network access.",
@@ -69,6 +92,7 @@ export const demoManifest: ConnectorManifest = {
   backfillDays: 90,
   outboundDomains: [],
   resourceNoun: { singular: "site", plural: "sites" },
+  translations: { de: demoDe },
 };
 
 type Simulation = "outage" | "bad-credentials";

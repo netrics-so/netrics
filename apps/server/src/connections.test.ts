@@ -400,7 +400,7 @@ describe("connection lifecycle", () => {
       id: connectionId,
       name: "Demo Metrics Renamed",
       connectorName: "Demo Connector",
-      connectorVersion: "0.1.0",
+      connectorVersion: "0.1.1",
     });
   });
 

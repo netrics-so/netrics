@@ -85,9 +85,11 @@ export function registerConnectionRoutes(
             response: connectorListResponseSchema,
           }),
         },
-        async () =>
+        async (request) =>
           connectorListResponseSchema.parse({
-            connectors: connections.listConnectors(),
+            connectors: connections.listConnectors(
+              request.sessionIdentity!.locale,
+            ),
           }),
       );
 

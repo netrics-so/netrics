@@ -15,7 +15,11 @@ import {
   recordSetupOwner,
   type Database,
 } from "@netrics/database";
-import { localeFromAcceptLanguage, resolveLocale } from "@netrics/domain";
+import {
+  localeFromAcceptLanguage,
+  resolveLocale,
+  type Locale,
+} from "@netrics/domain";
 
 import type { Config } from "../env.js";
 import { SETUP_TOKEN_HEADER, hashSetupToken } from "../setup.js";
@@ -34,6 +38,12 @@ export interface SessionIdentity {
   authUserId: string;
   email: string;
   domainUserId: string;
+  /**
+   * The language to answer in (ADR 0016 section 3, web signed in): the
+   * user's setting, else the instance default, else the request's
+   * Accept-Language, else English.
+   */
+  locale: Locale;
 }
 
 /**
@@ -257,10 +267,20 @@ export function createAuthService(
           name: session.user.name,
         });
       }
+      const acceptLanguage = headers["accept-language"];
       return {
         authUserId: session.user.id,
         email: domainUser.email,
         domainUserId: domainUser.id,
+        locale: resolveLocale([
+          domainUser.locale,
+          config.defaultLocale,
+          localeFromAcceptLanguage(
+            Array.isArray(acceptLanguage)
+              ? acceptLanguage.join(",")
+              : acceptLanguage,
+          ),
+        ]),
       };
     },
   };
