@@ -2,12 +2,23 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
-import type { DeviceDashboardResponse } from "@netrics/contracts";
+import type {
+  DeviceDashboardResponse,
+  DeviceDashboardV2Response,
+} from "@netrics/contracts";
 import { conversionNote } from "@netrics/domain";
 
+import { DeviceWidgetView } from "@/components/studio/device-widget";
+import { SlidePlayer } from "@/components/studio/slide-player";
 import { TileNotice, TileView } from "@/components/tile-view";
-import { TvFrame, useClock } from "@/components/tv-frame";
-import { createKioskClient, type KioskState } from "@/lib/kiosk-client";
+import { TvFrame, useClock, useIdle } from "@/components/tv-frame";
+import {
+  createKioskClient,
+  isSlidesDashboard,
+  type KioskState,
+} from "@/lib/kiosk-client";
+import { browserImageCache } from "@/lib/kiosk-image-cache";
+import { themeStyle } from "@/lib/studio-theme";
 import { pairingAddress } from "@/lib/pairing-address";
 import { deviceTileNotice } from "@/lib/tile-status";
 
@@ -15,6 +26,7 @@ const INITIAL: KioskState = {
   phase: "starting",
   pairing: null,
   dashboard: null,
+  images: new Map(),
   updatedAt: null,
   offline: false,
   lastError: null,
@@ -44,6 +56,7 @@ export function KioskView({ appVersion }: { appVersion: string }) {
       storage: browserStorage() ?? memoryStorage,
       appVersion,
       onChange: setState,
+      imageCache: browserImageCache(),
     });
     client.start();
     return () => client.stop();
@@ -53,8 +66,18 @@ export function KioskView({ appVersion }: { appVersion: string }) {
     return <PairingScreen state={state} />;
   }
   if (state.phase === "paired" && state.dashboard) {
-    return state.dashboard.dashboard ? (
-      <KioskDashboard state={state} dashboard={state.dashboard} />
+    const payload = state.dashboard;
+    if (payload.dashboard && isSlidesDashboard(payload)) {
+      return (
+        <KioskSlides
+          state={state}
+          payload={payload}
+          dashboard={payload.dashboard}
+        />
+      );
+    }
+    return payload.dashboard && !isSlidesDashboard(payload) ? (
+      <KioskDashboard state={state} dashboard={payload} />
     ) : (
       <Message title="No dashboard assigned yet">
         Choose one under TVs in netrics; this screen picks it up on its own.
@@ -133,6 +156,64 @@ function OfflineMarker({
         ? ` — last update ${formatTime(state.updatedAt, timeZone)}`
         : ""}
     </span>
+  );
+}
+
+/**
+ * A schema 2 payload (#221): the dashboard's slides on the studio canvas,
+ * rotating by each slide's duration, drawn from the payload alone.
+ */
+function KioskSlides({
+  state,
+  payload,
+  dashboard,
+}: {
+  state: KioskState;
+  payload: DeviceDashboardV2Response;
+  dashboard: NonNullable<DeviceDashboardV2Response["dashboard"]>;
+}) {
+  const idle = useIdle();
+  const { theme, timeZone } = payload;
+  const env = {
+    timeZone,
+    fontScale: theme.tokens.fontScale,
+    showHeader: dashboard.showHeader,
+    images: state.images,
+  };
+  return (
+    <div
+      className={idle ? "slide-screen slide-screen--idle" : "slide-screen"}
+      style={themeStyle(theme.tokens)}
+    >
+      <SlidePlayer
+        slides={payload.slides}
+        autoAdvance={payload.rotation.autoAdvance}
+        transition={payload.rotation.transition}
+        tokens={theme.tokens}
+        showHeader={dashboard.showHeader}
+        header={{
+          name: dashboard.name,
+          logoImageId: dashboard.logo?.imageId ?? null,
+          timeZone,
+          offline: dashboard.showHeader && state.offline,
+        }}
+        images={state.images}
+        renderWidget={(widget) => (
+          <DeviceWidgetView widget={widget} env={env} />
+        )}
+        empty={
+          <p className="kiosk-text slide-screen-empty">
+            This dashboard has no slides to show.
+          </p>
+        }
+      />
+      {/* With the header the marker is in it; without, in the corner. */}
+      {state.offline && !dashboard.showHeader ? (
+        <div className="slide-screen-status">
+          <OfflineMarker state={state} timeZone={timeZone} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

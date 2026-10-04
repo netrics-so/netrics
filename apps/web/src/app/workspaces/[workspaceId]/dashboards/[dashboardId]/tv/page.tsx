@@ -2,11 +2,15 @@ import { notFound } from "next/navigation";
 
 import {
   getDashboard,
+  getTheme,
   getWorkspace,
   listConnections,
+  listStudioImages,
   listWorkspaceMetrics,
 } from "@/lib/api";
 import { requireSession } from "@/lib/session";
+import { resolveDashboardTheme } from "@/lib/studio-theme";
+import { referencedImageIds } from "@/lib/studio-widgets";
 
 import type { TileConnection } from "../metric-tile";
 import { TvDashboard } from "./tv-dashboard";
@@ -17,7 +21,11 @@ interface TvPageProps {
   params: Promise<{ workspaceId: string; dashboardId: string }>;
 }
 
-/** Full-screen, read-only dashboard for a wall screen or TV browser (#52). */
+/**
+ * Full-screen, read-only dashboard for a wall screen or TV browser (#52):
+ * its slides rotate as on a paired screen (#221), with live numbers from
+ * the signed-in user's session.
+ */
 export default async function TvPage({ params }: TvPageProps) {
   const { workspaceId, dashboardId } = await params;
   const { cookieHeader } = await requireSession();
@@ -28,10 +36,19 @@ export default async function TvPage({ params }: TvPageProps) {
   if (!workspaceResult || !dashboardResult) {
     notFound();
   }
-  const [{ metrics }, { connections }] = await Promise.all([
-    listWorkspaceMetrics(cookieHeader, workspaceId),
-    listConnections(cookieHeader, workspaceId),
-  ]);
+  const { dashboard } = dashboardResult;
+  const [{ metrics }, { connections }, customTheme, images] = await Promise.all(
+    [
+      listWorkspaceMetrics(cookieHeader, workspaceId),
+      listConnections(cookieHeader, workspaceId),
+      dashboard.settings.themeId
+        ? getTheme(cookieHeader, workspaceId, dashboard.settings.themeId)
+        : null,
+      referencedImageIds(dashboard).length > 0
+        ? listStudioImages(cookieHeader, workspaceId)
+        : [],
+    ],
+  );
   const byId: Record<string, TileConnection> = Object.fromEntries(
     connections.map((connection) => [
       connection.id,
@@ -43,7 +60,12 @@ export default async function TvPage({ params }: TvPageProps) {
     <TvDashboard
       workspaceId={workspaceId}
       timeZone={workspaceResult.workspace.timeZone}
-      dashboard={dashboardResult.dashboard}
+      dashboard={dashboard}
+      theme={resolveDashboardTheme(
+        dashboard.settings,
+        customTheme?.theme ?? null,
+      )}
+      images={images}
       metrics={metrics}
       connections={byId}
     />

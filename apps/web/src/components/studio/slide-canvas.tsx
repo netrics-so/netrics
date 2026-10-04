@@ -12,6 +12,7 @@ import type { DashboardSlide } from "@netrics/contracts";
 import {
   STUDIO_HEADER_BAND,
   STUDIO_TEXT_MINIMUMS,
+  type StudioPlacement,
   type ThemeTokens,
 } from "@netrics/domain";
 
@@ -213,6 +214,21 @@ function SlideHeader({
   );
 }
 
+/** What the canvas needs of a widget: its id, type and grid placement. */
+export interface CanvasWidget extends StudioPlacement {
+  id: string;
+  type: string;
+}
+
+/**
+ * What the canvas needs of a slide: a dashboard document's slide or a
+ * device payload's (schema 2), whose widgets carry their data.
+ */
+export interface CanvasSlide<W extends CanvasWidget> {
+  background: DashboardSlide["background"];
+  widgets: readonly W[];
+}
+
 /**
  * One slide on a 16:9 canvas (ADR 0015): the optional header band, the
  * slide's background image under a dim of the theme background, and its
@@ -221,7 +237,7 @@ function SlideHeader({
  * canvas fills its container's width; `renderWidget` supplies the content
  * (live queries on signed-in pages, the device payload on screens).
  */
-export function SlideCanvas({
+export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
   slide,
   tokens,
   showHeader,
@@ -231,18 +247,18 @@ export function SlideCanvas({
   className,
   style,
 }: {
-  slide: DashboardSlide;
+  slide: CanvasSlide<W>;
   tokens: ThemeTokens;
   showHeader: boolean;
   header: SlideHeaderInfo;
   images: StudioImages;
-  renderWidget: (widget: StudioWidget) => ReactNode;
+  renderWidget: (widget: W) => ReactNode;
   className?: string;
   style?: CSSProperties;
 }) {
   const background = slideBackground(slide);
   const backgroundImage = background ? images.get(background.imageId) : null;
-  const widgets: StudioWidget[] = slide.widgets;
+  const { widgets } = slide;
   return (
     <div
       className={className ? `studio-canvas ${className}` : "studio-canvas"}

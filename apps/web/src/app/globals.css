@@ -1836,6 +1836,84 @@ a.health-badge:hover {
   }
 }
 
+/*
+ * The slide player (#221): every slide stacked on one 16:9 canvas, only the
+ * current one visible. "fade" cross-fades; reduced motion cuts.
+ */
+.slide-player {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--t-background);
+}
+
+.slide-player-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.slide-player-slide.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.slide-player--fade .slide-player-slide {
+  transition:
+    opacity 700ms ease-in-out,
+    visibility 0s linear 700ms;
+}
+
+.slide-player--fade .slide-player-slide.active {
+  transition:
+    opacity 700ms ease-in-out,
+    visibility 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide-player--fade .slide-player-slide,
+  .slide-player--fade .slide-player-slide.active {
+    transition: none;
+  }
+}
+
+/* A screen playing slides: the canvas as large as fits, letterboxed. */
+.slide-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: var(--t-background, #07090c);
+  overflow: hidden;
+}
+
+.slide-screen .slide-player {
+  width: min(100vw, calc(100vh * 16 / 9));
+}
+
+.slide-screen-status {
+  position: absolute;
+  right: 1.5vw;
+  bottom: 1.5vh;
+  display: flex;
+  gap: 1.5vw;
+  align-items: baseline;
+  font-size: 1.8vh;
+  color: var(--t-muted, #8a919c);
+}
+
+.slide-screen--idle,
+.slide-screen--idle * {
+  cursor: none;
+}
+
+.slide-screen--idle .tv-exit {
+  opacity: 0;
+}
+
 /* The dashboard page: slide tabs above the canvas. */
 .slide-tabs {
   display: flex;
