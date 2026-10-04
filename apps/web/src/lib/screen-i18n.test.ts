@@ -64,10 +64,10 @@ describe("clock and notices in German", () => {
         showDate: true,
         locale: "de",
       }),
-    ).toEqual({ time: "14:05", date: "Sa., 3. Okt." });
+    ).toEqual({ time: "14:05", date: "Sa., 3. Okt.", zone: null });
     expect(
       clockText(date, { timeZone: "Europe/Berlin", showDate: true }),
-    ).toEqual({ time: "14:05", date: "Sat 3 Oct" });
+    ).toEqual({ time: "14:05", date: "Sat 3 Oct", zone: null });
   });
 
   it("says how long ago with Intl", () => {

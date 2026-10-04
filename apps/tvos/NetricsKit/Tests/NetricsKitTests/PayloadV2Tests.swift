@@ -72,6 +72,17 @@ import Testing
         #expect(widgets[2].content == .clock(ClockWidgetOptions(showDate: true, hour12: false, timeZone: "America/New_York")))
     }
 
+    @Test func clockDateStyleAndZoneLine() throws {
+        let decode = { (json: String) in try JSONDecoder().decode(ClockWidgetOptions.self, from: Data(json.utf8)) }
+        // A payload from before ADR 0019 §9: short date, no zone line.
+        #expect(try decode(#"{"showDate":true,"hour12":false,"timeZone":"UTC"}"#) == ClockWidgetOptions(timeZone: "UTC"))
+        #expect(
+            try decode(#"{"showDate":true,"hour12":false,"timeZone":"UTC","dateStyle":"long","showZone":true}"#)
+                == ClockWidgetOptions(timeZone: "UTC", dateStyle: .long, showZone: true))
+        // An unknown style (a newer server) reads as short.
+        #expect(try decode(#"{"dateStyle":"medium","showZone":"yes"}"#) == ClockWidgetOptions())
+    }
+
     @Test func imagesWithAnUnsafeHashAreDropped() {
         let images = v2Payload().images
         #expect(images.map(\.id) == [logoID, backgroundID])

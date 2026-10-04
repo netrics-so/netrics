@@ -791,6 +791,35 @@ describe("device payload schema 2", () => {
     );
   });
 
+  it("sends the clock's long date and zone line only when set (ADR 0019 §9)", async () => {
+    const before = await v2(STUDIO);
+    const clockOf = (payload: DeviceDashboardV2Response) =>
+      widgetsOf(payload).find((widget) => widget.id === id(1, 106))!;
+    // Unset: the payload and its version are as before the options existed.
+    expect(clockOf(before).options).not.toHaveProperty("dateStyle");
+    expect(clockOf(before).options).not.toHaveProperty("showZone");
+    const set = { hour12: true, dateStyle: "long", showZone: true };
+    await owner`
+      update dashboard_widgets set options = ${owner.json(set)}
+      where id = ${id(1, 106)}`;
+    try {
+      const after = await v2(STUDIO);
+      expect(clockOf(after).options).toEqual({
+        showDate: true,
+        hour12: true,
+        timeZone: "Europe/Berlin",
+        dateStyle: "long",
+        showZone: true,
+      });
+      expect(after.version).not.toBe(before.version);
+      expect(deviceDashboardV2ResponseSchema.parse(after)).toEqual(after);
+    } finally {
+      await owner`
+        update dashboard_widgets set options = ${owner.json({ hour12: true })}
+        where id = ${id(1, 106)}`;
+    }
+  });
+
   it("omits disabled slides and their images", async () => {
     const payload = await v2(STUDIO);
     expect(payload.slides.map((slide) => slide.name)).toEqual(["Sales", null]);

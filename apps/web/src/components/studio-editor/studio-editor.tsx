@@ -307,6 +307,7 @@ export function StudioEditor({
         logoImage && logoImage.width > 0 && logoImage.height > 0
           ? logoImage.width / logoImage.height
           : null,
+      timeZone,
       labelOf: (entry: DataWidget | { type: string }) =>
         isDataWidgetType(entry.type)
           ? dataWidgetLabel(
@@ -331,6 +332,7 @@ export function StudioEditor({
     logoImage,
     metricsById,
     draftLayouts,
+    timeZone,
   ]);
   const previewContext: PreviewContext = useMemo(
     () => ({

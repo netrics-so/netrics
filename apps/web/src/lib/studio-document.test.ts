@@ -314,7 +314,13 @@ describe("requests", () => {
         widget: {
           type: "clock",
           title: null,
-          options: { showDate: true, hour12: false, timeZone: null },
+          options: {
+            showDate: true,
+            hour12: false,
+            timeZone: null,
+            dateStyle: "short",
+            showZone: false,
+          },
         },
       },
       { type: "updateSettings", patch: { accentColor: "#ff8800" } },

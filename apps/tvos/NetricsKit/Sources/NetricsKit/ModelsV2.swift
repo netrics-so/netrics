@@ -304,20 +304,31 @@ public struct ClockWidgetOptions: Codable, Sendable, Equatable {
     public var hour12: Bool
     /** Resolved by the server; nil falls back to the workspace's zone. */
     public var timeZone: String?
+    /** Short ("Sat 4 Oct") or long ("Saturday, 4 October"); unknown → short. */
+    public var dateStyle: ClockDateStyle
+    /** The zone line ("Berlin · UTC+2"). */
+    public var showZone: Bool
 
-    public init(showDate: Bool = true, hour12: Bool = false, timeZone: String? = nil) {
+    public init(
+        showDate: Bool = true, hour12: Bool = false, timeZone: String? = nil, dateStyle: ClockDateStyle = .short,
+        showZone: Bool = false
+    ) {
         self.showDate = showDate
         self.hour12 = hour12
         self.timeZone = timeZone
+        self.dateStyle = dateStyle
+        self.showZone = showZone
     }
 
-    private enum CodingKeys: String, CodingKey { case showDate, hour12, timeZone }
+    private enum CodingKeys: String, CodingKey { case showDate, hour12, timeZone, dateStyle, showZone }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         showDate = c.lenient(Bool.self, .showDate) ?? true
         hour12 = c.lenient(Bool.self, .hour12) ?? false
         timeZone = c.lenient(String.self, .timeZone)
+        dateStyle = c.lenient(String.self, .dateStyle).flatMap(ClockDateStyle.init(rawValue:)) ?? .short
+        showZone = c.lenient(Bool.self, .showZone) ?? false
     }
 }
 

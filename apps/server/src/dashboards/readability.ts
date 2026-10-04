@@ -1,9 +1,11 @@
 import {
+  clockWidgetOptionsSchema,
   textWidgetOptionsSchema,
   type FormatWarning,
 } from "@netrics/contracts";
 import {
   findImages,
+  findWorkspace,
   listWorkspaceMetrics,
   type Dashboard,
   type DashboardWidgetRow,
@@ -35,6 +37,8 @@ import { resolveThemeTokens } from "../themes/service.js";
 export interface ReadabilityInputs {
   fontScale: number;
   logoAspect: number | null;
+  /** The workspace's time zone: clocks without their own show it. */
+  timeZone: string;
   /** The label of a data widget, as screens show it. */
   labelOf(widget: DashboardWidgetRow): string | null;
 }
@@ -65,9 +69,21 @@ export async function loadReadabilityInputs(
       logoAspect = logo.width / logo.height;
     }
   }
+  const hasZoneLine = dashboard.slides.some((slide) =>
+    slide.widgets.some(
+      (widget) =>
+        widget.type === "clock" &&
+        clockWidgetOptionsSchema.safeParse(widget.options).data?.showZone ===
+          true,
+    ),
+  );
+  const timeZone = hasZoneLine
+    ? ((await findWorkspace(tx, workspaceId))?.timeZone ?? "UTC")
+    : "UTC";
   return {
     fontScale: effectiveFontScale(tokens?.fontScale),
     logoAspect,
+    timeZone,
     labelOf(widget) {
       if (widget.connectionId === null || widget.metricKey === null) {
         return null;
@@ -116,6 +132,21 @@ export function dashboardFormatWarnings(
           ...base,
           text: widget.text,
           textSize: textWidgetOptionsSchema.parse(widget.options).size,
+        };
+      }
+      if (type === "clock") {
+        const clock = clockWidgetOptionsSchema.safeParse(widget.options).data;
+        return {
+          ...base,
+          clock: clock
+            ? {
+                showDate: clock.showDate,
+                dateStyle: clock.dateStyle,
+                zone: clock.showZone
+                  ? (clock.timeZone ?? inputs.timeZone)
+                  : null,
+              }
+            : null,
         };
       }
       return base;

@@ -425,6 +425,8 @@ export const STUDIO_TEXT_MINIMUMS = {
   display: 96,
   value: 64,
   clock: 56,
+  /** The clock's zone line (ADR 0019, section 9). */
+  zone: 24,
 } as const;
 
 /** The theme font scales (ADR 0015, section 6). */
@@ -440,7 +442,8 @@ export function effectiveFontScale(fontScale: number | undefined): number {
 /**
  * Text roles of a widget, in units. `valueMin`/`valueMax` bound a data
  * widget's value (renderers fit it between them, then switch to the compact
- * form, see `fitTextSize`); `clockMin`/`clockMax` the clock's time.
+ * form, see `fitTextSize`); `clockMin`/`clockMax` the clock's time,
+ * `date` its date and `zone` its zone line.
  */
 export type StudioTextRole =
   | "any"
@@ -455,7 +458,8 @@ export type StudioTextRole =
   | "valueMax"
   | "clockMin"
   | "clockMax"
-  | "date";
+  | "date"
+  | "zone";
 
 export type StudioTypeScale = Partial<Record<StudioTextRole, number>>;
 
@@ -533,6 +537,7 @@ export function widgetTypeScale(
           contentHeight(placement, showHeader) * CLOCK_HEIGHT_SHARE,
         ),
         date: m.title * scale,
+        zone: m.zone * scale,
       };
     }
   }
@@ -1019,6 +1024,190 @@ export function compactNumber(value: number): string {
   return `${sign}${whole}${fraction === 0 ? "" : `.${fraction}`}${COMPACT_SUFFIXES[tier]}`;
 }
 
+// ---------------------------------------------------------------------------
+// Clock: zone line and content layout (ADR 0019, section 9)
+
+/** How the clock shows the date: "Sat 4 Oct" or "Saturday, 4 October". */
+export type ClockDateStyle = "short" | "long";
+
+/**
+ * The widest date of each style in English and German by the width
+ * estimate, so whether the date fits does not change from day to day. The
+ * domain tests check every day of a year in both languages against them.
+ */
+export const CLOCK_DATE_SAMPLES: Readonly<Record<ClockDateStyle, string>> = {
+  short: "Mo., 16. März",
+  long: "Donnerstag, 10. September",
+};
+
+/** The widest offset the zone line can show, for the fit. */
+const ZONE_OFFSET_SAMPLE = "UTC−00:00";
+
+/** Line height of the clock's date and zone line (STUDIO_LINE_HEIGHT). */
+const CLOCK_LINE_HEIGHT = 1.15;
+
+/**
+ * The city of an IANA zone: its last part with underscores as spaces
+ * ("America/Argentina/Buenos_Aires" → "Buenos Aires"); null for zones that
+ * name no place ("UTC", "Etc/GMT+3", "EST").
+ */
+export function zoneCity(timeZone: string): string | null {
+  if (timeZone.startsWith("Etc/") || !timeZone.includes("/")) return null;
+  const last = timeZone.slice(timeZone.lastIndexOf("/") + 1);
+  const city = last.replaceAll("_", " ").trim();
+  return city === "" ? null : city;
+}
+
+/**
+ * The zone's offset from UTC in minutes at `now`, east positive; null for
+ * a zone the runtime does not know.
+ */
+export function zoneOffsetMinutes(timeZone: string, now: Date): number | null {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric",
+    }).formatToParts(now);
+  } catch {
+    return null;
+  }
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((entry) => entry.type === type)?.value ?? Number.NaN);
+  const local = Date.UTC(
+    part("year"),
+    part("month") - 1,
+    part("day"),
+    part("hour"),
+    part("minute"),
+    part("second"),
+  );
+  if (!Number.isFinite(local)) return null;
+  const utc = Math.floor(now.getTime() / 1000) * 1000;
+  return Math.round((local - utc) / 60_000);
+}
+
+/** "UTC+2", "UTC+5:30", "UTC−3" (a minus sign), "UTC". */
+export function formatUtcOffset(minutes: number): string {
+  if (minutes === 0) return "UTC";
+  const sign = minutes > 0 ? "+" : "−";
+  const total = Math.abs(minutes);
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  return `UTC${sign}${hours}${rest === 0 ? "" : `:${String(rest).padStart(2, "0")}`}`;
+}
+
+/**
+ * The clock's zone line: "Berlin · UTC+2" (the offset at `now`, so it
+ * follows daylight saving time), "UTC" for `Etc/UTC`, "UTC−3" for
+ * `Etc/GMT+3`. Never an abbreviation ("CEST"): those differ between ICU
+ * and Foundation and by locale. A zone the runtime does not know shows its
+ * city (or its name) alone.
+ */
+export function zoneLabel(timeZone: string, now: Date): string {
+  const city = zoneCity(timeZone);
+  const minutes = zoneOffsetMinutes(timeZone, now);
+  if (minutes === null) return city ?? timeZone;
+  const offset = formatUtcOffset(minutes);
+  return city === null ? offset : `${city} · ${offset}`;
+}
+
+/** The widest zone line of the zone, for the fit: "Berlin · UTC−00:00". */
+export function zoneLabelSample(timeZone: string): string {
+  const city = zoneCity(timeZone);
+  return city === null ? ZONE_OFFSET_SAMPLE : `${city} · ${ZONE_OFFSET_SAMPLE}`;
+}
+
+export interface ClockLayoutInput {
+  /** Cells of the widget (its type scale). */
+  placement: StudioPlacement;
+  /** The content box in units (the format's, or the 16:9 reference's). */
+  box: { width: number; height: number };
+  fontScale?: number;
+  showHeader?: boolean;
+  /** The time as shown ("14:05", "2:05 PM"); digits count as the widest. */
+  time: string;
+  showDate: boolean;
+  dateStyle: ClockDateStyle;
+  /** The zone of the zone line, or null without one (`showZone` off). */
+  zone: string | null;
+}
+
+export interface ClockLayout {
+  /** The time's size in units: at least the clock minimum, as large as fits. */
+  time: number;
+  /** The date's size, or null when it is off or does not fit. */
+  date: number | null;
+  /** The zone line's size, or null when it is off or does not fit. */
+  zone: number | null;
+  /** A part that is on does not fit (the Studio's `clock_parts_hidden`). */
+  hidden: boolean;
+}
+
+/**
+ * The clock's content (ADR 0019, section 9): the time at least 56 units and
+ * as large as fits, the date (30, down to 24 to fit its widest sample) and
+ * the zone line (24). When the lines do not fit beside the time at its
+ * minimum, the zone line goes first, then the date. Uses samples, never the
+ * day's text, so the result is the same every day and in the Studio.
+ */
+export function clockLayout(input: ClockLayoutInput): ClockLayout {
+  const scale = effectiveFontScale(input.fontScale);
+  const sizes = widgetTypeScale("clock", input.placement, {
+    fontScale: scale,
+    showHeader: input.showHeader ?? true,
+  });
+  const box = input.box;
+  const timeMin = sizes.clockMin!;
+  const dateSize = input.showDate
+    ? fitTextSize(CLOCK_DATE_SAMPLES[input.dateStyle], box.width, {
+        min: sizes.any!,
+        max: sizes.date!,
+      })
+    : null;
+  const zoneSize =
+    input.zone !== null &&
+    estimateTextWidth(zoneLabelSample(input.zone), sizes.zone!) <= box.width
+      ? sizes.zone!
+      : null;
+  const linesHeight = (date: boolean, zone: boolean) =>
+    (date && dateSize !== null ? dateSize * CLOCK_LINE_HEIGHT : 0) +
+    (zone && zoneSize !== null ? zoneSize * CLOCK_LINE_HEIGHT : 0);
+  const fits = (date: boolean, zone: boolean) =>
+    (!date || dateSize !== null) &&
+    (!zone || zoneSize !== null) &&
+    timeMin + linesHeight(date, zone) <= box.height;
+  // The zone line goes first, then the date.
+  const wantZone = input.zone !== null;
+  const candidates: Array<[boolean, boolean]> = [
+    [input.showDate, wantZone],
+    [input.showDate, false],
+    [false, false],
+  ];
+  const [showDate, showZone] = candidates.find(([date, zone]) =>
+    fits(date, zone),
+  ) ?? [false, false];
+  const used = linesHeight(showDate, showZone);
+  const max = Math.max(timeMin, Math.min(sizes.clockMax!, box.height - used));
+  // Widest digits, so the size does not change from minute to minute.
+  const sample = input.time.replace(/\d/g, "0");
+  const time =
+    fitTextSize(sample, box.width, { min: timeMin, max, weight: "semibold" }) ??
+    timeMin;
+  return {
+    time,
+    date: showDate ? dateSize : null,
+    zone: showZone ? zoneSize : null,
+    hidden: showDate !== input.showDate || showZone !== wantZone,
+  };
+}
+
 /** The module as one object, as ADR 0015 names it (`studioLayout.fits`). */
 export const studioLayout = {
   canvasUnit,
@@ -1045,4 +1234,6 @@ export const studioLayout = {
   legacyLayout,
   parseTextWidget,
   compactNumber,
+  zoneLabel,
+  clockLayout,
 } as const;

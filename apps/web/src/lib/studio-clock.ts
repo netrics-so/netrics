@@ -1,10 +1,14 @@
 // The clock widget and the slide header's clock (ADR 0015, section 2): the
-// time, and optionally the date, in the workspace's time zone or the
-// widget's own.
+// time, and optionally the date (short or long) and the zone line (ADR 0019,
+// section 9), in the workspace's time zone or the widget's own.
+
+import { zoneLabel, type ClockDateStyle } from "@netrics/domain";
 
 export interface ClockText {
   time: string;
   date: string | null;
+  /** "Berlin · UTC+2", or null without the zone line. */
+  zone: string | null;
 }
 
 function format(
@@ -28,8 +32,10 @@ function format(
 }
 
 /**
- * "14:05" (or "2:05 PM") and "Sat 4 Oct" ("Sa., 4. Okt." in German): the
- * date in the screen's language (ADR 0016); English when none is given.
+ * "14:05" (or "2:05 PM") and "Sat 4 Oct" ("Sa., 4. Okt." in German), or
+ * the long "Saturday, 4 October" ("Samstag, 4. Oktober"): the date in the
+ * screen's language (ADR 0016); English when none is given. The long form
+ * is the weekday, a comma and the day and month, as on tvOS.
  */
 export function clockText(
   date: Date,
@@ -37,6 +43,8 @@ export function clockText(
     timeZone: string;
     hour12?: boolean;
     showDate?: boolean;
+    dateStyle?: ClockDateStyle;
+    showZone?: boolean;
     locale?: string;
   },
 ): ClockText {
@@ -54,14 +62,26 @@ export function clockText(
         minute: "2-digit",
         hourCycle: "h23",
       });
-  const day = options.showDate
-    ? format(date, locale === "en" ? "en-GB" : locale, options.timeZone, {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-      })
-    : null;
-  return { time, date: day };
+  const dateLocale = locale === "en" ? "en-GB" : locale;
+  let day: string | null = null;
+  if (options.showDate && options.dateStyle === "long") {
+    const weekday = format(date, dateLocale, options.timeZone, {
+      weekday: "long",
+    });
+    const dayMonth = format(date, dateLocale, options.timeZone, {
+      day: "numeric",
+      month: "long",
+    });
+    day = `${weekday}, ${dayMonth}`;
+  } else if (options.showDate) {
+    day = format(date, dateLocale, options.timeZone, {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+    });
+  }
+  const zone = options.showZone ? zoneLabel(options.timeZone, date) : null;
+  return { time, date: day, zone };
 }
 
 /** Milliseconds until the next minute starts: the clock ticks on it. */

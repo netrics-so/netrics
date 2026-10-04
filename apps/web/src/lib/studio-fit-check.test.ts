@@ -100,4 +100,45 @@ describe("fit check", () => {
       fitCheck({ ...base, widget: clock, unreadable: undefined, locale: "en" }),
     ).toBeNull();
   });
+
+  it("says which clock lines are left out for room (ADR 0019 §9)", () => {
+    const clock = (w: number, h: number, options: object) =>
+      ({
+        type: "clock",
+        id: ID(14),
+        x: 0,
+        y: 0,
+        w,
+        h,
+        title: null,
+        options: {
+          timeZone: null,
+          hour12: false,
+          showDate: true,
+          dateStyle: "long",
+          showZone: true,
+          ...options,
+        },
+      }) as DashboardWidget;
+    const check = (widget: DashboardWidget, locale: "en" | "de" = "en") =>
+      fitCheck({
+        ...base,
+        widget,
+        unreadable: undefined,
+        locale,
+        timeZone: "Europe/Berlin",
+      });
+    expect(check(clock(2, 1, {}))).toEqual({
+      state: "partial",
+      text: "The date and time zone do not fit, so they are left out. A larger clock shows more.",
+    });
+    expect(check(clock(2, 1, { showZone: false }), "de")).toEqual({
+      state: "partial",
+      text: "Das Datum passt nicht und wird weggelassen. Eine größere Uhr zeigt mehr.",
+    });
+    expect(check(clock(3, 3, {}))).toEqual({
+      state: "fits",
+      text: "Everything the clock shows fits at 1080p",
+    });
+  });
 });

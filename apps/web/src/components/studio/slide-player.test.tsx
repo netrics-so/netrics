@@ -118,7 +118,13 @@ const widgets: DeviceWidget[] = [
     w: 4,
     h: 2,
     label: null,
-    options: { showDate: true, hour12: false, timeZone: "Europe/Berlin" },
+    options: {
+      showDate: true,
+      hour12: false,
+      timeZone: "Europe/Berlin",
+      dateStyle: "short",
+      showZone: false,
+    },
   },
 ];
 

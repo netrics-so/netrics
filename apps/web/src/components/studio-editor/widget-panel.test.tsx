@@ -200,7 +200,13 @@ describe("widget panel", () => {
       w: 2,
       h: 1,
       title: null,
-      options: { showDate: false, hour12: true, timeZone: "America/New_York" },
+      options: {
+        showDate: false,
+        hour12: true,
+        timeZone: "America/New_York",
+        dateStyle: "short",
+        showZone: false,
+      },
     });
     expect(html).toContain(
       '<option value="">Workspace (Europe/Berlin)</option>',

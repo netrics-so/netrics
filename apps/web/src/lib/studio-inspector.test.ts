@@ -110,7 +110,13 @@ const clockWidget: DashboardWidget = {
   w: 2,
   h: 1,
   title: null,
-  options: { showDate: true, hour12: false, timeZone: null },
+  options: {
+    showDate: true,
+    hour12: false,
+    timeZone: null,
+    dateStyle: "short",
+    showZone: false,
+  },
 };
 
 const context = { metrics, imageIds: [ID(50)], locale: "en" as const };
@@ -443,7 +449,13 @@ describe("option validation", () => {
     expect(widgetInputProblem(bar)).toMatch(/^options\.limit/);
     const clock = {
       ...clockWidget,
-      options: { showDate: true, hour12: false, timeZone: "Mars/Olympus" },
+      options: {
+        showDate: true,
+        hour12: false,
+        timeZone: "Mars/Olympus",
+        dateStyle: "short",
+        showZone: false,
+      },
     } as DashboardWidget;
     expect(widgetInputProblem(clock)).toMatch(/^options\.timeZone/);
   });

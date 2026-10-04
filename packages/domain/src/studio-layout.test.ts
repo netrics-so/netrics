@@ -8,8 +8,10 @@ import {
   STUDIO_MIN_WIDGET_SIZE,
   STUDIO_TEXT_MINIMUMS,
   STUDIO_WIDGET_TYPES,
+  clockLayout,
   compactNumber,
   estimateTextWidth,
+  formatUtcOffset,
   findOverlaps,
   fitTextSize,
   isInsideGrid,
@@ -27,6 +29,9 @@ import {
   widgetRect,
   widgetTypeScale,
   wrappedLineCount,
+  zoneCity,
+  zoneLabel,
+  zoneLabelSample,
 } from "./studio-layout.js";
 
 const HD = { width: 1920, height: 1080 };
@@ -449,6 +454,134 @@ describe("compactNumber", () => {
     for (const value of values) {
       expect(compactNumber(value)).toBe(format.format(value));
     }
+  });
+});
+
+describe("zoneLabel", () => {
+  const summer = new Date("2026-07-04T12:00:00Z");
+  const winter = new Date("2026-01-10T12:00:00Z");
+
+  it("names the city and the offset at the time, following DST", () => {
+    expect(zoneLabel("Europe/Berlin", summer)).toBe("Berlin \u00b7 UTC+2");
+    expect(zoneLabel("Europe/Berlin", winter)).toBe("Berlin \u00b7 UTC+1");
+    expect(zoneLabel("America/Sao_Paulo", summer)).toBe(
+      "Sao Paulo \u00b7 UTC\u22123",
+    );
+    expect(zoneLabel("Asia/Kolkata", summer)).toBe("Kolkata \u00b7 UTC+5:30");
+    expect(zoneLabel("Asia/Kathmandu", summer)).toBe(
+      "Kathmandu \u00b7 UTC+5:45",
+    );
+    expect(zoneLabel("America/Argentina/Buenos_Aires", summer)).toBe(
+      "Buenos Aires \u00b7 UTC\u22123",
+    );
+  });
+
+  it("switches at the daylight saving change", () => {
+    expect(zoneLabel("Europe/Berlin", new Date("2026-03-29T00:59:59Z"))).toBe(
+      "Berlin \u00b7 UTC+1",
+    );
+    expect(zoneLabel("Europe/Berlin", new Date("2026-03-29T01:00:00Z"))).toBe(
+      "Berlin \u00b7 UTC+2",
+    );
+  });
+
+  it("shows zones without a place as their offset", () => {
+    expect(zoneLabel("Etc/UTC", summer)).toBe("UTC");
+    expect(zoneLabel("UTC", summer)).toBe("UTC");
+    expect(zoneLabel("Etc/GMT+3", summer)).toBe("UTC\u22123");
+    expect(zoneCity("Etc/UTC")).toBeNull();
+  });
+
+  it("shows an unknown zone by its city, never throwing", () => {
+    expect(zoneLabel("Mars/Olympus_Mons", summer)).toBe("Olympus Mons");
+  });
+
+  it("formats offsets with a minus sign and minutes only when needed", () => {
+    expect(formatUtcOffset(0)).toBe("UTC");
+    expect(formatUtcOffset(120)).toBe("UTC+2");
+    expect(formatUtcOffset(-210)).toBe("UTC\u22123:30");
+    expect(formatUtcOffset(825)).toBe("UTC+13:45");
+  });
+
+  it("measures with a sample at least as wide as any offset", () => {
+    for (const minutes of [0, 60, -180, 330, 345, -570, 765, 840]) {
+      const label = `Berlin \u00b7 ${formatUtcOffset(minutes)}`;
+      expect(estimateTextWidth(label, 24)).toBeLessThanOrEqual(
+        estimateTextWidth(zoneLabelSample("Europe/Berlin"), 24),
+      );
+    }
+  });
+});
+
+describe("clockLayout", () => {
+  const boxOf = (w: number, h: number) => {
+    const rect = widgetRect({ x: 0, y: 0, w, h }, HD, true);
+    return { width: rect.width - 48, height: rect.height - 48 };
+  };
+  const layout = (
+    w: number,
+    h: number,
+    options: Partial<Parameters<typeof clockLayout>[0]> = {},
+  ) =>
+    clockLayout({
+      placement: { x: 0, y: 0, w, h },
+      box: boxOf(w, h),
+      time: "14:05",
+      showDate: true,
+      dateStyle: "short",
+      zone: null,
+      ...options,
+    });
+
+  it("shows time, long date and zone in a 3 × 3 clock", () => {
+    const result = layout(3, 3, { dateStyle: "long", zone: "Europe/Berlin" });
+    expect(result.hidden).toBe(false);
+    expect(result.zone).toBe(24);
+    expect(result.date).toBeGreaterThanOrEqual(24);
+    expect(result.date).toBeLessThanOrEqual(30);
+    expect(result.time).toBeGreaterThan(96);
+  });
+
+  it("shows only the time in a 2 × 1 clock with both options", () => {
+    const result = layout(2, 1, { dateStyle: "long", zone: "Europe/Berlin" });
+    expect(result).toMatchObject({ date: null, zone: null, hidden: true });
+    expect(result.time).toBe(STUDIO_TEXT_MINIMUMS.clock);
+  });
+
+  it("drops the zone line before the date", () => {
+    // 3 × 1 has room for no line; find a height with room for one.
+    const box = { width: 400, height: 56 + 30 * 1.15 + 1 };
+    const result = clockLayout({
+      placement: { x: 0, y: 0, w: 3, h: 2 },
+      box,
+      time: "14:05",
+      showDate: true,
+      dateStyle: "short",
+      zone: "Europe/Berlin",
+    });
+    expect(result).toMatchObject({ date: 30, zone: null, hidden: true });
+  });
+
+  it("keeps a short-date clock as before: time and date at 30", () => {
+    const result = layout(3, 2);
+    expect(result).toMatchObject({ date: 30, zone: null, hidden: false });
+  });
+
+  it("hides the long date where even 24 units are too wide", () => {
+    const result = layout(2, 2, { dateStyle: "long" });
+    expect(result).toMatchObject({ date: null, hidden: true });
+    expect(layout(2, 2)).toMatchObject({ date: 30, hidden: false });
+  });
+
+  it("does not report a part that is off", () => {
+    expect(layout(2, 1, { showDate: false }).hidden).toBe(false);
+  });
+
+  it("scales every line with the font scale", () => {
+    const result = layout(4, 3, { zone: "Etc/UTC", fontScale: 1.3 });
+    expect(result.zone).toBeCloseTo(24 * 1.3, 9);
+    expect(result.date).toBeCloseTo(30 * 1.3, 9);
+    expect(result.time).toBeGreaterThanOrEqual(56 * 1.3);
   });
 });
 
