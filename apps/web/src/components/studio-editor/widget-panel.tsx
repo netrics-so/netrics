@@ -25,6 +25,8 @@ import {
   isDataWidgetType,
   parseCountdownTarget,
   parseTextWidget,
+  REVIEW_MIN_RATING,
+  connectorHasReviews,
 } from "@netrics/domain";
 
 import { Spans } from "@/components/studio/text-widget";
@@ -61,7 +63,17 @@ import {
 } from "@/lib/studio-inspector";
 import { fitCheck } from "@/lib/studio-fit-check";
 import type { UnreadableLabel } from "@/lib/studio-readability";
-import type { DataWidget, StudioConnection } from "@/lib/studio-widgets";
+import type {
+  DataWidget,
+  ReviewWidget,
+  StudioConnection,
+} from "@/lib/studio-widgets";
+import { hideReview } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api";
+import {
+  reloadReviews,
+  useLatestReviewData,
+} from "@/components/studio/use-widget-data";
 import {
   choiceValue,
   currencyOptionLabel,
@@ -107,7 +119,10 @@ export interface WidgetPanelProps {
   showHeader?: boolean;
   /** The canvas's readability warning for this widget, if any (#241). */
   unreadable?: UnreadableLabel;
-  /** The workspace's connections, by id: a status board's sources. */
+  /**
+   * The workspace's connections, by id: a status board's sources, and the
+   * connections a latest review can bind (those with reviews).
+   */
   connections?: Readonly<Record<string, StudioConnection>>;
   dispatch: (action: StudioAction) => void;
   onUploadImage?: (file: File) => Promise<string | null>;
@@ -219,6 +234,9 @@ export function WidgetPanel(props: WidgetPanelProps) {
           dispatch={dispatch}
         />
       ) : null}
+      {widget.type === "review" ? (
+        <ReviewFields {...props} widget={widget} />
+      ) : null}
       <StyleFields {...props} />
 
       <div className="actions inspector-actions">
@@ -280,6 +298,7 @@ function TypeField({
   images,
   goals,
   dispatch,
+  connections,
 }: WidgetPanelProps) {
   const locale = useLocale();
   const t = useT("studio.widgetPanel");
@@ -288,6 +307,7 @@ function TypeField({
     imageIds: images.map((image) => image.id),
     locale,
     goals: goals ?? [],
+    reviewConnectionIds: reviewConnectionIds(connections),
   };
   const options = WIDGET_TYPES.map((type) => ({
     type,
@@ -337,6 +357,191 @@ function TypeField({
         <p className="help">{t("typeHelp")}</p>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Latest review (ADR 0019 section 12)
+
+/** Connections that keep review text, by name. */
+export function reviewConnectionIds(
+  connections: Readonly<Record<string, StudioConnection>> | undefined,
+): string[] {
+  return Object.entries(connections ?? {})
+    .filter(([, connection]) =>
+      connectorHasReviews(connection.connectorId ?? ""),
+    )
+    .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+    .map(([id]) => id);
+}
+
+/**
+ * A latest review's binding and options: the connection (one with
+ * reviews), the app (or all apps) and its icon, "Minimum stars", "Hide
+ * reviews without text", "Show author", and "Hide this review" for the
+ * review shown now (the Studio is for `dashboards:update`).
+ */
+function ReviewFields({
+  widget,
+  workspaceId,
+  metrics,
+  images,
+  connections,
+  dispatch,
+  onUploadImage,
+}: WidgetPanelProps & { widget: ReviewWidget }) {
+  const locale = useLocale();
+  const t = useT("studio.widgetPanel");
+  const update = (patch: WidgetPatch) =>
+    dispatch({ type: "updateWidget", widgetId: widget.id, patch });
+  const options = (patch: object) =>
+    dispatch({ type: "updateWidgetOptions", widgetId: widget.id, patch });
+  const ids = reviewConnectionIds(connections);
+  if (!ids.includes(widget.connectionId)) ids.unshift(widget.connectionId);
+  // The apps: those of a metric of the connection broken down by app.
+  const appMetric = metrics.find(
+    (metric) =>
+      metric.connectionId === widget.connectionId &&
+      metric.dimensions.includes(RESOURCE_DIMENSION),
+  );
+  const { resources } = useResources(workspaceId, appMetric);
+  const resourceId = widget.dimensions[RESOURCE_DIMENSION] ?? "";
+  const { data } = useLatestReviewData(workspaceId, widget);
+  const [hiding, setHiding] = useState(false);
+  const [hideState, setHideState] = useState<string | null>(null);
+  const reviewId = data?.review?.id ?? null;
+
+  return (
+    <>
+      <fieldset>
+        <legend>{t("review")}</legend>
+        <div className="field">
+          <label htmlFor="widget-review-connection">
+            {t("reviewConnection")}
+          </label>
+          <select
+            id="widget-review-connection"
+            value={widget.connectionId}
+            onChange={(event) =>
+              update({
+                connectionId: event.target.value,
+                dimensions: {},
+                resourceName: null,
+              } as WidgetPatch)
+            }
+          >
+            {ids.map((id) => (
+              <option key={id} value={id}>
+                {connections?.[id]?.name ?? t("removedConnection")}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="widget-review-app">{t("reviewApp")}</label>
+          <select
+            id="widget-review-app"
+            value={resourceId}
+            aria-describedby="widget-review-app-help"
+            onChange={(event) => {
+              const id = event.target.value;
+              const chosen = resources?.find((entry) => entry.id === id);
+              update({
+                dimensions: id ? { [RESOURCE_DIMENSION]: id } : {},
+                resourceName: chosen ? (chosen.name ?? chosen.id) : null,
+              } as WidgetPatch);
+            }}
+          >
+            <option value="">{t("reviewAllApps")}</option>
+            {resourceId && !resources?.some((r) => r.id === resourceId) ? (
+              <option value={resourceId}>
+                {widget.resourceName ?? resourceId}
+              </option>
+            ) : null}
+            {(resources ?? []).map((resource) => (
+              <option key={resource.id} value={resource.id}>
+                {resourceOptionLabel(resource)}
+              </option>
+            ))}
+          </select>
+          <p id="widget-review-app-help" className="help">
+            {t("reviewAppHelp")}
+          </p>
+        </div>
+        <ImagePicker
+          id="widget-review-icon"
+          label={t("appIcon")}
+          noneLabel={t("noIcon")}
+          images={images}
+          value={widget.imageId}
+          onChange={(imageId) => update({ imageId } as WidgetPatch)}
+          {...(onUploadImage ? { onUpload: onUploadImage } : {})}
+        />
+      </fieldset>
+      <fieldset>
+        <legend>{t("style")}</legend>
+        <div className="field">
+          <label htmlFor="widget-review-stars">{t("minRating")}</label>
+          <select
+            id="widget-review-stars"
+            value={widget.options.minRating}
+            onChange={(event) =>
+              options({ minRating: Number(event.target.value) })
+            }
+          >
+            {Array.from(
+              { length: REVIEW_MIN_RATING.max - REVIEW_MIN_RATING.min + 1 },
+              (_, index) => REVIEW_MIN_RATING.min + index,
+            ).map((count) => (
+              <option key={count} value={count}>
+                {t("minRatingOption", { count })}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Check
+          checked={widget.options.requireText}
+          onChange={(requireText) => options({ requireText })}
+        >
+          {t("requireText")}
+        </Check>
+        <Check
+          checked={widget.options.showAuthor}
+          onChange={(showAuthor) => options({ showAuthor })}
+        >
+          {t("showAuthor")}
+        </Check>
+        <p className="help">{t("showAuthorHelp")}</p>
+      </fieldset>
+      <div className="field">
+        <button
+          type="button"
+          className="danger"
+          disabled={reviewId === null || hiding}
+          aria-describedby="widget-review-hide-help"
+          onClick={() => {
+            if (reviewId === null) return;
+            setHiding(true);
+            setHideState(null);
+            hideReview(workspaceId, widget.connectionId, reviewId)
+              .then(() => {
+                setHideState(t("reviewHidden"));
+                reloadReviews();
+              })
+              .catch((cause: unknown) =>
+                setHideState(apiErrorMessage(cause, locale)),
+              )
+              .finally(() => setHiding(false));
+          }}
+        >
+          {hiding ? t("hidingReview") : t("hideReview")}
+        </button>
+        <p id="widget-review-hide-help" className="help" role="status">
+          {hideState ??
+            (reviewId === null ? t("noReviewShown") : t("hideReviewHelp"))}
+        </p>
+      </div>
+    </>
   );
 }
 

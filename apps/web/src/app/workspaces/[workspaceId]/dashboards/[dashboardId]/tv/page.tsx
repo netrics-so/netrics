@@ -63,6 +63,7 @@ export default async function TvPage({ params }: TvPageProps) {
         name: connection.name,
         state: connection.state,
         setupPending: connection.setupPending,
+        connectorId: connection.connectorId,
       },
     ]),
   );

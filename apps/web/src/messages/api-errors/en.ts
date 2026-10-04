@@ -29,6 +29,10 @@ export const apiErrorsEn = {
     dashboard_not_found: "This dashboard no longer exists.",
     theme_not_found: "That theme no longer exists.",
     goal_not_found: "That goal no longer exists.",
+    review_not_found: "That review no longer exists.",
+    connection_not_found: "That connection no longer exists.",
+    reviews_not_supported:
+      "This connection has no reviews. A latest-review widget needs an App Store Connect connection.",
     goal_name_taken: "A goal with that name already exists in this workspace.",
     period_not_supported:
       "A goal needs a period with an end: today, this week, month, quarter or year.",

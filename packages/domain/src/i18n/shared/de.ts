@@ -11,6 +11,7 @@ export const sharedDe: Catalog<SharedMessages> = {
     singular: "Ressource",
     plural: "Ressourcen",
   },
+  latestReview: "Neueste Bewertung",
   others: "Andere",
   sources: "Quellen",
   goal: "Ziel",

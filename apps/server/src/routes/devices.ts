@@ -25,6 +25,7 @@ import type { Database } from "@netrics/database";
 import { can, type Locale, type WorkspaceAction } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
+import type { CredentialKeyring } from "../credentials.js";
 import { createDeviceService, type Result } from "../devices/service.js";
 import {
   parseBody,
@@ -49,6 +50,8 @@ export interface DeviceRouteDeps {
   payloadCacheMs?: number;
   /** NETRICS_DEFAULT_LOCALE: screens of workspaces without a language. */
   defaultLocale?: Locale | null;
+  /** Opens stored envelopes: whether a connection holds a reviews key. */
+  credentialKeyring?: CredentialKeyring;
 }
 
 const deviceParamsSchema = z.object({ deviceId: z.uuid() });

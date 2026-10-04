@@ -285,6 +285,10 @@ struct SlideCanvasView: View {
         if case .image(let id, _) = widget.content {
             return imageFile(id)
         }
+        // A latest review's app icon (ADR 0019 section 12).
+        if case .review(let id?, _, _) = widget.content {
+            return imageFile(id)
+        }
         return nil
     }
 

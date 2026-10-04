@@ -57,6 +57,7 @@ public enum KitText: String, Sendable, CaseIterable {
     case conversionSource, conversionNotConverted
     case weekOf, others
     case tableTop, tableNew
+    case reviewsPaused, reviewsPausedHint, noReviews, reviewStars
     case statusEmpty, statusMore, statusConnected, statusDelayed, statusFailing
     case statusAgeMinutes, statusAgeHours, statusAgeDays, statusNever
     case compareRatio, comparePoints, compareDerived
@@ -125,6 +126,10 @@ public enum KitStrings {
         .others: "Others",
         .tableTop: "Top %d",
         .tableNew: "new",
+        .reviewsPaused: "App Store reviews paused — upload a new reviews key",
+        .reviewsPausedHint: "Upload it in the connection's settings.",
+        .noReviews: "No reviews yet",
+        .reviewStars: "%d of 5 stars",
         .statusEmpty: "No sources connected",
         .statusMore: "+%d more",
         .statusConnected: "%d connected",
@@ -237,6 +242,10 @@ public enum KitStrings {
         .others: "Andere",
         .tableTop: "Top %d",
         .tableNew: "neu",
+        .reviewsPaused: "App-Store-Bewertungen pausiert – lade einen neuen Bewertungsschlüssel hoch",
+        .reviewsPausedHint: "Lade ihn in den Einstellungen der Verbindung hoch.",
+        .noReviews: "Noch keine Bewertungen",
+        .reviewStars: "%d von 5 Sternen",
         .statusEmpty: "Keine Quellen verbunden",
         .statusMore: "+%d weitere",
         .statusConnected: "%d verbunden",

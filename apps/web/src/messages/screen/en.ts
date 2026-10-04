@@ -61,6 +61,10 @@ export const screenEn = {
       /** Table widgets (ADR 0019 section 6). */
       tableTop: "Top {count}",
       tableNew: "new",
+      reviewsPaused: "App Store reviews paused — upload a new reviews key",
+      reviewsPausedHint: "Upload it in the connection's settings.",
+      noReviews: "No reviews yet",
+      reviewStars: "{rating} of 5 stars",
       tableNoChange: "–",
       tableChangeHead: "Δ",
       /** Goal widgets (ADR 0019 section 5). */

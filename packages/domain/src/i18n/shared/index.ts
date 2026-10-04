@@ -110,3 +110,16 @@ export function countdownUnits(
     m: t("countdown.units.m"),
   };
 }
+
+/**
+ * A latest-review widget's label (ADR 0019 section 12): its title, else
+ * "Latest review", and the app's name when it shows one app
+ * ("Latest review · Wurfel").
+ */
+export function reviewWidgetLabel(
+  input: { title: string | null; resourceName: string | null },
+  locale: Locale = "en",
+): string {
+  const title = input.title ?? sharedTranslator(locale)("latestReview");
+  return input.resourceName ? `${title} · ${input.resourceName}` : title;
+}

@@ -142,6 +142,10 @@ export async function loadReadabilityInputs(
     locale,
     now: new Date(),
     labelOf(widget) {
+      // A latest review has no metric (ADR 0019 section 12).
+      if (widget.type === "review") {
+        return label(widget, "");
+      }
       if (widget.connectionId === null || widget.metricKey === null) {
         return null;
       }
@@ -189,7 +193,7 @@ export function dashboardFormatWarnings(
           rows: tableWidgetOptionsSchema.safeParse(widget.options).data?.limit,
         };
       }
-      if (isDataWidgetType(type)) {
+      if (isDataWidgetType(type) || type === "review") {
         return { ...base, label: inputs.labelOf(widget) };
       }
       if (type === "status") {

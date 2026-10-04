@@ -310,6 +310,41 @@ private func weight(_ any: Any?) -> StudioFontWeight {
         }
     }
 
+    @Test func reviewLayouts() {
+        func text(_ any: Any?) -> String? { any is NSNull || any == nil ? nil : any as? String }
+        let cases = StudioVectors.cases("reviewLayouts")
+        #expect(!cases.isEmpty)
+        for c in cases {
+            let layout = StudioLayout.reviewLayout(
+                label: c["label"] as! String, width: double(c["width"]), height: double(c["height"]),
+                fontScale: double(c["fontScale"]), icon: bool(c["icon"]), title: text(c["title"]),
+                body: text(c["body"]), notice: bool(c["notice"]))
+            let e = c["layout"] as! [String: Any]
+            let sizes = e["sizes"] as! [String: Any]
+            #expect(close(layout.sizes.title, double(sizes["title"])), "\(c)")
+            #expect(close(layout.sizes.resource, double(sizes["resource"])), "\(c)")
+            #expect(close(layout.sizes.stars, double(sizes["stars"])), "\(c)")
+            #expect(close(layout.sizes.review, double(sizes["review"])), "\(c)")
+            #expect(close(layout.sizes.author, double(sizes["author"])), "\(c)")
+            #expect(layout.titleLines == int(e["titleLines"]), "\(c)")
+            #expect(layout.resourceLines == int(e["resourceLines"]), "\(c)")
+            #expect(close(layout.icon, double(e["icon"])), "\(c)")
+            #expect(close(layout.starsRowHeight, double(e["starsRowHeight"])), "\(c)")
+            #expect(close(layout.textLine, double(e["textLine"])), "\(c)")
+            #expect(layout.showTitle == bool(e["showTitle"]), "\(c)")
+            #expect(layout.titleTruncated == bool(e["titleTruncated"]), "\(c)")
+            #expect(layout.bodyLines == int(e["bodyLines"]), "\(c)")
+            #expect(layout.bodyTruncated == bool(e["bodyTruncated"]), "\(c)")
+        }
+    }
+
+    @Test func reviewStars() {
+        for c in StudioVectors.cases("reviewStars") {
+            let rating = c["rating"] is NSNull ? Double.nan : double(c["rating"])
+            #expect(StudioLayout.reviewStarsFilled(rating) == int(c["filled"]), "\(c)")
+        }
+    }
+
     @Test func legacy() {
         for c in StudioVectors.cases("legacy") {
             let tiles = int(c["tiles"])

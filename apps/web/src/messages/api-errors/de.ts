@@ -29,6 +29,10 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Dieses Dashboard enthält jetzt Folien oder Widgets, die der Kachel-Editor nicht beibehalten kann. Lade es neu, bevor du es bearbeitest.",
     dashboard_not_found: "Dieses Dashboard existiert nicht mehr.",
     theme_not_found: "Dieses Design existiert nicht mehr.",
+    review_not_found: "Diese Bewertung gibt es nicht mehr.",
+    connection_not_found: "Diese Verbindung gibt es nicht mehr.",
+    reviews_not_supported:
+      "Diese Verbindung hat keine Bewertungen. Ein Widget für die neueste Bewertung braucht eine App-Store-Connect-Verbindung.",
     goal_not_found: "Dieses Ziel existiert nicht mehr.",
     goal_name_taken:
       "In diesem Workspace gibt es schon ein Ziel mit diesem Namen.",

@@ -47,6 +47,8 @@ export function newWidget(
     now?: Date;
     /** The workspace's goals, by name: a new goal widget shows the first. */
     goals?: ReadonlyArray<{ id: string; name: string }>;
+    /** Connections that keep review text (latest review), first first. */
+    reviewConnectionIds?: readonly string[];
   },
 ): { widget: NewWidget } | { reason: string } {
   const t = webTranslator(input.locale, "studio.newWidget");
@@ -206,6 +208,23 @@ export function newWidget(
           options: { size: "body", align: "start" },
         },
       };
+    case "review": {
+      const connectionId = input.reviewConnectionIds?.[0];
+      if (!connectionId) {
+        return { reason: t("noReviews") };
+      }
+      return {
+        widget: {
+          type,
+          title: null,
+          connectionId,
+          dimensions: {},
+          imageId: null,
+          resourceName: null,
+          options: { minRating: 1, requireText: true, showAuthor: true },
+        },
+      };
+    }
     case "clock":
       return {
         widget: {

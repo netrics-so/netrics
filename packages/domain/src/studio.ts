@@ -23,6 +23,7 @@ export const WIDGET_TYPES = [
   "compare",
   "countdown",
   "gauge",
+  "review",
 ] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 
@@ -43,14 +44,28 @@ export function isDataWidgetType(type: string): type is DataWidgetType {
 /**
  * What a widget counts toward `STUDIO_LIMITS.dataWidgets`: one per metric
  * query, so a compare widget (numerator and denominator) counts twice and
- * a goal widget (its goal's metric) once (ADR 0019 section 2); widgets
- * without a metric count nothing.
+ * a goal widget (its goal's metric) and a latest review (one small query)
+ * once (ADR 0019 section 2); widgets without a metric count nothing.
  */
 export function dataWidgetCost(type: string): number {
   if (type === "compare") return 2;
-  if (type === "gauge") return 1;
+  if (type === "gauge" || type === "review") return 1;
   return isDataWidgetType(type) ? 1 : 0;
 }
+
+/**
+ * Connectors whose connections keep review text (ADR 0019 sections 11 and
+ * 12): a latest-review widget binds one of their connections; any other is
+ * refused (`reviews_not_supported`).
+ */
+export const REVIEW_CONNECTOR_IDS = ["app-store-connect"] as const;
+
+export function connectorHasReviews(connectorId: string): boolean {
+  return (REVIEW_CONNECTOR_IDS as readonly string[]).includes(connectorId);
+}
+
+/** Review widget options' bounds (ADR 0019 section 12). */
+export const REVIEW_MIN_RATING = { min: 1, max: 5, default: 1 } as const;
 
 /** Server-validated limits; they bound payload size and query cost. */
 export const STUDIO_LIMITS = {

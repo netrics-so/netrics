@@ -37,6 +37,8 @@ import {
   tableLayout,
   tableRowLabel,
   tableRowsShown,
+  reviewLayout,
+  reviewStarsFilled,
   textWidgetSizes,
   widgetRect,
   widgetTypeScale,
@@ -371,6 +373,7 @@ export function buildStudioLayoutVectors() {
         { type: "line", w: 6, h: 4 },
         { type: "bar", w: 12, h: 8 },
         { type: "table", w: 4, h: 4 },
+        { type: "review", w: 4, h: 3 },
         { type: "compare", w: 4, h: 3 },
         { type: "text", w: 2, h: 1 },
         { type: "clock", w: 2, h: 1 },
@@ -840,6 +843,64 @@ export function buildStudioLayoutVectors() {
     }),
   );
 
+  // Latest reviews (ADR 0019 section 12): the 4 × 3 minimum, a wider and
+  // a taller box at 16:9, and odd ones; with and without an icon, title,
+  // body and a notice line.
+  const reviewBoxes = [
+    { width: 560, height: 294.65 },
+    { width: 872, height: 414.2 },
+    { width: 404, height: 533.75 },
+    { width: 200, height: 100 },
+    { width: 0, height: 0 },
+  ];
+  const reviewTexts: Array<{ title: string | null; body: string | null }> = [
+    {
+      title: "Finally",
+      body: "Finally a dashboard I can leave on the office TV. Everyone sees the numbers without asking me.",
+    },
+    { title: null, body: "Short." },
+    {
+      title: "A very long review title that will not fit on one line at all",
+      body: null,
+    },
+    { title: "   ", body: "日本語のレビューです。とても良いアプリ。" },
+    { title: null, body: null },
+  ];
+  const reviewLayouts = reviewBoxes.flatMap((box) =>
+    ["Latest review", "Latest review · Wurfel", LABELS[5]!].flatMap((label) =>
+      [1, 1.3].flatMap((fontScale) =>
+        reviewTexts.flatMap((text) =>
+          [true, false].flatMap((icon) =>
+            [false, true].map((notice) => ({
+              label,
+              width: box.width,
+              height: box.height,
+              fontScale,
+              icon,
+              notice,
+              ...text,
+              layout: reviewLayout({
+                label,
+                width: box.width,
+                height: box.height,
+                fontScale,
+                icon,
+                notice,
+                ...text,
+              }),
+            })),
+          ),
+        ),
+      ),
+    ),
+  );
+  const reviewStars = [5, 4, 1, 0, 6, -1, 3.4, 3.5, Number.NaN].map(
+    (rating) => ({
+      rating: Number.isNaN(rating) ? null : rating,
+      filled: reviewStarsFilled(rating),
+    }),
+  );
+
   const legacy = Array.from({ length: 41 }, (_, tiles) => ({
     tiles,
     grid: legacyGrid(tiles),
@@ -912,6 +973,8 @@ export function buildStudioLayoutVectors() {
     tableRowsShown: tableRowsShownCases,
     tableRowLabels,
     tableChanges,
+    reviewLayouts,
+    reviewStars,
     statusLayouts,
     statusRowsShown: statusRowsShownCases,
     statusAges,

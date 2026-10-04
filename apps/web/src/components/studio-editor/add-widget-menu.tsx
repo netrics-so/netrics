@@ -66,6 +66,7 @@ export function AddWidgetMenu({
   metrics,
   imageIds,
   goals = [],
+  reviewConnectionIds = [],
   dispatch,
   showHeader = true,
   primaryFormat = "16x9",
@@ -77,6 +78,8 @@ export function AddWidgetMenu({
   imageIds: readonly string[];
   /** The workspace's goals: a new goal widget shows the first. */
   goals?: readonly Goal[];
+  /** Connections that keep review text (a latest review), first first. */
+  reviewConnectionIds?: readonly string[];
   dispatch: (action: StudioAction) => void;
   /** Whether the canvas shows the header (it moves the grid). */
   showHeader?: boolean;
@@ -197,7 +200,13 @@ export function AddWidgetMenu({
         {t("add")}
       </span>
       {WIDGET_TYPES.map((type) => {
-        const made = newWidget(type, { metrics, imageIds, locale, goals });
+        const made = newWidget(type, {
+          metrics,
+          imageIds,
+          locale,
+          goals,
+          reviewConnectionIds,
+        });
         const reason =
           "reason" in made
             ? made.reason

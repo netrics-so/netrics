@@ -253,6 +253,47 @@ public enum DataSurface: String, Sendable, Equatable {
     }
 }
 
+// MARK: - Latest review (ADR 0019 section 12)
+
+public enum ReviewText {
+    /**
+     * A review widget's surface lines: "App Store reviews paused — upload a
+     * new reviews key" and its hint instead of "Reconnect …"; "No reviews
+     * yet" under the skeleton; "Loading history…" as for any widget.
+     */
+    public static func surfaceTexts(_ surface: DataSurface, language: ScreenLanguage) -> (headline: String?, hint: String) {
+        switch surface {
+        case .authFailed:
+            return (KitStrings.text(.reviewsPaused, language), KitStrings.text(.reviewsPausedHint, language))
+        case .noData:
+            return (nil, KitStrings.text(.noReviews, language))
+        case .backfilling:
+            return surface.texts(source: nil, language: language)
+        }
+    }
+
+    /** A territory's name in the screen language ("DE" → "Germany"); the code when unknown. */
+    public static func territoryName(_ code: String?, language: ScreenLanguage) -> String? {
+        guard let code, code.count == 2, code.allSatisfy({ $0.isASCII && $0.isUppercase }) else { return nil }
+        return language.locale.localizedString(forRegionCode: code) ?? code
+    }
+
+    /**
+     * "Marta P. · Germany · 2 hr. ago": the nickname (when sent), the
+     * territory's name and the review's age from this device's clock.
+     */
+    public static func authorLine(_ review: WidgetReview, now: Date = Date(), language: ScreenLanguage = .en) -> String {
+        let author = review.author.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap {
+            $0.isEmpty ? nil : $0
+        }
+        return [
+            author,
+            territoryName(review.territory, language: language),
+            WidgetFooter.relativeTime(review.createdAt, now: now, language: language),
+        ].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
 // MARK: - Widget footer
 
 /**

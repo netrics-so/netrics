@@ -9,7 +9,7 @@ import Foundation
 // canvas answer in canvas points; the type scale answers in units.
 
 public enum StudioWidgetType: String, Sendable, Equatable, CaseIterable, Codable {
-    case metric, line, bar, image, text, clock, table, status, compare, countdown, gauge
+    case metric, line, bar, image, text, clock, table, status, compare, countdown, gauge, review
 
     /** Widgets with a title and resource line (bound to a metric). */
     public var isData: Bool {
@@ -76,6 +76,7 @@ public enum StudioTextRole: String, Sendable, CaseIterable, Codable {
     case any, title, resource, change, axis, body, heading, display
     case valueMin, valueMax, clockMin, clockMax, date, zone
     case cell, columnHead, operand
+    case review, stars
 }
 
 public enum StudioFontWeight: String, Sendable, Codable {
@@ -148,6 +149,7 @@ public enum StudioLayout {
         case .image: return (1, 1)
         case .text, .clock: return (2, 1)
         case .table: return (4, 4)
+        case .review: return (4, 3)
         case .status: return (3, 3)
         case .compare: return (4, 3)
         case .countdown: return (3, 2)
@@ -235,6 +237,10 @@ public enum StudioLayout {
         public static let cell = 28.0
         /** Table column heads, in caps. */
         public static let columnHead = 24.0
+        /** A review's title and body (ADR 0019 section 12). */
+        public static let review = 32.0
+        /** A review's five stars. */
+        public static let stars = 28.0
         /** A compare widget's two numbers (ADR 0019 section 10). */
         public static let operand = 48.0
     }
@@ -279,6 +285,11 @@ public enum StudioLayout {
             return [
                 .any: any, .title: Minimum.title * scale, .resource: Minimum.resource * scale,
                 .columnHead: Minimum.columnHead * scale, .cell: Minimum.cell * scale,
+            ]
+        case .review:
+            return [
+                .any: any, .title: Minimum.title * scale, .resource: Minimum.resource * scale,
+                .stars: Minimum.stars * scale, .review: Minimum.review * scale,
             ]
         case .status:
             return [
@@ -1007,6 +1018,116 @@ public enum StudioLayout {
             titleLines: titleLines, resourceLines: resourceLines, showTarget: showTarget, showFooter: showFooter,
             progressLines: progressLines, textWidth: textWidth, ringDiameter: diameter, ringStroke: stroke,
             compact: compact, fits: diameter >= GaugeSpacing.ringMin)
+    }
+
+    // MARK: Latest review (ADR 0019 section 12)
+
+    /** Line height of a review's label, stars row and author line. */
+    static let reviewLineHeight = 1.15
+    /** Line height of a review's title and body. */
+    static let reviewTextLineHeight = 1.25
+
+    /** A review's spacing and fixed sizes in units. */
+    public enum ReviewSpacing {
+        /** Between the label, the stars row, the text and the author line. */
+        public static let stack = 8.0
+        /** The app icon's edge (not scaled with the font). */
+        public static let icon = 48.0
+        /** Between the icon and the stars. */
+        public static let iconGap = 12.0
+        /** Between two stars. */
+        public static let starGap = 4.0
+    }
+
+    /** Stars a review shows, filled up to its rating. */
+    public static let reviewStars = 5
+
+    public struct ReviewSizes: Sendable, Equatable {
+        public var title: Double
+        public var resource: Double
+        public var stars: Double
+        public var review: Double
+        public var author: Double
+    }
+
+    public struct ReviewLayout: Sendable, Equatable {
+        public var sizes: ReviewSizes
+        public var titleLines: Int
+        public var resourceLines: Int
+        public var icon: Double
+        public var starsRowHeight: Double
+        public var textLine: Double
+        public var showTitle: Bool
+        public var titleTruncated: Bool
+        public var bodyLines: Int
+        public var bodyTruncated: Bool
+    }
+
+    static func reviewText(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let trimmed = trimWhitespace(text)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /**
+     * A latest-review widget's layout (reviewLayout in the TypeScript): the
+     * label, the stars row (icon and stars), the review's title (one line)
+     * and body (the lines that fit, then an ellipsis) and the author line,
+     * in a content box in units.
+     */
+    public static func reviewLayout(
+        label: String, width inputWidth: Double, height: Double, fontScale: Double? = nil,
+        icon: Bool, title inputTitle: String?, body inputBody: String?, notice: Bool = false
+    ) -> ReviewLayout {
+        let scale = effectiveFontScale(fontScale)
+        let sizes = ReviewSizes(
+            title: Minimum.title * scale,
+            resource: Minimum.resource * scale,
+            stars: Minimum.stars * scale,
+            review: Minimum.review * scale,
+            author: Minimum.any * scale)
+        let width = Swift.max(0, inputWidth)
+        let parts = labelParts(label)
+        let titleLines = Swift.min(
+            labelMaxLines,
+            Swift.max(1, wrappedLineCount(parts.title, maxWidth: width, fontSize: sizes.title, weight: .semibold)))
+        let resourceLines = parts.resource.map {
+            Swift.min(
+                labelMaxLines,
+                Swift.max(1, wrappedLineCount($0, maxWidth: width, fontSize: sizes.resource, weight: .semibold)))
+        } ?? 0
+        let iconEdge = icon ? ReviewSpacing.icon : 0
+        let starsRowHeight = Swift.max(iconEdge, sizes.stars * reviewLineHeight)
+        let textLine = sizes.review * reviewTextLineHeight
+        let smallLine = sizes.author * reviewLineHeight
+        let fixed =
+            Double(titleLines) * sizes.title * reviewLineHeight
+            + Double(resourceLines) * sizes.resource * reviewLineHeight
+            + ReviewSpacing.stack
+            + starsRowHeight
+            + ReviewSpacing.stack
+            + ReviewSpacing.stack
+            + smallLine
+            + (notice ? ReviewSpacing.stack + smallLine : 0)
+        let title = reviewText(inputTitle)
+        let body = reviewText(inputBody)
+        var room = Swift.max(0, height - fixed)
+        let showTitle = title != nil && room >= textLine
+        if showTitle { room -= textLine }
+        let capacity = Swift.max(0, Int((room / textLine).rounded(.down)))
+        let wanted = body.map { wrappedLineCount($0, maxWidth: width, fontSize: sizes.review, weight: .regular) } ?? 0
+        let bodyLines = Swift.min(wanted, capacity)
+        return ReviewLayout(
+            sizes: sizes, titleLines: titleLines, resourceLines: resourceLines, icon: iconEdge,
+            starsRowHeight: starsRowHeight, textLine: textLine, showTitle: showTitle,
+            titleTruncated: showTitle && estimateTextWidth(title!, fontSize: sizes.review, weight: .semibold) > width,
+            bodyLines: bodyLines, bodyTruncated: wanted > bodyLines)
+    }
+
+    /** Filled stars of a rating: rounded (as Math.round) into 0–5. */
+    public static func reviewStarsFilled(_ rating: Double) -> Int {
+        guard rating.isFinite else { return 0 }
+        return Swift.min(reviewStars, Swift.max(0, Int((rating + 0.5).rounded(.down))))
     }
 
     // MARK: Legacy layout (tile migration)

@@ -76,7 +76,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       add: "Widget hinzufügen",
       hint: "Klick, um es am ersten freien Platz einzufügen, oder zieh es auf die Folie",
       addType:
-        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} other {Widget}} hinzufügen",
+        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} other {Widget}} hinzufügen",
     },
     assignTvs: {
       title: "„{name}“ auf TVs zeigen",
@@ -323,6 +323,25 @@ export const studioDe: Catalog<typeof studioEn> = {
       fitContain: "Ganzes Bild (contain)",
       fitCover: "Widget füllen, beschnitten (cover)",
       preview: "Vorschau",
+      review: "Bewertung",
+      reviewConnection: "App-Store-Connect-Verbindung",
+      reviewApp: "App",
+      reviewAllApps: "Alle Apps",
+      reviewAppHelp: "Die neueste Bewertung einer App oder aller Apps.",
+      appIcon: "App-Icon",
+      noIcon: "Kein Icon",
+      minRating: "Mindestens Sterne",
+      minRatingOption: "{count, plural, one {# Stern} other {# Sterne}}",
+      requireText: "Bewertungen ohne Text ausblenden",
+      showAuthor: "Autor zeigen",
+      showAuthorHelp:
+        "Der Spitzname der Person, die bewertet hat. Ausgeschaltet erreicht er keinen Bildschirm.",
+      hideReview: "Diese Bewertung ausblenden",
+      hideReviewHelp:
+        "Blendet die gerade gezeigte Bewertung in allen Widgets aus; die nächste rückt nach.",
+      hidingReview: "Wird ausgeblendet…",
+      reviewHidden: "Bewertung ausgeblendet.",
+      noReviewShown: "Gerade wird keine Bewertung gezeigt.",
     },
     newWidget: {
       noMetrics: "Füg zuerst eine Verbindung mit Metriken hinzu.",
@@ -331,6 +350,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       text: "## Überschrift\nEtwas Text",
       notBreakable: "Diese Metrik lässt sich nicht in Balken aufschlüsseln.",
       noGoals: "Leg zuerst ein Ziel an (Seite Ziele).",
+      noReviews: "Verbinde zuerst App Store Connect.",
     },
     status: {
       liveOn: "Live auf {screens}",
@@ -515,9 +535,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}}",
+        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}})",
+        "{title} ({type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}})",
       copyOf: "{name} (Kopie)",
       slide: "Folie {number}",
       quoted: "„{name}“",
@@ -529,9 +549,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         widgetPlaced:
           "{name} in Spalte {column}, Zeile {row} {verb, select, duplicated {dupliziert} pasted {eingefügt} other {hinzugefügt}}.",
         typeNoRoom:
-          "{type, select, metric {Eine Metrik} line {Ein Liniendiagramm} bar {Ein Balkendiagramm} table {Eine Tabelle} compare {Ein Vergleich} image {Ein Bild} text {Ein Text} clock {Eine Uhr} status {Eine Statusübersicht} countdown {Ein Countdown} other {Ein Widget}} braucht mindestens {w} × {h} Zellen; hier ist kein Platz dafür.",
+          "{type, select, metric {Eine Metrik} line {Ein Liniendiagramm} bar {Ein Balkendiagramm} table {Eine Tabelle} review {Eine neueste Bewertung} compare {Ein Vergleich} image {Ein Bild} text {Ein Text} clock {Eine Uhr} status {Eine Statusübersicht} countdown {Ein Countdown} other {Ein Widget}} braucht mindestens {w} × {h} Zellen; hier ist kein Platz dafür.",
         typeChanged:
-          "{name} ist jetzt {type, select, metric {eine Metrik} line {ein Liniendiagramm} bar {ein Balkendiagramm} table {eine Tabelle} compare {ein Vergleich} image {ein Bild} text {ein Text} clock {eine Uhr} status {eine Statusübersicht} countdown {ein Countdown} other {ein Widget}}.",
+          "{name} ist jetzt {type, select, metric {eine Metrik} line {ein Liniendiagramm} bar {ein Balkendiagramm} table {eine Tabelle} review {eine neueste Bewertung} compare {ein Vergleich} image {ein Bild} text {ein Text} clock {eine Uhr} status {eine Statusübersicht} countdown {ein Countdown} other {ein Widget}}.",
         undone: "Rückgängig gemacht.",
         redone: "Wiederholt.",
         discarded: "Änderungen verworfen.",

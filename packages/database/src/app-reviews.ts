@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, notInArray, sql } from "drizzle-orm";
 
 import type { Db, Transaction } from "./context.js";
 import * as schema from "./schema.js";
@@ -262,6 +262,66 @@ export async function hideAppReview(
   return row && row.hiddenAt
     ? { resourceId: row.resourceId, hiddenAt: row.hiddenAt }
     : null;
+}
+
+/** A stored review as the latest-review widget shows it. */
+export interface LatestAppReview {
+  providerReviewId: string;
+  resourceId: string;
+  rating: number;
+  title: string | null;
+  body: string | null;
+  author: string | null;
+  territory: string | null;
+  createdAt: Date;
+}
+
+/**
+ * The newest review of a connection (one app's, or any app's) that is not
+ * hidden, has at least `minRating` stars and, with `requireText`, a body
+ * (ADR 0019 section 12). Null when none matches. This is the only read of
+ * review text: one review per widget, never a list.
+ */
+export async function findLatestAppReview(
+  tx: Transaction,
+  input: {
+    workspaceId: string;
+    connectionId: string;
+    resourceId?: string | null;
+    minRating: number;
+    requireText: boolean;
+  },
+): Promise<LatestAppReview | null> {
+  const t = schema.appReviews;
+  const [row] = await tx
+    .select({
+      providerReviewId: t.providerReviewId,
+      resourceId: t.resourceId,
+      rating: t.rating,
+      title: t.title,
+      body: t.body,
+      author: t.author,
+      territory: t.territory,
+      createdAt: t.createdAt,
+    })
+    .from(t)
+    .where(
+      and(
+        eq(t.workspaceId, input.workspaceId),
+        eq(t.connectionId, input.connectionId),
+        input.resourceId != null
+          ? eq(t.resourceId, input.resourceId)
+          : undefined,
+        isNull(t.hiddenAt),
+        gte(t.rating, input.minRating),
+        input.requireText
+          ? sql`coalesce(btrim(${t.body}), '') <> ''`
+          : undefined,
+      ),
+    )
+    .orderBy(desc(t.createdAt), desc(t.providerReviewId))
+    .limit(1);
+  return row ?? null;
 }
 
 export interface AppReviewPruneResult {

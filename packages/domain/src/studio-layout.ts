@@ -25,7 +25,8 @@ export type StudioWidgetType =
   | "status"
   | "compare"
   | "countdown"
-  | "gauge";
+  | "gauge"
+  | "review";
 
 export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "metric",
@@ -39,6 +40,7 @@ export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "compare",
   "countdown",
   "gauge",
+  "review",
 ];
 
 /** A widget's cells: 0-based column and row, width and height in cells. */
@@ -99,6 +101,7 @@ export const STUDIO_MIN_WIDGET_SIZE: Readonly<
   compare: { w: 4, h: 3 },
   countdown: { w: 3, h: 2 },
   gauge: { w: 3, h: 3 },
+  review: { w: 4, h: 3 },
 };
 
 /** Widgets with a title and resource line (bound to a metric). */
@@ -469,6 +472,10 @@ export const STUDIO_TEXT_MINIMUMS = {
   columnHead: 24,
   /** A compare widget's two numbers (ADR 0019 section 10). */
   operand: 48,
+  /** A review's title and body (ADR 0019 section 12). */
+  review: 32,
+  /** A review's five stars. */
+  stars: 28,
 } as const;
 
 /** The theme font scales (ADR 0015, section 6). */
@@ -504,7 +511,9 @@ export type StudioTextRole =
   | "zone"
   | "cell"
   | "columnHead"
-  | "operand";
+  | "operand"
+  | "review"
+  | "stars";
 
 export type StudioTypeScale = Partial<Record<StudioTextRole, number>>;
 
@@ -583,6 +592,14 @@ export function widgetTypeScale(
         resource: m.resource * scale,
         columnHead: m.columnHead * scale,
         cell: m.cell * scale,
+      };
+    case "review":
+      return {
+        any,
+        title: m.title * scale,
+        resource: m.resource * scale,
+        stars: m.stars * scale,
+        review: m.review * scale,
       };
     case "status":
       return {
@@ -1486,6 +1503,155 @@ export function gaugeLayout(input: GaugeLayoutInput): GaugeLayout {
 }
 
 // ---------------------------------------------------------------------------
+// Latest review (ADR 0019 section 12)
+
+/** Line height of a review's label, stars row and author line. */
+const REVIEW_LINE_HEIGHT = 1.15;
+/** Line height of a review's title and body (design 4b: 1.3; kept tighter). */
+const REVIEW_TEXT_LINE_HEIGHT = 1.25;
+
+/** A review's spacing and fixed sizes in units. */
+export const REVIEW_SPACING = {
+  /** Between the label, the stars row, the text and the author line. */
+  stack: 8,
+  /** The app icon's edge (not scaled with the font). */
+  icon: 48,
+  /** Between the icon and the stars. */
+  iconGap: 12,
+  /** Between two stars. */
+  starGap: 4,
+} as const;
+
+/** Stars a review shows, filled up to its rating. */
+export const REVIEW_STARS = 5;
+
+export interface ReviewLayoutInput {
+  /** The widget's label as screens show it ("Latest review · Wurfel"). */
+  label: string;
+  /** The content box in units: the widget's rect less its padding. */
+  width: number;
+  height: number;
+  fontScale?: number;
+  /** An app icon is shown in the stars row. */
+  icon: boolean;
+  /** The review's title and body; null or blank: none. */
+  title: string | null;
+  body: string | null;
+  /** A notice line (stale) below the author line. */
+  notice?: boolean;
+}
+
+export interface ReviewLayout {
+  /** Text sizes in units. */
+  sizes: {
+    title: number;
+    resource: number;
+    stars: number;
+    review: number;
+    author: number;
+  };
+  /** Lines of the label's title (1–2) and resource line (0–2). */
+  titleLines: number;
+  resourceLines: number;
+  /** The icon's edge in units, 0 without one. */
+  icon: number;
+  /** The stars row: the icon or the stars, whichever is taller. */
+  starsRowHeight: number;
+  /** One line of the review's title or body, in units. */
+  textLine: number;
+  /** The review's title is shown (one line, may end with an ellipsis). */
+  showTitle: boolean;
+  /** The title is wider than the content box: it ends with an ellipsis. */
+  titleTruncated: boolean;
+  /** Body lines shown: as many as the text takes and the room allows. */
+  bodyLines: number;
+  /** The body takes more lines than shown: the last one ends with "…". */
+  bodyTruncated: boolean;
+}
+
+function reviewText(text: string | null): string | null {
+  return text === null || text.trim() === "" ? null : text.trim();
+}
+
+/**
+ * A latest-review widget's layout: the label (title and resource line, at
+ * most two lines each), the stars row (the app icon, 48 u, when set, and
+ * five stars, 28 u), the review's title (32 u semibold, one line) and body
+ * (32 u, the lines that fit, then an ellipsis: data text, ADR 0019 section
+ * 2), and the author line (24 u). Without a title the body takes its room.
+ * At the minimum 4 × 3 (560 × 295 u at 16:9, font scale 1) the label, the
+ * stars row, the title, two body lines and the author line fit.
+ */
+export function reviewLayout(input: ReviewLayoutInput): ReviewLayout {
+  const scale = effectiveFontScale(input.fontScale);
+  const m = STUDIO_TEXT_MINIMUMS;
+  const sizes = {
+    title: m.title * scale,
+    resource: m.resource * scale,
+    stars: m.stars * scale,
+    review: m.review * scale,
+    author: m.any * scale,
+  };
+  const width = Math.max(0, input.width);
+  const parts = labelParts(input.label);
+  const titleLines = Math.min(
+    STUDIO_LABEL_MAX_LINES,
+    Math.max(1, wrappedLineCount(parts.title, width, sizes.title, "semibold")),
+  );
+  const resourceLines =
+    parts.resource === null
+      ? 0
+      : Math.min(
+          STUDIO_LABEL_MAX_LINES,
+          Math.max(
+            1,
+            wrappedLineCount(parts.resource, width, sizes.resource, "semibold"),
+          ),
+        );
+  const icon = input.icon ? REVIEW_SPACING.icon : 0;
+  const starsRowHeight = Math.max(icon, sizes.stars * REVIEW_LINE_HEIGHT);
+  const textLine = sizes.review * REVIEW_TEXT_LINE_HEIGHT;
+  const smallLine = sizes.author * REVIEW_LINE_HEIGHT;
+  const fixed =
+    titleLines * sizes.title * REVIEW_LINE_HEIGHT +
+    resourceLines * sizes.resource * REVIEW_LINE_HEIGHT +
+    REVIEW_SPACING.stack +
+    starsRowHeight +
+    REVIEW_SPACING.stack +
+    REVIEW_SPACING.stack +
+    smallLine +
+    (input.notice === true ? REVIEW_SPACING.stack + smallLine : 0);
+  const title = reviewText(input.title);
+  const body = reviewText(input.body);
+  let room = Math.max(0, input.height - fixed);
+  const showTitle = title !== null && room >= textLine;
+  if (showTitle) room -= textLine;
+  const capacity = Math.max(0, Math.floor(room / textLine));
+  const wanted =
+    body === null ? 0 : wrappedLineCount(body, width, sizes.review, "regular");
+  const bodyLines = Math.min(wanted, capacity);
+  return {
+    sizes,
+    titleLines,
+    resourceLines,
+    icon,
+    starsRowHeight,
+    textLine,
+    showTitle,
+    titleTruncated:
+      showTitle && estimateTextWidth(title!, sizes.review, "semibold") > width,
+    bodyLines,
+    bodyTruncated: wanted > bodyLines,
+  };
+}
+
+/** Filled stars of a rating: rounded into 0–5. */
+export function reviewStarsFilled(rating: number): number {
+  if (!Number.isFinite(rating)) return 0;
+  return Math.min(REVIEW_STARS, Math.max(0, Math.round(rating)));
+}
+
+// ---------------------------------------------------------------------------
 // Legacy layout (tile migration, #214)
 
 /** Tiles per slide: at most 4 columns × 4 rows keep the 3 × 2 minimum. */
@@ -2298,6 +2464,8 @@ export const studioLayout = {
   statusRowLabel,
   statusAge,
   gaugeLayout,
+  reviewLayout,
+  reviewStarsFilled,
   legacyGrid,
   legacyLayout,
   parseTextWidget,

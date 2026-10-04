@@ -30,6 +30,8 @@ import {
   studioLayout,
   tableChangeKind,
   tableLayout,
+  reviewLayout,
+  reviewStarsFilled,
   tableRowLabel,
   tableRowsShown,
   textWidgetSizes,
@@ -119,6 +121,7 @@ describe("placement rules", () => {
       compare: { w: 4, h: 3 },
       countdown: { w: 3, h: 2 },
       gauge: { w: 3, h: 3 },
+      review: { w: 4, h: 3 },
     });
     expect(meetsMinimumSize("metric", { x: 0, y: 0, w: 3, h: 2 })).toBe(true);
     expect(meetsMinimumSize("metric", { x: 0, y: 0, w: 2, h: 4 })).toBe(false);
@@ -400,6 +403,100 @@ describe("statusAge", () => {
       amount: 0,
       unit: "m",
     });
+  });
+});
+
+describe("reviewLayout (ADR 0019 section 12)", () => {
+  // A 4 × 3 widget's content box at 16:9 with the header.
+  const box = { width: 560, height: 294.65 };
+  const long =
+    "Finally a dashboard I can leave on the office TV. Everyone sees the numbers without asking me, and the new goals make it even better.";
+
+  it("fits the label, stars, title, two body lines and the author at its minimum", () => {
+    const layout = reviewLayout({
+      label: "Latest review · Wurfel",
+      ...box,
+      icon: true,
+      title: "Finally",
+      body: long,
+    });
+    expect(STUDIO_MIN_WIDGET_SIZE.review).toEqual({ w: 4, h: 3 });
+    expect(layout).toMatchObject({
+      titleLines: 1,
+      resourceLines: 1,
+      icon: 48,
+      starsRowHeight: 48,
+      showTitle: true,
+      titleTruncated: false,
+      bodyLines: 2,
+      bodyTruncated: true,
+    });
+    expect(layout.sizes).toEqual({
+      title: 30,
+      resource: 30,
+      stars: 28,
+      review: 32,
+      author: 24,
+    });
+  });
+
+  it("gives the body the title's room without one, and shows short text whole", () => {
+    const untitled = reviewLayout({
+      label: "Latest review",
+      ...box,
+      icon: false,
+      title: "  ",
+      body: long,
+    });
+    expect(untitled.showTitle).toBe(false);
+    expect(untitled.bodyLines).toBe(4);
+    const short = reviewLayout({
+      label: "Latest review",
+      ...box,
+      icon: false,
+      title: null,
+      body: "Great.",
+    });
+    expect(short).toMatchObject({ bodyLines: 1, bodyTruncated: false });
+  });
+
+  it("keeps every text at its minimum and gives up body lines first", () => {
+    const layout = reviewLayout({
+      label: "Latest review · Wurfel",
+      ...box,
+      fontScale: 1.3,
+      icon: true,
+      title: "Finally",
+      body: long,
+      notice: false,
+    });
+    expect(layout.sizes.review).toBeCloseTo(32 * 1.3, 9);
+    expect(layout.sizes.author).toBeCloseTo(24 * 1.3, 9);
+    expect(layout.showTitle).toBe(true);
+    expect(layout.bodyLines).toBe(0);
+    expect(layout.bodyTruncated).toBe(true);
+    expect(
+      widgetTypeScale("review", { x: 0, y: 0, w: 4, h: 3 }, { fontScale: 1.3 }),
+    ).toMatchObject({ review: 32 * 1.3, stars: 28 * 1.3, any: 24 * 1.3 });
+  });
+
+  it("ends a long title with an ellipsis", () => {
+    expect(
+      reviewLayout({
+        label: "Latest review",
+        ...box,
+        icon: false,
+        title: "A very long review title that will not fit on one line at all",
+        body: null,
+      }).titleTruncated,
+    ).toBe(true);
+  });
+
+  it("fills stars up to the rating", () => {
+    expect([5, 1, 0, 7, -2, 3.5].map(reviewStarsFilled)).toEqual([
+      5, 1, 0, 5, 0, 4,
+    ]);
+    expect(reviewStarsFilled(Number.NaN)).toBe(0);
   });
 });
 

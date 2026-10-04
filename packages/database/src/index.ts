@@ -66,6 +66,7 @@ export {
   AppReviewStoreError,
   capAppReviewText,
   deleteConnectionAppReviews,
+  findLatestAppReview,
   hideAppReview,
   ingestAppReviews,
   pruneAppReviews,
@@ -75,6 +76,7 @@ export type {
   AppReviewPruneResult,
   AppReviewRetentionPolicy,
   AppReviewWindow,
+  LatestAppReview,
 } from "./app-reviews.js";
 export {
   AcceptInvitationFailure,

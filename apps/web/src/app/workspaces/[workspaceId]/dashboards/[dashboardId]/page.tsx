@@ -69,6 +69,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
         name: connection.name,
         state: connection.state,
         setupPending: connection.setupPending,
+        connectorId: connection.connectorId,
       },
     ]),
   );

@@ -339,6 +339,7 @@ export const DEFAULT_WIDGET_SIZE: Readonly<
   countdown: { w: 3, h: 2 },
   // Its minimum (ADR 0019 section 5): the ring with the target line.
   gauge: { w: 3, h: 3 },
+  review: { w: 4, h: 3 },
 };
 
 /**
@@ -616,6 +617,10 @@ function widgetInput(widget: DashboardWidget): DashboardWidgetInput {
       return { ...widget, title: widget.title?.trim() || null };
     case "gauge": {
       const { goalName: _goalName, ...input } = widget;
+      return { ...input, title: input.title?.trim() || null };
+    }
+    case "review": {
+      const { resourceName: _resourceName, ...input } = widget;
       return { ...input, title: input.title?.trim() || null };
     }
     default:

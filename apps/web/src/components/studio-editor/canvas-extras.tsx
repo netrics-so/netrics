@@ -11,6 +11,7 @@ import {
 
 import { dataWidgetLabel } from "@/components/studio/metric-widget";
 import { gaugeLabel } from "@/lib/studio-gauge";
+import { reviewLabel } from "@/components/studio/review-widget";
 import {
   widgetName,
   type StudioAction,
@@ -46,16 +47,18 @@ export function useUnreadableLabels(
       (widget) =>
         widget.type === "gauge"
           ? gaugeLabel(widget, locale)
-          : isDataWidgetType(widget.type)
-            ? dataWidgetLabel(
-                widget as DataWidget,
-                metrics.get(metricKeyOf(widget as DataWidget)),
-              )
-            : widget.type === "status"
-              ? (widget.title ?? sourcesLabel(locale))
-              : widget.type === "countdown"
-                ? countdownLabel(widget.title, locale)
-                : "",
+          : widget.type === "review"
+            ? reviewLabel(widget, locale)
+            : isDataWidgetType(widget.type)
+              ? dataWidgetLabel(
+                  widget as DataWidget,
+                  metrics.get(metricKeyOf(widget as DataWidget)),
+                )
+              : widget.type === "status"
+                ? (widget.title ?? sourcesLabel(locale))
+                : widget.type === "countdown"
+                  ? countdownLabel(widget.title, locale)
+                  : "",
       fontScale,
       locale,
     );

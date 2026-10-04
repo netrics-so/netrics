@@ -1,9 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import type {
   Goal,
+  LatestReviewRequest,
+  LatestReviewResponse,
   MetricBreakdownResponse,
   MetricQueryResponse,
 } from "@netrics/contracts";
@@ -11,11 +19,12 @@ import type {
 import {
   apiErrorMessage,
   fetchGoal,
+  queryLatestReview,
   queryMetric,
   queryMetricBreakdown,
 } from "@/lib/api";
 import type { RefreshCycle } from "@/lib/refresh-countdown";
-import type { DataWidget } from "@/lib/studio-widgets";
+import type { DataWidget, ReviewWidget } from "@/lib/studio-widgets";
 import { useLocale } from "@/lib/i18n/client";
 
 /** How often a widget refreshes its numbers while the page is visible. */
@@ -225,4 +234,57 @@ export function useGoalData(
     [workspaceId, goalId],
   );
   return usePolled(load, refreshMs, `goal|${workspaceId}|${goalId}`);
+}
+
+// "Hide this review" changes what every review widget on the page shows:
+// a generation counter that their loads include, so all of them reload.
+let reviewGeneration = 0;
+const reviewListeners = new Set<() => void>();
+
+/** After a review was hidden: every review widget loads its review anew. */
+export function reloadReviews(): void {
+  reviewGeneration += 1;
+  for (const listener of reviewListeners) listener();
+}
+
+function subscribeReviews(listener: () => void): () => void {
+  reviewListeners.add(listener);
+  return () => reviewListeners.delete(listener);
+}
+
+/**
+ * A latest-review widget's review (ADR 0019 section 12): the newest that
+ * matches its options and is not hidden, with the id "Hide this review"
+ * takes. `reloadReviews` reloads every one at once.
+ */
+export function useLatestReviewData(
+  workspaceId: string,
+  widget: ReviewWidget,
+  refreshMs = WIDGET_REFRESH_MS,
+): WidgetData<LatestReviewResponse> {
+  const version = useSyncExternalStore(
+    subscribeReviews,
+    () => reviewGeneration,
+    () => 0,
+  );
+  const key = JSON.stringify({
+    connectionId: widget.connectionId,
+    request: {
+      ...(widget.dimensions.resource
+        ? { resource: widget.dimensions.resource }
+        : {}),
+      minRating: widget.options.minRating,
+      requireText: widget.options.requireText,
+      showAuthor: widget.options.showAuthor,
+    },
+    version,
+  });
+  const load = useCallback(() => {
+    const { connectionId, request } = JSON.parse(key) as {
+      connectionId: string;
+      request: LatestReviewRequest;
+    };
+    return queryLatestReview(workspaceId, connectionId, request);
+  }, [workspaceId, key]);
+  return usePolled(load, refreshMs, `review|${workspaceId}|${key}`);
 }

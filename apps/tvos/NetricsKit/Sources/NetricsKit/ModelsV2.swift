@@ -973,6 +973,87 @@ public struct GaugeWidgetData: Codable, Sendable, Equatable {
     }
 }
 
+/** A latest review's options (ADR 0019 section 12). */
+public struct ReviewWidgetOptions: Codable, Sendable, Equatable {
+    public var minRating: Int
+    public var requireText: Bool
+    public var showAuthor: Bool
+
+    public init(minRating: Int = 1, requireText: Bool = true, showAuthor: Bool = true) {
+        self.minRating = minRating
+        self.requireText = requireText
+        self.showAuthor = showAuthor
+    }
+
+    private enum CodingKeys: String, CodingKey { case minRating, requireText, showAuthor }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        minRating = min(max(c.lenient(Int.self, .minRating) ?? 1, 1), 5)
+        requireText = c.lenient(Bool.self, .requireText) ?? true
+        showAuthor = c.lenient(Bool.self, .showAuthor) ?? true
+    }
+}
+
+/** The review a latest-review widget shows. */
+public struct WidgetReview: Codable, Sendable, Equatable {
+    public var rating: Int
+    public var title: String?
+    public var body: String?
+    /** The nickname; nil with "Show author" off. */
+    public var author: String?
+    /** ISO 3166-1 alpha-2. */
+    public var territory: String?
+    public var createdAt: String
+
+    public init(
+        rating: Int, title: String? = nil, body: String? = nil, author: String? = nil, territory: String? = nil,
+        createdAt: String
+    ) {
+        self.rating = rating
+        self.title = title
+        self.body = body
+        self.author = author
+        self.territory = territory
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey { case rating, title, body, author, territory, createdAt }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        rating = c.lenient(Int.self, .rating) ?? 0
+        title = c.lenient(String.self, .title)
+        body = c.lenient(String.self, .body)
+        author = c.lenient(String.self, .author)
+        territory = c.lenient(String.self, .territory)
+        createdAt = c.lenient(String.self, .createdAt) ?? ""
+    }
+}
+
+/** A latest-review widget's data (ADR 0019 section 12). */
+public struct ReviewWidgetData: Codable, Sendable, Equatable {
+    public var status: DeviceTileStatus
+    public var updatedAt: String?
+    /** Nil: no review matches (the status says why). */
+    public var review: WidgetReview?
+
+    public init(status: DeviceTileStatus, updatedAt: String? = nil, review: WidgetReview? = nil) {
+        self.status = status
+        self.updatedAt = updatedAt
+        self.review = review
+    }
+
+    private enum CodingKeys: String, CodingKey { case status, updatedAt, review }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
+        updatedAt = c.lenient(String.self, .updatedAt)
+        review = c.lenient(WidgetReview.self, .review)
+    }
+}
+
 // MARK: Widgets and slides
 
 public enum WidgetContent: Sendable, Equatable {
@@ -980,6 +1061,8 @@ public enum WidgetContent: Sendable, Equatable {
     case line(LineWidgetOptions, LineWidgetData)
     case bar(BarWidgetOptions, BarWidgetData)
     case table(TableWidgetOptions, TableWidgetData)
+    /** The app's icon (one of the payload's images), options and data. */
+    case review(imageId: String?, ReviewWidgetOptions, ReviewWidgetData)
     case status(StatusWidgetOptions, StatusWidgetData)
     case compare(CompareWidgetOptions, CompareWidgetData)
     case image(imageId: String, ImageWidgetOptions)
@@ -1062,6 +1145,11 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
         case "compare":
             guard let data = c.lenient(CompareWidgetData.self, .data) else { return .unsupported }
             return .compare(c.lenient(CompareWidgetOptions.self, .options) ?? .init(), data)
+        case "review":
+            guard let data = c.lenient(ReviewWidgetData.self, .data) else { return .unsupported }
+            return .review(
+                imageId: c.lenient(String.self, .imageId), c.lenient(ReviewWidgetOptions.self, .options) ?? .init(),
+                data)
         case "image":
             guard let imageId = c.lenient(String.self, .imageId) else { return .unsupported }
             return .image(imageId: imageId, c.lenient(ImageWidgetOptions.self, .options) ?? .init())
@@ -1111,6 +1199,10 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .gauge(let options, let data):
+            try c.encode(options, forKey: .options)
+            try c.encode(data, forKey: .data)
+        case .review(let imageId, let options, let data):
+            try c.encode(imageId, forKey: .imageId)
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .image(let imageId, let options):

@@ -11,6 +11,7 @@ import {
   lineWidgetOptionsSchema,
   metricWidgetOptionsSchema,
   statusWidgetOptionsSchema,
+  reviewWidgetOptionsSchema,
   tableWidgetOptionsSchema,
   textWidgetOptionsSchema,
   themeTokensSchema,
@@ -73,6 +74,7 @@ import {
   ratioOf,
   goalLabel,
   goalPeriodEnd,
+  reviewWidgetLabel,
   tileLabel,
   zonedIsoString,
   type GoalAggregation,
@@ -83,6 +85,7 @@ import {
 
 import { toStateView } from "../connections/present.js";
 import { readGoal } from "../goals/progress.js";
+import { latestReview } from "../reviews/latest.js";
 import {
   findAllResourcesNames,
   queryMetric,
@@ -127,6 +130,16 @@ export interface BuildOptions {
    * payload names it in `locale`. English when absent.
    */
   locale?: Locale;
+  /**
+   * Whether a connection holds a reviews key (latest-review widgets, ADR
+   * 0019 section 12); the device service opens the stored envelope. Absent:
+   * every connection is taken to hold one.
+   */
+  reviewsKey?: (row: {
+    id: string;
+    workspaceId: string;
+    credentialsEncrypted: Buffer | null;
+  }) => boolean;
 }
 
 export function tileStatus(
@@ -208,6 +221,8 @@ interface DataContext {
   sources: DeviceStatusData["items"];
   /** Connections with a backfill queued or running. */
   backfilling: Set<string>;
+  /** Connections that hold a reviews key (asked once per connection). */
+  reviewsKey(connectionId: string): boolean;
   label(widget: DataWidget, metricName: string | undefined): string;
 }
 
@@ -221,6 +236,8 @@ async function loadDataContext(
   const states = new Map(
     connections.map(({ row, state }) => [row.id, toStateView(state)]),
   );
+  const rows = new Map(connections.map(({ row }) => [row.id, row]));
+  const reviewsKeys = new Map<string, boolean>();
   const backfilling = await findBackfillingConnectionIds(tx, workspaceId);
   // Only what a board shows: never credentials, configuration or errors.
   const sources = sortSourceItems(
@@ -271,6 +288,17 @@ async function loadDataContext(
     states,
     sources,
     backfilling,
+    reviewsKey(connectionId) {
+      let held = reviewsKeys.get(connectionId);
+      if (held === undefined) {
+        const row = rows.get(connectionId);
+        held =
+          row !== undefined &&
+          (options.reviewsKey ? options.reviewsKey(row) : true);
+        reviewsKeys.set(connectionId, held);
+      }
+      return held;
+    },
     label(widget, metricName) {
       const dimensions = dimensionsOf(widget);
       const resourceId = dimensions[RESOURCE_DIMENSION];
@@ -957,7 +985,9 @@ async function buildSlides(
         ...slides.flatMap((slide) => [
           slide.backgroundImageId,
           ...slide.widgets.map((widget) =>
-            widget.type === "image" ? widget.imageId : null,
+            widget.type === "image" || widget.type === "review"
+              ? widget.imageId
+              : null,
           ),
         ]),
       ].filter((id): id is string => id !== null),
@@ -996,6 +1026,21 @@ async function buildSlides(
       ),
     ),
   );
+  // A latest review names its app (ADR 0019 section 12).
+  const reviewResourceNames = await findResourceNames(
+    tx,
+    workspaceId,
+    slides.flatMap((slide) =>
+      slide.widgets.flatMap((widget) => {
+        const resourceId = dimensionsOf(widget)[RESOURCE_DIMENSION];
+        return widget.type === "review" &&
+          widget.connectionId !== null &&
+          resourceId !== undefined
+          ? [{ connectionId: widget.connectionId, resourceId }]
+          : [];
+      }),
+    ),
+  );
   const built: BuiltSlide[] = [];
   for (const slide of slides) {
     const widgets: DeviceWidget[] = [];
@@ -1024,6 +1069,68 @@ async function buildSlides(
             options: parsedOptions(imageWidgetOptionsSchema, widget.options),
           });
         }
+      } else if (widget.type === "review" && widget.connectionId !== null) {
+        const resourceId = dimensionsOf(widget)[RESOURCE_DIMENSION] ?? null;
+        const reviewOptions = parsedOptions(
+          reviewWidgetOptionsSchema,
+          widget.options,
+        );
+        const connectionId = widget.connectionId;
+        const state = context.states.get(connectionId) ?? null;
+        // In a savepoint: a failing query must not fail the payload. The
+        // logged error is the query's, never review text (no statement
+        // carries any).
+        const found = await tx
+          .transaction((savepoint) =>
+            latestReview(savepoint, {
+              workspaceId,
+              connectionId,
+              resourceId,
+              options: reviewOptions,
+              state,
+              backfilling: context.backfilling.has(connectionId),
+              reviewsKey: context.reviewsKey(connectionId),
+              now: options.now,
+            }),
+          )
+          .catch((err: unknown) => {
+            options.log?.warn({ tileId: widget.id, err }, "device tile failed");
+            return {
+              status: tileStatus(state, false, options.now),
+              updatedAt: state?.lastSuccessAt ?? null,
+              review: null,
+            };
+          });
+        // Screens get no review id: they cannot hide a review.
+        const review = found.review
+          ? {
+              rating: found.review.rating,
+              title: found.review.title,
+              body: found.review.body,
+              author: found.review.author,
+              territory: found.review.territory,
+              createdAt: found.review.createdAt,
+            }
+          : null;
+        widgets.push({
+          type: "review",
+          ...placement,
+          label: reviewWidgetLabel(
+            {
+              title: widget.title,
+              resourceName:
+                resourceId === null
+                  ? null
+                  : (reviewResourceNames.get(
+                      resourceNameKey(widget.connectionId, resourceId),
+                    ) ?? null),
+            },
+            options.locale ?? DEFAULT_LOCALE,
+          ),
+          imageId: imageRef(widget.imageId),
+          options: reviewOptions,
+          data: { status: found.status, updatedAt: found.updatedAt, review },
+        });
       } else if (widget.type === "text") {
         widgets.push({
           type: "text",

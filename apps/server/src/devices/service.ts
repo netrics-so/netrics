@@ -47,6 +47,8 @@ import {
 import { resolveLocale, type Locale } from "@netrics/domain";
 
 import { generatePrincipalToken, generateToken, hashToken } from "../tokens.js";
+import type { CredentialKeyring } from "../credentials.js";
+import { storedReviewsKey } from "../reviews/latest.js";
 import {
   buildDeviceDashboard,
   buildDeviceDashboardV2,
@@ -182,6 +184,11 @@ export interface DeviceServiceDeps {
    * screen language (ADR 0016 section 3).
    */
   defaultLocale?: Locale | null;
+  /**
+   * Opens stored envelopes, only to tell whether a connection holds a
+   * reviews key (latest-review widgets, ADR 0019 section 12).
+   */
+  credentialKeyring?: CredentialKeyring;
 }
 
 /** The device dashboard payload in schema 1, 2 or 3 (ADR 0015, ADR 0017). */
@@ -512,11 +519,18 @@ export function createDeviceService(deps: DeviceServiceDeps) {
           workspace?.screenLocale,
           deps.defaultLocale,
         ]);
+        const keyring = deps.credentialKeyring;
         const options = {
           now: now(),
           locale,
           exchangeRates: deps.exchangeRates ?? false,
           ...(log ? { log } : {}),
+          ...(keyring
+            ? {
+                reviewsKey: (row: Parameters<typeof storedReviewsKey>[0]) =>
+                  storedReviewsKey(row, keyring),
+              }
+            : {}),
         };
         const build = (): Promise<
           | DeviceDashboardResponse

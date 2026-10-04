@@ -101,7 +101,7 @@ import { SlideRail } from "./slide-rail";
 import { SlideSettings } from "./slide-settings";
 import { CanvasHead, LiveIndicator, StatusLine } from "./studio-status";
 import { useLeaveGuard } from "./use-leave-guard";
-import type { StudioCurrency } from "./widget-panel";
+import { reviewConnectionIds, type StudioCurrency } from "./widget-panel";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { builtinThemeName } from "@/lib/theme-name";
 
@@ -772,6 +772,7 @@ export function StudioEditor({
               metrics={metrics}
               imageIds={images.map((image) => image.id)}
               goals={goals}
+              reviewConnectionIds={reviewConnectionIds(connections)}
               dispatch={dispatch}
               showHeader={draft.settings.showHeader}
               primaryFormat={primaryFormat}

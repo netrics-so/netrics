@@ -15,6 +15,8 @@ export const sharedEn = {
     singular: "resource",
     plural: "resources",
   },
+  /** A latest-review widget without a title (ADR 0019 section 12). */
+  latestReview: "Latest review",
   /** A breakdown's remainder: the smaller groups added up. */
   others: "Others",
   /** A status board's default label (ADR 0019 section 7). */
