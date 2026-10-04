@@ -1,4 +1,3 @@
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -19,6 +18,7 @@ import { LineWidgetView } from "./line-widget";
 import { MetricWidgetView } from "./metric-widget";
 import { LiveWidget, SlideCanvas, WidgetBoundary } from "./slide-canvas";
 import { TextWidgetView } from "./text-widget";
+import { renderI18n } from "@/lib/i18n/test-render";
 
 const ID = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -71,7 +71,7 @@ describe("metric widget", () => {
   };
 
   it("shows the label in full as title and resource line, value and change", () => {
-    const html = renderToStaticMarkup(<MetricWidgetView {...props} />);
+    const html = renderI18n(<MetricWidgetView {...props} />);
     expect(html).toContain('<h3 class="sw-title"');
     expect(html).toContain(">Proceeds</h3>");
     expect(html).toContain(">Paperstand – Magazine reader</p>");
@@ -87,7 +87,7 @@ describe("metric widget", () => {
 
   it("never sets text below the minimums", () => {
     for (const fontScale of [1, 1.15, 1.3]) {
-      const html = renderToStaticMarkup(
+      const html = renderI18n(
         <MetricWidgetView
           {...props}
           fontScale={fontScale}
@@ -113,7 +113,7 @@ describe("metric widget", () => {
         entry.fontScale === 1 &&
         entry.showHeader,
     )!;
-    const html = renderToStaticMarkup(<MetricWidgetView {...props} />);
+    const html = renderI18n(<MetricWidgetView {...props} />);
     expect(html).toContain(
       `<h3 class="sw-title" style="font-size:${u(vector.sizes.title!)}"`,
     );
@@ -124,7 +124,7 @@ describe("metric widget", () => {
 
   it("marks a label that cannot fit as truncated, with the full text kept", () => {
     const long = `Downloads · ${"Extremely long application name ".repeat(4).trim()}`;
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <MetricWidgetView
         {...props}
         label={long}
@@ -136,12 +136,12 @@ describe("metric widget", () => {
   });
 
   it("shows a placeholder while loading and a notice when it failed", () => {
-    const loading = renderToStaticMarkup(
+    const loading = renderI18n(
       <MetricWidgetView {...props} reading={null} loading />,
     );
     expect(loading).toContain("sw-placeholder");
     expect(loading).toContain(">…</p>");
-    const failed = renderToStaticMarkup(
+    const failed = renderI18n(
       <MetricWidgetView {...props} reading={null} notice="Could not load" />,
     );
     expect(failed).toContain('class="sw-notice"');
@@ -171,7 +171,7 @@ describe("line widget", () => {
   };
 
   it("draws the period, the previous period dashed and labelled axes", () => {
-    const html = renderToStaticMarkup(<LineWidgetView {...props} />);
+    const html = renderI18n(<LineWidgetView {...props} />);
     expect(html).toContain('class="sw-line-current"');
     expect(html).toContain('class="sw-line-previous"');
     expect(html).toContain('class="sw-line-last"');
@@ -185,7 +185,7 @@ describe("line widget", () => {
   });
 
   it("leaves out what its options switch off", () => {
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <LineWidgetView
         {...props}
         options={{ showPrevious: false, showAxis: false }}
@@ -198,7 +198,7 @@ describe("line widget", () => {
 
 describe("bar widget", () => {
   it("lists the groups with Others last and never cuts a name silently", () => {
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <BarWidgetView
         label="Downloads by app"
         reading={{
@@ -233,7 +233,7 @@ describe("bar widget", () => {
 describe("image widget", () => {
   it("keeps the aspect ratio with contain or cover", () => {
     const image = { id: ID(5), url: "/img.png", width: 512, height: 256 };
-    const contain = renderToStaticMarkup(
+    const contain = renderI18n(
       <ImageWidgetView
         widget={{
           title: "Wurfel",
@@ -247,7 +247,7 @@ describe("image widget", () => {
     expect(contain).toContain('width="512"');
     expect(contain).toContain("object-fit:contain");
     expect(contain).toContain("object-position:0% 50%");
-    const cover = renderToStaticMarkup(
+    const cover = renderI18n(
       <ImageWidgetView
         widget={{ title: null, options: { fit: "cover", align: "center" } }}
         image={image}
@@ -258,7 +258,7 @@ describe("image widget", () => {
   });
 
   it("says so when the image is gone", () => {
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <ImageWidgetView
         widget={{ title: null, options: { fit: "contain", align: "center" } }}
         image={null}
@@ -271,7 +271,7 @@ describe("image widget", () => {
 
 describe("text widget", () => {
   const render = (source: string) =>
-    renderToStaticMarkup(
+    renderI18n(
       <TextWidgetView
         text={source}
         options={{ size: "body", align: "start" }}
@@ -329,7 +329,7 @@ describe("text widget", () => {
 
 describe("clock widget", () => {
   it("shows the time in its zone and the date", () => {
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <ClockWidgetView
         now={new Date("2026-10-04T12:05:00Z")}
         timeZone="Europe/Berlin"
@@ -455,7 +455,7 @@ describe("slide canvas", () => {
   } as DashboardSlide;
 
   const render = (renderWidget: (widget: StudioWidget) => React.ReactNode) =>
-    renderToStaticMarkup(
+    renderI18n(
       <SlideCanvas
         slide={slide}
         tokens={BUILTIN_THEMES.paper.tokens}
@@ -503,9 +503,7 @@ describe("slide canvas", () => {
       ...widgets[0]!,
       type: "gauge",
     } as unknown as StudioWidget;
-    const html = renderToStaticMarkup(
-      <LiveWidget widget={unknown} env={env} />,
-    );
+    const html = renderI18n(<LiveWidget widget={unknown} env={env} />);
     expect(html).toContain("This widget could not be shown");
   });
 
@@ -513,13 +511,13 @@ describe("slide canvas", () => {
     expect(WidgetBoundary.getDerivedStateFromError()).toEqual({ failed: true });
     const boundary = new WidgetBoundary({ children: null });
     boundary.state = { failed: true };
-    expect(renderToStaticMarkup(<>{boundary.render()}</>)).toContain(
+    expect(renderI18n(<>{boundary.render()}</>)).toContain(
       "This widget could not be shown",
     );
   });
 
   it("leaves the header out when the dashboard hides it", () => {
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <SlideCanvas
         slide={slide}
         tokens={BUILTIN_THEMES.netrics_dark.tokens}

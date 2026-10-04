@@ -58,6 +58,7 @@ import { PlayMode } from "./play-mode";
 import { SlideRail } from "./slide-rail";
 import { useLeaveGuard } from "./use-leave-guard";
 import type { StudioCurrency } from "./widget-panel";
+import { useLocale } from "@/lib/i18n/client";
 
 const reducer = createStudioReducer(() => crypto.randomUUID());
 
@@ -104,6 +105,7 @@ export function StudioEditor({
   /** Display currency and convertible currencies for amounts (#191). */
   currency?: StudioCurrency;
 }) {
+  const locale = useLocale();
   const router = useRouter();
   const [state, dispatch] = useReducer(reducer, dashboard, initialStudioState);
   const [images, setImages] = useState(initialImages);
@@ -208,7 +210,7 @@ export function StudioEditor({
         dispatch({ type: "announce", text: `Image “${image.name}” uploaded.` });
         return image.id;
       } catch (cause) {
-        setError(apiErrorMessage(cause));
+        setError(apiErrorMessage(cause, locale));
         return null;
       }
     },
@@ -238,7 +240,7 @@ export function StudioEditor({
         dispatch({ type: "announce", text: "Image deleted." });
         return null;
       } catch (cause) {
-        return apiErrorMessage(cause);
+        return apiErrorMessage(cause, locale);
       }
     },
     [workspaceId],
@@ -268,7 +270,7 @@ export function StudioEditor({
       if (cause instanceof ApiError && cause.code === "version_conflict") {
         setConflict(true);
       } else {
-        setError(apiErrorMessage(cause));
+        setError(apiErrorMessage(cause, locale));
       }
     } finally {
       setSaving(false);
@@ -286,7 +288,7 @@ export function StudioEditor({
       setConflict(false);
       setError(null);
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setSaving(false);
     }
@@ -301,7 +303,7 @@ export function StudioEditor({
       );
       router.push(`/workspaces/${workspaceId}/dashboards/${copy.id}/studio`);
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
       setSaving(false);
     }
   }

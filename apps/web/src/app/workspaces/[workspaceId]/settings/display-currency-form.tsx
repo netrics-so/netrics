@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 import type { CurrencyConversionOptionsResponse } from "@netrics/contracts";
 
 import { apiErrorMessage, setWorkspaceDisplayCurrency } from "@/lib/api";
+import { useLocale } from "@/lib/i18n/client";
 
 const PER_CURRENCY = "";
 
@@ -22,6 +23,7 @@ export function DisplayCurrencyForm({
   currentDisplayCurrency: string | null;
   options: CurrencyConversionOptionsResponse;
 }) {
+  const locale = useLocale();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -54,7 +56,7 @@ export function DisplayCurrencyForm({
       );
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }

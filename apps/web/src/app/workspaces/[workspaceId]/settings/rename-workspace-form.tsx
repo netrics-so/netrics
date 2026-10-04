@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { apiErrorMessage, renameWorkspace } from "@/lib/api";
+import { useLocale } from "@/lib/i18n/client";
 
 export function RenameWorkspaceForm({
   workspaceId,
@@ -12,6 +13,7 @@ export function RenameWorkspaceForm({
   workspaceId: string;
   currentName: string;
 }) {
+  const locale = useLocale();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -25,7 +27,7 @@ export function RenameWorkspaceForm({
       await renameWorkspace(workspaceId, String(form.get("name") ?? ""));
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }

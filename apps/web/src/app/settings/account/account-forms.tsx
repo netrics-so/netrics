@@ -13,6 +13,7 @@ import {
 import { apiErrorMessage, setMyLocale } from "@/lib/api";
 import { changePassword, signOut } from "@/lib/auth";
 import { useT } from "@/lib/i18n/client";
+import { useLocale } from "@/lib/i18n/client";
 
 /**
  * The user's language (ADR 0016). Saving re-renders the server components,
@@ -26,6 +27,7 @@ export function LanguageForm({
   /** The language "Automatic" resolves to for this request. */
   automaticName: string;
 }) {
+  const locale = useLocale();
   const t = useT("account.language");
   const common = useT("common");
   const router = useRouter();
@@ -44,7 +46,7 @@ export function LanguageForm({
       setSaved(true);
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 
 import { apiErrorMessage, approveDevice } from "@/lib/api";
+import { useLocale } from "@/lib/i18n/client";
 
 export interface ApprovableWorkspace {
   id: string;
@@ -19,6 +20,7 @@ export function ApproveDeviceForm({
   initialCode,
   workspaces,
 }: ApproveDeviceFormProps) {
+  const locale = useLocale();
   const [code, setCode] = useState(initialCode);
   const [workspaceId, setWorkspaceId] = useState(workspaces[0]!.id);
   const workspace = workspaces.find((w) => w.id === workspaceId)!;
@@ -48,7 +50,7 @@ export function ApproveDeviceForm({
       });
       setPaired(device.name);
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }

@@ -1,4 +1,3 @@
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,6 +24,7 @@ import {
 } from "./inspector";
 import { SlideRail } from "./slide-rail";
 import { leavesPage } from "./use-leave-guard";
+import { renderI18n } from "@/lib/i18n/test-render";
 
 const ID = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -106,7 +106,7 @@ describe("slide rail", () => {
     slide(2, { name: "Sales", widgets: [textWidget] }),
     slide(3, { enabled: false, durationSeconds: 45 }),
   ];
-  const html = renderToStaticMarkup(
+  const html = renderI18n(
     <SlideRail
       slides={slides}
       selectedSlideId={ID(3)}
@@ -137,7 +137,7 @@ describe("slide rail", () => {
   });
 
   it("never offers to delete the only slide", () => {
-    const single = renderToStaticMarkup(
+    const single = renderI18n(
       <SlideRail
         slides={[slide(2)]}
         selectedSlideId={ID(2)}
@@ -154,7 +154,7 @@ describe("slide rail", () => {
 
 describe("editor canvas", () => {
   it("puts a focusable, labelled handle on every widget", () => {
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <EditorCanvas
         slide={slide(2, { widgets: [textWidget] })}
         dashboardName="Overview"
@@ -180,7 +180,7 @@ describe("inspector", () => {
   const state = initialStudioState(dashboard);
 
   it("shows the dashboard settings as labelled controls", () => {
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <DashboardSettingsPanel
         document={{
           ...state.draft,
@@ -229,7 +229,7 @@ describe("inspector", () => {
   });
 
   it("edits a text widget's title and text", () => {
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <WidgetPanel
         widget={textWidget}
         workspaceId={ID(3)}
@@ -271,7 +271,7 @@ describe("add widget", () => {
 
   it("says why a type cannot be added yet", () => {
     const state = initialStudioState(dashboard);
-    const html = renderToStaticMarkup(
+    const html = renderI18n(
       <AddWidgetMenu
         document={state.draft}
         slide={state.draft.slides[0]!}

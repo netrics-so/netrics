@@ -2,9 +2,14 @@ import type {
   CurrencyConversion,
   MetricCurrenciesResponse,
 } from "@netrics/contracts";
-import { CURRENCY_DIMENSION, isPerCurrencyUnit } from "@netrics/domain";
+import {
+  CURRENCY_DIMENSION,
+  isPerCurrencyUnit,
+  type Locale,
+} from "@netrics/domain";
 
 import { formatValue } from "./format-metric";
+import { webTranslator } from "./i18n/catalogs";
 
 /**
  * The tile editor's currency choice for a "currency_minor" metric (ADR
@@ -56,8 +61,11 @@ export function effectiveChoice(
 }
 
 /** "EUR · €1,234.56": a currency option with its total over the period. */
-export function currencyOptionLabel(option: CurrencyTotals[number]): string {
-  return `${option.currency} · ${formatValue(option.total, `${option.currency}_minor`)}`;
+export function currencyOptionLabel(
+  option: CurrencyTotals[number],
+  locale: Locale,
+): string {
+  return `${option.currency} · ${formatValue(option.total, `${option.currency}_minor`, locale)}`;
 }
 
 /**
@@ -112,7 +120,10 @@ export function tileCurrencySummary(tile: {
  * The note under a converted value: what it is, where the rates come from,
  * and what could not be converted (shown apart, never dropped).
  */
-export function conversionNote(conversion: CurrencyConversion): {
+export function conversionNote(
+  conversion: CurrencyConversion,
+  locale: Locale,
+): {
   text: string;
   title: string;
   unconverted: string[];
@@ -123,9 +134,10 @@ export function conversionNote(conversion: CurrencyConversion): {
       "Converted with the ECB reference rate of each day (the last published one on weekends and holidays). Apple's own reports use different rates.",
     unconverted: conversion.unconverted
       .filter((entry) => entry.value !== null)
-      .map(
-        (entry) =>
-          `${formatValue(entry.value, `${entry.currency}_minor`)} not converted`,
+      .map((entry) =>
+        webTranslator(locale, "formats.metric")("notConverted", {
+          amount: formatValue(entry.value, `${entry.currency}_minor`, locale),
+        }),
       ),
   };
 }

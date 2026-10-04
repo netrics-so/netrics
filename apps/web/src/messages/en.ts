@@ -1,116 +1,45 @@
+import { accountEn } from "./account/en";
+import { apiErrorsEn } from "./api-errors/en";
+import { authEn } from "./auth/en";
+import { commonEn } from "./common/en";
+import { formatsEn } from "./formats/en";
+import { screenEn } from "./screen/en";
+import { settingsEn } from "./settings/en";
+import { studioEn } from "./studio/en";
+import { workspaceEn } from "./workspace/en";
+
 /**
  * The web app's English messages: the source catalog (ADR 0016). Every
  * other language is typed against this one. ICU MessageFormat subset:
  * `{arg}`, `{n, plural, …}`, `{x, select, …}`; see @netrics/domain i18n.
- * Group keys by area; add an area's strings when the area is translated.
+ *
+ * Each area keeps its strings in its own module (messages/<area>/en.ts and
+ * de.ts) with its own top-level groups, so areas are translated and
+ * reviewed independently; the groups of two areas never overlap (checked
+ * in lib/i18n/i18n.test.ts).
  */
+export const EN_AREAS = {
+  common: commonEn,
+  account: accountEn,
+  apiErrors: apiErrorsEn,
+  formats: formatsEn,
+  auth: authEn,
+  workspace: workspaceEn,
+  studio: studioEn,
+  settings: settingsEn,
+  screen: screenEn,
+} as const;
+
 export const en = {
-  common: {
-    save: "Save",
-    saving: "Saving…",
-    roles: {
-      owner: "owner",
-      admin: "admin",
-      editor: "editor",
-      viewer: "viewer",
-    },
-  },
-  nav: {
-    status: "Status",
-    signIn: "Sign in",
-    account: "Account",
-  },
-  account: {
-    title: "Account",
-    profile: "Profile",
-    name: "Name",
-    email: "Email",
-    memberships: "Workspace memberships",
-    noMemberships: "No memberships yet.",
-    changePassword: "Change password",
-    currentPassword: "Current password",
-    newPassword: "New password",
-    changing: "Changing…",
-    passwordChanged: "Password changed.",
-    passwordChangeFailed: "Could not change password.",
-    session: "Session",
-    signOut: "Sign out",
-    signingOut: "Signing out…",
-    language: {
-      title: "Language",
-      label: "Language",
-      automatic: "Automatic ({language})",
-      hint: "The language of netrics for you. Automatic follows this installation's default, else your browser.",
-      saved: "Language saved.",
-    },
-  },
-  workspaceSettings: {
-    screenLanguage: {
-      label: "Screen language",
-      automatic: "Installation default ({language})",
-      hint: "Kiosks and Apple TVs of this workspace show labels in this language. Each member picks their own language under Account.",
-    },
-  },
-  errors: {
-    generic: "Something went wrong. Try again.",
-  },
-  /**
-   * Screens (ADR 0016 sections 3 and 6): the browser kiosk in the
-   * workspace's screen language, the signed-in TV mode in the member's, and
-   * the widgets and tiles both draw.
-   */
-  screen: {
-    kiosk: {
-      title: "netrics kiosk",
-      connecting: "Connecting to netrics…",
-      loading: "Loading…",
-      noDashboardTitle: "No dashboard assigned yet",
-      noDashboardText:
-        "Choose one under TVs in netrics; this screen picks it up on its own.",
-      pairingPrompt: "Show a netrics dashboard on this screen",
-      pairingCode: "Pairing code",
-      pairingGoTo: "Go to {url} and enter the code.",
-      unreachable: "Cannot reach netrics — retrying",
-      offline: "Offline",
-      offlineSince: "Offline — last update {time}",
-      noSlides: "This dashboard has no slides to show.",
-      noTiles: "This dashboard has no tiles yet.",
-      tileFailed: "This tile could not load.",
-    },
-    tv: {
-      allHidden:
-        "Every slide is hidden. Show at least one slide to play this dashboard.",
-      exit: "Exit TV mode",
-    },
-    widget: {
-      approximate: "Approximate",
-      noDataYet: "No data for this period yet",
-      noDataShort: "No data yet",
-      noComparison: "No data to compare {comparison}",
-      noComparisonShort: "No comparison",
-      notEnoughData: "Not enough data for a chart yet",
-      refreshFailed: "Refresh failed",
-      couldNotLoad: "Could not load",
-      failed: "This widget could not be shown",
-      imageMissing: "Image not available",
-      offline: "Offline",
-      mayBeOutdated: "The numbers may be out of date",
-      lineSummary: "{label}: {value}.",
-      lineSummaryPrevious: "{label}: {value}, dashed line {comparison}.",
-      trend: "Trend from {min} to {max}, latest {latest}.",
-      trendAt: "Trend from {min} to {max}, latest {latest} ({date}).",
-    },
-    /** Why a tile's numbers may be out of date (#52, #59). */
-    notices: {
-      removed: "Connection removed",
-      authFailed: "Connection needs new credentials",
-      needsReconnect: "Connection needs to be reconnected",
-      outage: "Source unreachable",
-      firstSync: "Waiting for the first sync",
-      lastSync: "Last sync {time}",
-      never: "never",
-    },
-  },
+  ...commonEn,
+  ...accountEn,
+  ...apiErrorsEn,
+  ...formatsEn,
+  ...authEn,
+  ...workspaceEn,
+  ...studioEn,
+  ...settingsEn,
+  ...screenEn,
 } as const;
 
 export type WebMessages = typeof en;

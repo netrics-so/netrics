@@ -1,4 +1,5 @@
 import type { Device } from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
 
 import { relativeTime } from "./relative-time";
 
@@ -53,6 +54,7 @@ export function shortenError(
 
 export function summarizeHeartbeat(
   heartbeat: Device["heartbeat"],
+  locale: Locale,
 ): HeartbeatSummary | null {
   if (!heartbeat) {
     return null;
@@ -60,7 +62,7 @@ export function summarizeHeartbeat(
   const full = heartbeat.lastError?.trim() ? heartbeat.lastError : null;
   return {
     version: describeAppVersion(heartbeat.appVersion),
-    at: relativeTime(heartbeat.at),
+    at: relativeTime(heartbeat.at, locale),
     lastError: full === null ? null : shortenError(full),
     lastErrorFull: full,
   };

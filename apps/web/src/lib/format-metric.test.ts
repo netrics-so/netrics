@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  COMPARISON_LABELS,
-  PERIOD_LABELS,
-  aggregationLabel,
   displayUnit,
+  formatCompactValue,
   formatChange,
   formatValue,
   metricPickerLabel,
@@ -28,7 +26,7 @@ describe("formatValue", () => {
     [12, "position", "12.0"],
     [null, "visitors", "—"],
   ])("%s %s → %s", (value, unit, expected) => {
-    expect(formatValue(value, unit)).toBe(expected);
+    expect(formatValue(value, unit, "en")).toBe(expected);
   });
 });
 
@@ -46,10 +44,10 @@ describe("currency amounts in minor units", () => {
     // BHD has three decimals.
     [1_234, "BHD", "BHD\u00a01.234"],
   ])("%s %s → %s", (value, currency, expected) => {
-    expect(formatValue(value, `${currency}_minor`)).toBe(expected);
-    expect(formatValue(value, displayUnit("currency_minor", currency))).toBe(
-      expected,
-    );
+    expect(formatValue(value, `${currency}_minor`, "en")).toBe(expected);
+    expect(
+      formatValue(value, displayUnit("currency_minor", currency), "en"),
+    ).toBe(expected);
   });
 
   it("resolves a per-currency unit with the tile's currency", () => {
@@ -60,7 +58,7 @@ describe("currency amounts in minor units", () => {
   });
 
   it("shows an amount without a currency as a plain number", () => {
-    expect(formatValue(1_234, "currency_minor")).toBe("1,234");
+    expect(formatValue(1_234, "currency_minor", "en")).toBe("1,234");
   });
 
   it("formats an absolute change in the currency", () => {
@@ -114,16 +112,6 @@ describe("Search Console readings", () => {
       text: "−1.2",
     });
   });
-
-  it("names a daily gauge's aggregations by day", () => {
-    const gauge = { kind: "gauge", granularity: "day" };
-    expect(aggregationLabel("last", gauge)).toBe("Latest day");
-    expect(aggregationLabel("min", gauge)).toBe("Lowest day");
-    expect(aggregationLabel("max", gauge)).toBe("Highest day");
-    expect(aggregationLabel("sum", { kind: "delta", granularity: "day" })).toBe(
-      "Total",
-    );
-  });
 });
 
 describe("the tile metric picker", () => {
@@ -145,19 +133,25 @@ describe("the tile metric picker", () => {
 
   it("names a breakdown by its dimensions besides the resource", () => {
     expect(
-      metricPickerLabel({ name: "Clicks", dimensions: ["resource"] }),
+      metricPickerLabel({ name: "Clicks", dimensions: ["resource"] }, "en"),
     ).toBe("Clicks");
     expect(
-      metricPickerLabel({
-        name: "Clicks by breakdown",
-        dimensions: ["resource", "page", "query", "country", "device"],
-      }),
+      metricPickerLabel(
+        {
+          name: "Clicks by breakdown",
+          dimensions: ["resource", "page", "query", "country", "device"],
+        },
+        "en",
+      ),
     ).toBe("Clicks by breakdown (per page / query / country / device)");
     expect(
-      metricPickerLabel({
-        name: "Requests by route",
-        dimensions: ["resource", "route"],
-      }),
+      metricPickerLabel(
+        {
+          name: "Requests by route",
+          dimensions: ["resource", "route"],
+        },
+        "en",
+      ),
     ).toBe("Requests by route (per route)");
   });
 });
@@ -180,15 +174,6 @@ describe("observationBreakdown", () => {
   });
 });
 
-describe("period labels", () => {
-  it("names every period and what it is compared with", () => {
-    expect(PERIOD_LABELS.last_90_days).toBe("Last 90 days");
-    expect(PERIOD_LABELS.last_12_months).toBe("Last 12 months");
-    expect(COMPARISON_LABELS.last_90_days).toBe("vs previous 90 days");
-    expect(COMPARISON_LABELS.last_12_months).toBe("vs previous 12 months");
-  });
-});
-
 describe("sparkBucketLabel", () => {
   it.each([
     ["2026-09-28T12:00:00.000Z", "today", "14:00"],
@@ -199,10 +184,66 @@ describe("sparkBucketLabel", () => {
     ["2026-08-31T22:00:00.000Z", "last_12_months", "Sep 2026"],
     ["2026-09-01T00:00:00.000Z", "last_12_months", "Sep 2026"],
   ] as const)("%s in %s → %s", (bucket, period, expected) => {
-    expect(sparkBucketLabel(bucket, period, "Europe/Berlin")).toBe(expected);
+    expect(sparkBucketLabel(bucket, period, "Europe/Berlin", "en")).toBe(
+      expected,
+    );
   });
 
   it("has no label without a bucket", () => {
-    expect(sparkBucketLabel(undefined, "last_90_days", "UTC")).toBeNull();
+    expect(sparkBucketLabel(undefined, "last_90_days", "UTC", "en")).toBeNull();
+  });
+});
+
+describe("German formatting", () => {
+  it.each([
+    [1284, "signups", "1.284"],
+    [12.25, "seconds", "12,25"],
+    [12_900, "visitors", "12,9\u00a0Tsd."],
+    [4_200_000, "visitors", "4,2\u00a0Mio."],
+    [999_950, "visitors", "1\u00a0Mio."],
+    [123_456, "EUR_minor", "1.234,56\u00a0€"],
+    [420_000_000, "USD_minor", "4,2\u00a0Mio.\u00a0$"],
+    [42.25, "percent", "42,3%"],
+    [0.0353, "ratio", "3,53%"],
+    [4.5, "position", "4,5"],
+  ])("%s %s → %s", (value, unit, expected) => {
+    expect(formatValue(value, unit, "de")).toBe(expected);
+  });
+
+  it("compacts narrow values with the layout's suffixes", () => {
+    // Widgets measure the shared compact text (studio vectors), so narrow
+    // values keep K/M and only take the language's decimal separator.
+    expect(formatCompactValue(12_345, "visitors", "de")).toBe("12,3K");
+    expect(formatCompactValue(12_345, "visitors", "en")).toBe("12.3K");
+  });
+
+  it("formats changes and labels", () => {
+    expect(formatChange(-3, -0.034, "signups", "higher", "de")?.text).toBe(
+      "−3,4%",
+    );
+    expect(
+      sparkBucketLabel(
+        "2026-09-28T00:00:00.000Z",
+        "last_90_days",
+        "Europe/Berlin",
+        "de",
+      ),
+    ).toBe("Woche vom 28. Sept.");
+    expect(
+      metricPickerLabel(
+        { name: "Klicks", dimensions: ["resource", "page"] },
+        "de",
+      ),
+    ).toBe("Klicks (pro page)");
+    expect(
+      metricPickerLabel(
+        {
+          name: "Klicks",
+          dimensions: ["resource", "page", "query"],
+          dimensionNames: { page: "Seite", query: "Suchanfrage" },
+        },
+        "de",
+      ),
+    ).toBe("Klicks (pro Seite / Suchanfrage)");
   });
 });

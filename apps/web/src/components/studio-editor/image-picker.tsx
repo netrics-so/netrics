@@ -13,12 +13,14 @@ import {
   type ResourceIconSource,
   type WorkspaceImage,
 } from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
 
 import {
   apiErrorMessage,
   fetchResourceIcon,
   listResourceIcons,
 } from "@/lib/api";
+import { useLocale } from "@/lib/i18n/client";
 
 /** A workspace image as the pickers list it. */
 export interface PickableImage {
@@ -100,6 +102,7 @@ export function useResourceIcons(
 
 async function storeIconOf(
   source: ResourceIconSource,
+  locale: Locale,
 ): Promise<{ imageId: string } | { problem: string }> {
   const { workspaceId, onImage } = iconsState;
   if (!workspaceId) return { problem: "The studio is not open." };
@@ -112,7 +115,7 @@ async function storeIconOf(
     onImage?.(image);
     return { imageId: image.id };
   } catch (cause) {
-    return { problem: apiErrorMessage(cause) };
+    return { problem: apiErrorMessage(cause, locale) };
   }
 }
 
@@ -130,6 +133,7 @@ function AppIconChooser({
   onChange: (imageId: string) => void;
   disabled: boolean;
 }) {
+  const locale = useLocale();
   const icons = useSyncExternalStore(
     subscribeIcons,
     () => iconsState,
@@ -171,7 +175,7 @@ function AppIconChooser({
           if (!chosen) return;
           setBusy(true);
           setProblem(null);
-          void storeIconOf(chosen)
+          void storeIconOf(chosen, locale)
             .then((result) => {
               if ("imageId" in result) onChange(result.imageId);
               else setProblem(result.problem);

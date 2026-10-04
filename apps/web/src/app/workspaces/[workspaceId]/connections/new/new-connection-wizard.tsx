@@ -36,6 +36,7 @@ import {
   missingKeyField,
   signedKeyStrategyOf,
 } from "@/lib/signed-key";
+import { useLocale } from "@/lib/i18n/client";
 
 interface NewConnectionWizardProps {
   workspaceId: string;
@@ -46,6 +47,7 @@ export function NewConnectionWizard({
   workspaceId,
   connectors,
 }: NewConnectionWizardProps) {
+  const locale = useLocale();
   const router = useRouter();
   const [connector, setConnector] = useState<ConnectorCatalogEntry | null>(
     null,
@@ -164,7 +166,7 @@ export function NewConnectionWizard({
       }
     } catch (cause) {
       setPreview(null);
-      showFailure(apiErrorMessage(cause));
+      showFailure(apiErrorMessage(cause, locale));
     } finally {
       setPending(null);
     }
@@ -197,7 +199,7 @@ export function NewConnectionWizard({
       });
       router.push(`/workspaces/${workspaceId}/connections/${connection.id}`);
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
       setPending(null);
     }
   }

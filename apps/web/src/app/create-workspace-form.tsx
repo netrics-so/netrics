@@ -4,8 +4,10 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { apiErrorMessage, createWorkspace } from "@/lib/api";
+import { useLocale } from "@/lib/i18n/client";
 
 export function CreateWorkspaceForm() {
+  const locale = useLocale();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -28,7 +30,7 @@ export function CreateWorkspaceForm() {
       );
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
       setPending(false);
     }
   }

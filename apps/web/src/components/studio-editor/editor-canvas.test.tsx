@@ -1,4 +1,3 @@
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { DashboardSettings, DashboardWidget } from "@netrics/contracts";
@@ -14,6 +13,7 @@ import {
   dragOutline,
   type CanvasDrag,
 } from "./editor-canvas";
+import { renderI18n } from "@/lib/i18n/test-render";
 
 const ID = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -68,7 +68,7 @@ function render(
   selectedWidgetId: string | null,
   initialDrag: CanvasDrag | null = null,
 ) {
-  return renderToStaticMarkup(
+  return renderI18n(
     <EditorCanvas
       slide={slide}
       dashboardName="Overview"

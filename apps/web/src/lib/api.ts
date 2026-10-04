@@ -136,9 +136,10 @@ import {
   type ThemeResponse,
   type UpdateThemeRequest,
 } from "@netrics/contracts";
-import type { Locale } from "@netrics/domain";
+import type { Locale, MessageKey } from "@netrics/domain";
 
 import { apiFetch } from "./api-fetch";
+import { webTranslator, type WebMessages } from "./i18n/catalogs";
 import { toStudioImage, type StudioImage } from "./studio-widgets";
 
 /**
@@ -158,145 +159,48 @@ export class ApiError extends Error {
   }
 }
 
-export function apiErrorMessage(error: unknown): string {
+/** API error codes that share one message. */
+const API_ERROR_ALIASES: Readonly<Record<string, ApiErrorKey>> = {
+  workspace_not_found: "record_not_found",
+  member_not_found: "record_not_found",
+  project_not_found: "record_not_found",
+  connection_not_found: "record_not_found",
+  image_type_mismatch: "image_invalid",
+  unsupported_media_type: "image_invalid",
+  tile_metric_not_found: "metric_not_found",
+};
+
+type ApiErrorKey = MessageKey<WebMessages["apiErrors"]>;
+
+/**
+ * An error for the user, in their language: API error codes are worded
+ * from the catalog (ADR 0016 section 5; the API returns codes, not prose).
+ */
+export function apiErrorMessage(error: unknown, locale: Locale): string {
+  const t = webTranslator(locale, "apiErrors");
   if (error instanceof ApiError) {
-    switch (error.code) {
-      case "last_owner":
-        return "The last owner of a workspace cannot be demoted or removed.";
-      case "membership_exists":
-        return "That person is already a member of this workspace.";
-      case "email_delivery_failed":
-        return "The invitation email could not be sent. Try again later.";
-      case "invitation_not_found":
-        return "This invitation link is not valid.";
-      case "invitation_revoked":
-        return "This invitation was withdrawn. Ask for a new one.";
-      case "invitation_used":
-        return "This invitation has already been used.";
-      case "invitation_expired":
-        return "This invitation has expired. Ask for a new one.";
-      case "invitation_email_mismatch":
-        return "This invitation is for a different email address.";
-      case "workspace_already_exists":
-        return "A workspace already exists for this installation.";
-      case "forbidden":
-        return "Your role does not allow this action.";
-      case "unauthorized":
-        return "Your session has expired — sign in again.";
-      case "workspace_not_found":
-      case "member_not_found":
-      case "project_not_found":
-      case "connection_not_found":
-        return "That record no longer exists.";
-      case "invalid_request":
-        return "The request was invalid — check your input.";
-      case "payload_too_large":
-        return "The request was too large to send.";
-      case "version_conflict":
-        return "Someone else saved this dashboard in the meantime. Reload to see their changes, then edit again.";
-      case "studio_dashboard":
-        return "This dashboard now has slides or widgets that the tile editor cannot keep. Reload it before editing.";
-      case "dashboard_not_found":
-        return "This dashboard no longer exists.";
-      case "theme_not_found":
-        return "That theme no longer exists.";
-      case "theme_name_taken":
-        return "A theme with that name already exists in this workspace.";
-      case "contrast_too_low":
-        return "Some text would be too hard to read on a TV: every text colour needs at least 3:1 contrast against its background.";
-      case "theme_in_use": {
-        const names = error.details.dashboards?.map((d) => d.name) ?? [];
-        return names.length > 0
-          ? `Dashboards still use this theme: ${names.join(", ")}. Pick another theme for them first.`
-          : "Dashboards still use this theme. Pick another theme for them first.";
+    const code = API_ERROR_ALIASES[error.code] ?? error.code;
+    if (code === "theme_in_use" || code === "image_in_use") {
+      const names = error.details.dashboards?.map((d) => d.name) ?? [];
+      if (names.length > 0) {
+        return t(`${code}_by`, {
+          names: new Intl.ListFormat(locale, { type: "conjunction" }).format(
+            names,
+          ),
+        });
       }
-      case "widget_out_of_bounds":
-        return "A widget lies outside its slide's grid.";
-      case "widget_too_small":
-        return "A widget is smaller than its type allows.";
-      case "widgets_overlap":
-        return "Two widgets on a slide overlap.";
-      case "too_many_data_widgets":
-        return "A dashboard shows at most 48 data widgets.";
-      case "unknown_resource":
-        return "A widget shows an app or project its connection no longer has.";
-      case "image_not_found":
-        return "An image this dashboard uses no longer exists.";
-      case "image_in_use": {
-        const names = error.details.dashboards?.map((d) => d.name) ?? [];
-        return names.length > 0
-          ? `Dashboards still use this image: ${names.join(", ")}. Remove it from them first.`
-          : "Dashboards still use this image.";
-      }
-      case "image_too_large":
-        return "That image is larger than 1 MiB. Export it smaller and try again.";
-      case "image_dimensions_too_large":
-        return "That image is too large: at most 4096 pixels per side.";
-      case "image_animated":
-        return "Animated images are not supported. Use a still PNG, JPEG or WebP.";
-      case "image_type_mismatch":
-      case "image_invalid":
-      case "unsupported_media_type":
-        return "That file is not a PNG, JPEG or WebP image.";
-      case "image_quota_exceeded":
-        return "This workspace has no room for more images. Delete some first.";
-      case "resource_icon_not_found":
-        return "The App Store does not list this app (yet), so it has no icon to use. Upload one instead.";
-      case "resource_icon_unavailable":
-        return "The app icon could not be fetched right now. Try again later, or upload one.";
-      case "resource_icons_unsupported":
-        return "This connection has no icons to offer. Upload an image instead.";
-      case "resource_not_found":
-        return "That app or project is no longer part of its connection.";
-      case "none_connected":
-        return "Connect a source first: the Overview shows the numbers of your connections.";
-      case "template_unsupported":
-        return "There is no Brand template for this connection yet.";
-      case "device_not_found":
-        return "That TV no longer exists.";
-      case "pairing_not_found":
-        return "That code is not valid. Check the code on the TV; codes expire after 10 minutes, so the TV may show a new one.";
-      case "too_many_attempts":
-        return "Too many wrong codes. Wait 15 minutes, then try again.";
-      case "tile_metric_not_found":
-      case "metric_not_found":
-        return "A tile's metric is no longer available from its connection.";
-      case "aggregation_not_supported":
-        return "That aggregation does not fit the metric.";
-      case "currency_required":
-        return "Pick a currency for this amount: amounts in different currencies are not added up.";
-      case "metric_not_per_currency":
-        return "This metric is not an amount in several currencies.";
-      case "currency_choice_conflict":
-        return "A tile shows one currency exactly or converts into a display currency, not both.";
-      case "currency_not_covered":
-        return "The ECB publishes no reference rate for that currency. Pick EUR or another listed currency.";
-      case "currency_conversion_off":
-        return "This instance does not fetch exchange rates, so amounts stay per currency.";
-      case "unknown_dimension":
-        return "A tile filters on a dimension the metric does not have.";
-      case "oauth_reauthorization_required":
-        return "The authorization at the provider stopped working. Reconnect it from the connection page.";
-      case "connection_setup_pending":
-        return "Finish setting up this connection first.";
-      case "connector_unavailable":
-        return "This connector is not available on this instance.";
-      case "connection_busy":
-        return "The connection is changing right now. Try again in a moment.";
-      case "analytics_unsupported":
-        return "App Store analytics are only available for App Store Connect connections with an uploaded key.";
-      default:
-        // Connector check/preview failures arrive as human-readable,
-        // already-redacted messages rather than snake_case codes.
-        return /^[a-z_]+$/.test(error.code)
-          ? `Request failed (${error.code}).`
-          : error.code;
     }
+    if (/^[a-z_]+$/.test(code)) {
+      return t.has(code) ? t(code) : t("requestFailed", { code });
+    }
+    // Connector check/preview failures arrive as human-readable,
+    // already-redacted messages rather than snake_case codes.
+    return error.code;
   }
   if (error instanceof ZodError) {
-    return "Check your input — a field is missing or invalid.";
+    return t("invalidInput");
   }
-  return error instanceof Error ? error.message : "Something went wrong.";
+  return error instanceof Error ? error.message : t("generic");
 }
 
 async function readErrorCode(response: Response): Promise<string> {

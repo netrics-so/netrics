@@ -7,6 +7,7 @@ import type { BuiltinThemeKey } from "@netrics/domain";
 
 import { apiErrorMessage, createTheme } from "@/lib/api";
 import { copyName } from "@/lib/theme-name";
+import { useLocale } from "@/lib/i18n/client";
 
 export function CopyBuiltinButton({
   workspaceId,
@@ -19,6 +20,7 @@ export function CopyBuiltinButton({
   baseName: string;
   takenNames: string[];
 }) {
+  const locale = useLocale();
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +35,7 @@ export function CopyBuiltinButton({
       });
       router.push(`/workspaces/${workspaceId}/settings/themes/${theme.id}`);
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
       setPending(false);
     }
   }

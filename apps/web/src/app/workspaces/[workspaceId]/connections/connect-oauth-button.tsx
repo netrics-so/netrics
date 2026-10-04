@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { apiErrorMessage, startOAuthAuthorization } from "@/lib/api";
 import { providerName } from "@/lib/oauth-connection";
+import { useLocale } from "@/lib/i18n/client";
 
 interface ConnectOAuthButtonProps {
   workspaceId: string;
@@ -32,6 +33,7 @@ export function ConnectOAuthButton({
   offerAccountChange = false,
   primary = true,
 }: ConnectOAuthButtonProps) {
+  const locale = useLocale();
   const name = providerName(provider);
   const [otherAccount, setOtherAccount] = useState(false);
   const [pending, setPending] = useState(false);
@@ -49,7 +51,7 @@ export function ConnectOAuthButton({
       });
       window.location.assign(authorizationUrl);
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
       setPending(false);
     }
   }

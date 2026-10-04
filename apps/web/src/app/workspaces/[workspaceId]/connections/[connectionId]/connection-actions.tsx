@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { disconnectQuery, providerName } from "@/lib/oauth-connection";
 import { keyRemovedQuery } from "@/lib/signed-key";
+import { useLocale } from "@/lib/i18n/client";
 
 interface ConnectionActionsProps {
   workspaceId: string;
@@ -39,6 +40,7 @@ export function ConnectionActions({
   canUpdate,
   canDelete,
 }: ConnectionActionsProps) {
+  const locale = useLocale();
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -54,7 +56,7 @@ export function ConnectionActions({
       setNotice("Sync queued — it will run on the next worker pass.");
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }
@@ -76,7 +78,7 @@ export function ConnectionActions({
             : `/workspaces/${workspaceId}`,
       );
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
       setPending(false);
     }
   }

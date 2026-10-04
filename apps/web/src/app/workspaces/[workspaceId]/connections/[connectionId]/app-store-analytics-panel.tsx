@@ -27,6 +27,7 @@ import {
   missingKeyField,
   type SignedKeyStrategy,
 } from "@/lib/signed-key";
+import { useLocale } from "@/lib/i18n/client";
 
 interface AppStoreAnalyticsPanelProps {
   workspaceId: string;
@@ -59,6 +60,7 @@ export function AppStoreAnalyticsPanel({
   canUpdate,
   authFailed,
 }: AppStoreAnalyticsPanelProps) {
+  const locale = useLocale();
   const initialValues = useCallback(
     () => ({
       ...emptyKeyValues(strategy),
@@ -89,7 +91,7 @@ export function AppStoreAnalyticsPanel({
     try {
       setStatus(await getAppStoreAnalytics(workspaceId, connectionId));
     } catch (cause) {
-      setLoadError(apiErrorMessage(cause));
+      setLoadError(apiErrorMessage(cause, locale));
     } finally {
       setLoading(false);
     }
@@ -134,7 +136,7 @@ export function AppStoreAnalyticsPanel({
       close();
       await load();
     } catch (cause) {
-      const message = apiErrorMessage(cause);
+      const message = apiErrorMessage(cause, locale);
       const field = fieldOfMessage(message, strategy.fields);
       if (field) {
         setFieldErrors({ [field]: message });

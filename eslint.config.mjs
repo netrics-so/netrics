@@ -72,10 +72,11 @@ function webApiFetchRestrictions() {
 
 /**
  * Web files whose user-facing text comes from the message catalogs (ADR
- * 0016). Each area issue adds its directories; the last one replaces the
- * list with all of apps/web/src.
+ * 0016 section 9). Each area keeps its own list, so the area changes do not
+ * touch the same lines; the last area replaces them with all of
+ * apps/web/src.
  */
-export const I18N_FILES = [
+const I18N_FOUNDATION = [
   "apps/web/src/app/layout.tsx",
   "apps/web/src/components/nav.tsx",
   "apps/web/src/app/settings/account/**/*.tsx",
@@ -87,6 +88,26 @@ export const I18N_FILES = [
   "apps/web/src/components/tile-view.tsx",
   "apps/web/src/components/sparkline.tsx",
   "apps/web/src/components/studio/**/*.tsx",
+];
+
+// Auth and onboarding (#251).
+const I18N_AUTH = [];
+
+// Workspace overview, projects, connections and devices (#252).
+const I18N_WORKSPACE = [];
+
+// Dashboards, the web TV layout and the Studio (#253).
+const I18N_STUDIO = [];
+
+// Settings, themes, status, deploy notice and error pages (#254).
+const I18N_SETTINGS = [];
+
+export const I18N_FILES = [
+  ...I18N_FOUNDATION,
+  ...I18N_AUTH,
+  ...I18N_WORKSPACE,
+  ...I18N_STUDIO,
+  ...I18N_SETTINGS,
 ];
 
 function i18nRestrictions() {

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
 
 import { apiErrorMessage, setWorkspaceTimeZone } from "@/lib/api";
+import { useLocale } from "@/lib/i18n/client";
 
 /** "Today" and daily numbers on dashboards follow this zone. */
 export function TimeZoneForm({
@@ -13,6 +14,7 @@ export function TimeZoneForm({
   workspaceId: string;
   currentTimeZone: string;
 }) {
+  const locale = useLocale();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -33,7 +35,7 @@ export function TimeZoneForm({
       );
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }

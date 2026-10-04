@@ -18,6 +18,7 @@ import {
 import { metricIdOf } from "@/lib/studio-inspector";
 import { needsCurrency, type CurrencyTotals } from "@/lib/tile-currency";
 import { hasResources, type TileResources } from "@/lib/tile-resource";
+import { useLocale } from "@/lib/i18n/client";
 
 // What the inspector offers for a data widget's binding, loaded from the
 // metric routes: resources with their names (#194), currencies with their
@@ -38,6 +39,7 @@ function useLoaded<T>(
   key: string,
   load: () => Promise<T>,
 ): { value: T | null; error: string | null; loading: boolean } {
+  const locale = useLocale();
   const [state, setState] = useState<Loaded<T>>({
     key: "",
     value: null,
@@ -52,7 +54,7 @@ function useLoaded<T>(
       })
       .catch((cause: unknown) => {
         if (current) {
-          setState({ key, value: null, error: apiErrorMessage(cause) });
+          setState({ key, value: null, error: apiErrorMessage(cause, locale) });
         }
       });
     return () => {
