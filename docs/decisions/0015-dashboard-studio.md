@@ -465,7 +465,8 @@ both test suites run, so the web and tvOS place and size text identically.
   colours from the theme's `warning` token.
 - **Motion.** Fade transitions last 400 ms. With Reduce Motion (tvOS) or
   `prefers-reduced-motion` (web) slides switch without animation. Nothing
-  else animates.
+  else animates. Amended by [ADR 0018](./0018-signal-design.md) §6: slide enter
+  motion, a last-point pulse, a stale blink and a skeleton sweep.
 
 ### 9. Editor ("Studio")
 
