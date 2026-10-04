@@ -3,8 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_ERROR_DISPLAY_LENGTH,
   describeAppVersion,
+  isAppleTv,
+  rotationKey,
   shortenError,
   summarizeHeartbeat,
+  summarizeScreen,
 } from "./device-heartbeat";
 
 const NOW = Date.parse("2026-10-02T12:00:00.000Z");
@@ -128,5 +131,65 @@ describe("summarizeHeartbeat", () => {
         "de",
       )?.at,
     ).toBe("vor 2 Minuten");
+  });
+});
+
+describe("isAppleTv", () => {
+  const beat = (appVersion: string) => ({
+    at: "2026-10-02T11:58:00.000Z",
+    appVersion,
+    uptimeSeconds: 1,
+    lastError: null,
+  });
+
+  it("recognises the Apple TV app by its tvos prefix", () => {
+    expect(isAppleTv(beat("tvos 1.4 (12)"))).toBe(true);
+    expect(isAppleTv(beat("TVOS"))).toBe(true);
+  });
+
+  it("treats kiosks, other apps and silent devices as not Apple TV", () => {
+    expect(isAppleTv(beat("web 0.1.0"))).toBe(false);
+    expect(isAppleTv(beat("tvosx 1.0"))).toBe(false);
+    expect(isAppleTv(null)).toBe(false);
+  });
+});
+
+describe("rotationKey", () => {
+  it("names each rotation's message", () => {
+    expect([0, 90, 180, 270].map((r) => rotationKey(r as 0))).toEqual([
+      "r0",
+      "r90",
+      "r180",
+      "r270",
+    ]);
+  });
+});
+
+describe("summarizeScreen", () => {
+  it("is null until a device reports its screen", () => {
+    expect(summarizeScreen(null)).toBeNull();
+  });
+
+  it("gives the sides unformatted and the format as a ratio", () => {
+    expect(
+      summarizeScreen({
+        width: 3840,
+        height: 2160,
+        scale: 1,
+        format: "16x9",
+        mode: "screen",
+      }),
+    ).toEqual({
+      width: "3840",
+      height: "2160",
+      format: "16:9",
+      mode: "screen",
+    });
+  });
+
+  it("leaves the format out when the device sent none", () => {
+    expect(
+      summarizeScreen({ width: 1080, height: 1920, scale: 2, mode: "scroll" }),
+    ).toEqual({ width: "1080", height: "1920", format: null, mode: "scroll" });
   });
 });

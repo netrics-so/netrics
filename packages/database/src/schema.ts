@@ -785,6 +785,11 @@ export const dashboards = pgTable(
     accentColor: text("accent_color"),
     /** Shown in the header before the name (#217). */
     logoImageId: uuid("logo_image_id"),
+    /**
+     * The format the widgets' x, y, w, h are designed in (ADR 0017 section
+     * 4); every other format is auto or a custom layout.
+     */
+    primaryFormat: text("primary_format").notNull().default("16x9"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -836,6 +841,10 @@ export const dashboards = pgTable(
       foreignColumns: [workspaceImages.id, workspaceImages.workspaceId],
     }),
     index("dashboards_logo_image_idx").on(table.logoImageId),
+    check(
+      "dashboards_primary_format_valid",
+      sql`${table.primaryFormat} in ('16x9', '21x9', '4x3', '3x4', '9x16')`,
+    ),
   ],
 );
 
@@ -942,6 +951,12 @@ export const dashboardWidgets = pgTable(
       columns: [table.connectionId, table.workspaceId],
       foreignColumns: [connections.id, connections.workspaceId],
     }).onDelete("cascade"),
+    // Custom layouts reference a widget together with its slide (#275).
+    unique("dashboard_widgets_id_slide_workspace_unique").on(
+      table.id,
+      table.slideId,
+      table.workspaceId,
+    ),
     index("dashboard_widgets_slide_idx").on(table.slideId),
     index("dashboard_widgets_dashboard_idx").on(table.dashboardId),
     index("dashboard_widgets_connection_idx").on(table.connectionId),
@@ -960,9 +975,11 @@ export const dashboardWidgets = pgTable(
       "dashboard_widgets_image_valid",
       sql`(${table.imageId} is not null) = (${table.type} = 'image')`,
     ),
+    // The largest grid of any format (ADR 0017 section 8); the service
+    // checks the exact grid of the dashboard's primary format.
     check(
       "dashboard_widgets_grid_valid",
-      sql`${table.x} >= 0 and ${table.y} >= 0 and ${table.w} >= 1 and ${table.h} >= 1 and ${table.x} + ${table.w} <= 12 and ${table.y} + ${table.h} <= 8`,
+      sql`${table.x} >= 0 and ${table.y} >= 0 and ${table.w} >= 1 and ${table.h} >= 1 and ${table.x} + ${table.w} <= 16 and ${table.y} + ${table.h} <= 14`,
     ),
     check(
       "dashboard_widgets_title_valid",
@@ -984,6 +1001,117 @@ export const dashboardWidgets = pgTable(
     check(
       "dashboard_widgets_type_columns",
       sql`case when ${table.type} in ('metric', 'line', 'bar') then ${table.connectionId} is not null and ${table.metricKey} is not null and ${table.aggregation} is not null and ${table.period} is not null and ${table.text} is null else ${table.connectionId} is null and ${table.metricKey} is null and ${table.aggregation} is null and ${table.period} is null and ${table.displayCurrency} is null and ${table.dimensions} = '{}'::jsonb and (${table.text} is not null) = (${table.type} = 'text') end`,
+    ),
+  ],
+);
+
+// Custom layouts (ADR 0017 sections 4 and 8): per slide and non-primary
+// format, either auto (no rows, computed by reflowSlide) or custom (one
+// slide layout row and one placement per widget of the slide). Composite
+// foreign keys keep a layout on a slide of its own dashboard and workspace,
+// and every placement on a widget of that slide; both go with the slide,
+// the widget or the layout (cascade).
+export const dashboardSlideLayouts = pgTable(
+  "dashboard_slide_layouts",
+  {
+    slideId: uuid("slide_id").notNull(),
+    format: text("format").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    dashboardId: uuid("dashboard_id").notNull(),
+    /** Continuation pages included, 1–8. */
+    pages: smallint("pages").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: "dashboard_slide_layouts_pk",
+      columns: [table.slideId, table.format],
+    }),
+    unique("dashboard_slide_layouts_slide_format_workspace_unique").on(
+      table.slideId,
+      table.format,
+      table.workspaceId,
+    ),
+    foreignKey({
+      name: "dashboard_slide_layouts_slide_fk",
+      columns: [table.slideId, table.dashboardId, table.workspaceId],
+      foreignColumns: [
+        dashboardSlides.id,
+        dashboardSlides.dashboardId,
+        dashboardSlides.workspaceId,
+      ],
+    }).onDelete("cascade"),
+    index("dashboard_slide_layouts_workspace_idx").on(table.workspaceId),
+    index("dashboard_slide_layouts_dashboard_idx").on(table.dashboardId),
+    check(
+      "dashboard_slide_layouts_format_valid",
+      sql`${table.format} in ('16x9', '21x9', '4x3', '3x4', '9x16')`,
+    ),
+    check(
+      "dashboard_slide_layouts_pages_valid",
+      sql`${table.pages} between 1 and 8`,
+    ),
+  ],
+);
+
+export const dashboardWidgetLayouts = pgTable(
+  "dashboard_widget_layouts",
+  {
+    widgetId: uuid("widget_id").notNull(),
+    format: text("format").notNull(),
+    slideId: uuid("slide_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    /** 0-based page of the slide in this format. */
+    page: smallint("page").notNull(),
+    x: smallint("x").notNull(),
+    y: smallint("y").notNull(),
+    w: smallint("w").notNull(),
+    h: smallint("h").notNull(),
+    /** Hidden in this format: an explicit choice, never a silent drop. */
+    hidden: boolean("hidden").notNull().default(false),
+    /** Placed by the server after a primary edit; for the user to review. */
+    autoPlaced: boolean("auto_placed").notNull().default(false),
+  },
+  (table) => [
+    primaryKey({
+      name: "dashboard_widget_layouts_pk",
+      columns: [table.widgetId, table.format],
+    }),
+    foreignKey({
+      name: "dashboard_widget_layouts_widget_fk",
+      columns: [table.widgetId, table.slideId, table.workspaceId],
+      foreignColumns: [
+        dashboardWidgets.id,
+        dashboardWidgets.slideId,
+        dashboardWidgets.workspaceId,
+      ],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "dashboard_widget_layouts_layout_fk",
+      columns: [table.slideId, table.format, table.workspaceId],
+      foreignColumns: [
+        dashboardSlideLayouts.slideId,
+        dashboardSlideLayouts.format,
+        dashboardSlideLayouts.workspaceId,
+      ],
+    }).onDelete("cascade"),
+    index("dashboard_widget_layouts_workspace_idx").on(table.workspaceId),
+    index("dashboard_widget_layouts_layout_idx").on(
+      table.slideId,
+      table.format,
+    ),
+    check(
+      "dashboard_widget_layouts_page_valid",
+      sql`${table.page} between 0 and 7`,
+    ),
+    check(
+      "dashboard_widget_layouts_grid_valid",
+      sql`${table.x} >= 0 and ${table.y} >= 0 and ${table.w} >= 1 and ${table.h} >= 1 and ${table.x} + ${table.w} <= 16 and ${table.y} + ${table.h} <= 14`,
     ),
   ],
 );
@@ -1039,6 +1167,15 @@ export const dashboardTiles = pgTable(
 
 // A paired screen (ADR 0011). Workspace table under RLS; its credentials are
 // principal_tokens rows of kind "device".
+/** `devices.screen` as stored: a heartbeat's validated `screen` object. */
+export interface DeviceScreenColumn {
+  width: number;
+  height: number;
+  scale: number;
+  format?: string;
+  mode: string;
+}
+
 export const devices = pgTable(
   "devices",
   {
@@ -1064,10 +1201,30 @@ export const devices = pgTable(
     uptimeSeconds: integer("uptime_seconds"),
     lastError: text("last_error"),
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+    // Screen settings (ADR 0017 section 7, #276): the whole rendering turns
+    // by this many degrees (an Apple TV cannot know its TV is mounted on
+    // its side), and the display mode a browser kiosk uses.
+    rotation: smallint("rotation").notNull().default(0),
+    displayMode: text("display_mode").notNull().default("screen"),
+    // The screen the device last reported in a heartbeat (validated by the
+    // contracts' deviceScreenSchema before it is stored); null until then.
+    screen: jsonb("screen").$type<DeviceScreenColumn>(),
   },
   (table) => [
     unique("devices_id_workspace_unique").on(table.id, table.workspaceId),
     index("devices_workspace_idx").on(table.workspaceId),
+    check(
+      "devices_rotation_valid",
+      sql`${table.rotation} in (0, 90, 180, 270)`,
+    ),
+    check(
+      "devices_display_mode_valid",
+      sql`${table.displayMode} in ('screen', 'scroll')`,
+    ),
+    check(
+      "devices_screen_object",
+      sql`${table.screen} is null or jsonb_typeof(${table.screen}) = 'object'`,
+    ),
   ],
 );
 

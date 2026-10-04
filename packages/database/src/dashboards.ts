@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
@@ -12,9 +14,31 @@ export type DashboardRow = typeof schema.dashboards.$inferSelect;
 export type DashboardSlideRow = typeof schema.dashboardSlides.$inferSelect;
 export type DashboardWidgetRow = typeof schema.dashboardWidgets.$inferSelect;
 
+/** A widget's place in a custom layout (ADR 0017 section 4). */
+export interface LayoutPlacement {
+  widgetId: string;
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  hidden: boolean;
+  autoPlaced: boolean;
+}
+
+/** A custom layout of one slide in one (non-primary) format. */
+export interface SlideLayout {
+  format: string;
+  pages: number;
+  /** One per widget of the slide, in the slide's widget order. */
+  placements: LayoutPlacement[];
+}
+
 export interface DashboardSlide extends DashboardSlideRow {
   /** In reading order: top to bottom, then left to right. */
   widgets: DashboardWidgetRow[];
+  /** Custom formats only, by format key; formats not listed are auto. */
+  layouts: SlideLayout[];
 }
 
 export interface Dashboard extends DashboardRow {
@@ -70,6 +94,16 @@ export interface WidgetInput {
   options: Record<string, unknown>;
 }
 
+/**
+ * A custom layout to store: placements name widgets by their index in the
+ * slide's `widgets`, so new widgets (no id yet) can be placed too.
+ */
+export interface SlideLayoutInput {
+  format: string;
+  pages: number;
+  placements: Array<Omit<LayoutPlacement, "widgetId"> & { widget: number }>;
+}
+
 export interface SlideInput {
   /** Kept when it is a slide of this dashboard; otherwise a new id. */
   id?: string | null;
@@ -80,6 +114,8 @@ export interface SlideInput {
   backgroundImageId: string | null;
   backgroundDim: number;
   widgets: WidgetInput[];
+  /** Custom layouts (ADR 0017); missing or empty: every format is auto. */
+  layouts?: SlideLayoutInput[];
 }
 
 export interface DashboardInput {
@@ -87,6 +123,8 @@ export interface DashboardInput {
   projectId: string | null;
   /** Missing fields: the defaults on insert, unchanged on replace. */
   settings?: Partial<DashboardSettings>;
+  /** The format widgets are placed in; missing: 16x9 on insert, unchanged on replace. */
+  primaryFormat?: string;
   slides: SlideInput[];
 }
 
@@ -179,10 +217,107 @@ async function loadSlides(
       asc(schema.dashboardWidgets.x),
       asc(schema.dashboardWidgets.id),
     );
-  return slides.map((slide) => ({
-    ...slide,
-    widgets: widgets.filter((widget) => widget.slideId === slide.id),
-  }));
+  const layouts = await loadLayouts(
+    tx,
+    workspaceId,
+    dashboardId,
+    slides.map((slide) => slide.id),
+  );
+  return slides.map((slide) => {
+    const own = widgets.filter((widget) => widget.slideId === slide.id);
+    return {
+      ...slide,
+      widgets: own,
+      layouts: (layouts.get(slide.id) ?? []).map(
+        ({ format, pages, byWidget }) => ({
+          format,
+          pages,
+          // In the slide's widget order, like the widgets themselves.
+          placements: own.flatMap((widget) => {
+            const placement = byWidget.get(widget.id);
+            return placement ? [placement] : [];
+          }),
+        }),
+      ),
+    };
+  });
+}
+
+/** Formats in their fixed order (ADR 0017 section 1), for stable output. */
+const FORMAT_ORDER = ["16x9", "21x9", "4x3", "3x4", "9x16"];
+
+/** The custom layouts of the given slides, by slide id. */
+async function loadLayouts(
+  tx: Transaction,
+  workspaceId: string,
+  dashboardId: string,
+  slideIds: readonly string[],
+): Promise<
+  Map<
+    string,
+    Array<{
+      format: string;
+      pages: number;
+      byWidget: Map<string, LayoutPlacement>;
+    }>
+  >
+> {
+  const result = new Map<
+    string,
+    Array<{
+      format: string;
+      pages: number;
+      byWidget: Map<string, LayoutPlacement>;
+    }>
+  >();
+  if (slideIds.length === 0) {
+    return result;
+  }
+  const layouts = await tx
+    .select()
+    .from(schema.dashboardSlideLayouts)
+    .where(
+      and(
+        eq(schema.dashboardSlideLayouts.workspaceId, workspaceId),
+        eq(schema.dashboardSlideLayouts.dashboardId, dashboardId),
+      ),
+    );
+  if (layouts.length === 0) {
+    return result;
+  }
+  const placements = await tx
+    .select()
+    .from(schema.dashboardWidgetLayouts)
+    .where(
+      and(
+        eq(schema.dashboardWidgetLayouts.workspaceId, workspaceId),
+        inArray(schema.dashboardWidgetLayouts.slideId, [...slideIds]),
+      ),
+    );
+  layouts.sort(
+    (a, b) => FORMAT_ORDER.indexOf(a.format) - FORMAT_ORDER.indexOf(b.format),
+  );
+  for (const layout of layouts) {
+    const byWidget = new Map<string, LayoutPlacement>();
+    for (const row of placements) {
+      if (row.slideId === layout.slideId && row.format === layout.format) {
+        byWidget.set(row.widgetId, {
+          widgetId: row.widgetId,
+          page: row.page,
+          x: row.x,
+          y: row.y,
+          w: row.w,
+          h: row.h,
+          hidden: row.hidden,
+          autoPlaced: row.autoPlaced,
+        });
+      }
+    }
+    const list = result.get(layout.slideId) ?? [];
+    list.push({ format: layout.format, pages: layout.pages, byWidget });
+    result.set(layout.slideId, list);
+  }
+  return result;
 }
 
 export async function findDashboard(
@@ -231,6 +366,15 @@ function keepId(
   return { id };
 }
 
+/** The kept id, or a new one: widget ids are known before the insert. */
+function widgetId(
+  id: string | null | undefined,
+  existing: ReadonlySet<string>,
+  taken: Set<string>,
+): string {
+  return keepId(id, existing, taken).id ?? randomUUID();
+}
+
 /**
  * Writes the slides and widgets of a dashboard that has none (any old ones
  * deleted first). Ids in `keep` are reused; the rest are new.
@@ -267,9 +411,14 @@ async function writeSlides(
     });
   const slideIds = new Map(slideRows.map((row) => [row.position, row.id]));
   const takenWidgets = new Set<string>();
+  const ids = slides.map((slide) =>
+    slide.widgets.map((widget) =>
+      widgetId(widget.id, keep.widgets, takenWidgets),
+    ),
+  );
   const widgetRows = slides.flatMap((slide, position) =>
-    slide.widgets.map((widget) => ({
-      ...keepId(widget.id, keep.widgets, takenWidgets),
+    slide.widgets.map((widget, index) => ({
+      id: ids[position]![index]!,
       slideId: slideIds.get(position)!,
       dashboardId,
       workspaceId,
@@ -292,6 +441,33 @@ async function writeSlides(
   );
   if (widgetRows.length > 0) {
     await tx.insert(schema.dashboardWidgets).values(widgetRows);
+  }
+  const layoutRows = slides.flatMap((slide, position) =>
+    (slide.layouts ?? []).map((layout) => ({
+      slideId: slideIds.get(position)!,
+      format: layout.format,
+      workspaceId,
+      dashboardId,
+      pages: layout.pages,
+    })),
+  );
+  if (layoutRows.length === 0) {
+    return;
+  }
+  await tx.insert(schema.dashboardSlideLayouts).values(layoutRows);
+  const placementRows = slides.flatMap((slide, position) =>
+    (slide.layouts ?? []).flatMap((layout) =>
+      layout.placements.map(({ widget, ...placement }) => ({
+        ...placement,
+        widgetId: ids[position]![widget]!,
+        format: layout.format,
+        slideId: slideIds.get(position)!,
+        workspaceId,
+      })),
+    ),
+  );
+  if (placementRows.length > 0) {
+    await tx.insert(schema.dashboardWidgetLayouts).values(placementRows);
   }
 }
 
@@ -349,6 +525,7 @@ export async function insertDashboard(
       name: input.name,
       projectId: input.projectId,
       ...input.settings,
+      ...(input.primaryFormat ? { primaryFormat: input.primaryFormat } : {}),
     })
     .returning();
   if (!row) {
@@ -385,6 +562,7 @@ export async function replaceDashboard(
       name: input.name,
       projectId: input.projectId,
       ...input.settings,
+      ...(input.primaryFormat ? { primaryFormat: input.primaryFormat } : {}),
       version: expectedVersion + 1,
       updatedAt: new Date(),
     })
@@ -413,7 +591,8 @@ export async function replaceDashboard(
     ),
   };
   if (keep.slides.size > 0) {
-    // Widgets go with their slides (foreign key cascade).
+    // Widgets and custom layouts go with their slides (foreign key
+    // cascade); the caller sends the layouts to keep.
     await tx
       .delete(schema.dashboardSlides)
       .where(

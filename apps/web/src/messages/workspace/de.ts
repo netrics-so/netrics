@@ -52,6 +52,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     lastSeen: "zuletzt gesehen {time}",
     heartbeat: "{version}, Lebenszeichen {time}",
     lastError: "Letzter Fehler: {error}",
+    screenSize: "{width} × {height}",
     connections: "Verbindungen",
     noConnections: "Noch keine Verbindungen.",
     table: {
@@ -118,6 +119,19 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     confirmRevoke: "{name} widerrufen? Der TV zeigt sofort keine Daten mehr.",
     confirm: "Bestätigen",
     revoke: "Widerrufen",
+    orientation: "Ausrichtung",
+    rotations: {
+      r0: "Querformat",
+      r90: "Hochformat 90°",
+      r180: "Auf dem Kopf",
+      r270: "Hochformat 270°",
+    },
+    mode: "Modus",
+    modes: {
+      screen: "Bildschirm-Ansicht",
+      scroll: "Scroll-Ansicht",
+    },
+    appleTvMode: "Apple TV nutzt immer die Bildschirm-Ansicht.",
   },
   deviceApproval: {
     pageTitle: "TV verbinden · netrics",

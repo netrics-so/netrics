@@ -630,6 +630,8 @@ describe("device credentials", () => {
       id: device.id,
       name: "Credential TV",
       dashboardId,
+      rotation: 0,
+      displayMode: "screen",
     });
     const [row] =
       await admin`select last_seen_at from devices where id = ${device.id}`;
@@ -772,6 +774,100 @@ describe("device credentials", () => {
       select metadata from audit_events
       where target = ${device.id} and action = 'device.updated'`;
     expect(event!.metadata).toEqual({ name: "Reception", dashboardId });
+  });
+
+  it("changes rotation and display mode (#276)", async () => {
+    const { device, accessToken } = await pair("Portrait TV", null);
+    // Paired devices start unrotated, in screen view, with no screen yet.
+    expect(device).toMatchObject({
+      rotation: 0,
+      displayMode: "screen",
+      screen: null,
+    });
+    expect(
+      deviceSelfResponseSchema.parse((await me(accessToken)).json()).device,
+    ).toMatchObject({ rotation: 0, displayMode: "screen" });
+
+    const url = `/v1/workspaces/${workspaceId}/devices/${device.id}`;
+    expectError(
+      await call("PATCH", url, { cookie: editor, payload: { rotation: 90 } }),
+      403,
+      "forbidden",
+    );
+    for (const payload of [
+      { rotation: 45 },
+      { rotation: -90 },
+      { rotation: 360 },
+      { rotation: "90" },
+      { displayMode: "glance" },
+      { displayMode: "" },
+      { displayMode: null },
+    ]) {
+      expect(
+        (await call("PATCH", url, { cookie: owner, payload })).statusCode,
+      ).toBe(400);
+    }
+
+    const updated = await call("PATCH", url, {
+      cookie: owner,
+      payload: { rotation: 90, displayMode: "scroll" },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(deviceResponseSchema.parse(updated.json()).device).toMatchObject({
+      name: "Portrait TV",
+      dashboardId: null,
+      rotation: 90,
+      displayMode: "scroll",
+    });
+    expect(
+      deviceSelfResponseSchema.parse((await me(accessToken)).json()).device,
+    ).toMatchObject({ rotation: 90, displayMode: "scroll" });
+    // Only what was sent changes.
+    const turned = await call("PATCH", url, {
+      cookie: owner,
+      payload: { rotation: 270 },
+    });
+    expect(deviceResponseSchema.parse(turned.json()).device).toMatchObject({
+      rotation: 270,
+      displayMode: "scroll",
+    });
+    const events = await admin`
+      select metadata from audit_events
+      where target = ${device.id} and action = 'device.updated'
+      order by created_at`;
+    expect(events.map((row) => row.metadata)).toEqual([
+      { rotation: 90, displayMode: "scroll" },
+      { rotation: 270 },
+    ]);
+  });
+
+  it("keeps screen settings inside the device's workspace (#276)", async () => {
+    const { device } = await pair("Guarded TV", null);
+    const foreign = await newWorkspace(stranger);
+    expectError(
+      await call("PATCH", `/v1/workspaces/${foreign}/devices/${device.id}`, {
+        cookie: stranger,
+        payload: { rotation: 180 },
+      }),
+      404,
+      "device_not_found",
+    );
+    expectError(
+      await call(
+        "PATCH",
+        `/v1/workspaces/${workspaceId}/devices/${device.id}`,
+        { cookie: stranger, payload: { displayMode: "scroll" } },
+      ),
+      404,
+      "workspace_not_found",
+    );
+    const [row] = await admin`
+      select rotation, display_mode from devices where id = ${device.id}`;
+    expect(row).toEqual({ rotation: 0, display_mode: "screen" });
+    const events = await admin`
+      select 1 from audit_events
+      where target = ${device.id} and action = 'device.updated'`;
+    expect(events).toHaveLength(0);
   });
 });
 
@@ -1251,6 +1347,92 @@ describe("device dashboard", () => {
       uptimeSeconds: 5,
       lastError: null,
     });
+  });
+
+  it("stores the reported screen and shows it in the device list (#276)", async () => {
+    const { device, accessToken } = await pair("Measured TV", salesId);
+    const listed = async () =>
+      deviceListResponseSchema
+        .parse(
+          (
+            await call("GET", `/v1/workspaces/${workspaceId}/devices`, {
+              cookie: owner,
+            })
+          ).json(),
+        )
+        .devices.find((entry) => entry.id === device.id)!;
+    expect((await listed()).screen).toBeNull();
+
+    const beat = { appVersion: "tvos 1.0", uptimeSeconds: 10 };
+    const screen = {
+      width: 3840,
+      height: 2160,
+      scale: 1,
+      format: "16x9",
+      mode: "screen",
+    };
+    expect(
+      (
+        await heartbeat(accessToken, {
+          ...beat,
+          screen: { ...screen, extra: "x".repeat(10_000) },
+        })
+      ).statusCode,
+    ).toBe(204);
+    expect((await listed()).screen).toEqual(screen);
+    // Only the validated keys are stored.
+    const [row] =
+      await admin`select screen from devices where id = ${device.id}`;
+    expect(row!.screen).toEqual(screen);
+
+    // An older app's heartbeat (no screen) keeps the last report.
+    await heartbeat(accessToken, beat);
+    expect((await listed()).screen).toEqual(screen);
+
+    // A browser kiosk that does not know the formats yet omits `format`.
+    const kiosk = { width: 1080, height: 1920, scale: 2.5, mode: "scroll" };
+    await heartbeat(accessToken, { ...beat, screen: kiosk });
+    expect((await listed()).screen).toEqual(kiosk);
+  });
+
+  it("refuses screens out of range (#276)", async () => {
+    const { device, accessToken } = await pair("Odd TV", null);
+    const beat = { appVersion: "web 1.0", uptimeSeconds: 1 };
+    const screen = { width: 1920, height: 1080, scale: 1, mode: "screen" };
+    for (const bad of [
+      { ...screen, width: 0 },
+      { ...screen, height: -1080 },
+      { ...screen, width: 16_385 },
+      { ...screen, height: 1e9 },
+      { ...screen, width: 1920.5 },
+      { ...screen, width: "1920" },
+      { ...screen, scale: 0.4 },
+      { ...screen, scale: 8.5 },
+      { ...screen, scale: Number.MAX_VALUE },
+      { ...screen, format: "5x4" },
+      { ...screen, format: "" },
+      { ...screen, mode: "glance" },
+      { width: 1920, height: 1080, scale: 1 },
+      [1920, 1080],
+      "1920x1080",
+      null,
+    ]) {
+      expect(
+        (await heartbeat(accessToken, { ...beat, screen: bad })).statusCode,
+      ).toBe(400);
+    }
+    const [row] = await admin`
+      select screen, last_heartbeat_at from devices where id = ${device.id}`;
+    expect(row).toEqual({ screen: null, last_heartbeat_at: null });
+    // The bounds themselves are accepted.
+    for (const edge of [
+      { width: 1, height: 1, scale: 0.5, mode: "screen" },
+      { width: 16_384, height: 16_384, scale: 8, mode: "scroll" },
+    ]) {
+      expect(
+        (await heartbeat(accessToken, { ...beat, screen: edge })).statusCode,
+      ).toBe(204);
+    }
   });
 
   it("rejects malformed heartbeats", async () => {

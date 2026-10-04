@@ -42,8 +42,15 @@ import { slideTitle } from "./studio-widgets";
 // document is saved as a whole with an explicit Save (no autosave): screens
 // show a dashboard as soon as it is saved.
 
-/** A slide in the draft; its position is its index. */
-export type StudioSlide = Omit<DashboardSlide, "position">;
+/**
+ * A slide in the draft; its position is its index. Custom layouts and
+ * format warnings (ADR 0017) are not edited here yet: a save without
+ * `layouts` keeps the stored ones.
+ */
+export type StudioSlide = Omit<
+  DashboardSlide,
+  "position" | "layouts" | "formatWarnings"
+>;
 
 /** What a Save sends: name, project, settings, slides and widgets. */
 export interface StudioDocument {

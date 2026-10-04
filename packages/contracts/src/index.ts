@@ -7,6 +7,9 @@ import {
   METRIC_KINDS,
   PERIODS,
   BACKGROUND_DIM,
+  CUSTOM_LAYOUT_MAX_PAGES,
+  SCREEN_FORMAT_KEYS,
+  SCREEN_FORMAT_MAX_GRID,
   SLIDE_SECONDS,
   SLIDE_TRANSITIONS,
   STUDIO_GRID,
@@ -1415,10 +1418,11 @@ export type DashboardTile = z.infer<typeof dashboardTileSchema>;
 
 // ─── Dashboard Studio (ADR 0015) ────────────────────────────────────────────
 //
-// A dashboard is an ordered list of slides, each a 12 × 8 grid of widgets.
-// Bounds, minimum sizes and overlaps are checked by the server (400
-// widget_out_of_bounds, widget_too_small, widgets_overlap); see
-// slideLayoutProblem in @netrics/domain.
+// A dashboard is an ordered list of slides, each a grid of widgets in the
+// dashboard's primary format (ADR 0017: 12 × 8 for 16x9, the default).
+// Bounds, minimum sizes and overlaps are checked by the server against the
+// primary format's grid (400 widget_out_of_bounds, widget_too_small,
+// widgets_overlap); see slideLayoutProblem in @netrics/domain.
 
 export const widgetTypeSchema = z.enum(WIDGET_TYPES);
 export type WidgetType = z.infer<typeof widgetTypeSchema>;
@@ -1477,16 +1481,96 @@ export type DashboardSettingsInput = z.input<
   typeof dashboardSettingsInputSchema
 >;
 
+/** A screen format (ADR 0017 section 1): an aspect-ratio class with its grid. */
+export const screenFormatSchema = z.enum(SCREEN_FORMAT_KEYS);
+export type ScreenFormatKey = z.infer<typeof screenFormatSchema>;
+
+/**
+ * Cells in the grid of a format: bounded here by the largest grid (16 × 14);
+ * the server checks the exact grid (16x9: 12 columns × 8 rows).
+ */
 const widgetPlacementShape = {
-  /** Column of the top left cell, 0–11. */
-  x: z.number().int().min(0).max(STUDIO_GRID.columns),
-  /** Row of the top left cell, 0–7. */
-  y: z.number().int().min(0).max(STUDIO_GRID.rows),
+  /** Column of the top left cell (16x9: 0–11). */
+  x: z.number().int().min(0).max(SCREEN_FORMAT_MAX_GRID.columns),
+  /** Row of the top left cell (16x9: 0–7). */
+  y: z.number().int().min(0).max(SCREEN_FORMAT_MAX_GRID.rows),
   /** Width in cells. */
-  w: z.number().int().min(1).max(STUDIO_GRID.columns),
+  w: z.number().int().min(1).max(SCREEN_FORMAT_MAX_GRID.columns),
   /** Height in cells. */
-  h: z.number().int().min(1).max(STUDIO_GRID.rows),
+  h: z.number().int().min(1).max(SCREEN_FORMAT_MAX_GRID.rows),
 };
+
+const layoutPlacementShape = {
+  /** A widget of the slide. */
+  widgetId: z.uuid(),
+  /** 0-based page of the slide in this format (continuation pages). */
+  page: z
+    .number()
+    .int()
+    .min(0)
+    .max(CUSTOM_LAYOUT_MAX_PAGES - 1),
+  ...widgetPlacementShape,
+  /** Not shown in this format (listed in the Studio, never dropped silently). */
+  hidden: z.boolean(),
+  /**
+   * Placed by the server after an edit of the primary, for the user to
+   * review; false when the user moved, resized or confirmed it.
+   */
+  autoPlaced: z.boolean(),
+};
+
+/**
+ * A custom layout of a slide in one format other than the primary (ADR 0017
+ * section 4): every widget of the slide placed exactly once or hidden,
+ * inside the format's grid, at least its minimum size, no overlaps per page.
+ */
+export const slideLayoutSchema = z.object({
+  format: screenFormatSchema,
+  /** 1–8 pages. */
+  pages: z.number().int().min(1).max(CUSTOM_LAYOUT_MAX_PAGES),
+  /** One per widget of the slide, in the slide's widget order. */
+  placements: z.array(z.object(layoutPlacementShape)),
+});
+export type SlideLayout = z.infer<typeof slideLayoutSchema>;
+
+/**
+ * A custom layout as sent. Placements name widgets by the ids sent in the
+ * slide's `widgets`; `hidden` and `autoPlaced` default to false. The server
+ * checks it (400 layout_invalid_page_count, layout_page_out_of_range,
+ * layout_widget_duplicated, layout_widget_out_of_bounds,
+ * layout_widget_too_small, layout_widgets_overlap; layout_primary_format
+ * and layout_duplicate_format for the list), then completes it as after a
+ * primary edit: placements of widgets the slide does not have are dropped,
+ * and widgets without one (a new widget has no id yet) are placed
+ * automatically and flagged `autoPlaced`. The response has the result.
+ */
+export const slideLayoutInputSchema = z.object({
+  format: screenFormatSchema,
+  pages: z.number().int().min(1).max(CUSTOM_LAYOUT_MAX_PAGES),
+  placements: z
+    .array(
+      z.object({
+        ...layoutPlacementShape,
+        hidden: z.boolean().default(false),
+        autoPlaced: z.boolean().default(false),
+      }),
+    )
+    .max(STUDIO_LIMITS.widgetsPerSlide),
+});
+export type SlideLayoutInput = z.input<typeof slideLayoutInputSchema>;
+
+/**
+ * A readability warning of a slide in a format (ADR 0017 section 6).
+ * Read-only; filled by the readability checks (#280), empty until then.
+ */
+export const formatWarningSchema = z.object({
+  format: screenFormatSchema,
+  /** What is wrong, e.g. a label that does not fit. */
+  code: z.string(),
+  /** The widget concerned, or null for the slide (e.g. its header). */
+  widgetId: z.uuid().nullable(),
+});
+export type FormatWarning = z.infer<typeof formatWarningSchema>;
 
 const widgetTitleSchema = z
   .string()
@@ -1630,6 +1714,15 @@ export const dashboardSlideInputSchema = z.object({
   widgets: z
     .array(dashboardWidgetInputSchema)
     .max(STUDIO_LIMITS.widgetsPerSlide),
+  /**
+   * Custom layouts, one per format other than the primary; formats not
+   * listed are auto. Missing: the slide keeps its stored custom layouts (a
+   * client from before ADR 0017); an empty list makes every format auto.
+   */
+  layouts: z
+    .array(slideLayoutInputSchema)
+    .max(SCREEN_FORMAT_KEYS.length - 1)
+    .optional(),
 });
 export type DashboardSlideInput = z.input<typeof dashboardSlideInputSchema>;
 
@@ -1700,6 +1793,10 @@ export const dashboardSlideSchema = z.object({
   background: slideBackgroundSchema.nullable(),
   /** In reading order: top to bottom, then left to right. */
   widgets: z.array(dashboardWidgetSchema),
+  /** Custom layouts by format; formats not listed (and the primary) are auto. */
+  layouts: z.array(slideLayoutSchema),
+  /** Readability warnings per format (#280). Read-only. */
+  formatWarnings: z.array(formatWarningSchema),
 });
 export type DashboardSlide = z.infer<typeof dashboardSlideSchema>;
 
@@ -1712,6 +1809,11 @@ export const dashboardSchema = z.object({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   settings: dashboardSettingsSchema,
+  /**
+   * The format widgets are placed in (ADR 0017 section 4); every other
+   * format is auto or a custom layout of the slide. Default 16x9.
+   */
+  primaryFormat: screenFormatSchema,
   slides: z.array(dashboardSlideSchema),
   /**
    * The metric widgets of all slides in reading order, as tiles. Kept for
@@ -1757,6 +1859,8 @@ export const createDashboardRequestSchema = z
     name: nameSchema,
     projectId: z.uuid().nullable().optional(),
     settings: dashboardSettingsInputSchema.optional(),
+    /** The format `slides` are placed in; default 16x9. */
+    primaryFormat: screenFormatSchema.optional(),
     slides: dashboardSlidesInputSchema.optional(),
     /** Legacy; not together with `slides`. */
     tiles: z
@@ -1774,6 +1878,13 @@ export type CreateDashboardRequest = z.infer<
  * legacy form sends `tiles` instead of `slides`: it works on a dashboard of
  * metric widgets in the automatic layout and answers 409 studio_dashboard
  * otherwise, so an old client cannot flatten a studio dashboard.
+ *
+ * Widgets are placed in the dashboard's current primary format. A different
+ * `primaryFormat` re-bases the dashboard after the save (ADR 0017 section
+ * 4): the old primary layout becomes a custom layout of its format and the
+ * chosen format's layout (custom, or auto) becomes the primary; 409
+ * format_has_overflow when that layout has continuation pages, or
+ * format_has_hidden_widgets when it hides widgets. Missing: unchanged.
  */
 export const replaceDashboardRequestSchema = z
   .object({
@@ -1781,6 +1892,8 @@ export const replaceDashboardRequestSchema = z
     name: nameSchema,
     projectId: z.uuid().nullable(),
     settings: dashboardSettingsInputSchema.optional(),
+    /** Missing: unchanged. See above for a change. */
+    primaryFormat: screenFormatSchema.optional(),
     slides: dashboardSlidesInputSchema.optional(),
     /** Legacy; exactly one of `tiles` and `slides`. */
     tiles: z
@@ -1956,10 +2069,50 @@ export const approveDeviceRequestSchema = z.object({
 });
 export type ApproveDeviceRequest = z.infer<typeof approveDeviceRequestSchema>;
 
+// Screen settings and reporting (ADR 0017 section 7, #276).
+
+/**
+ * Degrees the device turns its whole rendering, clockwise: 90 and 270 for
+ * a TV mounted on its side, 180 for one mounted upside down.
+ */
+export const DEVICE_ROTATIONS = [0, 90, 180, 270] as const;
+export const deviceRotationSchema = z.literal(DEVICE_ROTATIONS);
+export type DeviceRotation = z.infer<typeof deviceRotationSchema>;
+
+/**
+ * "screen": fits the screen, rotates slides, never scrolls (the default,
+ * and always on tvOS). "scroll": one scrolling column (browser kiosks).
+ */
+export const DISPLAY_MODES = ["screen", "scroll"] as const;
+export const displayModeSchema = z.enum(DISPLAY_MODES);
+export type DisplayMode = z.infer<typeof displayModeSchema>;
+
+/** Largest screen side a device may report, in CSS px or points. */
+export const MAX_SCREEN_SIDE = 16_384;
+
+/**
+ * A device's screen as it reports it in the heartbeat: the size after its
+ * rotation setting (CSS px or points), the device pixel ratio, and the
+ * format and mode it shows. Unknown keys are dropped.
+ */
+export const deviceScreenSchema = z.object({
+  width: z.number().int().min(1).max(MAX_SCREEN_SIDE),
+  height: z.number().int().min(1).max(MAX_SCREEN_SIDE),
+  scale: z.number().min(0.5).max(8),
+  /** Absent when the client does not know the formats yet. */
+  format: screenFormatSchema.optional(),
+  mode: displayModeSchema,
+});
+export type DeviceScreen = z.infer<typeof deviceScreenSchema>;
+
 export const deviceSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
   dashboardId: z.uuid().nullable(),
+  rotation: deviceRotationSchema,
+  displayMode: displayModeSchema,
+  /** The screen of the latest heartbeat that reported one; null before. */
+  screen: deviceScreenSchema.nullable(),
   createdAt: z.iso.datetime(),
   lastSeenAt: z.iso.datetime().nullable(),
   revokedAt: z.iso.datetime().nullable(),
@@ -2004,6 +2157,9 @@ export const deviceSelfResponseSchema = z.object({
     id: z.uuid(),
     name: z.string().min(1),
     dashboardId: z.uuid().nullable(),
+    /** Screen settings (#276); older apps ignore them. */
+    rotation: deviceRotationSchema,
+    displayMode: displayModeSchema,
   }),
 });
 export type DeviceSelfResponse = z.infer<typeof deviceSelfResponseSchema>;
@@ -2012,10 +2168,17 @@ export const updateDeviceRequestSchema = z
   .object({
     name: nameSchema.optional(),
     dashboardId: z.uuid().nullable().optional(),
+    rotation: deviceRotationSchema.optional(),
+    displayMode: displayModeSchema.optional(),
   })
-  .refine((body) => body.name !== undefined || body.dashboardId !== undefined, {
-    message: "nothing to change",
-  });
+  .refine(
+    (body) =>
+      body.name !== undefined ||
+      body.dashboardId !== undefined ||
+      body.rotation !== undefined ||
+      body.displayMode !== undefined,
+    { message: "nothing to change" },
+  );
 export type UpdateDeviceRequest = z.infer<typeof updateDeviceRequestSchema>;
 
 // The device dashboard read model and heartbeat (ADR 0007, #57).
@@ -2216,7 +2379,10 @@ export type DeviceBarData = z.infer<typeof deviceBarDataSchema>;
 const deviceWidgetShape = {
   id: z.uuid(),
   /** Grid cell of the top left corner and size in cells (12 × 8 grid). */
-  ...widgetPlacementShape,
+  x: z.number().int().min(0).max(STUDIO_GRID.columns),
+  y: z.number().int().min(0).max(STUDIO_GRID.rows),
+  w: z.number().int().min(1).max(STUDIO_GRID.columns),
+  h: z.number().int().min(1).max(STUDIO_GRID.rows),
 };
 
 /**
@@ -2358,6 +2524,8 @@ export const deviceHeartbeatRequestSchema = z.object({
   appVersion: z.string().trim().min(1).max(50),
   uptimeSeconds: z.number().int().min(0).max(2_147_483_647),
   lastError: z.string().max(500).nullable().optional(),
+  /** The device's screen (#276); older apps send none. */
+  screen: deviceScreenSchema.optional(),
 });
 export type DeviceHeartbeatRequest = z.infer<
   typeof deviceHeartbeatRequestSchema

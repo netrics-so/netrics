@@ -260,6 +260,20 @@
       "when": 1791086902051,
       "tag": "0036_i18n_locales",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791101084379,
+      "tag": "0037_format_layouts",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791102978247,
+      "tag": "0038_device_screen",
+      "breakpoints": true
     }
   ]
 }

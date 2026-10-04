@@ -373,6 +373,54 @@ import Testing
         #expect(h.store.snapshot.device?.name == "Renamed")
     }
 
+    @Test func heartbeatsCarryTheMeasuredScreen() async throws {
+        let h = Harness(
+            credentials: { credentialsFor("a", accessExpiresIn: 24 * 3600, clock: $0) },
+            routes: { _ in
+                [
+                    "GET /v1/device/dashboard": { _ in jsonObject(["error": "internal"], status: 500) },
+                    "POST /v1/device/heartbeat": { _ in HTTPResponse(status: 204) },
+                    "GET /v1/device/me": { _ in
+                        jsonObject(
+                            [
+                                "device": [
+                                    "id": pairingID, "name": "Lobby", "dashboardId": NSNull(),
+                                    "rotation": 90, "displayMode": "screen",
+                                ]
+                            ], status: 200)
+                    },
+                ]
+            },
+            screen: { DeviceScreenReport.measured(width: 1920, height: 1080, scale: 1) })
+        await h.start()
+        await h.advance(10)
+        #expect(await h.client.sendHeartbeat())
+        let beat = try #require(h.api.callsTo("POST /v1/device/heartbeat").first)
+        let body = try #require(beat.json())
+        let screen = try #require(body["screen"] as? [String: Any])
+        #expect(screen["width"] as? Int == 1920)
+        #expect(screen["height"] as? Int == 1080)
+        #expect(screen["scale"] as? Double == 1)
+        #expect(screen["mode"] as? String == "screen")
+        #expect(screen["format"] == nil)
+    }
+
+    @Test func heartbeatsWithoutAMeasureSendNoScreen() async throws {
+        let h = Harness(credentials: { credentialsFor("a", accessExpiresIn: 24 * 3600, clock: $0) }) { _ in
+            [
+                "GET /v1/device/dashboard": { _ in jsonObject(["error": "internal"], status: 500) },
+                "POST /v1/device/heartbeat": { _ in HTTPResponse(status: 204) },
+            ]
+        }
+        await h.start()
+        await h.advance(10)
+        #expect(await h.client.sendHeartbeat())
+        let beat = try #require(h.api.callsTo("POST /v1/device/heartbeat").first)
+        let body = try #require(beat.json())
+        #expect(body.keys.contains("screen") == false)
+        #expect(body.keys.contains("lastError"))
+    }
+
     @Test func noHeartbeatWhilePairing() async {
         let h = Harness { clock in ["POST /v1/device/pairings": { _ in pairingResponse(clock: clock) }] }
         await h.start()
@@ -461,5 +509,55 @@ import Testing
         _ = await client.tick()
         #expect(api.calls.isEmpty)
         #expect(await client.state.lastError?.contains("not allowed") == true)
+    }
+}
+
+@Suite struct ScreenReportTests {
+    private func encoded(_ value: some Encodable) throws -> [String: Any] {
+        let data = try JSONEncoder().encode(value)
+        let object = try JSONSerialization.jsonObject(with: data)
+        return try #require(object as? [String: Any])
+    }
+
+    @Test func encodesTheScreenWithTheHeartbeat() throws {
+        let body = try encoded(
+            DeviceHeartbeatRequest(
+                appVersion: "tvos 1.0", uptimeSeconds: 5, lastError: nil,
+                screen: DeviceScreenReport(width: 3840, height: 2160, scale: 1, format: "16x9")))
+        let screen = try #require(body["screen"] as? [String: Any])
+        #expect(screen["width"] as? Int == 3840)
+        #expect(screen["height"] as? Int == 2160)
+        #expect(screen["format"] as? String == "16x9")
+        #expect(screen["mode"] as? String == "screen")
+    }
+
+    @Test func oldHeartbeatsKeepTheirShape() throws {
+        let body = try encoded(DeviceHeartbeatRequest(appVersion: "tvos 1.0", uptimeSeconds: 5, lastError: nil))
+        #expect(Set(body.keys) == ["appVersion", "uptimeSeconds", "lastError"])
+    }
+
+    @Test func measuredScreensStayInsideTheAPIBounds() {
+        #expect(
+            DeviceScreenReport.measured(width: 1366.4, height: 767.6, scale: 1.25)
+                == DeviceScreenReport(width: 1366, height: 768, scale: 1.25))
+        #expect(
+            DeviceScreenReport.measured(width: 40_000, height: 0.2, scale: 12)
+                == DeviceScreenReport(width: 16_384, height: 1, scale: 8))
+        #expect(DeviceScreenReport.measured(width: 800, height: 600, scale: 0.25)?.scale == 0.5)
+        #expect(DeviceScreenReport.measured(width: 800, height: 600, scale: .nan)?.scale == 1)
+        #expect(DeviceScreenReport.measured(width: 0, height: 1080, scale: 1) == nil)
+        #expect(DeviceScreenReport.measured(width: .infinity, height: 1080, scale: 1) == nil)
+    }
+
+    @Test func decodesScreenSettingsAndToleratesOlderServers() throws {
+        let newer = try JSONDecoder().decode(
+            DeviceSelfResponse.self,
+            from: Data(#"{"device":{"id":"d","name":"TV","dashboardId":null,"rotation":270,"displayMode":"screen"}}"#.utf8))
+        #expect(newer.device.rotation == 270)
+        #expect(newer.device.displayMode == "screen")
+        let older = try JSONDecoder().decode(
+            DeviceSelfResponse.self, from: Data(#"{"device":{"id":"d","name":"TV","dashboardId":null}}"#.utf8))
+        #expect(older.device.rotation == nil)
+        #expect(older.device.displayMode == nil)
     }
 }

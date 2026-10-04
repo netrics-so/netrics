@@ -266,7 +266,8 @@ export function registerDeviceRoutes(
         "/heartbeat",
         {
           schema: routeSchema({
-            summary: "Report the device's app version, uptime and last error",
+            summary:
+              "Report the device's app version, uptime, last error and screen",
             tags: ["devices"],
             body: deviceHeartbeatRequestSchema,
             device: true,
@@ -353,7 +354,8 @@ export function registerDeviceRoutes(
         "/workspaces/:workspaceId/devices/:deviceId",
         {
           schema: routeSchema({
-            summary: "Rename a device or change its dashboard",
+            summary:
+              "Rename a device, change its dashboard, rotation or display mode",
             tags: ["devices"],
             body: updateDeviceRequestSchema,
             response: deviceResponseSchema,

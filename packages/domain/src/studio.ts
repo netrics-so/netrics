@@ -1,7 +1,8 @@
 import {
   findOverlaps,
-  isInsideGrid,
+  isInsideFormatGrid,
   meetsMinimumSize,
+  type ScreenFormat,
   type StudioPlacement,
 } from "./studio-layout.js";
 
@@ -73,12 +74,15 @@ export type SlideLayoutProblem =
 
 /**
  * Why a slide's widgets cannot be placed as given, or null when they fit:
- * each inside the grid, at least its type's minimum size, none overlapping.
+ * each inside the grid of `format` (the dashboard's primary format, ADR
+ * 0017; 16x9 is the 12 × 8 grid), at least its type's minimum size, none
+ * overlapping.
  */
 export function slideLayoutProblem(
   widgets: ReadonlyArray<StudioPlacement & { type: WidgetType }>,
+  format: ScreenFormat = "16x9",
 ): SlideLayoutProblem | null {
-  if (!widgets.every(isInsideGrid)) {
+  if (!widgets.every((widget) => isInsideFormatGrid(widget, format))) {
     return "widget_out_of_bounds";
   }
   if (!widgets.every((widget) => meetsMinimumSize(widget.type, widget))) {

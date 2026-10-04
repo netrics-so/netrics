@@ -79,6 +79,8 @@ function dashboard(): Dashboard {
         background: null,
         // Downloads at columns 1–4, another metric at 9–12, text below.
         widgets: [metric(11, 0, 0), metric(12, 8, 0), text],
+        layouts: [],
+        formatWarnings: [],
       },
       {
         id: ID(3),
@@ -88,8 +90,11 @@ function dashboard(): Dashboard {
         enabled: true,
         background: null,
         widgets: [],
+        layouts: [],
+        formatWarnings: [],
       },
     ],
+    primaryFormat: "16x9",
     tiles: [],
   };
 }

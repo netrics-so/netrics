@@ -166,8 +166,11 @@ export type {
   DashboardSlideRow,
   DashboardSummary,
   DashboardWidgetRow,
+  LayoutPlacement,
   ReplaceResult,
   SlideInput,
+  SlideLayout,
+  SlideLayoutInput,
   WidgetInput,
 } from "./dashboards.js";
 export {

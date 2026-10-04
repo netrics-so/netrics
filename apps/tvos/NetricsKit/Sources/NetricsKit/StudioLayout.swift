@@ -374,13 +374,21 @@ public enum StudioLayout {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /** How a data widget's label wraps at 1080p (title and resource line). */
-    public static func labelFit(_ label: String, type: StudioWidgetType, w: Int, h: Int, fontScale: Double? = nil)
-        -> StudioLabelFit
-    {
+    /**
+     * How a data widget's label wraps (title and resource line) at the
+     * format's reference canvas (1080p at 16x9, the default). A stretched
+     * screen only ever gives a cell more room than the reference (ADR 0017,
+     * section 2).
+     */
+    public static func labelFit(
+        _ label: String, type: StudioWidgetType, w: Int, h: Int, fontScale: Double? = nil,
+        format: ScreenFormat = .widescreen
+    ) -> StudioLabelFit {
         guard type.isData else { return StudioLabelFit(fits: true, titleLines: 0, resourceLines: 0) }
         let scale = effectiveFontScale(fontScale)
-        let rect = widgetRect(StudioPlacement(x: 0, y: 0, w: w, h: h), canvas: referenceCanvas, showHeader: true)
+        let rect = placementRect(
+            StudioPlacement(x: 0, y: 0, w: w, h: h),
+            frame: screenFrame(screen: format.spec.reference, format: format, showHeader: true))
         let width = rect.width - 2 * widgetPadding
         let parts = labelParts(label)
         let titleLines = wrappedLineCount(
@@ -395,8 +403,11 @@ public enum StudioLayout {
     }
 
     /** Whether the widget shows its label without truncating it. */
-    public static func fits(_ label: String, type: StudioWidgetType, w: Int, h: Int, fontScale: Double? = nil) -> Bool {
-        labelFit(label, type: type, w: w, h: h, fontScale: fontScale).fits
+    public static func fits(
+        _ label: String, type: StudioWidgetType, w: Int, h: Int, fontScale: Double? = nil,
+        format: ScreenFormat = .widescreen
+    ) -> Bool {
+        labelFit(label, type: type, w: w, h: h, fontScale: fontScale, format: format).fits
     }
 
     // MARK: Legacy layout (tile migration)

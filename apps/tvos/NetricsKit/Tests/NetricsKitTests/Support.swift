@@ -149,7 +149,8 @@ final class Harness {
         credentials: ((ManualClock) -> DeviceCredentials)? = nil,
         cached: CachedDashboard? = nil,
         routes: (ManualClock) -> [String: Handler],
-        images: InMemoryImageCache = InMemoryImageCache()
+        images: InMemoryImageCache = InMemoryImageCache(),
+        screen: (@Sendable () async -> DeviceScreenReport?)? = nil
     ) {
         let clock = ManualClock()
         self.clock = clock
@@ -158,7 +159,7 @@ final class Harness {
         cache = InMemoryDashboardCache(cached)
         client = DeviceClient(
             server: testServer, transport: api, store: store, cache: cache, images: images,
-            appVersion: "1.2.3", now: { clock.now })
+            appVersion: "1.2.3", now: { clock.now }, screen: screen)
         nextStepAt = clock.now
     }
 

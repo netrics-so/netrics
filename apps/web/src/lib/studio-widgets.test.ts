@@ -41,6 +41,8 @@ function slide(widgets: StudioWidget[], extra: object = {}): DashboardSlide {
     enabled: true,
     background: null,
     widgets: widgets as DashboardWidget[],
+    layouts: [],
+    formatWarnings: [],
     ...extra,
   };
 }

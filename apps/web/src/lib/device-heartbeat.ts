@@ -67,3 +67,42 @@ export function summarizeHeartbeat(
     lastErrorFull: full,
   };
 }
+
+/**
+ * Whether the device is the Apple TV app, by its reported version. It shows
+ * Screen view only (ADR 0017 section 7), so the TV list offers no mode.
+ */
+export function isAppleTv(heartbeat: Device["heartbeat"]): boolean {
+  return heartbeat !== null && /^tvos(?=\s|$)/i.test(heartbeat.appVersion);
+}
+
+/** The orientation message key of a rotation ("r90"). */
+export function rotationKey(
+  rotation: Device["rotation"],
+): `r${Device["rotation"]}` {
+  return `r${rotation}`;
+}
+
+export interface ScreenSummary {
+  /** Unformatted sides, so a 4K width never reads "3,840" or "3.840". */
+  width: string;
+  height: string;
+  /** "16:9" for the format key "16x9"; null when the device sent none. */
+  format: string | null;
+  mode: Device["displayMode"];
+}
+
+/** The screen a device last reported, ready for the TV list (#276). */
+export function summarizeScreen(
+  screen: Device["screen"],
+): ScreenSummary | null {
+  if (!screen) {
+    return null;
+  }
+  return {
+    width: String(screen.width),
+    height: String(screen.height),
+    format: screen.format ? screen.format.replace("x", ":") : null,
+    mode: screen.mode,
+  };
+}
