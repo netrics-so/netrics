@@ -1,0 +1,48 @@
+/** The Screens page: cards, table and a screen's details (#303). */
+export const screensEn = {
+  screens: {
+    title: "All screens",
+    connectTv: "Connect a TV",
+    views: "View",
+    cards: "Cards",
+    table: "Table",
+    online: "Online",
+    offline: "Offline",
+    revoked: "Revoked",
+    noDashboard: "No dashboard",
+    emptyTitle: "No screens yet",
+    emptyBody:
+      "Open netrics on a TV or in a browser on the screen: it shows a short code. Approve the code here and choose the dashboard the screen shows.",
+    emptyViewer:
+      "Owners and admins connect TVs. Once one is connected, it appears here.",
+    revokedSection:
+      "{count, plural, one {# revoked screen} other {# revoked screens}}",
+    selectHint: "Select a screen to see its settings and health.",
+    details: "Screen details",
+    close: "Close details",
+    settings: "Settings",
+    health: "Health",
+    status: "Status",
+    lastSeen: "Last seen",
+    app: "App",
+    heartbeat: "{version} · heartbeat {time}",
+    noHeartbeat: "No heartbeat yet",
+    lastError: "Last error",
+    noError: "None reported",
+    screen: "Screen",
+    screenNotReported: "Not reported yet",
+    screenSize: "{width} × {height}",
+    paired: "Paired",
+    dashboard: "Dashboard",
+    revokedNote: "Revoked {time}. This screen no longer shows data.",
+    readOnly: "Only owners and admins change a screen’s settings.",
+    columns: {
+      name: "Name",
+      status: "Status",
+      dashboard: "Dashboard",
+      lastSeen: "Last seen",
+      app: "App",
+      screen: "Screen",
+    },
+  },
+} as const;

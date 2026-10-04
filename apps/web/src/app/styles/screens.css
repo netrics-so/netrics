@@ -1,0 +1,438 @@
+/* ─── Screens (#303, design 2c) ─────────────────────────────────────────
+
+   Cards with a thumbnail of what each screen shows, or a table; the
+   selected screen's details beside the list (below it under 1100 px).
+   Admin colours come from the Signal tokens; the thumbnail is a TV
+   surface and takes the shown dashboard's theme colours inline. */
+
+.screens-page {
+  /* The dimmed layer over an offline screen's thumbnail, and its label
+     (TV surface colours, as the design draws them). */
+  --screen-offline-veil: rgba(13, 15, 18, 0.72);
+  --screen-offline-text: #e6e9ed;
+}
+
+/* Cards / Table: a segmented switch; the active view is dark. */
+.view-switch {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.view-switch button {
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--radius-nav);
+  background: none;
+  color: var(--muted);
+  font-size: var(--size-12);
+  font-weight: 700;
+}
+
+.view-switch button:hover:not(:disabled) {
+  background: var(--chip);
+  color: var(--text);
+}
+
+.view-switch button[aria-pressed="true"],
+.view-switch button[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--text);
+  color: var(--surface);
+}
+
+.screens-page .page-actions {
+  align-items: center;
+  gap: 12px;
+}
+
+/* List and details. */
+.screens-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (min-width: 1100px) {
+  .screens-layout--open {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+
+  .screen-panel {
+    position: sticky;
+    top: 16px;
+  }
+}
+
+.screens-main {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.screens-hint {
+  margin: 14px 0 0;
+}
+
+/* The grid: 3 columns on a wide page, 2, then 1 on phones. */
+.screen-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+@container (min-width: 400px) {
+  .screen-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 760px) {
+  .screen-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.screen-grid > li {
+  display: flex;
+  min-width: 0;
+}
+
+/* A card is one button: select it to open its details. */
+.screen-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 400;
+  text-align: left;
+}
+
+.screen-card:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+
+/* Selected: the accent border (1.5 px, drawn without a layout shift) and
+   the ring. */
+.screen-card[aria-pressed="true"],
+.screen-card[aria-pressed="true"]:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow:
+    inset 0 0 0 0.5px var(--accent),
+    var(--selection-ring);
+}
+
+.screen-card--revoked {
+  opacity: 0.6;
+}
+
+.screen-card--revoked[aria-pressed="true"] {
+  opacity: 0.85;
+}
+
+.screen-card-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.screen-card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--size-14);
+  font-weight: 700;
+}
+
+.screen-card-seen {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--size-12);
+}
+
+.screen-card-dashboard {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent-text);
+  font-size: var(--size-12);
+  font-weight: 600;
+}
+
+.screen-card-dashboard--none {
+  color: var(--muted);
+}
+
+.screen-card-badge {
+  flex: none;
+  margin-left: auto;
+}
+
+/* 8 px status dot. */
+.status-dot {
+  flex: none;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.status-dot--online {
+  background: var(--success);
+}
+
+.status-dot--offline {
+  background: var(--danger);
+}
+
+/* The thumbnail: the dashboard's first slide as blocks, 16:9. */
+.screen-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 5%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.screen-thumb-slide {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+}
+
+/* Formats narrower than the thumbnail: fit the height instead. */
+.screen-thumb-slide--tall {
+  width: auto;
+  height: 100%;
+}
+
+.screen-thumb-widget {
+  position: absolute;
+  box-sizing: border-box;
+  /* The theme's surface lifted a little toward its muted text, so blocks
+     read at thumbnail size. */
+  border: 1px solid
+    color-mix(in srgb, var(--thumb-border) 80%, var(--thumb-muted));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--thumb-surface) 88%, var(--thumb-muted));
+  transform: scale(0.92);
+}
+
+.screen-thumb-widget--quiet {
+  border-color: var(--thumb-muted);
+  background: transparent;
+}
+
+.screen-thumb-offline {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--screen-offline-veil);
+  color: var(--screen-offline-text);
+  font-size: var(--size-12);
+  font-weight: 700;
+}
+
+/* Revoked screens: collapsed below the active ones. */
+.screens-revoked {
+  margin-top: 20px;
+}
+
+.screens-revoked > summary {
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: var(--size-13);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Table view. */
+.screens-table-card {
+  padding: 4px 8px;
+}
+
+.screens-table td {
+  vertical-align: middle;
+}
+
+.screens-table tr.is-revoked td {
+  color: var(--muted);
+}
+
+.screens-table tr.is-selected td {
+  background: var(--accent-wash);
+}
+
+button.screens-table-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: var(--size-13);
+  font-weight: 700;
+  text-align: left;
+}
+
+button.screens-table-name:hover:not(:disabled) {
+  background: none;
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+/* Details. */
+.screen-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  padding: 16px;
+}
+
+.screen-panel-head {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.screen-panel-title {
+  min-width: 0;
+}
+
+.screen-panel-title h2 {
+  margin: 0 0 4px;
+  font-size: var(--size-15);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.screen-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: var(--size-12);
+  font-weight: 600;
+}
+
+button.screen-panel-close {
+  display: grid;
+  place-items: center;
+  align-self: start;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-nav);
+  background: none;
+  color: var(--muted);
+}
+
+button.screen-panel-close:hover:not(:disabled) {
+  background: var(--chip);
+  color: var(--text);
+}
+
+.screen-panel-section h3 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: var(--size-12);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.screen-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  font-size: var(--size-13);
+}
+
+.screen-facts dt {
+  color: var(--muted);
+}
+
+.screen-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.screen-facts dd.screen-error {
+  color: var(--danger);
+}
+
+.screen-panel > p {
+  margin: 0;
+}
+
+/* Today's device controls, stacked to fit the panel. */
+.screen-panel-settings form.inline {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.screen-panel-settings .field input,
+.screen-panel-settings .field select {
+  width: 100%;
+}
+
+.screen-panel-settings form.inline button[type="submit"] {
+  align-self: flex-start;
+}
+
+.screen-panel-settings .device-mode-fixed {
+  display: block;
+  padding: 4px 0;
+  font-size: var(--size-14);
+}
+
+.screen-panel-settings .actions {
+  align-items: center;
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: var(--size-13);
+}
+
+/* Empty: what a screen is and how to connect one. */
+.screens-empty {
+  max-width: 560px;
+}
+
+.screens-empty p {
+  margin: 0 0 16px;
+  color: var(--text-2);
+  font-size: var(--size-14);
+}
+
+@media (max-width: 560px) {
+  .screen-panel-head {
+    grid-template-columns: 88px minmax(0, 1fr) auto;
+  }
+}
