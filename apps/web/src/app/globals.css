@@ -1715,19 +1715,11 @@ a.health-badge:hover {
   line-height: 1.15;
 }
 
-/* TV surfaces set in IBM Plex Sans (ADR 0018 §3; --font-tv is the
-   self-hosted face), the system font until it is there. */
+/* TV surfaces set in IBM Plex Sans (ADR 0018 §3). */
 .studio-canvas,
 .slide-player,
 .scroll-view {
-  font-family: var(
-    --font-tv,
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    sans-serif
-  );
+  font-family: var(--font-tv);
 }
 
 /* Widget surfaces (ADR 0018 §5), derived from the theme's tokens, never
