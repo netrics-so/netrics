@@ -13,6 +13,7 @@ import {
   AcceptInvitationFailure,
   acceptInvitation,
   createInvitation,
+  findUserByEmail,
   findUserById,
   findWorkspace,
   insertAuditEvent,
@@ -27,6 +28,8 @@ import {
 import { can, canManageMember } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
+import { INVITATION_TTL_MS } from "../link-lifetimes.js";
+import { invitationEmailLocale } from "../mail/locale.js";
 import type { Mailer } from "../mail/mailer.js";
 import { generateToken, hashToken } from "../tokens.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
@@ -39,9 +42,9 @@ export interface InvitationRouteDeps {
   mailer: Mailer;
   /** Public web origin; invitation links point to <webOrigin>/invite/<token>. */
   webOrigin: string;
+  /** NETRICS_DEFAULT_LOCALE, for the invitation's language. */
+  defaultLocale: string | null;
 }
-
-const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const invitationParamsSchema = z.object({ invitationId: z.uuid() });
 // Tokens are 43-char base64url strings; bound the input before hashing.
@@ -193,12 +196,21 @@ export function registerInvitationRoutes(
           ).toString();
           if (delivery === "email") {
             const inviter = await findUserById(deps.db, access.callerId);
+            // An installation-level lookup by address: the email goes to
+            // that address anyway, and only its language is used.
+            const recipient = await findUserByEmail(deps.db, email);
             try {
               await deps.mailer.sendInvitationEmail({
                 to: email,
                 url: inviteUrl,
                 workspaceName: created.workspaceName,
-                inviterName: inviter?.displayName ?? "A workspace admin",
+                inviterName: inviter?.displayName ?? null,
+                locale: invitationEmailLocale({
+                  recipientLocale: recipient?.locale,
+                  inviterLocale: inviter?.locale,
+                  defaultLocale: deps.defaultLocale,
+                  inviterAcceptLanguage: request.headers["accept-language"],
+                }),
               });
             } catch {
               // The invitation stays open; inviting again sends a new link.
