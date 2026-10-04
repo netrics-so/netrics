@@ -15,7 +15,7 @@ import {
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 
 import { createAuthService, type AuthService } from "./auth/index.js";
-import { registerClientAddress } from "./client-address.js";
+import { registerClientAddress, servesAuthFlow } from "./client-address.js";
 import { logSerializers } from "./log-serializers.js";
 import { createDefaultRegistry } from "./connectors.js";
 import { createOnboarding } from "./onboarding.js";
@@ -110,16 +110,32 @@ export async function buildApp(
     deps.authService ??
     createAuthService(config, db, { logger: app.log, mailer });
 
-  await app.register(cors, { origin: config.webOrigin, credentials: true });
+  // Credentialed CORS for the web origin only. Any other origin (or none)
+  // gets no CORS headers at all, so no Access-Control-Allow-Credentials and
+  // no preflight answer. Token clients are server-side and need no CORS;
+  // CORS for browsers on other origins is deliberately not offered (ADR
+  // 0013, #158).
+  const webOrigin = new URL(config.webOrigin).origin;
+  await app.register(cors, {
+    origin: (origin, callback) => callback(null, origin === webOrigin),
+    credentials: true,
+  });
 
   // better-auth owns everything under /api/auth/* (sign-up, sign-in, session
   // management); the auth module bridges Fastify to its fetch-style handler.
+  // With NETRICS_PROXY_SECRET set, only the web frontend reaches it: without
+  // the secret the flow answers like an unknown route (ADR 0013, #158).
   app.route({
     method: ["GET", "POST"],
     url: "/api/auth/*",
     // better-auth documents its own endpoints; not part of this API's spec.
     schema: { hide: true },
-    handler: (request, reply) => authService.handle(request, reply),
+    handler: async (request, reply) => {
+      if (!servesAuthFlow(request, config.proxySecrets)) {
+        return reply.callNotFound();
+      }
+      return authService.handle(request, reply);
+    },
   });
 
   // Public (no session): lets the web app route first visitors to /setup

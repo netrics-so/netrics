@@ -205,7 +205,10 @@ Relevant environment variables (see `.env.example`):
   without it are served and authenticated by session or token, except that
   the api then accepts session cookies only on requests carrying the secret.
   The api takes two comma-separated values during a rotation (`new,old`); the
-  web app sends the first. It is never logged.
+  web app sends the first. It is never logged. With the secret set, the api
+  also serves the browser auth flow (`/api/auth/*`) only to requests carrying
+  it and answers 404 to the rest, so `BETTER_AUTH_URL` must then be the web
+  origin (emailed links lead there and pass the web proxy).
 
 In production, the api also rejects the public development values of
 `BETTER_AUTH_SECRET` and `APP_ENCRYPTION_KEY`. Session cookies have a 7-day
@@ -246,6 +249,21 @@ node dist/admin-cli.js revoke-token --id <token id>
 
 Clients send `Authorization: Bearer nt_…`. Tenant routes accept sessions
 only.
+
+Base URL for token clients (ADR 0013):
+
+- **netrics cloud:** `https://api.netrics.so/v1`, for example
+  `curl -H "Authorization: Bearer nt_…" https://api.netrics.so/v1/admin/workspaces`.
+  The browser app stays on `https://app.netrics.so`; session cookies are not
+  accepted on the API host, and `/api/auth/*` is not part of its surface.
+- **Self-hosted:** `<origin>/v1`, the same origin as the web app, which
+  proxies `/v1` to the api. A separate API host is optional: it needs a DNS
+  record, the api's port published (behind TLS), and the same
+  `NETRICS_PROXY_SECRET` on the web app and the api so that cookie sessions
+  and the auth flow stay with the web origin.
+
+The API answers credentialed CORS only for `WEB_ORIGIN`; other origins get no
+CORS headers. Token clients are expected to run server-side.
 
 Session-protected API routes live under `/v1`:
 
