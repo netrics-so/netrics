@@ -214,11 +214,24 @@ describe("client address for rate limits", () => {
     "ignores forged forwarded addresses with %s",
     async (_case, headersFor) => {
       // A fresh forged address on every attempt, in every header a client
-      // could try; all of them count against the one shared address.
-      await exhaustSignIn(withSecret, egress(), (i) => ({
-        ...headersFor(i),
-        "x-real-ip": ip(i),
-      }));
+      // could try; all of them count against the one shared address. (The
+      // pairing limit: without a valid secret /api/auth does not answer.)
+      const shared = egress();
+      const pair = (i: number) =>
+        withSecret.inject({
+          method: "POST",
+          url: "/v1/device/pairings",
+          remoteAddress: EDGE,
+          headers: {
+            "x-forwarded-for": shared,
+            ...headersFor(i),
+            "x-real-ip": ip(i),
+          },
+        });
+      for (let i = 0; i < PAIRING_MAX; i++) {
+        expect((await pair(i)).statusCode).toBe(200);
+      }
+      expect((await pair(PAIRING_MAX)).statusCode).toBe(429);
     },
   );
 
@@ -301,11 +314,12 @@ describe("session cookies with NETRICS_PROXY_SECRET", () => {
       (await me(withSecret, { cookie, [PROXY_SECRET_HEADER]: WRONG }))
         .statusCode,
     ).toBe(401);
+    // The browser auth flow itself is not served without the secret.
     const session = await withSecret.inject({
       url: "/api/auth/get-session",
       headers: { cookie },
     });
-    expect(session.json()).toBeNull();
+    expect(session.statusCode).toBe(404);
   });
 
   it("accepts the cookie on every request when the secret is unset", async () => {
@@ -328,6 +342,87 @@ describe("session cookies with NETRICS_PROXY_SECRET", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(response.statusCode).toBe(200);
+  });
+});
+
+// ADR 0013 (#158): browsers reach /api/auth only through the web origin, so
+// with the secret set the flow does not exist on a separate API host.
+describe("the browser auth flow with NETRICS_PROXY_SECRET", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await signUp(
+      withSecret,
+      "auth-flow@example.com",
+      frontend("198.51.100.210"),
+    );
+  });
+
+  it.each([
+    ["no secret", {}],
+    ["a wrong secret", { [PROXY_SECRET_HEADER]: WRONG }],
+    ["an empty secret", { [PROXY_SECRET_HEADER]: "" }],
+  ])("answers 404 like an unknown route with %s", async (_case, headers) => {
+    const responses = await Promise.all([
+      withSecret.inject({
+        url: "/api/auth/get-session",
+        headers: { cookie, ...headers },
+      }),
+      withSecret.inject({ url: "/api/auth/ok", headers }),
+      withSecret.inject({
+        method: "POST",
+        url: "/api/auth/sign-in/email",
+        remoteAddress: EDGE,
+        headers: { "x-forwarded-for": egress(), ...headers },
+        payload: { email: "auth-flow@example.com", password: "password-12345" },
+      }),
+      withSecret.inject({
+        method: "POST",
+        url: "/api/auth/sign-up/email",
+        headers,
+        payload: {
+          name: "Eve",
+          email: "eve@example.com",
+          password: "password-12345",
+        },
+      }),
+    ]);
+    for (const response of responses) {
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({ error: "not_found" });
+      expect(response.headers["set-cookie"]).toBeUndefined();
+    }
+  });
+
+  it("serves the flow to the web frontend", async () => {
+    const session = await withSecret.inject({
+      url: "/api/auth/get-session",
+      headers: { cookie, [PROXY_SECRET_HEADER]: SECRET },
+    });
+    expect(session.statusCode).toBe(200);
+    expect(session.json()).toMatchObject({
+      user: { email: "auth-flow@example.com" },
+    });
+    const signIn = await withSecret.inject({
+      method: "POST",
+      url: "/api/auth/sign-in/email",
+      remoteAddress: EDGE,
+      headers: { "x-forwarded-for": egress(), ...frontend("198.51.100.211") },
+      payload: { email: "auth-flow@example.com", password: "password-12345" },
+    });
+    expect(signIn.statusCode).toBe(200);
+  });
+
+  it("serves the flow to every request when the secret is unset", async () => {
+    const plainCookie = await signUp(withoutSecret, "flow@example.com", {});
+    const session = await withoutSecret.inject({
+      url: "/api/auth/get-session",
+      headers: { cookie: plainCookie },
+    });
+    expect(session.statusCode).toBe(200);
+    expect(session.json()).toMatchObject({
+      user: { email: "flow@example.com" },
+    });
   });
 });
 

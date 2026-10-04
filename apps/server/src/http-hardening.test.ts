@@ -128,6 +128,76 @@ describe("cross-origin mutations", () => {
   });
 });
 
+// ADR 0013 (#158): credentialed CORS for WEB_ORIGIN only; no CORS at all for
+// other origins (token clients are server-side, and a separate API host
+// offers no browser access).
+describe("CORS", () => {
+  const WEB = "http://localhost:3000";
+  const FOREIGN = "https://evil.example.com";
+  const CORS_HEADERS = [
+    "access-control-allow-origin",
+    "access-control-allow-credentials",
+    "access-control-allow-methods",
+    "access-control-allow-headers",
+  ];
+
+  function preflight(origin: string) {
+    return app.inject({
+      method: "OPTIONS",
+      url: "/v1/workspaces",
+      headers: {
+        origin,
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type, authorization",
+      },
+    });
+  }
+
+  it("answers a preflight from the web origin with credentials", async () => {
+    const response = await preflight(WEB);
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-origin"]).toBe(WEB);
+    expect(response.headers["access-control-allow-credentials"]).toBe("true");
+    expect(response.headers.vary).toContain("Origin");
+  });
+
+  it("gives a preflight from another origin no CORS headers", async () => {
+    for (const origin of [
+      FOREIGN,
+      "http://localhost:3000.evil.example",
+      "null",
+    ]) {
+      const response = await preflight(origin);
+      expect(response.statusCode).toBe(404);
+      for (const name of CORS_HEADERS) {
+        expect(response.headers[name]).toBeUndefined();
+      }
+    }
+  });
+
+  it("allows credentials on simple requests from the web origin only", async () => {
+    const web = await app.inject({
+      url: "/v1/setup-status",
+      headers: { origin: WEB },
+    });
+    expect(web.headers["access-control-allow-origin"]).toBe(WEB);
+    expect(web.headers["access-control-allow-credentials"]).toBe("true");
+
+    for (const headers of [
+      { origin: FOREIGN },
+      { origin: FOREIGN, authorization: "Bearer nt_not-a-real-token" },
+      {},
+    ]) {
+      for (const url of ["/v1/setup-status", "/v1/me", "/health/live"]) {
+        const response = await app.inject({ url, headers });
+        for (const name of CORS_HEADERS) {
+          expect(response.headers[name]).toBeUndefined();
+        }
+      }
+    }
+  });
+});
+
 describe("request ids", () => {
   it("keep log-safe client ids and replace anything else", async () => {
     const kept = await app.inject({

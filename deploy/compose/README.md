@@ -93,9 +93,17 @@ NETRICS_PROXY_SECRET=...
 The web app then marks its requests with the secret, and the API believes the
 client address they carry. Requests without the secret are still served and
 authenticated by session or token, but the API accepts session cookies only
-on requests carrying it (browsers always come through the web app). To
+on requests carrying it (browsers always come through the web app), and it
+answers 404 to `/api/auth/*` without it. Keep `NETRICS_PUBLIC_URL` (which
+sets `BETTER_AUTH_URL` and `WEB_ORIGIN`) on the web app's address. To
 rotate, set `new,old` on the API, then `new` on the web app, then `new` on
 the API.
+
+The same setup gives token clients (service accounts, `Authorization:
+Bearer nt_…`) their own API host, as netrics cloud does with
+`https://api.netrics.so`: point a DNS record at the API's published port
+(behind TLS) and call `https://<api host>/v1/…`. Without one, token clients
+use `<NETRICS_PUBLIC_URL>/v1/…` through the web app.
 
 ### Exchange rates (display currency)
 

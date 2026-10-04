@@ -210,6 +210,26 @@ What `api.netrics.so` implies (#158):
   proxy keeps working; a separate API host needs only DNS and the API's
   port. Without `NETRICS_PROXY_SECRET`, nothing changes.
 
+Decided in #158:
+
+- **No token-only CORS.** Requests from origins other than `WEB_ORIGIN` get
+  no CORS headers at all, neither credentialed nor `*`. The API used to send
+  `Access-Control-Allow-Origin: <WEB_ORIGIN>` and
+  `Access-Control-Allow-Credentials` on every response; it now sends them
+  only when the request's Origin is the web origin. Offering `*` for bearer
+  requests would invite browser apps to hold service-account tokens, which
+  carry installation scopes and are meant for server-side clients. It can be
+  added later for a specific client without changing anything else.
+- **`/api/auth/*` refused without the secret.** With `NETRICS_PROXY_SECRET`
+  set, the API answers `/api/auth/*` like an unknown route (404) unless the
+  request carries the secret. Every legitimate caller passes the web app:
+  the browser auth client is same-origin, the web proxy, the session lookup
+  of server components and the OAuth callback all use the shared fetch
+  helper, and emailed links point at `BETTER_AUTH_URL`, which is the web
+  origin. So the browser flow does not exist on `api.netrics.so`, and its
+  rate-limited endpoints are not reachable around the frontend. Without the
+  secret nothing changes.
+
 ### Host redirects, `/healthz`, CSP
 
 - **Host redirects.** `proxy.ts` runs as Vercel routing middleware.

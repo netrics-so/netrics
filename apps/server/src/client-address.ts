@@ -32,7 +32,26 @@ declare module "fastify" {
      * request.ip. Set by an onRequest hook before any route runs.
      */
     clientIp: string;
+    /**
+     * Whether the request carries a valid NETRICS_PROXY_SECRET, i.e. comes
+     * from the web frontend. Always false while no secret is configured.
+     */
+    fromFrontend: boolean;
   }
+}
+
+/**
+ * Whether the browser auth flow (/api/auth/*) is served to this request.
+ * Without a configured secret, always (one origin, self-hosting unchanged).
+ * With one, only through the web frontend: browsers reach /api/auth only via
+ * the web origin, so on a separate API host (api.netrics.so) the flow does
+ * not exist (ADR 0013, #158).
+ */
+export function servesAuthFlow(
+  request: FastifyRequest,
+  proxySecrets: readonly Secret[],
+): boolean {
+  return proxySecrets.length === 0 || request.fromFrontend;
 }
 
 function digest(value: string): Buffer {
@@ -82,6 +101,7 @@ export function registerClientAddress(
   proxySecrets: readonly Secret[],
 ): void {
   app.decorateRequest("clientIp", "");
+  app.decorateRequest("fromFrontend", false);
   app.addHook("onRequest", async (request) => {
     const fromFrontend = matchesProxySecret(
       singleHeader(request, PROXY_SECRET_HEADER),
@@ -91,6 +111,7 @@ export function registerClientAddress(
       ? validClientIp(singleHeader(request, FORWARDED_CLIENT_IP_HEADER))
       : null;
     request.clientIp = forwarded ?? request.ip;
+    request.fromFrontend = fromFrontend;
 
     // Neither header travels further (better-auth, logs, handlers): the
     // secret is consumed here, and the auth bridge sets the client address

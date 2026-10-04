@@ -107,10 +107,32 @@ export async function registerOpenApi(
         title: "netrics API",
         version,
         description:
-          "REST API of a netrics installation. Browser clients authenticate " +
-          "with the session cookie issued by /api/auth; mutating requests " +
-          "from browsers must come from the configured web origin.",
+          "REST API of a netrics installation. Integrations and scripts " +
+          "authenticate with a service-account token in `Authorization: " +
+          "Bearer nt_…`; on netrics cloud they use https://api.netrics.so. " +
+          "Browser clients " +
+          "authenticate with the session cookie issued by /api/auth through " +
+          "the web origin; mutating requests from browsers must come from " +
+          "the configured web origin.",
       },
+      // Paths carry their /v1 prefix, so each server URL is an origin
+      // (ADR 0013, #158).
+      servers: [
+        { url: "https://api.netrics.so", description: "netrics cloud" },
+        {
+          url: "{scheme}://{host}",
+          description:
+            "Self-hosted: the installation's web origin, which proxies " +
+            "/v1 to the API, or a separate API host if one is set up.",
+          variables: {
+            scheme: { enum: ["https", "http"], default: "https" },
+            host: {
+              default: "netrics.example.com",
+              description: "Host (and port, if not the default) to reach.",
+            },
+          },
+        },
+      ],
       components: {
         securitySchemes: {
           session: {
