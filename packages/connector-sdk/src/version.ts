@@ -7,8 +7,9 @@ import { satisfiesRange } from "./semver.js";
 // 0.2.3: the "currency_minor" unit, whose metrics declare a "currency"
 // dimension (ADR 0014).
 // 0.2.4: the optional manifest field resourceNoun (#208).
+// 0.2.5: the optional Connector.resourceIcons capability (#226).
 // All are additive: ^0.2.0 connectors keep loading.
-export const SDK_VERSION = "0.2.4";
+export const SDK_VERSION = "0.2.5";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

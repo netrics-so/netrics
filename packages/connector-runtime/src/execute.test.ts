@@ -19,7 +19,9 @@ import {
   ContractViolationError,
   executeCheck,
   executeDiscover,
+  executeResourceIcons,
   executeSync,
+  supportsResourceIcons,
 } from "./execute.js";
 
 const baseContext: ConnectionContext = {
@@ -458,5 +460,113 @@ describe("binary bodies (SDK 0.2.2)", () => {
         /exceeds 1048576 bytes when decompressed/,
       );
     });
+  });
+});
+
+describe("executeResourceIcons (SDK 0.2.5)", () => {
+  const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+  const iconsRequest = { resources: [{ id: "app-1" }, { id: "app-2" }] };
+
+  function withIcons(icons: unknown): Connector {
+    return {
+      ...connectorWith(demoManifest),
+      resourceIcons: async () => icons as never,
+    };
+  }
+
+  it("returns no icons for a connector without the capability", async () => {
+    const plain = connectorWith(demoManifest);
+    expect(supportsResourceIcons(plain)).toBe(false);
+    await expect(
+      executeResourceIcons(plain, baseContext, iconsRequest),
+    ).resolves.toEqual([]);
+  });
+
+  it("decodes the icons a connector returns", async () => {
+    const connector = withIcons({
+      icons: [
+        {
+          resourceId: "app-2",
+          contentType: "image/png",
+          data: png.toString("base64"),
+        },
+      ],
+    });
+    expect(supportsResourceIcons(connector)).toBe(true);
+    const icons = await executeResourceIcons(
+      connector,
+      baseContext,
+      iconsRequest,
+    );
+    expect(icons).toHaveLength(1);
+    expect(icons[0]!.resourceId).toBe("app-2");
+    expect(icons[0]!.contentType).toBe("image/png");
+    expect(Buffer.compare(icons[0]!.bytes, png)).toBe(0);
+  });
+
+  it("refuses icons for resources it did not ask for", async () => {
+    const connector = withIcons({
+      icons: [
+        {
+          resourceId: "someone-else",
+          contentType: "image/png",
+          data: png.toString("base64"),
+        },
+      ],
+    });
+    await expect(
+      executeResourceIcons(connector, baseContext, iconsRequest),
+    ).rejects.toThrow(ContractViolationError);
+  });
+
+  it("refuses non-raster types, invalid base64 and oversized icons", async () => {
+    for (const icon of [
+      { resourceId: "app-1", contentType: "image/svg+xml", data: "PHN2Zz4=" },
+      { resourceId: "app-1", contentType: "image/png", data: "not base64!" },
+      {
+        resourceId: "app-1",
+        contentType: "image/png",
+        data: Buffer.alloc(1_048_577, 1).toString("base64"),
+      },
+    ]) {
+      await expect(
+        executeResourceIcons(withIcons({ icons: [icon] }), baseContext, {
+          resources: [{ id: "app-1" }],
+        }),
+      ).rejects.toThrow(ContractViolationError);
+    }
+  });
+
+  it("refuses an invalid request before calling the connector", async () => {
+    let called = false;
+    const connector: Connector = {
+      ...connectorWith(demoManifest),
+      resourceIcons: async () => {
+        called = true;
+        return { icons: [] };
+      },
+    };
+    await expect(
+      executeResourceIcons(connector, baseContext, { resources: [] }),
+    ).rejects.toThrow(ContractViolationError);
+    await expect(
+      executeResourceIcons(connector, baseContext, {
+        resources: [{ id: "app-1", territories: ["usa"] }],
+      }),
+    ).rejects.toThrow(ContractViolationError);
+    expect(called).toBe(false);
+  });
+
+  it("keeps the egress allowlist: an undeclared host is a broken connector", async () => {
+    const sneaky: Connector = {
+      ...connectorWith(demoManifest),
+      resourceIcons: async (_context, _request, runtime) => {
+        await runtime.fetch("https://is6-ssl.mzstatic.com/icon.png");
+        return { icons: [] };
+      },
+    };
+    await expect(
+      executeResourceIcons(sneaky, baseContext, iconsRequest),
+    ).rejects.toThrow(/not in the connector's outboundDomains/);
   });
 });

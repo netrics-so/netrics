@@ -281,3 +281,90 @@ export async function findDeviceImage(
     limit 1`);
   return rows.length === 1 ? findImage(tx, workspaceId, imageId) : null;
 }
+
+// ─── Resource icons (#226) ─────────────────────────────────────────────────
+
+/** The newest stored icon of a connection's resource, if any. */
+export async function findResourceIcon(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+  resourceId: string,
+): Promise<ImageRow | null> {
+  const [row] = await tx
+    .select(metadata)
+    .from(schema.workspaceImages)
+    .where(
+      and(
+        eq(schema.workspaceImages.workspaceId, workspaceId),
+        eq(schema.workspaceImages.origin, "resource_icon"),
+        eq(schema.workspaceImages.connectionId, connectionId),
+        eq(schema.workspaceImages.resourceId, resourceId),
+      ),
+    )
+    .orderBy(desc(schema.workspaceImages.createdAt), schema.workspaceImages.id)
+    .limit(1);
+  return row ?? null;
+}
+
+/** Every stored icon of the connection's resources (refreshed daily). */
+export async function listResourceIcons(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId?: string,
+): Promise<ImageRow[]> {
+  return tx
+    .select(metadata)
+    .from(schema.workspaceImages)
+    .where(
+      and(
+        eq(schema.workspaceImages.workspaceId, workspaceId),
+        eq(schema.workspaceImages.origin, "resource_icon"),
+        ...(connectionId
+          ? [eq(schema.workspaceImages.connectionId, connectionId)]
+          : []),
+      ),
+    )
+    .orderBy(desc(schema.workspaceImages.createdAt), schema.workspaceImages.id);
+}
+
+/**
+ * Points every use of one image (dashboard logos, slide backgrounds, image
+ * widgets) at another image of the same workspace: a refreshed icon
+ * replaces the old one where it is shown. Dashboard versions are left
+ * alone, so an open studio keeps its draft.
+ */
+export async function replaceImageReferences(
+  tx: Transaction,
+  workspaceId: string,
+  fromImageId: string,
+  toImageId: string,
+): Promise<void> {
+  await tx
+    .update(schema.dashboards)
+    .set({ logoImageId: toImageId })
+    .where(
+      and(
+        eq(schema.dashboards.workspaceId, workspaceId),
+        eq(schema.dashboards.logoImageId, fromImageId),
+      ),
+    );
+  await tx
+    .update(schema.dashboardSlides)
+    .set({ backgroundImageId: toImageId })
+    .where(
+      and(
+        eq(schema.dashboardSlides.workspaceId, workspaceId),
+        eq(schema.dashboardSlides.backgroundImageId, fromImageId),
+      ),
+    );
+  await tx
+    .update(schema.dashboardWidgets)
+    .set({ imageId: toImageId })
+    .where(
+      and(
+        eq(schema.dashboardWidgets.workspaceId, workspaceId),
+        eq(schema.dashboardWidgets.imageId, fromImageId),
+      ),
+    );
+}

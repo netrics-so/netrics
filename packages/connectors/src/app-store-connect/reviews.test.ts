@@ -180,9 +180,10 @@ describe("manifest", () => {
         (metric) => metric.kind === "delta" && metric.granularity === "day",
       ),
     ).toBe(true);
-    // Reviews come from the same API host: the egress allowlist is unchanged.
-    expect(appStoreConnectManifest.outboundDomains).not.toContain(
-      "itunes.apple.com",
+    // Reviews come from the API host. itunes.apple.com is allowed for the
+    // app icon lookup only (#226); reviews never use its public RSS feeds.
+    expect(appStoreConnectManifest.outboundDomains).toContain(
+      "api.appstoreconnect.apple.com",
     );
   });
 });

@@ -1,8 +1,24 @@
 "use client";
 
-import { useState, type DragEvent } from "react";
+import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type DragEvent,
+} from "react";
 
-import { IMAGE_CONTENT_TYPES, IMAGE_MAX_BYTES } from "@netrics/contracts";
+import {
+  IMAGE_CONTENT_TYPES,
+  IMAGE_MAX_BYTES,
+  type ResourceIconSource,
+  type WorkspaceImage,
+} from "@netrics/contracts";
+
+import {
+  apiErrorMessage,
+  fetchResourceIcon,
+  listResourceIcons,
+} from "@/lib/api";
 
 /** A workspace image as the pickers list it. */
 export interface PickableImage {
@@ -25,6 +41,153 @@ export function uploadProblem(file: { type: string; size: number }) {
     return "That image is larger than 1 MiB. Export it smaller and try again.";
   }
   return null;
+}
+
+interface ResourceIconsState {
+  workspaceId: string | null;
+  sources: ResourceIconSource[];
+  onImage: ((image: WorkspaceImage) => void) | null;
+}
+
+// "Use app icon" (#226) for every image picker of the open studio. A small
+// store rather than a context provider, so the editor only registers
+// itself (one studio per page) and its layout stays as it is.
+const NO_ICONS: ResourceIconsState = {
+  workspaceId: null,
+  sources: [],
+  onImage: null,
+};
+let iconsState = NO_ICONS;
+const iconListeners = new Set<() => void>();
+
+function setIconsState(next: ResourceIconsState) {
+  iconsState = next;
+  for (const listener of iconListeners) listener();
+}
+
+function subscribeIcons(listener: () => void) {
+  iconListeners.add(listener);
+  return () => {
+    iconListeners.delete(listener);
+  };
+}
+
+/**
+ * Registers the studio for "Use app icon": lists the resources whose icon
+ * the server can fetch (App Store apps) once, and hands every icon used in
+ * a picker, stored as a workspace image by the server, to `onImage`.
+ */
+export function useResourceIcons(
+  workspaceId: string,
+  onImage: (image: WorkspaceImage) => void,
+): void {
+  useEffect(() => {
+    let active = true;
+    setIconsState({ workspaceId, sources: [], onImage });
+    listResourceIcons(workspaceId)
+      .then(({ resources }) => {
+        if (active) setIconsState({ ...iconsState, sources: resources });
+      })
+      .catch(() => {
+        // No icons to offer; uploads still work.
+      });
+    return () => {
+      active = false;
+      setIconsState(NO_ICONS);
+    };
+  }, [workspaceId, onImage]);
+}
+
+async function storeIconOf(
+  source: ResourceIconSource,
+): Promise<{ imageId: string } | { problem: string }> {
+  const { workspaceId, onImage } = iconsState;
+  if (!workspaceId) return { problem: "The studio is not open." };
+  try {
+    const { image } = await fetchResourceIcon(
+      workspaceId,
+      source.connectionId,
+      source.resourceId,
+    );
+    onImage?.(image);
+    return { imageId: image.id };
+  } catch (cause) {
+    return { problem: apiErrorMessage(cause) };
+  }
+}
+
+function sourceKey(source: ResourceIconSource): string {
+  return `${source.connectionId}|${source.resourceId}`;
+}
+
+/** Picks an app and uses its icon; hidden when there is none to offer. */
+function AppIconChooser({
+  id,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  onChange: (imageId: string) => void;
+  disabled: boolean;
+}) {
+  const icons = useSyncExternalStore(
+    subscribeIcons,
+    () => iconsState,
+    () => NO_ICONS,
+  );
+  const [choice, setChoice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  if (icons.sources.length === 0) return null;
+  const several =
+    new Set(icons.sources.map((source) => source.connectionId)).size > 1;
+  const chosen = icons.sources.find((source) => sourceKey(source) === choice);
+  return (
+    <div className="image-picker-icon">
+      <label htmlFor={`${id}-icon`} className="visually-hidden">
+        App icon
+      </label>
+      <select
+        id={`${id}-icon`}
+        value={choice}
+        disabled={disabled || busy}
+        onChange={(event) => {
+          setChoice(event.target.value);
+          setProblem(null);
+        }}
+      >
+        <option value="">App icon…</option>
+        {icons.sources.map((source) => (
+          <option key={sourceKey(source)} value={sourceKey(source)}>
+            {source.name}
+            {several ? ` (${source.connectionName})` : ""}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        disabled={!chosen || disabled || busy}
+        onClick={() => {
+          if (!chosen) return;
+          setBusy(true);
+          setProblem(null);
+          void storeIconOf(chosen)
+            .then((result) => {
+              if ("imageId" in result) onChange(result.imageId);
+              else setProblem(result.problem);
+            })
+            .finally(() => setBusy(false));
+        }}
+      >
+        {busy ? "Fetching…" : "Use app icon"}
+      </button>
+      {problem ? (
+        <span className="error" role="alert">
+          {problem}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -101,6 +264,9 @@ export function ImagePicker({
           ))}
         </select>
       </div>
+      {onUpload ? (
+        <AppIconChooser id={id} onChange={onChange} disabled={uploading} />
+      ) : null}
       {onUpload ? (
         <div
           className={

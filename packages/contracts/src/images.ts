@@ -80,3 +80,34 @@ export const imageInUseResponseSchema = z.object({
   dashboards: z.array(z.object({ id: z.uuid(), name: z.string() })),
 });
 export type ImageInUseResponse = z.infer<typeof imageInUseResponseSchema>;
+
+// Resource icons (#226): a connection resource's icon (an app's App Store
+// icon) as a workspace image of origin "resource_icon".
+
+/** A resource whose icon can be used, with the stored icon if any. */
+export const resourceIconSourceSchema = z.object({
+  connectionId: z.uuid(),
+  connectionName: z.string(),
+  resourceId: z.string().min(1),
+  name: z.string(),
+  kind: z.string(),
+  /** The stored icon; null until someone uses it the first time. */
+  image: workspaceImageSchema.nullable(),
+});
+export type ResourceIconSource = z.infer<typeof resourceIconSourceSchema>;
+
+export const resourceIconListResponseSchema = z.object({
+  resources: z.array(resourceIconSourceSchema),
+});
+export type ResourceIconListResponse = z.infer<
+  typeof resourceIconListResponseSchema
+>;
+
+/** Fetches (or reuses, while fresh) the icon of one resource. */
+export const useResourceIconRequestSchema = z.object({
+  connectionId: z.uuid(),
+  resourceId: z.string().min(1).max(200),
+});
+export type UseResourceIconRequest = z.infer<
+  typeof useResourceIconRequestSchema
+>;

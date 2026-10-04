@@ -239,3 +239,102 @@ export function resourceNameKey(
 ): string {
   return `${connectionId}|${resourceId}`;
 }
+
+/** Territories hinted per resource at most. */
+const MAX_TERRITORY_HINTS = 3;
+
+/**
+ * The territories (ISO 3166-1 alpha-2) each resource has the largest
+ * values for over the last 90 days, in any metric with a "territory"
+ * dimension, largest first (#226: where a store lookup tries next). Groups
+ * such as "Others" are left out.
+ */
+export async function resourceTopTerritories(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+  resourceIds: readonly string[],
+  now: Date,
+): Promise<Map<string, string[]>> {
+  if (resourceIds.length === 0) {
+    return new Map();
+  }
+  const since = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const rows = await tx.execute(sql`
+    select resource, territory from (
+      select resource, territory,
+             row_number() over (
+               partition by resource order by total desc, territory
+             ) as rank
+      from (
+        select o.dimensions ->> ${RESOURCE_DIMENSION} as resource,
+               o.dimensions ->> 'territory' as territory,
+               sum(o.value) as total
+        from observations o
+        where o.workspace_id = ${workspaceId}
+          and o.connection_id = ${connectionId}
+          and o.source_timestamp >= ${since.toISOString()}
+          and o.dimensions ->> ${RESOURCE_DIMENSION} in (${sql.join(
+            resourceIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})
+          and o.dimensions ->> 'territory' ~ '^[A-Z]{2}$'
+        group by 1, 2
+      ) totals
+    ) ranked
+    where rank <= ${MAX_TERRITORY_HINTS}
+    order by resource, rank`);
+  const result = new Map<string, string[]>();
+  for (const row of rows) {
+    const resource = row.resource as string;
+    result.set(resource, [
+      ...(result.get(resource) ?? []),
+      row.territory as string,
+    ]);
+  }
+  return result;
+}
+
+export interface NamedResource {
+  connectionId: string;
+  resourceId: string;
+  name: string;
+  kind: string;
+}
+
+/**
+ * The discovered resources of the given connections (only the selected
+ * ones, when a connection syncs a selection), by connection and name.
+ */
+export async function listNamedResources(
+  tx: Transaction,
+  workspaceId: string,
+  connectionIds: readonly string[],
+): Promise<NamedResource[]> {
+  if (connectionIds.length === 0) {
+    return [];
+  }
+  const rows = await tx.execute(sql`
+    select r.connection_id, r.resource_id, r.name, r.kind
+    from connection_resources r
+    join connections c
+      on c.workspace_id = ${workspaceId} and c.id = r.connection_id
+    where r.workspace_id = ${workspaceId}
+      and r.connection_id in (${sql.join(
+        connectionIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+      and (
+        jsonb_typeof(c.config -> 'resourceSelection') is distinct from 'array'
+        or jsonb_array_length(c.config -> 'resourceSelection') = 0
+        or c.config -> 'resourceSelection' ? r.resource_id
+      )
+    order by r.connection_id, r.name, r.resource_id
+    limit ${MAX_RESOURCES}`);
+  return rows.map((row) => ({
+    connectionId: row.connection_id as string,
+    resourceId: row.resource_id as string,
+    name: row.name as string,
+    kind: row.kind as string,
+  }));
+}

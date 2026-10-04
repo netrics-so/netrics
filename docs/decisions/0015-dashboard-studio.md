@@ -282,14 +282,44 @@ statement) still works; deleting an image checks them immediately (#217).
 **Resource icons ("use app icon").** An image widget, a slide background or
 the dashboard logo can use a connection resource's icon instead of an
 upload, for example a Wurfel app icon from App Store Connect. The connector
-fetches it through `runtime.fetch` (allowlisted hosts), and it is stored as
-a `resource_icon` image with the same validation and refreshed when the
-connection syncs its resources. For App Store Connect the official source
-is the build's `iconAssetToken` (`templateUrl` on Apple's image CDN). Which
-key role may read builds is unverified: the Sales key may not. The fallback
-is the iTunes Search API lookup (`artworkUrl512`, released apps only).
-The implementing issue verifies both with a real key before choosing, and
-pins the narrowest hosts (`is1-ssl.mzstatic.com` … `is5-ssl.mzstatic.com`).
+fetches it through `runtime.fetch` (allowlisted hosts) with the optional
+`resourceIcons` capability (SDK 0.2.5), never the browser. The server
+validates the bytes like an upload, stores them as a `resource_icon` image
+(counted in the quota) when someone uses the icon, and refreshes the icons
+it stores when the connection refreshes its resource names, at most daily.
+A changed icon becomes a new image that takes the old one's place in every
+logo, background and image widget; the old image is deleted. Dashboard
+versions do not change, so an open studio keeps its draft.
+
+For App Store Connect (#226, spike findings 2026-10-04):
+
+- **Primary source: the public iTunes lookup**
+  (`https://itunes.apple.com/lookup?id=<ids>&entity=software`). It needs no
+  key role, so it works with the Sales key every connection has. Ids are
+  batched (one request for many apps), and the artwork URL's size segment
+  is rewritten from `512x512bb.jpg` to `1024x1024bb.png` (square, no alpha,
+  no rounded corners; the mask belongs to the renderer). Apps the default
+  (US) storefront does not list are looked up again in their largest sales
+  territories. Apple asks for about 20 lookups per minute; netrics makes a
+  few per refresh at most.
+- **Hosts, pinned exactly:** `itunes.apple.com` and `is1-ssl.mzstatic.com`
+  … `is5-ssl.mzstatic.com` (recorded from real lookups; `*.mzstatic.com` is
+  not allowed). The connector checks an artwork URL's host before fetching,
+  and the egress check refuses every other host on every redirect hop.
+- **Optional: the newest build's `iconAssetToken`** (`templateUrl` with
+  `{w}x{h}bb.{f}`), only for apps the lookup does not list, and only when
+  the key may read builds. Apple's role matrix gives Sales and Customer
+  Support keys no build access, so a 403 skips the step silently for every
+  app; netrics never asks for a broader role for an icon (ADR 0014). This
+  has not been confirmed with a real key yet.
+- **No icon** (unreleased, not on the App Store): the picker offers an
+  upload.
+- **Terms.** Apple licenses App Store artwork "only for promoting store
+  content" and asks for it to be shown near a Download on the App Store
+  badge. An internal metrics dashboard does not strictly fit that. The risk
+  is low: a workspace sees only the icons of its own connection's apps, on
+  its own dashboards (the hosted service serves owner-scoped icons only),
+  and every icon can be replaced by an upload.
 
 ### 6. Themes
 
@@ -474,7 +504,14 @@ both test suites run, so the web and tvOS place and size text identically.
   when connected, ratings and reviews) and **Brand** (pick a resource such
   as one app: its icon as the logo, its metrics filtered to it, an accent
   colour). Templates are generated server-side, like the onboarding
-  dashboard (#51), and are ordinary dashboards afterwards.
+  dashboard (#51), and are ordinary dashboards afterwards
+  (`POST /v1/workspaces/:w/dashboard-templates`; the builders only use
+  connections that exist, and every label fits at 1080p). The Brand
+  accent is the icon's dominant colour, computed in the browser from the
+  stored image (the server never decodes pixels, section 5), lightened or
+  darkened until it reaches 4.5:1 on the theme surface, else the theme
+  accent; the user can change it before creating, and the server checks it
+  like any accent (below 3:1 refused).
 
 ## Alternatives considered
 

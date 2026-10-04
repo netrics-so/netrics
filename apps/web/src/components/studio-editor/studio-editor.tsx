@@ -48,7 +48,7 @@ import {
   useWidgetClipboard,
 } from "./canvas-extras";
 import { EditorCanvas, type CanvasOutline } from "./editor-canvas";
-import type { PickableImage } from "./image-picker";
+import { useResourceIcons, type PickableImage } from "./image-picker";
 import {
   DashboardSettingsPanel,
   WidgetPanel,
@@ -214,6 +214,17 @@ export function StudioEditor({
     },
     [workspaceId],
   );
+
+  // "Use app icon" in the pickers (#226): an icon the server stored joins
+  // the editor's images like an upload.
+  const onIconImage = useCallback((image: WorkspaceImage) => {
+    setImages((current) => [
+      image,
+      ...current.filter((entry) => entry.id !== image.id),
+    ]);
+    dispatch({ type: "announce", text: `App icon “${image.name}” added.` });
+  }, []);
+  useResourceIcons(workspaceId, onIconImage);
 
   const imagesInUse = useMemo(
     () => new Set(referencedImageIds(draft)),

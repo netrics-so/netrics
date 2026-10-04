@@ -435,11 +435,45 @@ give netrics its own key.
 | "This key can also read sales reports, so it has the Admin role"                       | netrics does not store Admin keys. Create a Customer Support key; revoke the Admin key if it was for us.  |
 | "App Store reviews paused — upload a new reviews key"                                  | Apple refused the reviews key (revoked or role changed). Upload a new Customer Support key; sales go on.  |
 
+## App icons
+
+In the Studio, "Use app icon" in an image picker and the Brand template
+(ADR 0015) show an app's App Store icon. netrics fetches it on the server,
+never from the browser:
+
+1. The public App Store lookup,
+   `https://itunes.apple.com/lookup?id=<app ids>&entity=software`, gives
+   each released app's artwork URL; several apps go in one request. Apps
+   the US storefront does not list are looked up again in the territories
+   they sell most in (from the synced sales). The lookup needs no key and
+   no role, so it works with the Sales key.
+2. The artwork URL is asked for at 1024 × 1024 PNG (the JPEG of the same
+   artwork when the PNG is larger than 1 MiB) from Apple's image CDN, only
+   when its host is one of `is1-ssl.mzstatic.com` … `is5-ssl.mzstatic.com`.
+3. For an app the lookup does not list (not released yet), the newest
+   build's icon (`iconAssetToken`) is used when the key may read builds.
+   Sales and Customer Support keys may not: Apple answers 403, and netrics
+   skips this step silently.
+
+The icon is checked like an upload (PNG or JPEG, strict header parse,
+metadata removed), stored as a workspace image and counts against the image
+quota. It is fetched when someone uses it and refreshed with the app names,
+at most once a day; a changed icon replaces the old one wherever it is
+shown. An app without an icon (unreleased, not on the App Store) can always
+use an uploaded image instead.
+
+Apple licenses App Store artwork for promoting apps. netrics shows a
+workspace only the icons of its own connection's apps, on its own
+dashboards; every icon can be replaced by an upload.
+
 ## Network access
 
-The connector only talks to `api.appstoreconnect.apple.com` and the
-analytics segment bucket `asp-us-west-2.s3.us-west-2.amazonaws.com` (see
-[Segment host](#segment-host)). Token signing is done by the netrics server,
-not by connector code; the App Store Connect token is never sent to the
-bucket. The one-time analytics step runs on the server, also only against
-`api.appstoreconnect.apple.com`.
+The connector talks to `api.appstoreconnect.apple.com`, the analytics
+segment bucket `asp-us-west-2.s3.us-west-2.amazonaws.com` (see
+[Segment host](#segment-host)), and for [app icons](#app-icons) the public
+App Store lookup `itunes.apple.com` and Apple's image CDN hosts
+`is1-ssl.mzstatic.com` … `is5-ssl.mzstatic.com`, all exactly (no wildcard;
+the egress check applies to every redirect too). Token signing is done by
+the netrics server, not by connector code; the App Store Connect token is
+never sent to the bucket, the lookup or the CDN. The one-time analytics
+step runs on the server, also only against `api.appstoreconnect.apple.com`.

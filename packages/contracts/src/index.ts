@@ -1770,6 +1770,82 @@ export type DuplicateDashboardRequest = z.infer<
 >;
 
 // ---------------------------------------------------------------------------
+// Dashboard templates (ADR 0015 section 9, #226)
+// ---------------------------------------------------------------------------
+
+export const DASHBOARD_TEMPLATES = ["overview", "brand"] as const;
+export const dashboardTemplateSchema = z.enum(DASHBOARD_TEMPLATES);
+export type DashboardTemplate = z.infer<typeof dashboardTemplateSchema>;
+
+/**
+ * A new dashboard generated on the server. Overview: the numbers of every
+ * connection the workspace has (downloads of all apps, proceeds, reviews
+ * with a reviews key, Search Console clicks and impressions, Vercel
+ * visitors). Brand: one resource (an app, a project, a property) with its
+ * icon as the logo, an accent colour and its own numbers. The result is an
+ * ordinary dashboard (409 none_connected when nothing can be shown).
+ */
+export const createDashboardFromTemplateRequestSchema = z.discriminatedUnion(
+  "template",
+  [
+    z.object({
+      template: z.literal("overview"),
+      /** Default "Overview". */
+      name: nameSchema.optional(),
+    }),
+    z.object({
+      template: z.literal("brand"),
+      connectionId: z.uuid(),
+      resourceId: z.string().min(1).max(200),
+      /** Default: the resource's name. */
+      name: nameSchema.optional(),
+      /**
+       * The brand colour (checked against the theme surface: 400
+       * contrast_too_low below 3:1); null or missing: the theme accent.
+       */
+      accentColor: hexColorSchema.nullable().optional(),
+      /**
+       * The logo; missing: the resource's icon when its connector has one
+       * (fetched now if needed), null: no logo.
+       */
+      logoImageId: z.uuid().nullable().optional(),
+    }),
+  ],
+);
+export type CreateDashboardFromTemplateRequest = z.infer<
+  typeof createDashboardFromTemplateRequestSchema
+>;
+
+const templateSourceSchema = z.object({
+  connectionId: z.uuid(),
+  connectionName: z.string(),
+  connectorId: z.string(),
+});
+
+/** What the templates can be built from in this workspace. */
+export const dashboardTemplateOptionsResponseSchema = z.object({
+  overview: z.object({
+    /** The connections the Overview shows; empty: it cannot be made. */
+    sources: z.array(templateSourceSchema),
+  }),
+  brand: z.object({
+    /** Resources a Brand dashboard can be made for. */
+    resources: z.array(
+      templateSourceSchema.extend({
+        resourceId: z.string().min(1),
+        name: z.string(),
+        kind: z.string(),
+        /** The connector can fetch this resource's icon. */
+        iconSupported: z.boolean(),
+      }),
+    ),
+  }),
+});
+export type DashboardTemplateOptionsResponse = z.infer<
+  typeof dashboardTemplateOptionsResponseSchema
+>;
+
+// ---------------------------------------------------------------------------
 // Devices and pairing (ADR 0010, ADR 0011)
 // ---------------------------------------------------------------------------
 
