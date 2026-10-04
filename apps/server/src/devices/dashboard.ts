@@ -12,6 +12,7 @@ import {
   type ConnectionStateView,
   type DeviceDashboardResponse,
   type DeviceDashboardV2Response,
+  type DeviceDashboardV3Response,
   type DeviceImage,
   type DeviceSlide,
   type DeviceTile,
@@ -43,8 +44,14 @@ import {
   DEFAULT_THEME_KEY,
   EXCHANGE_RATE_SOURCE,
   RESOURCE_DIMENSION,
+  SCREEN_FORMATS,
   STUDIO_GRID,
   isBuiltinThemeKey,
+  isScreenFormat,
+  slideLayoutFor,
+  type CustomLayout,
+  type LayoutWidget,
+  type ScreenFormat,
   isDataWidgetType,
   tileLabel,
   type Locale,
@@ -68,7 +75,12 @@ import {
 // dashboard exactly its tiles as before, byte for byte.
 //
 // Schema 2 (#219): the enabled slides with every widget, its placement and
-// computed data, the resolved theme, rotation and the referenced images.
+// computed data, the resolved theme, rotation and the referenced images,
+// in the `16x9` layout (ADR 0017 section 9).
+//
+// Schema 3 (#277): schema 2's content with the primary placements, the
+// custom layouts of other formats and the device's settings; every screen
+// lays the dashboard out for its own format.
 
 /**
  * Data older than this many poll intervals (at least 15 minutes) is stale.
@@ -512,18 +524,40 @@ async function dataWidgetOf(
   };
 }
 
+/** A built slide: its device form, before any layout is applied. */
+interface BuiltSlide {
+  slide: Dashboard["slides"][number];
+  /** The slide without widgets, in the field order of the payload. */
+  head: Omit<DeviceSlide, "widgets">;
+  /** In the primary's reading order, placed in the primary's grid. */
+  widgets: DeviceWidget[];
+}
+
+/** What schemas 2 and 3 share: every enabled slide with computed data. */
+interface BuiltDashboard {
+  dashboard: Dashboard | null;
+  primaryFormat: ScreenFormat;
+  timeZone: string;
+  locale: Locale;
+  header: DeviceDashboardV2Response["dashboard"];
+  theme: DeviceDashboardV2Response["theme"];
+  rotation: DeviceDashboardV2Response["rotation"];
+  slides: BuiltSlide[];
+  images: DeviceImage[];
+}
+
 /**
- * Builds the schema 2 read model inside the device's workspace
- * transaction. Data widgets are computed like schema 1 tiles: one that
- * fails reports `no_data` (or its connection's failure) and never fails
- * the payload.
+ * Loads the dashboard and computes every widget of its enabled slides,
+ * inside the device's workspace transaction. Data widgets are computed like
+ * schema 1 tiles: one that fails reports `no_data` (or its connection's
+ * failure) and never fails the payload.
  */
-export async function buildDeviceDashboardV2(
+async function buildSlides(
   tx: Transaction,
   workspaceId: string,
   dashboardId: string | null,
   options: BuildOptions,
-): Promise<DeviceDashboardV2Response> {
+): Promise<BuiltDashboard> {
   const workspace = await findWorkspace(tx, workspaceId);
   const timeZone = workspace?.timeZone ?? "UTC";
   const dashboard = dashboardId
@@ -567,7 +601,7 @@ export async function buildDeviceDashboardV2(
     slides.flatMap((slide) => slide.widgets.filter(isDataWidget)),
     options,
   );
-  const deviceSlides: DeviceSlide[] = [];
+  const built: BuiltSlide[] = [];
   for (const slide of slides) {
     const widgets: DeviceWidget[] = [];
     for (const widget of slide.widgets) {
@@ -610,25 +644,30 @@ export async function buildDeviceDashboardV2(
       }
     }
     const background = imageRef(slide.backgroundImageId);
-    deviceSlides.push({
-      id: slide.id,
-      name: slide.name,
-      durationSec: slide.durationSeconds ?? dashboard!.defaultSlideSeconds,
-      background:
-        background !== null
-          ? { imageId: background, dim: slide.backgroundDim }
-          : null,
+    built.push({
+      slide,
+      head: {
+        id: slide.id,
+        name: slide.name,
+        durationSec: slide.durationSeconds ?? dashboard!.defaultSlideSeconds,
+        background:
+          background !== null
+            ? { imageId: background, dim: slide.backgroundDim }
+            : null,
+      },
       widgets,
     });
   }
 
   const logo = imageRef(dashboard?.logoImageId ?? null);
-  const content = {
-    schema: 2 as const,
-    refreshAfterSec: DEVICE_REFRESH_AFTER_SECONDS,
+  return {
+    dashboard,
+    primaryFormat: isScreenFormat(dashboard?.primaryFormat)
+      ? dashboard.primaryFormat
+      : "16x9",
     timeZone,
     locale: options.locale ?? DEFAULT_LOCALE,
-    dashboard: dashboard
+    header: dashboard
       ? {
           id: dashboard.id,
           name: dashboard.name,
@@ -642,9 +681,226 @@ export async function buildDeviceDashboardV2(
       transition: (dashboard?.transition ??
         "fade") as DeviceDashboardV2Response["rotation"]["transition"],
     },
-    grid: { columns: STUDIO_GRID.columns, rows: STUDIO_GRID.rows },
-    slides: deviceSlides,
+    slides: built,
     images,
   };
+}
+
+/** The payload's widgets of a slide as input to the domain's layouts. */
+function layoutWidgets(widgets: readonly DeviceWidget[]): LayoutWidget[] {
+  return widgets.map(({ id, type, x, y, w, h }) => ({ id, type, x, y, w, h }));
+}
+
+/**
+ * A slide's custom layout of `format` for the given widgets: placements of
+ * widgets that are not in the payload (an image widget whose image is
+ * gone) are left out, so every screen lays out exactly what it got.
+ */
+function customLayoutOf(
+  slide: Dashboard["slides"][number],
+  format: ScreenFormat,
+  widgetIds: ReadonlySet<string>,
+): CustomLayout | null {
+  const layout = slide.layouts.find((entry) => entry.format === format);
+  return layout
+    ? {
+        pages: layout.pages,
+        placements: layout.placements
+          .filter((placement) => widgetIds.has(placement.widgetId))
+          .map(({ widgetId, ...placement }) => ({
+            id: widgetId,
+            ...placement,
+          })),
+      }
+    : null;
+}
+
+/** Fixed namespace of continuation-page slide ids (UUID version 5). */
+const PAGE_SLIDE_NAMESPACE = "1c8f8a4e-6f43-4b0a-9a51-5e3d2b7c9d10";
+
+/**
+ * A name-based UUID (RFC 9562 version 5) of a slide's continuation page:
+ * the same slide and page always get the same id, so screens keep showing
+ * it across payloads.
+ */
+export function pageSlideId(slideId: string, page: number): string {
+  const namespace = Buffer.from(PAGE_SLIDE_NAMESPACE.replace(/-/g, ""), "hex");
+  const hash = createHash("sha1")
+    .update(namespace)
+    .update(`${slideId}/${page}`)
+    .digest();
+  const bytes = hash.subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * A slide in the `16x9` layout for schema 2 (ADR 0017 section 9): as built
+ * when the primary is `16x9`, else its custom or auto `16x9` layout, each
+ * continuation page an extra slide ("Sales 1/2", "Sales 2/2") whose id is
+ * name-based on the slide id and page. Hidden widgets are left out.
+ */
+function slidesIn16x9(
+  built: BuiltSlide,
+  primaryFormat: ScreenFormat,
+): DeviceSlide[] {
+  if (primaryFormat === "16x9") {
+    return [{ ...built.head, widgets: built.widgets }];
+  }
+  const byId = new Map(built.widgets.map((widget) => [widget.id, widget]));
+  const pages = slideLayoutFor({
+    widgets: layoutWidgets(built.widgets),
+    primaryFormat,
+    format: "16x9",
+    custom: customLayoutOf(built.slide, "16x9", new Set(byId.keys())),
+  });
+  return pages.map((page, index) => ({
+    ...built.head,
+    id: index === 0 ? built.head.id : pageSlideId(built.head.id, index),
+    name:
+      pages.length === 1
+        ? built.head.name
+        : [built.head.name, `${index + 1}/${pages.length}`]
+            .filter((part) => part !== null && part !== "")
+            .join(" "),
+    widgets: page.flatMap(({ id, x, y, w, h }) => {
+      const widget = byId.get(id);
+      return widget ? [{ ...widget, x, y, w, h }] : [];
+    }),
+  }));
+}
+
+/**
+ * Builds the schema 2 read model inside the device's workspace
+ * transaction: the dashboard in its `16x9` layout, as released screens
+ * know it. For a `16x9` dashboard (every dashboard before ADR 0017) it is
+ * byte for byte what it was.
+ */
+export async function buildDeviceDashboardV2(
+  tx: Transaction,
+  workspaceId: string,
+  dashboardId: string | null,
+  options: BuildOptions,
+): Promise<DeviceDashboardV2Response> {
+  const built = await buildSlides(tx, workspaceId, dashboardId, options);
+  const content = {
+    schema: 2 as const,
+    refreshAfterSec: DEVICE_REFRESH_AFTER_SECONDS,
+    timeZone: built.timeZone,
+    locale: built.locale,
+    dashboard: built.header,
+    theme: built.theme,
+    rotation: built.rotation,
+    grid: { columns: STUDIO_GRID.columns, rows: STUDIO_GRID.rows },
+    slides: built.slides.flatMap((slide) =>
+      slidesIn16x9(slide, built.primaryFormat),
+    ),
+    images: built.images,
+  };
   return { version: versionOf(content), ...content };
+}
+
+// ─── Schema 3 ───────────────────────────────────────────────────────────────
+
+/** Every format's grid and reference canvas, in the fixed format order. */
+const DEVICE_FORMATS = Object.fromEntries(
+  (["16x9", "21x9", "4x3", "3x4", "9x16"] as const).map((key) => {
+    const spec = SCREEN_FORMATS[key];
+    return [
+      key,
+      {
+        columns: spec.columns,
+        rows: spec.rows,
+        reference: [spec.reference.width, spec.reference.height],
+      },
+    ];
+  }),
+) as DeviceDashboardV3Response["formats"];
+
+/** Schema 3 without the device settings: the same for every screen. */
+export type DeviceDashboardV3Content = Omit<
+  DeviceDashboardV3Response,
+  "version" | "device"
+>;
+
+/**
+ * Builds the device-independent part of schema 3 (ADR 0017 section 9)
+ * inside the device's workspace transaction: schema 2's content with the
+ * primary placements, every format's grid, and per slide the custom layouts
+ * (`autoPlaced` is the Studio's and not sent). Screens lay out for their own
+ * format. `withDevice` completes it.
+ */
+export async function buildDeviceDashboardV3(
+  tx: Transaction,
+  workspaceId: string,
+  dashboardId: string | null,
+  options: BuildOptions,
+): Promise<DeviceDashboardV3Content> {
+  const built = await buildSlides(tx, workspaceId, dashboardId, options);
+  return {
+    schema: 3,
+    refreshAfterSec: DEVICE_REFRESH_AFTER_SECONDS,
+    timeZone: built.timeZone,
+    locale: built.locale,
+    primaryFormat: built.primaryFormat,
+    formats: DEVICE_FORMATS,
+    dashboard: built.header,
+    theme: built.theme,
+    rotation: built.rotation,
+    slides: built.slides.map(({ slide, head, widgets }) => {
+      const ids = new Set(widgets.map((widget) => widget.id));
+      return {
+        ...head,
+        widgets,
+        layouts: slide.layouts
+          .filter((layout) => layout.format !== built.primaryFormat)
+          .map((layout) => ({
+            format: layout.format as ScreenFormat,
+            pages: layout.pages,
+            placements: layout.placements
+              .filter((placement) => ids.has(placement.widgetId))
+              .map(({ widgetId, page, x, y, w, h, hidden }) => ({
+                widgetId,
+                page,
+                x,
+                y,
+                w,
+                h,
+                hidden,
+              })),
+          })),
+      };
+    }),
+    images: built.images,
+  };
+}
+
+/**
+ * Schema 3 for one device: its settings go into the payload and its hash,
+ * so a rotation or mode change is a new ETag and reaches the screen within
+ * one poll, while the rest stays shared by every screen of the dashboard.
+ */
+export function withDevice(
+  content: DeviceDashboardV3Content,
+  device: DeviceDashboardV3Response["device"],
+): DeviceDashboardV3Response {
+  const { schema, refreshAfterSec, timeZone, locale, primaryFormat, formats } =
+    content;
+  const full = {
+    schema,
+    refreshAfterSec,
+    timeZone,
+    locale,
+    primaryFormat,
+    formats,
+    device: { rotation: device.rotation, displayMode: device.displayMode },
+    dashboard: content.dashboard,
+    theme: content.theme,
+    rotation: content.rotation,
+    slides: content.slides,
+    images: content.images,
+  };
+  return { version: versionOf(full), ...full };
 }

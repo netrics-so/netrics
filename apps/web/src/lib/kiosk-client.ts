@@ -3,6 +3,7 @@ import type {
   DeviceCredentials,
   DeviceDashboardResponse,
   DeviceDashboardV2Response,
+  DeviceDashboardV3Response,
   DeviceImage,
   DeviceScreen,
   PollPairingResponse,
@@ -26,6 +27,12 @@ import { MAX_SCREEN_SIDE } from "@netrics/contracts";
  * with the device token, kept in Cache Storage by sha256 (only missing
  * hashes are downloaded) and handed to the page as `blob:` URLs, which are
  * revoked when no payload references them any more.
+ *
+ * Formats (#277, ADR 0017 section 9): schema 3 is schema 2 with the primary
+ * layout, each slide's custom layouts and the device's rotation and display
+ * mode. The kiosk asks for the highest schema both the server and the page
+ * render (`schemas`, default 1 and 2), so the page opts into schema 3 once
+ * it lays slides out per format.
  */
 
 export const CREDENTIALS_KEY = "netrics.kiosk.credentials";
@@ -43,6 +50,12 @@ export const REQUEST_TIMEOUT_MS = 15 * 1000;
 const DEFAULT_REFRESH_AFTER_SECONDS = 60;
 /** The payload schema with slides; 1 is the tile list. */
 export const SLIDES_SCHEMA = 2;
+/** The payload schema with formats, custom layouts and device settings. */
+export const FORMATS_SCHEMA = 3;
+/** A device payload schema the kiosk knows. */
+export type KioskSchema = 1 | 2 | 3;
+/** What the kiosk renders unless the page says otherwise. */
+const DEFAULT_SCHEMAS: readonly KioskSchema[] = [1, 2];
 const MAX_ERROR_LENGTH = 500;
 
 export interface KioskStorage {
@@ -64,9 +77,11 @@ export interface KioskPairing {
   expiresAt: string;
 }
 
-/** Either payload schema: tiles (1) or slides (2). */
+/** Any payload schema: tiles (1), slides (2) or slides with formats (3). */
 export type KioskDashboard =
-  DeviceDashboardResponse | DeviceDashboardV2Response;
+  | DeviceDashboardResponse
+  | DeviceDashboardV2Response
+  | DeviceDashboardV3Response;
 
 /** An image of the payload, ready to show: `url` is a `blob:` URL. */
 export interface KioskImage {
@@ -125,6 +140,12 @@ export interface KioskClientOptions {
    * null (or no function) sends none.
    */
   screen?: () => DeviceScreen | null;
+  /**
+   * The payload schemas the page renders (default 1 and 2); the kiosk asks
+   * for the highest one the server lists too. Schema 1 is always the
+   * fallback.
+   */
+  schemas?: readonly KioskSchema[];
 }
 
 export interface KioskClient {
@@ -233,6 +254,29 @@ export function isSlidesDashboard(
   return (dashboard as { schema?: unknown }).schema === SLIDES_SCHEMA;
 }
 
+/** Whether a payload is schema 1: the tile list. */
+export function isTilesDashboard(
+  dashboard: KioskDashboard,
+): dashboard is DeviceDashboardResponse {
+  return dashboardSchemaOf(dashboard) === 1;
+}
+
+/** Whether a payload is schema 3: slides with formats and device settings. */
+export function isFormatsDashboard(
+  dashboard: KioskDashboard,
+): dashboard is DeviceDashboardV3Response {
+  return (dashboard as { schema?: unknown }).schema === FORMATS_SCHEMA;
+}
+
+/** A payload's schema. */
+export function dashboardSchemaOf(dashboard: KioskDashboard): KioskSchema {
+  return isFormatsDashboard(dashboard)
+    ? 3
+    : isSlidesDashboard(dashboard)
+      ? 2
+      : 1;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -241,20 +285,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * A light shape check, not the contract's full parse: a newer server may
  * add widget types, which the canvas shows as a notice in their box.
  */
-function isDashboard(value: unknown): value is KioskDashboard {
+function isDashboard(
+  value: unknown,
+  schemas: readonly KioskSchema[],
+): value is KioskDashboard {
   if (!isRecord(value) || !isString(value.version)) {
     return false;
   }
   if (!isString(value.timeZone)) {
     return false;
   }
+  const slides =
+    Array.isArray(value.slides) &&
+    Array.isArray(value.images) &&
+    isRecord(value.theme) &&
+    isRecord(value.theme.tokens) &&
+    isRecord(value.rotation);
   if (value.schema === SLIDES_SCHEMA) {
+    return slides;
+  }
+  if (value.schema === FORMATS_SCHEMA) {
+    // Only for a page that renders it (a cached one after a downgrade is
+    // dropped, and the next poll asks again).
     return (
-      Array.isArray(value.slides) &&
-      Array.isArray(value.images) &&
-      isRecord(value.theme) &&
-      isRecord(value.theme.tokens) &&
-      isRecord(value.rotation)
+      schemas.includes(FORMATS_SCHEMA) &&
+      slides &&
+      isString(value.primaryFormat) &&
+      isRecord(value.formats) &&
+      isRecord(value.device)
     );
   }
   return Array.isArray(value.tiles);
@@ -291,13 +349,19 @@ const defaultBlobUrls: KioskBlobUrls = {
   revoke: (url) => URL.revokeObjectURL(url),
 };
 
-function parseCachedDashboard(raw: string | null): CachedDashboard | null {
+function parseCachedDashboard(
+  raw: string | null,
+  schemas: readonly KioskSchema[],
+): CachedDashboard | null {
   if (!raw) {
     return null;
   }
   try {
     const value = JSON.parse(raw) as Partial<CachedDashboard>;
-    if (isDashboard(value.payload) && typeof value.updatedAt === "number") {
+    if (
+      isDashboard(value.payload, schemas) &&
+      typeof value.updatedAt === "number"
+    ) {
       return {
         etag: typeof value.etag === "string" ? value.etag : null,
         payload: value.payload,
@@ -329,6 +393,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
   const { storage } = options;
 
   const imageCache = options.imageCache ?? null;
+  const schemas = options.schemas ?? DEFAULT_SCHEMAS;
   const blobUrls = options.blobUrls ?? defaultBlobUrls;
 
   let state: KioskState = {
@@ -354,7 +419,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
   let heartbeatTimer: unknown = null;
   let refreshing: Promise<RefreshOutcome> | null = null;
   /** The schema to ask for; null until `/v1/server` has answered. */
-  let schema: 1 | 2 | null = null;
+  let schema: KioskSchema | null = null;
   /** Blob URLs of loaded images, by sha256. */
   const loaded = new Map<string, string>();
   /** Image syncs run one after another; a newer payload ends an older one. */
@@ -694,7 +759,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
       if (at !== epoch) {
         return;
       }
-      if (!isDashboard(payload)) {
+      if (!isDashboard(payload, schemas)) {
         throw new Error("Unexpected dashboard response");
       }
       failures = 0;
@@ -719,13 +784,13 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
   }
 
   /**
-   * The payload schema to ask for: 2 when `/v1/server` lists it, else 1
-   * (a server from before slides). The answer is kept for this page load
-   * (a deploy reloads the kiosk). When the server info cannot be read, the
-   * schema of the payload on screen is kept, so an outage never switches a
-   * slide screen back to tiles.
+   * The payload schema to ask for: the highest the page renders that
+   * `/v1/server` lists, else 1 (a server from before slides). The answer is
+   * kept for this page load (a deploy reloads the kiosk). When the server
+   * info cannot be read, the schema of the payload on screen is kept, so an
+   * outage never switches a slide screen back to tiles.
    */
-  async function dashboardSchema(): Promise<1 | 2> {
+  async function dashboardSchema(): Promise<KioskSchema> {
     if (schema !== null) {
       return schema;
     }
@@ -734,23 +799,27 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
       if (!response.ok) {
         throw new HttpError(response.status);
       }
-      const body: unknown = await response.json();
-      schema = serverDashboardSchemas(body).includes(SLIDES_SCHEMA) ? 2 : 1;
+      const listed = serverDashboardSchemas(await response.json());
+      schema =
+        ([3, 2] as const).find(
+          (candidate) =>
+            schemas.includes(candidate) && listed.includes(candidate),
+        ) ?? 1;
       return schema;
     } catch {
-      return state.dashboard && isSlidesDashboard(state.dashboard) ? 2 : 1;
+      return state.dashboard ? dashboardSchemaOf(state.dashboard) : 1;
     }
   }
 
-  function getDashboard(wanted: 1 | 2): Promise<Response> {
+  function getDashboard(wanted: KioskSchema): Promise<Response> {
     // ETags are per schema: only offer one for the schema asked for.
     const current = state.dashboard;
     const sameSchema =
-      current !== null && isSlidesDashboard(current) === (wanted === 2);
+      current !== null && dashboardSchemaOf(current) === wanted;
     return request(
-      wanted === 2
-        ? `/v1/device/dashboard?schema=${SLIDES_SCHEMA}`
-        : "/v1/device/dashboard",
+      wanted === 1
+        ? "/v1/device/dashboard"
+        : `/v1/device/dashboard?schema=${wanted}`,
       {
         headers: {
           authorization: `Bearer ${credentials?.accessToken ?? ""}`,
@@ -763,7 +832,8 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
   // ── Images (schema 2) ──────────────────────────────────────────────────
 
   function payloadImages(dashboard: KioskDashboard | null): DeviceImage[] {
-    return dashboard && isSlidesDashboard(dashboard)
+    return dashboard &&
+      (isSlidesDashboard(dashboard) || isFormatsDashboard(dashboard))
       ? dashboard.images.filter(usableImage)
       : [];
   }
@@ -935,7 +1005,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
         enterPairing();
         return;
       }
-      const cached = parseCachedDashboard(read(DASHBOARD_KEY));
+      const cached = parseCachedDashboard(read(DASHBOARD_KEY), schemas);
       etag = cached?.etag ?? null;
       failures = 0;
       update({

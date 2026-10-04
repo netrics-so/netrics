@@ -7,6 +7,7 @@ import type {
   DeviceCredentials,
   DeviceDashboardResponse,
   DeviceDashboardV2Response,
+  DeviceDashboardV3Response,
   DeviceHeartbeatRequest,
   DeviceSelfResponse,
   PollPairingResponse,
@@ -49,6 +50,9 @@ import { generatePrincipalToken, generateToken, hashToken } from "../tokens.js";
 import {
   buildDeviceDashboard,
   buildDeviceDashboardV2,
+  buildDeviceDashboardV3,
+  withDevice,
+  type DeviceDashboardV3Content,
   type TileErrorLogger,
 } from "./dashboard.js";
 import {
@@ -180,9 +184,14 @@ export interface DeviceServiceDeps {
   defaultLocale?: Locale | null;
 }
 
-/** The device dashboard payload in schema 1 or 2 (ADR 0015 section 7). */
+/** The device dashboard payload in schema 1, 2 or 3 (ADR 0015, ADR 0017). */
 export type DeviceDashboardPayload =
-  DeviceDashboardResponse | DeviceDashboardV2Response;
+  | DeviceDashboardResponse
+  | DeviceDashboardV2Response
+  | DeviceDashboardV3Response;
+
+/** A payload schema the server answers (`dashboardSchemas`). */
+export type DeviceDashboardSchema = 1 | 2 | 3;
 
 export function createDeviceService(deps: DeviceServiceDeps) {
   const { db } = deps;
@@ -479,15 +488,18 @@ export function createDeviceService(deps: DeviceServiceDeps) {
 
     /**
      * The read model of the calling device's dashboard (ADR 0007), in
-     * schema 1 or 2 (ADR 0015 section 7). Computed inside the device's
-     * workspace transaction, and reused for up to 30 s per (workspace,
-     * dashboard, dashboard version, schema, language). Labels are in the
-     * workspace's screen language, else the instance default (ADR 0016).
+     * schema 1, 2 (ADR 0015 section 7) or 3 (ADR 0017 section 9).
+     * Computed inside the device's workspace transaction, and reused for
+     * up to 30 s per (workspace, dashboard, dashboard version, schema,
+     * language). Schema 3 adds the device's settings after the reused part,
+     * so they are in its version without splitting the memo per device.
+     * Labels are in the workspace's screen language, else the instance
+     * default (ADR 0016).
      */
     async dashboard(
       principal: { workspaceId: string; deviceId: string },
       log?: TileErrorLogger,
-      schema: 1 | 2 = 1,
+      schema: DeviceDashboardSchema = 1,
     ): Promise<Result<DeviceDashboardPayload>> {
       const { workspaceId } = principal;
       return withWorkspace(db, { workspaceId }, async (tx) => {
@@ -506,26 +518,34 @@ export function createDeviceService(deps: DeviceServiceDeps) {
           exchangeRates: deps.exchangeRates ?? false,
           ...(log ? { log } : {}),
         };
-        const build = (): Promise<DeviceDashboardPayload> =>
-          schema === 2
-            ? buildDeviceDashboardV2(
+        const build = (): Promise<
+          | DeviceDashboardResponse
+          | DeviceDashboardV2Response
+          | DeviceDashboardV3Content
+        > =>
+          schema === 3
+            ? buildDeviceDashboardV3(
                 tx,
                 workspaceId,
                 device.dashboardId,
                 options,
               )
-            : buildDeviceDashboard(
-                tx,
-                workspaceId,
-                device.dashboardId,
-                options,
-              );
+            : schema === 2
+              ? buildDeviceDashboardV2(
+                  tx,
+                  workspaceId,
+                  device.dashboardId,
+                  options,
+                )
+              : buildDeviceDashboard(
+                  tx,
+                  workspaceId,
+                  device.dashboardId,
+                  options,
+                );
         const version = device.dashboardId
           ? await findDashboardVersion(tx, workspaceId, device.dashboardId)
           : null;
-        if (version === null) {
-          return ok<DeviceDashboardPayload>(await build());
-        }
         const key = [
           workspaceId,
           device.dashboardId,
@@ -533,7 +553,13 @@ export function createDeviceService(deps: DeviceServiceDeps) {
           schema,
           locale,
         ].join(":");
-        return ok<DeviceDashboardPayload>(await payloads.get(key, build));
+        const payload =
+          version === null ? await build() : await payloads.get(key, build);
+        return ok<DeviceDashboardPayload>(
+          "schema" in payload && payload.schema === 3
+            ? withDevice(payload, deviceSettings(device))
+            : payload,
+        );
       });
     },
 

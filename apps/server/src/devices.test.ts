@@ -10,6 +10,7 @@ import {
   dashboardResponseSchema,
   deviceDashboardResponseSchema,
   deviceDashboardV2ResponseSchema,
+  deviceDashboardV3ResponseSchema,
   deviceListResponseSchema,
   imageResponseSchema,
   deviceResponseSchema,
@@ -226,8 +227,9 @@ describe("server identification", () => {
       version: "0.0.0-dev",
       pairingUrl: "http://localhost:3000/devices/approve",
       // Released apps keep working: the API version stays 1, and new apps
-      // ask for schema 2 only when it is listed (ADR 0015 section 7).
-      dashboardSchemas: [1, 2],
+      // ask for schema 2 or 3 only when it is listed (ADR 0015 section 7,
+      // ADR 0017 section 9).
+      dashboardSchemas: [1, 2, 3],
     });
   });
 
@@ -1169,9 +1171,56 @@ describe("device dashboard", () => {
     expect((await conditional("", v2Etag)).statusCode).toBe(200);
   });
 
+  it("answers schema 3 with ?schema=3, with ETags per schema and device settings (#277)", async () => {
+    const { device, accessToken } = await pair("Formats TV", salesId);
+    const v2Response = await getDashboard(accessToken, { query: "?schema=2" });
+    const v2 = deviceDashboardV2ResponseSchema.parse(v2Response.json());
+    const response = await getDashboard(accessToken, { query: "?schema=3" });
+    expect(response.statusCode).toBe(200);
+    const v3 = deviceDashboardV3ResponseSchema.parse(response.json());
+    expect(response.headers.etag).toBe(`"${v3.version}"`);
+    expect(response.headers["cache-control"]).toBe("no-cache");
+    expect(v3).toMatchObject({
+      schema: 3,
+      primaryFormat: "16x9",
+      formats: { "16x9": { columns: 12, rows: 8, reference: [1920, 1080] } },
+      device: { rotation: 0, displayMode: "screen" },
+      dashboard: v2.dashboard,
+    });
+    expect(v3.slides).toEqual(
+      v2.slides.map((slide) => ({ ...slide, layouts: [] })),
+    );
+
+    // Each schema answers 304 on its own ETag only.
+    const v1Etag = (await read(accessToken)).response.headers.etag as string;
+    const v2Etag = v2Response.headers.etag as string;
+    const v3Etag = response.headers.etag as string;
+    const conditional = (query: string, etag: string) =>
+      getDashboard(accessToken, { query, etag });
+    expect((await conditional("?schema=3", v3Etag)).statusCode).toBe(304);
+    expect((await conditional("?schema=3", v2Etag)).statusCode).toBe(200);
+    expect((await conditional("?schema=3", v1Etag)).statusCode).toBe(200);
+    expect((await conditional("?schema=2", v3Etag)).statusCode).toBe(200);
+    expect((await conditional("", v3Etag)).statusCode).toBe(200);
+
+    // Turning the TV in the web app reaches it on the next poll.
+    const url = `/v1/workspaces/${workspaceId}/devices/${device.id}`;
+    expect(
+      (await call("PATCH", url, { cookie: owner, payload: { rotation: 90 } }))
+        .statusCode,
+    ).toBe(200);
+    const turned = await conditional("?schema=3", v3Etag);
+    expect(turned.statusCode).toBe(200);
+    expect(deviceDashboardV3ResponseSchema.parse(turned.json()).device).toEqual(
+      { rotation: 90, displayMode: "screen" },
+    );
+    // Released apps know no rotation: their payload is unchanged.
+    expect((await conditional("?schema=2", v2Etag)).statusCode).toBe(304);
+  });
+
   it("refuses an unknown schema", async () => {
     const { accessToken } = await pair("Future TV", salesId);
-    for (const query of ["?schema=3", "?schema=two", "?schema="]) {
+    for (const query of ["?schema=4", "?schema=two", "?schema="]) {
       const response = await getDashboard(accessToken, { query });
       expect(response.statusCode).toBe(400);
     }
@@ -1281,6 +1330,19 @@ describe("device dashboard", () => {
     );
     expect(ours.dashboard).toMatchObject({ id: salesId });
     expect(ours.version).not.toBe(theirs.version);
+    const theirsV3 = deviceDashboardV3ResponseSchema.parse(
+      (
+        await getDashboard(result.credentials.accessToken, {
+          query: "?schema=3",
+        })
+      ).json(),
+    );
+    expect(theirsV3.dashboard).toMatchObject({ id: strangerDashboard });
+    expect(
+      deviceDashboardV3ResponseSchema.parse(
+        (await getDashboard(accessToken, { query: "?schema=3" })).json(),
+      ).dashboard,
+    ).toMatchObject({ id: salesId });
     // Reassigning to the other workspace's dashboard is refused.
     const device = deviceResponseSchema.parse(approved.json()).device;
     expect((await reassign(device.id, salesId)).statusCode).toBe(404);

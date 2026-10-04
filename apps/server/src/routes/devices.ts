@@ -9,6 +9,7 @@ import {
   deviceDashboardQuerySchema,
   deviceDashboardResponseSchema,
   deviceDashboardV2ResponseSchema,
+  deviceDashboardV3ResponseSchema,
   deviceHeartbeatRequestSchema,
   deviceListResponseSchema,
   deviceResponseSchema,
@@ -227,14 +228,17 @@ export function registerDeviceRoutes(
           schema: routeSchema({
             summary:
               "The device's dashboard: schema 1 (tiles) by default, schema 2 " +
-              "(slides, widgets, theme, images) with ?schema=2 when server " +
-              "info lists it; send If-None-Match with the last ETag to get " +
-              "304 when nothing changed",
+              "(slides, widgets, theme, images in the 16:9 layout) with " +
+              "?schema=2, schema 3 (primary and custom layouts per screen " +
+              "format, device rotation and display mode) with ?schema=3, " +
+              "each when server info lists it; ETags are per schema: send " +
+              "If-None-Match with the last ETag to get 304 when nothing changed",
             tags: ["devices"],
             querystring: deviceDashboardQuerySchema,
             response: z.union([
               deviceDashboardResponseSchema,
               deviceDashboardV2ResponseSchema,
+              deviceDashboardV3ResponseSchema,
             ]),
             device: true,
             notModified: true,
@@ -242,7 +246,8 @@ export function registerDeviceRoutes(
         },
         async (request, reply) => {
           const query = deviceDashboardQuerySchema.parse(request.query);
-          const schema = query.schema === "2" ? 2 : 1;
+          const schema =
+            query.schema === "3" ? 3 : query.schema === "2" ? 2 : 1;
           const dashboard = unwrap(
             await devices.dashboard(request.device!, request.log, schema),
             reply,
@@ -256,9 +261,12 @@ export function registerDeviceRoutes(
           if (matchesEtag(request.headers["if-none-match"], etag)) {
             return reply.code(304).send();
           }
-          return "schema" in dashboard
-            ? deviceDashboardV2ResponseSchema.parse(dashboard)
-            : deviceDashboardResponseSchema.parse(dashboard);
+          if (!("schema" in dashboard)) {
+            return deviceDashboardResponseSchema.parse(dashboard);
+          }
+          return dashboard.schema === 3
+            ? deviceDashboardV3ResponseSchema.parse(dashboard)
+            : deviceDashboardV2ResponseSchema.parse(dashboard);
         },
       );
 

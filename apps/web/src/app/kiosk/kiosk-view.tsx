@@ -17,6 +17,7 @@ import { I18nProvider, useLocale, useT } from "@/lib/i18n/client";
 import {
   createKioskClient,
   isSlidesDashboard,
+  isTilesDashboard,
   kioskScreen,
   type KioskState,
 } from "@/lib/kiosk-client";
@@ -116,7 +117,7 @@ export function KioskScreen({ state }: { state: KioskState }) {
         />
       );
     }
-    return payload.dashboard && !isSlidesDashboard(payload) ? (
+    return payload.dashboard && isTilesDashboard(payload) ? (
       <KioskDashboard state={state} dashboard={payload} />
     ) : (
       <Message title={t("noDashboardTitle")}>

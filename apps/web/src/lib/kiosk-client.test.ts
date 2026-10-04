@@ -4,6 +4,7 @@ import type {
   DeviceCredentials,
   DeviceDashboardResponse,
   DeviceDashboardV2Response,
+  DeviceDashboardV3Response,
 } from "@netrics/contracts";
 import { BUILTIN_THEMES } from "@netrics/domain";
 
@@ -12,6 +13,8 @@ import {
   DASHBOARD_KEY,
   backoffMs,
   createKioskClient,
+  dashboardSchemaOf,
+  isFormatsDashboard,
   isSlidesDashboard,
   kioskAppVersion,
   kioskScreen,
@@ -19,6 +22,7 @@ import {
   type KioskBlobUrls,
   type KioskClient,
   type KioskImageCache,
+  type KioskSchema,
   type KioskStorage,
 } from "./kiosk-client";
 
@@ -106,6 +110,8 @@ function json(
 interface Call {
   method: string;
   path: string;
+  /** "?schema=2" or "". */
+  search: string;
   headers: Headers;
   body: unknown;
   at: number;
@@ -122,6 +128,7 @@ function fakeApi(routes: Record<string, Handler>) {
       const call: Call = {
         method: init.method ?? "GET",
         path: url.pathname,
+        search: url.search,
         headers: new Headers(init.headers),
         body: typeof init.body === "string" ? JSON.parse(init.body) : null,
         at: Date.now(),
@@ -634,6 +641,39 @@ function slidesPayload(
   };
 }
 
+/** Schema 2's content with formats, layouts and the device's settings. */
+function formatsPayload(
+  version: string,
+  images?: Parameters<typeof slidesPayload>[1],
+): DeviceDashboardV3Response {
+  const {
+    schema: _s,
+    grid: _g,
+    slides,
+    ...rest
+  } = slidesPayload(version, images);
+  const format = (columns: number, rows: number, w: number, h: number) => ({
+    columns,
+    rows,
+    reference: [w, h] as [number, number],
+  });
+  return {
+    ...rest,
+    schema: 3,
+    locale: "en",
+    primaryFormat: "16x9",
+    formats: {
+      "16x9": format(12, 8, 1920, 1080),
+      "21x9": format(16, 8, 2520, 1080),
+      "4x3": format(9, 8, 1440, 1080),
+      "3x4": format(6, 10, 1080, 1440),
+      "9x16": format(6, 14, 1080, 1920),
+    },
+    device: { rotation: 90, displayMode: "screen" },
+    slides: slides.map((slide) => ({ ...slide, layouts: [] })),
+  };
+}
+
 function serverInfo(dashboardSchemas?: number[]) {
   return json({
     product: "netrics",
@@ -686,6 +726,7 @@ function startWith(options: {
   storage: KioskStorage;
   imageCache?: KioskImageCache;
   blobUrls?: KioskBlobUrls;
+  schemas?: readonly KioskSchema[];
 }): KioskClient {
   client = createKioskClient({
     ...options,
@@ -842,6 +883,119 @@ describe("kiosk payload schema", () => {
     expect(
       api.callsTo("GET /v1/device/dashboard")[1]!.headers.get("if-none-match"),
     ).toBe('"s2"');
+  });
+});
+
+describe("kiosk payload schema 3 (#277)", () => {
+  function dashboardUrls(api: ReturnType<typeof fakeApi>): string[] {
+    return (api.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .map(([input]) => String(input))
+      .filter((input) => input.startsWith("/v1/device/dashboard"));
+  }
+
+  function formatsApi(listed: number[]) {
+    return fakeApi({
+      "GET /v1/server": () => serverInfo(listed),
+      "GET /v1/device/dashboard": (call) => {
+        const v3 = call.search === "?schema=3";
+        const etag = v3 ? '"s3"' : '"s2"';
+        if (call.headers.get("if-none-match") === etag) {
+          return reply(304, null, { etag });
+        }
+        return json(v3 ? formatsPayload("s3") : slidesPayload("s2"), {
+          headers: { etag },
+        });
+      },
+      "GET /v1/device/images/11111111-1111-4111-8111-111111111111": () =>
+        reply(200, new Blob(["logo"], { type: "image/png" })),
+      "GET /v1/device/images/22222222-2222-4222-8222-222222222222": () =>
+        reply(200, new Blob(["bg"], { type: "image/png" })),
+    });
+  }
+
+  it("stays on schema 2 until the page renders schema 3", async () => {
+    const { storage } = pairedStorage();
+    const api = formatsApi([1, 2, 3]);
+    const kiosk = startWith({ fetch: api.fetch, storage });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(dashboardUrls(api)).toEqual(["/v1/device/dashboard?schema=2"]);
+    expect(isSlidesDashboard(kiosk.getState().dashboard!)).toBe(true);
+  });
+
+  it("asks for schema 3 when the page renders it and the server lists it", async () => {
+    const { storage, data } = pairedStorage();
+    const api = formatsApi([1, 2, 3]);
+    const kiosk = startWith({
+      fetch: api.fetch,
+      storage,
+      schemas: [1, 2, 3],
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(dashboardUrls(api)).toEqual(["/v1/device/dashboard?schema=3"]);
+    const payload = kiosk.getState().dashboard!;
+    expect(isFormatsDashboard(payload)).toBe(true);
+    expect(dashboardSchemaOf(payload)).toBe(3);
+    expect(isFormatsDashboard(payload) && payload.device.rotation).toBe(90);
+    // Its images are loaded like schema 2's.
+    expect([...kiosk.getState().images.keys()].sort()).toEqual([
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+    ]);
+    // Kept for a reload, and polled with its own ETag.
+    expect(JSON.parse(data.get(DASHBOARD_KEY)!).payload.schema).toBe(3);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(
+      api.callsTo("GET /v1/device/dashboard")[1]!.headers.get("if-none-match"),
+    ).toBe('"s3"');
+  });
+
+  it("asks for schema 2 from a server that does not list 3", async () => {
+    const { storage } = pairedStorage();
+    const api = formatsApi([1, 2]);
+    const kiosk = startWith({
+      fetch: api.fetch,
+      storage,
+      schemas: [1, 2, 3],
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(dashboardUrls(api)).toEqual(["/v1/device/dashboard?schema=2"]);
+    expect(isSlidesDashboard(kiosk.getState().dashboard!)).toBe(true);
+  });
+
+  it("does not show a cached schema 3 payload on a page without it", async () => {
+    const cached = JSON.stringify({
+      etag: '"s3"',
+      payload: formatsPayload("s3", []),
+      updatedAt: T0 - 60_000,
+    });
+    const { storage } = pairedStorage({ [DASHBOARD_KEY]: cached });
+    const api = fakeApi({
+      "GET /v1/server": () => {
+        throw new TypeError("fetch failed");
+      },
+      "GET /v1/device/dashboard": () => {
+        throw new TypeError("fetch failed");
+      },
+    });
+    const kiosk = startWith({ fetch: api.fetch, storage });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(kiosk.getState().dashboard).toBeNull();
+    // Nor is its ETag offered for another schema.
+    expect(dashboardUrls(api)).toEqual(["/v1/device/dashboard"]);
+    expect(
+      api
+        .callsTo("GET /v1/device/dashboard")[0]
+        ?.headers.get("if-none-match") ?? null,
+    ).toBeNull();
+
+    kiosk.stop();
+    const { storage: modern } = pairedStorage({ [DASHBOARD_KEY]: cached });
+    const restored = startWith({
+      fetch: api.fetch,
+      storage: modern,
+      schemas: [1, 2, 3],
+    });
+    expect(isFormatsDashboard(restored.getState().dashboard!)).toBe(true);
   });
 });
 
