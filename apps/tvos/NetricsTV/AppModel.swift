@@ -33,6 +33,8 @@ final class AppModel {
 
     private let store: any CredentialStore = KeychainCredentialStore()
     private let cache: any DashboardCache = FileDashboardCache.inCachesDirectory()
+    /** Schema 2 images by SHA-256, next to the cached payload. */
+    let images = FileImageCache.inCachesDirectory()
     private var client: DeviceClient?
     private var runTask: Task<Void, Never>?
     private var updatesTask: Task<Void, Never>?
@@ -97,6 +99,7 @@ final class AppModel {
         stopClient()
         store.clearAll()
         cache.clear()
+        images.clear()
         server = nil
         device = DeviceState()
         storageError = nil
@@ -128,7 +131,7 @@ final class AppModel {
             )
         )
         let client = DeviceClient(
-            server: server, transport: transport, store: store, cache: cache,
+            server: server, transport: transport, store: store, cache: cache, images: images,
             appVersion: Self.appVersion)
         self.client = client
         device = DeviceState()
@@ -163,6 +166,7 @@ final class AppModel {
         stopClient()
         store.clearAll()
         cache.clear()
+        images.clear()
         server = nil
         device = DeviceState()
         UIApplication.shared.isIdleTimerDisabled = false

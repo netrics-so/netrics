@@ -12,6 +12,12 @@ import Foundation
 // - the last dashboard stays on screen (and on disk) through outages;
 // - failures back off 5 s, 10 s, 20 s, 40 s, then 60 s.
 //
+// Schema 2 (ADR 0015, section 7): the client asks for `?schema=2` only
+// when the server's info lists it (checked before the first poll and every
+// few hours), and sends a cached ETag only with the schema it belongs to.
+// After a schema 2 payload it downloads the images it does not have yet,
+// verified by their SHA-256, with the device token.
+//
 // The client is driven by `tick()`, which does the next step and returns
 // how long to wait before the following one. `run()` loops over it with
 // real sleeps; tests call `tick()` with a manual clock.
@@ -39,8 +45,10 @@ public struct PairingDisplay: Sendable, Equatable {
 public struct DeviceState: Sendable, Equatable {
     public var phase: DevicePhase = .starting
     public var pairing: PairingDisplay?
-    /** The last dashboard the API returned; kept through outages. */
-    public var dashboard: DeviceDashboard?
+    /** The last dashboard the API returned (schema 1 or 2); kept through outages. */
+    public var payload: DashboardPayload?
+    /** Hashes of the payload's images that are on disk and can be shown. */
+    public var storedImages: Set<String> = []
     /** When the API last confirmed the dashboard (200 or 304). */
     public var updatedAt: Date?
     /** The latest request failed; the screen shows the last known state. */
@@ -49,6 +57,21 @@ public struct DeviceState: Sendable, Equatable {
     public var device: DeviceSummary?
 
     public init() {}
+
+    /** The schema 1 payload, when the server answered schema 1. */
+    public var dashboard: DeviceDashboard? {
+        get {
+            if case .v1(let payload) = payload { return payload }
+            return nil
+        }
+        set { payload = newValue.map { .v1($0) } }
+    }
+
+    /** The schema 2 payload, when the server answered schema 2. */
+    public var dashboardV2: DeviceDashboardV2? {
+        if case .v2(let payload) = payload { return payload }
+        return nil
+    }
 }
 
 public struct HTTPStatusError: Error, Sendable, Equatable, LocalizedError {
@@ -76,6 +99,8 @@ public actor DeviceClient {
     public static let backoffMin: Duration = .seconds(5)
     public static let backoffMax: Duration = .seconds(60)
     static let defaultRefreshAfterSeconds = 60
+    /** How often the server's dashboard schemas are checked again (an upgraded server). */
+    public static let schemaRecheckInterval: TimeInterval = 6 * 60 * 60
     static let maxErrorLength = 500
 
     /** 5 s, 10 s, 20 s, 40 s, then 60 s for every further failure. */
@@ -89,6 +114,7 @@ public actor DeviceClient {
     private let transport: any HTTPTransport
     private let store: any CredentialStore
     private let cache: any DashboardCache
+    private let images: any ImageCache
     private let appVersion: String
     private let now: @Sendable () -> Date
 
@@ -98,6 +124,9 @@ public actor DeviceClient {
 
     private var credentials: DeviceCredentials?
     private var etag: String?
+    /** The schema the server answers, from its info; nil until known. */
+    private var serverSchema: Int?
+    private var schemaCheckedAt: Date?
     private var pairingSecret: PollPairingRequest?
     private var pollInterval: Duration = .seconds(5)
     private var failures = 0
@@ -113,6 +142,7 @@ public actor DeviceClient {
         transport: any HTTPTransport,
         store: any CredentialStore,
         cache: any DashboardCache,
+        images: any ImageCache = InMemoryImageCache(),
         appVersion: String,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -120,6 +150,7 @@ public actor DeviceClient {
         self.transport = transport
         self.store = store
         self.cache = cache
+        self.images = images
         self.appVersion = appVersion
         self.now = now
         (updates, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(16))
@@ -148,7 +179,8 @@ public actor DeviceClient {
         var next = state
         next.phase = .paired
         next.pairing = nil
-        next.dashboard = cached?.payload
+        next.payload = cached?.payload
+        next.storedImages = storedImages(cached?.payload)
         next.updatedAt = cached?.updatedAt
         next.offline = false
         next.lastError = nil
@@ -170,6 +202,7 @@ public actor DeviceClient {
         pairingSecret = nil
         store.clearAll()
         cache.clear()
+        images.clear()
         var next = DeviceState()
         next.phase = .unpaired
         publish(next)
@@ -297,11 +330,13 @@ public actor DeviceClient {
         pairingSecret = nil
         store.clearCredentials()
         cache.clear()
+        images.clear()
         failures = 0
         update {
             $0.phase = .pairing
             $0.pairing = nil
-            $0.dashboard = nil
+            $0.payload = nil
+            $0.storedImages = []
             $0.updatedAt = nil
             $0.offline = false
             $0.device = nil
@@ -397,13 +432,15 @@ public actor DeviceClient {
         persistCredentials(next)
         try? store.saveDevice(device)
         cache.clear()
+        images.clear()
         etag = nil
         pairingSecret = nil
         failures = 0
         update {
             $0.phase = .paired
             $0.pairing = nil
-            $0.dashboard = nil
+            $0.payload = nil
+            $0.storedImages = []
             $0.updatedAt = nil
             $0.offline = false
             $0.lastError = nil
@@ -467,7 +504,12 @@ public actor DeviceClient {
                     return await startPairing()
                 }
             }
-            var response = try await getDashboard()
+            if needsSchemaCheck() {
+                try await checkServerSchema()
+                guard at == epoch else { return superseded() }
+            }
+            let schema = requestSchema()
+            var response = try await getDashboard(schema: schema)
             guard at == epoch else { return superseded() }
             if response.status == 401 {
                 // Expired early or rotated elsewhere: one refresh, one retry.
@@ -477,7 +519,7 @@ public actor DeviceClient {
                     enterPairing()
                     return await startPairing()
                 }
-                response = try await getDashboard()
+                response = try await getDashboard(schema: schema)
                 guard at == epoch else { return superseded() }
                 if response.status == 401 {
                     // A fresh token refused: the device was revoked.
@@ -486,27 +528,37 @@ public actor DeviceClient {
                 }
             }
             let confirmedAt = now()
-            if response.status == 304, let dashboard = state.dashboard {
+            if response.status == 304, let payload = state.payload, payload.schema == schema {
                 failures = 0
                 update {
                     $0.updatedAt = confirmedAt
                     $0.offline = false
                     $0.lastError = nil
                 }
-                cache.save(CachedDashboard(etag: etag, payload: dashboard, updatedAt: confirmedAt))
-                return refreshAfter(dashboard)
+                cache.save(CachedDashboard(etag: etag, payload: payload, updatedAt: confirmedAt))
+                await syncImages(payload, epoch: at)
+                return refreshAfter(payload)
             }
             guard response.isSuccess else { throw HTTPStatusError(status: response.status) }
-            let payload = try decode(DeviceDashboard.self, response, "dashboard")
+            // An older server ignores ?schema=2 and answers schema 1: read
+            // whichever schema the body is.
+            let payload = try decode(DashboardPayload.self, response, "dashboard")
             failures = 0
             etag = response.header("etag") ?? "\"\(payload.version)\""
+            if payload.schema != schema {
+                // The server answers another schema than it listed: follow it.
+                serverSchema = payload.schema
+            }
             cache.save(CachedDashboard(etag: etag, payload: payload, updatedAt: confirmedAt))
+            let stored = storedImages(payload)
             update {
-                $0.dashboard = payload
+                $0.payload = payload
+                $0.storedImages = stored
                 $0.updatedAt = confirmedAt
                 $0.offline = false
                 $0.lastError = nil
             }
+            await syncImages(payload, epoch: at)
             return refreshAfter(payload)
         } catch TransportError.certificateChanged {
             return block()
@@ -521,16 +573,103 @@ public actor DeviceClient {
         }
     }
 
-    private func getDashboard() async throws -> HTTPResponse {
+    private func getDashboard(schema: Int) async throws -> HTTPResponse {
         var headers = ["authorization": "Bearer \(credentials?.accessToken ?? "")"]
-        if let etag, state.dashboard != nil {
+        // An ETag names one schema's answer: never offer it for the other.
+        if let etag, let payload = state.payload, payload.schema == schema {
             headers["if-none-match"] = etag
         }
-        return try await send("GET", "/v1/device/dashboard", headers: headers)
+        let path = schema == 1 ? "/v1/device/dashboard" : "/v1/device/dashboard?schema=\(schema)"
+        return try await send("GET", path, headers: headers)
     }
 
-    private func refreshAfter(_ dashboard: DeviceDashboard) -> Duration {
-        .seconds(dashboard.refreshAfterSec > 0 ? dashboard.refreshAfterSec : Self.defaultRefreshAfterSeconds)
+    private func refreshAfter(_ payload: DashboardPayload) -> Duration {
+        .seconds(payload.refreshAfterSec > 0 ? payload.refreshAfterSec : Self.defaultRefreshAfterSeconds)
+    }
+
+    // MARK: Schema negotiation
+
+    private func needsSchemaCheck() -> Bool {
+        guard let checkedAt = schemaCheckedAt, serverSchema != nil else { return true }
+        return now().timeIntervalSince(checkedAt) >= Self.schemaRecheckInterval
+    }
+
+    /**
+     * Reads `dashboardSchemas` from the server's info. A failed check is
+     * not an outage: the poll goes on with what is known and checks again
+     * on the next one. Only a changed certificate stops the client.
+     */
+    private func checkServerSchema() async throws {
+        let response: HTTPResponse
+        do {
+            response = try await send("GET", "/v1/server")
+        } catch TransportError.certificateChanged {
+            throw TransportError.certificateChanged
+        } catch {
+            return
+        }
+        guard response.isSuccess, let info = try? JSONDecoder().decode(ServerInfo.self, from: response.body)
+        else { return }
+        serverSchema = info.preferredDashboardSchema
+        schemaCheckedAt = now()
+    }
+
+    /** The schema to ask for: the server's, else the cached payload's, else 1. */
+    func requestSchema() -> Int {
+        serverSchema ?? state.payload?.schema ?? 1
+    }
+
+    // MARK: Images
+
+    private func storedImages(_ payload: DashboardPayload?) -> Set<String> {
+        guard case .v2(let v2) = payload else { return [] }
+        return Set(v2.images.map(\.sha256).filter { images.contains($0) })
+    }
+
+    /**
+     * Downloads the payload's images that are not stored yet, then marks
+     * them used and evicts unreferenced ones beyond the budget. A failed
+     * image is retried with the next poll; it never fails the dashboard.
+     */
+    private func syncImages(_ payload: DashboardPayload, epoch at: Int) async {
+        guard case .v2(let v2) = payload else { return }
+        let referenced = Set(v2.images.map(\.sha256))
+        for image in v2.images where !images.contains(image.sha256) {
+            guard at == epoch, let data = await fetchImage(image) else { continue }
+            images.store(data, sha256: image.sha256)
+            guard at == epoch else { return }
+            update { $0.storedImages.insert(image.sha256) }
+        }
+        guard at == epoch else { return }
+        images.touch(referenced, at: now())
+        images.evict(keeping: referenced, budget: ImageCacheLimits.budget)
+    }
+
+    /** The image's URL on this server; nil for anything but a device image path. */
+    func imageURL(_ image: DeviceImage) -> URL? {
+        // Relative to the server, and only below the device image route:
+        // the bearer token must never go to another host or path.
+        guard image.url.hasPrefix("/v1/device/images/"), !image.url.contains(".."),
+            !image.url.contains("//"), !image.url.contains("@"), !image.url.contains("\\")
+        else { return nil }
+        let url = server.endpoint(image.url)
+        guard url.host() == server.baseURL.host(), url.scheme == server.baseURL.scheme else { return nil }
+        return url
+    }
+
+    private func fetchImage(_ image: DeviceImage) async -> Data? {
+        guard let url = imageURL(image), let token = credentials?.accessToken else { return nil }
+        do {
+            try server.policy.validate(url)
+            let response = try await transport.send(
+                HTTPRequest(url: url, headers: ["authorization": "Bearer \(token)", "accept": "image/*"]))
+            guard response.isSuccess, response.body.count <= ImageCacheLimits.maxImageBytes else { return nil }
+            // Stored only when the bytes are the ones the payload names.
+            guard ImageHash.sha256(response.body) == image.sha256 else { return nil }
+            return response.body
+        } catch {
+            return nil
+        }
     }
 
     /**

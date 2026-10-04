@@ -2,7 +2,7 @@ import NetricsKit
 import SwiftUI
 
 /**
- * Reached with the Siri Remote (Play/Pause, or press and hold the clickpad
+ * Reached with the Siri Remote (press and hold the clickpad, or Play/Pause
  * on the dashboard; the Settings button while pairing). Shows what this TV
  * is connected to; Unpair clears the Keychain and the cache and starts
  * pairing with netrics cloud again (another server is one button away).

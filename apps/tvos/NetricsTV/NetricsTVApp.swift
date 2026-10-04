@@ -32,6 +32,12 @@ enum Theme {
 }
 
 extension Color {
+    /** A theme token (`#rrggbb`); netrics Dark's text colour if it is not one. */
+    init(token: String) {
+        let color = ThemeColor.parse(token) ?? ThemeColor.parse(ThemeTokens.netricsDark.text)!
+        self.init(red: color.red, green: color.green, blue: color.blue)
+    }
+
     init(hex: UInt32) {
         self.init(
             red: Double((hex >> 16) & 0xFF) / 255,
@@ -77,8 +83,14 @@ struct DeviceView: View {
             case .blocked(let message):
                 BlockedView(message: message, openSettings: { showSettings = true })
             case .paired:
-                if let dashboard = state.dashboard {
-                    if dashboard.dashboard != nil {
+                if let payload = state.payload {
+                    if let v2 = state.dashboardV2, v2.dashboard != nil {
+                        // Schema 2: slides, rotated here (ADR 0015).
+                        SlideshowView(
+                            state: state, payload: v2, images: model.images,
+                            openSettings: { showSettings = true })
+                    } else if let dashboard = state.dashboard, dashboard.dashboard != nil {
+                        // Schema 1 (an older server): every tile on one screen.
                         DashboardView(state: state, dashboard: dashboard)
                             .remoteSettingsGesture { showSettings = true }
                     } else {
@@ -86,7 +98,7 @@ struct DeviceView: View {
                             title: "No dashboard assigned yet",
                             text: "Choose one under TVs in netrics; this screen picks it up on its own.",
                             marker: state.offline
-                                ? TVTime.offlineMarker(updatedAt: state.updatedAt, timeZone: dashboard.timeZone)
+                                ? TVTime.offlineMarker(updatedAt: state.updatedAt, timeZone: payload.timeZone)
                                 : nil
                         )
                         .remoteSettingsGesture { showSettings = true }

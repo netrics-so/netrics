@@ -27,6 +27,7 @@ final class ManualClock: Sendable {
 struct Call: Sendable {
     var method: String
     var path: String
+    var query: String?
     var headers: [String: String]
     var body: Data?
     /** Seconds since T0. */
@@ -67,7 +68,7 @@ final class FakeAPI: HTTPTransport {
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         let call = Call(
-            method: request.method, path: request.url.path(), headers: request.headers,
+            method: request.method, path: request.url.path(), query: request.url.query(), headers: request.headers,
             body: request.body, at: clock.now.timeIntervalSince(T0))
         recorded.withLock { $0.append(call) }
         guard let handler = routes.withLock({ $0["\(call.method) \(call.path)"] }) else {
@@ -147,7 +148,8 @@ final class Harness {
     init(
         credentials: ((ManualClock) -> DeviceCredentials)? = nil,
         cached: CachedDashboard? = nil,
-        routes: (ManualClock) -> [String: Handler]
+        routes: (ManualClock) -> [String: Handler],
+        images: InMemoryImageCache = InMemoryImageCache()
     ) {
         let clock = ManualClock()
         self.clock = clock
@@ -155,7 +157,7 @@ final class Harness {
         store = InMemoryCredentialStore(server: testServer, credentials: credentials?(clock))
         cache = InMemoryDashboardCache(cached)
         client = DeviceClient(
-            server: testServer, transport: api, store: store, cache: cache,
+            server: testServer, transport: api, store: store, cache: cache, images: images,
             appVersion: "1.2.3", now: { clock.now })
         nextStepAt = clock.now
     }

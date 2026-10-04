@@ -14,12 +14,38 @@ public struct ServerInfo: Codable, Sendable, Equatable {
     public var deviceApiVersion: Int
     public var version: String
     public var pairingUrl: String
+    /**
+     * The dashboard payload schemas the server answers (ADR 0015, section
+     * 7). Absent before schema 2: such a server answers schema 1 only.
+     */
+    public var dashboardSchemas: [Int]?
 
-    public init(product: String, deviceApiVersion: Int, version: String, pairingUrl: String) {
+    public init(
+        product: String, deviceApiVersion: Int, version: String, pairingUrl: String, dashboardSchemas: [Int]? = nil
+    ) {
         self.product = product
         self.deviceApiVersion = deviceApiVersion
         self.version = version
         self.pairingUrl = pairingUrl
+        self.dashboardSchemas = dashboardSchemas
+    }
+
+    private enum CodingKeys: String, CodingKey { case product, deviceApiVersion, version, pairingUrl, dashboardSchemas }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        product = try c.decode(String.self, forKey: .product)
+        deviceApiVersion = try c.decode(Int.self, forKey: .deviceApiVersion)
+        version = try c.decode(String.self, forKey: .version)
+        pairingUrl = try c.decode(String.self, forKey: .pairingUrl)
+        // A shape this build does not understand means: schema 1 only.
+        dashboardSchemas = (try? c.decodeIfPresent([Int].self, forKey: .dashboardSchemas)) ?? nil
+    }
+
+    /** The newest dashboard schema both this app and the server speak. */
+    public var preferredDashboardSchema: Int {
+        let offered = Set(dashboardSchemas ?? [1])
+        return supportedDashboardSchemas.first { offered.contains($0) } ?? 1
     }
 }
 

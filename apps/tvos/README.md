@@ -106,15 +106,36 @@ drops the alpha channel of opaque images and checks the sizes.
   last payload is cached in the Caches directory, so an offline start shows
   it at once. Failures back off 5, 10, 20, 40, then 60 seconds, and the
   header shows "Offline — last update HH:MM".
+- **Slides (payload schema 2, ADR 0015).** Before the first poll, and every
+  6 hours, the app reads `dashboardSchemas` from `GET /v1/server` and asks
+  for `?schema=2` only when the server lists it; an older server keeps
+  getting today's request and the tiles render as one auto-laid-out screen.
+  A cached ETag is only sent with the schema it belongs to. Unknown widget
+  types (a newer server) render as an empty themed cell. Slides rotate
+  locally by their duration (`SlideRotation`), fade in 400 ms (none with
+  Reduce Motion or the "none" transition), and a new payload keeps the slide
+  on screen when it still exists. Positions and text sizes come from
+  `StudioLayout` and `StudioRender` (ports of the web's studio layout), so
+  web and TV place widgets alike; colours are the payload's theme tokens.
+- **Images.** The payload's images are downloaded once with the device
+  token from their device URL (only `/v1/device/images/…` on the paired
+  server), verified against their SHA-256 and stored by hash in
+  `Caches/netrics/images`. Beyond 50 MB, images the current payload does
+  not reference are evicted, least recently used first. They are decoded
+  with ImageIO at the widget's pixel size.
 - **Heartbeat.** Every 5 minutes: app version, uptime and the last error.
-- **Settings.** Press Play/Pause, or press and hold the clickpad, on the
-  dashboard. The pairing screen has a Settings button. Unpair clears the
+- **Remote.** On a slide dashboard, left and right change the slide and
+  Play/Pause pauses the rotation ("Paused" in the header).
+- **Settings.** Press and hold the clickpad on the dashboard, or press
+  Play/Pause where there is nothing to rotate (one slide, or a schema 1
+  dashboard). The pairing screen has a Settings button. Unpair clears the
   Keychain and the cache and shows a new netrics cloud code.
 
 `DeviceClient` follows the browser kiosk (`apps/web/src/lib/kiosk-client.ts`)
 rule for rule, and its tests cover the same cases. Number formatting, tile
 notices and the grid follow `format-metric.ts`, `tile-status.ts` and
-`tv-grid.ts`.
+`tv-grid.ts`; the widget layout follows `studio-render.ts`, `studio-chart.ts`
+and the text widget layout in `studio-widgets.ts`.
 
 ## Transport security
 

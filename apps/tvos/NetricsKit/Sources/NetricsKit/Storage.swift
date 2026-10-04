@@ -133,16 +133,23 @@ public final class KeychainCredentialStore: CredentialStore {
     }
 }
 
-/** The last dashboard, for an offline start. */
+/**
+ * The last dashboard, for an offline start: schema 1 or 2, with the ETag
+ * that belongs to that schema's answer.
+ */
 public struct CachedDashboard: Codable, Sendable, Equatable {
     public var etag: String?
-    public var payload: DeviceDashboard
+    public var payload: DashboardPayload
     public var updatedAt: Date
 
-    public init(etag: String?, payload: DeviceDashboard, updatedAt: Date) {
+    public init(etag: String?, payload: DashboardPayload, updatedAt: Date) {
         self.etag = etag
         self.payload = payload
         self.updatedAt = updatedAt
+    }
+
+    public init(etag: String?, payload: DeviceDashboard, updatedAt: Date) {
+        self.init(etag: etag, payload: .v1(payload), updatedAt: updatedAt)
     }
 }
 
