@@ -21,3 +21,4 @@ product is built.
 | [0014](./0014-app-store-connect-signed-keys.md)     | App Store Connect: signed-key credentials and report sources |
 | [0015](./0015-dashboard-studio.md)                  | Dashboard Studio: slides, widgets, themes and images         |
 | [0016](./0016-internationalisation.md)              | Internationalisation: typed catalogs, no locale in URLs      |
+| [0017](./0017-screen-formats-and-display-modes.md)  | Screen formats, adaptive layouts and display modes           |
