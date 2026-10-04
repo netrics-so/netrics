@@ -64,6 +64,9 @@ services:
       # Display currency (#191): "ecb" (default) or "off". Set the same on
       # the scheduler.
       NETRICS_EXCHANGE_RATES: ${NETRICS_EXCHANGE_RATES:-ecb}
+      # Default language (ADR 0016): "en" (unset) or "de". Set the same on
+      # the web app.
+      NETRICS_DEFAULT_LOCALE: ${NETRICS_DEFAULT_LOCALE:-}
       # Workspace image quota (#217): images and MiB per workspace.
       NETRICS_IMAGE_QUOTA_COUNT: ${NETRICS_IMAGE_QUOTA_COUNT:-100}
       NETRICS_IMAGE_QUOTA_MIB: ${NETRICS_IMAGE_QUOTA_MIB:-50}
@@ -98,6 +101,7 @@ services:
     environment:
       NETRICS_API_URL: http://api:3001
       NETRICS_PROXY_SECRET: ${NETRICS_PROXY_SECRET:-}
+      NETRICS_DEFAULT_LOCALE: ${NETRICS_DEFAULT_LOCALE:-}
     depends_on:
       - api
 

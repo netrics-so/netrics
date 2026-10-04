@@ -97,6 +97,7 @@ export async function updateWorkspace(
     name?: string;
     timeZone?: string;
     displayCurrency?: string | null;
+    screenLocale?: string | null;
   },
 ): Promise<Workspace | null> {
   const rows = await tx

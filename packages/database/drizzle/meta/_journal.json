@@ -253,6 +253,13 @@
       "when": 1791072912239,
       "tag": "0035_workspace_images",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791086902051,
+      "tag": "0036_i18n_locales",
+      "breakpoints": true
     }
   ]
 }

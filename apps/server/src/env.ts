@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   IMAGE_QUOTA_DEFAULT_BYTES,
   IMAGE_QUOTA_DEFAULT_COUNT,
+  localeSchema,
   processRoleSchema,
 } from "@netrics/contracts";
 
@@ -206,6 +207,9 @@ const envSchema = z
     // converted amounts; "off" fetches nothing and keeps every amount per
     // currency. Read at runtime by the scheduler and the API alike.
     NETRICS_EXCHANGE_RATES: z.enum(["ecb", "off"]).default("ecb"),
+    // The instance's default language (ADR 0016): "en" or "de"; unset is
+    // English. Read at runtime; the web app reads the same variable.
+    NETRICS_DEFAULT_LOCALE: localeSchema.optional(),
     // Workspace image quota (ADR 0015, section 5): images and total size in
     // MiB per workspace. Read at runtime; existing images above a lowered
     // quota stay, only new uploads are refused.
@@ -370,6 +374,7 @@ const envSchema = z
           : null,
     } satisfies Record<string, OAuthClientConfig | null>,
     exchangeRates: env.NETRICS_EXCHANGE_RATES === "ecb",
+    defaultLocale: env.NETRICS_DEFAULT_LOCALE ?? null,
     imageQuota: {
       maxCount: env.NETRICS_IMAGE_QUOTA_COUNT,
       maxBytes: env.NETRICS_IMAGE_QUOTA_MIB * 1_048_576,

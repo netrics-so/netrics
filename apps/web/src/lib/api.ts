@@ -88,6 +88,7 @@ import {
   projectListResponseSchema,
   projectResponseSchema,
   renameWorkspaceRequestSchema,
+  updateMeRequestSchema,
   setupStatusResponseSchema,
   startOAuthAuthorizationRequestSchema,
   startOAuthAuthorizationResponseSchema,
@@ -135,6 +136,7 @@ import {
   type ThemeResponse,
   type UpdateThemeRequest,
 } from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
 
 import { apiFetch } from "./api-fetch";
 import { toStudioImage, type StudioImage } from "./studio-widgets";
@@ -565,6 +567,29 @@ export function createWorkspace(
       withDemo,
       ...(timeZone ? { timeZone } : {}),
     }),
+  );
+}
+
+/** null: the screens follow the instance default (ADR 0016). */
+export function setWorkspaceScreenLocale(
+  workspaceId: string,
+  screenLocale: Locale | null,
+): Promise<WorkspaceResponse> {
+  return browserSend(
+    workspaceResponseSchema,
+    "PATCH",
+    `/v1/workspaces/${workspaceId}`,
+    renameWorkspaceRequestSchema.parse({ screenLocale }),
+  );
+}
+
+/** The signed-in user's language; null follows the instance and browser. */
+export function setMyLocale(locale: Locale | null): Promise<MeResponse> {
+  return browserSend(
+    meResponseSchema,
+    "PATCH",
+    "/v1/me",
+    updateMeRequestSchema.parse({ locale }),
   );
 }
 

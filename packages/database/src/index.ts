@@ -286,6 +286,7 @@ export {
   findUserById,
   listMembershipsForUser,
   provisionDomainUser,
+  setUserLocale,
 } from "./users.js";
 export type { DomainUser, MembershipInfo } from "./users.js";
 export {

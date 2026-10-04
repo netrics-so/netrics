@@ -7,3 +7,4 @@ export * from "./exchange-rates.js";
 export * from "./studio-layout.js";
 export * from "./studio.js";
 export * from "./theme.js";
+export * from "./i18n/index.js";

@@ -174,6 +174,10 @@ Relevant environment variables (see `.env.example`):
   reference rates (egress to `www.ecb.europa.eu` only) and workspaces or
   tiles may show amounts converted into a display currency, marked
   approximate. With `off` nothing is fetched and amounts stay per currency.
+- `NETRICS_DEFAULT_LOCALE` — `en` (default) or `de`, read at request time
+  by the api and the web app (ADR 0016). The language for people without
+  their own setting and for screens of workspaces without a screen
+  language; the api refuses other values.
 - `NETRICS_AUTH_RATE_LIMIT` — `on` (default in production) or `off`.
   Sign-in, sign-up, password reset and verification mail are limited per
   client IP (`apps/server/src/auth/rate-limit.ts`). The counters live in

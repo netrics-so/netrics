@@ -11,6 +11,7 @@ import {
   SLIDE_TRANSITIONS,
   STUDIO_GRID,
   STUDIO_LIMITS,
+  SUPPORTED_LOCALES,
   THEME_COLOR_TOKENS,
   THEME_FONT_SCALES,
   WIDGET_TYPES,
@@ -81,11 +82,20 @@ export const setupStatusResponseSchema = z.object({
 });
 export type SetupStatusResponse = z.infer<typeof setupStatusResponseSchema>;
 
+/** A language netrics speaks (ADR 0016): "en" or "de". */
+export const localeSchema = z.enum(SUPPORTED_LOCALES);
+
 export const meResponseSchema = z.object({
   user: z.object({
     id: z.uuid(),
     email: z.string().min(1),
     displayName: z.string().min(1),
+    /**
+     * The user's language; null follows the instance default
+     * (NETRICS_DEFAULT_LOCALE), then the browser (ADR 0016). Defaults to
+     * null so a web app deployed before its API still parses the answer.
+     */
+    locale: localeSchema.nullable().default(null),
   }),
   memberships: z.array(
     z.object({
@@ -96,6 +106,12 @@ export const meResponseSchema = z.object({
   ),
 });
 export type MeResponse = z.infer<typeof meResponseSchema>;
+
+export const updateMeRequestSchema = z.object({
+  /** Null goes back to the instance default and the browser. */
+  locale: localeSchema.nullable(),
+});
+export type UpdateMeRequest = z.infer<typeof updateMeRequestSchema>;
 
 const nameSchema = z.string().trim().min(1).max(100);
 
@@ -122,6 +138,12 @@ export const workspaceSchema = z.object({
    * exact (the default).
    */
   displayCurrency: z.string().length(3).nullable(),
+  /**
+   * The language of the workspace's screens (kiosk, Apple TV); null
+   * follows the instance default (ADR 0016). Defaults to null for an API
+   * deployed after its web app.
+   */
+  screenLocale: localeSchema.nullable().default(null),
   createdAt: z.iso.datetime(),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
@@ -147,12 +169,15 @@ export const renameWorkspaceRequestSchema = z
      * the instance does not fetch rates.
      */
     displayCurrency: currencyCodeSchema.nullable().optional(),
+    /** The screens' language; null follows the instance default. */
+    screenLocale: localeSchema.nullable().optional(),
   })
   .refine(
     (body) =>
       body.name !== undefined ||
       body.timeZone !== undefined ||
-      body.displayCurrency !== undefined,
+      body.displayCurrency !== undefined ||
+      body.screenLocale !== undefined,
     { message: "nothing to update" },
   );
 export type RenameWorkspaceRequest = z.infer<

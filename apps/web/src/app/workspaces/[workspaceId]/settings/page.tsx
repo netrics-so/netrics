@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { can } from "@netrics/domain";
+import { LOCALE_NAMES, can } from "@netrics/domain";
 
 import { DisplayCurrencyForm } from "./display-currency-form";
 import { MembersManager } from "./members-manager";
 import { RenameWorkspaceForm } from "./rename-workspace-form";
+import { ScreenLanguageForm } from "./screen-language-form";
 import { TimeZoneForm } from "./time-zone-form";
 import {
   getCurrencyConversion,
@@ -15,6 +16,8 @@ import {
   listMembers,
   listWorkspaces,
 } from "@/lib/api";
+import { instanceDefaultLocale } from "@/lib/i18n/locale";
+import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +43,7 @@ export default async function WorkspaceSettingsPage({
   }
 
   const role = membership.role;
+  const screenLanguage = await getT("workspaceSettings.screenLanguage");
   const canRename = can(role, "workspace:rename");
   const canAddMembers = can(role, "members:add");
   const [{ members }, { invitations }, conversion] = await Promise.all([
@@ -75,6 +79,12 @@ export default async function WorkspaceSettingsPage({
             Dashboards count &ldquo;today&rdquo; and daily numbers in this time
             zone.
           </p>
+          <ScreenLanguageForm
+            workspaceId={workspaceId}
+            current={workspaceResult.workspace.screenLocale}
+            instanceDefaultName={LOCALE_NAMES[instanceDefaultLocale() ?? "en"]}
+          />
+          <p className="muted">{screenLanguage("hint")}</p>
         </div>
       ) : null}
 
