@@ -233,9 +233,16 @@ describe("metric choices", () => {
     const all = { ...metricWidget, dimensions: {}, resourceName: null };
     const apps = { singular: "app", plural: "apps" };
     expect(scopePatch(all, 3, apps)).toEqual({ allResourcesName: "All apps" });
+    expect(scopePatch(all, 3, apps, "de")).toEqual({
+      allResourcesName: "Alle Apps",
+    });
+    // Saved in English, opened in German: left alone (no unsaved changes).
     expect(
-      scopePatch(all, 3, { singular: "App", plural: "Apps" }, "de"),
-    ).toEqual({ allResourcesName: "Alle Apps" });
+      scopePatch({ ...all, allResourcesName: "All apps" }, 3, apps, "de"),
+    ).toBeNull();
+    expect(
+      scopePatch({ ...all, allResourcesName: "Alle Apps" }, 3, apps, "en"),
+    ).toBeNull();
     expect(scopePatch({ ...all, allResourcesName: "All apps" }, 3, apps)).toBe(
       null,
     );

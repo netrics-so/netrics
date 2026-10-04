@@ -6,6 +6,7 @@ import {
 import {
   CURRENCY_DIMENSION,
   RESOURCE_DIMENSION,
+  SUPPORTED_LOCALES,
   STUDIO_LABEL_MAX_LINES,
   allResourcesName,
   isDataWidgetType,
@@ -222,6 +223,19 @@ export function scopePatch(
   locale: Locale = "en",
 ): WidgetPatch | null {
   if (resourceCount === null || widget.dimensions[RESOURCE_DIMENSION]) {
+    return null;
+  }
+  // A name already saved in any language stays: opening the Studio in
+  // another language must not change the draft (names are content in the
+  // creator's language, ADR 0016 section 5; screens rebuild their labels).
+  if (
+    widget.allResourcesName !== null &&
+    SUPPORTED_LOCALES.some(
+      (other) =>
+        allResourcesName(noun, resourceCount, other) ===
+        widget.allResourcesName,
+    )
+  ) {
     return null;
   }
   const scope = allResourcesName(noun, resourceCount, locale);
