@@ -32,6 +32,11 @@ export const screenDe: Catalog<typeof screenEn> = {
       approximate: "Ungefähr",
       tableTop: "Top {count}",
       tableNew: "neu",
+      reviewsPaused:
+        "App-Store-Bewertungen pausiert – lade einen neuen Bewertungsschlüssel hoch",
+      reviewsPausedHint: "Lade ihn in den Einstellungen der Verbindung hoch.",
+      noReviews: "Noch keine Bewertungen",
+      reviewStars: "{rating} von 5 Sternen",
       tableNoChange: "–",
       tableChangeHead: "Δ",
       gaugeTarget: "Ziel {target}",

@@ -8,6 +8,7 @@ import {
   METRIC_KINDS,
   PERIODS,
   BACKGROUND_DIM,
+  REVIEW_MIN_RATING,
   CUSTOM_LAYOUT_MAX_PAGES,
   FORMAT_WARNING_CODES,
   SCREEN_FORMAT_KEYS,
@@ -1714,6 +1715,29 @@ export const gaugeWidgetOptionsSchema = z.object({
   /** "9 days left" (in progress) and "2 days early" (reached). */
   showTimeLeft: z.boolean().default(true),
 });
+/** The latest review (ADR 0019 section 12). */
+export const reviewWidgetOptionsSchema = z.object({
+  /** Reviews with fewer stars are skipped. */
+  minRating: z
+    .number()
+    .int()
+    .min(REVIEW_MIN_RATING.min)
+    .max(REVIEW_MIN_RATING.max)
+    .default(REVIEW_MIN_RATING.default),
+  /** Skip reviews without a body ("Hide reviews without text"). */
+  requireText: z.boolean().default(true),
+  /** The reviewer's nickname; without it, none reaches any client. */
+  showAuthor: z.boolean().default(true),
+});
+export type ReviewWidgetOptions = z.infer<typeof reviewWidgetOptionsSchema>;
+
+/**
+ * A review widget's filter: one app of its connection, or none (all apps).
+ */
+const reviewDimensionsSchema = z
+  .object({ resource: z.string().min(1).max(200).optional() })
+  .strict();
+
 export const textWidgetOptionsSchema = z.object({
   size: z.enum(["body", "heading", "display"]).default("body"),
   align: alignSchema.default("start"),
@@ -1875,6 +1899,20 @@ export const dashboardWidgetInputSchema = z.discriminatedUnion("type", [
     ...widgetInputShape,
     options: countdownWidgetOptionsSchema,
   }),
+  z.object({
+    type: z.literal("review"),
+    ...widgetInputShape,
+    /**
+     * A connection whose connector keeps review text (App Store Connect);
+     * any other is refused with 400 reviews_not_supported.
+     */
+    connectionId: z.uuid(),
+    /** `resource`: one app of the connection; none: all its apps. */
+    dimensions: reviewDimensionsSchema.optional(),
+    /** The app's icon, an image of this workspace ("Use app icon"). */
+    imageId: z.uuid().nullable().optional(),
+    options: reviewWidgetOptionsSchema.prefault({}),
+  }),
 ]);
 export type DashboardWidgetInput = z.input<typeof dashboardWidgetInputSchema>;
 export type DashboardWidgetInputParsed = z.infer<
@@ -2025,6 +2063,16 @@ export const dashboardWidgetSchema = z.discriminatedUnion("type", [
     type: z.literal("countdown"),
     ...widgetShape,
     options: countdownWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("review"),
+    ...widgetShape,
+    connectionId: z.uuid(),
+    dimensions: z.record(z.string(), z.string()),
+    imageId: z.uuid().nullable(),
+    /** The app's name when the widget shows one app. Read-only. */
+    resourceName: z.string().nullable(),
+    options: reviewWidgetOptionsSchema,
   }),
 ]);
 export type DashboardWidget = z.infer<typeof dashboardWidgetSchema>;
@@ -2780,6 +2828,68 @@ export const deviceGaugeDataSchema = z.object({
 });
 export type DeviceGaugeData = z.infer<typeof deviceGaugeDataSchema>;
 
+/**
+ * One review as clients get it (ADR 0019 sections 11 and 12): the newest
+ * that matches the widget's options and is not hidden. Review text reaches
+ * clients only this way; there is no list or export.
+ */
+const reviewShape = {
+  /** 1–5 stars. */
+  rating: z.number().int().min(1).max(5),
+  title: z.string().nullable(),
+  body: z.string().nullable(),
+  /** The reviewer's nickname; null with `showAuthor` off or none given. */
+  author: z.string().nullable(),
+  /** ISO 3166-1 alpha-2; screens show the country's name. */
+  territory: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+};
+
+/**
+ * A latest-review widget's data (ADR 0019 section 12). `auth_failed`: the
+ * reviews key is missing or the connection needs reconnecting ("App Store
+ * reviews paused — upload a new reviews key"); `backfilling` while the
+ * first sync runs; `no_data` without a matching review; `stale` by the
+ * usual rule. Screens do not get the review's id (they cannot hide it).
+ */
+export const deviceReviewDataSchema = z.object({
+  status: deviceTileStatusSchema,
+  /** The connection's last successful sync. */
+  updatedAt: z.iso.datetime().nullable(),
+  review: z.object(reviewShape).nullable(),
+});
+export type DeviceReviewData = z.infer<typeof deviceReviewDataSchema>;
+
+/**
+ * The Studio's data of a latest-review widget (POST
+ * /v1/workspaces/:w/connections/:c/reviews/latest): the device data, and
+ * the review's provider id, which "Hide this review" needs.
+ */
+export const latestReviewRequestSchema = z.object({
+  /** One app of the connection; absent: all its apps. */
+  resource: z.string().min(1).max(200).optional(),
+  minRating: reviewWidgetOptionsSchema.shape.minRating,
+  requireText: reviewWidgetOptionsSchema.shape.requireText,
+  showAuthor: reviewWidgetOptionsSchema.shape.showAuthor,
+});
+export type LatestReviewRequest = z.input<typeof latestReviewRequestSchema>;
+export type LatestReviewRequestParsed = z.infer<
+  typeof latestReviewRequestSchema
+>;
+
+export const latestReviewResponseSchema = z.object({
+  status: deviceTileStatusSchema,
+  updatedAt: z.iso.datetime().nullable(),
+  review: z
+    .object({
+      /** The provider's review id, for "Hide this review". */
+      id: z.string().min(1),
+      ...reviewShape,
+    })
+    .nullable(),
+});
+export type LatestReviewResponse = z.infer<typeof latestReviewResponseSchema>;
+
 /** A widget's id and placement in a grid of `columns` × `rows`. */
 function deviceWidgetPlacementShape(grid: { columns: number; rows: number }) {
   return {
@@ -2921,6 +3031,16 @@ function deviceWidgetUnion<E extends z.ZodRawShape>(
         timeZone: z.string().min(1),
         targetAt: z.iso.datetime(),
       }),
+    }),
+    z.object({
+      type: z.literal("review"),
+      ...deviceWidgetShape,
+      /** The title, else "Latest review", and the app ("· Wurfel"). */
+      label: deviceDataLabelSchema,
+      /** The app's icon: one of the payload's `images`, else null. */
+      imageId: z.uuid().nullable(),
+      options: reviewWidgetOptionsSchema,
+      data: deviceReviewDataSchema,
     }),
   ]);
 }

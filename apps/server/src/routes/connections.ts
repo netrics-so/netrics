@@ -15,6 +15,8 @@ import {
   enableAppStoreAnalyticsRequestSchema,
   enableAppStoreAnalyticsResponseSchema,
   enqueueSyncResponseSchema,
+  latestReviewRequestSchema,
+  latestReviewResponseSchema,
   observationListQuerySchema,
   observationListResponseSchema,
   previewConnectionRequestSchema,
@@ -491,6 +493,49 @@ export function registerConnectionRoutes(
             return;
           }
           return enqueueSyncResponseSchema.parse({ jobId });
+        },
+      );
+
+      // The latest-review widget's data for the Studio and the signed-in
+      // TV mode (ADR 0019 §12): one review, the newest matching and not
+      // hidden, with its id for "Hide this review". Like a metric query it
+      // needs connections:view; there is no list or export of reviews.
+      scope.post(
+        "/workspaces/:workspaceId/connections/:connectionId/reviews/latest",
+        {
+          schema: routeSchema({
+            summary: "The newest review a latest-review widget shows",
+            tags: ["connections"],
+            body: latestReviewRequestSchema,
+            response: latestReviewResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:view")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const body = parseBody(latestReviewRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const result = await connections.latestReview(
+            access,
+            params.data.connectionId,
+            body,
+          );
+          if (!result.ok) {
+            return sendError(reply, result.status, result.error);
+          }
+          return latestReviewResponseSchema.parse(result.value);
         },
       );
 

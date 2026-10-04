@@ -209,6 +209,7 @@ export async function buildApp(
     version: config.version,
     exchangeRates: config.exchangeRates,
     defaultLocale: config.defaultLocale,
+    credentialKeyring,
     ...(deps.devicePayloadCacheMs !== undefined
       ? { payloadCacheMs: deps.devicePayloadCacheMs }
       : {}),

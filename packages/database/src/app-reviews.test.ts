@@ -10,6 +10,7 @@ import {
   AppReviewStoreError,
   capAppReviewText,
   deleteConnectionAppReviews,
+  findLatestAppReview,
   hideAppReview,
   ingestAppReviews,
   pruneAppReviews,
@@ -335,6 +336,70 @@ describe("tenant isolation", () => {
       select hidden_at from app_reviews where provider_review_id = 'r1'`;
     expect(row!.hidden_at).toBeNull();
     expect(await storedIds()).toEqual(["r1"]);
+  });
+});
+
+describe("latest review (ADR 0019 section 12)", () => {
+  const latest = (
+    options: { resourceId?: string; minRating?: number; requireText?: boolean },
+    workspaceId = workspaceA,
+    connectionId = connectionA,
+  ) =>
+    inWorkspace(workspaceId, (tx) =>
+      findLatestAppReview(tx, {
+        workspaceId,
+        connectionId,
+        resourceId: options.resourceId ?? null,
+        minRating: options.minRating ?? 1,
+        requireText: options.requireText ?? true,
+      }),
+    );
+
+  it("is the newest match that is not hidden", async () => {
+    await ingest([
+      review("newest-other-app", HOUR, { resource: OTHER_APP }),
+      review("two-stars", 2 * HOUR, { rating: 2 }),
+      review("no-text", 3 * HOUR, { rating: 5, body: "   " }),
+      review("five", 4 * HOUR, { rating: 5 }),
+      review("older-five", 5 * HOUR, { rating: 5 }),
+    ]);
+    expect((await latest({}))?.providerReviewId).toBe("newest-other-app");
+    expect((await latest({ resourceId: APP }))?.providerReviewId).toBe(
+      "two-stars",
+    );
+    expect(
+      (await latest({ resourceId: APP, minRating: 4 }))?.providerReviewId,
+    ).toBe("five");
+    expect(
+      (await latest({ resourceId: APP, minRating: 4, requireText: false }))
+        ?.providerReviewId,
+    ).toBe("no-text");
+    await inWorkspace(workspaceA, (tx) =>
+      hideAppReview(tx, {
+        workspaceId: workspaceA,
+        connectionId: connectionA,
+        providerReviewId: "five",
+        now: NOW,
+      }),
+    );
+    expect(await latest({ resourceId: APP, minRating: 4 })).toMatchObject({
+      providerReviewId: "older-five",
+      rating: 5,
+      title: "Title older-five",
+      body: "Body older-five",
+      author: "author-older-five",
+      territory: "DE",
+    });
+    expect(await latest({ resourceId: "unknown" })).toBeNull();
+  });
+
+  it("never reads another workspace's reviews", async () => {
+    await ingest([review("b1", HOUR)], [], workspaceB, connectionB);
+    // Workspace A asking for B's connection, under A's RLS and predicate.
+    expect(await latest({}, workspaceA, connectionB)).toBeNull();
+    expect((await latest({}, workspaceB, connectionB))?.providerReviewId).toBe(
+      "b1",
+    );
   });
 });
 

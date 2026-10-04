@@ -68,6 +68,14 @@ struct WidgetView: View {
                     now: context.date)
             }
             .surface(env, state: GaugeWidgetView.surfaceState(data))
+        case .review(_, _, let data):
+            // The age in the author line is worded anew every minute.
+            TimelineView(.everyMinute) { context in
+                ReviewWidgetView(
+                    label: widget.label ?? "", placement: placement, data: data, icon: image, env: env,
+                    now: context.date)
+            }
+            .surface(env, state: SurfaceState(data.status))
         case .image(_, let options):
             ImageWidgetView(stored: image, options: options, label: widget.label, env: env)
         case .text(let text, let options):
@@ -208,10 +216,12 @@ struct DataStateView: View {
     let placement: ScreenPlacement
     let env: WidgetEnv
     let now: Date
+    /** The surface's lines when the type words them itself (a latest review). */
+    var texts: (headline: String?, hint: String)? = nil
 
     var body: some View {
         // Screens carry no source name: "Reconnect the source".
-        let texts = surface.texts(source: nil, language: env.language)
+        let texts = self.texts ?? surface.texts(source: nil, language: env.language)
         VStack(alignment: .leading, spacing: 0) {
             WidgetLabelView(layout: label, env: env)
             Spacer(minLength: 0)
@@ -996,6 +1006,131 @@ struct StatusRowView: View {
         .frame(height: env.pt(sizes.cell * 1.15))
         .padding(.top, env.pt(StudioLayout.StatusSpacing.rowGap))
         .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: Latest review (ADR 0019 section 12)
+
+/**
+ * The newest App Store review (design 4b): the label, the app icon and five
+ * stars (filled in `warning`, empty in `border`), the title on one line and
+ * the body in the lines `reviewLayout` gives it (data text: both end with
+ * an ellipsis), the author line "Marta P. · Germany · 2 hr. ago" with the
+ * age from this device's clock. One review, no rotation; the parts rise on
+ * the slide enter like table rows.
+ */
+struct ReviewWidgetView: View {
+    let label: String
+    let placement: ScreenPlacement
+    let data: ReviewWidgetData
+    let icon: StoredImage?
+    let env: WidgetEnv
+    var now = Date()
+
+    @Environment(\.enterProgress) private var progressValue
+
+    var body: some View {
+        let language = env.language
+        let box = StudioRender.contentBox(placement.cells, showHeader: env.showHeader, unitBox: placement.unitBox)
+        let sizes = StudioLayout.typeScale(
+            .review, placement: placement.cells, fontScale: env.fontScale, showHeader: env.showHeader)
+        let labelLayout = StudioRender.labelLayout(label, width: box.width, sizes: sizes)
+        let notice =
+            data.status == .stale || data.status == .outage
+            ? TileNotices.notice(status: data.status, updatedAt: data.updatedAt, language: language) : nil
+        let review = data.review
+        let layout = StudioLayout.reviewLayout(
+            label: label, width: box.width, height: box.height, fontScale: env.fontScale, icon: icon != nil,
+            title: review?.title, body: review?.body, notice: notice != nil)
+        let small = layout.sizes.author
+
+        if let surface = DataSurface(data.status) {
+            DataStateView(
+                surface: surface, type: .review, label: labelLayout, small: small, updatedAt: data.updatedAt,
+                placement: placement, env: env, now: now,
+                texts: ReviewText.surfaceTexts(surface, language: language))
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                WidgetLabelView(layout: labelLayout, env: env)
+                if let review {
+                    HStack(spacing: env.pt(StudioLayout.ReviewSpacing.iconGap)) {
+                        if let icon {
+                            DownsampledImage(
+                                file: icon.url, image: icon.image, fit: .cover, align: .center,
+                                box: CGSize(width: env.pt(layout.icon), height: env.pt(layout.icon)),
+                                displayScale: env.displayScale
+                            )
+                            .frame(width: env.pt(layout.icon), height: env.pt(layout.icon))
+                            .clipShape(RoundedRectangle(cornerRadius: env.pt(10)))
+                            .accessibilityHidden(true)
+                        }
+                        ReviewStarsView(rating: review.rating, size: layout.sizes.stars, env: env)
+                    }
+                    .frame(height: env.pt(layout.starsRowHeight), alignment: .leading)
+                    .padding(.bottom, env.pt(StudioLayout.ReviewSpacing.stack))
+                    .modifier(RowRise(progress: progressValue, index: 0, rise: env.pt(EnterMotion.rowRise)))
+                    if layout.showTitle, let title = review.title {
+                        Text(title)
+                            .font(env.font(layout.sizes.review, .semibold))
+                            .foregroundStyle(env.colors.text)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(height: env.pt(layout.textLine), alignment: .leading)
+                            .modifier(RowRise(progress: progressValue, index: 1, rise: env.pt(EnterMotion.rowRise)))
+                    }
+                    if layout.bodyLines > 0, let body = review.body {
+                        Text(body)
+                            .font(env.font(layout.sizes.review))
+                            .foregroundStyle(env.colors.text)
+                            .lineLimit(layout.bodyLines)
+                            .truncationMode(.tail)
+                            .lineSpacing(env.pt(layout.textLine - layout.sizes.review * 1.2))
+                            .frame(
+                                maxHeight: env.pt(layout.textLine * Double(layout.bodyLines)), alignment: .topLeading
+                            )
+                            .modifier(RowRise(progress: progressValue, index: 2, rise: env.pt(EnterMotion.rowRise)))
+                    }
+                    Spacer(minLength: 0)
+                    Text(ReviewText.authorLine(review, now: now, language: language))
+                        .font(env.font(small))
+                        .foregroundStyle(env.colors.muted)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.top, env.pt(StudioLayout.ReviewSpacing.stack))
+                        .modifier(RowRise(progress: progressValue, index: 3, rise: env.pt(EnterMotion.rowRise)))
+                } else {
+                    Text(verbatim: "—")
+                        .font(env.font(layout.sizes.review))
+                        .foregroundStyle(env.colors.muted)
+                    Spacer(minLength: 0)
+                }
+                if let notice {
+                    NoticeLine(text: notice, size: small, env: env, stale: data.status == .stale)
+                        .padding(.top, env.pt(StudioLayout.ReviewSpacing.stack))
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+/** Five stars, filled up to the rating in `warning`, the rest in `border`. */
+struct ReviewStarsView: View {
+    let rating: Int
+    let size: Double
+    let env: WidgetEnv
+
+    var body: some View {
+        let filled = StudioLayout.reviewStarsFilled(Double(rating))
+        HStack(spacing: env.pt(StudioLayout.ReviewSpacing.starGap)) {
+            ForEach(0..<StudioLayout.reviewStars, id: \.self) { index in
+                Text(verbatim: "★")
+                    .foregroundStyle(index < filled ? env.colors.warning : env.colors.border)
+            }
+        }
+        .font(env.font(size))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(KitStrings.text(.reviewStars, env.language, filled))
     }
 }
 

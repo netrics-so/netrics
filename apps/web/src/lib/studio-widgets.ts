@@ -17,6 +17,9 @@ import type { ScreenPlacement } from "./studio-render";
 
 // The studio's widgets as the web renders them (ADR 0015, sections 1–2).
 
+/** The latest-review widget (ADR 0019 section 12). */
+export type ReviewWidget = Extract<DashboardWidget, { type: "review" }>;
+
 /** The image widget (#217). */
 export type ImageWidget = Extract<DashboardWidget, { type: "image" }>;
 
@@ -126,6 +129,8 @@ export function referencedImageIds(dashboard: {
     if (background) ids.add(background.imageId);
     for (const widget of slide.widgets) {
       if (widget.type === "image") ids.add(widget.imageId);
+      // A latest review's app icon (ADR 0019 section 12).
+      if (widget.type === "review" && widget.imageId) ids.add(widget.imageId);
     }
   }
   return [...ids];
@@ -170,6 +175,8 @@ export interface StudioConnection {
   state: ConnectionStateView;
   /** Setup not finished (ADR 0012): a status board lists it as failing. */
   setupPending?: boolean;
+  /** The connector, where it matters (which connections have reviews). */
+  connectorId?: string;
 }
 
 /** What live widgets read besides their own settings. */

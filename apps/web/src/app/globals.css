@@ -2016,6 +2016,7 @@ a.health-badge:hover {
 .sw-table,
 .sw-status,
 .sw-compare,
+.sw-review,
 .sw-clock,
 .sw-countdown,
 .sw-failed {
@@ -2111,6 +2112,7 @@ a.health-badge:hover {
 .sw-table > .sw-footer,
 .sw-status > .sw-footer,
 .sw-compare > .sw-notice,
+.sw-review > .sw-review-author,
 .sw-footer {
   margin-top: auto;
 }
@@ -2286,6 +2288,65 @@ a.health-badge:hover {
 
 .sw-bar-row.others .sw-bar-fill {
   opacity: 0.5;
+}
+
+/* Latest review (ADR 0019 section 12, design 4b): the app icon and five
+   stars (filled in warning, empty in border), the title on one line and
+   the body in the lines reviewLayout gives it, each ending with an
+   ellipsis (data text); the author line at the bottom. */
+.sw-review-stars-row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 12);
+  margin-bottom: calc(var(--u) * 8);
+  flex: none;
+}
+
+.sw-review-icon {
+  flex: none;
+  object-fit: cover;
+  border-radius: calc(var(--u) * 10);
+}
+
+.sw-review-stars {
+  display: inline-flex;
+  gap: calc(var(--u) * 4);
+  line-height: 1.15;
+  color: var(--t-border);
+}
+
+.sw-review-star.filled {
+  color: var(--t-warning);
+}
+
+.sw-review-title,
+.sw-review-author {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-review-title {
+  font-weight: 600;
+  color: var(--t-text);
+}
+
+.sw-review-body {
+  color: var(--t-text);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.sw-review-author {
+  line-height: 1.15;
+  padding-top: calc(var(--u) * 8);
+}
+
+.scroll-review-body {
+  overflow-wrap: anywhere;
+  white-space: pre-line;
 }
 
 /* Tables (ADR 0019 section 6): sizes and column widths come from the

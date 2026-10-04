@@ -84,6 +84,7 @@ export default async function StudioPage({ params }: StudioPageProps) {
         name: connection.name,
         state: connection.state,
         setupPending: connection.setupPending,
+        connectorId: connection.connectorId,
       },
     ]),
   );

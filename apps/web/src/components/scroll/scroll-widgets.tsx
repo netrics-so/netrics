@@ -38,6 +38,11 @@ import {
   type TableReadingProps,
 } from "@/components/studio/table-widget";
 import {
+  ReviewStars,
+  useLiveReview,
+  type ReviewReadingProps,
+} from "@/components/studio/review-widget";
+import {
   GaugeRing,
   useLiveGauge,
   type GaugeReadingProps,
@@ -78,6 +83,7 @@ import {
 } from "@/lib/studio-status";
 import { countdownTargetAt, countdownView } from "@/lib/studio-countdown";
 import { tableRowTexts, tableSubtitle } from "@/lib/studio-table";
+import { reviewAuthorLine } from "@/lib/studio-review";
 import { gaugeTexts } from "@/lib/studio-gauge";
 import {
   compareChangeText,
@@ -901,6 +907,97 @@ function LiveScrollGauge({
   return <ScrollGaugeCard {...useLiveGauge(widget, env)} {...size} />;
 }
 
+/**
+ * The latest-review card (ADR 0019 sections 2 and 12): the stars, the
+ * title and the whole text (the card grows; nothing is cut), the author
+ * line. States read as on a slide, in words.
+ */
+export function ScrollReviewCard(props: ReviewReadingProps & ScrollCardSize) {
+  const { reading } = props;
+  const locale = useLocale();
+  const t = useT("screen.widget");
+  const now = useNow();
+  const state =
+    props.status === "auth_failed"
+      ? t("reviewsPaused")
+      : props.status === "backfilling"
+        ? t("loadingHistory")
+        : props.status === "no_data" || (!reading && !props.loading)
+          ? t("noReviews")
+          : null;
+  return (
+    <article
+      className="sw scroll-card scroll-card--review"
+      aria-busy={props.loading ?? false}
+    >
+      <ScrollLabel label={props.label} />
+      {reading && state === null ? (
+        <>
+          <div className="sw-review-stars-row">
+            {props.icon ? (
+              <img
+                className="sw-review-icon"
+                src={props.icon}
+                alt=""
+                style={{ width: u(48), height: u(48) }}
+              />
+            ) : null}
+            <ReviewStars rating={reading.rating} size={SCROLL_TYPE.change} />
+          </div>
+          {reading.title ? (
+            <p
+              className="sw-review-title scroll-review-title"
+              style={{ fontSize: u(SCROLL_TYPE.title) }}
+            >
+              {reading.title}
+            </p>
+          ) : null}
+          {reading.body ? (
+            <p
+              className="scroll-review-body"
+              style={{ fontSize: u(SCROLL_TYPE.resource) }}
+            >
+              {reading.body}
+            </p>
+          ) : null}
+          <p
+            className="sw-muted"
+            style={{ fontSize: u(SCROLL_TYPE.small) }}
+            suppressHydrationWarning
+          >
+            {reviewAuthorLine(reading, locale, now.getTime())}
+          </p>
+        </>
+      ) : (
+        <p
+          className={state ? "sw-muted" : "scroll-value sw-placeholder"}
+          style={{ fontSize: u(SCROLL_TYPE.small) }}
+        >
+          {state ?? "…"}
+        </p>
+      )}
+      {props.notice ? (
+        <WidgetNotice size={SCROLL_TYPE.small} stale={props.status === "stale"}>
+          {props.notice}
+        </WidgetNotice>
+      ) : null}
+    </article>
+  );
+}
+
+function LiveScrollReview({
+  widget,
+  env,
+  size,
+}: {
+  widget: Extract<StudioWidget, { type: "review" }>;
+  env: StudioEnv;
+  size: ScrollCardSize;
+}) {
+  const { reviewId: _id, ...props } = useLiveReview(widget, env);
+  return <ScrollReviewCard {...props} {...size} />;
+}
+
 function LiveScrollTable({
   widget,
   env,
@@ -1093,6 +1190,8 @@ export function LiveScrollWidget({
       return <LiveScrollBar widget={widget} env={env} size={size} />;
     case "table":
       return <LiveScrollTable widget={widget} env={env} size={size} />;
+    case "review":
+      return <LiveScrollReview widget={widget} env={env} size={size} />;
     case "status":
       return <LiveScrollStatus widget={widget} env={env} size={size} />;
     case "compare":

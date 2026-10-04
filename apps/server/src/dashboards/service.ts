@@ -9,6 +9,7 @@ import {
   lineWidgetOptionsSchema,
   metricWidgetOptionsSchema,
   statusWidgetOptionsSchema,
+  reviewWidgetOptionsSchema,
   textWidgetOptionsSchema,
   type CreateDashboardRequest,
   type Dashboard as DashboardView,
@@ -24,6 +25,7 @@ import {
 import {
   connectionHasResource,
   deleteDashboard,
+  findConnection,
   findConnectionMetric,
   findResourceNames,
   findDashboard,
@@ -59,10 +61,12 @@ import {
   compareUnitsProblem,
   compatibleAggregations,
   dataWidgetCost,
+  connectorHasReviews,
   isCurrencyCode,
   isDataWidgetType,
   isPerCurrencyUnit,
   legacyLayout,
+  reviewWidgetLabel,
   slideLayoutProblem,
   tileLabel,
   type Aggregation,
@@ -122,6 +126,13 @@ function isDataRow(widget: DashboardWidgetRow): widget is DataWidgetRow {
   return isDataWidgetType(widget.type) && widget.connectionId !== null;
 }
 
+/** A latest-review widget with its connection (ADR 0019 section 12). */
+type ReviewWidgetRow = DashboardWidgetRow & { connectionId: string };
+
+function isReviewRow(widget: DashboardWidgetRow): widget is ReviewWidgetRow {
+  return widget.type === "review" && widget.connectionId !== null;
+}
+
 function dimensionsOf(widget: DashboardWidgetRow): Record<string, string> {
   return widget.dimensions as Record<string, string>;
 }
@@ -174,6 +185,8 @@ function optionsOf(widget: DashboardWidgetRow) {
       return statusWidgetOptionsSchema.parse(options);
     case "countdown":
       return countdownWidgetOptionsSchema.parse(options);
+    case "review":
+      return reviewWidgetOptionsSchema.parse(options);
   }
 }
 
@@ -209,10 +222,14 @@ export async function presentDashboard(
     const denominator = denominatorOf(widget);
     return denominator ? [denominator] : [];
   });
+  // A latest review names its app (ADR 0019 section 12).
+  const reviews = dashboard.slides.flatMap((slide) =>
+    slide.widgets.filter(isReviewRow),
+  );
   const names = await findResourceNames(
     tx,
     workspaceId,
-    [...data, ...denominators].flatMap((widget) => {
+    [...data, ...denominators, ...reviews].flatMap((widget) => {
       const resourceId = dimensionsOf(widget)[RESOURCE_DIMENSION];
       return resourceId === undefined
         ? []
@@ -253,6 +270,12 @@ export async function presentDashboard(
       }),
     };
   };
+  const reviewResourceName = (widget: ReviewWidgetRow) => {
+    const resourceId = dimensionsOf(widget)[RESOURCE_DIMENSION];
+    return resourceId === undefined
+      ? null
+      : (names.get(resourceNameKey(widget.connectionId, resourceId)) ?? null);
+  };
   // Readability per format (ADR 0017 §6, #280), labelled as screens show
   // the widgets, in the reader's language.
   const readability = await loadReadabilityInputs(
@@ -261,6 +284,12 @@ export async function presentDashboard(
     dashboard,
     locale,
     (widget, metricName) => {
+      if (isReviewRow(widget)) {
+        return reviewWidgetLabel(
+          { title: widget.title, resourceName: reviewResourceName(widget) },
+          locale,
+        );
+      }
       if (!isDataRow(widget)) return null;
       const { dimensions, resourceName, allResourcesName } = binding(widget);
       return tileLabel({
@@ -341,6 +370,17 @@ export async function presentDashboard(
         type: "countdown",
         ...base,
         options: countdownWidgetOptionsSchema.parse(widget.options),
+      };
+    }
+    if (isReviewRow(widget)) {
+      return {
+        type: "review",
+        ...base,
+        connectionId: widget.connectionId,
+        dimensions: dimensionsOf(widget),
+        imageId: widget.imageId,
+        resourceName: reviewResourceName(widget),
+        options: reviewWidgetOptionsSchema.parse(widget.options),
       };
     }
     return widget.type === "text"
@@ -633,6 +673,9 @@ async function validateWidget(
   if (widget.type === "compare") {
     return validateCompare(tx, workspaceId, widget, base);
   }
+  if (widget.type === "review") {
+    return validateReviewWidget(tx, workspaceId, widget, base);
+  }
   const binding = await validateBinding(tx, workspaceId, widget);
   if (!binding.ok) {
     return binding;
@@ -721,6 +764,49 @@ async function validateCompare(
       aggregation: denominator.value.aggregation,
       dimensions: denominator.value.dimensions,
     },
+  });
+}
+
+/**
+ * A latest-review widget (ADR 0019 section 12): a connection of this
+ * workspace whose connector keeps review text (else 400
+ * reviews_not_supported), optionally one of its apps; its icon is checked
+ * with the dashboard's other images (checkImages).
+ */
+async function validateReviewWidget(
+  tx: Transaction,
+  workspaceId: string,
+  widget: Extract<DashboardWidgetInputParsed, { type: "review" }>,
+  base: Pick<WidgetInput, "id" | "type" | "x" | "y" | "w" | "h" | "title">,
+): Promise<Result<WidgetInput>> {
+  const connection = await findConnection(tx, workspaceId, widget.connectionId);
+  if (!connection) {
+    return fail(400, "connection_not_found");
+  }
+  if (!connectorHasReviews(connection.row.connectorId)) {
+    return fail(400, "reviews_not_supported");
+  }
+  const resource = widget.dimensions?.resource;
+  if (
+    resource !== undefined &&
+    !(await connectionHasResource(
+      tx,
+      workspaceId,
+      widget.connectionId,
+      resource,
+    ))
+  ) {
+    return fail(400, "unknown_resource");
+  }
+  return ok({
+    ...base,
+    ...EMPTY_WIDGET_DATA,
+    connectionId: widget.connectionId,
+    dimensions: (resource !== undefined
+      ? { [RESOURCE_DIMENSION]: resource }
+      : {}) as Record<string, string>,
+    imageId: widget.imageId ?? null,
+    options: widget.options,
   });
 }
 

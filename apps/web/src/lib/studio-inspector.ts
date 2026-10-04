@@ -12,6 +12,7 @@ import {
   countdownLabel,
   isDataWidgetType,
   labelFit,
+  reviewWidgetLabel,
   tileLabel,
   type Locale,
   type ResourceNoun,
@@ -388,6 +389,8 @@ export function convertWidget(
     locale: Locale;
     /** The workspace's goals: a goal widget shows the first. */
     goals?: ReadonlyArray<{ id: string; name: string }>;
+    /** Connections that keep review text (a latest review). */
+    reviewConnectionIds?: readonly string[];
   },
 ): { widget: WidgetFields } | { reason: string } {
   const made = newWidget(to, context);
@@ -517,6 +520,27 @@ export function labelPreview(
   locale: Locale,
   fontScale = 1,
 ): LabelPreview | null {
+  if (widget.type === "review") {
+    const resourceName = widget.dimensions[RESOURCE_DIMENSION]
+      ? widget.resourceName
+      : null;
+    const label = reviewWidgetLabel(
+      { title: widget.title?.trim() || null, resourceName },
+      locale,
+    );
+    const fit = labelFit(label, widget, { fontScale });
+    return {
+      label,
+      defaultLabel: reviewWidgetLabel({ title: null, resourceName }, locale),
+      fit,
+      warning: fit.fits
+        ? null
+        : webTranslator(locale, "studio.readability")("labelWarning", {
+            lines: Math.max(fit.titleLines, fit.resourceLines),
+            max: STUDIO_LABEL_MAX_LINES,
+          }),
+    };
+  }
   if (widget.type === "gauge") {
     // The title, else the goal's name (ADR 0019 section 2).
     const defaultLabel = gaugeLabel(

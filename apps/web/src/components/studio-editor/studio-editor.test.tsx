@@ -342,6 +342,7 @@ describe("add widget", () => {
         imageIds: [ID(50)],
         locale: "en",
         goals: [{ id: ID(70), name: "Monthly downloads" }],
+        reviewConnectionIds: [ID(70)],
       });
       expect("widget" in made).toBe(true);
       if ("widget" in made) {

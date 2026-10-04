@@ -128,6 +128,7 @@ const context = {
   imageIds: [ID(50)],
   locale: "en" as const,
   goals: [{ id: ID(70), name: "Monthly downloads" }],
+  reviewConnectionIds: [ID(70)],
 };
 
 /** The widget with its placement, as the API receives it. */

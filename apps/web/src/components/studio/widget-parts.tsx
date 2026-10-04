@@ -192,8 +192,11 @@ export function DataStateWidget({
   placement,
   showHeader,
   fontScale,
+  reconnectText,
+  reconnectHint,
+  emptyText,
 }: {
-  type: "metric" | "line" | "bar" | "table" | "compare" | "gauge";
+  type: "metric" | "line" | "bar" | "table" | "compare" | "gauge" | "review";
   surface: DataSurface;
   label: WidgetLabelLayout;
   /** The layout's smallest text size (at least 24 units). */
@@ -203,6 +206,11 @@ export function DataStateWidget({
   placement: StudioPlacement;
   showHeader: boolean;
   fontScale: number;
+  /** Auth failed: instead of "Reconnect {source}" and its hint. */
+  reconnectText?: string;
+  reconnectHint?: string;
+  /** No data: instead of "No data yet". */
+  emptyText?: string;
 }) {
   const t = useT("screen.widget");
   // The source is in "Reconnect …": the footer says when it last worked.
@@ -223,10 +231,11 @@ export function DataStateWidget({
             className="sw-reconnect"
             style={{ fontSize: u(Math.max(RECONNECT_SIZE, small * 1.1875)) }}
           >
-            {name ? t("reconnect", { source: name }) : t("reconnectSource")}
+            {reconnectText ??
+              (name ? t("reconnect", { source: name }) : t("reconnectSource"))}
           </p>
           <p className="sw-muted sw-state-hint" style={{ fontSize: u(small) }}>
-            {t("reconnectHint")}
+            {reconnectHint ?? t("reconnectHint")}
           </p>
         </div>
         {footer ? <WidgetFooter size={small}>{footer}</WidgetFooter> : null}
@@ -249,7 +258,7 @@ export function DataStateWidget({
           {backfilling ? <span className="sw-skeleton-sweep" /> : null}
         </span>
         <p className="sw-muted sw-state-hint" style={{ fontSize: u(small) }}>
-          {backfilling ? t("loadingHistory") : t("noDataShort")}
+          {backfilling ? t("loadingHistory") : (emptyText ?? t("noDataShort"))}
         </p>
       </div>
     </article>

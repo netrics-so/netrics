@@ -73,7 +73,7 @@ export const studioEn = {
       add: "Add widget",
       hint: "Click to add it in the first free spot, or drag it onto the slide",
       addType:
-        "Add {type, select, metric {metric} line {line chart} bar {bar chart} table {table} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} other {widget}}",
+        "Add {type, select, metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} other {widget}}",
     },
     assignTvs: {
       title: "Show “{name}” on TVs",
@@ -319,6 +319,25 @@ export const studioEn = {
       fitContain: "Whole image (contain)",
       fitCover: "Fill the widget, cropped (cover)",
       preview: "Preview",
+      review: "Review",
+      reviewConnection: "App Store Connect connection",
+      reviewApp: "App",
+      reviewAllApps: "All apps",
+      reviewAppHelp: "The newest review of one app, or of all apps.",
+      appIcon: "App icon",
+      noIcon: "No icon",
+      minRating: "Minimum stars",
+      minRatingOption: "{count, plural, one {# star} other {# stars}}",
+      requireText: "Hide reviews without text",
+      showAuthor: "Show author",
+      showAuthorHelp:
+        "The reviewer's nickname. Off, it never reaches the screens.",
+      hideReview: "Hide this review",
+      hideReviewHelp:
+        "Hides the review shown now from every widget; the next one takes its place.",
+      hidingReview: "Hiding…",
+      reviewHidden: "Review hidden.",
+      noReviewShown: "No review is shown right now.",
     },
     newWidget: {
       noMetrics: "Add a connection with metrics first.",
@@ -327,6 +346,7 @@ export const studioEn = {
       text: "## Heading\nSome text",
       notBreakable: "This metric cannot be broken down into bars.",
       noGoals: "Create a goal first (Goals page).",
+      noReviews: "Connect App Store Connect first.",
     },
     status: {
       liveOn: "Live on {screens}",
@@ -507,9 +527,9 @@ export const studioEn = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} table {Table} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} countdown {Countdown} gauge {Goal} other {Widget}}",
+        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} table {Table} review {Latest review} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} countdown {Countdown} gauge {Goal} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} gauge {goal} other {widget}})",
+        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} gauge {goal} other {widget}})",
       copyOf: "{name} (copy)",
       slide: "Slide {number}",
       quoted: "“{name}”",
@@ -521,9 +541,9 @@ export const studioEn = {
         widgetPlaced:
           "{name} {verb, select, duplicated {duplicated} pasted {pasted} other {added}} at column {column}, row {row}.",
         typeNoRoom:
-          "{type, select, metric {A metric} line {A line chart} bar {A bar chart} table {A table} compare {A comparison} image {An image} text {A text} clock {A clock} status {A status board} countdown {A countdown} other {A widget}} needs at least {w} × {h} cells; there is no room for it here.",
+          "{type, select, metric {A metric} line {A line chart} bar {A bar chart} table {A table} review {A latest review} compare {A comparison} image {An image} text {A text} clock {A clock} status {A status board} countdown {A countdown} other {A widget}} needs at least {w} × {h} cells; there is no room for it here.",
         typeChanged:
-          "{name} is now {type, select, metric {a metric} line {a line chart} bar {a bar chart} table {a table} compare {a comparison} image {an image} text {a text} clock {a clock} status {a status board} countdown {a countdown} other {a widget}}.",
+          "{name} is now {type, select, metric {a metric} line {a line chart} bar {a bar chart} table {a table} review {a latest review} compare {a comparison} image {an image} text {a text} clock {a clock} status {a status board} countdown {a countdown} other {a widget}}.",
         undone: "Undone.",
         redone: "Redone.",
         discarded: "Changes discarded.",

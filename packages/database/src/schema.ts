@@ -1050,17 +1050,18 @@ export const dashboardWidgets = pgTable(
     index("dashboard_widgets_goal_idx").on(table.goalId),
     check(
       "dashboard_widgets_type_valid",
-      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table', 'status', 'compare', 'countdown', 'gauge')`,
+      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table', 'status', 'compare', 'countdown', 'gauge', 'review')`,
     ),
     // Only goal widgets name a goal (theirs may be null: deleted).
     check(
       "dashboard_widgets_goal_valid",
       sql`${table.goalId} is null or ${table.type} = 'gauge'`,
     ),
-    // An image widget names its image; no other widget does.
+    // An image widget names its image; a latest review may name its app's
+    // icon (ADR 0019 §12); no other widget does.
     check(
       "dashboard_widgets_image_valid",
-      sql`(${table.imageId} is not null) = (${table.type} = 'image')`,
+      sql`${table.type} = 'review' or (${table.imageId} is not null) = (${table.type} = 'image')`,
     ),
     // The largest grid of any format (ADR 0017 section 8); the service
     // checks the exact grid of the dashboard's primary format.
@@ -1089,10 +1090,12 @@ export const dashboardWidgets = pgTable(
       "dashboard_widgets_denominator_columns",
       sql`case when ${table.type} = 'compare' then ${table.denominatorConnectionId} is not null and ${table.denominatorMetricKey} is not null and ${table.denominatorAggregation} in ('sum', 'avg', 'min', 'max', 'last') else ${table.denominatorConnectionId} is null and ${table.denominatorMetricKey} is null and ${table.denominatorAggregation} is null and ${table.denominatorDimensions} = '{}'::jsonb end`,
     ),
-    // Data widgets have a metric binding and no text; the others neither.
+    // Data widgets have a metric binding and no text; a latest review a
+    // connection (and an optional resource filter) only; the others
+    // neither.
     check(
       "dashboard_widgets_type_columns",
-      sql`case when ${table.type} in ('metric', 'line', 'bar', 'table', 'compare') then ${table.connectionId} is not null and ${table.metricKey} is not null and ${table.aggregation} is not null and ${table.period} is not null and ${table.text} is null else ${table.connectionId} is null and ${table.metricKey} is null and ${table.aggregation} is null and ${table.period} is null and ${table.displayCurrency} is null and ${table.dimensions} = '{}'::jsonb and (${table.text} is not null) = (${table.type} = 'text') end`,
+      sql`case when ${table.type} in ('metric', 'line', 'bar', 'table', 'compare') then ${table.connectionId} is not null and ${table.metricKey} is not null and ${table.aggregation} is not null and ${table.period} is not null and ${table.text} is null when ${table.type} = 'review' then ${table.connectionId} is not null and ${table.metricKey} is null and ${table.aggregation} is null and ${table.period} is null and ${table.displayCurrency} is null and ${table.text} is null else ${table.connectionId} is null and ${table.metricKey} is null and ${table.aggregation} is null and ${table.period} is null and ${table.displayCurrency} is null and ${table.dimensions} = '{}'::jsonb and (${table.text} is not null) = (${table.type} = 'text') end`,
     ),
   ],
 );

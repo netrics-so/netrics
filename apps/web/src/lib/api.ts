@@ -29,6 +29,8 @@ import {
   metricCurrenciesResponseSchema,
   metricResourcesRequestSchema,
   metricResourcesResponseSchema,
+  latestReviewRequestSchema,
+  latestReviewResponseSchema,
   metricBreakdownRequestSchema,
   metricBreakdownResponseSchema,
   metricQueryRequestSchema,
@@ -48,6 +50,8 @@ import {
   type MetricCurrenciesResponse,
   type MetricResourcesRequest,
   type MetricResourcesResponse,
+  type LatestReviewRequest,
+  type LatestReviewResponse,
   type MetricBreakdownRequest,
   type MetricBreakdownResponse,
   type MetricQueryRequest,
@@ -1173,6 +1177,39 @@ export function queryMetricBreakdown(
     `/v1/workspaces/${workspaceId}/metrics/breakdown`,
     metricBreakdownRequestSchema.parse(body),
   );
+}
+
+/**
+ * A latest-review widget's review (ADR 0019 section 12, browser): the
+ * newest that matches and is not hidden, with its id for "Hide this
+ * review". One review; there is no list.
+ */
+export function queryLatestReview(
+  workspaceId: string,
+  connectionId: string,
+  body: LatestReviewRequest,
+): Promise<LatestReviewResponse> {
+  return browserSend(
+    latestReviewResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/reviews/latest`,
+    latestReviewRequestSchema.parse(body),
+  );
+}
+
+/** "Hide this review": no widget shows it again (dashboards:update). */
+export async function hideReview(
+  workspaceId: string,
+  connectionId: string,
+  reviewId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/reviews/${encodeURIComponent(reviewId)}/hide`,
+    { method: "POST" },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw await readError(response);
+  }
 }
 
 /** A per-currency metric's currencies, largest total first (ADR 0014). */

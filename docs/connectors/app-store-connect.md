@@ -311,6 +311,15 @@ reviews paused — upload a new reviews key".
   widget's data. **Hide this review** on that widget (it needs the right to
   edit dashboards; audited as `review.hidden`, without the text) keeps a
   review off every widget.
+- The widget's data is **one review**, the newest that matches its options
+  (one app or all, minimum stars, with text): in the screens' payload
+  without the review's id (screens cannot hide one), and for the Studio and
+  the signed-in TV mode from
+  `POST /v1/workspaces/:w/connections/:c/reviews/latest` (it needs the
+  right to view connections, like metric data), with the id that "Hide
+  this review" takes. With **Show author** off the nickname is left out on
+  the server and reaches no client. Without a reviews key the widget says
+  "App Store reviews paused — upload a new reviews key".
 - A review counts on the **Pacific Time** day of its creation date, like
   sales.
 - Each sync reads at least the last 7 days again (from the start of that

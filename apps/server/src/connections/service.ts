@@ -11,6 +11,8 @@ import type {
   DeleteConnectionResponse,
   EnableAppStoreAnalyticsRequest,
   EnableAppStoreAnalyticsResponse,
+  LatestReviewRequestParsed,
+  LatestReviewResponse,
   ObservationListQuery,
   PreviewConnectionRequest,
   UpdateConnectionRequest,
@@ -30,6 +32,7 @@ import type {
 import { ANALYTICS_METRIC_KEYS } from "@netrics/connectors";
 import {
   DEFAULT_LOCALE,
+  connectorHasReviews,
   localizedManifest,
   type Locale,
 } from "@netrics/domain";
@@ -37,6 +40,7 @@ import {
   deleteConnection as deleteConnectionRow,
   deleteConnectionAppReviews,
   enqueueJob,
+  findBackfillingConnectionIds,
   findConnection,
   findConnectionOAuth,
   finishConnectionSetup,
@@ -99,10 +103,12 @@ import {
   type SignedKey,
   type SignedKeyProviders,
 } from "../signed-keys/registry.js";
+import { latestReview, storedReviewsKey } from "../reviews/latest.js";
 import {
   presentConnection,
   presentConnectionDetail,
   presentSyncRun,
+  toStateView,
 } from "./present.js";
 
 /**
@@ -1723,6 +1729,43 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
      * widget shows the review again. The audit event names the connection,
      * the app and the provider's review id, never the review's text.
      */
+    /**
+     * A latest-review widget's data for the Studio (ADR 0019 section 12):
+     * the newest matching review that is not hidden, with its provider id
+     * for "Hide this review". One review per call; there is no list.
+     */
+    async latestReview(
+      actor: Actor,
+      connectionId: string,
+      request: LatestReviewRequestParsed,
+    ) {
+      return inWorkspace(actor, async (tx) => {
+        const found = await findConnection(tx, actor.workspaceId, connectionId);
+        if (!found) {
+          return fail<LatestReviewResponse>(404, NOT_FOUND);
+        }
+        if (!connectorHasReviews(found.row.connectorId)) {
+          return fail<LatestReviewResponse>(400, "reviews_not_supported");
+        }
+        const backfilling = await findBackfillingConnectionIds(
+          tx,
+          actor.workspaceId,
+        );
+        return ok(
+          await latestReview(tx, {
+            workspaceId: actor.workspaceId,
+            connectionId,
+            resourceId: request.resource ?? null,
+            options: request,
+            state: toStateView(found.state),
+            backfilling: backfilling.has(connectionId),
+            reviewsKey: storedReviewsKey(found.row, credentialKeyring),
+            now: new Date(),
+          }),
+        );
+      });
+    },
+
     async hideReview(actor: Actor, connectionId: string, reviewId: string) {
       return inWorkspace(actor, async (tx) => {
         const hidden = await hideAppReview(tx, {

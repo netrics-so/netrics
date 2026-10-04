@@ -18,6 +18,7 @@ import { MetricWidgetView, type MetricReadingProps } from "./metric-widget";
 import { StatusWidgetView, type StatusReadingProps } from "./status-widget";
 import { TableWidgetView, type TableReadingProps } from "./table-widget";
 import { CompareWidgetView, type CompareReadingProps } from "./compare-widget";
+import { ReviewWidgetView, deviceReviewReading } from "./review-widget";
 import { WidgetFailed } from "./slide-canvas";
 import { TextWidgetView } from "./text-widget";
 
@@ -316,6 +317,13 @@ export function DeviceWidgetView({
         <GaugeWidgetView
           {...common}
           {...deviceGaugeReading(widget, env.timeZone, locale)}
+        />
+      );
+    case "review":
+      return (
+        <ReviewWidgetView
+          {...common}
+          {...deviceReviewReading(widget, env.images, locale)}
         />
       );
     case "image":

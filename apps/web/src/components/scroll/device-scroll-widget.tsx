@@ -13,6 +13,7 @@ import {
   deviceCompareReading,
   type DeviceWidgetEnv,
 } from "@/components/studio/device-widget";
+import { deviceReviewReading } from "@/components/studio/review-widget";
 import { WidgetFailed } from "@/components/studio/slide-canvas";
 import { useLocale } from "@/lib/i18n/client";
 
@@ -24,6 +25,7 @@ import {
   ScrollImageCard,
   ScrollLineCard,
   ScrollMetricCard,
+  ScrollReviewCard,
   ScrollStatusCard,
   ScrollTableCard,
   ScrollCompareCard,
@@ -101,6 +103,13 @@ export function DeviceScrollWidget({
       );
     case "bar":
       return <ScrollBarCard {...deviceBarReading(widget, locale)} {...size} />;
+    case "review":
+      return (
+        <ScrollReviewCard
+          {...deviceReviewReading(widget, env.images, locale)}
+          {...size}
+        />
+      );
     case "table":
       return (
         <ScrollTableCard {...deviceTableReading(widget, locale)} {...size} />
