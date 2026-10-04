@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -22,6 +22,9 @@ import { DashboardView } from "./dashboard-view";
 import type { TileConnection } from "./metric-tile";
 
 export const dynamic = "force-dynamic";
+
+/** Edge to edge on phones; the page keeps to the safe area (ADR 0017). */
+export const viewport: Viewport = { viewportFit: "cover" };
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getT("dashboard");

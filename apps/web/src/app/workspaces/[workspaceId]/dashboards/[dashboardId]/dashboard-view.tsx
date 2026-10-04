@@ -5,16 +5,24 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import type { Dashboard, WorkspaceMetric } from "@netrics/contracts";
+import type { DisplayMode } from "@netrics/domain";
 
 import {
   apiErrorMessage,
   deleteDashboard,
   duplicateDashboard,
 } from "@/lib/api";
+import { ScrollView } from "@/components/scroll/scroll-view";
+import { LiveScrollWidget } from "@/components/scroll/scroll-widgets";
 import { pickableMetrics } from "@/lib/format-metric";
 import type { ResolvedTheme } from "@/lib/studio-theme";
-import type { StudioEnv, StudioImage } from "@/lib/studio-widgets";
+import {
+  logoImageId,
+  type StudioEnv,
+  type StudioImage,
+} from "@/lib/studio-widgets";
 
+import { DisplayModeSwitch, useDisplayMode } from "./display-mode-switch";
 import type { TileConnection } from "./metric-tile";
 import { SlideViewer } from "./slide-viewer";
 import { useServerRefresh } from "./use-server-refresh";
@@ -27,7 +35,9 @@ function metricId(metric: WorkspaceMetric) {
 /**
  * A dashboard's slides with live data, and what the role may do with it.
  * Every dashboard, tile dashboards included, is edited in the Studio
- * (#223, #225).
+ * (#223, #225). Two display modes (ADR 0017, section 5): scroll view, a
+ * responsive page with every slide as a section (phones and tablets by
+ * default), and screen view, the slides on their canvas (desktops).
  */
 export function DashboardView({
   workspaceId,
@@ -40,6 +50,7 @@ export function DashboardView({
   theme,
   timeZone,
   images,
+  initialMode = null,
 }: {
   workspaceId: string;
   dashboard: Dashboard;
@@ -54,6 +65,8 @@ export function DashboardView({
   canEdit: boolean;
   canDuplicate: boolean;
   canDelete: boolean;
+  /** Tests: the mode to render with, instead of the browser's default. */
+  initialMode?: DisplayMode | null;
 }) {
   const locale = useLocale();
   const t = useT("dashboard");
@@ -63,6 +76,7 @@ export function DashboardView({
   const [dashboard, setDashboard] = useState(initial);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useDisplayMode(initialMode);
 
   // Follow the server's copy when it changes (refreshed every minute), so
   // changes saved elsewhere show up.
@@ -126,52 +140,54 @@ export function DashboardView({
     }
   }
 
-  return (
-    <>
-      <div className="dashboard-header">
-        <h1>{dashboard.name}</h1>
-        <div className="actions">
-          {canEdit ? (
-            <Link href={studioHref}>
-              <button type="button" className="primary">
-                {t("openStudio")}
-              </button>
-            </Link>
-          ) : null}
-          <Link
-            href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}/tv`}
-          >
-            <button type="button">{t("tvMode")}</button>
-          </Link>
-          {canDuplicate ? (
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => void onDuplicate()}
-            >
-              {t("duplicate")}
-            </button>
-          ) : null}
-          {canDelete ? (
-            <button
-              type="button"
-              className="danger"
-              disabled={pending}
-              onClick={() => void onDelete()}
-            >
-              {common("delete")}
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {error ? (
-        <div className="error" role="alert">
-          {error}
-        </div>
+  const actions = (
+    <div className="actions">
+      <DisplayModeSwitch mode={mode} onChange={setMode} />
+      {canEdit ? (
+        <Link href={studioHref}>
+          <button type="button" className="primary">
+            {t("openStudio")}
+          </button>
+        </Link>
       ) : null}
+      <Link href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}/tv`}>
+        <button type="button">{t("tvMode")}</button>
+      </Link>
+      {canDuplicate ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => void onDuplicate()}
+        >
+          {t("duplicate")}
+        </button>
+      ) : null}
+      {canDelete ? (
+        <button
+          type="button"
+          className="danger"
+          disabled={pending}
+          onClick={() => void onDelete()}
+        >
+          {common("delete")}
+        </button>
+      ) : null}
+    </div>
+  );
+  const errorBox = error ? (
+    <div className="error" role="alert">
+      {error}
+    </div>
+  ) : null;
 
-      {widgetCount === 0 ? (
+  if (widgetCount === 0) {
+    return (
+      <>
+        <div className="dashboard-header">
+          <h1>{dashboard.name}</h1>
+          {actions}
+        </div>
+        {errorBox}
         <div className="card">
           <p>{t("empty")}</p>
           {pickable.length === 0 ? (
@@ -195,8 +211,41 @@ export function DashboardView({
             </Link>
           ) : null}
         </div>
-      ) : (
+      </>
+    );
+  }
+
+  if (mode === "scroll") {
+    return (
+      <>
+        {errorBox}
+        <ScrollView
+          name={dashboard.name}
+          logoImageId={logoImageId(dashboard.settings)}
+          slides={dashboard.slides}
+          tokens={theme.tokens}
+          images={env.images}
+          toolbar={actions}
+          renderWidget={(widget, size) => (
+            <LiveScrollWidget widget={widget} env={env} size={size} />
+          )}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="dashboard-header">
+        <h1>{dashboard.name}</h1>
+        {actions}
+      </div>
+      {errorBox}
+      {mode === "screen" ? (
         <SlideViewer dashboard={dashboard} tokens={theme.tokens} env={env} />
+      ) : (
+        // Until the browser's default is known (after mount).
+        <div className="display-mode-pending" aria-busy="true" />
       )}
     </>
   );
