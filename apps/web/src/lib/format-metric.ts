@@ -9,10 +9,11 @@ import {
   SERIES_UNITS,
   aggregationName,
   amountCurrency,
-  compactNumber,
   comparisonLabel,
   currencyExponent,
   isPerCurrencyUnit,
+  localeCompactNumber,
+  narrowCompactNumber,
   periodLabel,
   sharedTranslator,
   toMajorUnits,
@@ -42,61 +43,6 @@ export function displayUnit(unit: string, currency?: string | null): string {
   return unit;
 }
 
-/**
- * Compact suffixes for languages whose `Intl` short compact notation does
- * not abbreviate thousands (German CLDR writes 12.900, not 12,9 Tsd.).
- * Languages not listed use `Intl` as it is.
- */
-const COMPACT_SUFFIXES: Partial<Record<Locale, readonly string[]>> = {
-  de: ["", "Tsd.", "Mio.", "Mrd.", "Bio."],
-};
-
-/**
- * `value` in compact notation with one decimal at most ("12,9 Tsd.",
- * "4,2 Mio. $"), or null when the language's `Intl` compact notation is
- * used as it is.
- */
-function suffixCompact(
-  value: number,
-  locale: Locale,
-  currency?: string,
-): string | null {
-  const suffixes = COMPACT_SUFFIXES[locale];
-  if (!suffixes) {
-    return null;
-  }
-  const magnitude = Math.abs(value);
-  let tier = 0;
-  while (tier < suffixes.length - 1 && magnitude >= 1000 ** (tier + 1)) {
-    tier += 1;
-  }
-  let scaled = Math.round((value / 1000 ** tier) * 10) / 10;
-  // 999,950 rounds to 1000 thousand: one million.
-  if (Math.abs(scaled) >= 1000 && tier < suffixes.length - 1) {
-    tier += 1;
-    scaled = Math.round((value / 1000 ** tier) * 10) / 10;
-  }
-  const format = new Intl.NumberFormat(locale, {
-    maximumFractionDigits: 1,
-    ...(currency ? { style: "currency", currency } : {}),
-    minimumFractionDigits: 0,
-  });
-  const suffix = suffixes[tier];
-  if (!suffix) {
-    return format.format(scaled);
-  }
-  // The suffix follows the number, before a trailing currency sign.
-  const parts = format.formatToParts(scaled);
-  const lastNumber = parts.findLastIndex((part) =>
-    ["integer", "fraction", "group", "decimal"].includes(part.type),
-  );
-  return parts
-    .map((part, index) =>
-      index === lastNumber ? `${part.value}\u00a0${suffix}` : part.value,
-    )
-    .join("");
-}
-
 export function formatValue(
   value: number | null,
   unit: string,
@@ -109,18 +55,15 @@ export function formatValue(
   if (currency) {
     const major = toMajorUnits(value, currency);
     const digits = currencyExponent(currency);
-    const compact = Math.abs(major) >= 10_000;
-    const local = compact ? suffixCompact(major, locale, currency) : null;
-    if (local !== null) {
-      return local;
+    if (Math.abs(major) >= 10_000) {
+      return localeCompactNumber(major, locale, currency);
     }
     return new Intl.NumberFormat(locale, {
       style: "currency",
       currency,
-      notation: compact ? "compact" : "standard",
-      // Whole amounts without decimals; compact values keep one decimal.
-      minimumFractionDigits: compact || Number.isInteger(major) ? 0 : digits,
-      maximumFractionDigits: compact ? 1 : digits,
+      // Whole amounts without decimals.
+      minimumFractionDigits: Number.isInteger(major) ? 0 : digits,
+      maximumFractionDigits: digits,
     }).format(major);
   }
   if (unit === "percent") {
@@ -137,14 +80,11 @@ export function formatValue(
       maximumFractionDigits: 1,
     }).format(value);
   }
-  const compact = Math.abs(value) >= 10_000;
-  const local = compact ? suffixCompact(value, locale) : null;
-  if (local !== null) {
-    return local;
+  if (Math.abs(value) >= 10_000) {
+    return localeCompactNumber(value, locale);
   }
   return new Intl.NumberFormat(locale, {
-    notation: compact ? "compact" : "standard",
-    maximumFractionDigits: compact ? 1 : Math.abs(value) >= 100 ? 0 : 2,
+    maximumFractionDigits: Math.abs(value) >= 100 ? 0 : 2,
   }).format(value);
 }
 
@@ -163,31 +103,17 @@ export function formatCompactValue(
   }
   const currency = amountCurrency(unit);
   if (currency) {
-    return new Intl.NumberFormat(locale, {
-      style: "currency",
-      currency,
-      notation: "compact",
-      maximumFractionDigits: 1,
-    }).format(toMajorUnits(value, currency));
+    return narrowCompactNumber(toMajorUnits(value, currency), locale, currency);
   }
   if (unit === "percent" || unit === "ratio" || unit === "position") {
     return formatValue(value, unit, locale);
   }
-  return localCompactNumber(value, locale);
+  return narrowCompactNumber(value, locale);
 }
 
-/**
- * The shared compact form ("12.3K", the studio vectors' text) with the
- * language's decimal separator ("12,3K" in German). The suffixes stay:
- * the width the layout measured is the same.
- */
+/** The shared compact form with the language's decimal separator ("12,3K"). */
 export function localCompactNumber(value: number, locale: Locale): string {
-  const text = compactNumber(value);
-  const decimal =
-    new Intl.NumberFormat(locale)
-      .formatToParts(1.5)
-      .find((part) => part.type === "decimal")?.value ?? ".";
-  return decimal === "." ? text : text.replace(".", decimal);
+  return narrowCompactNumber(value, locale);
 }
 
 export type ChangeDirection = "up" | "down" | "flat";

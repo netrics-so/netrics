@@ -455,10 +455,8 @@ extension MetricFormat {
     public static func compactValue(_ value: Double?, unit: String, language: ScreenLanguage = .en) -> String {
         guard let value else { return "—" }
         if let code = currency(of: unit) {
-            let major = value / pow(10, Double(exponent(of: code)))
-            let style = FloatingPointFormatStyle<Double>.Currency(code: code, locale: language.numberLocale)
-                .rounded(rule: rounding).notation(.compactName).precision(.fractionLength(0...1))
-            return major.formatted(style)
+            // The full compact form at any size, as the web's narrowCompactNumber.
+            return compactAmount(value / pow(10, Double(exponent(of: code))), currency: code, language: language)
         }
         if unit == "percent" || unit == "ratio" || unit == "position" {
             return self.value(value, unit: unit, language: language)

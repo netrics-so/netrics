@@ -23,6 +23,7 @@
     "setup": "pnpm install && pnpm db:up && pnpm build && pnpm db:migrate",
     "openapi": "pnpm --filter @netrics/server openapi",
     "openapi:check": "pnpm --filter @netrics/server openapi:check",
+    "vectors:compact": "UPDATE_COMPACT_VECTORS=1 vitest run packages/domain/src/compact-format.test.ts -t \"compact number vectors\"",
     "vectors:studio": "UPDATE_STUDIO_VECTORS=1 vitest run packages/domain/src/studio-layout.test.ts -t \"test vectors\""
   },
   "devDependencies": {
