@@ -26,17 +26,21 @@ export default async function InvitePage({
   if (!preview) {
     return (
       <>
-        <h1>{t("notFoundTitle")}</h1>
-        <p className="subtitle">{t("notFoundText")}</p>
+        <header>
+          <h1>{t("notFoundTitle")}</h1>
+          <p className="subtitle">{t("notFoundText")}</p>
+        </header>
       </>
     );
   }
   if (preview.status !== "pending") {
     return (
       <>
-        <h1>{t("title", { workspace: preview.workspaceName })}</h1>
-        <p className="subtitle">{t(preview.status)}</p>
-        <p className="muted">
+        <header>
+          <h1>{t("title", { workspace: preview.workspaceName })}</h1>
+          <p className="subtitle">{t(preview.status)}</p>
+        </header>
+        <p className="auth-links">
           <Link href="/login">{t("signIn")}</Link>
         </p>
       </>
@@ -48,26 +52,26 @@ export default async function InvitePage({
 
   return (
     <>
-      <h1>{t("title", { workspace: preview.workspaceName })}</h1>
-      <p className="subtitle">
-        {t.rich("invitedAs", {
-          role: (
-            <span key="role" className="role-badge">
-              {roles(preview.role)}
-            </span>
-          ),
-          email: preview.email,
-        })}
-      </p>
-      <div className="card">
-        <InvitationActions
-          token={token}
-          invitedEmail={preview.email}
-          signedInEmail={user?.email ?? null}
-        />
-      </div>
+      <header>
+        <h1>{t("title", { workspace: preview.workspaceName })}</h1>
+        <p className="subtitle">
+          {t.rich("invitedAs", {
+            role: (
+              <span key="role" className="role-badge">
+                {roles(preview.role)}
+              </span>
+            ),
+            email: preview.email,
+          })}
+        </p>
+      </header>
+      <InvitationActions
+        token={token}
+        invitedEmail={preview.email}
+        signedInEmail={user?.email ?? null}
+      />
       {user ? null : (
-        <p className="muted">
+        <p className="auth-links">
           {t.rich("haveAccount", {
             email: preview.email,
             link: (

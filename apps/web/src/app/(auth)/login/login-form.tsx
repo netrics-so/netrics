@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -47,7 +48,10 @@ export function LoginForm({ next }: { next: string }) {
         />
       </div>
       <div className="field">
-        <label htmlFor="password">{fields("password")}</label>
+        <div className="auth-label-row">
+          <label htmlFor="password">{fields("password")}</label>
+          <Link href="/forgot-password">{t("forgot")}</Link>
+        </div>
         <input
           id="password"
           name="password"

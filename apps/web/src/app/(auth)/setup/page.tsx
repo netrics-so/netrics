@@ -31,12 +31,12 @@ export default async function SetupPage({
 
   return (
     <>
-      <h1>{t("title")}</h1>
-      <p className="subtitle">{t("subtitle")}</p>
-      <div className="card">
-        <SetupForm initialToken={typeof token === "string" ? token : ""} />
-      </div>
-      <p className="muted">{t("tokenHint")}</p>
+      <header>
+        <h1>{t("title")}</h1>
+        <p className="subtitle">{t("subtitle")}</p>
+      </header>
+      <SetupForm initialToken={typeof token === "string" ? token : ""} />
+      <p className="auth-note">{t("tokenHint")}</p>
     </>
   );
 }

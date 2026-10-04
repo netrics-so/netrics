@@ -28,9 +28,11 @@ export default async function SignupPage() {
   if (setup.signup === "closed") {
     return (
       <>
-        <h1>{t("closedTitle")}</h1>
-        <p className="subtitle">{t("closedText")}</p>
-        <p className="muted">
+        <header>
+          <h1>{t("closedTitle")}</h1>
+          <p className="subtitle">{t("closedText")}</p>
+        </header>
+        <p className="auth-links">
           {t.rich("haveAccount", {
             link: (
               <Link key="link" href="/login">
@@ -45,12 +47,12 @@ export default async function SignupPage() {
 
   return (
     <>
-      <h1>{t("title")}</h1>
-      <p className="subtitle">{t("subtitle")}</p>
-      <div className="card">
-        <SignupForm />
-      </div>
-      <p className="muted">
+      <header>
+        <h1>{t("title")}</h1>
+        <p className="subtitle">{t("subtitle")}</p>
+      </header>
+      <SignupForm />
+      <p className="auth-links">
         {t.rich("haveAccount", {
           link: (
             <Link key="link" href="/login">

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   activeProjectResponseSchema,
+  addDemoContentResponseSchema,
   auditEventListResponseSchema,
   createProjectRequestSchema,
   createWorkspaceRequestSchema,
@@ -148,6 +149,48 @@ export function registerWorkspaceRoutes(
             workspace: toWorkspace(workspace),
             demoDashboardId,
           });
+        },
+      );
+
+      // First-run onboarding (#308): "Skip, use demo data" on a workspace
+      // created without the demo. Same content and rules as `withDemo`; the
+      // services check the caller's membership again under RLS.
+      scope.post(
+        "/workspaces/:workspaceId/demo",
+        {
+          schema: routeSchema({
+            summary: "Add the demo connection and a sample dashboard",
+            tags: ["workspaces"],
+            response: addDemoContentResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (
+            !can(access.role, "connections:create") ||
+            !can(access.role, "dashboards:create")
+          ) {
+            return sendError(reply, 403, "forbidden");
+          }
+          let demoDashboardId: string | null = null;
+          if (deps.addDemoContent) {
+            try {
+              demoDashboardId = await deps.addDemoContent({
+                workspaceId: access.workspaceId,
+                callerId: access.callerId,
+              });
+            } catch (error) {
+              request.log.error(
+                { err: error, workspaceId: access.workspaceId },
+                "demo content failed",
+              );
+            }
+          }
+          return addDemoContentResponseSchema.parse({ demoDashboardId });
         },
       );
 
