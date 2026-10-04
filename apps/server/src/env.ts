@@ -2,7 +2,11 @@ import { isIP } from "node:net";
 
 import { z } from "zod";
 
-import { processRoleSchema } from "@netrics/contracts";
+import {
+  IMAGE_QUOTA_DEFAULT_BYTES,
+  IMAGE_QUOTA_DEFAULT_COUNT,
+  processRoleSchema,
+} from "@netrics/contracts";
 
 import { Secret } from "./secret.js";
 
@@ -202,6 +206,21 @@ const envSchema = z
     // converted amounts; "off" fetches nothing and keeps every amount per
     // currency. Read at runtime by the scheduler and the API alike.
     NETRICS_EXCHANGE_RATES: z.enum(["ecb", "off"]).default("ecb"),
+    // Workspace image quota (ADR 0015, section 5): images and total size in
+    // MiB per workspace. Read at runtime; existing images above a lowered
+    // quota stay, only new uploads are refused.
+    NETRICS_IMAGE_QUOTA_COUNT: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(100_000)
+      .default(IMAGE_QUOTA_DEFAULT_COUNT),
+    NETRICS_IMAGE_QUOTA_MIB: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(100_000)
+      .default(IMAGE_QUOTA_DEFAULT_BYTES / 1_048_576),
     APP_VERSION: z.string().min(1).default("0.0.0-dev"),
     GIT_SHA: z.string().min(1).default("dev"),
   })
@@ -351,6 +370,10 @@ const envSchema = z
           : null,
     } satisfies Record<string, OAuthClientConfig | null>,
     exchangeRates: env.NETRICS_EXCHANGE_RATES === "ecb",
+    imageQuota: {
+      maxCount: env.NETRICS_IMAGE_QUOTA_COUNT,
+      maxBytes: env.NETRICS_IMAGE_QUOTA_MIB * 1_048_576,
+    },
     version: env.APP_VERSION,
     commit: env.GIT_SHA,
   }));

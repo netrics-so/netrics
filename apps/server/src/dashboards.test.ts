@@ -457,6 +457,7 @@ describe("dashboard studio API", () => {
       themeBuiltin: "netrics_dark",
       themeId: null,
       accentColor: null,
+      logoImageId: null,
     });
     const [sales, notes] = dashboard.slides;
     expect(sales).toMatchObject({
@@ -536,6 +537,7 @@ describe("dashboard studio API", () => {
       themeBuiltin: "netrics_dark",
       themeId: null,
       accentColor: null,
+      logoImageId: null,
     });
   });
 

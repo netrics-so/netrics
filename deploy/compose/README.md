@@ -113,6 +113,15 @@ To run without it, for example offline, set `NETRICS_EXCHANGE_RATES=off` in
 ECB, the option is hidden, and tiles show amounts per currency. Stored rates
 are kept; turning it back on resumes the daily fetch.
 
+### Image quota
+
+Dashboards can show uploaded images (PNG, JPEG or WebP, at most 1 MiB and
+4096 px per side). They are stored in PostgreSQL, so backups include them.
+Each workspace may keep 100 images and 50 MiB by default. To change that,
+set `NETRICS_IMAGE_QUOTA_COUNT` and `NETRICS_IMAGE_QUOTA_MIB` in `.env` and
+restart the `api`. Images above a lowered quota stay; only new uploads are
+refused.
+
 ### Another port
 
 If the host already serves 443, install with `--https-port 8443`. This sets

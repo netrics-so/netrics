@@ -419,3 +419,29 @@ describe("OAuth client configuration (ADR 0012)", () => {
     expect(inspect(config, { depth: 10 })).not.toContain(clientSecret);
   });
 });
+
+describe("image quota (#217)", () => {
+  it("defaults to 100 images and 50 MiB per workspace", () => {
+    expect(loadConfig({}).imageQuota).toEqual({
+      maxCount: 100,
+      maxBytes: 50 * 1_048_576,
+    });
+  });
+
+  it("reads the quota from the environment at runtime", () => {
+    expect(
+      loadConfig({
+        NETRICS_IMAGE_QUOTA_COUNT: "250",
+        NETRICS_IMAGE_QUOTA_MIB: "200",
+      }).imageQuota,
+    ).toEqual({ maxCount: 250, maxBytes: 200 * 1_048_576 });
+  });
+
+  it("refuses a quota that is not a whole, non-negative number", () => {
+    for (const value of ["-1", "1.5", "lots"]) {
+      expect(() => loadConfig({ NETRICS_IMAGE_QUOTA_COUNT: value })).toThrow(
+        ConfigError,
+      );
+    }
+  });
+});

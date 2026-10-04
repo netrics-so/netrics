@@ -666,6 +666,73 @@ export const workspaceThemes = pgTable(
 // ordered tiles change together, guarded by `version` (optimistic
 // concurrency). Composite foreign keys keep every tile in the workspace of
 // its dashboard and of its connection, independent of application code.
+// Workspace images (ADR 0015, section 5; #217): raster images stored in the
+// database, metadata already stripped. `content` is already compressed, so
+// the migration sets its storage to EXTERNAL (no TOAST compression). List
+// queries never select it. `id, workspace_id` is unique so dashboards,
+// slides and widgets can reference an image of their own workspace.
+export const workspaceImages = pgTable(
+  "workspace_images",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    contentType: text("content_type").notNull(),
+    bytes: integer("bytes").notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    sha256: text("sha256").notNull(),
+    content: bytea("content").notNull(),
+    origin: text("origin").notNull().default("upload"),
+    // Provenance of a resource icon; no foreign key, so an icon outlives
+    // its connection as an ordinary image.
+    connectionId: uuid("connection_id"),
+    resourceId: text("resource_id"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("workspace_images_id_workspace_unique").on(
+      table.id,
+      table.workspaceId,
+    ),
+    index("workspace_images_workspace_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+    check(
+      "workspace_images_content_type_valid",
+      sql`${table.contentType} in ('image/png', 'image/jpeg', 'image/webp')`,
+    ),
+    check(
+      "workspace_images_bytes_valid",
+      sql`${table.bytes} > 0 and ${table.bytes} <= 1048576 and ${table.bytes} = octet_length(${table.content})`,
+    ),
+    check(
+      "workspace_images_dimensions_valid",
+      sql`${table.width} between 1 and 4096 and ${table.height} between 1 and 4096 and ${table.width}::bigint * ${table.height} <= 16777216`,
+    ),
+    check(
+      "workspace_images_sha256_valid",
+      sql`${table.sha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "workspace_images_origin_valid",
+      sql`(${table.origin} = 'upload' and ${table.connectionId} is null and ${table.resourceId} is null) or (${table.origin} = 'resource_icon' and ${table.connectionId} is not null and ${table.resourceId} is not null)`,
+    ),
+    check(
+      "workspace_images_name_valid",
+      sql`char_length(${table.name}) <= 100`,
+    ),
+  ],
+);
+
 export const dashboards = pgTable(
   "dashboards",
   {
@@ -691,6 +758,8 @@ export const dashboards = pgTable(
     themeId: uuid("theme_id"),
     /** `#rrggbb`; overrides the theme accent (a brand dashboard). */
     accentColor: text("accent_color"),
+    /** Shown in the header before the name (#217). */
+    logoImageId: uuid("logo_image_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -733,6 +802,15 @@ export const dashboards = pgTable(
       "dashboards_accent_color_format",
       sql`${table.accentColor} ~ '^#[0-9a-f]{6}$'`,
     ),
+    // Image references (#217): migration 0035 makes these keys deferred,
+    // so deleting a workspace (images and dashboards in one statement)
+    // works; deleteImage checks them immediately.
+    foreignKey({
+      name: "dashboards_logo_image_fk",
+      columns: [table.logoImageId, table.workspaceId],
+      foreignColumns: [workspaceImages.id, workspaceImages.workspaceId],
+    }),
+    index("dashboards_logo_image_idx").on(table.logoImageId),
   ],
 );
 
@@ -755,6 +833,10 @@ export const dashboardSlides = pgTable(
     durationSeconds: integer("duration_seconds"),
     /** Screens skip disabled slides. */
     enabled: boolean("enabled").notNull().default(true),
+    /** A full-slide image behind the widgets (#217). */
+    backgroundImageId: uuid("background_image_id"),
+    /** 0–80 %: a theme-background overlay that keeps contrast. */
+    backgroundDim: smallint("background_dim").notNull().default(0),
   },
   (table) => [
     foreignKey({
@@ -777,6 +859,16 @@ export const dashboardSlides = pgTable(
       "dashboard_slides_duration_valid",
       sql`${table.durationSeconds} is null or ${table.durationSeconds} between 5 and 3600`,
     ),
+    check(
+      "dashboard_slides_background_dim_valid",
+      sql`${table.backgroundDim} between 0 and 80`,
+    ),
+    foreignKey({
+      name: "dashboard_slides_background_image_fk",
+      columns: [table.backgroundImageId, table.workspaceId],
+      foreignColumns: [workspaceImages.id, workspaceImages.workspaceId],
+    }),
+    index("dashboard_slides_background_image_idx").on(table.backgroundImageId),
   ],
 );
 
@@ -804,6 +896,8 @@ export const dashboardWidgets = pgTable(
     displayCurrency: text("display_currency"),
     /** Text widgets: markdown-lite, never HTML. */
     text: text("text"),
+    /** Image widgets (#217). */
+    imageId: uuid("image_id"),
     /** Type-specific style, validated per type by the API contract. */
     options: jsonb("options").notNull().default({}),
   },
@@ -826,9 +920,20 @@ export const dashboardWidgets = pgTable(
     index("dashboard_widgets_slide_idx").on(table.slideId),
     index("dashboard_widgets_dashboard_idx").on(table.dashboardId),
     index("dashboard_widgets_connection_idx").on(table.connectionId),
+    foreignKey({
+      name: "dashboard_widgets_image_fk",
+      columns: [table.imageId, table.workspaceId],
+      foreignColumns: [workspaceImages.id, workspaceImages.workspaceId],
+    }),
+    index("dashboard_widgets_image_idx").on(table.imageId),
     check(
       "dashboard_widgets_type_valid",
-      sql`${table.type} in ('metric', 'line', 'bar', 'text', 'clock')`,
+      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock')`,
+    ),
+    // An image widget names its image; no other widget does.
+    check(
+      "dashboard_widgets_image_valid",
+      sql`(${table.imageId} is not null) = (${table.type} = 'image')`,
     ),
     check(
       "dashboard_widgets_grid_valid",

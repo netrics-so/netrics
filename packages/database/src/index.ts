@@ -170,6 +170,24 @@ export type {
   WidgetInput,
 } from "./dashboards.js";
 export {
+  deleteImage,
+  findDeviceImage,
+  findImage,
+  findImageIds,
+  findImageUsers,
+  imageUsage,
+  insertImageWithinQuota,
+  listImages,
+  readImageContent,
+} from "./images.js";
+export type {
+  ImageInput,
+  ImageQuota,
+  ImageRow,
+  ImageUsage,
+  InsertImageResult,
+} from "./images.js";
+export {
   BREAKDOWN_TIMEOUT_MS,
   findConnectionMetric,
   listWorkspaceMetrics,

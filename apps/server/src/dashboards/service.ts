@@ -1,6 +1,7 @@
 import {
   barWidgetOptionsSchema,
   clockWidgetOptionsSchema,
+  imageWidgetOptionsSchema,
   lineWidgetOptionsSchema,
   metricWidgetOptionsSchema,
   textWidgetOptionsSchema,
@@ -20,6 +21,7 @@ import {
   findConnectionMetric,
   findResourceNames,
   findDashboard,
+  findImageIds,
   findProject,
   insertAuditEvent,
   insertDashboard,
@@ -111,6 +113,8 @@ function optionsOf(widget: DashboardWidgetRow) {
       return lineWidgetOptionsSchema.parse(options);
     case "bar":
       return barWidgetOptionsSchema.parse(options);
+    case "image":
+      return imageWidgetOptionsSchema.parse(options);
     case "text":
       return textWidgetOptionsSchema.parse(options);
     case "clock":
@@ -127,6 +131,7 @@ function settingsOf(dashboard: Dashboard): DashboardSettingsView {
     themeBuiltin: dashboard.themeBuiltin,
     themeId: dashboard.themeId,
     accentColor: dashboard.accentColor,
+    logoImageId: dashboard.logoImageId,
   };
 }
 
@@ -202,6 +207,14 @@ export async function presentDashboard(
         options: optionsOf(widget),
       } as DashboardWidget;
     }
+    if (widget.type === "image") {
+      return {
+        type: "image",
+        ...base,
+        imageId: widget.imageId!,
+        options: imageWidgetOptionsSchema.parse(widget.options),
+      };
+    }
     return widget.type === "text"
       ? {
           type: "text",
@@ -229,6 +242,10 @@ export async function presentDashboard(
       name: slide.name,
       durationSeconds: slide.durationSeconds,
       enabled: slide.enabled,
+      background:
+        slide.backgroundImageId === null
+          ? null
+          : { imageId: slide.backgroundImageId, dim: slide.backgroundDim },
       widgets: slide.widgets.map(present),
     })),
     tiles: metricWidgets(dashboard.slides, { enabledOnly: false })
@@ -338,6 +355,7 @@ const EMPTY_WIDGET_DATA = {
   dimensions: {},
   displayCurrency: null,
   text: null,
+  imageId: null,
 } as const;
 
 async function validateWidget(
@@ -354,6 +372,16 @@ async function validateWidget(
     h: widget.h,
     title: widget.title ?? null,
   };
+  if (widget.type === "image") {
+    // That the image is one of this workspace is checked with the
+    // dashboard's other images (checkImages).
+    return ok({
+      ...base,
+      ...EMPTY_WIDGET_DATA,
+      imageId: widget.imageId,
+      options: widget.options,
+    });
+  }
   if (widget.type === "text" || widget.type === "clock") {
     return ok({
       ...base,
@@ -373,7 +401,13 @@ async function validateWidget(
   ) {
     return fail(400, "unknown_dimension");
   }
-  return ok({ ...base, ...valid, text: null, options: widget.options });
+  return ok({
+    ...base,
+    ...valid,
+    text: null,
+    imageId: null,
+    options: widget.options,
+  });
 }
 
 /** Slides as sent, checked: limits, layout and every data widget's metric. */
@@ -407,6 +441,8 @@ async function validateSlides(
       name: slide.name ?? null,
       durationSeconds: slide.durationSeconds ?? null,
       enabled: slide.enabled ?? true,
+      backgroundImageId: slide.background?.imageId ?? null,
+      backgroundDim: slide.background?.dim ?? 0,
       widgets,
     });
   }
@@ -447,6 +483,8 @@ async function tilesToSlides(
       name: null,
       durationSeconds: null,
       enabled: true,
+      backgroundImageId: null,
+      backgroundDim: 0,
       widgets: [],
     });
   }
@@ -466,6 +504,7 @@ async function tilesToSlides(
       title: tile.title ?? null,
       ...valid,
       text: null,
+      imageId: null,
       options: { ...DEFAULT_METRIC_OPTIONS },
     });
   }
@@ -489,6 +528,7 @@ function isTileDashboard(slides: readonly DashboardSlide[]): boolean {
         slide.position !== index ||
         slide.name !== null ||
         slide.durationSeconds !== null ||
+        slide.backgroundImageId !== null ||
         !slide.enabled,
     )
   ) {
@@ -518,6 +558,8 @@ const EMPTY_SLIDE: SlideInput = {
   name: null,
   durationSeconds: null,
   enabled: true,
+  backgroundImageId: null,
+  backgroundDim: 0,
   widgets: [],
 };
 
@@ -580,6 +622,38 @@ async function chooseTheme(
     return fail(400, "contrast_too_low");
   }
   return ok(choice);
+}
+
+/**
+ * Whether every image a dashboard uses (logo, slide backgrounds, image
+ * widgets) is an image of this workspace (#217). The composite foreign keys
+ * enforce the same; this answers 400 image_not_found instead of failing.
+ */
+async function checkImages(
+  tx: Transaction,
+  workspaceId: string,
+  logoImageId: string | null | undefined,
+  slides: readonly SlideInput[],
+): Promise<boolean> {
+  const wanted = new Set<string>();
+  if (logoImageId) {
+    wanted.add(logoImageId);
+  }
+  for (const slide of slides) {
+    if (slide.backgroundImageId) {
+      wanted.add(slide.backgroundImageId);
+    }
+    for (const widget of slide.widgets) {
+      if (widget.imageId) {
+        wanted.add(widget.imageId);
+      }
+    }
+  }
+  if (wanted.size === 0) {
+    return true;
+  }
+  const found = await findImageIds(tx, workspaceId, [...wanted]);
+  return [...wanted].every((id) => found.has(id));
 }
 
 async function checkProject(
@@ -654,6 +728,16 @@ export function createDashboardService(deps: { db: Database }) {
         );
         if (!theme.ok) {
           return theme;
+        }
+        if (
+          !(await checkImages(
+            tx,
+            actor.workspaceId,
+            body.settings?.logoImageId,
+            slides.value,
+          ))
+        ) {
+          return fail<DashboardView>(400, "image_not_found");
         }
         const dashboard = await insertDashboard(tx, actor.workspaceId, {
           name: body.name,
@@ -737,6 +821,16 @@ export function createDashboardService(deps: { db: Database }) {
           }
           themeSettings = theme.value;
         }
+        if (
+          !(await checkImages(
+            tx,
+            actor.workspaceId,
+            body.settings?.logoImageId,
+            slides.value,
+          ))
+        ) {
+          return fail<DashboardView>(400, "image_not_found");
+        }
         const result = await replaceDashboard(
           tx,
           actor.workspaceId,
@@ -793,6 +887,8 @@ export function createDashboardService(deps: { db: Database }) {
             name: slide.name,
             durationSeconds: slide.durationSeconds,
             enabled: slide.enabled,
+            backgroundImageId: slide.backgroundImageId,
+            backgroundDim: slide.backgroundDim,
             widgets: slide.widgets.map((widget) => ({
               type: widget.type,
               x: widget.x,
@@ -807,6 +903,7 @@ export function createDashboardService(deps: { db: Database }) {
               dimensions: dimensionsOf(widget),
               displayCurrency: widget.displayCurrency,
               text: widget.text,
+              imageId: widget.imageId,
               options: widget.options as Record<string, unknown>,
             })),
           })),

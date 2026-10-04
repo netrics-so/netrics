@@ -44,6 +44,8 @@ export interface DashboardSettings {
   themeId: string | null;
   /** `#rrggbb`, overrides the theme accent. */
   accentColor: string | null;
+  /** A workspace image shown in the header (#217). */
+  logoImageId: string | null;
 }
 
 export interface WidgetInput {
@@ -63,6 +65,8 @@ export interface WidgetInput {
   /** A per-currency amount converted into this currency (#191). */
   displayCurrency: string | null;
   text: string | null;
+  /** Image widgets (#217). */
+  imageId: string | null;
   options: Record<string, unknown>;
 }
 
@@ -72,6 +76,9 @@ export interface SlideInput {
   name: string | null;
   durationSeconds: number | null;
   enabled: boolean;
+  /** A workspace image behind the widgets, and its dim (0–80 %). */
+  backgroundImageId: string | null;
+  backgroundDim: number;
   widgets: WidgetInput[];
 }
 
@@ -233,6 +240,8 @@ async function writeSlides(
         name: slide.name,
         durationSeconds: slide.durationSeconds,
         enabled: slide.enabled,
+        backgroundImageId: slide.backgroundImageId,
+        backgroundDim: slide.backgroundDim,
       })),
     )
     .returning({
@@ -260,6 +269,7 @@ async function writeSlides(
       dimensions: widget.dimensions,
       displayCurrency: widget.displayCurrency,
       text: widget.text,
+      imageId: widget.imageId,
       options: widget.options,
     })),
   );
