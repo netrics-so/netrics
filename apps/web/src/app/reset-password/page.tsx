@@ -1,9 +1,16 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ResetPasswordForm } from "./reset-password-form";
+import { getT } from "@/lib/i18n/server";
 import { readResetLink } from "@/lib/password-reset";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("passwordReset");
+  return { title: `${t("resetTitle")} · netrics` };
+}
 
 // Reached from the emailed link: the API checks the token and redirects here
 // with ?token=… (or ?error=INVALID_TOKEN). Reachable signed out.
@@ -16,29 +23,28 @@ export default async function ResetPasswordPage({
   }>;
 }) {
   const link = readResetLink(await searchParams);
+  const t = await getT("passwordReset");
 
   return (
     <>
-      <h1>Choose a new password</h1>
-      <p className="subtitle">Set the password for your netrics account</p>
+      <h1>{t("resetTitle")}</h1>
+      <p className="subtitle">{t("resetSubtitle")}</p>
       <div className="card">
         {link.kind === "ready" ? (
           <ResetPasswordForm token={link.token} />
         ) : (
           <div className="error" role="alert">
             <p>
-              {link.kind === "invalid"
-                ? "This reset link is invalid or has expired."
-                : "This page needs the link from the reset email."}
+              {link.kind === "invalid" ? t("invalidLink") : t("missingLink")}
             </p>
             <p>
-              <Link href="/forgot-password">Request a new link</Link>
+              <Link href="/forgot-password">{t("requestNew")}</Link>
             </p>
           </div>
         )}
       </div>
       <p className="muted">
-        <Link href="/login">Back to sign in</Link>
+        <Link href="/login">{t("backToSignIn")}</Link>
       </p>
     </>
   );

@@ -1,11 +1,18 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { CreateWorkspaceForm } from "./create-workspace-form";
 import { listWorkspaces } from "@/lib/api";
+import { getT } from "@/lib/i18n/server";
 import { parseOAuthOutcome } from "@/lib/oauth-connection";
 import { requireSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("home");
+  return { title: `${t("pageTitle")} · netrics` };
+}
 
 export default async function Home({
   searchParams,
@@ -23,12 +30,11 @@ export default async function Home({
     redirect(`/workspaces/${first.id}${outcome ? `?oauth=${outcome}` : ""}`);
   }
 
+  const t = await getT("home");
   return (
     <>
-      <h1>Welcome, {user.name}</h1>
-      <p className="subtitle">
-        You are not a member of any workspace yet — create the first one.
-      </p>
+      <h1>{t("title", { name: user.name })}</h1>
+      <p className="subtitle">{t("noWorkspace")}</p>
       <div className="card">
         <CreateWorkspaceForm />
       </div>

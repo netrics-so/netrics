@@ -91,7 +91,16 @@ const I18N_FOUNDATION = [
 ];
 
 // Auth and onboarding (#251).
-const I18N_AUTH = [];
+const I18N_AUTH = [
+  "apps/web/src/app/page.tsx",
+  "apps/web/src/app/create-workspace-form.tsx",
+  "apps/web/src/app/login/**/*.tsx",
+  "apps/web/src/app/signup/**/*.tsx",
+  "apps/web/src/app/setup/**/*.tsx",
+  "apps/web/src/app/forgot-password/**/*.tsx",
+  "apps/web/src/app/reset-password/**/*.tsx",
+  "apps/web/src/app/invite/**/*.tsx",
+];
 
 // Workspace overview, projects, connections and devices (#252).
 const I18N_WORKSPACE = [];

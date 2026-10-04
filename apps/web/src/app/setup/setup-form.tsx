@@ -4,11 +4,16 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { signUp } from "@/lib/auth";
+import { authErrorMessage } from "@/lib/auth-errors";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 // Must match SETUP_TOKEN_HEADER in apps/server/src/setup.ts.
 const SETUP_TOKEN_HEADER = "x-netrics-setup-token";
 
 export function SetupForm({ initialToken }: { initialToken: string }) {
+  const locale = useLocale();
+  const t = useT("setup");
+  const fields = useT("authFields");
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -30,8 +35,8 @@ export function SetupForm({ initialToken }: { initialToken: string }) {
     if (authError) {
       setError(
         authError.status === 403
-          ? "The setup token is invalid or was already used."
-          : (authError.message ?? "Setup failed."),
+          ? t("invalidToken")
+          : authErrorMessage(authError, locale, "setup"),
       );
       return;
     }
@@ -42,7 +47,7 @@ export function SetupForm({ initialToken }: { initialToken: string }) {
   return (
     <form className="stack" onSubmit={onSubmit}>
       <div className="field">
-        <label htmlFor="token">Setup token</label>
+        <label htmlFor="token">{t("token")}</label>
         <input
           id="token"
           name="token"
@@ -54,7 +59,7 @@ export function SetupForm({ initialToken }: { initialToken: string }) {
         />
       </div>
       <div className="field">
-        <label htmlFor="name">Name</label>
+        <label htmlFor="name">{fields("name")}</label>
         <input
           id="name"
           name="name"
@@ -65,7 +70,7 @@ export function SetupForm({ initialToken }: { initialToken: string }) {
         />
       </div>
       <div className="field">
-        <label htmlFor="email">Email</label>
+        <label htmlFor="email">{fields("email")}</label>
         <input
           id="email"
           name="email"
@@ -76,7 +81,7 @@ export function SetupForm({ initialToken }: { initialToken: string }) {
         />
       </div>
       <div className="field">
-        <label htmlFor="password">Password</label>
+        <label htmlFor="password">{fields("password")}</label>
         <input
           id="password"
           name="password"
@@ -89,7 +94,7 @@ export function SetupForm({ initialToken }: { initialToken: string }) {
       </div>
       {error ? <div className="error">{error}</div> : null}
       <button type="submit" className="primary" disabled={pending}>
-        {pending ? "Setting up…" : "Create owner account"}
+        {pending ? t("pending") : t("submit")}
       </button>
     </form>
   );

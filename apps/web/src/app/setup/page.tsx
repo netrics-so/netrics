@@ -1,11 +1,18 @@
+import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { SetupForm } from "./setup-form";
 import { getSetupStatus } from "@/lib/api";
+import { getT } from "@/lib/i18n/server";
 import { getSessionUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("setup");
+  return { title: `${t("title")} · netrics` };
+}
 
 export default async function SetupPage({
   searchParams,
@@ -20,20 +27,16 @@ export default async function SetupPage({
     redirect("/login");
   }
   const { token } = await searchParams;
+  const t = await getT("setup");
 
   return (
     <>
-      <h1>Set up netrics</h1>
-      <p className="subtitle">
-        Create the first account. It becomes the owner of your first workspace.
-      </p>
+      <h1>{t("title")}</h1>
+      <p className="subtitle">{t("subtitle")}</p>
       <div className="card">
         <SetupForm initialToken={typeof token === "string" ? token : ""} />
       </div>
-      <p className="muted">
-        The setup token is printed in the API log when the installation starts,
-        or set by your operator as NETRICS_SETUP_TOKEN.
-      </p>
+      <p className="muted">{t("tokenHint")}</p>
     </>
   );
 }

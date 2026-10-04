@@ -4,8 +4,13 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { signIn } from "@/lib/auth";
+import { authErrorMessage } from "@/lib/auth-errors";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 export function LoginForm({ next }: { next: string }) {
+  const locale = useLocale();
+  const t = useT("login");
+  const fields = useT("authFields");
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -21,7 +26,7 @@ export function LoginForm({ next }: { next: string }) {
     });
     setPending(false);
     if (authError) {
-      setError(authError.message ?? "Sign-in failed.");
+      setError(authErrorMessage(authError, locale, "signIn"));
       return;
     }
     router.push(next);
@@ -31,7 +36,7 @@ export function LoginForm({ next }: { next: string }) {
   return (
     <form className="stack" onSubmit={onSubmit}>
       <div className="field">
-        <label htmlFor="email">Email</label>
+        <label htmlFor="email">{fields("email")}</label>
         <input
           id="email"
           name="email"
@@ -42,7 +47,7 @@ export function LoginForm({ next }: { next: string }) {
         />
       </div>
       <div className="field">
-        <label htmlFor="password">Password</label>
+        <label htmlFor="password">{fields("password")}</label>
         <input
           id="password"
           name="password"
@@ -54,7 +59,7 @@ export function LoginForm({ next }: { next: string }) {
       </div>
       {error ? <div className="error">{error}</div> : null}
       <button type="submit" className="primary" disabled={pending}>
-        {pending ? "Signing in…" : "Sign in"}
+        {pending ? t("pending") : t("submit")}
       </button>
     </form>
   );

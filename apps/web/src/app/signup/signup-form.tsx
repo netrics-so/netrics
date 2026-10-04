@@ -4,8 +4,13 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { signUp } from "@/lib/auth";
+import { authErrorMessage } from "@/lib/auth-errors";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 export function SignupForm() {
+  const locale = useLocale();
+  const t = useT("signup");
+  const fields = useT("authFields");
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -22,7 +27,7 @@ export function SignupForm() {
     });
     setPending(false);
     if (authError) {
-      setError(authError.message ?? "Sign-up failed.");
+      setError(authErrorMessage(authError, locale, "signUp"));
       return;
     }
     // Email verification is not enforced yet, so sign-up signs in directly.
@@ -33,7 +38,7 @@ export function SignupForm() {
   return (
     <form className="stack" onSubmit={onSubmit}>
       <div className="field">
-        <label htmlFor="name">Name</label>
+        <label htmlFor="name">{fields("name")}</label>
         <input
           id="name"
           name="name"
@@ -44,7 +49,7 @@ export function SignupForm() {
         />
       </div>
       <div className="field">
-        <label htmlFor="email">Email</label>
+        <label htmlFor="email">{fields("email")}</label>
         <input
           id="email"
           name="email"
@@ -55,7 +60,7 @@ export function SignupForm() {
         />
       </div>
       <div className="field">
-        <label htmlFor="password">Password</label>
+        <label htmlFor="password">{fields("password")}</label>
         <input
           id="password"
           name="password"
@@ -68,7 +73,7 @@ export function SignupForm() {
       </div>
       {error ? <div className="error">{error}</div> : null}
       <button type="submit" className="primary" disabled={pending}>
-        {pending ? "Creating account…" : "Create account"}
+        {pending ? t("pending") : t("submit")}
       </button>
     </form>
   );
