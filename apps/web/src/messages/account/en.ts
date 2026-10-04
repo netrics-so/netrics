@@ -12,7 +12,6 @@ export const accountEn = {
     newPassword: "New password",
     changing: "Changing…",
     passwordChanged: "Password changed.",
-    passwordChangeFailed: "Could not change password.",
     session: "Session",
     signOut: "Sign out",
     signingOut: "Signing out…",

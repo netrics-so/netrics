@@ -59,6 +59,7 @@ import { SlideRail } from "./slide-rail";
 import { useLeaveGuard } from "./use-leave-guard";
 import type { StudioCurrency } from "./widget-panel";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { builtinThemeName } from "@/lib/theme-name";
 
 const reducer = createStudioReducer(() => crypto.randomUUID());
 
@@ -528,7 +529,13 @@ export function StudioEditor({
                 unreadable={unreadable.byWidget}
                 incoming={incoming}
               />
-              <p className="help">{t("canvasHelp", { theme: theme.name })}</p>
+              <p className="help">
+                {t("canvasHelp", {
+                  theme: theme.builtin
+                    ? builtinThemeName(theme.builtin, locale)
+                    : theme.name,
+                })}
+              </p>
             </>
           ) : null}
         </section>

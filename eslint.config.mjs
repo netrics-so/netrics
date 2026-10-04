@@ -72,72 +72,9 @@ function webApiFetchRestrictions() {
 
 /**
  * Web files whose user-facing text comes from the message catalogs (ADR
- * 0016 section 9). Each area keeps its own list, so the area changes do not
- * touch the same lines; the last area replaces them with all of
- * apps/web/src.
+ * 0016 section 9): every component in apps/web/src.
  */
-const I18N_FOUNDATION = [
-  "apps/web/src/app/layout.tsx",
-  "apps/web/src/components/nav.tsx",
-  "apps/web/src/app/settings/account/**/*.tsx",
-  "apps/web/src/app/workspaces/[[]workspaceId]/settings/screen-language-form.tsx",
-  // Screens (#256): the kiosk, the signed-in TV mode and what they draw.
-  "apps/web/src/app/kiosk/**/*.tsx",
-  "apps/web/src/app/workspaces/[[]workspaceId]/dashboards/[[]dashboardId]/tv/**/*.tsx",
-  "apps/web/src/components/tv-frame.tsx",
-  "apps/web/src/components/tile-view.tsx",
-  "apps/web/src/components/sparkline.tsx",
-  "apps/web/src/components/studio/**/*.tsx",
-];
-
-// Auth and onboarding (#251).
-const I18N_AUTH = [
-  "apps/web/src/app/page.tsx",
-  "apps/web/src/app/create-workspace-form.tsx",
-  "apps/web/src/app/login/**/*.tsx",
-  "apps/web/src/app/signup/**/*.tsx",
-  "apps/web/src/app/setup/**/*.tsx",
-  "apps/web/src/app/forgot-password/**/*.tsx",
-  "apps/web/src/app/reset-password/**/*.tsx",
-  "apps/web/src/app/invite/**/*.tsx",
-];
-
-// Workspace overview, projects, connections and devices (#252).
-const I18N_WORKSPACE = [
-  "apps/web/src/app/workspaces/[[]workspaceId]/page.tsx",
-  "apps/web/src/app/workspaces/[[]workspaceId]/create-project-form.tsx",
-  "apps/web/src/app/workspaces/[[]workspaceId]/create-dashboard-form.tsx",
-  "apps/web/src/app/workspaces/[[]workspaceId]/health-badge.tsx",
-  "apps/web/src/app/workspaces/[[]workspaceId]/device-controls.tsx",
-  "apps/web/src/app/workspaces/[[]workspaceId]/connections/**/*.tsx",
-  "apps/web/src/app/devices/approve/**/*.tsx",
-];
-
-// Dashboards, the web TV layout and the Studio (#253).
-const I18N_STUDIO = [
-  "apps/web/src/app/workspaces/[[]workspaceId]/dashboards/**/*.tsx",
-  "apps/web/src/components/studio/**/*.tsx",
-  "apps/web/src/components/studio-editor/**/*.tsx",
-  "apps/web/src/components/tile-view.tsx",
-  "apps/web/src/components/sparkline.tsx",
-  "apps/web/src/components/theme-preview.tsx",
-  "apps/web/src/components/tv-frame.tsx",
-];
-
-// Settings, themes, status, deploy notice and error pages (#254).
-const I18N_SETTINGS = [
-  "apps/web/src/app/workspaces/[[]workspaceId]/settings/**/*.tsx",
-  "apps/web/src/app/status/**/*.tsx",
-  "apps/web/src/components/deploy-watcher.tsx",
-];
-
-export const I18N_FILES = [
-  ...I18N_FOUNDATION,
-  ...I18N_AUTH,
-  ...I18N_WORKSPACE,
-  ...I18N_STUDIO,
-  ...I18N_SETTINGS,
-];
+export const I18N_FILES = ["apps/web/src/**/*.tsx"];
 
 function i18nRestrictions() {
   const message =
@@ -259,16 +196,11 @@ const layering = [
       ],
     },
   },
-  // The web helpers format with the caller's locale too (ADR 0016 section
-  // 8). The kiosk's helpers (app/kiosk, lib/kiosk-*) follow with the device
-  // payload's locale (#256); until then they are left out here.
+  // The web helpers and hooks format with the caller's locale too (ADR 0016
+  // section 8).
   {
-    files: ["apps/web/src/lib/**/*.ts"],
-    ignores: [
-      "apps/web/src/lib/api-fetch.ts",
-      "apps/web/src/lib/kiosk-*.ts",
-      "apps/web/src/**/*.test.ts",
-    ],
+    files: ["apps/web/src/**/*.ts"],
+    ignores: ["apps/web/src/lib/api-fetch.ts", "apps/web/src/**/*.test.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
