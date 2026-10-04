@@ -7,12 +7,16 @@ import { can } from "@netrics/domain";
 import { DisconnectResult } from "../connections/disconnect-result";
 import { OAuthOutcomeBanner } from "../connections/oauth-outcome";
 import { HealthBadge } from "../health-badge";
+import "@/app/styles/sources.css";
+import { ConnectedStrip } from "@/components/sources/connected-strip";
+import { ConnectorCatalogue } from "@/components/sources/connector-catalogue";
 import { listConnections, listConnectors, listWorkspaces } from "@/lib/api";
 import { getLocale, getT } from "@/lib/i18n/server";
 import { parseDisconnected, parseOAuthOutcome } from "@/lib/oauth-connection";
 import { relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
 import { parseKeyRemoved } from "@/lib/signed-key";
+import { connectorStandings } from "@/lib/sources";
 import { nextSyncLabel } from "@/lib/sync-schedule";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +31,10 @@ interface SourcesPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-/** The workspace's connections and adding one (#302). */
+/**
+ * The workspace's sources (#302, design 3c #306): the connected strip, the
+ * connector catalogue, and every connection's sync state in a table.
+ */
 export default async function SourcesPage({
   params,
   searchParams,
@@ -40,6 +47,7 @@ export default async function SourcesPage({
   const { cookieHeader } = await requireSession();
   const locale = await getLocale();
   const t = await getT("workspace");
+  const s = await getT("sources");
 
   const { workspaces } = await listWorkspaces(cookieHeader);
   const membership = workspaces.find((w) => w.id === workspaceId);
@@ -47,10 +55,14 @@ export default async function SourcesPage({
     notFound();
   }
   const role = membership.role;
-  const { connections } = await listConnections(cookieHeader, workspaceId);
+  const [{ connections }, { connectors }] = await Promise.all([
+    listConnections(cookieHeader, workspaceId),
+    listConnectors(cookieHeader),
+  ]);
+  const canCreate = can(role, "connections:create");
   // After deleting a connection with an uploaded key: where to revoke it.
   const removedKey = keyRemoved
-    ? (await listConnectors(cookieHeader)).connectors
+    ? connectors
         .flatMap((connector) => connector.authStrategies)
         .find(
           (strategy) =>
@@ -64,11 +76,9 @@ export default async function SourcesPage({
       <header className="page-header">
         <div>
           <h1>{t("pages.sources")}</h1>
-          <p className="page-meta">
-            {t("sourceCount", { count: connections.length })}
-          </p>
+          <p className="page-meta">{s("subtitle")}</p>
         </div>
-        {can(role, "connections:create") ? (
+        {canCreate ? (
           <div className="page-actions">
             <Link
               href={`/workspaces/${workspaceId}/connections/new`}
@@ -99,8 +109,41 @@ export default async function SourcesPage({
         </div>
       ) : null}
 
-      <div className="card">
-        <h2>{t("connections")}</h2>
+      <section className="sources-section" aria-labelledby="sources-connected">
+        <h2 id="sources-connected" className="sources-heading">
+          {s("connected")}
+          <span className="sources-count">
+            {t("sourceCount", { count: connections.length })}
+          </span>
+        </h2>
+        {connections.length === 0 ? (
+          <p className="muted">{t("noConnections")}</p>
+        ) : (
+          <ConnectedStrip
+            workspaceId={workspaceId}
+            connections={connections}
+            connectors={connectors}
+          />
+        )}
+      </section>
+
+      <section className="sources-section" aria-labelledby="sources-catalogue">
+        <h2 id="sources-catalogue" className="sources-heading">
+          {s("catalogue")}
+        </h2>
+        {canCreate ? (
+          <p className="page-meta sources-hint">{s("catalogueHint")}</p>
+        ) : null}
+        <ConnectorCatalogue
+          workspaceId={workspaceId}
+          connectors={connectors}
+          standings={connectorStandings(connections)}
+          mode={{ kind: "links", canCreate }}
+        />
+      </section>
+
+      <div className="card sources-table">
+        <h2>{s("allConnections")}</h2>
         {connections.length === 0 ? (
           <p className="muted">{t("noConnections")}</p>
         ) : (
@@ -152,7 +195,7 @@ export default async function SourcesPage({
             </table>
           </div>
         )}
-        {can(role, "connections:create") ? null : (
+        {canCreate ? null : (
           <p className="muted">{t("cannotCreateConnections")}</p>
         )}
       </div>

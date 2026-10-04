@@ -46,7 +46,8 @@ const demoDe: ManifestTranslation = {
 export const demoManifest: ConnectorManifest = {
   id: "demo",
   version: "0.1.1",
-  sdkVersion: "^0.2.6",
+  sdkVersion: "^0.2.7",
+  category: "other",
   name: "Demo Connector",
   description:
     "Deterministic demo connector for onboarding and tests. Generates plausible daily metrics locally without network access.",

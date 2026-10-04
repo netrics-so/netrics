@@ -12,6 +12,7 @@ import { ConfigFields } from "../config-fields";
 import { ConnectOAuthButton } from "../connect-oauth-button";
 import { SignedKeyFields } from "../signed-key-fields";
 import { TokenField } from "../token-field";
+import { ConnectorCatalogue } from "@/components/sources/connector-catalogue";
 import {
   apiErrorMessage,
   createConnection,
@@ -27,6 +28,7 @@ import {
   providerName,
   unavailableCopy,
 } from "@/lib/oauth-connection";
+import type { ConnectorStanding } from "@/lib/sources";
 import {
   APP_STORE_CONNECT_DOCS_URL,
   APP_STORE_CONNECT_PROVIDER,
@@ -42,23 +44,40 @@ import { useLocale, useT } from "@/lib/i18n/client";
 interface NewConnectionWizardProps {
   workspaceId: string;
   connectors: ConnectorCatalogEntry[];
+  /** How each connector stands in the workspace (catalogue CTAs, #306). */
+  standings?: Readonly<Record<string, ConnectorStanding>>;
+  /** The connector chosen in the catalogue (`?connector=`), if any. */
+  initialConnectorId?: string | null;
 }
 
 export function NewConnectionWizard({
   workspaceId,
   connectors,
+  standings = {},
+  initialConnectorId = null,
 }: NewConnectionWizardProps) {
   const locale = useLocale();
   const t = useT("connections.wizard");
   const common = useT("common");
   const router = useRouter();
-  const [connector, setConnector] = useState<ConnectorCatalogEntry | null>(
-    null,
+  const [initial] = useState(
+    () => connectors.find((entry) => entry.id === initialConnectorId) ?? null,
   );
-  const [name, setName] = useState("");
-  const [configValues, setConfigValues] = useState<Record<string, string>>({});
+  const [connector, setConnector] = useState<ConnectorCatalogEntry | null>(
+    initial,
+  );
+  const [name, setName] = useState(initial?.name ?? "");
+  const [configValues, setConfigValues] = useState<Record<string, string>>(
+    () =>
+      initial
+        ? initialConfigValues(parseConfigSchema(initial.configSchema))
+        : {},
+  );
   const [token, setToken] = useState("");
-  const [keyValues, setKeyValues] = useState<Record<string, string>>({});
+  const [keyValues, setKeyValues] = useState<Record<string, string>>(() => {
+    const strategy = initial ? signedKeyStrategyOf(initial) : null;
+    return strategy ? emptyKeyValues(strategy) : {};
+  });
   const [fieldErrors, setFieldErrors] = useState<
     Record<string, string | undefined>
   >({});
@@ -227,27 +246,16 @@ export function NewConnectionWizard({
     <>
       <div className="card">
         <h2>{t("chooseConnector")}</h2>
-        <div className="connector-cards">
-          {connectors.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              className={`connector-card ${connector?.id === entry.id ? "selected" : ""} ${entry.available ? "" : "unavailable"}`}
-              onClick={() => selectConnector(entry)}
-            >
-              <h3>{entry.name}</h3>
-              <p>{entry.description}</p>
-              <p className="meta">
-                {entry.unavailable
-                  ? unavailableCopy(entry.unavailable, locale).summary
-                  : t(entry.supportsBackfill ? "metaBackfill" : "meta", {
-                      version: entry.version,
-                      count: entry.metricsCount,
-                    })}
-              </p>
-            </button>
-          ))}
-        </div>
+        <ConnectorCatalogue
+          workspaceId={workspaceId}
+          connectors={connectors}
+          standings={standings}
+          mode={{
+            kind: "pick",
+            selectedId: connector?.id ?? null,
+            onPick: selectConnector,
+          }}
+        />
       </div>
 
       {connector && connector.unavailable ? (

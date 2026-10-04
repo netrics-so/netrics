@@ -424,9 +424,6 @@ export const workspaceEn = {
       selectApp: "Select at least one of the discovered apps.",
       selectResource: "Select at least one of the discovered resources.",
       chooseConnector: "1. Choose a connector",
-      meta: "v{version} · {count, plural, one {# metric} other {# metrics}}",
-      metaBackfill:
-        "v{version} · {count, plural, one {# metric} other {# metrics}} · backfill",
       connectWith: "2. Connect with {provider}",
       oauthIntro:
         "You sign in at {provider} and allow netrics read-only access to your {connector} data. netrics never sees your {provider} password. Afterwards you choose what this connection reads.",

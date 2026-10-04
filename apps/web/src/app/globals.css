@@ -705,48 +705,6 @@ button.danger:hover:not(:disabled) {
   margin: 12px 0;
 }
 
-.connector-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.connector-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  padding: 14px 16px;
-  background: var(--surface);
-  cursor: pointer;
-  text-align: left;
-  color: inherit;
-  font-weight: inherit;
-}
-
-.connector-card:hover:not(:disabled) {
-  background: var(--surface);
-  border-color: var(--border-strong);
-}
-
-.connector-card.selected,
-.connector-card.selected:hover:not(:disabled) {
-  border-color: var(--accent);
-  box-shadow: var(--selection-ring);
-  background: var(--accent-wash);
-}
-
-.connector-card h3 {
-  margin: 0 0 6px;
-  font-size: var(--size-14);
-  font-weight: 700;
-}
-
-.connector-card p {
-  margin: 0;
-  font-size: var(--size-13);
-  color: var(--muted);
-}
-
 /* Copyable one-time links (invitations): show the whole URL. */
 .copy-link {
   width: 100%;
@@ -1324,14 +1282,6 @@ input.pairing-code-input::placeholder {
 }
 
 /* ─── OAuth connections: connect, finish setup, disconnect (#136) ──────── */
-
-.connector-card.unavailable {
-  opacity: 0.6;
-}
-
-.connector-card.unavailable.selected {
-  opacity: 1;
-}
 
 a.health-badge {
   text-decoration: none;

@@ -138,7 +138,9 @@ const searchConsoleDe: ManifestTranslation = {
 export const searchConsoleManifest: ConnectorManifest = {
   id: PREFIX,
   version: "0.1.1",
-  sdkVersion: "^0.2.6",
+  sdkVersion: "^0.2.7",
+  category: "seo",
+  brandColor: "#4285f4",
   name: "Google Search Console",
   description:
     "Clicks, impressions, click-through rate and average position in Google Search, per Search Console property.",

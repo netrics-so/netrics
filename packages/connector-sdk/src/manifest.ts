@@ -234,6 +234,28 @@ export const manifestTranslationsSchema = z.record(
 );
 export type ManifestTranslations = z.infer<typeof manifestTranslationsSchema>;
 
+/**
+ * Where the catalogue files a connector (the Sources page's category
+ * filter). Presentation only. Since SDK 0.2.7.
+ */
+export const connectorCategorySchema = z.enum([
+  "seo",
+  "web",
+  "apps",
+  "ads",
+  "revenue",
+  "other",
+]);
+export type ConnectorCategory = z.infer<typeof connectorCategorySchema>;
+
+/**
+ * The colour of the connector's icon tile, as "#rrggbb". Presentation only;
+ * hosts fall back to a neutral tile without it. Since SDK 0.2.7.
+ */
+export const brandColorSchema = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, { message: 'brandColor must be "#rrggbb"' });
+
 function propertyKeys(schema: unknown): Set<string> {
   const properties =
     schema && typeof schema === "object"
@@ -259,6 +281,10 @@ export const connectorManifestSchema = z
     name: z.string().min(1),
     description: z.string().min(1),
     icon: z.string().min(1).optional(),
+    /** Catalogue category (SDK 0.2.7); hosts file connectors without one under "other". */
+    category: connectorCategorySchema.optional(),
+    /** Icon tile colour, "#rrggbb" (SDK 0.2.7). */
+    brandColor: brandColorSchema.optional(),
     url: z.url().optional(),
     docsUrl: z.url().optional(),
     authStrategies: z.array(authStrategySchema).min(1),

@@ -91,7 +91,9 @@ const vercelDe: ManifestTranslation = {
 export const vercelManifest: ConnectorManifest = {
   id: "vercel",
   version: "0.1.2",
-  sdkVersion: "^0.2.6",
+  sdkVersion: "^0.2.7",
+  category: "web",
+  brandColor: "#000000",
   name: "Vercel Web Analytics",
   description:
     "Visitors, page views and custom events from Vercel Web Analytics, per project.",

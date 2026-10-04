@@ -6,6 +6,7 @@ import { formatsEn } from "./formats/en";
 import { screenEn } from "./screen/en";
 import { settingsEn } from "./settings/en";
 import { shellEn } from "./shell/en";
+import { sourcesEn } from "./sources/en";
 import { studioEn } from "./studio/en";
 import { workspaceEn } from "./workspace/en";
 
@@ -30,6 +31,7 @@ export const EN_AREAS = {
   settings: settingsEn,
   screen: screenEn,
   shell: shellEn,
+  sources: sourcesEn,
 } as const;
 
 export const en = {
@@ -43,6 +45,7 @@ export const en = {
   ...settingsEn,
   ...screenEn,
   ...shellEn,
+  ...sourcesEn,
 } as const;
 
 export type WebMessages = typeof en;

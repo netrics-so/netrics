@@ -9,8 +9,9 @@ import { satisfiesRange } from "./semver.js";
 // 0.2.4: the optional manifest field resourceNoun (#208).
 // 0.2.5: the optional Connector.resourceIcons capability (#226).
 // 0.2.6: the optional manifest field translations (ADR 0016, #257).
+// 0.2.7: the optional manifest fields category and brandColor (#306).
 // All are additive: ^0.2.0 connectors keep loading.
-export const SDK_VERSION = "0.2.6";
+export const SDK_VERSION = "0.2.7";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

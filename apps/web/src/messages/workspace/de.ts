@@ -388,9 +388,6 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       selectApp: "Wähl mindestens eine der gefundenen Apps aus.",
       selectResource: "Wähl mindestens eine der gefundenen Ressourcen aus.",
       chooseConnector: "1. Connector auswählen",
-      meta: "v{version} · {count, plural, one {# Metrik} other {# Metriken}}",
-      metaBackfill:
-        "v{version} · {count, plural, one {# Metrik} other {# Metriken}} · mit Historie",
       connectWith: "2. Mit {provider} verbinden",
       oauthIntro:
         "Du meldest dich bei {provider} an und erlaubst netrics den reinen Lesezugriff auf deine {connector}-Daten. netrics sieht dein {provider}-Passwort nie. Danach wählst du aus, was diese Verbindung liest.",

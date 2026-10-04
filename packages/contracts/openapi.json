@@ -21236,6 +21236,49 @@
                             "minimum": 0,
                             "maximum": 9007199254740991
                           },
+                          "category": {
+                            "type": "string",
+                            "enum": [
+                              "seo",
+                              "web",
+                              "apps",
+                              "ads",
+                              "revenue",
+                              "other"
+                            ]
+                          },
+                          "brandColor": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^#[0-9a-fA-F]{6}$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "metrics": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
                           "minRefreshIntervalSeconds": {
                             "type": "integer",
                             "exclusiveMinimum": 0,
@@ -21429,6 +21472,9 @@
                           "version",
                           "description",
                           "metricsCount",
+                          "category",
+                          "brandColor",
+                          "metrics",
                           "minRefreshIntervalSeconds",
                           "supportsBackfill",
                           "configSchema",

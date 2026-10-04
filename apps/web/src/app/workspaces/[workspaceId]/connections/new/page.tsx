@@ -7,15 +7,18 @@ import { can } from "@netrics/domain";
 import { FinishSetup } from "../finish-setup";
 import { OAuthOutcomeBanner } from "../oauth-outcome";
 import { NewConnectionWizard } from "./new-connection-wizard";
+import "@/app/styles/sources.css";
 import {
   getConnection,
   getWorkspace,
+  listConnections,
   listConnectors,
   listWorkspaces,
 } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
 import { parseOAuthOutcome } from "@/lib/oauth-connection";
 import { requireSession } from "@/lib/session";
+import { connectorStandings } from "@/lib/sources";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +48,9 @@ export default async function NewConnectionPage({
     typeof query.connection === "string" && UUID.test(query.connection)
       ? query.connection
       : null;
+
+  const connectorParam =
+    typeof query.connector === "string" ? query.connector : null;
 
   const [{ workspaces }, workspaceResult, { connectors }, detail] =
     await Promise.all([
@@ -100,7 +106,14 @@ export default async function NewConnectionPage({
       <h1>{t("title")}</h1>
       <p className="subtitle">{workspaceResult.workspace.name}</p>
       <OAuthOutcomeBanner outcome={outcome} />
-      <NewConnectionWizard workspaceId={workspaceId} connectors={connectors} />
+      <NewConnectionWizard
+        workspaceId={workspaceId}
+        connectors={connectors}
+        standings={connectorStandings(
+          (await listConnections(cookieHeader, workspaceId)).connections,
+        )}
+        initialConnectorId={connectorParam}
+      />
     </>
   );
 }
