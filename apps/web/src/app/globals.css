@@ -2250,6 +2250,156 @@ a.health-badge:hover {
   border-style: dashed;
 }
 
+/* Grid editing (#224): a selected widget is dragged to move it and from its
+   edges and corners to resize it. touch-action: none keeps a touch drag
+   from scrolling the page. */
+.editor-overlay:focus {
+  outline: none;
+}
+
+.editor-widget--selected {
+  cursor: grab;
+  touch-action: none;
+}
+
+.editor-overlay--dragging,
+.editor-overlay--dragging .editor-widget {
+  cursor: grabbing;
+}
+
+.editor-widget--dragging {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.editor-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: var(--t-accent);
+  border: 2px solid var(--t-background);
+  border-radius: 3px;
+  touch-action: none;
+}
+
+.editor-handle--n,
+.editor-handle--s {
+  left: calc(50% - 7px);
+  cursor: ns-resize;
+}
+.editor-handle--e,
+.editor-handle--w {
+  top: calc(50% - 7px);
+  cursor: ew-resize;
+}
+.editor-handle--n,
+.editor-handle--ne,
+.editor-handle--nw {
+  top: -8px;
+}
+.editor-handle--s,
+.editor-handle--se,
+.editor-handle--sw {
+  bottom: -8px;
+}
+.editor-handle--e,
+.editor-handle--ne,
+.editor-handle--se {
+  right: -8px;
+}
+.editor-handle--w,
+.editor-handle--nw,
+.editor-handle--sw {
+  left: -8px;
+}
+.editor-handle--ne,
+.editor-handle--sw {
+  cursor: nesw-resize;
+}
+.editor-handle--nw,
+.editor-handle--se {
+  cursor: nwse-resize;
+}
+
+/* Touch: larger targets for a finger. */
+@media (pointer: coarse) {
+  .editor-handle {
+    width: 22px;
+    height: 22px;
+  }
+  .editor-handle--n,
+  .editor-handle--s {
+    left: calc(50% - 11px);
+  }
+  .editor-handle--e,
+  .editor-handle--w {
+    top: calc(50% - 11px);
+  }
+  .editor-handle--n,
+  .editor-handle--ne,
+  .editor-handle--nw {
+    top: -12px;
+  }
+  .editor-handle--s,
+  .editor-handle--se,
+  .editor-handle--sw {
+    bottom: -12px;
+  }
+  .editor-handle--e,
+  .editor-handle--ne,
+  .editor-handle--se {
+    right: -12px;
+  }
+  .editor-handle--w,
+  .editor-handle--nw,
+  .editor-handle--sw {
+    left: -12px;
+  }
+}
+
+.editor-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.editor-grid-cell {
+  position: absolute;
+  border: 1px dashed color-mix(in srgb, var(--t-muted) 45%, transparent);
+  border-radius: 4px;
+}
+
+.editor-outline {
+  position: absolute;
+  pointer-events: none;
+  border: 3px solid var(--t-accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--t-accent) 14%, transparent);
+}
+
+.editor-outline--blocked {
+  border-color: var(--t-warning);
+  background: color-mix(in srgb, var(--t-warning) 18%, transparent);
+}
+
+.editor-readout {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--t-accent);
+  color: var(--t-background);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.editor-outline--blocked .editor-readout {
+  background: var(--t-warning);
+}
+
 .editor-empty {
   position: absolute;
   inset: 0;
