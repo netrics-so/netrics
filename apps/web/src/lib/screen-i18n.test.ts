@@ -44,7 +44,7 @@ describe("numbers in German", () => {
         "Europe/Berlin",
         "de",
       ),
-    ).toBe("Woche ab 28. Sept.");
+    ).toBe("Woche vom 28. Sept.");
     expect(
       sparkBucketLabel(
         "2026-09-28T00:00:00.000Z",

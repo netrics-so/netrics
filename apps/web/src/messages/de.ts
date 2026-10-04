@@ -67,11 +67,11 @@ export const de: Catalog<WebMessages> = {
       loading: "Wird geladen…",
       noDashboardTitle: "Noch kein Dashboard zugewiesen",
       noDashboardText:
-        "Wähl eins unter TVs in netrics aus; dieser Bildschirm übernimmt es von selbst.",
+        "Wähle eines unter TVs in netrics aus; dieser Bildschirm übernimmt es von selbst.",
       pairingPrompt: "Zeig ein netrics-Dashboard auf diesem Bildschirm",
       pairingCode: "Kopplungscode",
       pairingGoTo: "Öffne {url} und gib den Code ein.",
-      unreachable: "netrics nicht erreichbar – neuer Versuch läuft",
+      unreachable: "netrics ist nicht erreichbar – neuer Versuch läuft",
       offline: "Offline",
       offlineSince: "Offline – letzte Aktualisierung {time}",
       noSlides: "Dieses Dashboard hat keine Folien zum Anzeigen.",

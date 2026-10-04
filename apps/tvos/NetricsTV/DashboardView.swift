@@ -7,6 +7,7 @@ import SwiftUI
  * and clock on top, every tile on one screen below.
  */
 struct DashboardView: View {
+    @Environment(\.screenLanguage) private var language
     let state: DeviceState
     let dashboard: DeviceDashboard
 
@@ -17,7 +18,7 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: gap) {
                 header(height: height)
                 if dashboard.tiles.isEmpty {
-                    Text("This dashboard has no tiles yet.")
+                    Text(L10n.tr("This dashboard has no tiles yet.", language))
                         .font(.system(size: height * 0.03))
                         .foregroundStyle(Theme.muted)
                     Spacer()
@@ -39,12 +40,12 @@ struct DashboardView: View {
                 .lineLimit(1)
             Spacer()
             if state.offline {
-                Text(TVTime.offlineMarker(updatedAt: state.updatedAt, timeZone: dashboard.timeZone))
+                Text(TVTime.offlineMarker(updatedAt: state.updatedAt, timeZone: dashboard.timeZone, language: language))
                     .font(.system(size: height * 0.018))
                     .foregroundStyle(Theme.warning)
             }
             TimelineView(.periodic(from: .now, by: 15)) { context in
-                Text(TVTime.clock(context.date, timeZone: dashboard.timeZone))
+                Text(TVTime.clock(context.date, timeZone: dashboard.timeZone, language: language))
                     .font(.system(size: height * 0.022).monospacedDigit())
                     .foregroundStyle(Theme.muted)
             }
@@ -85,6 +86,7 @@ struct TileGrid: View {
  * web's container units, so 1080p and 4K read the same.
  */
 struct TileView: View {
+    @Environment(\.screenLanguage) private var language
     let tile: DeviceTile
 
     var body: some View {
@@ -102,7 +104,7 @@ struct TileView: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                         Spacer(minLength: 12)
-                        Text(MetricFormat.subtitle(tile))
+                        Text(MetricFormat.subtitle(tile, language: language))
                             .font(.system(size: min(h * 0.065, w * 0.042)))
                             .foregroundStyle(Theme.muted)
                             .lineLimit(1)
@@ -121,13 +123,13 @@ struct TileView: View {
                 }
 
                 if let unit = tile.unit {
-                    Text(ConversionFormat.value(tile, unit: unit))
+                    Text(ConversionFormat.value(tile, unit: unit, language: language))
                         .font(.system(size: min(h * 0.30, w * 0.17), weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
                         .fixedSize(horizontal: false, vertical: true)
-                    let change = MetricFormat.changeLine(tile)
+                    let change = MetricFormat.changeLine(tile, language: language)
                     Text(change.text)
                         .font(.system(size: min(h * 0.08, w * 0.054)))
                         .foregroundStyle(color(change.direction))
@@ -141,14 +143,14 @@ struct TileView: View {
                         Spacer(minLength: 0)
                     }
                 } else {
-                    Text("This tile could not load.")
+                    Text(L10n.tr("This tile could not load.", language))
                         .font(.system(size: min(h * 0.07, w * 0.046)))
                         .foregroundStyle(Theme.down)
                     Spacer(minLength: 0)
                 }
 
                 // Converted amounts cite their source on one muted line.
-                if let note = ConversionFormat.note(tile.conversion) {
+                if let note = ConversionFormat.note(tile.conversion, language: language) {
                     Text(note)
                         .font(.system(size: min(h * 0.055, w * 0.036)))
                         .foregroundStyle(Theme.muted)
@@ -157,7 +159,8 @@ struct TileView: View {
                         .truncationMode(.tail)
                 }
 
-                if let notice = TileNotices.notice(status: tile.status, updatedAt: tile.updatedAt, now: now) {
+                if let notice = TileNotices.notice(
+                    status: tile.status, updatedAt: tile.updatedAt, now: now, language: language) {
                     Text("⚠ \(notice)")
                         .font(.system(size: min(h * 0.06, w * 0.04)))
                         .foregroundStyle(Theme.warning)

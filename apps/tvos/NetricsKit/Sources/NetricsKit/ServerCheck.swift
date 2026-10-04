@@ -15,34 +15,37 @@ public enum ServerCheckError: Error, Sendable, Equatable {
     case incompatibleVersion(server: Int)
     case serverError(Int)
 
-    public var message: String {
+    public var message: String { message(in: .en) }
+
+    /** The message in the TV's language (before pairing: its system language). */
+    public func message(in language: ScreenLanguage) -> String {
         switch self {
         case .invalidAddress:
-            return "Enter the address of your netrics server, for example netrics.example.com."
+            return KitStrings.text(.serverInvalidAddress, language)
         case .plainHTTPToPublicHost(let host):
-            return "\(host) is not on your local network, so it needs HTTPS. Plain HTTP is only possible for local servers."
+            return KitStrings.text(.serverPlainHTTPToPublicHost, language, host)
         case .plainHTTPNeedsSetting(let host):
-            return "\(host) uses plain HTTP. Use HTTPS, or turn on “Allow insecure connections” (not recommended)."
+            return KitStrings.text(.serverPlainHTTPNeedsSetting, language, host)
         case .unreachable(let detail):
-            return "Cannot reach this server. Check the address and the network. (\(detail))"
+            return KitStrings.text(.serverUnreachable, language, detail)
         case .timedOut:
-            return "The server did not answer in time. Check the address and the network."
+            return KitStrings.text(.serverTimedOut, language)
         case .untrustedCertificate(let settingHelps):
-            return settingHelps
-                ? "The server's certificate is not trusted. If it is your own server with a self-signed certificate, turn on “Allow insecure connections” (not recommended)."
-                : "The server's certificate is not trusted."
+            return KitStrings.text(
+                settingHelps ? .serverUntrustedCertificateSettingHelps : .serverUntrustedCertificate, language)
         case .certificateChanged:
-            return "The server's certificate has changed since it was trusted."
+            return KitStrings.text(.serverCertificateChanged, language)
         case .redirected(let location):
-            return "The server redirected to \(location ?? "another address"). Enter that address instead."
+            return location.map { KitStrings.text(.serverRedirected, language, $0) }
+                ?? KitStrings.text(.serverRedirectedSomewhere, language)
         case .notNetrics:
-            return "This address does not answer like a netrics server."
+            return KitStrings.text(.serverNotNetrics, language)
         case .incompatibleVersion(let server):
-            return server > (supportedDeviceAPIVersions.max() ?? 0)
-                ? "This server is newer than this app (device API \(server)). Update the app."
-                : "This server is too old for this app (device API \(server)). Update the server."
+            return KitStrings.text(
+                server > (supportedDeviceAPIVersions.max() ?? 0) ? .serverNewerThanApp : .serverOlderThanApp,
+                language, server)
         case .serverError(let status):
-            return "The server answered with an error (HTTP \(status)). Try again later."
+            return KitStrings.text(.serverError, language, status)
         }
     }
 }

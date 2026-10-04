@@ -27,7 +27,7 @@ final class AppModel {
     /** Shown on the server screen when the Keychain refuses to save. */
     var storageError: String?
     /** Why netrics cloud did not answer the last check, while retrying. */
-    private(set) var cloudError: String?
+    private(set) var cloudError: ServerCheckError?
     /** Seconds between checks of netrics cloud while it does not answer. */
     static let cloudRetryInterval: Duration = .seconds(10)
 
@@ -69,7 +69,7 @@ final class AppModel {
                     self.use(checked)
                     return
                 case .failure(let failure):
-                    self.cloudError = failure.message
+                    self.cloudError = failure
                 }
                 try? await Task.sleep(for: Self.cloudRetryInterval)
             }
@@ -86,6 +86,14 @@ final class AppModel {
     func switchToCloud() {
         forgetServer()
         connectToCloud()
+    }
+
+    /**
+     * The TV's language (ADR 0016): the workspace's screen language from
+     * the payload once there is one, else the Apple TV's system language.
+     */
+    var language: ScreenLanguage {
+        device.payload?.language ?? .system()
     }
 
     /** True while the TV is not paired, so changing the server loses nothing. */
@@ -114,7 +122,8 @@ final class AppModel {
             storageError = nil
         } catch {
             // Still usable until the app restarts; say why it will ask again.
-            storageError = "This TV could not save the server in its Keychain (\(error))."
+            storageError = L10n.tr(
+                "This TV could not save the server in its Keychain (%@).", language, String(describing: error))
         }
         start(result.config)
     }

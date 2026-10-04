@@ -7,6 +7,7 @@ import SwiftUI
  */
 struct PairingView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.screenLanguage) private var language
     let state: DeviceState
     let openSettings: () -> Void
 
@@ -15,7 +16,7 @@ struct PairingView: View {
             Spacer()
             HStack(alignment: .center, spacing: 120) {
                 VStack(alignment: .leading, spacing: 36) {
-                    Text("Show a netrics dashboard on this screen")
+                    Text(L10n.tr("Show a netrics dashboard on this screen", language))
                         .font(.system(size: 36))
                         .foregroundStyle(Theme.muted)
                     if let pairing = state.pairing {
@@ -23,10 +24,8 @@ struct PairingView: View {
                             .font(.system(size: 150, weight: .semibold, design: .monospaced))
                             .tracking(12)
                             .foregroundStyle(Theme.text)
-                            .accessibilityLabel("Pairing code \(pairing.code)")
-                        Text(
-                            "Go to \(Text(PairingAddress.display(pairing.pairingUrl)).foregroundStyle(Theme.text).fontWeight(.medium)) and enter the code."
-                        )
+                            .accessibilityLabel(L10n.tr("Pairing code %@", language, pairing.code))
+                        goTo(PairingAddress.display(pairing.pairingUrl))
                         .foregroundStyle(Theme.muted)
                         .font(.system(size: 34))
                     } else {
@@ -35,7 +34,7 @@ struct PairingView: View {
                             .foregroundStyle(Theme.faint)
                     }
                     if state.offline {
-                        Text("Cannot reach netrics — retrying")
+                        Text(L10n.tr("Cannot reach netrics — retrying", language))
                             .font(.system(size: 26))
                             .foregroundStyle(Theme.warning)
                     }
@@ -54,20 +53,30 @@ struct PairingView: View {
                 }
                 Spacer()
                 if model.server?.kind == .cloud {
-                    Button("Use your own server") { model.switchToOwnServer() }
+                    Button(L10n.tr("Use your own server", language)) { model.switchToOwnServer() }
                 } else {
-                    Button("Use netrics cloud") { model.switchToCloud() }
+                    Button(L10n.tr("Use netrics cloud", language)) { model.switchToCloud() }
                 }
-                Button("Settings", action: openSettings)
+                Button(L10n.tr("Settings", language), action: openSettings)
             }
             .font(.system(size: 24))
         }
         .padding(.horizontal, 100)
         .padding(.vertical, 60)
     }
+
+    /** "Go to <address> and enter the code.", the address emphasised, in the TV's language. */
+    private func goTo(_ address: String) -> Text {
+        let sentence = L10n.tr("Go to %@ and enter the code.", language)
+        let parts = sentence.components(separatedBy: "%@")
+        let emphasised = Text(address).foregroundStyle(Theme.text).fontWeight(.medium)
+        guard parts.count == 2 else { return Text(sentence.replacingOccurrences(of: "%@", with: address)) }
+        return Text("\(Text(parts[0]))\(emphasised)\(Text(parts[1]))")
+    }
 }
 
 struct QRCodeView: View {
+    @Environment(\.screenLanguage) private var language
     let text: String
 
     var body: some View {
@@ -81,7 +90,7 @@ struct QRCodeView: View {
                     .background(Color.white)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             }
-            Text("Or scan with your phone")
+            Text(L10n.tr("Or scan with your phone", language))
                 .font(.system(size: 24))
                 .foregroundStyle(Theme.muted)
         }

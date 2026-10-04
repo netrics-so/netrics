@@ -452,18 +452,28 @@ extension MetricFormat {
      * The compact form of a value (formatCompactValue on the web): 12.3K,
      * €4.2M; percentages and positions as usual.
      */
-    public static func compactValue(_ value: Double?, unit: String) -> String {
+    public static func compactValue(_ value: Double?, unit: String, language: ScreenLanguage = .en) -> String {
         guard let value else { return "—" }
         if let code = currency(of: unit) {
             let major = value / pow(10, Double(exponent(of: code)))
-            let style = FloatingPointFormatStyle<Double>.Currency(code: code, locale: locale).rounded(rule: rounding)
-                .notation(.compactName).precision(.fractionLength(0...1))
+            let style = FloatingPointFormatStyle<Double>.Currency(code: code, locale: language.numberLocale)
+                .rounded(rule: rounding).notation(.compactName).precision(.fractionLength(0...1))
             return major.formatted(style)
         }
         if unit == "percent" || unit == "ratio" || unit == "position" {
-            return self.value(value, unit: unit)
+            return self.value(value, unit: unit, language: language)
         }
-        return StudioLayout.compactNumber(value)
+        return compactNumber(value, language: language)
+    }
+
+    /**
+     * StudioLayout.compactNumber (the shared vectors' "12.3K") in the
+     * language: German swaps the decimal point for a comma ("12,3K"), as
+     * the web does; suffixes and the sign stay.
+     */
+    public static func compactNumber(_ value: Double, language: ScreenLanguage = .en) -> String {
+        let text = StudioLayout.compactNumber(value)
+        return language == .en ? text : text.replacingOccurrences(of: ".", with: ",")
     }
 
     /** Whether a change is good, given which way is better. */
@@ -492,19 +502,22 @@ extension MetricFormat {
      * "Week of Sep 29", "Sep 2026". Day buckets at UTC midnight are
      * reporting dates and are labelled in UTC.
      */
-    public static func bucketLabel(_ bucket: String, period: MetricPeriod, timeZone: String) -> String? {
+    public static func bucketLabel(
+        _ bucket: String, period: MetricPeriod, timeZone: String, language: ScreenLanguage = .en
+    ) -> String? {
         guard let date = ISODate.parse(bucket) else { return nil }
         let step = seriesStep(period)
         let utc = step != .hour && bucket.hasSuffix("T00:00:00.000Z")
         let zone = utc ? TimeZone(identifier: "UTC")! : (TimeZone(identifier: timeZone) ?? .current)
-        let style = Date.FormatStyle(locale: Locale(identifier: "en_US"), timeZone: zone)
+        let style = Date.FormatStyle(
+            locale: language == .en ? Locale(identifier: "en_US") : language.dateLocale, timeZone: zone)
         switch step {
         case .hour:
-            return TVTime.hourMinute(date, timeZone: utc ? "UTC" : zone.identifier)
+            return TVTime.hourMinute(date, timeZone: utc ? "UTC" : zone.identifier, language: language)
         case .day:
             return date.formatted(style.month(.abbreviated).day())
         case .week:
-            return "Week of \(date.formatted(style.month(.abbreviated).day()))"
+            return KitStrings.text(.weekOf, language, date.formatted(style.month(.abbreviated).day()))
         case .month:
             return date.formatted(style.month(.abbreviated).year())
         }
@@ -513,9 +526,9 @@ extension MetricFormat {
 
 extension TVTime {
     /** The clock widget: "14:05" (or "2:05 PM") and "Sat 4 Oct". */
-    public static func clockWidget(_ date: Date, timeZone: String, hour12: Bool, showDate: Bool)
-        -> (time: String, date: String?)
-    {
+    public static func clockWidget(
+        _ date: Date, timeZone: String, hour12: Bool, showDate: Bool, language: ScreenLanguage = .en
+    ) -> (time: String, date: String?) {
         let time: String
         if hour12 {
             let style = Date.FormatStyle(locale: Locale(identifier: "en_US"), timeZone: zone(timeZone))
@@ -523,10 +536,10 @@ extension TVTime {
             // Plain spaces: ICU writes a narrow no-break space before "PM".
             time = date.formatted(style).replacingOccurrences(of: "\u{202F}", with: " ")
         } else {
-            time = hourMinute(date, timeZone: timeZone)
+            time = hourMinute(date, timeZone: timeZone, language: language)
         }
         guard showDate else { return (time, nil) }
-        let day = Date.FormatStyle(locale: Locale(identifier: "en_GB"), timeZone: zone(timeZone))
+        let day = Date.FormatStyle(locale: language.dateLocale, timeZone: zone(timeZone))
             .weekday(.abbreviated).day().month(.abbreviated)
         return (time, date.formatted(day))
     }

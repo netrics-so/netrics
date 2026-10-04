@@ -155,8 +155,10 @@ export function LiveBarWidget({
                 label: group.label,
                 value: group.value,
               })),
+              // The remainder in the viewer's language (the API names it
+              // in English for signed-in views).
               others: data.others
-                ? { label: data.others.label, value: data.others.value }
+                ? { label: othersLabel(locale), value: data.others.value }
                 : null,
               approximate: data.conversion !== null,
             }

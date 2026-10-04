@@ -2,10 +2,10 @@ import Foundation
 
 // Tile formatting, worded and rounded like the web app
 // (apps/web/src/lib/format-metric.ts, tile-status.ts, relative-time.ts,
-// tv-grid.ts). Numbers use en-US; the web rounds half away from zero.
+// tv-grid.ts). Numbers use en-US in English and German in German
+// (ScreenLanguage.numberLocale); the web rounds half away from zero.
 
 public enum MetricFormat {
-    static let locale = Locale(identifier: "en_US")
     static let rounding = FloatingPointRoundingRule.toNearestOrAwayFromZero
 
     /** "EUR" for "EUR_minor"; nil for other units. */
@@ -38,8 +38,9 @@ public enum MetricFormat {
      * 1,284 · 12.9K · 4.2M · 3.14; currency in minor units shown in the
      * major unit (€1,234.56, $4.2M); percent as 42.3%; "—" without a value.
      */
-    public static func value(_ value: Double?, unit: String) -> String {
+    public static func value(_ value: Double?, unit: String, language: ScreenLanguage = .en) -> String {
         guard let value else { return "—" }
+        let locale = language.numberLocale
         if let code = currency(of: unit) {
             let exponent = exponent(of: code)
             let major = value / pow(10, Double(exponent))
@@ -81,54 +82,60 @@ public enum MetricFormat {
     }
 
     /** Nil when there is nothing to compare with. */
-    public static func change(delta: Double?, ratio: Double?, unit: String) -> Change? {
+    public static func change(delta: Double?, ratio: Double?, unit: String, language: ScreenLanguage = .en) -> Change? {
         guard let delta else { return nil }
         let direction: Direction = delta > 0 ? .up : delta < 0 ? .down : .flat
         let sign = delta > 0 ? "+" : delta < 0 ? "−" : "±"
         if let ratio {
             let digits = abs(ratio) < 0.1 ? 1 : 0
             let percent = (abs(ratio) * 100).formatted(
-                FloatingPointFormatStyle<Double>(locale: locale).rounded(rule: rounding)
+                FloatingPointFormatStyle<Double>(locale: language.numberLocale).rounded(rule: rounding)
                     .precision(.fractionLength(0...digits)))
             return Change(direction: direction, text: "\(sign)\(percent)%")
         }
-        return Change(direction: direction, text: "\(sign)\(value(abs(delta), unit: unit))")
+        return Change(direction: direction, text: "\(sign)\(value(abs(delta), unit: unit, language: language))")
     }
 
-    public static func periodLabel(_ period: MetricPeriod) -> String {
+    public static func periodLabel(_ period: MetricPeriod, language: ScreenLanguage = .en) -> String {
+        let key: KitText
         switch period {
-        case .today: return "Today"
-        case .last7Days: return "Last 7 days"
-        case .last30Days: return "Last 30 days"
-        case .thisMonth: return "This month"
-        case .last90Days: return "Last 90 days"
-        case .last12Months: return "Last 12 months"
+        case .today: key = .periodToday
+        case .last7Days: key = .periodLast7Days
+        case .last30Days: key = .periodLast30Days
+        case .thisMonth: key = .periodThisMonth
+        case .last90Days: key = .periodLast90Days
+        case .last12Months: key = .periodLast12Months
         case .unknown: return ""
         }
+        return KitStrings.text(key, language)
     }
 
     /** What the change is measured against, e.g. "vs previous 7 days". */
-    public static func comparisonLabel(_ period: MetricPeriod) -> String {
+    public static func comparisonLabel(_ period: MetricPeriod, language: ScreenLanguage = .en) -> String {
+        let key: KitText
         switch period {
-        case .today: return "vs yesterday"
-        case .last7Days: return "vs previous 7 days"
-        case .last30Days: return "vs previous 30 days"
-        case .thisMonth: return "vs last month"
-        case .last90Days: return "vs previous 90 days"
-        case .last12Months: return "vs previous 12 months"
-        case .unknown: return "vs previous period"
+        case .today: key = .comparisonToday
+        case .last7Days: key = .comparisonLast7Days
+        case .last30Days: key = .comparisonLast30Days
+        case .thisMonth: key = .comparisonThisMonth
+        case .last90Days: key = .comparisonLast90Days
+        case .last12Months: key = .comparisonLast12Months
+        case .unknown: key = .comparisonUnknown
         }
+        return KitStrings.text(key, language)
     }
 
-    public static func aggregationLabel(_ aggregation: MetricAggregation) -> String {
+    public static func aggregationLabel(_ aggregation: MetricAggregation, language: ScreenLanguage = .en) -> String {
+        let key: KitText
         switch aggregation {
-        case .sum: return "Total"
-        case .avg: return "Average"
-        case .min: return "Minimum"
-        case .max: return "Maximum"
-        case .last: return "Latest"
+        case .sum: key = .aggregationSum
+        case .avg: key = .aggregationAvg
+        case .min: key = .aggregationMin
+        case .max: key = .aggregationMax
+        case .last: key = .aggregationLast
         case .unknown: return ""
         }
+        return KitStrings.text(key, language)
     }
 
     /** "Today · Total" */
@@ -146,8 +153,9 @@ public enum MetricFormat {
         return (title, detail)
     }
 
-    public static func subtitle(_ tile: DeviceTile) -> String {
-        [periodLabel(tile.period), aggregationLabel(tile.aggregation)].filter { !$0.isEmpty }
+    public static func subtitle(_ tile: DeviceTile, language: ScreenLanguage = .en) -> String {
+        [periodLabel(tile.period, language: language), aggregationLabel(tile.aggregation, language: language)]
+            .filter { !$0.isEmpty }
             .joined(separator: " · ")
     }
 
@@ -155,33 +163,37 @@ public enum MetricFormat {
      * The line under the value: "▲ +25% vs previous 7 days", or why there
      * is nothing to compare.
      */
-    public static func changeLine(_ tile: DeviceTile) -> (direction: Direction, text: String) {
+    public static func changeLine(_ tile: DeviceTile, language: ScreenLanguage = .en) -> (direction: Direction, text: String) {
         let unit = tile.unit ?? "count"
-        if let change = change(delta: tile.change.delta, ratio: tile.change.ratio, unit: unit) {
-            return (change.direction, "\(change.direction.arrow) \(change.text) \(comparisonLabel(tile.period))")
+        let comparison = comparisonLabel(tile.period, language: language)
+        if let change = change(delta: tile.change.delta, ratio: tile.change.ratio, unit: unit, language: language) {
+            return (change.direction, "\(change.direction.arrow) \(change.text) \(comparison)")
         }
         if tile.value == nil {
-            return (.flat, "No data for this period yet")
+            return (.flat, KitStrings.text(.noDataForPeriod, language))
         }
-        return (.flat, "No data to compare \(comparisonLabel(tile.period))")
+        return (.flat, KitStrings.text(.noDataToCompare, language, comparison))
     }
 }
 
 public enum TileNotices {
-    public static let authFailed = "Connection needs new credentials"
-    public static let outage = "Source unreachable"
-    public static let firstSync = "Waiting for the first sync"
+    public static let authFailed = KitStrings.text(.noticeAuthFailed)
+    public static let outage = KitStrings.text(.noticeOutage)
+    public static let firstSync = KitStrings.text(.noticeFirstSync)
 
     /** The notice for a tile; nil when it is fresh. */
-    public static func notice(status: DeviceTileStatus, updatedAt: String?, now: Date = Date()) -> String? {
+    public static func notice(
+        status: DeviceTileStatus, updatedAt: String?, now: Date = Date(), language: ScreenLanguage = .en
+    ) -> String? {
         switch status {
         case .authFailed:
-            return authFailed
+            return KitStrings.text(.noticeAuthFailed, language)
         case .outage:
-            return outage
+            return KitStrings.text(.noticeOutage, language)
         case .stale:
-            guard let updatedAt else { return firstSync }
-            return "Last sync \(RelativeTime.describe(updatedAt, now: now))"
+            guard let updatedAt else { return KitStrings.text(.noticeFirstSync, language) }
+            return KitStrings.text(
+                .noticeLastSync, language, RelativeTime.describe(updatedAt, now: now, language: language))
         case .noData, .ok:
             return nil
         }
@@ -189,29 +201,32 @@ public enum TileNotices {
 }
 
 public enum RelativeTime {
-    /** "just now", "5 minutes ago", "in 2 hours". */
-    public static func describe(_ iso: String?, now: Date = Date()) -> String {
-        guard let iso, let date = ISODate.parse(iso) else { return "never" }
+    /** "just now", "5 minutes ago", "in 2 hours"; "vor 5 Minuten" in German. */
+    public static func describe(_ iso: String?, now: Date = Date(), language: ScreenLanguage = .en) -> String {
+        guard let iso, let date = ISODate.parse(iso) else { return KitStrings.text(.never, language) }
         let delta = Int((date.timeIntervalSince(now)).rounded(.toNearestOrAwayFromZero))
         let future = delta > 0
         let absolute = abs(delta)
         let minute = 60
         let hour = 60 * minute
         let day = 24 * hour
-        func plural(_ count: Int, _ word: String) -> String {
-            "\(count) \(word)\(count == 1 ? "" : "s")"
+        func count(_ seconds: Int, _ size: Int) -> Int {
+            Int((Double(seconds) / Double(size)).rounded(.toNearestOrAwayFromZero))
+        }
+        func plural(_ count: Int, _ one: KitText, _ other: KitText) -> String {
+            KitStrings.text(count == 1 ? one : other, language, count)
         }
         let text: String
         if absolute < 45 {
-            return "just now"
+            return KitStrings.text(.justNow, language)
         } else if absolute < hour {
-            text = plural(Int((Double(absolute) / Double(minute)).rounded(.toNearestOrAwayFromZero)), "minute")
+            text = plural(count(absolute, minute), .minuteOne, .minuteOther)
         } else if absolute < day {
-            text = plural(Int((Double(absolute) / Double(hour)).rounded(.toNearestOrAwayFromZero)), "hour")
+            text = plural(count(absolute, hour), .hourOne, .hourOther)
         } else {
-            text = plural(Int((Double(absolute) / Double(day)).rounded(.toNearestOrAwayFromZero)), "day")
+            text = plural(count(absolute, day), .dayOne, .dayOther)
         }
-        return future ? "in \(text)" : "\(text) ago"
+        return KitStrings.text(future ? .timeIn : .timeAgo, language, text)
     }
 }
 
@@ -276,23 +291,24 @@ public enum TVTime {
     }
 
     /** "14:05" in the workspace's zone (the offline marker). */
-    public static func hourMinute(_ date: Date, timeZone: String) -> String {
-        var style = Date.FormatStyle(locale: Locale(identifier: "en_GB"), timeZone: zone(timeZone))
+    public static func hourMinute(_ date: Date, timeZone: String, language: ScreenLanguage = .en) -> String {
+        var style = Date.FormatStyle(locale: language.dateLocale, timeZone: zone(timeZone))
         style = style.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
         return date.formatted(style)
     }
 
-    /** "Tue 29 Sep, 14:05" in the workspace's zone (the header clock). */
-    public static func clock(_ date: Date, timeZone: String) -> String {
-        let day = Date.FormatStyle(locale: Locale(identifier: "en_GB"), timeZone: zone(timeZone))
+    /** "Tue 29 Sep, 14:05" in the workspace's zone (the header clock); "Di. 29. Sept., 14:05". */
+    public static func clock(_ date: Date, timeZone: String, language: ScreenLanguage = .en) -> String {
+        let day = Date.FormatStyle(locale: language.dateLocale, timeZone: zone(timeZone))
             .weekday(.abbreviated).day().month(.abbreviated)
-        return "\(date.formatted(day)), \(hourMinute(date, timeZone: timeZone))"
+        return "\(date.formatted(day)), \(hourMinute(date, timeZone: timeZone, language: language))"
     }
 
     /** "Offline — last update 14:05", or "Offline" without a confirmed update. */
-    public static func offlineMarker(updatedAt: Date?, timeZone: String) -> String {
-        guard let updatedAt else { return "Offline" }
-        return "Offline — last update \(hourMinute(updatedAt, timeZone: timeZone))"
+    public static func offlineMarker(updatedAt: Date?, timeZone: String, language: ScreenLanguage = .en) -> String {
+        guard let updatedAt else { return KitStrings.text(.offline, language) }
+        return KitStrings.text(
+            .offlineLastUpdate, language, hourMinute(updatedAt, timeZone: timeZone, language: language))
     }
 }
 
@@ -317,8 +333,8 @@ public enum PairingAddress {
 /** Converted amounts (#191): marked approximate, with their source. */
 public enum ConversionFormat {
     /** "≈ €339.82" for a converted value, the plain value otherwise. */
-    public static func value(_ tile: DeviceTile, unit: String) -> String {
-        let text = MetricFormat.value(tile.value, unit: unit)
+    public static func value(_ tile: DeviceTile, unit: String, language: ScreenLanguage = .en) -> String {
+        let text = MetricFormat.value(tile.value, unit: unit, language: language)
         return tile.conversion != nil && tile.value != nil ? "≈ \(text)" : text
     }
 
@@ -327,10 +343,12 @@ public enum ConversionFormat {
      * rates", plus "· TWD not converted" for amounts left out. Nil for
      * exact values.
      */
-    public static func note(_ conversion: TileConversion?) -> String? {
+    public static func note(_ conversion: TileConversion?, language: ScreenLanguage = .en) -> String? {
         guard let conversion else { return nil }
-        let source = conversion.source.hasPrefix("ECB") ? "ECB reference rates" : conversion.source
+        let source =
+            conversion.source.hasPrefix("ECB") ? KitStrings.text(.conversionSource, language) : conversion.source
         let left = conversion.unconverted.map(\.currency)
-        return left.isEmpty ? source : "\(source) · \(left.joined(separator: ", ")) not converted"
+        return left.isEmpty
+            ? source : KitStrings.text(.conversionNotConverted, language, source, left.joined(separator: ", "))
     }
 }

@@ -41,7 +41,7 @@ export const sharedDe: Catalog<SharedMessages> = {
     min: "Tiefster Tag",
     max: "Höchster Tag",
   },
-  weekOf: "Woche ab {date}",
+  weekOf: "Woche vom {date}",
   conversion: {
     source: "EZB-Referenzkurse",
     notConverted: "{source} · {currencies} nicht umgerechnet",

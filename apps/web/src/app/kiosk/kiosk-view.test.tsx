@@ -209,7 +209,7 @@ describe("kiosk language", () => {
     expect(html).toMatch(
       /Öffne <strong class="kiosk-url">app\.example\/devices\/approve<\/strong> und gib den Code ein\./,
     );
-    expect(html).toContain("netrics nicht erreichbar");
+    expect(html).toContain("netrics ist nicht erreichbar");
   });
 
   it("labels schema 1 tiles in German", () => {
