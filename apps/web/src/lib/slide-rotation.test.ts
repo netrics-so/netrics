@@ -89,6 +89,135 @@ describe("createSlideRotation", () => {
     expect(seen).toEqual(["a", "b", "c"]);
   });
 
+  it("applies a shorter duration of the slide on screen at once", () => {
+    const { rotation, seen } = rotate();
+    rotation.update([A, B, C], true);
+    vi.advanceTimersByTime(10_000);
+    expect(rotation.current()).toBe("b");
+
+    // 5 s into b (20 s), b becomes 8 s long: it leaves 3 s later, not
+    // after the 15 s the old duration had left.
+    vi.advanceTimersByTime(5_000);
+    rotation.update([A, { ...B, durationSec: 8 }, C], true);
+    vi.advanceTimersByTime(2_999);
+    expect(rotation.current()).toBe("b");
+    vi.advanceTimersByTime(1);
+    expect(rotation.current()).toBe("c");
+    expect(seen).toEqual(["a", "b", "c"]);
+  });
+
+  it("moves on at once when the shorter duration has already passed", () => {
+    const { rotation, seen } = rotate();
+    rotation.update([A, B, C], true);
+    vi.advanceTimersByTime(10_000 + 15_000);
+    expect(rotation.current()).toBe("b");
+
+    // 15 s into b, b becomes 5 s long: its time is up, c follows now and
+    // gets its full 5 s (no slide is skipped).
+    rotation.update([A, { ...B, durationSec: 5 }, C], true);
+    vi.advanceTimersByTime(0);
+    expect(rotation.current()).toBe("c");
+    vi.advanceTimersByTime(4_999);
+    expect(rotation.current()).toBe("c");
+    vi.advanceTimersByTime(1);
+    expect(rotation.current()).toBe("a");
+    expect(seen).toEqual(["a", "b", "c", "a"]);
+  });
+
+  it("lets a longer duration keep the slide on screen longer", () => {
+    const { rotation } = rotate();
+    rotation.update([A, B], true);
+    vi.advanceTimersByTime(6_000);
+    rotation.update([{ ...A, durationSec: 30 }, B], true);
+    vi.advanceTimersByTime(23_999);
+    expect(rotation.current()).toBe("a");
+    vi.advanceTimersByTime(1);
+    expect(rotation.current()).toBe("b");
+  });
+
+  it("runs on an injected clock", () => {
+    let now = 0;
+    const pending: Array<{ at: number; run: () => void } | null> = [];
+    const clock = {
+      now: () => now,
+      setTimeout: (run: () => void, ms: number) =>
+        pending.push({ at: now + ms, run }) - 1,
+      clearTimeout: (handle: unknown) => {
+        pending[handle as number] = null;
+      },
+    };
+    const tick = (ms: number) => {
+      now += ms;
+      for (const [index, entry] of pending.entries()) {
+        if (entry && entry.at <= now) {
+          pending[index] = null;
+          entry.run();
+        }
+      }
+    };
+    const seen: Array<string | null> = [];
+    const injected = createSlideRotation({
+      onChange: (id) => seen.push(id),
+      clock,
+    });
+    injected.update([A, B, C], true);
+    tick(4_000);
+    injected.update([{ ...A, durationSec: 5 }, B, C], true);
+    tick(999);
+    expect(injected.current()).toBe("a");
+    tick(1);
+    expect(injected.current()).toBe("b");
+    expect(seen).toEqual(["a", "b"]);
+    injected.stop();
+  });
+
+  it("steps both ways and starts the new slide's time afresh", () => {
+    const { rotation, seen } = rotate();
+    rotation.update([A, B, C], true);
+    vi.advanceTimersByTime(9_000);
+    rotation.step(1);
+    expect(rotation.current()).toBe("b");
+    vi.advanceTimersByTime(19_999);
+    expect(rotation.current()).toBe("b");
+    rotation.step(-1);
+    rotation.step(-1);
+    expect(rotation.current()).toBe("c");
+    vi.advanceTimersByTime(5_000);
+    expect(rotation.current()).toBe("a");
+    expect(seen).toEqual(["a", "b", "a", "c", "a"]);
+  });
+
+  it("pauses and resumes with the time the slide had left", () => {
+    const { rotation } = rotate();
+    rotation.update([A, B], true);
+    vi.advanceTimersByTime(4_000);
+    rotation.setPaused(true);
+    vi.advanceTimersByTime(60_000);
+    expect(rotation.current()).toBe("a");
+    // A payload while paused keeps it paused.
+    rotation.update([A, B], true);
+    vi.advanceTimersByTime(60_000);
+    expect(rotation.current()).toBe("a");
+    rotation.setPaused(false);
+    vi.advanceTimersByTime(5_999);
+    expect(rotation.current()).toBe("a");
+    vi.advanceTimersByTime(1);
+    expect(rotation.current()).toBe("b");
+  });
+
+  it("starts on a given slide when it is there", () => {
+    const seen: Array<string | null> = [];
+    rotation = createSlideRotation({
+      onChange: (id) => seen.push(id),
+      startId: "c",
+    });
+    rotation.update([A, B, C], true);
+    expect(rotation.current()).toBe("c");
+    vi.advanceTimersByTime(5_000);
+    expect(rotation.current()).toBe("a");
+    expect(seen).toEqual(["a"]);
+  });
+
   it("starts at the first slide when the current one is gone", () => {
     const { rotation } = rotate();
     rotation.update([A, B, C], true);

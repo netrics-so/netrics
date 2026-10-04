@@ -1,19 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ThemeTokens } from "@netrics/domain";
 
-import { LiveWidget, SlideCanvas } from "@/components/studio/slide-canvas";
+import { LiveWidget } from "@/components/studio/slide-canvas";
+import {
+  SlidePlayer,
+  type SlidePlayerControls,
+} from "@/components/studio/slide-player";
+import { documentRotation } from "@/lib/slide-rotation";
 import type { StudioDocument } from "@/lib/studio-document";
-import { playlist, stepIndex } from "@/lib/studio-play";
 import type { StudioEnv } from "@/lib/studio-widgets";
 
 /**
  * "Play" (ADR 0015, section 9): the draft's rotation full-screen, as a
- * screen would run it: visible slides only, each for its duration, with
- * the dashboard's transition (none with reduced motion). Arrow keys step,
- * Space pauses, Escape ends.
+ * screen would run it: the same SlidePlayer as the kiosk and the TV mode,
+ * so visible slides only, each for its duration, with the dashboard's
+ * transition (none with reduced motion). Arrow keys step, Space pauses,
+ * Escape ends.
  */
 export function PlayMode({
   document,
@@ -29,16 +34,23 @@ export function PlayMode({
   onClose: () => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
-  const items = playlist(document.slides, document.settings);
-  const [index, setIndex] = useState(() =>
-    Math.max(
-      0,
-      items.findIndex((item) => item.slide.id === startSlideId),
-    ),
+  const controls = useRef<SlidePlayerControls | null>(null);
+  const { settings } = document;
+  const slides = useMemo(
+    () => documentRotation(document.slides, settings),
+    [document.slides, settings],
   );
+  const [currentId, setCurrentId] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
-  const current = items[Math.min(index, items.length - 1)];
-  const count = items.length;
+  // Without auto-advance a screen shows only the first slide.
+  const count = settings.autoAdvance
+    ? slides.length
+    : Math.min(slides.length, 1);
+  const index = Math.max(
+    0,
+    slides.findIndex((slide) => slide.id === currentId),
+  );
+  const step = (by: number) => controls.current?.step(by);
 
   // Full screen when the browser allows it; leaving it ends Play.
   useEffect(() => {
@@ -67,17 +79,6 @@ export function PlayMode({
     };
   }, [onClose]);
 
-  // Advance after the slide's duration.
-  const seconds = current?.seconds ?? 0;
-  useEffect(() => {
-    if (seconds <= 0 || paused || count <= 1) return;
-    const timer = window.setTimeout(
-      () => setIndex((value) => stepIndex(value, 1, count)),
-      seconds * 1000,
-    );
-    return () => window.clearTimeout(timer);
-  }, [seconds, paused, count, index]);
-
   return (
     <div
       ref={root}
@@ -91,52 +92,50 @@ export function PlayMode({
           event.preventDefault();
           onClose();
         } else if (event.key === "ArrowRight") {
-          setIndex((value) => stepIndex(value, 1, count));
+          step(1);
         } else if (event.key === "ArrowLeft") {
-          setIndex((value) => stepIndex(value, -1, count));
+          step(-1);
         } else if (event.key === " ") {
           event.preventDefault();
           setPaused((value) => !value);
         }
       }}
     >
-      {current ? (
-        <div className="play-stage">
-          <SlideCanvas
-            key={`${current.slide.id}-${index}`}
-            className={
-              document.settings.transition === "fade"
-                ? "studio-slide-enter"
-                : undefined
-            }
-            slide={current.slide}
-            tokens={tokens}
-            showHeader={document.settings.showHeader}
-            header={{
-              name: document.name.trim() || "Untitled",
-              slideName: current.slide.name,
-              logoImageId: document.settings.logoImageId,
-              timeZone: env.timeZone,
-            }}
-            images={env.images}
-            renderWidget={(widget) => <LiveWidget widget={widget} env={env} />}
-          />
-        </div>
-      ) : (
-        <p className="play-empty">
-          Every slide is hidden. Show at least one slide on screens to play the
-          dashboard.
-        </p>
-      )}
+      <div className="play-stage">
+        <SlidePlayer
+          slides={slides}
+          autoAdvance={settings.autoAdvance}
+          transition={settings.transition}
+          tokens={tokens}
+          showHeader={settings.showHeader}
+          header={{
+            name: document.name.trim() || "Untitled",
+            logoImageId: settings.logoImageId,
+            timeZone: env.timeZone,
+          }}
+          images={env.images}
+          renderWidget={(widget) => <LiveWidget widget={widget} env={env} />}
+          startSlideId={startSlideId}
+          paused={paused}
+          controlsRef={controls}
+          onSlideChange={setCurrentId}
+          empty={
+            <p className="play-empty">
+              Every slide is hidden. Show at least one slide on screens to play
+              the dashboard.
+            </p>
+          }
+        />
+      </div>
       <div className="play-controls">
         <span aria-live="polite">
           {count > 0
-            ? `Slide ${Math.min(index, count - 1) + 1} of ${count}${paused ? " · paused" : ""}`
+            ? `Slide ${Math.min(index, count - 1) + 1} of ${count}${paused && count > 1 ? " · paused" : ""}`
             : ""}
         </span>
         <button
           type="button"
-          onClick={() => setIndex((value) => stepIndex(value, -1, count))}
+          onClick={() => step(-1)}
           disabled={count <= 1}
           aria-label="Previous slide"
         >
@@ -151,7 +150,7 @@ export function PlayMode({
         </button>
         <button
           type="button"
-          onClick={() => setIndex((value) => stepIndex(value, 1, count))}
+          onClick={() => step(1)}
           disabled={count <= 1}
           aria-label="Next slide"
         >

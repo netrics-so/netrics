@@ -203,12 +203,17 @@ export interface MetricWidgetLayout {
   value: FittedValue;
   /**
    * The change line as shown: "▲ +8% vs previous 7 days" when it fits on
-   * one line, else "▲ +8%" (the period line names the comparison); null
-   * when it is off or there is no room.
+   * one line, else "▲ +8%"; null when it is off or there is no room.
    */
   changeText: string | null;
-  /** Sizes in units. */
-  sizes: { small: number; change: number };
+  /**
+   * The comparison ("vs previous 30 days") on its own line under a short
+   * change line, when it fits on one line at a readable size and there is
+   * room; else null.
+   */
+  comparisonText: string | null;
+  /** Sizes in units; `comparison` is the comparison line's. */
+  sizes: { small: number; change: number; comparison: number };
   /** Height left for the sparkline in units; 0 hides it. */
   sparkline: number;
   /** The connection's name under the numbers (a notice always shows). */
@@ -221,15 +226,25 @@ export const MIN_SPARKLINE_HEIGHT = 40;
 /**
  * What a metric widget shows at its size. The label, the value and a status
  * notice always show. The rest is added by importance while there is room:
- * the change line, the period line, the sparkline, then the connection's
- * name.
+ * the change line, the period line, the comparison, the sparkline, then
+ * the connection's name.
+ *
+ * The comparison stays whenever it fits at a readable size: on the change
+ * line when the whole line fits on one line at the change size, else on a
+ * line of its own under the change ("▼ −28%" / "vs previous 30 days") at
+ * the change size or, narrower, the smallest readable size. Only when it
+ * fits neither way, or the widget has no height left, does the change
+ * show alone.
  */
 export function metricWidgetLayout(input: {
   label: string;
   value: { full: string; compact: string };
   periodText: string;
-  /** The change with and without its comparison; null when it is off. */
-  change: { full: string; short: string } | null;
+  /**
+   * The change with and without its comparison, and the comparison alone
+   * (null when there is none to keep); null when the change is off.
+   */
+  change: { full: string; short: string; comparison: string | null } | null;
   /** A stale or failure notice, always shown. */
   noticeText: string | null;
   sourceText: string | null;
@@ -261,9 +276,12 @@ export function metricWidgetLayout(input: {
     valueMin * VALUE_LINE_HEIGHT;
   const fits = (extra: number) => used + extra <= box.height;
 
-  // One line: the comparison goes when it would wrap.
+  // One line: when the whole change would wrap, the comparison moves to a
+  // line of its own below.
+  const oneLine =
+    input.change !== null && linesOf(input.change.full, box.width, change) <= 1;
   const changeText = input.change
-    ? linesOf(input.change.full, box.width, change) <= 1
+    ? oneLine
       ? input.change.full
       : input.change.short
     : null;
@@ -274,6 +292,19 @@ export function metricWidgetLayout(input: {
   const period = height(input.periodText, small);
   const showPeriod = fits(period);
   if (showPeriod) used += period;
+
+  const comparison =
+    showChange && !oneLine ? (input.change?.comparison ?? null) : null;
+  const comparisonSize = comparison
+    ? ([change, small].find(
+        (size) => wrappedLineCount(comparison, box.width, size) <= 1,
+      ) ?? null)
+    : null;
+  let showComparison = false;
+  if (comparisonSize !== null && fits(comparisonSize * LINE_HEIGHT)) {
+    showComparison = true;
+    used += comparisonSize * LINE_HEIGHT;
+  }
 
   // A sparkline of at least the minimum height, with the name under it.
   const source = input.noticeText ? 0 : height(input.sourceText, small);
@@ -309,7 +340,8 @@ export function metricWidgetLayout(input: {
     showPeriod,
     value,
     changeText: showChange ? changeText : null,
-    sizes: { small, change },
+    comparisonText: showComparison ? comparison : null,
+    sizes: { small, change, comparison: comparisonSize ?? change },
     sparkline,
     showSource,
   };

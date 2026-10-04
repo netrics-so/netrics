@@ -214,6 +214,32 @@ function SlideHeader({
   );
 }
 
+/** A layer over the whole 16:9 canvas (no reliance on `inset`). */
+const BACKGROUND_LAYER: CSSProperties = {
+  position: "absolute",
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+};
+
+/**
+ * The slide background covers the whole canvas whatever its aspect ratio:
+ * scaled to fill, centred, the overflow cropped (as tvOS and the kiosk).
+ * Inline, so no page style (an image reset, a missing class) can leave a
+ * strip of canvas showing.
+ */
+const BACKGROUND_COVER: CSSProperties = {
+  ...BACKGROUND_LAYER,
+  display: "block",
+  width: "100%",
+  height: "100%",
+  maxWidth: "none",
+  maxHeight: "none",
+  objectFit: "cover",
+  objectPosition: "center",
+};
+
 /** What the canvas needs of a widget: its id, type and grid placement. */
 export interface CanvasWidget extends StudioPlacement {
   id: string;
@@ -272,10 +298,11 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
             alt=""
             width={backgroundImage.width}
             height={backgroundImage.height}
+            style={BACKGROUND_COVER}
           />
           <div
             className="studio-background-dim"
-            style={{ opacity: background.dim / 100 }}
+            style={{ ...BACKGROUND_LAYER, opacity: background.dim / 100 }}
           />
         </>
       ) : null}
