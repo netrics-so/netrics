@@ -29,6 +29,7 @@ type BrandResource =
 
 /** New dashboards start on the default theme; the accent is checked on it. */
 const SURFACE = BUILTIN_THEMES[DEFAULT_THEME_KEY].tokens.surface;
+const THEME_ACCENT = BUILTIN_THEMES[DEFAULT_THEME_KEY].tokens.accent;
 
 const CHOICES: ReadonlyArray<{ id: Choice; title: string; text: string }> = [
   { id: "blank", title: "Blank", text: "One empty slide to fill yourself." },
@@ -69,6 +70,8 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
     "idle" | "loading" | "missing" | "ready"
   >("idle");
   const [accent, setAccent] = useState<string | null>(null);
+  // Reading the icon's colour; the form waits for it (#248).
+  const [readingAccent, setReadingAccent] = useState(false);
 
   useEffect(() => {
     if (choice === "blank" || options) return;
@@ -94,6 +97,7 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
   useEffect(() => {
     setIcon(null);
     setAccent(null);
+    setReadingAccent(false);
     if (!selected) {
       setIconState("idle");
       return;
@@ -109,11 +113,18 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
         if (cancelled) return;
         setIcon(image);
         setIconState("ready");
+        setReadingAccent(true);
+        // Always settles (null after a timeout): the theme accent then.
         const pixels = await readIconPixels(image.url);
-        if (!cancelled && pixels) setAccent(brandAccent(pixels, SURFACE));
+        if (cancelled) return;
+        setAccent(pixels ? brandAccent(pixels, SURFACE) : null);
+        setReadingAccent(false);
       })
       .catch(() => {
-        if (!cancelled) setIconState("missing");
+        if (!cancelled) {
+          setIconState("missing");
+          setReadingAccent(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -145,6 +156,7 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
         ? options !== null && !overviewEmpty
         : selected !== undefined &&
           iconState !== "loading" &&
+          !readingAccent &&
           contrast?.level !== "fail");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -268,15 +280,16 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
             {selected ? (
               <div className="field">
                 <label htmlFor="brand-accent">Accent colour</label>
-                <input
-                  id="brand-accent"
-                  type="color"
-                  value={
-                    accent ?? BUILTIN_THEMES[DEFAULT_THEME_KEY].tokens.accent
-                  }
-                  disabled={pending}
-                  onChange={(event) => setAccent(event.target.value)}
-                />
+                <div className="new-dashboard-accent">
+                  <input
+                    id="brand-accent"
+                    type="color"
+                    value={accent ?? THEME_ACCENT}
+                    disabled={pending || readingAccent}
+                    onChange={(event) => setAccent(event.target.value)}
+                  />
+                  <code>{accent ?? THEME_ACCENT}</code>
+                </div>
               </div>
             ) : null}
             {selected ? (
@@ -287,11 +300,13 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
                     ? "No icon available; you can upload a logo in the Studio. "
                     : null}
                 {iconState !== "loading"
-                  ? accent
-                    ? contrast?.level === "fail"
-                      ? `This colour is too hard to read on a TV (${contrast.ratio}:1, at least 3:1).`
-                      : `Accent ${accent} from the icon, ${contrast?.ratio}:1 on the theme.`
-                    : "The theme’s accent colour is used."
+                  ? readingAccent
+                    ? "Reading the icon’s colour…"
+                    : accent
+                      ? contrast?.level === "fail"
+                        ? `This colour is too hard to read on a TV (${contrast.ratio}:1, at least 3:1).`
+                        : `Accent ${accent} from the icon, ${contrast?.ratio}:1 on the theme.`
+                      : "The theme’s accent colour is used."
                   : null}
               </p>
             ) : null}
