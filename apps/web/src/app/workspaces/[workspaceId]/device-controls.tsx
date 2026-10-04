@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { apiErrorMessage, revokeDevice, updateDevice } from "@/lib/api";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 interface DeviceControlsProps {
   workspaceId: string;
@@ -19,6 +19,8 @@ export function DeviceControls({
   dashboards,
 }: DeviceControlsProps) {
   const locale = useLocale();
+  const t = useT("devices");
+  const common = useT("common");
   const router = useRouter();
   const [name, setName] = useState(device.name);
   const [dashboardId, setDashboardId] = useState(device.dashboardId ?? "");
@@ -66,7 +68,7 @@ export function DeviceControls({
     <>
       <form className="inline" onSubmit={onSave}>
         <div className="field">
-          <label htmlFor={`device-${device.id}-name`}>Name</label>
+          <label htmlFor={`device-${device.id}-name`}>{t("name")}</label>
           <input
             id={`device-${device.id}-name`}
             type="text"
@@ -78,7 +80,9 @@ export function DeviceControls({
           />
         </div>
         <div className="field">
-          <label htmlFor={`device-${device.id}-dashboard`}>Dashboard</label>
+          <label htmlFor={`device-${device.id}-dashboard`}>
+            {t("dashboard")}
+          </label>
           <select
             id={`device-${device.id}-dashboard`}
             value={dashboardId}
@@ -90,30 +94,30 @@ export function DeviceControls({
                 {dashboard.name}
               </option>
             ))}
-            <option value="">No dashboard</option>
+            <option value="">{t("noDashboard")}</option>
           </select>
         </div>
         <button type="submit" disabled={pending || !changed}>
-          Save
+          {common("save")}
         </button>
       </form>
       {confirming ? (
         <div className="actions">
-          <span>Revoke {device.name}? It stops showing data immediately.</span>
+          <span>{t("confirmRevoke", { name: device.name })}</span>
           <button
             type="button"
             className="danger"
             disabled={pending}
             onClick={onRevoke}
           >
-            Confirm
+            {t("confirm")}
           </button>
           <button
             type="button"
             disabled={pending}
             onClick={() => setConfirming(false)}
           >
-            Cancel
+            {common("cancel")}
           </button>
         </div>
       ) : (
@@ -124,7 +128,7 @@ export function DeviceControls({
             disabled={pending}
             onClick={() => setConfirming(true)}
           >
-            Revoke
+            {t("revoke")}
           </button>
         </div>
       )}

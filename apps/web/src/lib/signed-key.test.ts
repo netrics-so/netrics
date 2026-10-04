@@ -10,6 +10,8 @@ import {
   keyIdFromFileName,
   keyRemovedQuery,
   latestReportingDay,
+  localizeSignedKeyStrategy,
+  localizedFieldLabel,
   missingKeyField,
   parseKeyRemoved,
   privateKeyHint,
@@ -92,14 +94,14 @@ describe("signed-key strategy", () => {
 describe("format hints", () => {
   it("explains a malformed issuer ID or key ID, and accepts good ones", () => {
     const hint = (key: string, value: string) =>
-      keyFieldHint("app-store-connect", key, value);
+      keyFieldHint("app-store-connect", key, value, "en");
     expect(hint("issuerId", "57246542-96fe-1a63-e053-0824d011072a")).toBeNull();
     expect(hint("issuerId", "57246542")).toMatch(/UUID/);
     expect(hint("keyId", "2X9R4HXF34")).toBeNull();
     expect(hint("keyId", "2x9r4hxf34")).toBeNull();
     expect(hint("keyId", "2X9R4")).toMatch(/10 letters and digits/);
     expect(hint("keyId", "")).toBeNull();
-    expect(keyFieldHint("acme", "keyId", "x")).toBeNull();
+    expect(keyFieldHint("acme", "keyId", "x", "en")).toBeNull();
   });
 
   it("reads the key ID from Apple's file name", () => {
@@ -110,19 +112,21 @@ describe("format hints", () => {
   });
 
   it("names what was chosen instead of a .p8 private key", () => {
-    expect(privateKeyHint(P8, 4096)).toBeNull();
-    expect(privateKeyHint("", 4096)).toBeNull();
-    expect(privateKeyHint("x".repeat(5000), 4096)).toMatch(/larger than 4 KiB/);
-    expect(privateKeyHint("-----BEGIN CERTIFICATE-----\nMII…", 4096)).toMatch(
-      /certificate/,
+    expect(privateKeyHint(P8, 4096, "en")).toBeNull();
+    expect(privateKeyHint("", 4096, "en")).toBeNull();
+    expect(privateKeyHint("x".repeat(5000), 4096, "en")).toMatch(
+      /larger than 4 KiB/,
     );
     expect(
-      privateKeyHint("-----BEGIN RSA PRIVATE KEY-----\nMII…", 4096),
+      privateKeyHint("-----BEGIN CERTIFICATE-----\nMII…", 4096, "en"),
+    ).toMatch(/certificate/);
+    expect(
+      privateKeyHint("-----BEGIN RSA PRIVATE KEY-----\nMII…", 4096, "en"),
     ).toMatch(/RSA/);
-    expect(privateKeyHint("-----BEGIN PUBLIC KEY-----\nMF…", 4096)).toMatch(
-      /public key/,
-    );
-    expect(privateKeyHint("hello", 4096)).toMatch(/BEGIN PRIVATE KEY/);
+    expect(
+      privateKeyHint("-----BEGIN PUBLIC KEY-----\nMF…", 4096, "en"),
+    ).toMatch(/public key/);
+    expect(privateKeyHint("hello", 4096, "en")).toMatch(/BEGIN PRIVATE KEY/);
   });
 });
 
@@ -198,5 +202,37 @@ describe("connection page", () => {
     expect(parseKeyRemoved({ keyRemoved: "<script>" })).toBeNull();
     expect(parseKeyRemoved({ keyRemoved: ["a", "b"] })).toBeNull();
     expect(parseKeyRemoved({})).toBeNull();
+  });
+});
+
+describe("the App Store Connect form in German", () => {
+  const strategy = signedKeyStrategyOf({ authStrategies: [ASC] })!;
+
+  it("words labels and descriptions from the catalog, English as the server sent it", () => {
+    expect(localizeSignedKeyStrategy(strategy, "en")).toBe(strategy);
+    const de = localizeSignedKeyStrategy(strategy, "de");
+    expect(de.fields.map((field) => field.label)).toEqual([
+      "Issuer ID",
+      "Key ID",
+      "Privater Schlüssel",
+    ]);
+    expect(de.fields[1]!.description).toBe(
+      "Die 10-stellige Key ID in der Zeile deines Teamschlüssels.",
+    );
+    expect(
+      localizedFieldLabel(
+        strategy,
+        { key: "privateKey", label: "Private key" },
+        "de",
+      ),
+    ).toBe("Privater Schlüssel");
+    expect(keyFieldHint("app-store-connect", "keyId", "2X9R4", "de")).toMatch(
+      /10 Buchstaben und Ziffern/,
+    );
+  });
+
+  it("leaves other providers alone", () => {
+    const other = { ...strategy, provider: "acme" };
+    expect(localizeSignedKeyStrategy(other, "de")).toBe(other);
   });
 });

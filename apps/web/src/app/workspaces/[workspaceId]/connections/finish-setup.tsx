@@ -1,3 +1,5 @@
+"use client";
+
 import type {
   ConnectionDetail,
   ConnectorCatalogEntry,
@@ -6,6 +8,7 @@ import type {
 import { EditConnectionForm } from "./[connectionId]/edit-connection-form";
 import { ReconnectBanner } from "./reconnect-banner";
 import { SearchConsoleSettings } from "./search-console-settings";
+import { useT } from "@/lib/i18n/client";
 import { SEARCH_CONSOLE_CONNECTOR_ID } from "@/lib/oauth-connection";
 
 /**
@@ -27,6 +30,7 @@ export function FinishSetup({
   /** Where a reconnect returns to. */
   returnPath: string;
 }) {
+  const t = useT("connections.finishSetup");
   return (
     <>
       <ReconnectBanner
@@ -36,20 +40,16 @@ export function FinishSetup({
         returnPath={returnPath}
       />
       <div className="card" id="finish-setup">
-        <h2>Choose what to read</h2>
+        <h2>{t("title")}</h2>
         {connection.oauth?.accountEmail ? (
           <p className="muted">
-            Connected as {connection.oauth.accountEmail}. Nothing is synced
-            until you save.
+            {t("connectedAs", { email: connection.oauth.accountEmail })}
           </p>
         ) : (
-          <p className="muted">Nothing is synced until you save.</p>
+          <p className="muted">{t("nothingSynced")}</p>
         )}
         {!canUpdate ? (
-          <p className="muted">
-            Your role cannot change connections. Ask a workspace owner, admin or
-            editor to finish the setup.
-          </p>
+          <p className="muted">{t("roleCannot")}</p>
         ) : connection.connectorId === SEARCH_CONSOLE_CONNECTOR_ID ? (
           <SearchConsoleSettings
             workspaceId={workspaceId}

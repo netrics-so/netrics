@@ -6,8 +6,13 @@
  */
 
 import type { AppStoreReviewsStatusResponse } from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
 
-import { APP_STORE_CONNECT_KEYS_URL } from "./app-store-analytics";
+import {
+  APP_STORE_CONNECT_KEYS_URL,
+  type KeyGuide,
+} from "./app-store-analytics";
+import { webTranslator } from "./i18n/catalogs";
 import { normalizeKeyValue, type SignedKeyStrategy } from "./signed-key";
 
 export type ReviewsStatus = AppStoreReviewsStatusResponse["status"];
@@ -16,39 +21,29 @@ export type ReviewsStatus = AppStoreReviewsStatusResponse["status"];
 const REVIEWS_KEY_FIELDS = ["keyId", "privateKey"] as const;
 
 /** The guide of the Customer Support key. */
-export const REVIEWS_KEY_GUIDE = {
-  summary: "How to create the Customer Support key",
-  steps: [
-    "Sign in to App Store Connect as the Account Holder or an Admin and open Users and Access → Integrations → App Store Connect API.",
-    "Under Team Keys, generate a key named “netrics reviews” with the Customer Support role. Developer or Marketing also work but grant more; Sales and Finance cannot read reviews, and netrics refuses Admin keys.",
-    "Download the .p8 file right away (Apple offers it only once) and copy the Key ID from the key's row.",
-    "Upload it below. netrics checks with Apple that it reads reviews and cannot read sales reports before it stores anything.",
-  ],
-  links: [
-    {
-      step: 0,
-      label: "Open App Store Connect API keys",
-      url: APP_STORE_CONNECT_KEYS_URL,
-    },
-  ],
-} as const;
+export function reviewsKeyGuide(locale: Locale): KeyGuide {
+  const t = webTranslator(locale, "connections.appStoreReviews.guide");
+  return {
+    summary: t("summary"),
+    steps: [t("step1"), t("step2"), t("step3"), t("step4")],
+    links: [
+      {
+        step: 0,
+        label: webTranslator(locale, "connections.signedKey")("openKeys"),
+        url: APP_STORE_CONNECT_KEYS_URL,
+      },
+    ],
+  };
+}
 
 /** One line per status of the reviews key. */
 export function reviewsStatusLabel(
   status: ReviewsStatus,
   keyId: string | null,
+  locale: Locale,
 ): string {
-  const key = keyId ? ` (key ${keyId})` : "";
-  switch (status) {
-    case "not_configured":
-      return "Not set up. Ratings and reviews are optional.";
-    case "active":
-      return `Reading ratings and reviews${key}.`;
-    case "paused":
-      return `App Store reviews paused — upload a new reviews key${key}.`;
-    case "unknown":
-      return `Status unknown right now${key}.`;
-  }
+  const t = webTranslator(locale, "connections.appStoreReviews.status");
+  return t(status, { key: keyId ? t("keySuffix", { keyId }) : "" });
 }
 
 /**
@@ -58,10 +53,12 @@ export function reviewsStatusLabel(
  */
 export function reviewsKeyStrategy(
   strategy: SignedKeyStrategy,
+  locale: Locale,
 ): SignedKeyStrategy {
+  const t = webTranslator(locale, "connections.appStoreReviews.fields");
   return {
     ...strategy,
-    providerName: "Customer Support",
+    providerName: t("providerName"),
     fields: strategy.fields
       .filter((field) =>
         (REVIEWS_KEY_FIELDS as readonly string[]).includes(field.key),
@@ -70,13 +67,11 @@ export function reviewsKeyStrategy(
         field.key === "keyId"
           ? {
               ...field,
-              description:
-                "The 10-character Key ID in the row of the Customer Support key.",
+              description: t("keyId"),
             }
           : {
               ...field,
-              description:
-                "The AuthKey_<Key ID>.p8 file of the Customer Support key. Apple lets you download it only once.",
+              description: t("privateKey"),
             },
       ),
   };

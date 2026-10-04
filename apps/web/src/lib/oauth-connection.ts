@@ -13,6 +13,9 @@ import type {
   DiscoveredResource,
   OAuthCallbackOutcome,
 } from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
+
+import { webTranslator } from "./i18n/catalogs";
 
 /** Where self-hosters learn to register a Google OAuth app. */
 export const GOOGLE_OAUTH_SETUP_GUIDE =
@@ -45,30 +48,34 @@ export function oauthProviderOf(
  * Why a connector cannot be connected here, for the marketplace card. Only
  * an administrator can change it; the guide link is for self-hosters.
  */
-export function unavailableCopy(unavailable: ConnectorUnavailable): {
+export function unavailableCopy(
+  unavailable: ConnectorUnavailable,
+  locale: Locale,
+): {
   summary: string;
   detail: string;
   guideUrl: string | null;
 } {
+  const t = webTranslator(locale, "connections.oauth.unavailable");
   const name = providerName(unavailable.provider);
   if (unavailable.reason === "signed_key_provider_unsupported") {
     return {
-      summary: "Not available on this instance",
-      detail: `This netrics server cannot use ${name} keys yet. An administrator has to update netrics.`,
+      summary: t("summary"),
+      detail: t("signedKeyUnsupported", { name }),
       guideUrl: null,
     };
   }
   if (unavailable.reason === "oauth_provider_unsupported") {
     return {
-      summary: "Not available on this instance",
-      detail: `This netrics server cannot sign in with ${name}. An administrator has to update netrics.`,
+      summary: t("summary"),
+      detail: t("oauthUnsupported", { name }),
       guideUrl: null,
     };
   }
   const env = `NETRICS_OAUTH_${unavailable.provider.toUpperCase().replace(/-/g, "_")}`;
   return {
-    summary: `Needs ${name} sign-in set up by an administrator`,
-    detail: `Connecting with ${name} is not set up on this instance yet. An administrator registers a ${name} OAuth app for it and sets ${env}_CLIENT_ID and ${env}_CLIENT_SECRET; then this connector becomes available.`,
+    summary: t("notConfiguredSummary", { name }),
+    detail: t("notConfiguredDetail", { name, env }),
     guideUrl:
       unavailable.provider === "google" ? GOOGLE_OAUTH_SETUP_GUIDE : null,
   };
@@ -106,67 +113,34 @@ export function parseOAuthOutcome(
  */
 export function oauthOutcomeMessage(
   outcome: OAuthCallbackOutcome | null,
+  locale: Locale,
   provider = "google",
 ): OutcomeMessage | null {
-  const name = providerName(provider);
-  switch (outcome) {
-    case null:
-    case "connected":
-      return null;
-    case "reauthorized":
-      return {
-        tone: "notice",
-        text: `${name} is reconnected. Syncing resumes right away; the data collected so far is kept.`,
-      };
-    case "denied":
-      return {
-        tone: "error",
-        text: `You cancelled at ${name}, so nothing was changed. Start again whenever you are ready.`,
-      };
-    case "invalid_state":
-      return {
-        tone: "error",
-        text: `That ${name} sign-in expired or was already used. Sign-ins are valid for 10 minutes; start again.`,
-      };
-    case "forbidden":
-      return {
-        tone: "error",
-        text: `This ${name} sign-in was started by a different netrics user, or your role no longer allows it. Nothing was connected.`,
-      };
-    case "scope_missing":
-      return {
-        tone: "error",
-        text: `netrics needs every permission it asked for. Start again and leave all boxes ticked on ${name}'s consent screen.`,
-      };
-    case "account_mismatch":
-      return {
-        tone: "error",
-        text: `You signed in with a different ${name} account than the one this connection uses, so nothing was changed. Reconnect with the same account, or choose “Use a different ${name} account”.`,
-      };
-    case "failed":
-      return {
-        tone: "error",
-        text: `${name} could not complete the connection, and nothing was stored. Try again in a moment.`,
-      };
+  if (outcome === null || outcome === "connected") {
+    return null;
   }
+  const t = webTranslator(locale, "connections.oauth.outcome");
+  return {
+    tone: outcome === "reauthorized" ? "notice" : "error",
+    text: t(outcome, { name: providerName(provider) }),
+  };
 }
 
 /** The banner of a connection in needs_reauthorization. */
 export function reauthorizationCopy(
   reason: ConnectionAuthReason | null,
+  locale: Locale,
   provider = "google",
 ): { title: string; detail: string } {
+  const t = webTranslator(locale, "connections.oauth.reauthorize");
   const name = providerName(provider);
   if (reason === "scope_missing") {
     return {
-      title: `Syncing is paused: netrics needs one more ${name} permission.`,
-      detail: `This connector now reads data the earlier authorization did not cover. Reconnect ${name} and allow the access it asks for.`,
+      title: t("scopeTitle", { name }),
+      detail: t("scopeDetail", { name }),
     };
   }
-  return {
-    title: `Syncing is paused: the ${name} authorization stopped working.`,
-    detail: `Access was removed in the ${name} account, its password changed, or the authorization expired (while an instance's ${name} app is in testing, ${name} ends authorizations after 7 days). Reconnect ${name} to continue; the data collected so far is kept.`,
-  };
+  return { title: t("title", { name }), detail: t("detail", { name }) };
 }
 
 /**
@@ -209,25 +183,13 @@ export function parseDisconnected(query: {
 /** What the disconnect did with the access at the provider. */
 export function revocationMessage(
   revocation: ConnectionRevocation,
+  locale: Locale,
 ): OutcomeMessage {
-  const name = providerName(revocation.provider);
-  switch (revocation.status) {
-    case "revoked":
-      return {
-        tone: "notice",
-        text: `Disconnected. netrics no longer has access to your ${name} account.`,
-      };
-    case "kept":
-      return {
-        tone: "notice",
-        text: `Disconnected. ${name} access stays listed in your ${name} account while other netrics connections use it; removing it there would stop those connections too.`,
-      };
-    case "failed":
-      return {
-        tone: "error",
-        text: `Disconnected, but ${name} did not confirm that access was removed. To be sure, remove netrics from the apps with access to your ${name} account.`,
-      };
-  }
+  const t = webTranslator(locale, "connections.oauth.revocation");
+  return {
+    tone: revocation.status === "failed" ? "error" : "notice",
+    text: t(revocation.status, { name: providerName(revocation.provider) }),
+  };
 }
 
 // ─── Google Search Console setup ───────────────────────────────────────────
@@ -245,12 +207,16 @@ export const MAX_BREAKDOWN_DIMENSIONS = 2;
 export const DEFAULT_ROW_LIMIT = 1_000;
 export const MAX_ROW_LIMIT = 5_000;
 
-export const DIMENSION_LABELS: Record<SearchConsoleDimension, string> = {
-  page: "Page",
-  query: "Query",
-  country: "Country",
-  device: "Device",
-};
+/** "Page", "Query", … in the user's language. */
+export function dimensionLabel(
+  dimension: SearchConsoleDimension,
+  locale: Locale,
+): string {
+  return webTranslator(
+    locale,
+    "connections.searchConsole.dimensions",
+  )(dimension);
+}
 
 /** The config value for a set of dimensions: "none", "query", "page,query". */
 export function toDimensionsValue(
@@ -283,29 +249,33 @@ export function parseRowLimit(raw: string): number | null {
   return value >= 1 && value <= MAX_ROW_LIMIT ? value : null;
 }
 
-const PERMISSION_LABELS: Record<string, string> = {
-  siteOwner: "Owner",
-  siteFullUser: "Full user",
-  siteRestrictedUser: "Restricted user",
-};
-
 export interface PropertyView {
   siteUrl: string;
   /** example.com for a domain property, the URL for a URL-prefix one. */
   name: string;
-  kind: "Domain property" | "URL-prefix property";
+  /** "Domain property" or "URL-prefix property", in words. */
+  kind: string;
   permission: string | null;
 }
 
 /** A discovered Search Console property, as the picker shows it. */
-export function propertyView(resource: DiscoveredResource): PropertyView {
+export function propertyView(
+  resource: DiscoveredResource,
+  locale: Locale,
+): PropertyView {
+  const t = webTranslator(locale, "connections.searchConsole");
   const domain = resource.id.startsWith("sc-domain:");
   const level = resource.metadata?.permissionLevel;
+  const permissionKey = `permissions.${String(level)}`;
   return {
     siteUrl: resource.id,
     name: domain ? resource.id.slice("sc-domain:".length) : resource.id,
-    kind: domain ? "Domain property" : "URL-prefix property",
+    kind: t(domain ? "domainProperty" : "urlPrefixProperty"),
     permission:
-      typeof level === "string" ? (PERMISSION_LABELS[level] ?? level) : null,
+      typeof level === "string"
+        ? t.has(permissionKey)
+          ? t(permissionKey)
+          : level
+        : null,
   };
 }

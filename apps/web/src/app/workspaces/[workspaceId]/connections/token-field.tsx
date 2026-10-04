@@ -2,6 +2,8 @@
 
 import type { ConnectorAuthStrategy } from "@netrics/contracts";
 
+import { useT } from "@/lib/i18n/client";
+
 interface TokenFieldProps {
   id: string;
   strategy: ConnectorAuthStrategy | undefined;
@@ -24,13 +26,14 @@ export function TokenField({
   replacing,
   guideOpen,
 }: TokenFieldProps) {
-  const label = strategy?.tokenLabel ?? "Access token";
+  const t = useT("connections.token");
+  const label = strategy?.tokenLabel ?? t("accessToken");
   const setup = strategy?.setup;
   return (
     <div className="field">
       {setup ? (
         <details className="setup-guide" open={guideOpen}>
-          <summary>How to create the token</summary>
+          <summary>{t("howTo")}</summary>
           <ol>
             {setup.steps.map((step) => (
               <li key={step}>{step}</li>
@@ -39,14 +42,14 @@ export function TokenField({
           {setup.url ? (
             <p>
               <a href={setup.url} target="_blank" rel="noreferrer">
-                Open the token page
+                {t("openPage")}
               </a>
             </p>
           ) : null}
         </details>
       ) : null}
       <label htmlFor={id}>
-        {replacing ? `New ${label.toLowerCase()}` : label}
+        {replacing ? t("newLabel", { label: label.toLowerCase() }) : label}
       </label>
       <input
         id={id}
@@ -57,7 +60,7 @@ export function TokenField({
         onChange={(event) => onChange(event.target.value)}
       />
       <p className="help">
-        {replacing ? "Leave empty to keep the current token. " : ""}
+        {replacing ? `${t("keepCurrent")} ` : ""}
         {strategy?.tokenDescription ?? ""}
       </p>
     </div>

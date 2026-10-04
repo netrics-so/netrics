@@ -5,10 +5,15 @@ import { useId, useState, type ChangeEvent } from "react";
 import {
   keyFieldHint,
   keyIdFromFileName,
+  localizeSignedKeyStrategy,
   privateKeyHint,
   type SignedKeyField,
   type SignedKeyStrategy,
 } from "@/lib/signed-key";
+import { useLocale, useT } from "@/lib/i18n/client";
+
+const PEM_PLACEHOLDER =
+  "-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----";
 
 interface SignedKeyFieldsProps {
   strategy: SignedKeyStrategy;
@@ -38,7 +43,7 @@ interface SignedKeyFieldsProps {
  * private key as a file (read in the browser, never shown) or pasted.
  */
 export function SignedKeyFields({
-  strategy,
+  strategy: serverStrategy,
   values,
   onChange,
   errors = {},
@@ -47,13 +52,16 @@ export function SignedKeyFields({
   guide,
   idPrefix = "",
 }: SignedKeyFieldsProps) {
+  const locale = useLocale();
+  const t = useT("connections.signedKey");
+  const strategy = localizeSignedKeyStrategy(serverStrategy, locale);
   const setup = guide ?? strategy.setup;
-  const name = strategy.providerName ?? "the provider";
+  const name = strategy.providerName ?? t("theProvider");
   return (
     <>
       {setup ? (
         <details className="setup-guide" open={guideOpen}>
-          <summary>{guide?.summary ?? `How to create the ${name} key`}</summary>
+          <summary>{guide?.summary ?? t("howToCreate", { name })}</summary>
           <ol>
             {setup.steps.map((step, index) => {
               const links = (setup.links ?? []).filter(
@@ -136,9 +144,12 @@ function KeyTextField({
   disabled: boolean | undefined;
   onChange: (value: string) => void;
 }) {
+  const locale = useLocale();
   const id = `${idPrefix}key-${field.key}`;
   const [touched, setTouched] = useState(false);
-  const hint = touched ? keyFieldHint(provider, field.key, value) : null;
+  const hint = touched
+    ? keyFieldHint(provider, field.key, value, locale)
+    : null;
   const problem = error ?? hint;
   return (
     <div className="field">
@@ -188,11 +199,13 @@ function KeyFileField({
   onChange: (value: string) => void;
   onFileName: (name: string, previousName: string | null) => void;
 }) {
+  const locale = useLocale();
+  const t = useT("connections.signedKey");
   const id = useId();
   const [mode, setMode] = useState<"file" | "paste">("file");
   const [fileName, setFileName] = useState<string | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
-  const hint = readError ?? privateKeyHint(value, field.maxBytes);
+  const hint = readError ?? privateKeyHint(value, field.maxBytes, locale);
   const problem = error ?? hint;
 
   async function onFile(event: ChangeEvent<HTMLInputElement>) {
@@ -207,7 +220,10 @@ function KeyFileField({
       setFileName(null);
       onChange("");
       setReadError(
-        `${file.name} is larger than ${Math.round(field.maxBytes / 1024)} KiB, so it is not an API key. Choose the AuthKey_<Key ID>.p8 file.`,
+        t("fileTooLarge", {
+          file: file.name,
+          kib: Math.round(field.maxBytes / 1024),
+        }),
       );
       return;
     }
@@ -219,7 +235,7 @@ function KeyFileField({
     } catch {
       setFileName(null);
       onChange("");
-      setReadError(`${file.name} could not be read. Choose the file again.`);
+      setReadError(t("fileUnreadable", { file: file.name }));
     }
   }
 
@@ -253,13 +269,16 @@ function KeyFileField({
               className={`file-button${disabled ? " disabled" : ""}`}
             >
               {fileName && value !== ""
-                ? "Choose another file…"
-                : "Choose the .p8 file…"}
+                ? t("chooseAnotherFile")
+                : t("chooseFile")}
             </label>
             {fileName && value !== "" ? (
               <span className="key-file-loaded" role="status">
-                ✓ {fileName} read ({new TextEncoder().encode(value).length}{" "}
-                bytes, not shown)
+                ✓{" "}
+                {t("fileRead", {
+                  file: fileName,
+                  bytes: new TextEncoder().encode(value).length,
+                })}
               </span>
             ) : null}
           </div>
@@ -271,7 +290,7 @@ function KeyFileField({
               disabled={disabled}
               onClick={() => switchTo("paste")}
             >
-              Paste the key instead
+              {t("pasteInstead")}
             </button>
           </p>
         </>
@@ -282,9 +301,7 @@ function KeyFileField({
             className="key-paste"
             rows={6}
             value={value}
-            placeholder={
-              "-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----"
-            }
+            placeholder={PEM_PLACEHOLDER}
             autoComplete="off"
             spellCheck={false}
             disabled={disabled}
@@ -293,15 +310,14 @@ function KeyFileField({
             onChange={(event) => onChange(event.target.value)}
           />
           <p className="help" id={`${id}-help`}>
-            Paste the whole content of the .p8 file, including the BEGIN and END
-            lines.{" "}
+            {t("pasteHelp")}{" "}
             <button
               type="button"
               className="link-button"
               disabled={disabled}
               onClick={() => switchTo("file")}
             >
-              Choose the file instead
+              {t("fileInstead")}
             </button>
           </p>
         </>

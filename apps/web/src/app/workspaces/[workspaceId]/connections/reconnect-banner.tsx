@@ -1,6 +1,9 @@
+"use client";
+
 import type { ConnectionDetail } from "@netrics/contracts";
 
 import { ConnectOAuthButton } from "./connect-oauth-button";
+import { useLocale, useT } from "@/lib/i18n/client";
 import { reauthorizationCopy } from "@/lib/oauth-connection";
 
 /**
@@ -19,6 +22,8 @@ export function ReconnectBanner({
   canUpdate: boolean;
   returnPath: string;
 }) {
+  const locale = useLocale();
+  const t = useT("connections.oauth");
   if (
     connection.state.authState !== "needs_reauthorization" ||
     !connection.oauth
@@ -26,7 +31,11 @@ export function ReconnectBanner({
     return null;
   }
   const { provider } = connection.oauth;
-  const copy = reauthorizationCopy(connection.state.authReason, provider);
+  const copy = reauthorizationCopy(
+    connection.state.authReason,
+    locale,
+    provider,
+  );
   return (
     <div className="error page-alert" role="alert">
       <p>
@@ -42,7 +51,7 @@ export function ReconnectBanner({
           offerAccountChange
         />
       ) : (
-        <p>Ask a workspace owner, admin or editor to reconnect it.</p>
+        <p>{t("askToReconnect")}</p>
       )}
     </div>
   );

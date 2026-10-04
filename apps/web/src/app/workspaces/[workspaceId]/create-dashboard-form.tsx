@@ -22,7 +22,7 @@ import {
 } from "@/lib/api";
 import { brandAccent } from "@/lib/dominant-color";
 import { readIconPixels } from "@/lib/icon-pixels";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 type Choice = "blank" | "overview" | "brand";
 type BrandResource =
@@ -32,19 +32,7 @@ type BrandResource =
 const SURFACE = BUILTIN_THEMES[DEFAULT_THEME_KEY].tokens.surface;
 const THEME_ACCENT = BUILTIN_THEMES[DEFAULT_THEME_KEY].tokens.accent;
 
-const CHOICES: ReadonlyArray<{ id: Choice; title: string; text: string }> = [
-  { id: "blank", title: "Blank", text: "One empty slide to fill yourself." },
-  {
-    id: "overview",
-    title: "Overview",
-    text: "Downloads, proceeds, reviews and web numbers of all connections.",
-  },
-  {
-    id: "brand",
-    title: "Brand",
-    text: "One app or site with its icon, colour and own numbers.",
-  },
-];
+const CHOICES: readonly Choice[] = ["blank", "overview", "brand"];
 
 function resourceKey(resource: { connectionId: string; resourceId: string }) {
   return `${resource.connectionId}|${resource.resourceId}`;
@@ -59,6 +47,8 @@ function resourceKey(resource: { connectionId: string; resourceId: string }) {
  */
 export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
   const locale = useLocale();
+  const t = useT("workspace.newDashboard");
+  const common = useT("common");
   const router = useRouter();
   const [choice, setChoice] = useState<Choice>("blank");
   const [name, setName] = useState("");
@@ -195,47 +185,42 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
   return (
     <form className="new-dashboard" onSubmit={onSubmit}>
       <fieldset className="new-dashboard-choices" disabled={pending}>
-        <legend>New dashboard</legend>
+        <legend>{t("legend")}</legend>
         {CHOICES.map((entry) => (
-          <label key={entry.id} className="new-dashboard-choice">
+          <label key={entry} className="new-dashboard-choice">
             <input
               type="radio"
               name="template"
-              value={entry.id}
-              checked={choice === entry.id}
+              value={entry}
+              checked={choice === entry}
               onChange={() => {
-                setChoice(entry.id);
+                setChoice(entry);
                 setError(null);
               }}
             />
-            <strong>{entry.title}</strong>
-            <span>{entry.text}</span>
+            <strong>{t(`choices.${entry}.title`)}</strong>
+            <span>{t(`choices.${entry}.text`)}</span>
           </label>
         ))}
       </fieldset>
 
       {choice === "overview" && options ? (
         overviewEmpty ? (
-          <p className="muted">
-            Connect a source first: the Overview shows the numbers of your
-            connections.
-          </p>
+          <p className="muted">{t("overviewEmpty")}</p>
         ) : (
           <p className="muted">
-            From{" "}
-            {options.overview.sources
-              .map((source) => source.connectionName)
-              .join(", ")}
-            . Only what is connected is shown.
+            {t("overviewFrom", {
+              sources: new Intl.ListFormat(locale).format(
+                options.overview.sources.map((source) => source.connectionName),
+              ),
+            })}
           </p>
         )
       ) : null}
 
       {choice === "brand" && options ? (
         brandEmpty ? (
-          <p className="muted">
-            No apps or sites yet: they appear once a connection has synced.
-          </p>
+          <p className="muted">{t("brandEmpty")}</p>
         ) : (
           <div className="new-dashboard-brand">
             {icon ? (
@@ -248,7 +233,7 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
               />
             ) : null}
             <div className="field">
-              <label htmlFor="brand-resource">App or site</label>
+              <label htmlFor="brand-resource">{t("appOrSite")}</label>
               <select
                 id="brand-resource"
                 value={resource}
@@ -261,7 +246,7 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
                   if (next) setName(next.name);
                 }}
               >
-                <option value="">Choose one</option>
+                <option value="">{t("chooseOne")}</option>
                 {groups.map((group) => (
                   <optgroup
                     key={group[0]!.connectionId}
@@ -281,7 +266,7 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
             </div>
             {selected ? (
               <div className="field">
-                <label htmlFor="brand-accent">Accent colour</label>
+                <label htmlFor="brand-accent">{t("accent")}</label>
                 <div className="new-dashboard-accent">
                   <input
                     id="brand-accent"
@@ -297,18 +282,21 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
             {selected ? (
               <p className="muted" role="status">
                 {iconState === "loading"
-                  ? "Fetching the app icon…"
+                  ? t("fetchingIcon")
                   : iconState === "missing"
-                    ? "No icon available; you can upload a logo in the Studio. "
+                    ? `${t("noIcon")} `
                     : null}
                 {iconState !== "loading"
                   ? readingAccent
-                    ? "Reading the icon’s colour…"
+                    ? t("readingColour")
                     : accent
                       ? contrast?.level === "fail"
-                        ? `This colour is too hard to read on a TV (${contrast.ratio}:1, at least 3:1).`
-                        : `Accent ${accent} from the icon, ${contrast?.ratio}:1 on the theme.`
-                      : "The theme’s accent colour is used."
+                        ? t("tooLowContrast", { ratio: contrast.ratio })
+                        : t("accentFromIcon", {
+                            accent,
+                            ratio: contrast?.ratio ?? "",
+                          })
+                      : t("themeAccent")
                   : null}
               </p>
             ) : null}
@@ -318,7 +306,7 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
 
       <div className="new-dashboard-row">
         <div className="field">
-          <label htmlFor="dashboard-name">Name</label>
+          <label htmlFor="dashboard-name">{t("name")}</label>
           <input
             id="dashboard-name"
             name="name"
@@ -329,20 +317,20 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
             onChange={(event) => setName(event.target.value)}
             placeholder={
               choice === "overview"
-                ? "Overview"
+                ? t("placeholderOverview")
                 : choice === "brand"
-                  ? (selected?.name ?? "The app’s name")
-                  : "Sales"
+                  ? (selected?.name ?? t("placeholderBrand"))
+                  : t("placeholderBlank")
             }
             disabled={pending}
           />
         </div>
         <button type="submit" className="primary" disabled={!canSubmit}>
           {pending
-            ? "Creating…"
+            ? common("creating")
             : choice === "blank"
-              ? "Create"
-              : "Create from template"}
+              ? common("create")
+              : t("createFromTemplate")}
         </button>
       </div>
       {error ? (

@@ -14,7 +14,7 @@ import {
   getAppStoreAnalytics,
 } from "@/lib/api";
 import {
-  ADMIN_KEY_GUIDE,
+  adminKeyGuide,
   adminKeyIdOf,
   analyticsStatusLabel,
   needsEnablement,
@@ -24,10 +24,11 @@ import {
   emptyKeyValues,
   fieldOfMessage,
   keyCredentials,
+  localizedFieldLabel,
   missingKeyField,
   type SignedKeyStrategy,
 } from "@/lib/signed-key";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 interface AppStoreAnalyticsPanelProps {
   workspaceId: string;
@@ -39,12 +40,6 @@ interface AppStoreAnalyticsPanelProps {
   /** The stored key was refused: nothing can be read until it is replaced. */
   authFailed: boolean;
 }
-
-const OUTCOME_LABELS = {
-  created: "Requested now",
-  existing: "Already requested",
-  failed: "Not requested",
-} as const;
 
 /**
  * "Enable App Store analytics" (ADR 0014, #174): the per-app status of the
@@ -61,6 +56,8 @@ export function AppStoreAnalyticsPanel({
   authFailed,
 }: AppStoreAnalyticsPanelProps) {
   const locale = useLocale();
+  const t = useT("connections.appStoreAnalytics");
+  const common = useT("common");
   const initialValues = useCallback(
     () => ({
       ...emptyKeyValues(strategy),
@@ -119,8 +116,10 @@ export function AppStoreAnalyticsPanel({
       setFieldErrors({
         [missing.key]:
           missing.input === "file"
-            ? "Choose the .p8 file of the Admin key, or paste it."
-            : `${missing.label} is required.`,
+            ? t("chooseAdminFile")
+            : t("fieldRequired", {
+                field: localizedFieldLabel(strategy, missing, locale),
+              }),
       });
       return;
     }
@@ -153,33 +152,24 @@ export function AppStoreAnalyticsPanel({
 
   return (
     <div className="card" id="app-store-analytics">
-      <h2>App Store analytics</h2>
-      <p className="muted">
-        Impressions, product page views and downloads by source come from
-        Apple&apos;s analytics reports. Apple only generates them after an Admin
-        has requested them once per app. The first reports arrive 1–2 days after
-        that, and each day is complete about two days later. netrics then reads
-        them with the Sales key it stores; sales keep syncing either way.
-      </p>
+      <h2>{t("title")}</h2>
+      <p className="muted">{t("intro")}</p>
 
       {!canUpdate ? (
-        <p className="muted">
-          Ask a workspace owner, admin or editor to enable App Store analytics.
-        </p>
+        <p className="muted">{t("askToEnable")}</p>
       ) : authFailed ? (
-        <p className="muted">
-          Upload a new App Store Connect key first: the status is read with it.
-        </p>
+        <p className="muted">{t("uploadKeyFirst")}</p>
       ) : null}
 
       {paused.length > 0 ? (
         <div className="error" role="alert">
           <p>
-            <strong>App Store analytics paused — enable again.</strong> Apple
-            stopped the report request of{" "}
-            {paused.map((app) => app.name ?? app.appId).join(", ")} because its
-            reports were not read for a long time. Enabling again creates a new
-            request; sales are not affected.
+            <strong>{t("pausedTitle")}</strong>{" "}
+            {t("pausedDetail", {
+              apps: new Intl.ListFormat(locale).format(
+                paused.map((app) => app.name ?? app.appId),
+              ),
+            })}
           </p>
         </div>
       ) : null}
@@ -188,25 +178,26 @@ export function AppStoreAnalyticsPanel({
         <div className="notice" role="status">
           <p>
             {result.response.apps.some((app) => app.outcome === "created")
-              ? "App Store analytics requested. The first reports arrive in 1–2 days."
-              : "Nothing new to request."}
+              ? t("requested")
+              : t("nothingNew")}
           </p>
           <ul className="analytics-outcomes">
             {result.response.apps.map((app) => (
               <li key={app.appId}>
-                {app.name ?? app.appId}: {OUTCOME_LABELS[app.outcome]}
+                {app.name ?? app.appId}: {t(`outcomes.${app.outcome}`)}
                 {app.message ? ` — ${app.message}` : ""}
               </li>
             ))}
           </ul>
           <p>
             <strong>
-              Now revoke the temporary Admin key
-              {result.keyId ? ` ${result.keyId}` : ""} in App Store Connect.
+              {result.keyId
+                ? t("revokeNowKey", { keyId: result.keyId })
+                : t("revokeNow")}
             </strong>{" "}
-            netrics did not store it, and nothing needs it any more.{" "}
+            {t("notStored")}{" "}
             <a href={result.response.keysUrl} target="_blank" rel="noreferrer">
-              Open App Store Connect API keys ↗
+              {t("openKeys")} ↗
             </a>
           </p>
         </div>
@@ -220,13 +211,13 @@ export function AppStoreAnalyticsPanel({
             </div>
           ) : null}
           {status === null && loading ? (
-            <p className="muted">Asking App Store Connect…</p>
+            <p className="muted">{t("asking")}</p>
           ) : apps.length > 0 ? (
             <table className="table">
               <thead>
                 <tr>
-                  <th>App</th>
-                  <th>Analytics</th>
+                  <th>{t("app")}</th>
+                  <th>{t("analytics")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -237,7 +228,7 @@ export function AppStoreAnalyticsPanel({
                       <span className="muted">{app.appId}</span>
                     </td>
                     <td>
-                      {analyticsStatusLabel(app.status, app.latestDay)}
+                      {analyticsStatusLabel(app.status, app.latestDay, locale)}
                       {app.message ? (
                         <div className="muted">{app.message}</div>
                       ) : null}
@@ -247,24 +238,20 @@ export function AppStoreAnalyticsPanel({
               </tbody>
             </table>
           ) : status ? (
-            <p className="muted">This connection reads no apps yet.</p>
+            <p className="muted">{t("noApps")}</p>
           ) : null}
 
           {open ? (
             <form className="stack" onSubmit={onSubmit}>
-              <h3>Enable App Store analytics</h3>
-              <p className="muted">
-                Requesting analytics reports needs a team key with the Admin
-                role, once. Use a temporary one: netrics uses it in memory for
-                this request only and never stores it. Revoke it right after.
-              </p>
+              <h3>{t("enable")}</h3>
+              <p className="muted">{t("enableIntro")}</p>
               <SignedKeyFields
                 strategy={strategy}
                 values={values}
                 errors={fieldErrors}
                 disabled={pending}
                 guideOpen
-                guide={ADMIN_KEY_GUIDE}
+                guide={adminKeyGuide(locale)}
                 idPrefix="admin-"
                 onChange={(key, value) => {
                   setValues((current) => ({ ...current, [key]: value }));
@@ -276,18 +263,16 @@ export function AppStoreAnalyticsPanel({
               />
               <div className="actions">
                 <button type="submit" className="primary" disabled={pending}>
-                  {pending
-                    ? "Requesting with App Store Connect…"
-                    : "Request analytics reports"}
+                  {pending ? t("requesting") : t("request")}
                 </button>
                 <button type="button" disabled={pending} onClick={close}>
-                  Cancel
+                  {common("cancel")}
                 </button>
               </div>
               {error ? (
                 <div className="error" role="alert">
                   <p>{error}</p>
-                  <p>Nothing was stored.</p>
+                  <p>{t("nothingStored")}</p>
                 </div>
               ) : null}
             </form>
@@ -301,7 +286,7 @@ export function AppStoreAnalyticsPanel({
                   setOpen(true);
                 }}
               >
-                Enable App Store analytics
+                {t("enable")}
               </button>
             </div>
           ) : status ? (
@@ -311,7 +296,7 @@ export function AppStoreAnalyticsPanel({
                 disabled={loading}
                 onClick={() => void load()}
               >
-                {loading ? "Checking…" : "Check again"}
+                {loading ? t("checking") : t("checkAgain")}
               </button>
             </div>
           ) : null}

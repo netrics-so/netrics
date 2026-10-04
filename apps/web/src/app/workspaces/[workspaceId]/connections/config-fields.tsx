@@ -1,6 +1,7 @@
 "use client";
 
 import type { ConfigField } from "@/lib/config-schema";
+import { useT } from "@/lib/i18n/client";
 
 interface ConfigFieldsProps {
   fields: ConfigField[];
@@ -19,8 +20,9 @@ export function ConfigFields({
   disabled,
   errors = {},
 }: ConfigFieldsProps) {
+  const t = useT("connections.config");
   if (fields.length === 0) {
-    return <p className="muted">This connector has no configuration.</p>;
+    return <p className="muted">{t("none")}</p>;
   }
   return (
     <>
@@ -28,7 +30,7 @@ export function ConfigFields({
         const id = `config-${field.key}`;
         const label = field.required
           ? field.label
-          : `${field.label} (optional)`;
+          : t("optionalLabel", { label: field.label });
         const help = field.description ? (
           <p className="help" id={`${id}-help`}>
             {field.description}
@@ -72,8 +74,8 @@ export function ConfigFields({
                 onChange={(event) => onChange(field.key, event.target.value)}
               >
                 <option value="">—</option>
-                <option value="true">true</option>
-                <option value="false">false</option>
+                <option value="true">{t("yes")}</option>
+                <option value="false">{t("no")}</option>
               </select>
               {help}
             </div>

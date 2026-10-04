@@ -10,7 +10,7 @@ import {
 } from "@/lib/api";
 import { disconnectQuery, providerName } from "@/lib/oauth-connection";
 import { keyRemovedQuery } from "@/lib/signed-key";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 interface ConnectionActionsProps {
   workspaceId: string;
@@ -41,6 +41,8 @@ export function ConnectionActions({
   canDelete,
 }: ConnectionActionsProps) {
   const locale = useLocale();
+  const t = useT("connections.actions");
+  const common = useT("common");
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -53,7 +55,7 @@ export function ConnectionActions({
     setPending(true);
     try {
       await triggerConnectionSync(workspaceId, connectionId);
-      setNotice("Sync queued — it will run on the next worker pass.");
+      setNotice(t("syncQueued"));
       router.refresh();
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));
@@ -98,7 +100,7 @@ export function ConnectionActions({
             disabled={pending || confirming}
             onClick={onSyncNow}
           >
-            Sync now
+            {t("syncNow")}
           </button>
         ) : null}
         {canDelete && !confirming ? (
@@ -111,7 +113,7 @@ export function ConnectionActions({
               setConfirming(true);
             }}
           >
-            {name ? "Disconnect" : "Delete connection"}
+            {name ? t("disconnect") : t("deleteConnection")}
           </button>
         ) : null}
       </div>
@@ -123,39 +125,34 @@ export function ConnectionActions({
           aria-labelledby="disconnect-title"
         >
           <h3 id="disconnect-title">
-            {name ? "Disconnect" : "Delete"} “{connectionName}”?
+            {name
+              ? t("confirmDisconnect", { name: connectionName })
+              : t("confirmDelete", { name: connectionName })}
           </h3>
-          <p>
-            Its state, observations and sync history are removed. Dashboard
-            tiles that use it show that the connection is gone.
-          </p>
+          <p>{t("removesData")}</p>
           {name ? (
-            <p className="muted">
-              netrics also removes its access to your {name} account, unless
-              other netrics connections still use that account; then the access
-              stays until the last one is disconnected.
-            </p>
+            <p className="muted">{t("removesAccess", { name })}</p>
           ) : null}
           {signedKey ? (
             <p className="muted">
-              netrics deletes its copy of the {signedKey.providerName} key
-              {signedKey.keyId ? ` ${signedKey.keyId}` : ""}. The key itself
-              stays valid at {signedKey.providerName} until you revoke it there
+              {signedKey.keyId
+                ? t("deletesKeyCopyId", {
+                    name: signedKey.providerName,
+                    keyId: signedKey.keyId,
+                  })
+                : t("deletesKeyCopy", { name: signedKey.providerName })}
               {signedKey.revokeUrl ? (
                 <>
                   {" "}
-                  (
                   <a
                     href={signedKey.revokeUrl}
                     target="_blank"
                     rel="noreferrer"
                   >
-                    API keys ↗
+                    {t("apiKeys")} ↗
                   </a>
-                  )
                 </>
               ) : null}
-              .
             </p>
           ) : null}
           <div className="actions">
@@ -165,14 +162,18 @@ export function ConnectionActions({
               disabled={pending}
               onClick={onDelete}
             >
-              {pending ? "Removing…" : name ? "Disconnect" : "Delete"}
+              {pending
+                ? common("removing")
+                : name
+                  ? t("disconnect")
+                  : common("delete")}
             </button>
             <button
               type="button"
               disabled={pending}
               onClick={() => setConfirming(false)}
             >
-              Cancel
+              {common("cancel")}
             </button>
           </div>
         </div>

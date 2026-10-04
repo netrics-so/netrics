@@ -32,7 +32,7 @@ describe("callback outcomes", () => {
 
   it("has a message for every outcome but connected", () => {
     for (const outcome of oauthCallbackOutcomeSchema.options) {
-      const message = oauthOutcomeMessage(outcome);
+      const message = oauthOutcomeMessage(outcome, "en");
       if (outcome === "connected") {
         expect(message).toBeNull();
         continue;
@@ -43,24 +43,28 @@ describe("callback outcomes", () => {
         outcome === "reauthorized" ? "notice" : "error",
       );
     }
-    expect(oauthOutcomeMessage(null)).toBeNull();
+    expect(oauthOutcomeMessage(null, "en")).toBeNull();
   });
 
   it("says what happened for each refusal", () => {
-    expect(oauthOutcomeMessage("denied")!.text).toContain(
+    expect(oauthOutcomeMessage("denied", "en")!.text).toContain(
       "You cancelled at Google",
     );
-    expect(oauthOutcomeMessage("invalid_state")!.text).toContain("expired");
-    expect(oauthOutcomeMessage("scope_missing")!.text).toContain(
+    expect(oauthOutcomeMessage("invalid_state", "en")!.text).toContain(
+      "expired",
+    );
+    expect(oauthOutcomeMessage("scope_missing", "en")!.text).toContain(
       "leave all boxes ticked",
     );
-    expect(oauthOutcomeMessage("account_mismatch")!.text).toContain(
+    expect(oauthOutcomeMessage("account_mismatch", "en")!.text).toContain(
       "Use a different Google account",
     );
-    expect(oauthOutcomeMessage("forbidden")!.text).toContain(
+    expect(oauthOutcomeMessage("forbidden", "en")!.text).toContain(
       "different netrics user",
     );
-    expect(oauthOutcomeMessage("failed")!.text).toContain("nothing was stored");
+    expect(oauthOutcomeMessage("failed", "en")!.text).toContain(
+      "nothing was stored",
+    );
   });
 });
 
@@ -84,22 +88,31 @@ describe("providers", () => {
   });
 
   it("explains unavailable connectors, with the guide for Google", () => {
-    const google = unavailableCopy({
-      reason: "oauth_provider_not_configured",
-      provider: "google",
-    });
+    const google = unavailableCopy(
+      {
+        reason: "oauth_provider_not_configured",
+        provider: "google",
+      },
+      "en",
+    );
     expect(google.detail).toContain("NETRICS_OAUTH_GOOGLE_CLIENT_ID");
     expect(google.guideUrl).toBe(GOOGLE_OAUTH_SETUP_GUIDE);
     expect(
-      unavailableCopy({
-        reason: "oauth_provider_unsupported",
-        provider: "acme",
-      }).guideUrl,
+      unavailableCopy(
+        {
+          reason: "oauth_provider_unsupported",
+          provider: "acme",
+        },
+        "en",
+      ).guideUrl,
     ).toBeNull();
-    const signedKey = unavailableCopy({
-      reason: "signed_key_provider_unsupported",
-      provider: "app-store-connect",
-    });
+    const signedKey = unavailableCopy(
+      {
+        reason: "signed_key_provider_unsupported",
+        provider: "app-store-connect",
+      },
+      "en",
+    );
     expect(signedKey.detail).toContain("App Store Connect keys");
     expect(signedKey.detail).not.toContain("OAuth");
     expect(signedKey.guideUrl).toBeNull();
@@ -108,9 +121,11 @@ describe("providers", () => {
 
 describe("reconnect and disconnect copy", () => {
   it("tells expiry and revocation apart from a missing permission", () => {
-    expect(reauthorizationCopy("invalid_grant").detail).toContain("7 days");
-    expect(reauthorizationCopy(null).title).toContain("stopped working");
-    expect(reauthorizationCopy("scope_missing").title).toContain(
+    expect(reauthorizationCopy("invalid_grant", "en").detail).toContain(
+      "7 days",
+    );
+    expect(reauthorizationCopy(null, "en").title).toContain("stopped working");
+    expect(reauthorizationCopy("scope_missing", "en").title).toContain(
       "one more Google permission",
     );
   });
@@ -120,14 +135,16 @@ describe("reconnect and disconnect copy", () => {
       provider: "google",
       accountPermissionsUrl: "https://myaccount.google.com/permissions",
     };
-    expect(revocationMessage({ ...base, status: "revoked" })).toEqual({
+    expect(revocationMessage({ ...base, status: "revoked" }, "en")).toEqual({
       tone: "notice",
       text: "Disconnected. netrics no longer has access to your Google account.",
     });
-    expect(revocationMessage({ ...base, status: "kept" }).text).toContain(
+    expect(revocationMessage({ ...base, status: "kept" }, "en").text).toContain(
       "stays listed in your Google account while other netrics connections use it",
     );
-    expect(revocationMessage({ ...base, status: "failed" }).tone).toBe("error");
+    expect(revocationMessage({ ...base, status: "failed" }, "en").tone).toBe(
+      "error",
+    );
   });
 });
 
@@ -153,12 +170,15 @@ describe("Search Console settings", () => {
 
   it("labels domain and URL-prefix properties and permissions", () => {
     expect(
-      propertyView({
-        id: "sc-domain:example.com",
-        name: "example.com",
-        kind: "domain_property",
-        metadata: { permissionLevel: "siteOwner" },
-      }),
+      propertyView(
+        {
+          id: "sc-domain:example.com",
+          name: "example.com",
+          kind: "domain_property",
+          metadata: { permissionLevel: "siteOwner" },
+        },
+        "en",
+      ),
     ).toEqual({
       siteUrl: "sc-domain:example.com",
       name: "example.com",
@@ -166,22 +186,28 @@ describe("Search Console settings", () => {
       permission: "Owner",
     });
     expect(
-      propertyView({
-        id: "https://example.org/blog/",
-        name: "https://example.org/blog/",
-        kind: "url_prefix_property",
-        metadata: { permissionLevel: "siteRestrictedUser" },
-      }),
+      propertyView(
+        {
+          id: "https://example.org/blog/",
+          name: "https://example.org/blog/",
+          kind: "url_prefix_property",
+          metadata: { permissionLevel: "siteRestrictedUser" },
+        },
+        "en",
+      ),
     ).toMatchObject({
       kind: "URL-prefix property",
       permission: "Restricted user",
     });
     expect(
-      propertyView({
-        id: "https://x.test/",
-        name: "x",
-        kind: "url_prefix_property",
-      }).permission,
+      propertyView(
+        {
+          id: "https://x.test/",
+          name: "x",
+          kind: "url_prefix_property",
+        },
+        "en",
+      ).permission,
     ).toBeNull();
   });
 });
@@ -217,5 +243,42 @@ describe("disconnect outcome on the workspace page", () => {
       parseDisconnected({ disconnected: "failed", provider: "acme" })
         ?.accountPermissionsUrl,
     ).toBeNull();
+  });
+});
+
+describe("in German", () => {
+  it("words outcomes, banners and properties", () => {
+    expect(oauthOutcomeMessage("denied", "de")!.text).toBe(
+      "Du hast bei Google abgebrochen, daher wurde nichts geändert. Starte neu, wann immer du so weit bist.",
+    );
+    expect(reauthorizationCopy(null, "de").title).toContain(
+      "Autorisierung bei Google funktioniert nicht mehr",
+    );
+    expect(
+      revocationMessage(
+        { provider: "google", status: "revoked", accountPermissionsUrl: null },
+        "de",
+      ).text,
+    ).toBe("Getrennt. netrics hat keinen Zugriff mehr auf dein Google-Konto.");
+    expect(
+      propertyView(
+        {
+          id: "sc-domain:example.com",
+          name: "example.com",
+          kind: "domain_property",
+          metadata: { permissionLevel: "siteFullUser" },
+        },
+        "de",
+      ),
+    ).toMatchObject({
+      kind: "Domain-Property",
+      permission: "Uneingeschränkter Nutzer",
+    });
+    expect(
+      unavailableCopy(
+        { reason: "oauth_provider_not_configured", provider: "google" },
+        "de",
+      ).detail,
+    ).toContain("NETRICS_OAUTH_GOOGLE_CLIENT_ID");
   });
 });

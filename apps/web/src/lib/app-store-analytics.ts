@@ -6,6 +6,9 @@
  */
 
 import type { AppStoreAnalyticsAppStatus } from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
+
+import { webTranslator } from "./i18n/catalogs";
 
 /** Where App Store Connect team keys are created and revoked. */
 export const APP_STORE_CONNECT_KEYS_URL =
@@ -17,19 +20,26 @@ export type AnalyticsStatus = AppStoreAnalyticsAppStatus["status"];
 export function analyticsStatusLabel(
   status: AnalyticsStatus,
   latestDay: string | null,
+  locale: Locale,
 ): string {
-  switch (status) {
-    case "not_enabled":
-      return "Not enabled";
-    case "stopped":
-      return "App Store analytics paused — enable again";
-    case "requested":
-      return "Requested — data pending (the first reports take 1–2 days)";
-    case "available":
-      return latestDay ? `Available through ${latestDay}` : "Available";
-    case "unknown":
-      return "Status unknown right now";
+  const t = webTranslator(locale, "connections.appStoreAnalytics.status");
+  if (status === "available" && latestDay) {
+    return t("availableThrough", {
+      day: formatReportingDay(latestDay, locale),
+    });
   }
+  return t(status);
+}
+
+/** A reporting day (YYYY-MM-DD) as a date in the user's language. */
+export function formatReportingDay(day: string, locale: Locale): string {
+  const time = Date.parse(`${day}T00:00:00Z`);
+  return Number.isNaN(time)
+    ? day
+    : new Intl.DateTimeFormat(locale, {
+        dateStyle: "medium",
+        timeZone: "UTC",
+      }).format(time);
 }
 
 /** Whether some app needs the one-time Admin step (never or no longer requested). */
@@ -48,23 +58,28 @@ export function pausedApps<
   return apps.filter((app) => app.status === "stopped");
 }
 
+/** A setup guide shown above a key form: summary, steps and links. */
+export interface KeyGuide {
+  summary: string;
+  steps: readonly string[];
+  links: readonly { step: number; label: string; url: string }[];
+}
+
 /** The guide of the temporary Admin key. */
-export const ADMIN_KEY_GUIDE = {
-  summary: "How to create the temporary Admin key",
-  steps: [
-    "Sign in to App Store Connect as the Account Holder or an Admin and open Users and Access → Integrations → App Store Connect API.",
-    "Under Team Keys, generate a key named “netrics analytics (temporary)” with the Admin role. Download the .p8 file and copy its Key ID.",
-    "Upload it below. netrics uses it once, in memory, to request the analytics reports of this connection's apps. It is not stored, queued or logged.",
-    "Revoke the key right afterwards. The Sales key netrics stores keeps reading the reports.",
-  ],
-  links: [
-    {
-      step: 0,
-      label: "Open App Store Connect API keys",
-      url: APP_STORE_CONNECT_KEYS_URL,
-    },
-  ],
-} as const;
+export function adminKeyGuide(locale: Locale): KeyGuide {
+  const t = webTranslator(locale, "connections.appStoreAnalytics.guide");
+  return {
+    summary: t("summary"),
+    steps: [t("step1"), t("step2"), t("step3"), t("step4")],
+    links: [
+      {
+        step: 0,
+        label: webTranslator(locale, "connections.signedKey")("openKeys"),
+        url: APP_STORE_CONNECT_KEYS_URL,
+      },
+    ],
+  };
+}
 
 /** The key ID of an Admin form's values, for the revocation reminder. */
 export function adminKeyIdOf(values: Record<string, string>): string | null {

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -5,10 +6,16 @@ import { can } from "@netrics/domain";
 
 import { ApproveDeviceForm, type ApprovableWorkspace } from "./approve-form";
 import { listDashboards, listWorkspaces } from "@/lib/api";
+import { getT } from "@/lib/i18n/server";
 import { getSessionUser } from "@/lib/session";
 import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("deviceApproval");
+  return { title: t("pageTitle") };
+}
 
 interface ApproveDevicePageProps {
   searchParams: Promise<{ code?: string | string[] }>;
@@ -49,20 +56,17 @@ export default async function ApproveDevicePage({
     })),
   );
 
+  const t = await getT("deviceApproval");
+  const common = await getT("common");
   return (
     <>
-      <h1>Connect a TV</h1>
-      <p className="subtitle">
-        Enter the code shown on the TV and choose what it should show.
-      </p>
+      <h1>{t("title")}</h1>
+      <p className="subtitle">{t("subtitle")}</p>
       {approvable.length === 0 ? (
         <div className="card">
-          <p>
-            Only workspace owners and admins can connect TVs. Ask one of them to
-            enter the code, or to make you an admin.
-          </p>
+          <p>{t("notAllowed")}</p>
           <p className="muted">
-            <Link href="/">Back</Link>
+            <Link href="/">{common("back")}</Link>
           </p>
         </div>
       ) : (

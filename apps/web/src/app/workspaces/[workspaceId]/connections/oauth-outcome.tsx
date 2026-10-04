@@ -1,5 +1,8 @@
+"use client";
+
 import type { OAuthCallbackOutcome } from "@netrics/contracts";
 
+import { useLocale } from "@/lib/i18n/client";
 import { oauthOutcomeMessage } from "@/lib/oauth-connection";
 
 /**
@@ -13,7 +16,8 @@ export function OAuthOutcomeBanner({
   outcome: OAuthCallbackOutcome | null;
   provider?: string;
 }) {
-  const message = oauthOutcomeMessage(outcome, provider);
+  const locale = useLocale();
+  const message = oauthOutcomeMessage(outcome, locale, provider);
   if (!message) {
     return null;
   }

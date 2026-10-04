@@ -20,7 +20,7 @@ import {
 } from "@/lib/api";
 import { summarizeHeartbeat } from "@/lib/device-heartbeat";
 import { parseDisconnected, parseOAuthOutcome } from "@/lib/oauth-connection";
-import { getLocale } from "@/lib/i18n/server";
+import { getLocale, getT } from "@/lib/i18n/server";
 import { relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
 import { parseKeyRemoved } from "@/lib/signed-key";
@@ -44,6 +44,8 @@ export default async function WorkspacePage({
   const keyRemoved = parseKeyRemoved(query);
   const { cookieHeader } = await requireSession();
   const locale = await getLocale();
+  const t = await getT("workspace");
+  const roles = await getT("common.roles");
 
   const [{ workspaces }, workspaceResult] = await Promise.all([
     listWorkspaces(cookieHeader),
@@ -77,7 +79,7 @@ export default async function WorkspacePage({
   const dashboardNames = new Map(dashboards.map((d) => [d.id, d.name]));
   const connectTv = can(role, "devices:manage") ? (
     <p>
-      <Link href="/devices/approve">Connect a TV</Link>
+      <Link href="/devices/approve">{t("connectTv")}</Link>
     </p>
   ) : null;
 
@@ -89,29 +91,35 @@ export default async function WorkspacePage({
       {removedKey ? (
         <div className="notice page-alert" role="status">
           <p>
-            Connection deleted, together with netrics&apos; copy of its{" "}
-            {removedKey.providerName ?? "provider"} key. The key itself stays
-            valid until you revoke it.{" "}
+            {removedKey.providerName
+              ? t("keyRemoved", { name: removedKey.providerName })
+              : t("keyRemovedUnnamed")}{" "}
             {removedKey.setup?.url ? (
               <a href={removedKey.setup.url} target="_blank" rel="noreferrer">
-                Revoke it in {removedKey.providerName ?? "the provider"} ↗
+                {removedKey.providerName
+                  ? t("revokeIn", { name: removedKey.providerName })
+                  : t("revokeAtProvider")}{" "}
+                ↗
               </a>
             ) : null}
           </p>
         </div>
       ) : null}
       <p className="subtitle">
-        Your role: <span className="role-badge">{role}</span>
+        {t("yourRole")} <span className="role-badge">{roles(role)}</span>
       </p>
 
       <div className="card">
-        <h2>Workspaces</h2>
+        <h2>{t("workspaces")}</h2>
         <ul className="workspace-list">
           {workspaces.map((workspace) => (
             <li key={workspace.id}>
               {workspace.id === workspaceId ? (
                 <span className="current">
-                  {workspace.name} (current, {workspace.role})
+                  {t("current", {
+                    name: workspace.name,
+                    role: roles(workspace.role),
+                  })}
                 </span>
               ) : (
                 <Link href={`/workspaces/${workspace.id}`}>
@@ -123,15 +131,15 @@ export default async function WorkspacePage({
         </ul>
         <p className="muted">
           <Link href={`/workspaces/${workspaceId}/settings`}>
-            Workspace settings
+            {t("settings")}
           </Link>
         </p>
       </div>
 
       <div className="card">
-        <h2>Dashboards</h2>
+        <h2>{t("dashboards")}</h2>
         {dashboards.length === 0 ? (
-          <p className="muted">No dashboards yet.</p>
+          <p className="muted">{t("noDashboards")}</p>
         ) : (
           <ul className="workspace-list">
             {dashboards.map((dashboard) => (
@@ -142,11 +150,11 @@ export default async function WorkspacePage({
                   {dashboard.name}
                 </Link>{" "}
                 <span className="muted">
-                  {dashboard.slideCount} slide
-                  {dashboard.slideCount === 1 ? "" : "s"} ·{" "}
-                  {dashboard.widgetCount} widget
-                  {dashboard.widgetCount === 1 ? "" : "s"} · updated{" "}
-                  {relativeTime(dashboard.updatedAt, locale)}
+                  {t("dashboardMeta", {
+                    slides: dashboard.slideCount,
+                    widgets: dashboard.widgetCount,
+                    updated: relativeTime(dashboard.updatedAt, locale),
+                  })}
                 </span>
                 {can(role, "dashboards:update") ? (
                   <>
@@ -154,9 +162,9 @@ export default async function WorkspacePage({
                     <Link
                       href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}/studio`}
                       className="studio-link"
-                      aria-label={`Open ${dashboard.name} in Studio`}
+                      aria-label={t("openInStudio", { name: dashboard.name })}
                     >
-                      Studio
+                      {t("studio")}
                     </Link>
                   </>
                 ) : null}
@@ -171,9 +179,9 @@ export default async function WorkspacePage({
 
       {devices ? (
         <div className="card">
-          <h2>TVs</h2>
+          <h2>{t("tvs")}</h2>
           {devices.length === 0 ? (
-            <p className="muted">No TVs yet.</p>
+            <p className="muted">{t("noTvs")}</p>
           ) : (
             <ul className="workspace-list device-list">
               {devices.map((device) => {
@@ -182,15 +190,21 @@ export default async function WorkspacePage({
                   <li key={device.id}>
                     <strong>{device.name}</strong>{" "}
                     {device.revokedAt ? (
-                      <span className="role-badge">Revoked</span>
+                      <span className="role-badge">{t("revoked")}</span>
                     ) : null}{" "}
                     <span className="muted">
                       {(device.dashboardId &&
                         dashboardNames.get(device.dashboardId)) ??
-                        "No dashboard"}{" "}
-                      · last seen {relativeTime(device.lastSeenAt, locale)}
+                        t("noDashboard")}{" "}
+                      ·{" "}
+                      {t("lastSeen", {
+                        time: relativeTime(device.lastSeenAt, locale),
+                      })}
                       {heartbeat
-                        ? ` · ${heartbeat.version}, heartbeat ${heartbeat.at}`
+                        ? ` · ${t("heartbeat", {
+                            version: heartbeat.version,
+                            time: heartbeat.at,
+                          })}`
                         : null}
                     </span>
                     {heartbeat?.lastError ? (
@@ -198,7 +212,7 @@ export default async function WorkspacePage({
                         className="muted device-error"
                         title={heartbeat.lastErrorFull ?? undefined}
                       >
-                        Last error: {heartbeat.lastError}
+                        {t("lastError", { error: heartbeat.lastError })}
                       </p>
                     ) : null}
                     {can(role, "devices:manage") && !device.revokedAt ? (
@@ -218,18 +232,18 @@ export default async function WorkspacePage({
       ) : null}
 
       <div className="card">
-        <h2>Connections</h2>
+        <h2>{t("connections")}</h2>
         {connections.length === 0 ? (
-          <p className="muted">No connections yet.</p>
+          <p className="muted">{t("noConnections")}</p>
         ) : (
           <table className="table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Connector</th>
-                <th>Health</th>
-                <th>Last success</th>
-                <th>Next sync</th>
+                <th>{t("table.name")}</th>
+                <th>{t("table.connector")}</th>
+                <th>{t("table.health")}</th>
+                <th>{t("table.lastSuccess")}</th>
+                <th>{t("table.nextSync")}</th>
               </tr>
             </thead>
             <tbody>
@@ -251,7 +265,7 @@ export default async function WorkspacePage({
                         className="health-badge pending"
                         href={`/workspaces/${workspaceId}/connections/${connection.id}#finish-setup`}
                       >
-                        Finish setup
+                        {t("finishSetup")}
                       </Link>
                     ) : (
                       <HealthBadge health={connection.state.health} />
@@ -272,21 +286,19 @@ export default async function WorkspacePage({
           <p>
             <Link href={`/workspaces/${workspaceId}/connections/new`}>
               <button type="button" className="primary">
-                Add connection
+                {t("addConnection")}
               </button>
             </Link>
           </p>
         ) : (
-          <p className="muted">
-            Your role cannot create connections in this workspace.
-          </p>
+          <p className="muted">{t("cannotCreateConnections")}</p>
         )}
       </div>
 
       <div className="card">
-        <h2>Projects</h2>
+        <h2>{t("projects")}</h2>
         {projects.length === 0 ? (
-          <p className="muted">No projects yet.</p>
+          <p className="muted">{t("noProjects")}</p>
         ) : (
           <ul className="workspace-list">
             {projects.map((project) => (
@@ -297,9 +309,7 @@ export default async function WorkspacePage({
         {can(role, "projects:create") ? (
           <CreateProjectForm workspaceId={workspaceId} />
         ) : (
-          <p className="muted">
-            Your role cannot create projects in this workspace.
-          </p>
+          <p className="muted">{t("cannotCreateProjects")}</p>
         )}
       </div>
     </>

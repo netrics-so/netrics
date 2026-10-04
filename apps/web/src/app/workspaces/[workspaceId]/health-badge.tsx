@@ -1,28 +1,17 @@
-import type { ConnectionAuthState, ConnectionHealth } from "@netrics/contracts";
+"use client";
 
-const LABELS: Record<ConnectionHealth, string> = {
-  ok: "Healthy",
-  auth_failed: "Auth failed",
-  needs_reauthorization: "Needs reconnect",
-  outage: "Outage",
-  pending: "Pending",
-};
+import type { ConnectionHealth } from "@netrics/contracts";
+
+import { useT } from "@/lib/i18n/client";
 
 export function HealthBadge({ health }: { health: ConnectionHealth }) {
+  const t = useT("health.states");
   return (
     <span className={`health-badge ${health}`}>
       <span
         className={`dot ${health === "ok" ? "up" : health === "pending" ? "unknown" : "down"}`}
       />
-      {LABELS[health]}
+      {t(health)}
     </span>
   );
 }
-
-/** The auth state in words, matching the health badge. */
-export const AUTH_STATE_LABELS: Record<ConnectionAuthState, string> = {
-  ok: "OK",
-  auth_failed: "Auth failed",
-  needs_reauthorization: "Needs reconnect",
-  outage: "Outage",
-};
