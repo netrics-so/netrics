@@ -12,7 +12,9 @@ export const studioEn = {
       imageDeleted: "Image deleted.",
       fixProblems:
         "Fix the problems marked on the slides before saving. Nothing was saved.",
-      backToDashboard: "Dashboard",
+      breadcrumb: "Breadcrumb",
+      dashboards: "Dashboards",
+      history: "Undo and redo",
       untitled: "Untitled",
       unsaved: "Unsaved changes",
       saved: "Saved",
@@ -21,8 +23,8 @@ export const studioEn = {
       discardConfirm: "Discard all unsaved changes?",
       discard: "Discard",
       play: "Play",
-      showOnTvs: "Show on TVs",
-      showOnTvsCount: "Show on TVs ({count})",
+      showOnTvs: "Show on screens",
+      showOnTvsCount: "Show on screens ({count})",
       conflict:
         "Someone else saved this dashboard while you were editing. Your changes are not saved.",
       loadTheirsConfirm:
@@ -30,8 +32,6 @@ export const studioEn = {
       loadTheirs: "Load their version",
       saveCopy: "Save mine as a copy",
       stage: "Slide",
-      canvasHelp:
-        "{theme} theme. Click a widget to edit it, drag it to move it and its edges to resize it (arrow keys and Shift+arrow keys do the same); click the slide's background for the dashboard settings.",
       inspector: "Inspector",
       leaveConfirm: "This dashboard has unsaved changes. Leave and lose them?",
       pageTitle: "Studio · netrics",
@@ -55,7 +55,7 @@ export const studioEn = {
       labelCut: "Label cut off",
       keyboardHelp:
         "Arrow keys move the widget by one cell, Shift and arrow keys resize it, Delete removes it, Escape goes back to the slide. Control or Command with D duplicates it, with C copies it, and with V pastes a copy.",
-      empty: "This slide is empty. Add a widget above.",
+      empty: "This slide is empty. Add a widget from “Add widget”.",
       readoutNoRoom: "{w} × {h} · no room here",
       dragCancelled: "Drag cancelled.",
       toReview: "To review",
@@ -69,7 +69,7 @@ export const studioEn = {
     },
     addMenu: {
       group: "Add a widget",
-      add: "Add",
+      add: "Add widget",
       hint: "Click to add it in the first free spot, or drag it onto the slide",
       addType:
         "Add {type, select, metric {metric} line {line chart} bar {bar chart} image {image} text {text} clock {clock} other {widget}}",
@@ -127,6 +127,12 @@ export const studioEn = {
       title: "Slides",
       atMost: "At most {max} slides",
       add: "Add slide",
+      addShort: "+ Add",
+      totalPrefix: "· {total}",
+      total: "{seconds} s",
+      totalMinutes: "{minutes} min {seconds} s",
+      totalWholeMinutes: "{minutes} min",
+      slidePosition: "{number} of {count}",
       keyboardHelp:
         "Arrow keys move between slides. Alt plus Arrow Up or Down moves the slide. Delete removes it after a confirmation.",
       dragHandle: "Drag to reorder",
@@ -184,7 +190,7 @@ export const studioEn = {
     },
     widgetPanel: {
       allResources: "All {plural}",
-      position: "Column {column}, row {row} · {w} × {h} cells",
+      position: "col {column}, row {row} · {w}×{h}",
       title: "Title",
       titleOptional: "Title (optional)",
       shownAs: "Shown as {label}",
@@ -218,6 +224,11 @@ export const studioEn = {
       barsShown: "Bars shown: {count}",
       barsHelp: "The largest groups, the rest added up as “Others”.",
       all: "All",
+      filter: "Filter",
+      filterChip: "{name} = {value}",
+      filterRemove: "Remove the filter on {name}",
+      filterAdd: "+ add",
+      filterDone: "Done",
       loadingValues: "Loading values…",
       filterHelp: "Everything, or only one of the largest values.",
       align: "Align",
@@ -261,6 +272,30 @@ export const studioEn = {
       noImage: "Upload an image first (dashboard settings, Logo).",
       text: "## Heading\nSome text",
       notBreakable: "This metric cannot be broken down into bars.",
+    },
+    status: {
+      liveOn: "Live on {screens}",
+      notLive: "Not on any screen",
+      canvasSlide: "Slide {number} · {ratio} · {width} × {height} preview",
+      canvasSlideNamed:
+        "Slide {number} · {name} · {ratio} · {width} × {height} preview",
+      gridOk: "Grid ✓",
+      gridProblems: "⚠ Check the placement",
+      readable: "Readable at distance:",
+      allFit: "all labels fit",
+      labelsCut: "{count, plural, one {# label cut} other {# labels cut}}",
+      theme: "Theme",
+      accent: "Accent",
+      headerOn: "Header · Clock on",
+      headerOff: "Header · Clock off",
+      keys: "arrows move · ⇧ resize · ⌫ delete",
+      keysHelp:
+        "Click a widget to edit it, drag it to move it and its edges to resize it (arrow keys and Shift+arrow keys do the same); click the slide's background for the slide and dashboard settings.",
+    },
+    fit: {
+      labelFits: "Label fits at 1080p",
+      labelFitsValue: "Label fits at 1080p · value {size} px",
+      textFits: "Text fits at 1080p",
     },
     readability: {
       titleCut: "The title is cut off on TVs.",

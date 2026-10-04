@@ -22,7 +22,8 @@ import {
   accentHint,
   themeChoice,
 } from "./inspector";
-import { SlideRail } from "./slide-rail";
+import { SlideRail, rotationSeconds, rotationText } from "./slide-rail";
+import { SlideSettings } from "./slide-settings";
 import { leavesPage } from "./use-leave-guard";
 import { renderI18n } from "@/lib/i18n/test-render";
 
@@ -121,7 +122,6 @@ describe("slide rail", () => {
       tokens={dark}
       defaultSeconds={20}
       slidesWithProblems={new Set([ID(2)])}
-      images={[]}
       dispatch={noop}
     />,
   );
@@ -137,7 +137,69 @@ describe("slide rail", () => {
     expect(html).toContain("Alt plus Arrow Up or Down moves the");
   });
 
+  it("shows the rotation's length and cards with name and duration", () => {
+    // Only visible slides count: the hidden one's 45 s do not.
+    expect(html).toContain(">· 20 s</span>");
+    expect(html).toContain('<span class="rail-seconds">45 s</span>');
+    expect(html).toContain('aria-label="Add slide"');
+    expect(html).toContain(">+ Add</button>");
+    // The settings moved to the inspector.
+    expect(html).not.toContain("slide-name");
+  });
+
+  it("puts children (the add-widget chips) at its foot", () => {
+    const withFoot = renderI18n(
+      <SlideRail
+        slides={slides}
+        selectedSlideId={ID(2)}
+        tokens={dark}
+        defaultSeconds={20}
+        slidesWithProblems={new Set()}
+        dispatch={noop}
+      >
+        <span id="foot" />
+      </SlideRail>,
+    );
+    expect(withFoot).toContain('<div class="rail-foot"><span id="foot">');
+  });
+
+  it("formats the rotation in seconds and minutes", () => {
+    expect(rotationSeconds(slides, 20)).toBe(20);
+    expect(
+      rotationSeconds([...slides, slide(4, { durationSeconds: 70 })], 20),
+    ).toBe(90);
+    expect(rotationText(20, "en")).toBe("20 s");
+    expect(rotationText(90, "en")).toBe("1 min 30 s");
+    expect(rotationText(120, "en")).toBe("2 min");
+    expect(rotationText(Number.NaN, "en")).toBe("0 s");
+  });
+});
+
+describe("slide settings in the inspector", () => {
+  const slides = [
+    slide(2, { name: "Sales", widgets: [textWidget] }),
+    slide(3, { enabled: false, durationSeconds: 45 }),
+  ];
+  const settings = (
+    selectedSlideId: string,
+    list: StudioSlide[] = slides,
+    confirmDelete: string | null = null,
+  ) =>
+    renderI18n(
+      <SlideSettings
+        slides={list}
+        selectedSlideId={selectedSlideId}
+        defaultSeconds={20}
+        images={[]}
+        dispatch={noop}
+        confirmDelete={confirmDelete}
+        onConfirmDelete={noop}
+      />,
+    );
+
   it("edits the selected slide with labelled fields", () => {
+    const html = settings(ID(3));
+    expect(html).toContain('<h2 id="inspector-slide">Slide 2</h2>');
     expect(html).toContain('<label for="slide-name">Name</label>');
     expect(html).toContain('placeholder="20 (dashboard default)"');
     expect(html).toContain('value="45"');
@@ -145,18 +207,15 @@ describe("slide rail", () => {
   });
 
   it("never offers to delete the only slide", () => {
-    const single = renderI18n(
-      <SlideRail
-        slides={[slide(2)]}
-        selectedSlideId={ID(2)}
-        tokens={dark}
-        defaultSeconds={20}
-        slidesWithProblems={new Set()}
-        images={[]}
-        dispatch={noop}
-      />,
-    );
+    const single = settings(ID(2), [slide(2)]);
     expect(single).toMatch(/<button[^>]*disabled=""[^>]*>Delete<\/button>/);
+  });
+
+  it("asks before deleting", () => {
+    expect(settings(ID(2))).not.toContain("alertdialog");
+    expect(settings(ID(2), slides, ID(2))).toContain(
+      "Delete Sales and its widget? You can undo this until you save.",
+    );
   });
 });
 

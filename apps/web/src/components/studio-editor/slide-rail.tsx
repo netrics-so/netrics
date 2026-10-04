@@ -7,12 +7,11 @@ import {
   useState,
   type KeyboardEvent,
   type PointerEvent,
+  type ReactNode,
 } from "react";
 
 import {
-  BACKGROUND_DIM,
   SCREEN_FORMATS,
-  SLIDE_SECONDS,
   STUDIO_LIMITS,
   type Locale,
   type ScreenFormat,
@@ -28,9 +27,6 @@ import {
 import { webTranslator } from "@/lib/i18n/catalogs";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { slideTitle } from "@/lib/studio-widgets";
-
-import type { PickableImage } from "./image-picker";
-import { ImagePicker } from "./image-picker";
 
 /**
  * A slide as a small schematic: the theme's background with its widgets
@@ -95,12 +91,6 @@ interface DragState {
   midpoints: number[];
 }
 
-/**
- * The slide rail (ADR 0015, section 9): every slide in rotation order. A
- * slide is selected by click or Enter; Alt+Arrow keys move it, the drag
- * handle moves it with a pointer, and every move is announced. Below the
- * list: the selected slide's name, duration, visibility and background.
- */
 const NO_COUNTS: ReadonlyMap<string, number> = new Map();
 
 /** "1 widget cut off", "2 widgets cut off" (labels or text). */
@@ -108,6 +98,38 @@ export function cutOffText(count: number, locale: Locale): string {
   return webTranslator(locale, "studio.rail")("cutOff", { count });
 }
 
+/** Seconds one round of the visible slides takes. */
+export function rotationSeconds(
+  slides: ReadonlyArray<Pick<StudioSlide, "enabled" | "durationSeconds">>,
+  defaultSeconds: number,
+): number {
+  const fallback = Number.isFinite(defaultSeconds) ? defaultSeconds : 0;
+  return slides
+    .filter((slide) => slide.enabled)
+    .reduce((sum, slide) => sum + (slide.durationSeconds ?? fallback), 0);
+}
+
+/** "20 s", "1 min 20 s": the length of a rotation. */
+export function rotationText(length: number, locale: Locale): string {
+  const t = webTranslator(locale, "studio.rail");
+  const total = Number.isFinite(length) ? Math.max(0, Math.round(length)) : 0;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return total < 60
+    ? t("total", { seconds: total })
+    : seconds === 0
+      ? t("totalWholeMinutes", { minutes })
+      : t("totalMinutes", { minutes, seconds });
+}
+
+/**
+ * The slide rail (ADR 0015, section 9; design 3b): every slide in rotation
+ * order as a card, with the rotation's length in the head. A slide is
+ * selected by click or Enter; Alt+Arrow keys move it, the drag handle
+ * moves it with a pointer, and every move is announced. The selected
+ * slide's settings are in the inspector (SlideSettings); `children` go
+ * below the list (the add-widget chips).
+ */
 export function SlideRail({
   slides,
   selectedSlideId,
@@ -115,10 +137,10 @@ export function SlideRail({
   defaultSeconds,
   slidesWithProblems,
   unreadableCounts = NO_COUNTS,
-  images,
   dispatch,
-  onUploadImage,
+  onRequestDelete,
   primaryFormat = "16x9",
+  children,
 }: {
   slides: StudioSlide[];
   selectedSlideId: string;
@@ -127,20 +149,20 @@ export function SlideRail({
   slidesWithProblems: ReadonlySet<string>;
   /** Labels cut off on TVs, per slide id (#241). */
   unreadableCounts?: ReadonlyMap<string, number>;
-  images: PickableImage[];
   dispatch: (action: StudioAction) => void;
-  onUploadImage?: (file: File) => Promise<string | null>;
+  /** Delete or Backspace on a slide: ask before deleting it. */
+  onRequestDelete?: (slideId: string) => void;
   /** The format the slides are designed in (thumbnails). */
   primaryFormat?: ScreenFormat;
+  /** Below the list: the add-widget chips. */
+  children?: ReactNode;
 }) {
   const locale = useLocale();
   const t = useT("studio.rail");
-  const common = useT("common");
   const hintId = useId();
   const items = useRef(new Map<string, HTMLLIElement>());
   const buttons = useRef(new Map<string, HTMLButtonElement>());
   const [drag, setDrag] = useState<DragState | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const focusAfterMove = useRef<string | null>(null);
 
   const selectedIndex = Math.max(
@@ -190,7 +212,8 @@ export function SlideRail({
       if (slides.length > 1) {
         event.preventDefault();
         dispatch({ type: "selectSlide", slideId: slide.id });
-        setConfirmDelete(slide.id);
+        dispatch({ type: "selectWidget", widgetId: null });
+        onRequestDelete?.(slide.id);
       }
     }
   }
@@ -235,18 +258,30 @@ export function SlideRail({
   return (
     <aside className="studio-rail" aria-label={t("title")}>
       <div className="rail-head">
-        <h2>{t("title")}</h2>
+        <div className="rail-head-title">
+          <h2>{t("title")}</h2>
+          <span className="rail-total">
+            {t("totalPrefix", {
+              total: rotationText(
+                rotationSeconds(slides, defaultSeconds),
+                locale,
+              ),
+            })}
+          </span>
+        </div>
         <button
           type="button"
+          className="rail-add"
           onClick={() => dispatch({ type: "addSlide" })}
           disabled={slides.length >= STUDIO_LIMITS.slides}
+          aria-label={t("add")}
           title={
             slides.length >= STUDIO_LIMITS.slides
               ? t("atMost", { max: STUDIO_LIMITS.slides })
               : undefined
           }
         >
-          {t("add")}
+          {t("addShort")}
         </button>
       </div>
       <p id={hintId} className="visually-hidden">
@@ -314,9 +349,13 @@ export function SlideRail({
                   problems: slidesWithProblems.has(slide.id) ? "yes" : "no",
                   cutOff: cutOff ?? 0,
                 })}
-                onClick={() =>
-                  dispatch({ type: "selectSlide", slideId: slide.id })
-                }
+                onClick={() => {
+                  dispatch({ type: "selectSlide", slideId: slide.id });
+                  // The selected slide again: its settings in the inspector.
+                  if (isSelected) {
+                    dispatch({ type: "selectWidget", widgetId: null });
+                  }
+                }}
                 onKeyDown={(event) => onItemKeyDown(event, index)}
               >
                 <SlideThumbnail
@@ -328,203 +367,34 @@ export function SlideRail({
                   <span className="rail-title">
                     {index + 1}. {title}
                   </span>
-                  <span className="rail-meta">
+                  <span className="rail-seconds">
                     {t("seconds", { seconds })}
-                    {slide.enabled ? "" : ` · ${t("hidden")}`}
+                  </span>
+                </span>
+                {!slide.enabled ||
+                slidesWithProblems.has(slide.id) ||
+                cutOff ? (
+                  <span className="rail-meta">
+                    {slide.enabled ? null : (
+                      <span className="rail-hidden">{t("hidden")}</span>
+                    )}
                     {slidesWithProblems.has(slide.id) ? (
-                      <span className="rail-problem"> · ⚠ {t("check")}</span>
+                      <span className="rail-problem">⚠ {t("check")}</span>
                     ) : null}
                     {cutOff ? (
                       <span className="rail-unreadable">
-                        {" "}
-                        · {cutOffText(cutOff, locale)}
+                        {cutOffText(cutOff, locale)}
                       </span>
                     ) : null}
                   </span>
-                </span>
+                ) : null}
               </button>
             </li>
           );
         })}
       </ol>
 
-      {selected ? (
-        <section className="rail-slide" aria-label={t("selected")}>
-          <h3>{t("slide", { number: selectedIndex + 1 })}</h3>
-          <div className="field">
-            <label htmlFor="slide-name">{t("name")}</label>
-            <input
-              id="slide-name"
-              type="text"
-              value={selected.name ?? ""}
-              maxLength={STUDIO_LIMITS.slideNameLength}
-              placeholder={t("slide", { number: selectedIndex + 1 })}
-              onChange={(event) =>
-                dispatch({
-                  type: "updateSlide",
-                  slideId: selected.id,
-                  patch: {
-                    name: event.target.value === "" ? null : event.target.value,
-                  },
-                })
-              }
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="slide-duration">{t("duration")}</label>
-            <input
-              id="slide-duration"
-              type="number"
-              inputMode="numeric"
-              min={SLIDE_SECONDS.min}
-              max={SLIDE_SECONDS.max}
-              value={selected.durationSeconds ?? ""}
-              placeholder={t("durationDefault", { seconds: defaultSeconds })}
-              onChange={(event) =>
-                dispatch({
-                  type: "updateSlide",
-                  slideId: selected.id,
-                  patch: {
-                    durationSeconds:
-                      event.target.value === ""
-                        ? null
-                        : Math.round(Number(event.target.value)),
-                  },
-                })
-              }
-            />
-          </div>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={selected.enabled}
-              onChange={(event) =>
-                dispatch({
-                  type: "updateSlide",
-                  slideId: selected.id,
-                  patch: { enabled: event.target.checked },
-                })
-              }
-            />
-            {t("showOnScreens")}
-          </label>
-          <ImagePicker
-            id="slide-background"
-            label={t("background")}
-            noneLabel={t("noBackground")}
-            images={images}
-            value={selected.background?.imageId ?? null}
-            onChange={(imageId) =>
-              dispatch({
-                type: "updateSlide",
-                slideId: selected.id,
-                patch: {
-                  background: imageId
-                    ? {
-                        imageId,
-                        dim: selected.background?.dim ?? BACKGROUND_DIM.default,
-                      }
-                    : null,
-                },
-              })
-            }
-            onUpload={onUploadImage}
-          />
-          {selected.background ? (
-            <div className="field">
-              <label htmlFor="slide-dim">
-                {t("dim", { percent: selected.background.dim })}
-              </label>
-              <input
-                id="slide-dim"
-                type="range"
-                min={BACKGROUND_DIM.min}
-                max={BACKGROUND_DIM.max}
-                step={5}
-                value={selected.background.dim}
-                onChange={(event) =>
-                  dispatch({
-                    type: "updateSlide",
-                    slideId: selected.id,
-                    patch: {
-                      background: {
-                        imageId: selected.background!.imageId,
-                        dim: Number(event.target.value),
-                      },
-                    },
-                  })
-                }
-              />
-            </div>
-          ) : null}
-          <div className="actions rail-actions">
-            <button
-              type="button"
-              onClick={() => move(selected.id, selectedIndex - 1)}
-              disabled={selectedIndex === 0}
-              aria-label={t("moveUp")}
-            >
-              ↑
-            </button>
-            <button
-              type="button"
-              onClick={() => move(selected.id, selectedIndex + 1)}
-              disabled={selectedIndex === slides.length - 1}
-              aria-label={t("moveDown")}
-            >
-              ↓
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                dispatch({ type: "duplicateSlide", slideId: selected.id })
-              }
-              disabled={slides.length >= STUDIO_LIMITS.slides}
-            >
-              {t("duplicate")}
-            </button>
-            <button
-              type="button"
-              className="danger"
-              onClick={() => setConfirmDelete(selected.id)}
-              disabled={slides.length <= 1}
-              title={slides.length <= 1 ? t("keepOne") : undefined}
-            >
-              {common("delete")}
-            </button>
-          </div>
-          {confirmDelete === selected.id ? (
-            <div
-              className="rail-confirm"
-              role="alertdialog"
-              aria-label={t("delete")}
-            >
-              <p>
-                {t("deleteConfirm", {
-                  slide: slideTitle(selected, selectedIndex, locale),
-                  widgets: selected.widgets.length,
-                })}
-              </p>
-              <div className="actions">
-                <button
-                  type="button"
-                  className="danger"
-                  autoFocus
-                  onClick={() => {
-                    setConfirmDelete(null);
-                    dispatch({ type: "deleteSlide", slideId: selected.id });
-                  }}
-                >
-                  {t("delete")}
-                </button>
-                <button type="button" onClick={() => setConfirmDelete(null)}>
-                  {common("cancel")}
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
+      {children ? <div className="rail-foot">{children}</div> : null}
     </aside>
   );
 }

@@ -14,7 +14,9 @@ export const studioDe: Catalog<typeof studioEn> = {
       imageDeleted: "Bild gelöscht.",
       fixProblems:
         "Behebe die auf den Folien markierten Probleme, bevor du speicherst. Es wurde nichts gespeichert.",
-      backToDashboard: "Dashboard",
+      breadcrumb: "Brotkrümelnavigation",
+      dashboards: "Dashboards",
+      history: "Rückgängig und Wiederholen",
       untitled: "Ohne Namen",
       unsaved: "Ungespeicherte Änderungen",
       saved: "Gespeichert",
@@ -23,8 +25,8 @@ export const studioDe: Catalog<typeof studioEn> = {
       discardConfirm: "Alle ungespeicherten Änderungen verwerfen?",
       discard: "Verwerfen",
       play: "Abspielen",
-      showOnTvs: "Auf TVs zeigen",
-      showOnTvsCount: "Auf TVs zeigen ({count})",
+      showOnTvs: "Auf Bildschirmen zeigen",
+      showOnTvsCount: "Auf Bildschirmen zeigen ({count})",
       conflict:
         "Jemand anderes hat dieses Dashboard gespeichert, während du es bearbeitet hast. Deine Änderungen sind nicht gespeichert.",
       loadTheirsConfirm:
@@ -32,8 +34,6 @@ export const studioDe: Catalog<typeof studioEn> = {
       loadTheirs: "Ihre Version laden",
       saveCopy: "Meine als Kopie speichern",
       stage: "Folie",
-      canvasHelp:
-        "Design {theme}. Klick auf ein Widget, um es zu bearbeiten; zieh es, um es zu verschieben, und an seinen Kanten, um die Größe zu ändern (Pfeiltasten und Umschalt+Pfeiltasten tun dasselbe). Klick auf den Hintergrund der Folie für die Dashboard-Einstellungen.",
       inspector: "Eigenschaften",
       leaveConfirm:
         "Dieses Dashboard hat ungespeicherte Änderungen. Seite verlassen und Änderungen verwerfen?",
@@ -58,7 +58,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       labelCut: "Beschriftung abgeschnitten",
       keyboardHelp:
         "Pfeiltasten verschieben das Widget um eine Zelle, Umschalt und Pfeiltasten ändern seine Größe, Entf entfernt es, Esc kehrt zur Folie zurück. Strg oder Befehl mit D dupliziert es, mit C kopiert es und mit V fügt eine Kopie ein.",
-      empty: "Diese Folie ist leer. Füg oben ein Widget hinzu.",
+      empty: "Diese Folie ist leer. Füg unter „Widget hinzufügen“ eins hinzu.",
       readoutNoRoom: "{w} × {h} · hier ist kein Platz",
       dragCancelled: "Ziehen abgebrochen.",
       toReview: "Zu prüfen",
@@ -72,7 +72,7 @@ export const studioDe: Catalog<typeof studioEn> = {
     },
     addMenu: {
       group: "Widget hinzufügen",
-      add: "Hinzufügen",
+      add: "Widget hinzufügen",
       hint: "Klick, um es am ersten freien Platz einzufügen, oder zieh es auf die Folie",
       addType:
         "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} image {Bild} text {Text} clock {Uhr} other {Widget}} hinzufügen",
@@ -130,6 +130,12 @@ export const studioDe: Catalog<typeof studioEn> = {
       title: "Folien",
       atMost: "Höchstens {max} Folien",
       add: "Folie hinzufügen",
+      addShort: "+ Neu",
+      totalPrefix: "· {total}",
+      total: "{seconds} s",
+      totalMinutes: "{minutes} min {seconds} s",
+      totalWholeMinutes: "{minutes} min",
+      slidePosition: "{number} von {count}",
       keyboardHelp:
         "Pfeiltasten wechseln zwischen den Folien. Alt mit Pfeil nach oben oder unten verschiebt die Folie. Entf entfernt sie nach einer Bestätigung.",
       dragHandle: "Zum Umsortieren ziehen",
@@ -187,7 +193,7 @@ export const studioDe: Catalog<typeof studioEn> = {
     },
     widgetPanel: {
       allResources: "Alle {plural}",
-      position: "Spalte {column}, Zeile {row} · {w} × {h} Zellen",
+      position: "Sp. {column}, Z. {row} · {w}×{h}",
       title: "Titel",
       titleOptional: "Titel (optional)",
       shownAs: "Angezeigt als {label}",
@@ -222,6 +228,11 @@ export const studioDe: Catalog<typeof studioEn> = {
       barsShown: "Angezeigte Balken: {count}",
       barsHelp: "Die größten Gruppen, der Rest zusammengefasst als „Andere“.",
       all: "Alle",
+      filter: "Filter",
+      filterChip: "{name} = {value}",
+      filterRemove: "Filter auf {name} entfernen",
+      filterAdd: "+ hinzufügen",
+      filterDone: "Fertig",
       loadingValues: "Werte werden geladen…",
       filterHelp: "Alles oder nur einer der größten Werte.",
       align: "Ausrichtung",
@@ -265,6 +276,31 @@ export const studioDe: Catalog<typeof studioEn> = {
       noImage: "Lade zuerst ein Bild hoch (Dashboard-Einstellungen, Logo).",
       text: "## Überschrift\nEtwas Text",
       notBreakable: "Diese Metrik lässt sich nicht in Balken aufschlüsseln.",
+    },
+    status: {
+      liveOn: "Live auf {screens}",
+      notLive: "Auf keinem Bildschirm",
+      canvasSlide: "Folie {number} · {ratio} · Vorschau {width} × {height}",
+      canvasSlideNamed:
+        "Folie {number} · {name} · {ratio} · Vorschau {width} × {height}",
+      gridOk: "Raster ✓",
+      gridProblems: "⚠ Platzierung prüfen",
+      readable: "Aus der Entfernung lesbar:",
+      allFit: "alle Beschriftungen passen",
+      labelsCut:
+        "{count, plural, one {# Beschriftung abgeschnitten} other {# Beschriftungen abgeschnitten}}",
+      theme: "Design",
+      accent: "Akzent",
+      headerOn: "Kopfzeile · Uhr an",
+      headerOff: "Kopfzeile · Uhr aus",
+      keys: "Pfeile verschieben · ⇧ Größe · ⌫ löschen",
+      keysHelp:
+        "Klick auf ein Widget, um es zu bearbeiten; zieh es, um es zu verschieben, und an seinen Kanten, um die Größe zu ändern (Pfeiltasten und Umschalt+Pfeiltasten tun dasselbe). Klick auf den Hintergrund der Folie für die Folien- und Dashboard-Einstellungen.",
+    },
+    fit: {
+      labelFits: "Beschriftung passt bei 1080p",
+      labelFitsValue: "Beschriftung passt bei 1080p · Wert {size} px",
+      textFits: "Text passt bei 1080p",
     },
     readability: {
       titleCut: "Der Titel wird auf TVs abgeschnitten.",

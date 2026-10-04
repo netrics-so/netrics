@@ -56,6 +56,7 @@ import {
   type PreviewTarget,
 } from "@/lib/studio-formats";
 import { resolveDashboardTheme } from "@/lib/studio-theme";
+import { workspacePath } from "@/lib/app-nav";
 import {
   metricKeyOf,
   referencedImageIds,
@@ -90,6 +91,8 @@ import {
 } from "./inspector";
 import { PlayMode } from "./play-mode";
 import { SlideRail } from "./slide-rail";
+import { SlideSettings } from "./slide-settings";
+import { CanvasHead, LiveIndicator, StatusLine } from "./studio-status";
 import { useLeaveGuard } from "./use-leave-guard";
 import type { StudioCurrency } from "./widget-panel";
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -170,6 +173,10 @@ export function StudioEditor({
   const [showProblems, setShowProblems] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [assigning, setAssigning] = useState(false);
+  /** The slide waiting for the delete confirmation in the inspector. */
+  const [confirmDeleteSlide, setConfirmDeleteSlide] = useState<string | null>(
+    null,
+  );
   const stopPlaying = useCallback(() => setPlaying(false), []);
   /** A new widget dragged from the add menu over the canvas (#241). */
   const [incoming, setIncoming] = useState<CanvasOutline | null>(null);
@@ -180,6 +187,10 @@ export function StudioEditor({
   const { draft } = state;
   const slide = selectedSlide(state);
   const slideId = slide?.id;
+  const slideIndex = Math.max(
+    0,
+    draft.slides.findIndex((entry) => entry.id === slideId),
+  );
   // Another slide starts on its first page.
   useEffect(() => {
     formatDispatch({ type: "slideChanged" });
@@ -486,15 +497,18 @@ export function StudioEditor({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [playing, save]);
 
-  const dashboardHref = `/workspaces/${workspaceId}/dashboards/${state.dashboardId}`;
   const dashboardProblems = problems.filter((p) => p.slideId === null);
   const widgetProblems = widget
     ? problems.filter((p) => p.widgetId === widget.id)
     : [];
   const activeDevices = devices?.filter((device) => !device.revokedAt) ?? null;
-  const assignedCount =
-    activeDevices?.filter((device) => device.dashboardId === state.dashboardId)
-      .length ?? 0;
+  // The screens that show this dashboard, from the devices the page loads
+  // anyway; null when the role cannot see them.
+  const liveScreens =
+    activeDevices
+      ?.filter((device) => device.dashboardId === state.dashboardId)
+      .map((device) => device.name) ?? null;
+  const assignedCount = liveScreens?.length ?? 0;
   const blockers = useMemo(
     () =>
       formatView.target === "scroll" || formatView.overview
@@ -561,11 +575,13 @@ export function StudioEditor({
 
   return (
     <div className="studio">
-      <div className="studio-toolbar">
+      <header className="studio-toolbar">
         <div className="studio-title">
-          <Link href={dashboardHref} className="muted">
-            ← {t("backToDashboard")}
-          </Link>
+          <nav className="studio-breadcrumb" aria-label={t("breadcrumb")}>
+            <Link href={workspacePath(workspaceId, "dashboards")}>
+              {t("dashboards")}
+            </Link>
+          </nav>
           <h1>{draft.name.trim() || t("untitled")}</h1>
           <span
             className={
@@ -576,45 +592,50 @@ export function StudioEditor({
           </span>
           {dirty ? null : <FormatAttention slides={savedSlides} />}
         </div>
-        <div className="actions studio-actions">
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "undo" })}
-            disabled={state.past.length === 0}
-            aria-keyshortcuts="Control+Z Meta+Z"
+        <div className="studio-actions">
+          {liveScreens ? <LiveIndicator screens={liveScreens} /> : null}
+          <div
+            className="studio-history"
+            role="group"
+            aria-label={t("history")}
           >
-            {t("undo")}
-          </button>
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "redo" })}
-            disabled={state.future.length === 0}
-            aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
-          >
-            {t("redo")}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm(t("discardConfirm"))) {
-                dispatch({ type: "discard" });
-                setError(null);
-                setShowProblems(false);
-              }
-            }}
-            disabled={!dirty || saving}
-          >
-            {t("discard")}
-          </button>
-          <button
-            type="button"
-            className="primary"
-            onClick={() => void save()}
-            disabled={!dirty || saving}
-            aria-keyshortcuts="Control+S Meta+S"
-          >
-            {saving ? common("saving") : common("save")}
-          </button>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => dispatch({ type: "undo" })}
+              disabled={state.past.length === 0}
+              aria-keyshortcuts="Control+Z Meta+Z"
+              aria-label={t("undo")}
+              title={t("undo")}
+            >
+              ↶
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => dispatch({ type: "redo" })}
+              disabled={state.future.length === 0}
+              aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
+              aria-label={t("redo")}
+              title={t("redo")}
+            >
+              ↷
+            </button>
+            <button
+              type="button"
+              className="studio-discard"
+              onClick={() => {
+                if (window.confirm(t("discardConfirm"))) {
+                  dispatch({ type: "discard" });
+                  setError(null);
+                  setShowProblems(false);
+                }
+              }}
+              disabled={!dirty || saving}
+            >
+              {t("discard")}
+            </button>
+          </div>
           <button type="button" onClick={() => setPlaying(true)}>
             ▶ {t("play")}
           </button>
@@ -625,8 +646,17 @@ export function StudioEditor({
                 : t("showOnTvs")}
             </button>
           ) : null}
+          <button
+            type="button"
+            className="primary"
+            onClick={() => void save()}
+            disabled={!dirty || saving}
+            aria-keyshortcuts="Control+S Meta+S"
+          >
+            {saving ? common("saving") : common("save")}
+          </button>
         </div>
-      </div>
+      </header>
 
       {conflict ? (
         <div className="error studio-banner" role="alert">
@@ -699,10 +729,22 @@ export function StudioEditor({
           defaultSeconds={draft.settings.defaultSlideSeconds}
           slidesWithProblems={slidesWithProblems}
           unreadableCounts={unreadable.perSlide}
-          images={pickable}
           dispatch={dispatch}
-          onUploadImage={onUploadImage}
-        />
+          onRequestDelete={setConfirmDeleteSlide}
+        >
+          {slide && editing && customFormat === null ? (
+            <AddWidgetMenu
+              document={draft}
+              slide={slide}
+              metrics={metrics}
+              imageIds={images.map((image) => image.id)}
+              dispatch={dispatch}
+              showHeader={draft.settings.showHeader}
+              primaryFormat={primaryFormat}
+              onDragNew={setIncoming}
+            />
+          ) : null}
+        </SlideRail>
         <section className="studio-stage" aria-label={t("stage")}>
           {slide ? (
             <>
@@ -761,25 +803,13 @@ export function StudioEditor({
                   aria-labelledby={`${stagePanelId}-tab-${formatView.target}`}
                   className="format-editor"
                 >
-                  <div className="stage-toolbar">
-                    <AddWidgetMenu
-                      document={draft}
-                      slide={slide}
-                      metrics={metrics}
-                      imageIds={images.map((image) => image.id)}
-                      dispatch={dispatch}
-                      showHeader={draft.settings.showHeader}
-                      primaryFormat={primaryFormat}
-                      onDragNew={setIncoming}
-                    />
-                    <WidgetClipboardBar
-                      selected={widget}
-                      clipboard={widgetClipboard.clipboard}
-                      onCopy={widgetClipboard.copy}
-                      onPaste={widgetClipboard.paste}
-                      onDuplicate={widgetClipboard.duplicate}
-                    />
-                  </div>
+                  <CanvasHead
+                    number={slideIndex + 1}
+                    name={slide.name?.trim() || null}
+                    format={primaryFormat}
+                    hasProblems={slidesWithProblems.has(slide.id)}
+                    cutOff={unreadable.perSlide.get(slide.id) ?? 0}
+                  />
                   <EditorCanvas
                     slide={slide}
                     dashboardName={draft.name}
@@ -794,13 +824,23 @@ export function StudioEditor({
                     primaryFormat={primaryFormat}
                     format={primaryFormat}
                   />
-                  <p className="help">
-                    {t("canvasHelp", {
-                      theme: theme.builtin
+                  <StatusLine
+                    themeName={
+                      theme.builtin
                         ? builtinThemeName(theme.builtin, locale)
-                        : theme.name,
-                    })}
-                  </p>
+                        : theme.name
+                    }
+                    accent={theme.tokens.accent}
+                    showHeader={draft.settings.showHeader}
+                  >
+                    <WidgetClipboardBar
+                      selected={widget}
+                      clipboard={widgetClipboard.clipboard}
+                      onCopy={widgetClipboard.copy}
+                      onPaste={widgetClipboard.paste}
+                      onDuplicate={widgetClipboard.duplicate}
+                    />
+                  </StatusLine>
                 </div>
               ) : (
                 <FormatPreview
@@ -873,23 +913,39 @@ export function StudioEditor({
               problems={widgetProblems}
               timeZone={timeZone}
               fontScale={theme.tokens.fontScale}
+              showHeader={draft.settings.showHeader}
+              unreadable={unreadable.byWidget.get(widget.id)}
               currency={currency}
               dispatch={dispatch}
               onUploadImage={onUploadImage}
               onDeleteImage={onDeleteImage}
             />
           ) : (
-            <DashboardSettingsPanel
-              document={draft}
-              themes={themes}
-              baseTokens={baseTheme.tokens}
-              projects={projects}
-              images={pickable}
-              problems={dashboardProblems}
-              themesHref={`/workspaces/${workspaceId}/settings/themes`}
-              dispatch={dispatch}
-              onUploadImage={onUploadImage}
-            />
+            <>
+              {slide ? (
+                <SlideSettings
+                  slides={draft.slides}
+                  selectedSlideId={slide.id}
+                  defaultSeconds={draft.settings.defaultSlideSeconds}
+                  images={pickable}
+                  dispatch={dispatch}
+                  onUploadImage={onUploadImage}
+                  confirmDelete={confirmDeleteSlide}
+                  onConfirmDelete={setConfirmDeleteSlide}
+                />
+              ) : null}
+              <DashboardSettingsPanel
+                document={draft}
+                themes={themes}
+                baseTokens={baseTheme.tokens}
+                projects={projects}
+                images={pickable}
+                problems={dashboardProblems}
+                themesHref={`/workspaces/${workspaceId}/settings/themes`}
+                dispatch={dispatch}
+                onUploadImage={onUploadImage}
+              />
+            </>
           )}
         </aside>
       </div>

@@ -21,6 +21,8 @@ import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
 import type { StudioConnection } from "@/lib/studio-widgets";
 
+import "@/app/styles/studio.css";
+
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {

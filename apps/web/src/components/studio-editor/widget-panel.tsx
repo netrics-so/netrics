@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import type {
   DashboardWidget,
@@ -49,6 +49,8 @@ import {
   resourcePatch,
   scopePatch,
 } from "@/lib/studio-inspector";
+import { fitCheck } from "@/lib/studio-fit-check";
+import type { UnreadableLabel } from "@/lib/studio-readability";
 import type { DataWidget } from "@/lib/studio-widgets";
 import {
   choiceValue,
@@ -90,6 +92,10 @@ export interface WidgetPanelProps {
   /** The theme's text scale, for the label fit. */
   fontScale?: number;
   currency?: StudioCurrency;
+  /** Whether the dashboard shows its header (the fit check's grid). */
+  showHeader?: boolean;
+  /** The canvas's readability warning for this widget, if any (#241). */
+  unreadable?: UnreadableLabel;
   dispatch: (action: StudioAction) => void;
   onUploadImage?: (file: File) => Promise<string | null>;
   /** Resolves to null when deleted, else why not. */
@@ -128,16 +134,17 @@ export function WidgetPanel(props: WidgetPanelProps) {
 
   return (
     <section className="inspector-section" aria-labelledby="inspector-widget">
-      <h2 id="inspector-widget">{widgetTypeName(widget.type, locale)}</h2>
-      <p className="help">
-        {t("position", {
-          column: widget.x + 1,
-          row: widget.y + 1,
-          w: widget.w,
-          h: widget.h,
-        })}
-        {metric ? ` · ${metric.connectionName}` : ""}
-      </p>
+      <div className="inspector-head">
+        <h2 id="inspector-widget">{widgetTypeName(widget.type, locale)}</h2>
+        <span className="inspector-head-meta">
+          {t("position", {
+            column: widget.x + 1,
+            row: widget.y + 1,
+            w: widget.w,
+            h: widget.h,
+          })}
+        </span>
+      </div>
       <Problems problems={problems} />
       <TypeField {...props} />
 
@@ -179,7 +186,7 @@ export function WidgetPanel(props: WidgetPanelProps) {
       ) : null}
       <StyleFields {...props} />
 
-      <div className="actions">
+      <div className="actions inspector-actions">
         <button
           type="button"
           onClick={() => dispatch({ type: "selectWidget", widgetId: null })}
@@ -196,7 +203,37 @@ export function WidgetPanel(props: WidgetPanelProps) {
           {t("delete")}
         </button>
       </div>
+      <FitCheckNote {...props} label={preview?.label ?? ""} />
     </section>
+  );
+}
+
+/** The fit check at the inspector's foot (design 3b). */
+function FitCheckNote({
+  widget,
+  unreadable,
+  fontScale,
+  showHeader,
+  label,
+}: WidgetPanelProps & { label: string }) {
+  const locale = useLocale();
+  const check = fitCheck({
+    widget,
+    label,
+    unreadable,
+    fontScale: fontScale ?? 1,
+    showHeader: showHeader ?? true,
+    locale,
+  });
+  if (!check) return null;
+  return (
+    <p
+      className={`fit-check fit-check--${check.state}`}
+      role={check.state === "cut" ? "status" : undefined}
+    >
+      <span aria-hidden="true">{check.state === "fits" ? "✓" : "⚠"}</span>{" "}
+      {check.text}
+    </p>
   );
 }
 
@@ -342,28 +379,32 @@ function DataFields({
         <legend>{t("data")}</legend>
         <div className="field">
           <label htmlFor="widget-connection">{t("connection")}</label>
-          <select
-            id="widget-connection"
-            value={widget.connectionId}
-            onChange={(event) =>
-              bind(
-                candidates.find(
-                  (candidate) => candidate.connectionId === event.target.value,
-                ),
-              )
-            }
-          >
-            {connections.some((c) => c.id === widget.connectionId) ? null : (
-              <option value={widget.connectionId}>
-                {metric?.connectionName ?? t("removedConnection")}
-              </option>
-            )}
-            {connections.map((connection) => (
-              <option key={connection.id} value={connection.id}>
-                {connection.name}
-              </option>
-            ))}
-          </select>
+          <span className="field-swatch-row">
+            <span className="field-swatch" aria-hidden="true" />
+            <select
+              id="widget-connection"
+              value={widget.connectionId}
+              onChange={(event) =>
+                bind(
+                  candidates.find(
+                    (candidate) =>
+                      candidate.connectionId === event.target.value,
+                  ),
+                )
+              }
+            >
+              {connections.some((c) => c.id === widget.connectionId) ? null : (
+                <option value={widget.connectionId}>
+                  {metric?.connectionName ?? t("removedConnection")}
+                </option>
+              )}
+              {connections.map((connection) => (
+                <option key={connection.id} value={connection.id}>
+                  {connection.name}
+                </option>
+              ))}
+            </select>
+          </span>
         </div>
         <div className="field">
           <label htmlFor="widget-metric">{t("metric")}</label>
@@ -400,39 +441,41 @@ function DataFields({
             <p className="help">{t("barMetrics")}</p>
           ) : null}
         </div>
-        <div className="field">
-          <label htmlFor="widget-aggregation">{t("show")}</label>
-          <select
-            id="widget-aggregation"
-            value={widget.aggregation}
-            onChange={(event) =>
-              update({
-                aggregation: event.target.value as MetricAggregation,
-              })
-            }
-          >
-            {(metric?.aggregations ?? [widget.aggregation]).map((option) => (
-              <option key={option} value={option}>
-                {metric ? aggregationName(option, metric, locale) : option}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="widget-period">{t("period")}</label>
-          <select
-            id="widget-period"
-            value={widget.period}
-            onChange={(event) =>
-              update({ period: event.target.value as MetricPeriod })
-            }
-          >
-            {PERIODS.map((option) => (
-              <option key={option} value={option}>
-                {periodLabel(option, locale)}
-              </option>
-            ))}
-          </select>
+        <div className="field-pair">
+          <div className="field">
+            <label htmlFor="widget-period">{t("period")}</label>
+            <select
+              id="widget-period"
+              value={widget.period}
+              onChange={(event) =>
+                update({ period: event.target.value as MetricPeriod })
+              }
+            >
+              {PERIODS.map((option) => (
+                <option key={option} value={option}>
+                  {periodLabel(option, locale)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="widget-aggregation">{t("show")}</label>
+            <select
+              id="widget-aggregation"
+              value={widget.aggregation}
+              onChange={(event) =>
+                update({
+                  aggregation: event.target.value as MetricAggregation,
+                })
+              }
+            >
+              {(metric?.aggregations ?? [widget.aggregation]).map((option) => (
+                <option key={option} value={option}>
+                  {metric ? aggregationName(option, metric, locale) : option}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         {!groupedByResource &&
         (offersResourceChoice(resources.resources) ||
@@ -550,23 +593,17 @@ function DataFields({
             </p>
           </div>
         ) : null}
-        {metric
-          ? filterDimensions(metric, widget).map((dimension) => (
-              <DimensionFilter
-                key={dimension}
-                workspaceId={workspaceId}
-                widget={widget}
-                dimension={dimension}
-                label={
-                  metric.dimensionNames?.[dimension] ??
-                  dimensionLabel(dimension)
-                }
-                onChange={(value) =>
-                  update(dimensionPatch(widget, dimension, value))
-                }
-              />
-            ))
-          : null}
+        {metric ? (
+          <FilterFields
+            key={widget.id}
+            workspaceId={workspaceId}
+            widget={widget}
+            metric={metric}
+            onChange={(dimension, value) =>
+              update(dimensionPatch(widget, dimension, value))
+            }
+          />
+        ) : null}
       </fieldset>
 
       {widget.type === "bar" ? (
@@ -616,6 +653,86 @@ function DataFields({
         </fieldset>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Filters as chips (design 3b): one per dimension filtered on, with a
+ * button to remove it, and "+ add" for the dimension pickers. The pickers
+ * show at once while nothing is filtered.
+ */
+function FilterFields({
+  workspaceId,
+  widget,
+  metric,
+  onChange,
+}: {
+  workspaceId: string;
+  widget: DataWidget;
+  metric: WorkspaceMetric;
+  onChange: (dimension: string, value: string | null) => void;
+}) {
+  const t = useT("studio.widgetPanel");
+  const dimensions = filterDimensions(metric, widget);
+  const nameOf = (dimension: string) =>
+    metric.dimensionNames?.[dimension] ?? dimensionLabel(dimension);
+  const active = dimensions.filter(
+    (dimension) => (widget.dimensions[dimension] ?? null) !== null,
+  );
+  const [open, setOpen] = useState(active.length === 0);
+  const pickersId = `widget-filters-${widget.id}`;
+  if (dimensions.length === 0) {
+    return null;
+  }
+  return (
+    <div className="filter-group">
+      <span className="field-label">{t("filter")}</span>
+      <div className="filter-chips">
+        {active.map((dimension) => {
+          const name = nameOf(dimension);
+          return (
+            <span key={dimension} className="filter-chip">
+              {t("filterChip", {
+                name,
+                value: widget.dimensions[dimension] ?? "",
+              })}
+              <button
+                type="button"
+                className="filter-chip-remove"
+                aria-label={t("filterRemove", { name })}
+                title={t("filterRemove", { name })}
+                onClick={() => onChange(dimension, null)}
+              >
+                ×
+              </button>
+            </span>
+          );
+        })}
+        <button
+          type="button"
+          className="filter-add"
+          aria-expanded={open}
+          aria-controls={pickersId}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? t("filterDone") : t("filterAdd")}
+        </button>
+      </div>
+      {open ? (
+        <div id={pickersId} className="filter-pickers">
+          {dimensions.map((dimension) => (
+            <DimensionFilter
+              key={dimension}
+              workspaceId={workspaceId}
+              widget={widget}
+              dimension={dimension}
+              label={nameOf(dimension)}
+              onChange={(value) => onChange(dimension, value)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
