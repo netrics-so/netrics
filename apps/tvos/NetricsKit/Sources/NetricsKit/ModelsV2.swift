@@ -4,6 +4,12 @@ import Foundation
 // in packages/contracts): slides of widgets on the 12 × 8 grid, the resolved
 // theme, rotation and the images the dashboard references.
 //
+// Schema 3 (ADR 0017, section 9; deviceDashboardV3ResponseSchema) is schema
+// 2's content plus the dashboard's primary format (widgets are placed in
+// its grid), the custom layouts per slide and format, and this device's
+// settings (rotation, display mode). The same type reads both; a schema 2
+// payload is a `16x9` dashboard without custom layouts, rotation 0.
+//
 // Decoding is tolerant, as for schema 1: unknown fields are ignored, an
 // unknown widget type (a newer server) or a widget whose fields this build
 // cannot read becomes `.unsupported` and renders as an empty themed cell,
@@ -11,7 +17,7 @@ import Foundation
 // the whole payload. Only the envelope (version, slides) is required.
 
 /** The payload schemas this app can render, newest first. */
-public let supportedDashboardSchemas: [Int] = [2, 1]
+public let supportedDashboardSchemas: [Int] = [3, 2, 1]
 
 // MARK: Lossy containers
 
@@ -543,7 +549,12 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
         placement = StudioPlacement(
             x: try c.decode(Int.self, forKey: .x), y: try c.decode(Int.self, forKey: .y),
             w: try c.decode(Int.self, forKey: .w), h: try c.decode(Int.self, forKey: .h))
-        guard StudioLayout.isInsideGrid(placement) else {
+        // Inside the largest grid here; the payload then keeps only the
+        // widgets inside its primary format's grid (12 × 8 for schema 2).
+        let largest = StudioLayout.screenFormatMaxGrid
+        guard placement.x >= 0, placement.y >= 0, placement.w >= 1, placement.h >= 1,
+            placement.x + placement.w <= largest.columns, placement.y + placement.h <= largest.rows
+        else {
             throw DecodingError.dataCorruptedError(forKey: .x, in: c, debugDescription: "Outside the grid")
         }
         type = c.lenient(String.self, .type) ?? ""
@@ -633,19 +644,25 @@ public struct DeviceSlide: Codable, Sendable, Equatable, Identifiable {
     public var durationSec: Int
     public var background: SlideBackground?
     public var widgets: [DeviceWidget]
+    /** Schema 3: the custom layouts of formats other than the primary; the others are auto. */
+    public var layouts: [DeviceSlideLayout]
 
-    public init(id: String, name: String?, durationSec: Int, background: SlideBackground?, widgets: [DeviceWidget]) {
+    public init(
+        id: String, name: String?, durationSec: Int, background: SlideBackground?, widgets: [DeviceWidget],
+        layouts: [DeviceSlideLayout] = []
+    ) {
         self.id = id
         self.name = name
         self.durationSec = durationSec
         self.background = background
         self.widgets = widgets
+        self.layouts = layouts
     }
 
     /** The dashboard default (ADR 0015): used when a duration is missing. */
     public static let defaultDurationSec = 20
 
-    private enum CodingKeys: String, CodingKey { case id, name, durationSec, background, widgets }
+    private enum CodingKeys: String, CodingKey { case id, name, durationSec, background, widgets, layouts }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -655,6 +672,129 @@ public struct DeviceSlide: Codable, Sendable, Equatable, Identifiable {
         durationSec = duration > 0 ? duration : Self.defaultDurationSec
         background = c.lenient(SlideBackground.self, .background)
         widgets = c.lossyArray(DeviceWidget.self, .widgets)
+        layouts = c.lossyArray(DeviceSlideLayout.self, .layouts)
+    }
+
+    /** The custom layout for `format`, if the slide has one. */
+    public func layout(_ format: ScreenFormat) -> DeviceSlideLayout? {
+        layouts.first { $0.format == format }
+    }
+}
+
+/** A widget's place in a custom layout (deviceLayoutPlacementSchema). */
+public struct DeviceLayoutPlacement: Codable, Sendable, Equatable {
+    public var widgetId: String
+    /** 0-based page (continuation pages). */
+    public var page: Int
+    public var x: Int
+    public var y: Int
+    public var w: Int
+    public var h: Int
+    /** Not shown in this format. */
+    public var hidden: Bool
+
+    public init(widgetId: String, page: Int, x: Int, y: Int, w: Int, h: Int, hidden: Bool = false) {
+        self.widgetId = widgetId
+        self.page = page
+        self.x = x
+        self.y = y
+        self.w = w
+        self.h = h
+        self.hidden = hidden
+    }
+
+    private enum CodingKeys: String, CodingKey { case widgetId, page, x, y, w, h, hidden }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        widgetId = try c.decode(String.self, forKey: .widgetId)
+        page = try c.decode(Int.self, forKey: .page)
+        x = try c.decode(Int.self, forKey: .x)
+        y = try c.decode(Int.self, forKey: .y)
+        w = try c.decode(Int.self, forKey: .w)
+        h = try c.decode(Int.self, forKey: .h)
+        hidden = c.lenient(Bool.self, .hidden) ?? false
+    }
+}
+
+/**
+ * A slide's custom layout in one format (deviceSlideLayoutSchema). A
+ * layout of a format this build does not know is dropped (that format is
+ * never this screen's).
+ */
+public struct DeviceSlideLayout: Codable, Sendable, Equatable {
+    public var format: ScreenFormat
+    public var pages: Int
+    public var placements: [DeviceLayoutPlacement]
+
+    public init(format: ScreenFormat, pages: Int, placements: [DeviceLayoutPlacement]) {
+        self.format = format
+        self.pages = pages
+        self.placements = placements
+    }
+
+    private enum CodingKeys: String, CodingKey { case format, pages, placements }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        format = try c.decode(ScreenFormat.self, forKey: .format)
+        pages = c.lenient(Int.self, .pages) ?? 1
+        placements = c.lossyArray(DeviceLayoutPlacement.self, .placements)
+    }
+
+    /** As the layout functions take it. */
+    public var custom: CustomLayout {
+        CustomLayout(
+            pages: pages,
+            placements: placements.map {
+                CustomPlacement(
+                    id: $0.widgetId, page: $0.page, x: $0.x, y: $0.y, w: $0.w, h: $0.h, hidden: $0.hidden,
+                    autoPlaced: false)
+            })
+    }
+}
+
+/**
+ * A device's rotation setting (ADR 0017, section 7): the whole rendering
+ * after pairing turns by this many degrees, clockwise, so a TV mounted on
+ * its side shows an upright dashboard. Anything else reads as 0.
+ */
+public enum ScreenRotation: Int, Codable, Sendable, Equatable, CaseIterable {
+    case none = 0
+    case quarter = 90
+    case half = 180
+    case threeQuarters = 270
+
+    public init(from decoder: Decoder) throws {
+        let value = try? decoder.singleValueContainer().decode(Int.self)
+        self = value.flatMap(ScreenRotation.init(rawValue:)) ?? .none
+    }
+
+    /** A quarter turn either way: the screen's sides swap. */
+    public var swapsSides: Bool { self == .quarter || self == .threeQuarters }
+
+    /** The size the rendering has once turned: 1920 × 1080 at 90° is 1080 × 1920. */
+    public func viewport(_ screen: StudioCanvas) -> StudioCanvas {
+        swapsSides ? StudioCanvas(width: screen.height, height: screen.width) : screen
+    }
+}
+
+/** Schema 3: this device's settings (#276). tvOS is always screen view. */
+public struct DeviceDisplaySettings: Codable, Sendable, Equatable {
+    public var rotation: ScreenRotation
+    public var displayMode: DisplayMode
+
+    public init(rotation: ScreenRotation = .none, displayMode: DisplayMode = .screen) {
+        self.rotation = rotation
+        self.displayMode = displayMode
+    }
+
+    private enum CodingKeys: String, CodingKey { case rotation, displayMode }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        rotation = c.lenient(ScreenRotation.self, .rotation) ?? .none
+        displayMode = c.lenient(DisplayMode.self, .displayMode) ?? .screen
     }
 }
 
@@ -699,7 +839,7 @@ public struct DeviceImage: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-/** GET /v1/device/dashboard?schema=2 */
+/** GET /v1/device/dashboard?schema=2 and ?schema=3 */
 public struct DeviceDashboardV2: Codable, Sendable, Equatable {
     public struct Info: Codable, Sendable, Equatable {
         public var id: String
@@ -734,10 +874,18 @@ public struct DeviceDashboardV2: Codable, Sendable, Equatable {
         }
     }
 
+    /** The schemas this type reads. */
+    public static let schemas: Set<Int> = [2, 3]
+
     public var version: String
+    /** 2 or 3. */
     public var schema: Int
     public var refreshAfterSec: Int
     public var timeZone: String
+    /** The format widgets are placed in; `16x9` in schema 2. */
+    public var primaryFormat: ScreenFormat
+    /** This device's rotation and mode; the defaults in schema 2. */
+    public var device: DeviceDisplaySettings
     /** Null when no dashboard is assigned; slides is then empty. */
     public var dashboard: Info?
     public var theme: DashboardTheme
@@ -751,11 +899,14 @@ public struct DeviceDashboardV2: Codable, Sendable, Equatable {
     public init(
         version: String, refreshAfterSec: Int = 60, timeZone: String = "UTC", dashboard: Info?,
         theme: DashboardTheme = .fallback, rotation: SlideRotationSettings = .init(), slides: [DeviceSlide],
-        images: [DeviceImage] = [], locale: String? = nil
+        images: [DeviceImage] = [], locale: String? = nil, schema: Int = 2,
+        primaryFormat: ScreenFormat = .widescreen, device: DeviceDisplaySettings = .init()
     ) {
         self.locale = locale
         self.version = version
-        schema = 2
+        self.schema = schema
+        self.primaryFormat = primaryFormat
+        self.device = device
         self.refreshAfterSec = refreshAfterSec
         self.timeZone = timeZone
         self.dashboard = dashboard
@@ -766,15 +917,25 @@ public struct DeviceDashboardV2: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, schema, refreshAfterSec, timeZone, locale, dashboard, theme, rotation, slides, images
+        case version, schema, refreshAfterSec, timeZone, locale, primaryFormat, device, dashboard, theme, rotation,
+            slides, images
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decode(String.self, forKey: .version)
         schema = try c.decode(Int.self, forKey: .schema)
-        guard schema == 2 else {
+        guard Self.schemas.contains(schema) else {
             throw DecodingError.dataCorruptedError(forKey: .schema, in: c, debugDescription: "Schema \(schema)")
+        }
+        if schema >= 3 {
+            // A format this build does not know (a newer server) is laid
+            // out as 16x9: widgets outside that grid are left out.
+            primaryFormat = c.lenient(ScreenFormat.self, .primaryFormat) ?? .widescreen
+            device = c.lenient(DeviceDisplaySettings.self, .device) ?? .init()
+        } else {
+            primaryFormat = .widescreen
+            device = .init()
         }
         refreshAfterSec = c.lenient(Int.self, .refreshAfterSec) ?? 60
         timeZone = c.lenient(String.self, .timeZone) ?? "UTC"
@@ -782,7 +943,14 @@ public struct DeviceDashboardV2: Codable, Sendable, Equatable {
         dashboard = c.lenient(Info.self, .dashboard)
         theme = c.lenient(DashboardTheme.self, .theme) ?? .fallback
         rotation = c.lenient(SlideRotationSettings.self, .rotation) ?? .init()
-        slides = try c.decode(LossyArray<DeviceSlide>.self, forKey: .slides).elements
+        let primary = primaryFormat
+        let customLayouts = schema >= 3
+        slides = try c.decode(LossyArray<DeviceSlide>.self, forKey: .slides).elements.map { slide in
+            var slide = slide
+            slide.widgets = slide.widgets.filter { StudioLayout.isInsideFormatGrid($0.placement, format: primary) }
+            if !customLayouts { slide.layouts = [] }
+            return slide
+        }
         images = c.lossyArray(DeviceImage.self, .images)
     }
 
@@ -798,17 +966,19 @@ public struct DeviceDashboardV2: Codable, Sendable, Equatable {
 
 /**
  * What the dashboard endpoint answered: schema 1 (an older server, or one
- * that does not list 2) or schema 2. Encoded as the payload itself, so a
- * cache file written by an older build reads as schema 1.
+ * that does not list 2) or schema 2 or 3 (`.v2`, one type for both).
+ * Encoded as the payload itself, so a cache file written by an older build
+ * reads as schema 1.
  */
 public enum DashboardPayload: Codable, Sendable, Equatable {
     case v1(DeviceDashboard)
+    /** Schema 2 or 3 (see `DeviceDashboardV2.schema`). */
     case v2(DeviceDashboardV2)
 
     public var schema: Int {
         switch self {
         case .v1: return 1
-        case .v2: return 2
+        case .v2(let payload): return payload.schema
         }
     }
 

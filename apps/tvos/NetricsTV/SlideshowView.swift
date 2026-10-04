@@ -2,13 +2,17 @@ import NetricsKit
 import SwiftUI
 
 /**
- * A schema 2 dashboard (ADR 0015, sections 7 and 8): its enabled slides,
- * one at a time, rotated here by each slide's duration. Left and right on
- * the Siri Remote change the slide, Play/Pause pauses the rotation (and
- * opens the settings when there is nothing to rotate), and pressing and
- * holding the clickpad opens the settings. A new payload keeps the slide on
- * screen when it still exists. Slides fade in 400 ms, or switch at once
- * with Reduce Motion or the dashboard's "none" transition.
+ * A schema 2 or 3 dashboard (ADR 0015, sections 7 and 8; ADR 0017): its
+ * enabled slides in the screen's format, one page at a time, rotated here
+ * by each slide's duration (a continuation page shows for the slide's full
+ * duration). The format comes from the size this view is given, which is
+ * the screen after the device's rotation setting; schema 2 is always the
+ * 16x9 layout. Left and right on the Siri Remote change the page,
+ * Play/Pause pauses the rotation (and opens the settings when there is
+ * nothing to rotate), and pressing and holding the clickpad opens the
+ * settings. A new payload or format keeps the slide on screen when it
+ * still exists. Pages fade in 400 ms, or switch at once with Reduce Motion
+ * or the dashboard's "none" transition.
  */
 struct SlideshowView: View {
     let state: DeviceState
@@ -23,21 +27,38 @@ struct SlideshowView: View {
         reduceMotion || payload.rotation.transition == .none ? nil : .easeInOut(duration: 0.4)
     }
 
-    private var current: DeviceSlide? {
-        let id = rotation?.currentID
-        return payload.slides.first { $0.id == id } ?? payload.slides.first
+    /** What the rotation follows: the pages and whether they advance. */
+    private struct RotationInput: Equatable {
+        var pages: [ScreenPage]
+        var autoAdvance: Bool
     }
 
     var body: some View {
+        GeometryReader { screen in
+            let viewport = StudioCanvas(width: Double(screen.size.width), height: Double(screen.size.height))
+            let format = ScreenView.format(payload, viewport: viewport)
+            slideshow(pages: ScreenView.pages(payload, format: format), format: format, viewport: viewport)
+        }
+        .ignoresSafeArea()
+    }
+
+    private func current(_ pages: [ScreenPage]) -> ScreenPage? {
+        let id = rotation?.currentID
+        return pages.first { $0.id == id } ?? pages.first
+    }
+
+    private func slideshow(pages: [ScreenPage], format: ScreenFormat, viewport: StudioCanvas) -> some View {
         let colors = StudioColors(payload.theme.tokens)
-        ZStack {
+        let page = current(pages)
+        let slide = page.flatMap { page in payload.slides.first { $0.id == page.slideId } }
+        return ZStack {
             colors.background.ignoresSafeArea()
-            if let slide = current {
+            if let page, let slide {
                 SlideCanvasView(
-                    payload: payload, slide: slide, colors: colors, state: state, images: images,
-                    paused: rotation?.isPaused ?? false
+                    payload: payload, slide: slide, page: page, format: format, viewport: viewport, colors: colors,
+                    state: state, images: images, paused: rotation?.isPaused ?? false
                 )
-                .id(slide.id)
+                .id(page.id)
                 .transition(.opacity)
             } else {
                 MessageView(
@@ -45,7 +66,6 @@ struct SlideshowView: View {
                     text: L10n.tr("This dashboard has no slides yet.", payload.language))
             }
         }
-        .ignoresSafeArea()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .focusable()
@@ -70,12 +90,12 @@ struct SlideshowView: View {
         }
         .onAppear {
             if rotation == nil {
-                rotation = SlideRotation(payload, now: Date())
+                rotation = SlideRotation(pages: pages, autoAdvance: payload.rotation.autoAdvance, now: Date())
             }
         }
-        .onChange(of: payload) { _, next in
+        .onChange(of: RotationInput(pages: pages, autoAdvance: payload.rotation.autoAdvance)) { _, next in
             guard var updated = rotation else { return }
-            updated.update(next, now: Date())
+            updated.update(pages: next.pages, autoAdvance: next.autoAdvance, now: Date())
             withAnimation(animation) { rotation = updated }
         }
         // One timer per scheduled change: re-armed whenever the rotation moves.
@@ -125,7 +145,7 @@ struct StudioColors {
 
 /** What a widget needs besides itself: canvas unit, colours and context. */
 struct WidgetEnv {
-    /** Canvas points per unit (canvas height / 1080). */
+    /** Screen points per unit (the frame's unit: canvas height / 1080 at 16:9). */
     let u: CGFloat
     let colors: StudioColors
     let showHeader: Bool
@@ -145,13 +165,20 @@ struct WidgetEnv {
 }
 
 /**
- * One slide on a 16:9 canvas: the background image under a dim of the
- * theme background, the header band, and the widgets placed by
- * StudioLayout.widgetRect, so they sit where the web puts them.
+ * One page of a slide on the screen (ADR 0017, section 2): the format's
+ * grid over the whole viewport (stretched at most 4/3, else centred), the
+ * background image under a dim of the theme background covering the whole
+ * viewport, the header band, and the page's widgets placed by
+ * StudioLayout.placementRect, so they sit where the web puts them. A
+ * `16x9` slide on a 16:9 TV is exactly the canvas of ADR 0015.
  */
 struct SlideCanvasView: View {
     let payload: DeviceDashboardV2
     let slide: DeviceSlide
+    let page: ScreenPage
+    let format: ScreenFormat
+    /** Points, after the rotation setting. */
+    let viewport: StudioCanvas
     let colors: StudioColors
     let state: DeviceState
     let images: FileImageCache
@@ -160,44 +187,44 @@ struct SlideCanvasView: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        GeometryReader { screen in
-            // The largest 16:9 canvas on the screen (a TV is 16:9: all of it).
-            let width = min(screen.size.width, screen.size.height * 16 / 9)
-            let height = width * 9 / 16
-            let canvas = StudioCanvas(width: Double(width), height: Double(height))
-            let showHeader = payload.dashboard?.showHeader ?? true
-            let env = WidgetEnv(
-                u: height / 1080, colors: colors, showHeader: showHeader, timeZone: payload.timeZone,
-                displayScale: displayScale, language: payload.language)
-            ZStack(alignment: .topLeading) {
-                colors.background
-                if let background = slide.background, let file = imageFile(background.imageId) {
-                    DownsampledImage(
-                        file: file.url, image: file.image, fit: .cover, align: .center,
-                        box: CGSize(width: width, height: height), displayScale: displayScale)
-                    .frame(width: width, height: height)
-                    .clipped()
-                    colors.background.opacity(Double(background.dim) / 100)
-                }
-                if showHeader {
-                    let band = StudioLayout.frame(canvas: canvas, showHeader: true).header!
-                    SlideHeaderView(
-                        payload: payload, slide: slide, env: env, state: state, paused: paused,
-                        logo: imageFile(payload.dashboard?.logoImageId)
-                    )
-                    .frame(width: width, height: CGFloat(band.height))
-                }
-                ForEach(slide.widgets) { widget in
-                    let rect = StudioLayout.widgetRect(widget.placement, canvas: canvas, showHeader: showHeader)
-                    WidgetView(widget: widget, env: env, image: imageForWidget(widget))
+        let showHeader = payload.dashboard?.showHeader ?? true
+        let geometry = ScreenView.geometry(viewport: viewport, format: format, showHeader: showHeader)
+        let width = CGFloat(viewport.width)
+        let height = CGFloat(viewport.height)
+        let env = WidgetEnv(
+            u: CGFloat(geometry.frame.unit), colors: colors, showHeader: showHeader, timeZone: payload.timeZone,
+            displayScale: displayScale, language: payload.language)
+        let widgets = Dictionary(slide.widgets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        ZStack(alignment: .topLeading) {
+            colors.background
+            if let background = slide.background, let file = imageFile(background.imageId) {
+                DownsampledImage(
+                    file: file.url, image: file.image, fit: .cover, align: .center,
+                    box: CGSize(width: width, height: height), displayScale: displayScale)
+                .frame(width: width, height: height)
+                .clipped()
+                colors.background.opacity(Double(background.dim) / 100)
+            }
+            if let band = geometry.frame.header {
+                SlideHeaderView(
+                    payload: payload, slide: slide, format: format, pageLabel: page.pageLabel, env: env, state: state,
+                    paused: paused, logo: imageFile(payload.dashboard?.logoImageId)
+                )
+                .frame(width: CGFloat(band.width), height: CGFloat(band.height))
+                .position(x: CGFloat(band.x + band.width / 2), y: CGFloat(band.y + band.height / 2))
+            }
+            ForEach(page.placements, id: \.id) { cell in
+                if let widget = widgets[cell.id] {
+                    let placed = geometry.place(cell.cells)
+                    let rect = placed.rect
+                    WidgetView(widget: widget, placement: placed.placement, env: env, image: imageForWidget(widget))
                         .frame(width: CGFloat(rect.width), height: CGFloat(rect.height))
                         .position(x: CGFloat(rect.x + rect.width / 2), y: CGFloat(rect.y + rect.height / 2))
                 }
             }
-            .frame(width: width, height: height)
-            .clipped()
-            .position(x: screen.size.width / 2, y: screen.size.height / 2)
         }
+        .frame(width: width, height: height)
+        .clipped()
     }
 
     private func imageForWidget(_ widget: DeviceWidget) -> StoredImage? {
@@ -221,10 +248,19 @@ struct StoredImage {
     let image: DeviceImage
 }
 
-/** Logo, dashboard and slide name, offline marker and clock (ADR 0015, section 1). */
+/**
+ * Logo, dashboard and slide name, page, offline marker and clock (ADR
+ * 0015, section 1). The format's header rule (`headerFit`, ADR 0017
+ * section 6): in narrow formats (3:4, 9:16) the dashboard name wraps to two
+ * lines before it shrinks, and the slide name is shown only when it fits
+ * beside a one-line name, so it is dropped before the dashboard name is
+ * cut. The page ("1/2") is never dropped.
+ */
 struct SlideHeaderView: View {
     let payload: DeviceDashboardV2
     let slide: DeviceSlide
+    let format: ScreenFormat
+    let pageLabel: String?
     let env: WidgetEnv
     let state: DeviceState
     let paused: Bool
@@ -232,9 +268,13 @@ struct SlideHeaderView: View {
 
     var body: some View {
         let colors = env.colors
-        HStack(spacing: env.pt(20)) {
+        let name = payload.dashboard?.name ?? ""
+        let fit = StudioLayout.headerFit(
+            name: name, slideName: slide.name, format: format,
+            logoAspect: logo.flatMap { $0.image.height > 0 ? Double($0.image.width) / Double($0.image.height) : nil })
+        HStack(spacing: env.pt(StudioHeaderMetrics.gap)) {
             if let logo {
-                let height = env.pt(48)
+                let height = env.pt(StudioHeaderMetrics.logo)
                 let aspect = logo.image.height > 0 ? CGFloat(logo.image.width) / CGFloat(logo.image.height) : 1
                 DownsampledImage(
                     file: logo.url, image: logo.image, fit: .contain, align: .center,
@@ -242,22 +282,28 @@ struct SlideHeaderView: View {
                 )
                 .frame(width: height * aspect, height: height)
             }
-            // Names shrink rather than lose their end.
-            Text(payload.dashboard?.name ?? "")
-                .font(env.font(36, .semibold))
+            // Names wrap (narrow formats) or shrink rather than lose their end.
+            Text(name)
+                .font(env.font(StudioHeaderMetrics.name, .semibold))
                 .foregroundStyle(colors.text)
-                .lineLimit(1)
+                .lineLimit(fit.maxNameLines)
                 .minimumScaleFactor(0.6)
                 .layoutPriority(2)
-            if let name = slide.name, !name.isEmpty {
-                Text(name)
-                    .font(env.font(30))
+            if let slideName = slide.name, !slideName.isEmpty, fit.showSlideName {
+                Text(slideName)
+                    .font(env.font(StudioHeaderMetrics.meta))
                     .foregroundStyle(colors.muted)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                     .layoutPriority(1)
             }
-            Spacer(minLength: env.pt(24))
+            if let pageLabel {
+                Text(pageLabel)
+                    .font(env.font(StudioHeaderMetrics.meta).monospacedDigit())
+                    .foregroundStyle(colors.muted)
+                    .fixedSize()
+            }
+            Spacer(minLength: env.pt(StudioHeaderMetrics.clockSpace))
             HStack(spacing: env.pt(24)) {
                 if paused {
                     Text("❚❚ \(L10n.tr("Paused", env.language))")
@@ -272,13 +318,13 @@ struct SlideHeaderView: View {
                 }
                 TimelineView(.everyMinute) { context in
                     Text(TVTime.hourMinute(context.date, timeZone: payload.timeZone, language: env.language))
-                        .font(env.font(30).monospacedDigit())
+                        .font(env.font(StudioHeaderMetrics.meta).monospacedDigit())
                         .foregroundStyle(colors.accent)
                 }
             }
             .fixedSize()
         }
-        .padding(.horizontal, env.pt(32))
+        .padding(.horizontal, env.pt(StudioHeaderMetrics.padding))
         .frame(maxHeight: .infinity)
     }
 }

@@ -121,14 +121,28 @@ drops the alpha channel of opaque images and checks the sizes.
   on screen when it still exists. Positions and text sizes come from
   `StudioLayout` and `StudioRender` (ports of the web's studio layout), so
   web and TV place widgets alike; colours are the payload's theme tokens.
+- **Screen formats (payload schema 3, ADR 0017).** When the server lists
+  schema 3 the app asks for it (else 2, else 1); the payload carries the
+  dashboard's primary format, its custom layouts per format and this TV's
+  rotation setting. tvOS cannot tell that a TV hangs on its side, so
+  everything after pairing (slides, "no dashboard", offline notices) turns
+  by the setting: at 90° or 270° a 1080p TV lays out as 1080 × 1920 points.
+  The format comes from that rotated size (`formatFor`), each slide shows
+  its primary, custom or auto-reflowed layout (`ScreenView.pages`), and
+  continuation pages rotate as extra entries for the slide's full duration
+  with "1/2" in the header. In 3:4 and 9:16 the dashboard name wraps to two
+  lines and the slide name is dropped first (`headerFit`). Apple TV is
+  always screen view; the display mode setting is for browser kiosks. A
+  schema 2 payload is the `16x9` layout, unrotated, as before.
 - **Images.** The payload's images are downloaded once with the device
   token from their device URL (only `/v1/device/images/…` on the paired
   server), verified against their SHA-256 and stored by hash in
   `Caches/netrics/images`. Beyond 50 MB, images the current payload does
   not reference are evicted, least recently used first. They are decoded
   with ImageIO at the widget's pixel size.
-- **Heartbeat.** Every 5 minutes: app version, uptime and the last error.
-- **Remote.** On a slide dashboard, left and right change the slide and
+- **Heartbeat.** Every 5 minutes: app version, uptime, the last error and
+  the screen (points after the rotation setting, scale, format, screen view).
+- **Remote.** On a slide dashboard, left and right change the slide (or page) and
   Play/Pause pauses the rotation ("Paused" in the header).
 - **Settings.** Press and hold the clickpad on the dashboard, or press
   Play/Pause where there is nothing to rotate (one slide, or a schema 1

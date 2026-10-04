@@ -10,6 +10,12 @@ import Foundation
  * next or previous slide, which starts that slide's time afresh; pausing
  * holds the current slide until it is resumed.
  *
+ * In screen view (ADR 0017) the entries are a slide's pages in the
+ * screen's format: continuation pages rotate as entries of their own, each
+ * for the slide's full duration (`ScreenView.pages`). When the format
+ * changes (a new rotation setting) and the page on screen is gone, the
+ * slide's last page before it stays.
+ *
  * A value type driven by the time it is given, so tests need no clock.
  */
 public struct SlideRotation: Sendable, Equatable {
@@ -40,6 +46,20 @@ public struct SlideRotation: Sendable, Equatable {
 
     public init(_ payload: DeviceDashboardV2, now: Date) {
         self.init(slides: Self.slides(payload), autoAdvance: payload.rotation.autoAdvance, now: now)
+    }
+
+    /** Screen view: each page of each slide is an entry, for the slide's full duration. */
+    public init(pages: [ScreenPage], autoAdvance: Bool, now: Date) {
+        self.init(slides: Self.slides(pages), autoAdvance: autoAdvance, now: now)
+    }
+
+    static func slides(_ pages: [ScreenPage]) -> [Slide] {
+        pages.map { Slide(id: $0.id, durationSec: max($0.durationSec, 1)) }
+    }
+
+    /** New pages (a new payload or another format): see `update(slides:autoAdvance:now:)`. */
+    public mutating func update(pages: [ScreenPage], autoAdvance: Bool, now: Date) {
+        update(slides: Self.slides(pages), autoAdvance: autoAdvance, now: now)
     }
 
     static func slides(_ payload: DeviceDashboardV2) -> [Slide] {
@@ -124,6 +144,26 @@ public struct SlideRotation: Sendable, Equatable {
         update(slides: Self.slides(payload), autoAdvance: payload.rotation.autoAdvance, now: now)
     }
 
+    /**
+     * Where the entry `current` is in `slides`: the same id while it is
+     * there; a continuation page that is gone (the slide now fits on fewer
+     * pages) falls back to the slide's last page before it.
+     */
+    static func kept(_ current: String, in slides: [Slide]) -> Int? {
+        if let index = slides.firstIndex(where: { $0.id == current }) {
+            return index
+        }
+        let entry = ScreenView.parsePageEntryId(current)
+        var kept: Int?
+        for (index, slide) in slides.enumerated() {
+            let candidate = ScreenView.parsePageEntryId(slide.id)
+            if candidate.slideId == entry.slideId && candidate.page <= entry.page {
+                kept = index
+            }
+        }
+        return kept
+    }
+
     public mutating func update(slides next: [Slide], autoAdvance: Bool, now: Date) {
         let current = currentID
         let wasRotating = rotates
@@ -136,7 +176,7 @@ public struct SlideRotation: Sendable, Equatable {
             pausedAt = nil
             return
         }
-        if let current, let kept = next.firstIndex(where: { $0.id == current }) {
+        if let current, let kept = Self.kept(current, in: next) {
             index = kept
             if !wasRotating {
                 shownSince = now
