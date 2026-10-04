@@ -30,7 +30,7 @@ import {
   type DataWidget,
   type StudioEnv,
 } from "@/lib/studio-widgets";
-import { webTranslator } from "@/lib/i18n/catalogs";
+import { webTranslator, type WebTranslator } from "@/lib/i18n/catalogs";
 import { connectionNotice } from "@/lib/tile-status";
 
 import { useMetricData } from "./use-widget-data";
@@ -56,14 +56,37 @@ export interface MetricWidgetViewProps {
   loading?: boolean;
 }
 
+/** What a metric widget's numbers read, apart from the label. */
+export interface MetricTexts {
+  change: ReturnType<typeof formatChange>;
+  /** The change with and without its comparison; null when not shown. */
+  changeLine: {
+    full: string;
+    short: string;
+    comparison: string | null;
+  } | null;
+  comparison: string;
+  /** "Last 7 days · Total". */
+  periodText: string;
+  /** The value in full ("1,248"), "…" while loading, "—" without data. */
+  full: string;
+  /** The compact value ("1.2K"). */
+  compact: string;
+}
+
 /**
- * The metric widget: today's tile (label, value, change, sparkline) on the
- * studio grid, sized by studioLayout and coloured by the theme tokens.
+ * The texts of a metric widget, shared by the slide renderer and the
+ * scroll view card (ADR 0017, section 5).
  */
-export function MetricWidgetView(props: MetricWidgetViewProps) {
+export function metricTexts(
+  props: Pick<
+    MetricWidgetViewProps,
+    "reading" | "metric" | "period" | "aggregation" | "options" | "loading"
+  >,
+  locale: Locale,
+  t: WebTranslator<"screen.widget">,
+): MetricTexts {
   const { reading, metric, period } = props;
-  const locale = useLocale();
-  const t = useT("screen.widget");
   const change = reading
     ? formatChange(
         reading.delta,
@@ -109,6 +132,19 @@ export function MetricWidgetView(props: MetricWidgetViewProps) {
   const compact = reading
     ? `${approx}${formatCompactValue(reading.value, reading.unit, locale)}`
     : full;
+  return { change, changeLine, comparison, periodText, full, compact };
+}
+
+/**
+ * The metric widget: today's tile (label, value, change, sparkline) on the
+ * studio grid, sized by studioLayout and coloured by the theme tokens.
+ */
+export function MetricWidgetView(props: MetricWidgetViewProps) {
+  const { reading, period } = props;
+  const locale = useLocale();
+  const t = useT("screen.widget");
+  const { change, changeLine, comparison, periodText, full, compact } =
+    metricTexts(props, locale, t);
   const layout = metricWidgetLayout({
     label: props.label,
     value: { full, compact },
@@ -214,14 +250,20 @@ export function dataNotice(
   return stale;
 }
 
-/** A metric widget that queries its own numbers (signed-in pages). */
-export function LiveMetricWidget({
-  widget,
-  env,
-}: {
-  widget: Extract<DataWidget, { type: "metric" }>;
-  env: StudioEnv;
-}) {
+/** A metric widget's props apart from its placement on a slide. */
+export type MetricReadingProps = Omit<
+  MetricWidgetViewProps,
+  "placement" | "showHeader" | "fontScale"
+>;
+
+/**
+ * A metric widget's live numbers (signed-in pages): queried and refreshed
+ * every minute, for the slide renderer and the scroll view card alike.
+ */
+export function useLiveMetric(
+  widget: Extract<DataWidget, { type: "metric" }>,
+  env: StudioEnv,
+): MetricReadingProps {
   const { data, error, loading } = useMetricData(env.workspaceId, widget);
   const locale = useLocale();
   const metric = env.metrics.get(metricKeyOf(widget));
@@ -230,37 +272,48 @@ export function LiveMetricWidget({
     data?.metric.unit ?? metric?.unit ?? "",
     data?.currency ?? widget.dimensions.currency,
   );
+  return {
+    label: dataWidgetLabel(widget, metric),
+    period: widget.period,
+    aggregation: widget.aggregation,
+    metric: data?.metric ?? metric ?? null,
+    reading: data
+      ? {
+          value: data.value,
+          unit,
+          delta: data.delta,
+          ratio: data.ratio,
+          series: data.series,
+          timeZone: data.timeZone,
+          approximate: data.conversion !== null,
+        }
+      : null,
+    notice: dataNotice(
+      error,
+      data !== null,
+      connectionNotice(connection, Date.now(), locale),
+      locale,
+    ),
+    source: connection?.name ?? null,
+    options: widget.options,
+    loading,
+  };
+}
+
+/** A metric widget that queries its own numbers (signed-in pages). */
+export function LiveMetricWidget({
+  widget,
+  env,
+}: {
+  widget: Extract<DataWidget, { type: "metric" }>;
+  env: StudioEnv;
+}) {
   return (
     <MetricWidgetView
-      label={dataWidgetLabel(widget, metric)}
-      period={widget.period}
-      aggregation={widget.aggregation}
-      metric={data?.metric ?? metric ?? null}
-      reading={
-        data
-          ? {
-              value: data.value,
-              unit,
-              delta: data.delta,
-              ratio: data.ratio,
-              series: data.series,
-              timeZone: data.timeZone,
-              approximate: data.conversion !== null,
-            }
-          : null
-      }
-      notice={dataNotice(
-        error,
-        data !== null,
-        connectionNotice(connection, Date.now(), locale),
-        locale,
-      )}
-      source={connection?.name ?? null}
+      {...useLiveMetric(widget, env)}
       placement={widget}
       showHeader={env.showHeader}
       fontScale={env.fontScale}
-      options={widget.options}
-      loading={loading}
     />
   );
 }

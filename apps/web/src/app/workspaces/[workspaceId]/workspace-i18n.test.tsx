@@ -84,7 +84,26 @@ function render(locale: Locale) {
       <HealthBadge health="needs_reauthorization" />
       <DeviceControls
         workspaceId="w"
-        device={{ id: "d", name: "Lobby", dashboardId: null }}
+        device={{
+          id: "d",
+          name: "Lobby",
+          dashboardId: null,
+          rotation: 90,
+          displayMode: "scroll",
+        }}
+        appleTv={false}
+        dashboards={[{ id: "x", name: "Sales" }]}
+      />
+      <DeviceControls
+        workspaceId="w"
+        device={{
+          id: "atv",
+          name: "Apple TV",
+          dashboardId: null,
+          rotation: 0,
+          displayMode: "screen",
+        }}
+        appleTv
         dashboards={[{ id: "x", name: "Sales" }]}
       />
       <NewConnectionWizard workspaceId="w" connectors={CONNECTORS} />
@@ -137,6 +156,30 @@ describe("workspace, connections and devices", () => {
     expect(html).toContain("Flag (optional)");
     expect(html).toContain("Private key");
     expect(html).toContain("Code on the TV");
+    // Screen settings (#276).
+    for (const text of [
+      "Orientation",
+      "Landscape",
+      "Portrait 90°",
+      "Portrait 270°",
+      "Upside down",
+      "Mode",
+      "Screen view",
+      "Scroll view",
+      "Apple TV always uses Screen view.",
+    ]) {
+      expect(html).toContain(text);
+    }
+  });
+
+  it("offers Scroll view only to browser kiosks (#276)", () => {
+    const html = render("en");
+    const appleTv = html.slice(html.indexOf('id="device-atv-mode"'));
+    expect(appleTv.slice(0, appleTv.indexOf("</output>"))).toContain(
+      "Screen view",
+    );
+    expect(html).toContain('id="device-d-mode"');
+    expect(html).not.toContain('<select id="device-atv-mode"');
   });
 
   it("render in German", () => {
@@ -158,7 +201,24 @@ describe("workspace, connections and devices", () => {
     expect(html).toContain("Privater Schlüssel");
     expect(html).toContain("Code auf dem TV");
     expect(html).toContain("TV verbinden");
+    for (const text of [
+      "Ausrichtung",
+      "Querformat",
+      "Hochformat 90°",
+      "Hochformat 270°",
+      "Auf dem Kopf",
+      "Modus",
+      "Bildschirm-Ansicht",
+      "Scroll-Ansicht",
+      "Apple TV nutzt immer die Bildschirm-Ansicht.",
+    ]) {
+      expect(html).toContain(text);
+    }
     for (const english of [
+      "Orientation",
+      "Landscape",
+      "Screen view",
+      "Scroll view",
       "Sync now",
       "Choose a connector",
       "Revoke",

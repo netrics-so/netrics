@@ -17,6 +17,7 @@ import { I18nProvider, useLocale, useT } from "@/lib/i18n/client";
 import {
   createKioskClient,
   isSlidesDashboard,
+  kioskScreen,
   type KioskState,
 } from "@/lib/kiosk-client";
 import { browserImageCache } from "@/lib/kiosk-image-cache";
@@ -80,6 +81,12 @@ export function KioskView({ appVersion }: { appVersion: string }) {
       appVersion,
       onChange: setState,
       imageCache: browserImageCache(),
+      screen: () =>
+        kioskScreen(
+          window.innerWidth,
+          window.innerHeight,
+          window.devicePixelRatio,
+        ),
     });
     client.start();
     return () => client.stop();

@@ -16142,12 +16142,30 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "rotation": {
+                          "type": "number",
+                          "enum": [
+                            0,
+                            90,
+                            180,
+                            270
+                          ]
+                        },
+                        "displayMode": {
+                          "type": "string",
+                          "enum": [
+                            "screen",
+                            "scroll"
+                          ]
                         }
                       },
                       "required": [
                         "id",
                         "name",
-                        "dashboardId"
+                        "dashboardId",
+                        "rotation",
+                        "displayMode"
                       ],
                       "additionalProperties": false
                     }
@@ -17998,7 +18016,7 @@
     },
     "/v1/device/heartbeat": {
       "post": {
-        "summary": "Report the device's app version, uptime and last error",
+        "summary": "Report the device's app version, uptime, last error and screen",
         "tags": [
           "devices"
         ],
@@ -18028,6 +18046,49 @@
                       {
                         "type": "null"
                       }
+                    ]
+                  },
+                  "screen": {
+                    "type": "object",
+                    "properties": {
+                      "width": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 16384
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 16384
+                      },
+                      "scale": {
+                        "type": "number",
+                        "minimum": 0.5,
+                        "maximum": 8
+                      },
+                      "format": {
+                        "type": "string",
+                        "enum": [
+                          "21x9",
+                          "16x9",
+                          "4x3",
+                          "3x4",
+                          "9x16"
+                        ]
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "screen",
+                          "scroll"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "width",
+                      "height",
+                      "scale",
+                      "mode"
                     ]
                   }
                 },
@@ -18148,6 +18209,73 @@
                               }
                             ]
                           },
+                          "rotation": {
+                            "type": "number",
+                            "enum": [
+                              0,
+                              90,
+                              180,
+                              270
+                            ]
+                          },
+                          "displayMode": {
+                            "type": "string",
+                            "enum": [
+                              "screen",
+                              "scroll"
+                            ]
+                          },
+                          "screen": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "width": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 16384
+                                  },
+                                  "height": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 16384
+                                  },
+                                  "scale": {
+                                    "type": "number",
+                                    "minimum": 0.5,
+                                    "maximum": 8
+                                  },
+                                  "format": {
+                                    "type": "string",
+                                    "enum": [
+                                      "21x9",
+                                      "16x9",
+                                      "4x3",
+                                      "3x4",
+                                      "9x16"
+                                    ]
+                                  },
+                                  "mode": {
+                                    "type": "string",
+                                    "enum": [
+                                      "screen",
+                                      "scroll"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "width",
+                                  "height",
+                                  "scale",
+                                  "mode"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "createdAt": {
                             "type": "string",
                             "format": "date-time",
@@ -18220,6 +18348,9 @@
                           "id",
                           "name",
                           "dashboardId",
+                          "rotation",
+                          "displayMode",
+                          "screen",
                           "createdAt",
                           "lastSeenAt",
                           "revokedAt",
@@ -18395,6 +18526,73 @@
                             }
                           ]
                         },
+                        "rotation": {
+                          "type": "number",
+                          "enum": [
+                            0,
+                            90,
+                            180,
+                            270
+                          ]
+                        },
+                        "displayMode": {
+                          "type": "string",
+                          "enum": [
+                            "screen",
+                            "scroll"
+                          ]
+                        },
+                        "screen": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "width": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 16384
+                                },
+                                "height": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 16384
+                                },
+                                "scale": {
+                                  "type": "number",
+                                  "minimum": 0.5,
+                                  "maximum": 8
+                                },
+                                "format": {
+                                  "type": "string",
+                                  "enum": [
+                                    "21x9",
+                                    "16x9",
+                                    "4x3",
+                                    "3x4",
+                                    "9x16"
+                                  ]
+                                },
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "screen",
+                                    "scroll"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "width",
+                                "height",
+                                "scale",
+                                "mode"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "createdAt": {
                           "type": "string",
                           "format": "date-time",
@@ -18467,6 +18665,9 @@
                         "id",
                         "name",
                         "dashboardId",
+                        "rotation",
+                        "displayMode",
+                        "screen",
                         "createdAt",
                         "lastSeenAt",
                         "revokedAt",
@@ -18593,7 +18794,7 @@
     },
     "/v1/workspaces/{workspaceId}/devices/{deviceId}": {
       "patch": {
-        "summary": "Rename a device or change its dashboard",
+        "summary": "Rename a device, change its dashboard, rotation or display mode",
         "tags": [
           "devices"
         ],
@@ -18619,6 +18820,22 @@
                       {
                         "type": "null"
                       }
+                    ]
+                  },
+                  "rotation": {
+                    "type": "number",
+                    "enum": [
+                      0,
+                      90,
+                      180,
+                      270
+                    ]
+                  },
+                  "displayMode": {
+                    "type": "string",
+                    "enum": [
+                      "screen",
+                      "scroll"
                     ]
                   }
                 }
@@ -18675,6 +18892,73 @@
                               "type": "string",
                               "format": "uuid",
                               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "rotation": {
+                          "type": "number",
+                          "enum": [
+                            0,
+                            90,
+                            180,
+                            270
+                          ]
+                        },
+                        "displayMode": {
+                          "type": "string",
+                          "enum": [
+                            "screen",
+                            "scroll"
+                          ]
+                        },
+                        "screen": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "width": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 16384
+                                },
+                                "height": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 16384
+                                },
+                                "scale": {
+                                  "type": "number",
+                                  "minimum": 0.5,
+                                  "maximum": 8
+                                },
+                                "format": {
+                                  "type": "string",
+                                  "enum": [
+                                    "21x9",
+                                    "16x9",
+                                    "4x3",
+                                    "3x4",
+                                    "9x16"
+                                  ]
+                                },
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "screen",
+                                    "scroll"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "width",
+                                "height",
+                                "scale",
+                                "mode"
+                              ],
+                              "additionalProperties": false
                             },
                             {
                               "type": "null"
@@ -18753,6 +19037,9 @@
                         "id",
                         "name",
                         "dashboardId",
+                        "rotation",
+                        "displayMode",
+                        "screen",
                         "createdAt",
                         "lastSeenAt",
                         "revokedAt",
@@ -18917,6 +19204,73 @@
                             }
                           ]
                         },
+                        "rotation": {
+                          "type": "number",
+                          "enum": [
+                            0,
+                            90,
+                            180,
+                            270
+                          ]
+                        },
+                        "displayMode": {
+                          "type": "string",
+                          "enum": [
+                            "screen",
+                            "scroll"
+                          ]
+                        },
+                        "screen": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "width": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 16384
+                                },
+                                "height": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 16384
+                                },
+                                "scale": {
+                                  "type": "number",
+                                  "minimum": 0.5,
+                                  "maximum": 8
+                                },
+                                "format": {
+                                  "type": "string",
+                                  "enum": [
+                                    "21x9",
+                                    "16x9",
+                                    "4x3",
+                                    "3x4",
+                                    "9x16"
+                                  ]
+                                },
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "screen",
+                                    "scroll"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "width",
+                                "height",
+                                "scale",
+                                "mode"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "createdAt": {
                           "type": "string",
                           "format": "date-time",
@@ -18989,6 +19343,9 @@
                         "id",
                         "name",
                         "dashboardId",
+                        "rotation",
+                        "displayMode",
+                        "screen",
                         "createdAt",
                         "lastSeenAt",
                         "revokedAt",

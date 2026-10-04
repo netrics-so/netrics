@@ -954,6 +954,17 @@ a.tile-stale:hover {
   margin-top: 8px;
 }
 
+/* The screen a device reported and its orientation (#276). */
+.device-list .device-screen {
+  margin: 4px 0 0;
+}
+
+/* Apple TV: the mode is fixed, shown where the mode menu would be. */
+.device-list .device-mode-fixed {
+  display: block;
+  padding: 8px 0;
+}
+
 .device-list .actions {
   align-items: center;
   margin: 8px 0 0;
@@ -1943,6 +1954,300 @@ a.health-badge:hover {
   border: 1px solid #23272e;
   border-radius: 8px;
   overflow: hidden;
+}
+
+/* ─── Display modes and scroll view (ADR 0017 section 5, #279) ────────── */
+
+/* "Scroll view / Screen view": a segmented pair, finger-sized. */
+.display-mode-switch {
+  display: inline-flex;
+  border: 1px solid #2a3038;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.display-mode-switch button {
+  min-height: 44px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #8a919c;
+}
+
+.display-mode-switch button + button {
+  border-left: 1px solid #2a3038;
+}
+
+.display-mode-switch button[aria-pressed="true"] {
+  background: #23272e;
+  color: #e6e9ed;
+  font-weight: 600;
+}
+
+.display-mode-pending {
+  min-height: 50vh;
+}
+
+/* Touch screens: every page control at least 44 px high. */
+@media (pointer: coarse) {
+  .dashboard-header .actions button,
+  .scroll-toolbar button {
+    min-height: 44px;
+  }
+}
+
+/* The dashboard page reaches the screen's edges (viewport-fit=cover):
+   content stays inside the safe area; phones use the width. */
+.container:has(.dashboard-page),
+body:has(.dashboard-page) .nav {
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+}
+
+.container:has(.dashboard-page) {
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+
+@media (max-width: 599px) {
+  .container:has(.dashboard-page),
+  body:has(.dashboard-page) .nav {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+}
+
+/*
+ * The scroll view: the dashboard's theme on a responsive page. --u is
+ * 1rem / 32, so the slides' unit sizes become rem (24 units = 0.75rem) and
+ * follow the browser's text size and zoom. Content at most 1200 px wide.
+ */
+.scroll-view {
+  --u: calc(1rem / 32);
+  max-width: 1200px;
+  margin: 0 auto;
+  background: var(--t-background);
+  color: var(--t-text);
+  border-radius: 12px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.scroll-header {
+  padding: 16px 12px 12px;
+  border-bottom: 1px solid var(--t-border);
+}
+
+.scroll-header-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.scroll-logo {
+  height: 2rem;
+  width: auto;
+  max-width: 40%;
+  object-fit: contain;
+  flex: none;
+}
+
+/* The name wraps; it is never cut. */
+.scroll-name {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.375rem;
+  line-height: 1.2;
+  color: var(--t-text);
+}
+
+.scroll-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--t-muted);
+}
+
+.scroll-state-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--t-up);
+}
+
+.scroll-state.offline {
+  color: var(--t-warning);
+}
+
+.scroll-state.offline .scroll-state-dot {
+  background: var(--t-warning);
+}
+
+.scroll-toolbar {
+  margin-top: 12px;
+}
+
+.scroll-toolbar .actions {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.scroll-sections {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A slide: its background is the backdrop under the slide's dim; the
+   heading band and the cards keep the theme's surface. */
+.scroll-section {
+  position: relative;
+  isolation: isolate;
+  padding: 12px;
+}
+
+.scroll-section + .scroll-section {
+  border-top: 1px solid var(--t-border);
+}
+
+.scroll-section-bg {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: -2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+}
+
+.scroll-section-dim {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: -1;
+  background: var(--t-background);
+}
+
+.scroll-section-heading {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  font-size: 1.125rem;
+  line-height: 1.25;
+  font-weight: 600;
+  color: var(--t-text);
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: 10px;
+}
+
+.scroll-grid {
+  display: grid;
+  gap: 12px;
+  align-items: start;
+}
+
+.scroll-item {
+  min-width: 0;
+}
+
+/* Every card sits on the theme's surface, also over a background image;
+   cards size to their content: no clamping, nothing cut. */
+.scroll-card {
+  height: auto;
+  overflow: visible;
+  padding: 16px;
+  border-radius: 10px;
+  gap: 6px;
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+}
+
+.scroll-empty {
+  margin: 0;
+  color: var(--t-muted);
+}
+
+.scroll-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scroll-title,
+.scroll-resource {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--t-label);
+}
+
+.scroll-resource {
+  color: var(--t-muted);
+}
+
+.scroll-value {
+  margin: 4px 0 0;
+  font-weight: 600;
+  line-height: 1.05;
+  white-space: nowrap;
+  color: var(--t-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.scroll-spark {
+  height: 3rem;
+}
+
+.scroll-chart {
+  margin-top: 8px;
+}
+
+.scroll-bars {
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.scroll-bar-label {
+  font-weight: 600;
+  color: var(--t-label);
+  min-width: 0;
+}
+
+.scroll-bar-track {
+  height: 0.5rem;
+  margin-top: 4px;
+}
+
+.scroll-card--clock {
+  padding: 20px 16px;
+}
+
+.scroll-card--image {
+  padding: 8px;
+}
+
+.scroll-card--image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 50vh;
+  max-height: 50dvh;
+  object-fit: contain;
+  border-radius: 6px;
 }
 
 /* ─── Studio editor (ADR 0015 section 9, #223) ───────────────────────── */

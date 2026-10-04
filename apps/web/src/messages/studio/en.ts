@@ -354,6 +354,12 @@ export const studioEn = {
     slideEmpty: "This slide has no widgets yet.",
     tvPageTitle: "TV mode · netrics",
     source: "source",
+    displayMode: "View",
+    screenView: "Screen view",
+    scrollView: "Scroll view",
+    live: "Live",
+    offline: "Offline",
+    scrollSlides: "Slides of {name}",
   },
   themePreview: {
     label: "Preview of a slide in this theme",

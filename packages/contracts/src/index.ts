@@ -2086,10 +2086,50 @@ export const approveDeviceRequestSchema = z.object({
 });
 export type ApproveDeviceRequest = z.infer<typeof approveDeviceRequestSchema>;
 
+// Screen settings and reporting (ADR 0017 section 7, #276).
+
+/**
+ * Degrees the device turns its whole rendering, clockwise: 90 and 270 for
+ * a TV mounted on its side, 180 for one mounted upside down.
+ */
+export const DEVICE_ROTATIONS = [0, 90, 180, 270] as const;
+export const deviceRotationSchema = z.literal(DEVICE_ROTATIONS);
+export type DeviceRotation = z.infer<typeof deviceRotationSchema>;
+
+/**
+ * "screen": fits the screen, rotates slides, never scrolls (the default,
+ * and always on tvOS). "scroll": one scrolling column (browser kiosks).
+ */
+export const DISPLAY_MODES = ["screen", "scroll"] as const;
+export const displayModeSchema = z.enum(DISPLAY_MODES);
+export type DisplayMode = z.infer<typeof displayModeSchema>;
+
+/** Largest screen side a device may report, in CSS px or points. */
+export const MAX_SCREEN_SIDE = 16_384;
+
+/**
+ * A device's screen as it reports it in the heartbeat: the size after its
+ * rotation setting (CSS px or points), the device pixel ratio, and the
+ * format and mode it shows. Unknown keys are dropped.
+ */
+export const deviceScreenSchema = z.object({
+  width: z.number().int().min(1).max(MAX_SCREEN_SIDE),
+  height: z.number().int().min(1).max(MAX_SCREEN_SIDE),
+  scale: z.number().min(0.5).max(8),
+  /** Absent when the client does not know the formats yet. */
+  format: screenFormatSchema.optional(),
+  mode: displayModeSchema,
+});
+export type DeviceScreen = z.infer<typeof deviceScreenSchema>;
+
 export const deviceSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
   dashboardId: z.uuid().nullable(),
+  rotation: deviceRotationSchema,
+  displayMode: displayModeSchema,
+  /** The screen of the latest heartbeat that reported one; null before. */
+  screen: deviceScreenSchema.nullable(),
   createdAt: z.iso.datetime(),
   lastSeenAt: z.iso.datetime().nullable(),
   revokedAt: z.iso.datetime().nullable(),
@@ -2134,6 +2174,9 @@ export const deviceSelfResponseSchema = z.object({
     id: z.uuid(),
     name: z.string().min(1),
     dashboardId: z.uuid().nullable(),
+    /** Screen settings (#276); older apps ignore them. */
+    rotation: deviceRotationSchema,
+    displayMode: displayModeSchema,
   }),
 });
 export type DeviceSelfResponse = z.infer<typeof deviceSelfResponseSchema>;
@@ -2142,10 +2185,17 @@ export const updateDeviceRequestSchema = z
   .object({
     name: nameSchema.optional(),
     dashboardId: z.uuid().nullable().optional(),
+    rotation: deviceRotationSchema.optional(),
+    displayMode: displayModeSchema.optional(),
   })
-  .refine((body) => body.name !== undefined || body.dashboardId !== undefined, {
-    message: "nothing to change",
-  });
+  .refine(
+    (body) =>
+      body.name !== undefined ||
+      body.dashboardId !== undefined ||
+      body.rotation !== undefined ||
+      body.displayMode !== undefined,
+    { message: "nothing to change" },
+  );
 export type UpdateDeviceRequest = z.infer<typeof updateDeviceRequestSchema>;
 
 // The device dashboard read model and heartbeat (ADR 0007, #57).
@@ -2491,6 +2541,8 @@ export const deviceHeartbeatRequestSchema = z.object({
   appVersion: z.string().trim().min(1).max(50),
   uptimeSeconds: z.number().int().min(0).max(2_147_483_647),
   lastError: z.string().max(500).nullable().optional(),
+  /** The device's screen (#276); older apps send none. */
+  screen: deviceScreenSchema.optional(),
 });
 export type DeviceHeartbeatRequest = z.infer<
   typeof deviceHeartbeatRequestSchema
