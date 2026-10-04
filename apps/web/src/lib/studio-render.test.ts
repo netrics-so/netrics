@@ -190,6 +190,67 @@ describe("metricWidgetLayout", () => {
     expect(layout.value.size).toBeGreaterThan(STUDIO_TEXT_MINIMUMS.value);
   });
 
+  it("keeps the period line of an untitled Overview metric in both languages (#268)", () => {
+    // The Overview template leaves single-source metric widgets untitled
+    // (apps/server/src/dashboards/templates.ts): the automatic label and
+    // this line must name metric, scope and period at the band's sizes
+    // (3 rows, 3 to 6 columns) in English and German, up to font scale 1.3.
+    const cases = [
+      [
+        "Downloads · All apps",
+        "Last 7 days · Total",
+        "▲ +8.2% vs previous 7 days",
+      ],
+      [
+        "Daily visitors · All projects",
+        "Last 7 days · Total",
+        "▲ +8.2% vs previous 7 days",
+      ],
+      [
+        "Erlöse · Alle Apps",
+        "Letzte 30 Tage · Summe",
+        "▲ +8,2 % vs. vorherige 30 Tage",
+      ],
+      [
+        "Tägliche Besucher · Alle Projekte",
+        "Letzte 7 Tage · Summe",
+        "▲ +8,2 % vs. vorherige 7 Tage",
+      ],
+      [
+        "Impressionen · Alle Properties",
+        "Letzte 7 Tage · Summe",
+        "▲ +8,2 % vs. vorherige 7 Tage",
+      ],
+      [
+        "Registrierungen · Alle Websites",
+        "Letzte 7 Tage · Summe",
+        "▲ +8,2 % vs. vorherige 7 Tage",
+      ],
+    ] as const;
+    for (const [label, periodText, full] of cases) {
+      for (const w of [3, 4, 6]) {
+        for (const fontScale of [1, 1.3]) {
+          const layout = metricWidgetLayout({
+            ...base,
+            label,
+            periodText,
+            value: { full: "€12,480.00", compact: "€12.5K" },
+            change: {
+              full,
+              short: "▲ +8,2 %",
+              comparison: full.slice(full.indexOf("v")),
+            },
+            fontScale,
+            placement: { x: 0, y: 0, w, h: 3 },
+          });
+          expect(layout.showPeriod, `${label} ${w} × 3 at ${fontScale}`).toBe(
+            true,
+          );
+        }
+      }
+    }
+  });
+
   it("keeps label, value, change and notice on the smallest widget", () => {
     for (const fontScale of [1, 1.15, 1.3]) {
       const layout = metricWidgetLayout({

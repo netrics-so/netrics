@@ -5,12 +5,28 @@ import {
   dashboardWidgetInputSchema,
 } from "@netrics/contracts";
 import {
+  appStoreConnectManifest,
+  demoManifest,
+  searchConsoleManifest,
+  vercelManifest,
+} from "@netrics/connectors";
+import {
+  RESOURCE_DIMENSION,
   STUDIO_LIMITS,
+  SUPPORTED_LOCALES,
+  allResourcesName,
+  compareCatalogs,
   labelFits,
+  localizedMetric,
+  localizedResourceNoun,
   slideLayoutProblem,
+  tileLabel,
+  type Locale,
   type WidgetType,
 } from "@netrics/domain";
 
+import { templateDe } from "./template-messages/de.js";
+import { templateEn } from "./template-messages/en.js";
 import {
   buildBrandTemplate,
   buildOverviewTemplate,
@@ -50,13 +66,59 @@ const unknown: TemplateSource = {
   connectorId: "acme-analytics",
 };
 
-/** Parses like POST /dashboards and checks every slide's layout and labels. */
-function expectValid(template: TemplateDashboard | null) {
+const MANIFESTS = [
+  appStoreConnectManifest,
+  searchConsoleManifest,
+  vercelManifest,
+  demoManifest,
+];
+
+/**
+ * The automatic label of an untitled widget as screens show it (#256,
+ * #257): the metric's name and, for a widget of all resources, "All apps"
+ * (assuming several), both in the reader's language.
+ */
+function autoLabel(
+  widget: { metricKey: string; dimensions?: Record<string, string> },
+  locale: Locale,
+  resourceName = "Wurfel – Cube Solver",
+): string {
+  const manifest = MANIFESTS.find((candidate) =>
+    candidate.metrics.some((metric) => metric.key === widget.metricKey),
+  )!;
+  const metric = manifest.metrics.find(
+    (candidate) => candidate.key === widget.metricKey,
+  )!;
+  const dimensions = widget.dimensions ?? {};
+  return tileLabel({
+    title: null,
+    metricName: localizedMetric(manifest, metric, locale).name,
+    dimensions,
+    resourceName:
+      dimensions[RESOURCE_DIMENSION] === undefined ? null : resourceName,
+    allResourcesName: allResourcesName(
+      localizedResourceNoun(manifest, locale),
+      2,
+      locale,
+    ),
+  });
+}
+
+/**
+ * Parses like POST /dashboards and checks every slide's layout and labels:
+ * the title, else the automatic label in `locale`, fits at font scale 1
+ * and 1.3 (the largest a theme may set).
+ */
+function expectValid(
+  template: TemplateDashboard | null,
+  locale: Locale = "en",
+) {
   expect(template).not.toBeNull();
   const parsed = createDashboardRequestSchema.parse(template);
   expect(parsed.slides!.length).toBeGreaterThan(0);
   expect(parsed.slides!.length).toBeLessThanOrEqual(STUDIO_LIMITS.slides);
   for (const slide of parsed.slides!) {
+    expect(slide.name).toBeTruthy();
     expect(slide.widgets.length).toBeGreaterThan(0);
     expect(slideLayoutProblem(slide.widgets)).toBeNull();
     for (const widget of slide.widgets) {
@@ -66,27 +128,34 @@ function expectValid(template: TemplateDashboard | null) {
         widget.type === "line" ||
         widget.type === "bar"
       ) {
-        expect(widget.title, "data widgets carry a short title").toBeTruthy();
-        expect(
-          labelFits(
-            widget.title!,
-            widget as { type: WidgetType; w: number; h: number },
-          ),
-          `"${widget.title}" fits ${widget.w} × ${widget.h}`,
-        ).toBe(true);
-        // Also at the largest font scale a theme may set.
-        expect(
-          labelFits(
-            widget.title!,
-            widget as { type: WidgetType; w: number; h: number },
-            { fontScale: 1.3 },
-          ),
-          `"${widget.title}" fits ${widget.w} × ${widget.h} at 1.3`,
-        ).toBe(true);
+        // Charts have no period line: their title names the period.
+        if (widget.type !== "metric") {
+          expect(widget.title, "charts carry a short title").toBeTruthy();
+        }
+        const label = widget.title ?? autoLabel(widget, locale);
+        for (const fontScale of [1, 1.3]) {
+          expect(
+            labelFits(
+              label,
+              widget as { type: WidgetType; w: number; h: number },
+              { fontScale },
+            ),
+            `"${label}" fits ${widget.w} × ${widget.h} at ${fontScale}`,
+          ).toBe(true);
+        }
       }
     }
   }
   return parsed;
+}
+
+function titles(template: { slides?: TemplateDashboard["slides"] }) {
+  return (template.slides ?? []).flatMap((slide) =>
+    slide.widgets.map((widget) => [
+      widget.type,
+      "title" in widget ? (widget.title ?? null) : null,
+    ]),
+  );
 }
 
 function metricKeys(template: TemplateDashboard | null): string[] {
@@ -293,6 +362,139 @@ describe("Brand template", () => {
       }),
     );
     expect(template.name.length).toBe(100);
+  });
+});
+
+describe("templates in the creator's language (#268)", () => {
+  it("German has exactly the English keys and arguments", () => {
+    expect(compareCatalogs(templateEn, templateDe)).toEqual([]);
+  });
+
+  it("Overview: names, slide names and chart titles in English and German; single-source metrics untitled", () => {
+    const sources = [asc(), gsc, vercel];
+    const en = expectValid(buildOverviewTemplate(sources), "en");
+    const de = expectValid(
+      buildOverviewTemplate(sources, { locale: "de" }),
+      "de",
+    );
+    expect(en.name).toBe("Overview");
+    expect(de.name).toBe("Übersicht");
+    expect(en.slides!.map((slide) => slide.name)).toEqual(["App Store", "Web"]);
+    expect(de.slides!.map((slide) => slide.name)).toEqual(["App Store", "Web"]);
+    // Metric widgets show "Downloads · All apps" and "Last 7 days · Total"
+    // in the screen language; charts name their period.
+    expect(titles(en)).toEqual([
+      ["metric", null],
+      ["metric", null],
+      ["line", "Downloads, 30 days"],
+      ["bar", "Downloads by app"],
+      ["metric", null],
+      ["metric", null],
+      ["metric", null],
+      ["line", "Search clicks, 30 days"],
+      ["line", "Visitors, 30 days"],
+    ]);
+    expect(titles(de)).toEqual([
+      ["metric", null],
+      ["metric", null],
+      ["line", "Downloads, 30 Tage"],
+      ["bar", "Downloads nach App"],
+      ["metric", null],
+      ["metric", null],
+      ["metric", null],
+      ["line", "Suchklicks, 30 Tage"],
+      ["line", "Besucher, 30 Tage"],
+    ]);
+  });
+
+  it("Overview keeps a name the creator gives", () => {
+    expect(
+      buildOverviewTemplate([asc()], { name: "Studio", locale: "de" })!.name,
+    ).toBe("Studio");
+  });
+
+  it("Overview titles metrics with the connection when several of one kind are connected", () => {
+    const sources = [asc("Studio A", true), asc("Studio B", true)];
+    const de = expectValid(
+      buildOverviewTemplate(sources, { locale: "de" }),
+      "de",
+    );
+    const deTitles = titles(de).map(([, title]) => title);
+    expect(deTitles).toContain("Downloads, 7 Tage · Studio A");
+    expect(deTitles).toContain("Erlöse, 30 Tage · Studio A");
+    expect(deTitles).toContain("Rezensionen, 30 Tage · Studio B");
+    expect(deTitles).not.toContain(null);
+  });
+
+  it("Brand: every widget titled, slides Today/Trend in English and Heute/Verlauf in German", () => {
+    const input = {
+      source: asc("Team", true),
+      resourceId: "6767935139",
+      resourceName: "Wurfel – Cube Solver",
+      logoImageId: crypto.randomUUID(),
+      accentColor: null,
+    };
+    const en = expectValid(buildBrandTemplate(input), "en");
+    const de = expectValid(
+      buildBrandTemplate({ ...input, locale: "de" }),
+      "de",
+    );
+    expect(de.name).toBe("Wurfel – Cube Solver");
+    expect(en.slides!.map((slide) => slide.name)).toEqual(["Today", "Trend"]);
+    expect(de.slides!.map((slide) => slide.name)).toEqual(["Heute", "Verlauf"]);
+    expect(titles(en)).toEqual([
+      ["image", null],
+      ["metric", "Downloads, 7 days"],
+      ["metric", "Proceeds, 30 days"],
+      ["metric", "Reviews, 30 days"],
+      ["line", "Downloads, 30 days"],
+      ["bar", "Top territories"],
+      ["line", "Downloads, 90 days"],
+      ["line", "Proceeds, 90 days"],
+    ]);
+    expect(titles(de)).toEqual([
+      ["image", null],
+      ["metric", "Downloads, 7 Tage"],
+      ["metric", "Erlöse, 30 Tage"],
+      ["metric", "Rezensionen, 30 Tage"],
+      ["line", "Downloads, 30 Tage"],
+      ["bar", "Top-Länder"],
+      ["line", "Downloads, 90 Tage"],
+      ["line", "Erlöse, 90 Tage"],
+    ]);
+  });
+
+  it("every template fits in every language", () => {
+    const mixes: TemplateSource[][] = [
+      [asc()],
+      [asc("Team", true)],
+      [asc("Studio A", true), asc("Studio B", true)],
+      [asc("A"), asc("B"), asc("C")],
+      [gsc],
+      [vercel],
+      [demo],
+      [asc("Team", true), gsc, vercel, demo],
+    ];
+    for (const locale of SUPPORTED_LOCALES) {
+      for (const sources of mixes) {
+        expectValid(buildOverviewTemplate(sources, { locale }), locale);
+      }
+      for (const source of [asc("Team", true), asc(), gsc, vercel, demo]) {
+        for (const logoImageId of [crypto.randomUUID(), null]) {
+          expectValid(
+            buildBrandTemplate({
+              source,
+              resourceId: "r-1",
+              resourceName: "Wurfel – Cube Solver",
+              logoImageId,
+              accentColor: null,
+              locale,
+            }),
+            locale,
+          );
+        }
+      }
+    }
   });
 });
 

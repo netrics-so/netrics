@@ -43,6 +43,7 @@ import {
 import {
   CURRENCY_DIMENSION,
   DEFAULT_DASHBOARD_SETTINGS,
+  DEFAULT_LOCALE,
   DEFAULT_THEME_KEY,
   RESOURCE_DIMENSION,
   checkAccentContrast,
@@ -54,6 +55,7 @@ import {
   legacyLayout,
   slideLayoutProblem,
   type Aggregation,
+  type Locale,
   type MetricKind,
   type SlideTransition,
   type WidgetType,
@@ -75,6 +77,8 @@ import {
 export interface Actor {
   workspaceId: string;
   callerId: string;
+  /** The caller's language: labels in responses use it (ADR 0016). */
+  locale?: Locale;
 }
 
 export type Result<T> =
@@ -145,6 +149,7 @@ export async function presentDashboard(
   tx: Transaction,
   workspaceId: string,
   dashboard: Dashboard,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<DashboardView> {
   const data = dashboard.slides.flatMap((slide) =>
     slide.widgets.filter(isDataRow),
@@ -159,7 +164,8 @@ export async function presentDashboard(
         : [{ connectionId: widget.connectionId, resourceId }];
     }),
   );
-  // "Downloads · All apps" for a widget that adds up several (#208).
+  // "Downloads · All apps" for a widget that adds up several (#208), in
+  // the caller's language ("Alle Apps", #268).
   const scopes = await findAllResourcesNames(
     tx,
     workspaceId,
@@ -168,6 +174,7 @@ export async function presentDashboard(
       metricKey: widget.metricKey,
       dimensions: dimensionsOf(widget),
     })),
+    locale,
   );
   const binding = (widget: DataWidgetRow) => {
     const dimensions = dimensionsOf(widget);
@@ -750,7 +757,14 @@ export function createDashboardService(deps: { db: Database }) {
           dashboardId,
         );
         return dashboard
-          ? ok(await presentDashboard(tx, actor.workspaceId, dashboard))
+          ? ok(
+              await presentDashboard(
+                tx,
+                actor.workspaceId,
+                dashboard,
+                actor.locale,
+              ),
+            )
           : fail<DashboardView>(404, NOT_FOUND);
       });
     },
@@ -805,7 +819,14 @@ export function createDashboardService(deps: { db: Database }) {
           target: dashboard.id,
           metadata: { name: dashboard.name },
         });
-        return ok(await presentDashboard(tx, actor.workspaceId, dashboard));
+        return ok(
+          await presentDashboard(
+            tx,
+            actor.workspaceId,
+            dashboard,
+            actor.locale,
+          ),
+        );
       });
     },
 
@@ -912,7 +933,12 @@ export function createDashboardService(deps: { db: Database }) {
           },
         });
         return ok(
-          await presentDashboard(tx, actor.workspaceId, result.dashboard),
+          await presentDashboard(
+            tx,
+            actor.workspaceId,
+            result.dashboard,
+            actor.locale,
+          ),
         );
       });
     },
@@ -964,7 +990,9 @@ export function createDashboardService(deps: { db: Database }) {
           target: copy.id,
           metadata: { name, sourceId: dashboardId },
         });
-        return ok(await presentDashboard(tx, actor.workspaceId, copy));
+        return ok(
+          await presentDashboard(tx, actor.workspaceId, copy, actor.locale),
+        );
       });
     },
 
