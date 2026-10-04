@@ -1,0 +1,1150 @@
+/* ─── Dashboard Studio editor in Signal (ADR 0015 §9, ADR 0018, design 3b) ───
+   Light chrome around the true-to-TV dark canvas: a 56 px header, the
+   body grid 172 | 1fr | 288 (slide rail, stage, inspector). The canvas
+   keeps the theme's colours; selection, handles and outlines are in the
+   admin accent. The slide renderer's own styles stay in globals.css. */
+
+.studio {
+  /* Grid lines on the dark canvas (design 3b). */
+  --canvas-grid: rgb(138 145 156 / 12%);
+  --canvas-grid-strong: rgb(138 145 156 / 40%);
+  --canvas-shadow: 0 1px 2px rgb(0 0 0 / 8%), 0 8px 24px rgb(28 27 25 / 8%);
+  --selection-ring-strong: 0 0 0 3px
+    color-mix(in srgb, var(--accent) 35%, transparent);
+
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--paper);
+}
+
+/* The Studio fills the shell's content area edge to edge. */
+.shell-content:has(.studio-page) {
+  padding: 0;
+}
+
+.studio .help {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.studio fieldset {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 10px 12px 12px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.studio .field > input:not([type="range"]),
+.studio .field > select,
+.studio .field > textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.studio legend {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.studio label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.studio :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────── */
+
+.studio-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 56px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.studio-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.studio-breadcrumb {
+  flex: none;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.studio-breadcrumb::after {
+  content: " /";
+}
+
+.studio-breadcrumb a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.studio-breadcrumb a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.studio-title h1 {
+  margin: 0;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-state {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.studio-state--dirty {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--warning-tint);
+  color: var(--warning-text);
+}
+
+.studio-state--attention {
+  padding: 1px 8px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-pill);
+  background: var(--warning-wash);
+  color: var(--warning-text);
+}
+
+.studio-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.studio-actions button {
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.studio-actions button.primary {
+  padding-inline: 16px;
+}
+
+.studio-history {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.studio-actions .icon-button,
+.studio-actions .studio-discard {
+  border-color: transparent;
+  background: none;
+  color: var(--text-2);
+}
+
+.studio-actions .icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.studio-actions .icon-button:hover:not(:disabled),
+.studio-actions .studio-discard:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--raised);
+}
+
+.studio-actions .icon-button:disabled,
+.studio-actions .studio-discard:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.studio-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 280px;
+  margin-right: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.studio-live-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-live-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.studio-banner {
+  margin: 12px 20px 0;
+}
+
+.studio-banner ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.studio-banner .actions {
+  margin: 8px 0 0;
+}
+
+/* ─── Body: rail | stage | inspector ──────────────────────────────────── */
+
+.studio-body {
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr) 288px;
+  flex: 1;
+  min-height: 0;
+}
+
+.studio-rail,
+.studio-stage,
+.studio-inspector {
+  min-width: 0;
+}
+
+/* Wide enough for three columns: each scrolls on its own and the page
+   does not. */
+@media (min-width: 900px) {
+  .studio {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .studio-rail,
+  .studio-stage,
+  .studio-inspector {
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+@media (max-width: 1279px) {
+  .studio-body {
+    grid-template-columns: 160px minmax(0, 1fr) 264px;
+  }
+}
+
+@media (max-width: 1099px) {
+  .studio-body {
+    grid-template-columns: 148px minmax(0, 1fr) 252px;
+  }
+
+  .studio-toolbar {
+    padding-inline: 14px;
+  }
+
+  .studio-live {
+    max-width: 160px;
+  }
+}
+
+/* Narrow: one column; the slides become a strip that scrolls sideways. */
+@media (max-width: 899px) {
+  .studio-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .studio-rail {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .studio-rail .rail-list {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 4px 4px 8px;
+  }
+
+  .studio-rail .rail-item {
+    flex: none;
+    width: 148px;
+  }
+
+  .studio-inspector {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* ─── Slide rail ──────────────────────────────────────────────────────── */
+
+.studio-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 12px;
+  border-right: 1px solid var(--border);
+  background: var(--raised);
+}
+
+.rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.rail-head-title {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.rail-head h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.studio-rail .rail-add {
+  flex: none;
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-text);
+}
+
+.studio-rail .rail-add:hover:not(:disabled) {
+  background: var(--accent-tint);
+}
+
+.rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rail-list--dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.rail-item {
+  position: relative;
+}
+
+.rail-item--dragged {
+  opacity: 0.5;
+}
+
+.rail-item--drop-before::before,
+.rail-item--drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.rail-item--drop-before::before {
+  top: -6px;
+}
+
+.rail-item--drop-after::after {
+  bottom: -6px;
+}
+
+/* The drag handle sits on the card's thumbnail. */
+.rail-handle {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: -2px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.rail-item:hover .rail-handle,
+.rail-item:focus-within .rail-handle,
+.rail-item--selected .rail-handle,
+.rail-list--dragging .rail-handle {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .rail-handle {
+    opacity: 1;
+    padding: 4px 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-handle {
+    transition: none;
+  }
+}
+
+.studio-rail .rail-select {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  font-weight: inherit;
+  text-align: left;
+}
+
+.studio-rail .rail-select:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.studio-rail .rail-item--selected .rail-select,
+.studio-rail .rail-item--selected .rail-select:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: var(--selection-ring);
+}
+
+.rail-item--off .rail-thumb {
+  opacity: 0.4;
+}
+
+.rail-thumb {
+  position: relative;
+  display: block;
+  flex: none;
+  align-self: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: none;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.rail-thumb-widget {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid;
+  border-radius: 2px;
+  transform: scale(0.9);
+}
+
+.rail-text {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rail-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-seconds {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.rail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.rail-problem,
+.rail-unreadable {
+  color: var(--warning-text);
+}
+
+/* The add-widget chips at the rail's foot (still draggable onto the
+   canvas, #241). */
+.rail-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.add-widget {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.add-widget-label {
+  flex-basis: 100%;
+  margin-bottom: 1px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.add-widget button {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  background: var(--surface);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.add-widget button:not(:disabled) {
+  cursor: grab;
+  touch-action: none;
+}
+
+.add-widget button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+/* ─── Stage ───────────────────────────────────────────────────────────── */
+
+.studio-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+}
+
+@media (max-width: 1279px) {
+  .studio-stage {
+    padding: 14px 16px;
+  }
+}
+
+.canvas-head,
+.studio-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.canvas-head {
+  justify-content: space-between;
+}
+
+.canvas-head-title {
+  min-width: 0;
+}
+
+.canvas-head-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.canvas-check--ok {
+  color: var(--accent-text);
+}
+
+.canvas-check--warn {
+  color: var(--warning-text);
+}
+
+.studio-status b {
+  color: var(--text);
+}
+
+.studio-status-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  vertical-align: -1px;
+  box-shadow: inset 0 0 0 1px rgb(28 27 25 / 15%);
+}
+
+.studio-status-keys {
+  margin-left: auto;
+  font-weight: 500;
+}
+
+.widget-clipboard {
+  display: flex;
+  gap: 4px;
+}
+
+.widget-clipboard button {
+  padding: 3px 9px;
+  border-color: var(--border);
+  border-radius: var(--radius-chip);
+  font-size: 12px;
+}
+
+/* The format switcher's chips in Signal. */
+.studio .format-chip,
+.studio .format-overview-toggle,
+.studio .format-devices button,
+.studio .format-pages button {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.studio .format-chip[aria-selected="true"],
+.studio .format-overview-toggle[aria-pressed="true"],
+.studio .format-devices button[aria-pressed="true"],
+.studio .format-pages [aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  box-shadow: var(--selection-ring);
+}
+
+/* ─── Canvas ──────────────────────────────────────────────────────────── */
+
+.editor-canvas {
+  position: relative;
+  flex: none;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--canvas-shadow);
+}
+
+.editor-overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.editor-overlay:focus {
+  outline: none;
+}
+
+.editor-gridlines,
+.editor-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.editor-gridline {
+  position: absolute;
+  border: 1px solid var(--canvas-grid);
+  border-radius: 4px;
+}
+
+.editor-grid-cell {
+  position: absolute;
+  border: 1px dashed var(--canvas-grid-strong);
+  border-radius: 4px;
+}
+
+.editor-widget {
+  position: absolute;
+  padding: 0;
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.editor-widget:hover:not(:disabled) {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.editor-widget:focus-visible,
+.editor-widget--selected,
+.editor-widget--selected:hover:not(:disabled) {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--selection-ring-strong);
+}
+
+.editor-widget--problem {
+  border-color: var(--t-warning);
+  border-style: dashed;
+}
+
+/* Grid editing (#224): a selected widget is dragged to move it and from its
+   edges and corners to resize it. touch-action: none keeps a touch drag
+   from scrolling the page. */
+.editor-widget--selected {
+  cursor: grab;
+  touch-action: none;
+}
+
+.editor-overlay--dragging,
+.editor-overlay--dragging .editor-widget {
+  cursor: grabbing;
+}
+
+.editor-widget--dragging {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.editor-handle {
+  --handle: 11px;
+  position: absolute;
+  box-sizing: border-box;
+  width: var(--handle);
+  height: var(--handle);
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 30%);
+  touch-action: none;
+}
+
+/* Touch: larger targets for a finger. */
+@media (pointer: coarse) {
+  .editor-handle {
+    --handle: 22px;
+  }
+}
+
+.editor-handle--n,
+.editor-handle--s {
+  left: calc(50% - var(--handle) / 2);
+  cursor: ns-resize;
+}
+.editor-handle--e,
+.editor-handle--w {
+  top: calc(50% - var(--handle) / 2);
+  cursor: ew-resize;
+}
+.editor-handle--n,
+.editor-handle--ne,
+.editor-handle--nw {
+  top: calc(var(--handle) / -2 - 1px);
+}
+.editor-handle--s,
+.editor-handle--se,
+.editor-handle--sw {
+  bottom: calc(var(--handle) / -2 - 1px);
+}
+.editor-handle--e,
+.editor-handle--ne,
+.editor-handle--se {
+  right: calc(var(--handle) / -2 - 1px);
+}
+.editor-handle--w,
+.editor-handle--nw,
+.editor-handle--sw {
+  left: calc(var(--handle) / -2 - 1px);
+}
+.editor-handle--ne,
+.editor-handle--sw {
+  cursor: nesw-resize;
+}
+.editor-handle--nw,
+.editor-handle--se {
+  cursor: nwse-resize;
+}
+
+.editor-outline {
+  position: absolute;
+  pointer-events: none;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.editor-outline--blocked {
+  border-color: var(--t-warning);
+  background: color-mix(in srgb, var(--t-warning) 18%, transparent);
+}
+
+.editor-readout {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-fill);
+  color: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.editor-outline--blocked .editor-readout {
+  background: var(--t-warning);
+  color: var(--t-background);
+}
+
+/* A label or text cut off on TVs (#241): a badge in the warning colour; on the
+   selected widget it spells out the fix. */
+.editor-widget--unreadable:not(.editor-widget--selected) {
+  border-color: var(--t-warning);
+}
+
+/* A widget placed automatically in a custom layout, waiting for review. */
+.editor-widget--review:not(.editor-widget--selected) {
+  border-color: var(--accent-tint);
+  border-style: dashed;
+}
+
+.editor-review {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-tint);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.editor-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--t-warning);
+  color: var(--t-background);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  pointer-events: none;
+}
+
+/* On the selected widget the hint sits outside the box, so it reads even
+   on a 1-row widget: below it, or above it near the slide's bottom. */
+.editor-badge--hint {
+  right: auto;
+  left: 0;
+  bottom: auto;
+  z-index: 2;
+  width: max-content;
+  max-width: 320px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 40%);
+}
+
+.editor-badge--below {
+  top: calc(100% + 6px);
+}
+
+.editor-badge--above {
+  bottom: calc(100% + 6px);
+}
+
+.editor-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--t-muted);
+  pointer-events: none;
+}
+
+/* ─── Inspector ───────────────────────────────────────────────────────── */
+
+.studio-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.studio-inspector .inspector-section {
+  gap: 14px;
+}
+
+/* Slide settings above the dashboard's: a hairline between them. */
+.studio-inspector .inspector-section + .inspector-section {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* The widget panel fills the column, so the fit check sits at its foot. */
+.studio-inspector .inspector-section:has(> .fit-check) {
+  flex: 1;
+}
+
+.studio-inspector h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.inspector-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inspector-head-meta {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-inspector .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.studio-inspector .field > label,
+.studio-inspector .field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.studio-inspector input:not([type="checkbox"], [type="range"], [type="color"]),
+.studio-inspector select,
+.studio-inspector textarea {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.studio-inspector fieldset {
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  gap: 10px;
+}
+
+.studio-inspector legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Switches: the text left, the 30 × 18 toggle right. */
+.studio-inspector label.check {
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+/* The source with its colour square (design 3b). */
+.field-swatch-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.field-swatch {
+  position: absolute;
+  left: 11px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.studio-inspector .field-swatch-row > select {
+  width: 100%;
+  min-width: 0;
+  padding-left: 35px;
+  font-weight: 600;
+}
+
+.field-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.field-pair > .field {
+  min-width: 0;
+}
+
+.filter-group,
+.filter-pickers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-pickers {
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 2px 2px 2px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-tint);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.studio-inspector .filter-chip-remove {
+  flex: none;
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.studio-inspector .filter-chip-remove:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.studio-inspector .filter-add {
+  padding: 2px 9px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.inspector-actions {
+  margin: 0;
+}
+
+.fit-check {
+  margin: auto 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fit-check--fits {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+
+.fit-check--cut {
+  border: 1px solid var(--warning-border);
+  background: var(--warning-wash);
+  color: var(--warning-text);
+}
+
+.rail-slide .rail-actions {
+  margin: 0;
+}
+
+.rail-slide .rail-actions button {
+  padding: 6px 10px;
+}
+
+.rail-confirm {
+  border: 1px solid var(--danger-border);
+  background: var(--danger-wash);
+  border-radius: var(--radius-control);
+  padding: 10px;
+  font-size: 13px;
+}
+
+.rail-confirm p {
+  margin: 0;
+}
+
+.rail-confirm .actions {
+  margin: 8px 0 0;
+}

@@ -138,7 +138,6 @@ describe("readability badges", () => {
         defaultSeconds={20}
         slidesWithProblems={new Set()}
         unreadableCounts={new Map([[ID(2), 2]])}
-        images={[]}
         dispatch={noop}
       />,
     );

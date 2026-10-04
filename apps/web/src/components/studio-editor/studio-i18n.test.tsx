@@ -153,7 +153,7 @@ describe("the Studio in German", () => {
       "de",
     );
     expect(html).toContain(">Metrik</h2>");
-    expect(html).toContain("Spalte 1, Zeile 1 · 4 × 3 Zellen");
+    expect(html).toContain("Sp. 1, Z. 1 · 4×3");
     expect(html).toContain('<label for="widget-connection">Verbindung</label>');
     expect(html).toContain('<option value="avg">Mittelwert</option>');
     expect(html).toContain(
@@ -187,7 +187,6 @@ describe("the Studio in German", () => {
           defaultSeconds={20}
           slidesWithProblems={new Set([ID(2)])}
           unreadableCounts={new Map([[ID(2), 2]])}
-          images={[]}
           dispatch={noop}
         />,
         locale,
@@ -198,7 +197,7 @@ describe("the Studio in German", () => {
     );
     const de = rail("de");
     expect(de).toContain(">Folien</h2>");
-    expect(de).toContain(">Folie hinzufügen</button>");
+    expect(de).toContain('aria-label="Folie hinzufügen"');
     expect(de).toContain(
       'aria-label="1 von 1: Folie 1, 20 Sekunden, auf Bildschirmen ausgeblendet, hat Probleme, 2 Widgets auf TVs abgeschnitten"',
     );

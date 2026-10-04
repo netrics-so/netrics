@@ -258,6 +258,79 @@ describe("widget panel", () => {
     expect(html).toContain("Workspace images (1)");
   });
 
+  it("heads the panel with the type and the place on the grid (design 3b)", () => {
+    const html = render({
+      type: "metric",
+      id: ID(11),
+      ...place,
+      ...binding,
+      options: { showSparkline: true, showChange: false },
+    });
+    expect(html).toContain(
+      '<h2 id="inspector-widget">Metric</h2><span class="inspector-head-meta">col 1, row 1 · 4×3</span>',
+    );
+    // The source with its colour square; period and aggregation side by side.
+    expect(html).toMatch(
+      /<span class="field-swatch-row"><span class="field-swatch" aria-hidden="true"><\/span><select id="widget-connection"/,
+    );
+    expect(html).toMatch(
+      /<div class="field-pair"><div class="field"><label for="widget-period">/,
+    );
+  });
+
+  it("shows filters as removable chips with + add", () => {
+    const html = render({
+      type: "metric",
+      id: ID(11),
+      ...place,
+      ...binding,
+      dimensions: { territory: "DE" },
+      options: { showSparkline: true, showChange: false },
+    });
+    expect(html).toContain('<span class="filter-chip">Territory = DE');
+    expect(html).toContain('aria-label="Remove the filter on Territory"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain(">+ add</button>");
+    // The pickers wait for + add while a filter is set.
+    expect(html).not.toContain("widget-filter-territory");
+  });
+
+  it("says at its foot whether the label fits at 1080p", () => {
+    const metric = {
+      type: "metric" as const,
+      id: ID(11),
+      ...place,
+      ...binding,
+      options: { showSparkline: true, showChange: false },
+    };
+    expect(render(metric)).toMatch(
+      /<p class="fit-check fit-check--fits"><span aria-hidden="true">✓<\/span> Label fits at 1080p · value \d+ px<\/p>/,
+    );
+    const cut = render(metric, {
+      unreadable: {
+        kind: "label",
+        slideId: ID(2),
+        widgetId: ID(11),
+        label: "Downloads",
+        fit: { fits: false, titleLines: 3, resourceLines: 1 },
+        fitsAtWidth: 6,
+        hint: "Make it 6 cells wide.",
+      },
+    });
+    expect(cut).toContain(
+      'class="fit-check fit-check--cut" role="status"><span aria-hidden="true">⚠</span> Make it 6 cells wide.',
+    );
+    expect(
+      render({
+        type: "clock",
+        id: ID(12),
+        ...place,
+        title: null,
+        options: { timeZone: null, hour12: false, showDate: false },
+      } as DashboardWidget),
+    ).not.toContain("fit-check");
+  });
+
   it("never offers to delete an image the draft uses", () => {
     const html = renderI18n(
       <ImageLibrary

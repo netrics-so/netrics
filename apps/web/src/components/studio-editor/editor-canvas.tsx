@@ -146,6 +146,29 @@ export function dragOutline(
   };
 }
 
+/** The grid's cells no widget covers, row by row. */
+export function freeCells(
+  widgets: ReadonlyArray<StudioPlacement>,
+  columns: number,
+  rows: number,
+): Array<{ x: number; y: number }> {
+  const covered = (x: number, y: number) =>
+    widgets.some(
+      (widget) =>
+        x >= widget.x &&
+        x < widget.x + widget.w &&
+        y >= widget.y &&
+        y < widget.y + widget.h,
+    );
+  const cells: Array<{ x: number; y: number }> = [];
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < columns; x++) {
+      if (!covered(x, y)) cells.push({ x, y });
+    }
+  }
+  return cells;
+}
+
 /** A page of a custom layout the canvas edits (#284). */
 export interface CanvasLayoutPage {
   /** The visible widgets of the page, at their placements in the format. */
@@ -442,7 +465,18 @@ export function EditorCanvas({
               )),
             )}
           </div>
-        ) : null}
+        ) : (
+          // The 12 × 8 grid, faintly, where no widget covers it (design 3b).
+          <div className="editor-gridlines" aria-hidden="true">
+            {freeCells(widgets, grid.columns, grid.rows).map(({ x, y }) => (
+              <span
+                key={`${x}-${y}`}
+                className="editor-gridline"
+                style={boxOf({ x, y, w: 1, h: 1 })}
+              />
+            ))}
+          </div>
+        )}
         {widgets.map((widget) => {
           const selected = widget.id === selectedWidgetId;
           const problem = widgetsWithProblems.has(widget.id);
