@@ -241,3 +241,83 @@ export function resizePlacement(
   }
   return candidate;
 }
+
+// ---------------------------------------------------------------------------
+// Free spots (#241: duplicate, paste, drop from the add menu)
+
+/**
+ * The free spot closest to `target` (by the distance of the top-left
+ * corners in widget widths and heights, ties in reading order) for a widget of `type`: at the target's
+ * size, else at the type's minimum size. Null when the slide has no room.
+ */
+export function nearestFreePlacement(
+  target: StudioPlacement,
+  type: WidgetType,
+  others: readonly StudioPlacement[],
+): StudioPlacement | null {
+  const minimum = STUDIO_MIN_WIDGET_SIZE[type];
+  const sizes = [
+    {
+      w: Math.min(Math.max(target.w, minimum.w), STUDIO_GRID.columns),
+      h: Math.min(Math.max(target.h, minimum.h), STUDIO_GRID.rows),
+    },
+    minimum,
+  ];
+  for (const size of sizes) {
+    let best: StudioPlacement | null = null;
+    let bestDistance = Infinity;
+    for (let y = 0; y + size.h <= STUDIO_GRID.rows; y++) {
+      for (let x = 0; x + size.w <= STUDIO_GRID.columns; x++) {
+        const candidate = { x, y, ...size };
+        if (others.some((other) => placementsOverlap(candidate, other))) {
+          continue;
+        }
+        // In widget sizes, so "next to it" beats "below it" for a wide
+        // widget; ties keep reading order.
+        const distance =
+          ((x - target.x) / size.w) ** 2 + ((y - target.y) / size.h) ** 2;
+        if (distance < bestDistance) {
+          best = candidate;
+          bestDistance = distance;
+        }
+      }
+    }
+    if (best) {
+      return best;
+    }
+  }
+  return null;
+}
+
+/**
+ * Where a new widget dropped at `point` (relative to the canvas) goes: a
+ * widget of `size` centred on the point, snapped to cells and kept inside
+ * the grid; at the type's minimum size when its usual size would overlap.
+ * `blocked` when neither fits there (the drop is refused).
+ */
+export function dropPlacement(
+  point: { x: number; y: number },
+  metrics: GridMetrics,
+  type: WidgetType,
+  size: { w: number; h: number },
+  others: readonly StudioPlacement[],
+): { placement: StudioPlacement; blocked: boolean } {
+  const column = (point.x - metrics.left) / (metrics.cellWidth + metrics.gap);
+  const row = (point.y - metrics.top) / (metrics.cellHeight + metrics.gap);
+  const around = (w: number, h: number): StudioPlacement => ({
+    x: clamp(Math.round(column - w / 2), 0, STUDIO_GRID.columns - w),
+    y: clamp(Math.round(row - h / 2), 0, STUDIO_GRID.rows - h),
+    w,
+    h,
+  });
+  const minimum = STUDIO_MIN_WIDGET_SIZE[type];
+  const usual = around(size.w, size.h);
+  if (!placementBlocker(usual, type, others)) {
+    return { placement: usual, blocked: false };
+  }
+  const small = around(minimum.w, minimum.h);
+  if (!placementBlocker(small, type, others)) {
+    return { placement: small, blocked: false };
+  }
+  return { placement: usual, blocked: true };
+}

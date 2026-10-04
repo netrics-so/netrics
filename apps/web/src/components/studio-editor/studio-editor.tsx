@@ -42,7 +42,12 @@ import {
 
 import { AddWidgetMenu } from "./add-widget-menu";
 import { AssignTvs } from "./assign-tvs";
-import { EditorCanvas } from "./editor-canvas";
+import {
+  WidgetClipboardBar,
+  useUnreadableLabels,
+  useWidgetClipboard,
+} from "./canvas-extras";
+import { EditorCanvas, type CanvasOutline } from "./editor-canvas";
 import type { PickableImage } from "./image-picker";
 import {
   DashboardSettingsPanel,
@@ -110,6 +115,8 @@ export function StudioEditor({
   const [playing, setPlaying] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const stopPlaying = useCallback(() => setPlaying(false), []);
+  /** A new widget dragged from the add menu over the canvas (#241). */
+  const [incoming, setIncoming] = useState<CanvasOutline | null>(null);
 
   const dirty = isDirty(state);
   useLeaveGuard(dirty);
@@ -162,6 +169,12 @@ export function StudioEditor({
       ),
     [metrics],
   );
+  const unreadable = useUnreadableLabels(
+    draft,
+    metricsById,
+    theme.tokens.fontScale,
+  );
+  const widgetClipboard = useWidgetClipboard(widget, dispatch, !playing);
   const env: StudioEnv = useMemo(
     () => ({
       workspaceId,
@@ -456,6 +469,7 @@ export function StudioEditor({
           tokens={theme.tokens}
           defaultSeconds={draft.settings.defaultSlideSeconds}
           slidesWithProblems={slidesWithProblems}
+          unreadableCounts={unreadable.perSlide}
           images={pickable}
           dispatch={dispatch}
           onUploadImage={onUploadImage}
@@ -463,13 +477,24 @@ export function StudioEditor({
         <section className="studio-stage" aria-label="Slide">
           {slide ? (
             <>
-              <AddWidgetMenu
-                document={draft}
-                slide={slide}
-                metrics={metrics}
-                imageIds={images.map((image) => image.id)}
-                dispatch={dispatch}
-              />
+              <div className="stage-toolbar">
+                <AddWidgetMenu
+                  document={draft}
+                  slide={slide}
+                  metrics={metrics}
+                  imageIds={images.map((image) => image.id)}
+                  dispatch={dispatch}
+                  showHeader={draft.settings.showHeader}
+                  onDragNew={setIncoming}
+                />
+                <WidgetClipboardBar
+                  selected={widget}
+                  clipboard={widgetClipboard.clipboard}
+                  onCopy={widgetClipboard.copy}
+                  onPaste={widgetClipboard.paste}
+                  onDuplicate={widgetClipboard.duplicate}
+                />
+              </div>
               <EditorCanvas
                 slide={slide}
                 dashboardName={draft.name}
@@ -479,6 +504,8 @@ export function StudioEditor({
                 selectedWidgetId={state.selectedWidgetId}
                 widgetsWithProblems={widgetsWithProblems}
                 dispatch={dispatch}
+                unreadable={unreadable.byWidget}
+                incoming={incoming}
               />
               <p className="help">
                 {theme.name} theme. Click a widget to edit it, drag it to move

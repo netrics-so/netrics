@@ -24,6 +24,7 @@ import {
 } from "@netrics/domain";
 
 import {
+  nearestFreePlacement,
   nudgePlacement,
   placementBlocker,
   resizePlacement,
@@ -116,6 +117,12 @@ export type StudioAction =
    * new type's minimum where there is room.
    */
   | { type: "changeWidgetType"; widgetId: string; widget: NewWidget }
+  /** Cmd/Ctrl+D: a copy on the same slide, in the nearest free spot. */
+  | { type: "duplicateWidget"; widgetId: string }
+  /** Cmd/Ctrl+V: a copied widget onto the selected slide. */
+  | { type: "pasteWidget"; widget: DashboardWidget }
+  /** A new widget dropped from the add menu at a spot on the canvas. */
+  | { type: "addWidgetAt"; widget: NewWidget; placement: StudioPlacement }
   | { type: "undo" }
   | { type: "redo" }
   | { type: "discard" }
@@ -913,6 +920,10 @@ export function createStudioReducer(newId: () => string) {
           `${widgetName(current)} is now a ${widgetTypeName(to).toLowerCase()}.`,
         );
       }
+      case "duplicateWidget":
+      case "pasteWidget":
+      case "addWidgetAt":
+        return insertWidget(state, action, newId);
       case "undo": {
         const previous = state.past.at(-1);
         if (!previous) {
@@ -1113,5 +1124,106 @@ function placeWidget(state: StudioState, action: PlacementAction): StudioState {
       })),
     ),
     placementText(widget, placed),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Duplicate, paste and drop from the add menu (#241)
+
+type InsertAction = Extract<
+  StudioAction,
+  { type: "duplicateWidget" | "pasteWidget" | "addWidgetAt" }
+>;
+
+/** Why one more widget of `type` cannot go on `slide` (limits only). */
+export function widgetLimitBlocker(
+  document: StudioDocument,
+  slide: StudioSlide,
+  type: WidgetType,
+): string | null {
+  if (slide.widgets.length >= STUDIO_LIMITS.widgetsPerSlide) {
+    return `A slide holds at most ${STUDIO_LIMITS.widgetsPerSlide} widgets.`;
+  }
+  if (
+    isDataWidgetType(type) &&
+    dataWidgetCount(document) >= STUDIO_LIMITS.dataWidgets
+  ) {
+    return `A dashboard shows at most ${STUDIO_LIMITS.dataWidgets} data widgets.`;
+  }
+  return null;
+}
+
+/**
+ * A widget added to a slide as one undo step, selected and announced: a
+ * duplicate next to its source, a pasted copy near where it was on its own
+ * slide, or a new widget where it was dropped. Refused, with the reason
+ * announced, at the slide and dashboard limits and when there is no room
+ * (or, for a drop, when the spot is taken).
+ */
+function insertWidget(
+  state: StudioState,
+  action: InsertAction,
+  newId: () => string,
+): StudioState {
+  const { draft } = state;
+  let slide: StudioSlide | undefined;
+  let source: DashboardWidget | NewWidget;
+  let verb: string;
+  if (action.type === "duplicateWidget") {
+    slide = draft.slides.find((s) =>
+      s.widgets.some((widget) => widget.id === action.widgetId),
+    );
+    const found = slide?.widgets.find((w) => w.id === action.widgetId);
+    if (!slide || !found) {
+      return state;
+    }
+    source = found;
+    verb = "duplicated";
+  } else {
+    slide = selectedSlide(state);
+    if (!slide) {
+      return state;
+    }
+    source = action.widget;
+    verb = action.type === "pasteWidget" ? "pasted" : "added";
+  }
+  const blocker = widgetLimitBlocker(draft, slide, source.type);
+  if (blocker) {
+    return announce(state, blocker);
+  }
+  let placement: StudioPlacement | null;
+  if (action.type === "addWidgetAt") {
+    placement = placementBlocker(action.placement, source.type, slide.widgets)
+      ? null
+      : action.placement;
+    if (!placement) {
+      return announce(state, "That spot is taken; the widget was not added.");
+    }
+  } else {
+    const from = source as DashboardWidget;
+    placement = nearestFreePlacement(from, from.type, slide.widgets);
+    if (!placement) {
+      return announce(state, "There is no free space on this slide for it.");
+    }
+  }
+  const widget = {
+    ...source,
+    id: newId(),
+    ...placement,
+  } as DashboardWidget;
+  const target = slide;
+  return announce(
+    {
+      ...edit(
+        state,
+        mapSlide(draft, target.id, (s) => ({
+          ...s,
+          widgets: [...s.widgets, widget],
+        })),
+      ),
+      selectedSlideId: target.id,
+      selectedWidgetId: widget.id,
+    },
+    `${widgetName(widget)} ${verb} at column ${placement.x + 1}, row ${placement.y + 1}.`,
   );
 }

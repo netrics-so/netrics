@@ -2132,6 +2132,10 @@ a.health-badge:hover {
   color: #e3b341;
 }
 
+.rail-unreadable {
+  color: #e3b341;
+}
+
 .rail-slide {
   border-top: 1px solid #23272e;
   padding-top: 12px;
@@ -2184,6 +2188,30 @@ a.health-badge:hover {
 }
 
 .add-widget button {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+/* #241: add buttons can be dragged onto the canvas. */
+.add-widget button:not(:disabled) {
+  cursor: grab;
+  touch-action: none;
+}
+
+.stage-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.widget-clipboard {
+  display: flex;
+  gap: 6px;
+}
+
+.widget-clipboard button {
   padding: 6px 10px;
   font-size: 13px;
 }
@@ -2370,6 +2398,28 @@ a.health-badge:hover {
   font-weight: 600;
   line-height: 1.4;
   white-space: nowrap;
+}
+
+/* A label cut off on TVs (#241): a badge in the warning colour; on the
+   selected widget it spells out the fix. */
+.editor-widget--unreadable:not(.editor-widget--selected) {
+  border-color: var(--t-warning);
+}
+
+.editor-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--t-warning);
+  color: var(--t-background);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  pointer-events: none;
 }
 
 .editor-outline--blocked .editor-readout {

@@ -25,6 +25,7 @@ import {
   type DragHandle,
   type GridMetrics,
 } from "@/lib/studio-grid";
+import type { UnreadableLabel } from "@/lib/studio-readability";
 import { widgetBoxStyle } from "@/lib/studio-render";
 import { themeStyle } from "@/lib/studio-theme";
 import type { StudioEnv } from "@/lib/studio-widgets";
@@ -33,6 +34,15 @@ import type { StudioEnv } from "@/lib/studio-widgets";
 const DRAG_THRESHOLD = 4;
 
 const HELP_ID = "editor-canvas-help";
+
+const NO_LABELS: ReadonlyMap<string, UnreadableLabel> = new Map();
+
+/** An outline on the canvas: where a widget would go, and whether it may. */
+export interface CanvasOutline {
+  placement: StudioPlacement;
+  blocked: boolean;
+  label: string;
+}
 
 /** A drag in progress: the widget, what is held, and where it would land. */
 export interface CanvasDrag {
@@ -133,6 +143,8 @@ export function EditorCanvas({
   selectedWidgetId,
   widgetsWithProblems,
   dispatch,
+  unreadable = NO_LABELS,
+  incoming = null,
   initialDrag = null,
 }: {
   slide: StudioSlide;
@@ -143,6 +155,10 @@ export function EditorCanvas({
   selectedWidgetId: string | null;
   widgetsWithProblems: ReadonlySet<string>;
   dispatch: (action: StudioAction) => void;
+  /** Widgets whose label is cut off on TVs, by widget id (#241). */
+  unreadable?: ReadonlyMap<string, UnreadableLabel>;
+  /** A new widget being dragged in from the add menu (#241). */
+  incoming?: CanvasOutline | null;
   /** For tests: render as if a drag were in progress. */
   initialDrag?: CanvasDrag | null;
 }) {
@@ -272,7 +288,9 @@ export function EditorCanvas({
     }
   }
 
-  const outline = drag?.moved ? dragOutline(drag, slide.widgets) : null;
+  const outline: CanvasOutline | null = drag?.moved
+    ? dragOutline(drag, slide.widgets)
+    : incoming;
 
   return (
     <div className="editor-canvas" style={themeStyle(tokens)}>
@@ -296,6 +314,7 @@ export function EditorCanvas({
             ? "editor-overlay editor-overlay--dragging"
             : "editor-overlay"
         }
+        data-editor-overlay=""
         role="group"
         tabIndex={-1}
         aria-label="Slide canvas"
@@ -329,6 +348,7 @@ export function EditorCanvas({
           const selected = widget.id === selectedWidgetId;
           const problem = widgetsWithProblems.has(widget.id);
           const dragging = drag?.moved && drag.widgetId === widget.id;
+          const cut = unreadable.get(widget.id);
           return (
             <button
               key={widget.id}
@@ -339,12 +359,13 @@ export function EditorCanvas({
                 selected ? "editor-widget--selected" : "",
                 problem ? "editor-widget--problem" : "",
                 dragging ? "editor-widget--dragging" : "",
+                cut ? "editor-widget--unreadable" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
               style={widgetBoxStyle(widget, settings.showHeader)}
               aria-pressed={selected}
-              aria-label={`${widgetName(widget)}, column ${widget.x + 1}, row ${widget.y + 1}, ${widget.w} by ${widget.h} cells${problem ? ", has a problem" : ""}`}
+              aria-label={`${widgetName(widget)}, column ${widget.x + 1}, row ${widget.y + 1}, ${widget.w} by ${widget.h} cells${problem ? ", has a problem" : ""}${cut ? `. ${cut.hint}` : ""}`}
               aria-describedby={HELP_ID}
               onClick={() =>
                 dispatch({ type: "selectWidget", widgetId: widget.id })
@@ -352,6 +373,15 @@ export function EditorCanvas({
               onPointerDown={(event) => beginDrag(event, widget, "move")}
               onKeyDown={(event) => onKeyDown(event, widget.id)}
             >
+              {cut ? (
+                <span
+                  className="editor-badge"
+                  title={cut.hint}
+                  aria-hidden="true"
+                >
+                  {selected ? cut.hint : "Label cut off"}
+                </span>
+              ) : null}
               {selected
                 ? RESIZE_HANDLES.map((handle) => (
                     <span
@@ -384,7 +414,8 @@ export function EditorCanvas({
       </div>
       <p id={HELP_ID} className="visually-hidden">
         Arrow keys move the widget by one cell, Shift and arrow keys resize it,
-        Delete removes it, Escape goes back to the slide.
+        Delete removes it, Escape goes back to the slide. Control or Command
+        with D duplicates it, with C copies it, and with V pastes a copy.
       </p>
       {slide.widgets.length === 0 ? (
         <p className="editor-empty">This slide is empty. Add a widget above.</p>

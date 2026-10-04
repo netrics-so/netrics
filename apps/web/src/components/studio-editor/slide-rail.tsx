@@ -80,12 +80,20 @@ interface DragState {
  * handle moves it with a pointer, and every move is announced. Below the
  * list: the selected slide's name, duration, visibility and background.
  */
+const NO_COUNTS: ReadonlyMap<string, number> = new Map();
+
+/** "1 label cut off", "2 labels cut off". */
+export function cutOffText(count: number): string {
+  return `${count} ${count === 1 ? "label" : "labels"} cut off`;
+}
+
 export function SlideRail({
   slides,
   selectedSlideId,
   tokens,
   defaultSeconds,
   slidesWithProblems,
+  unreadableCounts = NO_COUNTS,
   images,
   dispatch,
   onUploadImage,
@@ -95,6 +103,8 @@ export function SlideRail({
   tokens: ThemeTokens;
   defaultSeconds: number;
   slidesWithProblems: ReadonlySet<string>;
+  /** Labels cut off on TVs, per slide id (#241). */
+  unreadableCounts?: ReadonlyMap<string, number>;
   images: PickableImage[];
   dispatch: (action: StudioAction) => void;
   onUploadImage?: (file: File) => Promise<string | null>;
@@ -268,7 +278,7 @@ export function SlideRail({
                 }}
                 aria-current={isSelected ? "true" : undefined}
                 aria-describedby={hintId}
-                aria-label={`${index + 1} of ${slides.length}: ${title}, ${seconds} seconds${slide.enabled ? "" : ", hidden on screens"}${slidesWithProblems.has(slide.id) ? ", has problems" : ""}`}
+                aria-label={`${index + 1} of ${slides.length}: ${title}, ${seconds} seconds${slide.enabled ? "" : ", hidden on screens"}${slidesWithProblems.has(slide.id) ? ", has problems" : ""}${unreadableCounts.get(slide.id) ? `, ${cutOffText(unreadableCounts.get(slide.id)!)} on TVs` : ""}`}
                 onClick={() =>
                   dispatch({ type: "selectSlide", slideId: slide.id })
                 }
@@ -283,6 +293,12 @@ export function SlideRail({
                     {seconds} s{slide.enabled ? "" : " · hidden"}
                     {slidesWithProblems.has(slide.id) ? (
                       <span className="rail-problem"> · ⚠ check</span>
+                    ) : null}
+                    {unreadableCounts.get(slide.id) ? (
+                      <span className="rail-unreadable">
+                        {" "}
+                        · {cutOffText(unreadableCounts.get(slide.id)!)}
+                      </span>
                     ) : null}
                   </span>
                 </span>
