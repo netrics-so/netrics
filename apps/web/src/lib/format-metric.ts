@@ -6,6 +6,7 @@ import type {
 import {
   SERIES_UNITS,
   amountCurrency,
+  compactNumber,
   currencyExponent,
   isPerCurrencyUnit,
   toMajorUnits,
@@ -70,6 +71,30 @@ export function formatValue(value: number | null, unit: string): string {
     notation: compact ? "compact" : "standard",
     maximumFractionDigits: compact ? 1 : Math.abs(value) >= 100 ? 0 : 2,
   }).format(value);
+}
+
+/**
+ * The compact form of a value (12.3K, €4.2M) for a widget too narrow for
+ * the full one (ADR 0015, section 8); percentages and positions are short
+ * already and stay as they are.
+ */
+export function formatCompactValue(value: number | null, unit: string): string {
+  if (value === null) {
+    return "—";
+  }
+  const currency = amountCurrency(unit);
+  if (currency) {
+    return new Intl.NumberFormat(LOCALE, {
+      style: "currency",
+      currency,
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(toMajorUnits(value, currency));
+  }
+  if (unit === "percent" || unit === "ratio" || unit === "position") {
+    return formatValue(value, unit);
+  }
+  return compactNumber(value);
 }
 
 export type ChangeDirection = "up" | "down" | "flat";

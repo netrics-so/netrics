@@ -44,6 +44,12 @@ import {
   workspaceChoiceLabel,
   type CurrencyTotals,
 } from "@/lib/tile-currency";
+import type { ResolvedTheme } from "@/lib/studio-theme";
+import {
+  isTileDashboard,
+  type StudioEnv,
+  type StudioImage,
+} from "@/lib/studio-widgets";
 import {
   allResourcesOption,
   effectiveResource,
@@ -56,7 +62,8 @@ import {
   type TileResources,
 } from "@/lib/tile-resource";
 
-import { MetricTile, type TileConnection } from "./metric-tile";
+import type { TileConnection } from "./metric-tile";
+import { SlideViewer } from "./slide-viewer";
 import { useServerRefresh } from "./use-server-refresh";
 
 interface DraftTile {
@@ -100,11 +107,20 @@ export function DashboardView({
   canDuplicate,
   canDelete,
   currency,
+  theme,
+  timeZone,
+  images,
 }: {
   workspaceId: string;
   dashboard: Dashboard;
   metrics: WorkspaceMetric[];
   connections: Record<string, TileConnection>;
+  /** The dashboard's theme, resolved on the server (#216). */
+  theme: ResolvedTheme;
+  /** The workspace's time zone, for clocks and chart labels. */
+  timeZone: string;
+  /** The workspace images the slides show (#217). */
+  images: StudioImage[];
   /**
    * The workspace's display currency and the currencies a tile can be
    * converted into (none when the instance fetches no rates, #191).
@@ -139,6 +155,33 @@ export function DashboardView({
     [metrics],
   );
   const pickable = pickableMetrics(metrics);
+  const env: StudioEnv = useMemo(
+    () => ({
+      workspaceId,
+      timeZone,
+      fontScale: theme.tokens.fontScale,
+      showHeader: dashboard.settings.showHeader,
+      metrics: metricsById,
+      connections,
+      images: new Map(images.map((image) => [image.id, image])),
+    }),
+    [
+      workspaceId,
+      timeZone,
+      theme.tokens.fontScale,
+      dashboard.settings.showHeader,
+      metricsById,
+      connections,
+      images,
+    ],
+  );
+  // The tile editor keeps working for dashboards it can save without
+  // flattening them; others are edited in the Studio (#223).
+  const tileEditable = canEdit && isTileDashboard(dashboard);
+  const widgetCount = dashboard.slides.reduce(
+    (sum, slide) => sum + slide.widgets.length,
+    0,
+  );
 
   function startEditing() {
     setName(dashboard.name);
@@ -214,8 +257,6 @@ export function DashboardView({
     }
   }
 
-  const shownTiles = editing ? tiles : toDraft(dashboard);
-
   return (
     <>
       <div className="dashboard-header">
@@ -256,7 +297,7 @@ export function DashboardView({
               >
                 <button type="button">TV mode</button>
               </Link>
-              {canEdit ? (
+              {tileEditable ? (
                 <button type="button" onClick={startEditing}>
                   Edit
                 </button>
@@ -302,7 +343,7 @@ export function DashboardView({
         </div>
       ) : null}
 
-      {shownTiles.length === 0 && !editing ? (
+      {widgetCount === 0 && !editing ? (
         <div className="card">
           <p>This dashboard has no tiles yet.</p>
           {pickable.length === 0 ? (
@@ -313,7 +354,7 @@ export function DashboardView({
               </Link>{" "}
               first.
             </p>
-          ) : canEdit ? (
+          ) : tileEditable ? (
             <button type="button" className="primary" onClick={startEditing}>
               Add tiles
             </button>
@@ -399,19 +440,9 @@ export function DashboardView({
             </p>
           )}
         </div>
-      ) : (
-        <div className="tile-grid">
-          {shownTiles.map((tile) => (
-            <MetricTile
-              key={tile.key}
-              workspaceId={workspaceId}
-              tile={{ ...tile, id: tile.key, position: 0 }}
-              metric={metricsById.get(tileMetricId(tile))}
-              connection={connections[tile.connectionId]}
-            />
-          ))}
-        </div>
-      )}
+      ) : widgetCount > 0 ? (
+        <SlideViewer dashboard={dashboard} tokens={theme.tokens} env={env} />
+      ) : null}
     </>
   );
 }

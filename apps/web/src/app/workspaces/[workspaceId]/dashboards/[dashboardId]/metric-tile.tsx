@@ -15,43 +15,11 @@ import { TileNotice, TileView } from "@/components/tile-view";
 import { apiErrorMessage, queryMetric } from "@/lib/api";
 import { displayUnit } from "@/lib/format-metric";
 import { conversionNote } from "@/lib/tile-currency";
-import { TILE_NOTICES, lastSyncNotice } from "@/lib/tile-status";
+import { connectionNotice } from "@/lib/tile-status";
 
 export interface TileConnection {
   name: string;
   state: ConnectionStateView;
-}
-
-/**
- * Data older than this many poll intervals (at least 15 minutes) is marked
- * stale: the numbers may no longer reflect the source.
- */
-const STALE_AFTER_INTERVALS = 3;
-const MIN_STALE_MS = 15 * 60 * 1000;
-
-function staleness(connection: TileConnection | undefined): string | null {
-  if (!connection) {
-    return TILE_NOTICES.removed;
-  }
-  const { state } = connection;
-  if (state.health === "auth_failed") {
-    return TILE_NOTICES.authFailed;
-  }
-  if (state.health === "needs_reauthorization") {
-    return TILE_NOTICES.needsReconnect;
-  }
-  if (state.health === "outage") {
-    return TILE_NOTICES.outage;
-  }
-  if (!state.lastSuccessAt) {
-    return TILE_NOTICES.firstSync;
-  }
-  const age = Date.now() - new Date(state.lastSuccessAt).getTime();
-  const limit = Math.max(
-    STALE_AFTER_INTERVALS * state.pollIntervalSeconds * 1000,
-    MIN_STALE_MS,
-  );
-  return age > limit ? lastSyncNotice(state.lastSuccessAt) : null;
 }
 
 export function MetricTile({
@@ -123,7 +91,7 @@ export function MetricTile({
     data?.metric.unit ?? metric?.unit ?? "",
     data?.currency ?? tile.dimensions.currency,
   );
-  const stale = staleness(connection);
+  const stale = connectionNotice(connection);
   // Converted amounts are approximate and cite the ECB (#191); amounts
   // without a rate are listed apart, never dropped.
   const conversion = data?.conversion ? conversionNote(data.conversion) : null;
