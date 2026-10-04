@@ -3,15 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   DeviceCredentials,
   DeviceDashboardResponse,
+  DeviceDashboardV2Response,
 } from "@netrics/contracts";
+import { BUILTIN_THEMES } from "@netrics/domain";
 
 import {
   CREDENTIALS_KEY,
   DASHBOARD_KEY,
   backoffMs,
   createKioskClient,
+  isSlidesDashboard,
   kioskAppVersion,
+  serverDashboardSchemas,
+  type KioskBlobUrls,
   type KioskClient,
+  type KioskImageCache,
   type KioskStorage,
 } from "./kiosk-client";
 
@@ -82,6 +88,10 @@ function reply(status: number, body: unknown, headers = {}): Response {
     ok: status >= 200 && status < 300,
     headers: new Headers(headers),
     json: () => Promise.resolve(body),
+    blob: () =>
+      Promise.resolve(
+        body instanceof Blob ? body : new Blob([JSON.stringify(body)]),
+      ),
   } as Response;
 }
 
@@ -491,5 +501,478 @@ describe("kiosk dashboard loop", () => {
 
     await vi.advanceTimersByTimeAsync(5 * 60_000);
     expect(api.callsTo("POST /v1/device/heartbeat")).toHaveLength(2);
+  });
+});
+
+// ── Slides: payload schema 2 (#221) ───────────────────────────────────────
+
+const DASHBOARD_ID = "4c1e2d3f-5a6b-4c7d-8e9f-0a1b2c3d4e5f";
+const LOGO_ID = "11111111-1111-4111-8111-111111111111";
+const BACKGROUND_ID = "22222222-2222-4222-8222-222222222222";
+const SHA_LOGO = "a".repeat(64);
+const SHA_BACKGROUND = "b".repeat(64);
+const SHA_NEW_LOGO = "c".repeat(64);
+
+function image(id: string, sha256: string) {
+  return {
+    id,
+    sha256,
+    contentType: "image/png" as const,
+    width: 512,
+    height: 512,
+    bytes: 1024,
+    url: `/v1/device/images/${id}?v=${sha256}`,
+  };
+}
+
+function slidesPayload(
+  version: string,
+  images = [image(LOGO_ID, SHA_LOGO), image(BACKGROUND_ID, SHA_BACKGROUND)],
+): DeviceDashboardV2Response {
+  return {
+    version,
+    schema: 2,
+    refreshAfterSec: 60,
+    timeZone: "Europe/Berlin",
+    dashboard: {
+      id: DASHBOARD_ID,
+      name: "Wurfel",
+      showHeader: true,
+      logo: images[0] ? { imageId: images[0].id } : null,
+    },
+    theme: { name: "netrics Dark", tokens: BUILTIN_THEMES.netrics_dark.tokens },
+    rotation: { autoAdvance: true, transition: "fade" },
+    grid: { columns: 12, rows: 8 },
+    slides: [
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        name: "Sales",
+        durationSec: 20,
+        background: images[1] ? { imageId: images[1].id, dim: 40 } : null,
+        widgets: [],
+      },
+    ],
+    images,
+  };
+}
+
+function serverInfo(dashboardSchemas?: number[]) {
+  return json({
+    product: "netrics",
+    deviceApiVersion: 1,
+    version: "1.0.0",
+    pairingUrl: "http://kiosk.test/devices/approve",
+    ...(dashboardSchemas ? { dashboardSchemas } : {}),
+  });
+}
+
+function memoryImageCache(initial: Record<string, Blob> = {}) {
+  const entries = new Map(Object.entries(initial));
+  const cache: KioskImageCache = {
+    get: (sha) => Promise.resolve(entries.get(sha) ?? null),
+    put: (sha, blob) => {
+      entries.set(sha, blob);
+      return Promise.resolve();
+    },
+    prune: (keep) => {
+      for (const sha of [...entries.keys()]) {
+        if (!keep.has(sha)) entries.delete(sha);
+      }
+      return Promise.resolve();
+    },
+  };
+  return { cache, entries };
+}
+
+function fakeBlobUrls() {
+  let next = 0;
+  const live = new Set<string>();
+  const revoked: string[] = [];
+  const urls: KioskBlobUrls = {
+    create: () => {
+      next += 1;
+      const url = `blob:kiosk/${next}`;
+      live.add(url);
+      return url;
+    },
+    revoke: (url) => {
+      live.delete(url);
+      revoked.push(url);
+    },
+  };
+  return { urls, live, revoked };
+}
+
+function startWith(options: {
+  fetch: typeof fetch;
+  storage: KioskStorage;
+  imageCache?: KioskImageCache;
+  blobUrls?: KioskBlobUrls;
+}): KioskClient {
+  client = createKioskClient({
+    ...options,
+    blobUrls: options.blobUrls ?? fakeBlobUrls().urls,
+    appVersion: "1.2.3",
+  });
+  client.start();
+  return client;
+}
+
+function pairedStorage(extra: Record<string, string> = {}) {
+  return memoryStorage({
+    [CREDENTIALS_KEY]: JSON.stringify(credentialsFor("a", 24 * 3600 * 1000)),
+    ...extra,
+  });
+}
+
+function imageRoute(bytes: Record<string, string>) {
+  return (call: Call) => {
+    const id = call.path.split("/").at(-1)!;
+    const body = bytes[id];
+    return body === undefined
+      ? json({ error: "not_found" }, { status: 404 })
+      : reply(200, new Blob([body], { type: "image/png" }));
+  };
+}
+
+describe("serverDashboardSchemas", () => {
+  it("reads the listed schemas and treats a missing list as none", () => {
+    expect(serverDashboardSchemas({ dashboardSchemas: [1, 2] })).toEqual([
+      1, 2,
+    ]);
+    expect(serverDashboardSchemas({ product: "netrics" })).toEqual([]);
+    expect(serverDashboardSchemas(null)).toEqual([]);
+  });
+});
+
+describe("kiosk payload schema", () => {
+  it("asks for schema 2 when the server lists it", async () => {
+    const { storage } = pairedStorage();
+    const api = fakeApi({
+      "GET /v1/server": () => serverInfo([1, 2]),
+      "GET /v1/device/dashboard": () =>
+        json(slidesPayload("s2"), { headers: { etag: '"s2"' } }),
+      "GET /v1/device/images/11111111-1111-4111-8111-111111111111": () =>
+        reply(200, new Blob(["logo"], { type: "image/png" })),
+      "GET /v1/device/images/22222222-2222-4222-8222-222222222222": () =>
+        reply(200, new Blob(["bg"], { type: "image/png" })),
+    });
+    const kiosk = startWith({ fetch: api.fetch, storage });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const [request] = api.callsTo("GET /v1/device/dashboard");
+    const url = (api.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .map(([input]) => String(input))
+      .find((input) => input.startsWith("/v1/device/dashboard"));
+    expect(url).toBe("/v1/device/dashboard?schema=2");
+    expect(request!.headers.get("authorization")).toBe("Bearer access-a");
+    const state = kiosk.getState().dashboard!;
+    expect(isSlidesDashboard(state)).toBe(true);
+
+    // The answer is kept: the next poll does not ask the server again.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(api.callsTo("GET /v1/server")).toHaveLength(1);
+    expect(api.callsTo("GET /v1/device/dashboard")).toHaveLength(2);
+  });
+
+  it("keeps schema 1 against a server without dashboardSchemas", async () => {
+    const { storage } = pairedStorage();
+    const urls: string[] = [];
+    const api = fakeApi({
+      "GET /v1/server": () => serverInfo(),
+      "GET /v1/device/dashboard": () => json(dashboard("v1")),
+    });
+    const fetchSpy = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      urls.push(String(input));
+      return api.fetch(input, init);
+    }) as typeof fetch;
+    const kiosk = startWith({ fetch: fetchSpy, storage });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(urls).toContain("/v1/device/dashboard");
+    expect(urls.some((url) => url.includes("schema="))).toBe(false);
+    const state = kiosk.getState().dashboard!;
+    expect(isSlidesDashboard(state)).toBe(false);
+    expect(kiosk.getState().images.size).toBe(0);
+  });
+
+  it("keeps the cached slides schema while the server info cannot be read", async () => {
+    const { storage } = pairedStorage({
+      [DASHBOARD_KEY]: JSON.stringify({
+        etag: '"s2"',
+        payload: slidesPayload("s2", []),
+        updatedAt: T0 - 60_000,
+      }),
+    });
+    let infoUp = false;
+    const urls: string[] = [];
+    const api = fakeApi({
+      "GET /v1/server": () => {
+        if (!infoUp) throw new TypeError("fetch failed");
+        return serverInfo([1, 2]);
+      },
+      "GET /v1/device/dashboard": (call) =>
+        call.headers.get("if-none-match") === '"s2"'
+          ? reply(304, null, { etag: '"s2"' })
+          : json(slidesPayload("s2", [])),
+    });
+    const fetchSpy = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      urls.push(String(input));
+      return api.fetch(input, init);
+    }) as typeof fetch;
+    const kiosk = startWith({ fetch: fetchSpy, storage });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(
+      urls.filter((url) => url.startsWith("/v1/device/dashboard")),
+    ).toEqual(["/v1/device/dashboard?schema=2"]);
+    // Same schema: the ETag is offered and the screen keeps its slides.
+    expect(
+      api.callsTo("GET /v1/device/dashboard")[0]!.headers.get("if-none-match"),
+    ).toBe('"s2"');
+    expect(isSlidesDashboard(kiosk.getState().dashboard!)).toBe(true);
+
+    // The server info is asked again until it answers.
+    infoUp = true;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(api.callsTo("GET /v1/server")).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(api.callsTo("GET /v1/server")).toHaveLength(2);
+  });
+
+  it("does not offer a schema 1 ETag when asking for schema 2", async () => {
+    const { storage } = pairedStorage({
+      [DASHBOARD_KEY]: JSON.stringify({
+        etag: '"v1"',
+        payload: dashboard("v1"),
+        updatedAt: T0 - 60_000,
+      }),
+    });
+    const api = fakeApi({
+      "GET /v1/server": () => serverInfo([1, 2]),
+      "GET /v1/device/dashboard": () =>
+        json(slidesPayload("s2", []), { headers: { etag: '"s2"' } }),
+    });
+    const kiosk = startWith({ fetch: api.fetch, storage });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const [request] = api.callsTo("GET /v1/device/dashboard");
+    expect(request!.headers.get("if-none-match")).toBeNull();
+    expect(isSlidesDashboard(kiosk.getState().dashboard!)).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(
+      api.callsTo("GET /v1/device/dashboard")[1]!.headers.get("if-none-match"),
+    ).toBe('"s2"');
+  });
+});
+
+describe("kiosk images", () => {
+  it("downloads missing images with the device token, caches them by sha256 and shows blob URLs", async () => {
+    const { storage } = pairedStorage();
+    const { cache, entries } = memoryImageCache();
+    const blobs = fakeBlobUrls();
+    const api = fakeApi({
+      "GET /v1/server": () => serverInfo([1, 2]),
+      "GET /v1/device/dashboard": () =>
+        json(slidesPayload("s2"), { headers: { etag: '"s2"' } }),
+      [`GET /v1/device/images/${LOGO_ID}`]: imageRoute({ [LOGO_ID]: "logo" }),
+      [`GET /v1/device/images/${BACKGROUND_ID}`]: imageRoute({
+        [BACKGROUND_ID]: "bg",
+      }),
+    });
+    const kiosk = startWith({
+      fetch: api.fetch,
+      storage,
+      imageCache: cache,
+      blobUrls: blobs.urls,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const [logoRequest] = api.callsTo(`GET /v1/device/images/${LOGO_ID}`);
+    expect(logoRequest!.headers.get("authorization")).toBe("Bearer access-a");
+    expect([...entries.keys()].sort()).toEqual([SHA_LOGO, SHA_BACKGROUND]);
+    const images = kiosk.getState().images;
+    expect(images.get(LOGO_ID)).toEqual({
+      id: LOGO_ID,
+      url: expect.stringMatching(/^blob:/),
+      width: 512,
+      height: 512,
+    });
+    expect(images.get(BACKGROUND_ID)?.url).toMatch(/^blob:/);
+    expect(blobs.live.size).toBe(2);
+  });
+
+  it("uses cached images without downloading them", async () => {
+    const { storage } = pairedStorage();
+    const { cache } = memoryImageCache({
+      [SHA_LOGO]: new Blob(["logo"], { type: "image/png" }),
+      [SHA_BACKGROUND]: new Blob(["bg"], { type: "image/png" }),
+    });
+    const api = fakeApi({
+      "GET /v1/server": () => serverInfo([1, 2]),
+      "GET /v1/device/dashboard": () => json(slidesPayload("s2")),
+    });
+    const kiosk = startWith({ fetch: api.fetch, storage, imageCache: cache });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(
+      api.calls.some((call) => call.path.startsWith("/v1/device/images")),
+    ).toBe(false);
+    expect(kiosk.getState().images.size).toBe(2);
+  });
+
+  it("downloads only the new hash, revokes the old URL and prunes its cache entry", async () => {
+    const { storage } = pairedStorage();
+    const { cache, entries } = memoryImageCache();
+    const blobs = fakeBlobUrls();
+    let payload = slidesPayload("s2");
+    const api = fakeApi({
+      "GET /v1/server": () => serverInfo([1, 2]),
+      "GET /v1/device/dashboard": () => json(payload),
+      [`GET /v1/device/images/${LOGO_ID}`]: imageRoute({ [LOGO_ID]: "logo" }),
+      [`GET /v1/device/images/${BACKGROUND_ID}`]: imageRoute({
+        [BACKGROUND_ID]: "bg",
+      }),
+    });
+    const kiosk = startWith({
+      fetch: api.fetch,
+      storage,
+      imageCache: cache,
+      blobUrls: blobs.urls,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const oldLogo = kiosk.getState().images.get(LOGO_ID)!.url;
+    const background = kiosk.getState().images.get(BACKGROUND_ID)!.url;
+
+    // The logo is replaced (same id, new bytes): a new hash.
+    payload = slidesPayload("s3", [
+      image(LOGO_ID, SHA_NEW_LOGO),
+      image(BACKGROUND_ID, SHA_BACKGROUND),
+    ]);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(api.callsTo(`GET /v1/device/images/${LOGO_ID}`)).toHaveLength(2);
+    expect(api.callsTo(`GET /v1/device/images/${BACKGROUND_ID}`)).toHaveLength(
+      1,
+    );
+    expect(blobs.revoked).toEqual([oldLogo]);
+    expect(kiosk.getState().images.get(BACKGROUND_ID)!.url).toBe(background);
+    expect(kiosk.getState().images.get(LOGO_ID)!.url).not.toBe(oldLogo);
+    expect([...entries.keys()].sort()).toEqual([SHA_BACKGROUND, SHA_NEW_LOGO]);
+  });
+
+  it("retries an image that failed on the next poll", async () => {
+    const { storage } = pairedStorage();
+    let imagesUp = false;
+    const api = fakeApi({
+      "GET /v1/server": () => serverInfo([1, 2]),
+      "GET /v1/device/dashboard": (call) =>
+        call.headers.get("if-none-match")
+          ? reply(304, null)
+          : json(slidesPayload("s2"), { headers: { etag: '"s2"' } }),
+      [`GET /v1/device/images/${LOGO_ID}`]: () => {
+        if (!imagesUp) throw new TypeError("fetch failed");
+        return reply(200, new Blob(["logo"], { type: "image/png" }));
+      },
+      [`GET /v1/device/images/${BACKGROUND_ID}`]: imageRoute({
+        [BACKGROUND_ID]: "bg",
+      }),
+    });
+    const kiosk = startWith({ fetch: api.fetch, storage });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(kiosk.getState().images.has(LOGO_ID)).toBe(false);
+    expect(kiosk.getState().images.has(BACKGROUND_ID)).toBe(true);
+    expect(kiosk.getState().offline).toBe(false);
+
+    imagesUp = true;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(kiosk.getState().images.has(LOGO_ID)).toBe(true);
+    expect(api.callsTo(`GET /v1/device/images/${BACKGROUND_ID}`)).toHaveLength(
+      1,
+    );
+  });
+
+  it("never sends the token to an image URL outside the device API", async () => {
+    const { storage } = pairedStorage();
+    const evil = {
+      ...image(LOGO_ID, SHA_LOGO),
+      url: "https://elsewhere.example/steal",
+    };
+    const urls: string[] = [];
+    const api = fakeApi({
+      "GET /v1/server": () => serverInfo([1, 2]),
+      "GET /v1/device/dashboard": () => json(slidesPayload("s2", [evil])),
+    });
+    const fetchSpy = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      urls.push(String(input));
+      return api.fetch(input, init);
+    }) as typeof fetch;
+    const kiosk = startWith({ fetch: fetchSpy, storage });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(urls.some((url) => url.includes("elsewhere"))).toBe(false);
+    expect(kiosk.getState().images.size).toBe(0);
+  });
+
+  it("starts offline with the cached payload and its cached images", async () => {
+    const { storage } = pairedStorage({
+      [DASHBOARD_KEY]: JSON.stringify({
+        etag: '"s2"',
+        payload: slidesPayload("s2"),
+        updatedAt: T0 - 3600_000,
+      }),
+    });
+    const { cache } = memoryImageCache({
+      [SHA_LOGO]: new Blob(["logo"], { type: "image/png" }),
+      [SHA_BACKGROUND]: new Blob(["bg"], { type: "image/png" }),
+    });
+    const api = fakeApi({});
+    const kiosk = startWith({ fetch: api.fetch, storage, imageCache: cache });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const state = kiosk.getState();
+    expect(state.phase).toBe("paired");
+    expect(state.offline).toBe(true);
+    expect(state.dashboard?.version).toBe("s2");
+    expect(isSlidesDashboard(state.dashboard!)).toBe(true);
+    expect(state.images.size).toBe(2);
+    expect(state.updatedAt).toBe(T0 - 3600_000);
+  });
+
+  it("revokes every image URL and empties the cache when the device is revoked", async () => {
+    const { storage } = pairedStorage();
+    const { cache, entries } = memoryImageCache();
+    const blobs = fakeBlobUrls();
+    let revoked = false;
+    const api = fakeApi({
+      "GET /v1/server": () => serverInfo([1, 2]),
+      "GET /v1/device/dashboard": () =>
+        revoked
+          ? json({ error: "unauthorized" }, { status: 401 })
+          : json(slidesPayload("s2")),
+      "POST /v1/device/token": () =>
+        json({ error: "unauthorized" }, { status: 401 }),
+      "POST /v1/device/pairings": () => pairingResponse(),
+      [`GET /v1/device/images/${LOGO_ID}`]: imageRoute({ [LOGO_ID]: "logo" }),
+      [`GET /v1/device/images/${BACKGROUND_ID}`]: imageRoute({
+        [BACKGROUND_ID]: "bg",
+      }),
+    });
+    const kiosk = startWith({
+      fetch: api.fetch,
+      storage,
+      imageCache: cache,
+      blobUrls: blobs.urls,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(blobs.live.size).toBe(2);
+
+    revoked = true;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(kiosk.getState().phase).toBe("pairing");
+    expect(kiosk.getState().images.size).toBe(0);
+    expect(blobs.live.size).toBe(0);
+    expect(entries.size).toBe(0);
   });
 });

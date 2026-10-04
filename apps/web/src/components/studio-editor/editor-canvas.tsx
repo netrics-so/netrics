@@ -295,7 +295,7 @@ export function EditorCanvas({
   return (
     <div className="editor-canvas" style={themeStyle(tokens)}>
       <SlideCanvas
-        slide={{ ...slide, position: 0 }}
+        slide={slide}
         tokens={tokens}
         showHeader={settings.showHeader}
         header={{
