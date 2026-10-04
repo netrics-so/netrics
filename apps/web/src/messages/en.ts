@@ -4,6 +4,7 @@ import { authEn } from "./auth/en";
 import { commonEn } from "./common/en";
 import { formatsEn } from "./formats/en";
 import { screenEn } from "./screen/en";
+import { screensEn } from "./screens/en";
 import { settingsEn } from "./settings/en";
 import { shellEn } from "./shell/en";
 import { studioEn } from "./studio/en";
@@ -29,6 +30,7 @@ export const EN_AREAS = {
   studio: studioEn,
   settings: settingsEn,
   screen: screenEn,
+  screens: screensEn,
   shell: shellEn,
 } as const;
 
@@ -42,6 +44,7 @@ export const en = {
   ...studioEn,
   ...settingsEn,
   ...screenEn,
+  ...screensEn,
   ...shellEn,
 } as const;
 

@@ -7,6 +7,7 @@ import { commonDe } from "./common/de";
 import type { WebMessages } from "./en";
 import { formatsDe } from "./formats/de";
 import { screenDe } from "./screen/de";
+import { screensDe } from "./screens/de";
 import { settingsDe } from "./settings/de";
 import { shellDe } from "./shell/de";
 import { studioDe } from "./studio/de";
@@ -32,5 +33,6 @@ export const de: Catalog<WebMessages> = {
   ...studioDe,
   ...settingsDe,
   ...screenDe,
+  ...screensDe,
   ...shellDe,
 };
