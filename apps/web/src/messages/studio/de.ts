@@ -221,6 +221,9 @@ export const studioDe: Catalog<typeof studioEn> = {
       convertedTo: "Umgerechnet in {currency}",
       exactGroup: "Eine Währung, exakt",
       loadingCurrencies: "Währungen werden geladen…",
+      pickCurrency: "Wähl eine Währung",
+      pickCurrencyHelp:
+        "Ein Ziel zählt Beträge in einer Währung: Wähl eine aus oder rechne in eine um.",
       onlyCurrency: "Nur Beträge in {currency}, exakt.",
       approximate:
         "Ungefähr: Jeder Tag wird zum EZB-Referenzkurs dieses Tages umgerechnet. Währungen ohne Kurs werden getrennt gezeigt.",

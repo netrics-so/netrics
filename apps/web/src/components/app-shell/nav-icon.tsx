@@ -17,6 +17,13 @@ const PATHS: Record<NavKey, ReactNode> = {
       <path d="M10 3.5v13M3 9.5h7" />
     </>
   ),
+  goals: (
+    <>
+      <circle cx="10" cy="10" r="6.5" />
+      <circle cx="10" cy="10" r="3.5" />
+      <circle cx="10" cy="10" r="0.6" fill="currentColor" />
+    </>
+  ),
   themes: (
     <>
       <circle cx="10" cy="10" r="6.5" />

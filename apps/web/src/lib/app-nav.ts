@@ -4,12 +4,14 @@ import type { ConnectionHealth } from "@netrics/contracts";
  * The workspace app shell's map (ADR 0018 section 4, #302): which areas
  * the sidebar lists, where they live, and which one a path belongs to.
  * Only destinations that exist are listed; playlists, schedules, alerts,
- * templates and image libraries join with their features.
+ * templates and image libraries join with their features (goals joined
+ * with ADR 0019 §4).
  */
 
 export type NavKey =
   | "home"
   | "dashboards"
+  | "goals"
   | "themes"
   | "sources"
   | "addSource"
@@ -47,6 +49,7 @@ export function workspaceNav(
   return [
     { key: "home", href: at(""), section: null },
     { key: "dashboards", href: at("dashboards"), section: "dashboards" },
+    { key: "goals", href: at("goals"), section: "dashboards" },
     { key: "themes", href: at("settings/themes"), section: "dashboards" },
     { key: "sources", href: at("sources"), section: "sources" },
     ...(permissions.createConnections
@@ -86,6 +89,8 @@ export function activeNavKey(
       return "home";
     case "dashboards":
       return "dashboards";
+    case "goals":
+      return "goals";
     case "sources":
       return "sources";
     case "connections":

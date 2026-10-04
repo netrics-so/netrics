@@ -4,6 +4,7 @@ import { authEn } from "./auth/en";
 import { commonEn } from "./common/en";
 import { dashboardsEn } from "./dashboards/en";
 import { formatsEn } from "./formats/en";
+import { goalsEn } from "./goals/en";
 import { screenEn } from "./screen/en";
 import { screensEn } from "./screens/en";
 import { settingsEn } from "./settings/en";
@@ -30,6 +31,7 @@ export const EN_AREAS = {
   auth: authEn,
   workspace: workspaceEn,
   dashboards: dashboardsEn,
+  goals: goalsEn,
   studio: studioEn,
   settings: settingsEn,
   screen: screenEn,
@@ -46,6 +48,7 @@ export const en = {
   ...authEn,
   ...workspaceEn,
   ...dashboardsEn,
+  ...goalsEn,
   ...studioEn,
   ...settingsEn,
   ...screenEn,

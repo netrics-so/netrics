@@ -216,6 +216,9 @@ export const studioEn = {
       convertedTo: "Converted to {currency}",
       exactGroup: "One currency, exact",
       loadingCurrencies: "Loading currencies…",
+      pickCurrency: "Pick a currency",
+      pickCurrencyHelp:
+        "A goal counts amounts in one currency: pick one, or convert into one.",
       onlyCurrency: "Only amounts in {currency}, exact.",
       approximate:
         "Approximate: each day converted at that day's ECB reference rate. Currencies without a rate are shown apart.",

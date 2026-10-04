@@ -165,6 +165,22 @@ export {
   listThemes,
   updateTheme,
 } from "./themes.js";
+export {
+  deleteGoal,
+  findDashboardsUsingGoal,
+  findGoal,
+  insertGoal,
+  listGoals,
+  updateGoal,
+} from "./goals.js";
+export type {
+  DeleteGoalResult,
+  GoalInput,
+  GoalRow,
+  GoalUser,
+  InsertGoalResult,
+  UpdateGoalResult,
+} from "./goals.js";
 export type {
   DeleteThemeResult,
   InsertThemeResult,

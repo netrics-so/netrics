@@ -127,6 +127,16 @@ import {
   type WorkspaceListResponse,
   type WorkspaceResponse,
   type WorkspaceRole,
+  createGoalRequestSchema,
+  deleteGoalResponseSchema,
+  goalListResponseSchema,
+  goalResponseSchema,
+  updateGoalRequestSchema,
+  type CreateGoalRequest,
+  type DeleteGoalResponse,
+  type GoalListResponse,
+  type GoalResponse,
+  type UpdateGoalRequest,
   createThemeRequestSchema,
   themeErrorResponseSchema,
   themeListResponseSchema,
@@ -937,6 +947,60 @@ export async function deleteTheme(
   if (!response.ok && response.status !== 204) {
     throw await readError(response);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Goals (ADR 0019 section 4, #335)
+// ---------------------------------------------------------------------------
+
+/** The workspace's goals with their current progress. */
+export function listGoals(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<GoalListResponse> {
+  return serverGet(
+    goalListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/goals`,
+  );
+}
+
+export function createGoal(
+  workspaceId: string,
+  body: CreateGoalRequest,
+): Promise<GoalResponse> {
+  return browserSend(
+    goalResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/goals`,
+    createGoalRequestSchema.parse(body),
+  );
+}
+
+/** Throws ApiError "version_conflict" (409) when someone saved first. */
+export function updateGoal(
+  workspaceId: string,
+  goalId: string,
+  body: UpdateGoalRequest,
+): Promise<GoalResponse> {
+  return browserSend(
+    goalResponseSchema,
+    "PUT",
+    `/v1/workspaces/${workspaceId}/goals/${goalId}`,
+    updateGoalRequestSchema.parse(body),
+  );
+}
+
+/** Deletes a goal; answers the dashboards whose gauges used it. */
+export function deleteGoal(
+  workspaceId: string,
+  goalId: string,
+): Promise<DeleteGoalResponse> {
+  return browserSend(
+    deleteGoalResponseSchema,
+    "DELETE",
+    `/v1/workspaces/${workspaceId}/goals/${goalId}`,
+  );
 }
 
 // ---------------------------------------------------------------------------

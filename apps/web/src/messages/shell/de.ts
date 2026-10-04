@@ -25,6 +25,7 @@ export const shellDe: Catalog<typeof shellEn> = {
     items: {
       home: "Start",
       dashboards: "Alle Dashboards",
+      goals: "Ziele",
       themes: "Designs",
       sources: "Verbunden",
       addSource: "Quelle hinzufügen",
@@ -35,6 +36,7 @@ export const shellDe: Catalog<typeof shellEn> = {
     railItems: {
       home: "Start",
       dashboards: "Dashboards",
+      goals: "Ziele",
       themes: "Designs",
       sources: "Quellen",
       addSource: "Quelle hinzufügen",

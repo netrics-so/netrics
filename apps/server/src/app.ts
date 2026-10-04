@@ -45,6 +45,7 @@ import { registerMetricRoutes } from "./routes/metrics.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerOpenApi, routeSchema } from "./routes/openapi.js";
 import { registerSessionRoutes } from "./routes/session.js";
+import { registerGoalRoutes } from "./routes/goals.js";
 import { registerThemeRoutes } from "./routes/themes.js";
 import { registerWorkspaceRoutes } from "./routes/workspaces.js";
 
@@ -194,6 +195,12 @@ export async function buildApp(
   });
   registerDashboardRoutes(app, { authService, db });
   registerThemeRoutes(app, { authService, db });
+  registerGoalRoutes(app, {
+    authService,
+    db,
+    exchangeRates: config.exchangeRates,
+    ...(deps.now ? { now: deps.now } : {}),
+  });
   registerImageRoutes(app, { authService, db, quota: config.imageQuota });
   registerDeviceRoutes(app, {
     authService,
