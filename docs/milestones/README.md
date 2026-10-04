@@ -60,6 +60,7 @@ distribution runs the signed images.
 | [07 — Google Search Console](./07-google-search-console.md)               | Reusable user OAuth and Google metrics             |
 | [08 — App Store Connect](./08-app-store-connect.md)                       | Signed-key auth and app-store metrics              |
 | [09 — Dashboard Studio](./09-dashboard-studio.md)                         | Slides, widgets, themes and images on every screen |
+| [09.1 — Internationalisation](./09.1-internationalisation.md)             | English and German everywhere                      |
 | [10 — Apple Ads](./10-apple-ads.md)                                       | Client-credential auth and advertising metrics     |
 | [11 — Projects and derived metrics](./11-projects-and-derived-metrics.md) | Cross-connection analysis and organization         |
 | [12 — Community connector system](./12-community-connectors.md)           | Public SDK, template, catalog, and review pipeline |
@@ -118,6 +119,9 @@ team could parallelize independent connectors after milestone 07.
 - Planned: 09 (Dashboard Studio). Slides, widgets, themes and images
   decided in [ADR 0015](../decisions/0015-dashboard-studio.md); issues
   #213–#227. Milestones after it moved up by one (Apple Ads is now 10).
+- Planned: 09.1 (internationalisation, English + German). Decided in
+  [ADR 0016](../decisions/0016-internationalisation.md); umbrella #162,
+  issues #250–#257. Cross-cutting, runs alongside the next milestones.
 - Later: the web frontend on Vercel (#123).
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
