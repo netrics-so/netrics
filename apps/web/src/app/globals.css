@@ -19,6 +19,8 @@
   --faint: #9a948a;
   --accent: #0b8a85;
   --accent-text: #0b6f6b;
+  /* Fill behind white text: the accent darkened to a 4.5 contrast. */
+  --accent-fill: #0b807b;
   --accent-tint: #e6f4f3;
   --accent-wash: #f0faf9;
   --success: #22a06b;
@@ -534,14 +536,14 @@ button:disabled {
 }
 
 button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
   color: #fff;
 }
 
 button.primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 88%, black);
-  border-color: color-mix(in srgb, var(--accent) 88%, black);
+  background: color-mix(in srgb, var(--accent-fill) 88%, black);
+  border-color: color-mix(in srgb, var(--accent-fill) 88%, black);
 }
 
 button.danger {
