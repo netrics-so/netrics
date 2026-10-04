@@ -5,13 +5,30 @@ import type {
   createDashboardRequestSchema,
 } from "@netrics/contracts";
 import type { z } from "zod";
-import { STUDIO_GRID, STUDIO_LIMITS } from "@netrics/domain";
+import {
+  DEFAULT_LOCALE,
+  STUDIO_GRID,
+  STUDIO_LIMITS,
+  createTranslator,
+  type Catalog,
+  type Locale,
+} from "@netrics/domain";
+
+import { templateDe } from "./template-messages/de.js";
+import { templateEn, type TemplateMessages } from "./template-messages/en.js";
 
 // Dashboard templates (ADR 0015 section 9, #226): pure builders that turn
 // the workspace's connections into an ordinary studio dashboard. The
 // service validates the result like any dashboard a user sends (bounds,
 // overlap, minimum sizes, metrics, resources), and the tests check that
 // every label fits at 1080p, so a template never starts out unreadable.
+// Names and titles are in the creator's language (ADR 0016 section 5,
+// #268); widgets whose automatic label says the same go untitled.
+
+const TEMPLATE_CATALOGS: Readonly<Record<Locale, Catalog<TemplateMessages>>> = {
+  en: templateEn,
+  de: templateDe,
+};
 
 /** A dashboard as sent to POST /dashboards, before defaults apply. */
 export type TemplateDashboard = z.input<typeof createDashboardRequestSchema>;
@@ -44,7 +61,8 @@ interface WidgetSpec {
   connectionId: string;
   metricKey: string;
   period: MetricPeriod;
-  title: string;
+  /** Null: the automatic label (tileLabel) in the reader's language. */
+  title: string | null;
   groupBy?: string;
   dimensions?: Record<string, string>;
 }
@@ -80,7 +98,7 @@ function spec(
   type: DataType,
   metricKey: string,
   period: MetricPeriod,
-  title: string,
+  title: string | null,
   groupBy?: string,
 ): WidgetSpec {
   return {
@@ -111,7 +129,7 @@ function toWidget(
     connectionId: widget.connectionId,
     metricKey: widget.metricKey,
     period: widget.period,
-    title: widget.title,
+    ...(widget.title ? { title: widget.title } : {}),
     ...(widget.dimensions ? { dimensions: widget.dimensions } : {}),
   };
   if (widget.type === "bar") {
@@ -226,9 +244,58 @@ function byConnector(sources: readonly TemplateSource[], connectorId: string) {
     );
 }
 
-/** "Downloads, 7 days", plus " · <connection>" when there are several. */
-function titled(base: string, source: TemplateSource, several: boolean) {
-  return several ? `${base} · ${source.connectionName}` : base;
+/** Days of the periods template titles name. */
+const PERIOD_DAYS = {
+  last_7_days: 7,
+  last_30_days: 30,
+  last_90_days: 90,
+} as const;
+type TitledPeriod = keyof typeof PERIOD_DAYS;
+type MetricWord = keyof TemplateMessages["metrics"];
+
+/** The template catalog in the creator's language (ADR 0016 section 5). */
+function templateTexts(locale: Locale) {
+  const t = createTranslator<TemplateMessages>({
+    locale,
+    messages: TEMPLATE_CATALOGS[locale],
+    fallback: templateEn,
+  });
+  return {
+    t,
+    /** "Downloads, 30 days", "Erlöse, 30 Tage". */
+    over(metric: MetricWord, period: TitledPeriod): string {
+      return t("withPeriod", {
+        metric: t(`metrics.${metric}`),
+        days: PERIOD_DAYS[period],
+      });
+    },
+  };
+}
+
+/**
+ * Overview metric widgets go untitled: their automatic label ("Downloads ·
+ * All apps", in the screen language) and period line ("Last 7 days ·
+ * Total") say the same, and follow a later change of the screen language.
+ * With several connections of one kind those labels would be alike, so
+ * the title names the connection: "Downloads, 7 days · Studio A".
+ */
+function overviewTitle(
+  text: ReturnType<typeof templateTexts>,
+  metric: MetricWord,
+  period: TitledPeriod,
+  source: TemplateSource,
+  several: boolean,
+): string | null {
+  return several
+    ? `${text.over(metric, period)} · ${source.connectionName}`
+    : null;
+}
+
+export interface OverviewOptions {
+  /** Default: "Overview" in the creator's language. */
+  name?: string | undefined;
+  /** The creator's language; default English. */
+  locale?: Locale;
 }
 
 /**
@@ -237,8 +304,10 @@ function titled(base: string, source: TemplateSource, several: boolean) {
  */
 export function buildOverviewTemplate(
   sources: readonly TemplateSource[],
-  name = "Overview",
+  options: OverviewOptions = {},
 ): TemplateDashboard | null {
+  const text = templateTexts(options.locale ?? DEFAULT_LOCALE);
+  const { t } = text;
   const slides: DashboardSlideInput[] = [];
 
   const stores = byConnector(sources, APP_STORE_CONNECT);
@@ -250,14 +319,14 @@ export function buildOverviewTemplate(
         "metric",
         ASC.downloads,
         "last_7_days",
-        titled("Downloads, 7 days", source, several),
+        overviewTitle(text, "downloads", "last_7_days", source, several),
       ),
       spec(
         source,
         "metric",
         ASC.proceeds,
         "last_30_days",
-        titled("Proceeds, 30 days", source, several),
+        overviewTitle(text, "proceeds", "last_30_days", source, several),
       ),
       ...(source.hasReviews
         ? [
@@ -266,27 +335,28 @@ export function buildOverviewTemplate(
               "metric",
               ASC.reviews,
               "last_30_days",
-              titled("Reviews, 30 days", source, several),
+              overviewTitle(text, "reviews", "last_30_days", source, several),
             ),
           ]
         : []),
     ]);
     const first = stores[0]!;
+    // Charts have no period line: their titles name it.
     slides.push(
-      ...slidesFor("App Store", metrics, [
+      ...slidesFor(t("slides.appStore"), metrics, [
         spec(
           first,
           "line",
           ASC.downloads,
           "last_30_days",
-          "Downloads, 30 days",
+          text.over("downloads", "last_30_days"),
         ),
         spec(
           first,
           "bar",
           ASC.downloads,
           "last_30_days",
-          "Downloads by app",
+          t("downloadsByApp"),
           "resource",
         ),
       ]),
@@ -303,14 +373,26 @@ export function buildOverviewTemplate(
         "metric",
         GSC.clicks,
         "last_7_days",
-        titled("Search clicks, 7 days", source, searches.length > 1),
+        overviewTitle(
+          text,
+          "searchClicks",
+          "last_7_days",
+          source,
+          searches.length > 1,
+        ),
       ),
       spec(
         source,
         "metric",
         GSC.impressions,
         "last_7_days",
-        titled("Impressions, 7 days", source, searches.length > 1),
+        overviewTitle(
+          text,
+          "impressions",
+          "last_7_days",
+          source,
+          searches.length > 1,
+        ),
       ),
     ]),
     ...sites.map((source) =>
@@ -319,7 +401,13 @@ export function buildOverviewTemplate(
         "metric",
         VERCEL_METRICS.visitors,
         "last_7_days",
-        titled("Visitors, 7 days", source, sites.length > 1),
+        overviewTitle(
+          text,
+          "visitors",
+          "last_7_days",
+          source,
+          sites.length > 1,
+        ),
       ),
     ),
     ...demos.flatMap((source) => [
@@ -328,14 +416,20 @@ export function buildOverviewTemplate(
         "metric",
         DEMO_METRICS.signups,
         "last_7_days",
-        titled("Signups, 7 days", source, demos.length > 1),
+        overviewTitle(text, "signups", "last_7_days", source, demos.length > 1),
       ),
       spec(
         source,
         "metric",
         DEMO_METRICS.visitors,
         "last_7_days",
-        titled("Visitors, 7 days", source, demos.length > 1),
+        overviewTitle(
+          text,
+          "visitors",
+          "last_7_days",
+          source,
+          demos.length > 1,
+        ),
       ),
     ]),
   ];
@@ -348,7 +442,7 @@ export function buildOverviewTemplate(
           "line",
           GSC.clicks,
           "last_30_days",
-          "Search clicks, 30 days",
+          text.over("searchClicks", "last_30_days"),
         ),
       ),
     ...sites
@@ -359,7 +453,7 @@ export function buildOverviewTemplate(
           "line",
           VERCEL_METRICS.visitors,
           "last_30_days",
-          "Visitors, 30 days",
+          text.over("visitors", "last_30_days"),
         ),
       ),
     ...demos
@@ -370,19 +464,19 @@ export function buildOverviewTemplate(
           "line",
           DEMO_METRICS.signups,
           "last_30_days",
-          "Signups, 30 days",
+          text.over("signups", "last_30_days"),
         ),
       ),
   ];
   if (webMetrics.length > 0) {
-    slides.push(...slidesFor("Web", webMetrics, webCharts));
+    slides.push(...slidesFor(t("slides.web"), webMetrics, webCharts));
   }
 
   if (slides.length === 0) {
     return null;
   }
   return {
-    name,
+    name: options.name ?? t("overviewName"),
     settings: { showHeader: true, autoAdvance: true },
     slides: slides.slice(0, STUDIO_LIMITS.slides),
   };
@@ -395,208 +489,98 @@ export interface BrandInput {
   name?: string;
   logoImageId: string | null;
   accentColor: string | null;
+  /** The creator's language; default English. */
+  locale?: Locale;
 }
 
-/** The brand's numbers per connector: band, charts, and a trend slide. */
+/**
+ * The brand's numbers per connector: band, charts, and a trend slide.
+ *
+ * Every Brand widget is titled. Its automatic label would repeat the
+ * brand's name ("Downloads · Wurfel – Cube Solver") on every widget of a
+ * dashboard named after it, and a long name wraps and, in a narrow band
+ * at a large font scale, pushes out the period line; the title names the
+ * period instead. Charts have no period line at all.
+ */
 function brandSpecs(
   source: TemplateSource,
+  text: ReturnType<typeof templateTexts>,
 ): { metrics: WidgetSpec[]; charts: WidgetSpec[]; trend: WidgetSpec[] } | null {
+  const { t, over } = text;
+  const at = (
+    type: DataType,
+    metricKey: string,
+    period: TitledPeriod,
+    word: MetricWord,
+  ) => spec(source, type, metricKey, period, over(word, period));
   switch (source.connectorId) {
     case APP_STORE_CONNECT:
       return {
         metrics: [
-          spec(
-            source,
-            "metric",
-            ASC.downloads,
-            "last_7_days",
-            "Downloads, 7 days",
-          ),
-          spec(
-            source,
-            "metric",
-            ASC.proceeds,
-            "last_30_days",
-            "Proceeds, 30 days",
-          ),
+          at("metric", ASC.downloads, "last_7_days", "downloads"),
+          at("metric", ASC.proceeds, "last_30_days", "proceeds"),
           ...(source.hasReviews
-            ? [
-                spec(
-                  source,
-                  "metric",
-                  ASC.reviews,
-                  "last_30_days",
-                  "Reviews, 30 days",
-                ),
-              ]
+            ? [at("metric", ASC.reviews, "last_30_days", "reviews")]
             : []),
         ],
         charts: [
-          spec(
-            source,
-            "line",
-            ASC.downloads,
-            "last_30_days",
-            "Downloads, 30 days",
-          ),
+          at("line", ASC.downloads, "last_30_days", "downloads"),
           spec(
             source,
             "bar",
             ASC.downloadsByTerritory,
             "last_30_days",
-            "Top territories",
+            t("topTerritories"),
             "territory",
           ),
         ],
         trend: [
-          spec(
-            source,
-            "line",
-            ASC.downloads,
-            "last_90_days",
-            "Downloads, 90 days",
-          ),
-          spec(
-            source,
-            "line",
-            ASC.proceeds,
-            "last_90_days",
-            "Proceeds, 90 days",
-          ),
+          at("line", ASC.downloads, "last_90_days", "downloads"),
+          at("line", ASC.proceeds, "last_90_days", "proceeds"),
         ],
       };
     case SEARCH_CONSOLE:
       return {
         metrics: [
-          spec(
-            source,
-            "metric",
-            GSC.clicks,
-            "last_7_days",
-            "Search clicks, 7 days",
-          ),
-          spec(
-            source,
-            "metric",
-            GSC.impressions,
-            "last_7_days",
-            "Impressions, 7 days",
-          ),
+          at("metric", GSC.clicks, "last_7_days", "searchClicks"),
+          at("metric", GSC.impressions, "last_7_days", "impressions"),
         ],
-        charts: [
-          spec(
-            source,
-            "line",
-            GSC.clicks,
-            "last_30_days",
-            "Search clicks, 30 days",
-          ),
-        ],
+        charts: [at("line", GSC.clicks, "last_30_days", "searchClicks")],
         trend: [
-          spec(
-            source,
-            "line",
-            GSC.clicks,
-            "last_90_days",
-            "Search clicks, 90 days",
-          ),
-          spec(
-            source,
-            "line",
-            GSC.impressions,
-            "last_90_days",
-            "Impressions, 90 days",
-          ),
+          at("line", GSC.clicks, "last_90_days", "searchClicks"),
+          at("line", GSC.impressions, "last_90_days", "impressions"),
         ],
       };
     case VERCEL:
       return {
         metrics: [
-          spec(
-            source,
-            "metric",
-            VERCEL_METRICS.visitors,
-            "last_7_days",
-            "Visitors, 7 days",
-          ),
-          spec(
-            source,
-            "metric",
-            VERCEL_METRICS.pageviews,
-            "last_7_days",
-            "Page views, 7 days",
-          ),
+          at("metric", VERCEL_METRICS.visitors, "last_7_days", "visitors"),
+          at("metric", VERCEL_METRICS.pageviews, "last_7_days", "pageViews"),
         ],
         charts: [
-          spec(
-            source,
-            "line",
-            VERCEL_METRICS.visitors,
-            "last_30_days",
-            "Visitors, 30 days",
-          ),
+          at("line", VERCEL_METRICS.visitors, "last_30_days", "visitors"),
           spec(
             source,
             "bar",
             VERCEL_METRICS.countryVisitors,
             "last_30_days",
-            "Top countries",
+            t("topCountries"),
             "country",
           ),
         ],
         trend: [
-          spec(
-            source,
-            "line",
-            VERCEL_METRICS.visitors,
-            "last_90_days",
-            "Visitors, 90 days",
-          ),
-          spec(
-            source,
-            "line",
-            VERCEL_METRICS.pageviews,
-            "last_90_days",
-            "Page views, 90 days",
-          ),
+          at("line", VERCEL_METRICS.visitors, "last_90_days", "visitors"),
+          at("line", VERCEL_METRICS.pageviews, "last_90_days", "pageViews"),
         ],
       };
     case DEMO:
       return {
         metrics: [
-          spec(
-            source,
-            "metric",
-            DEMO_METRICS.signups,
-            "last_7_days",
-            "Signups, 7 days",
-          ),
-          spec(
-            source,
-            "metric",
-            DEMO_METRICS.visitors,
-            "last_7_days",
-            "Visitors, 7 days",
-          ),
+          at("metric", DEMO_METRICS.signups, "last_7_days", "signups"),
+          at("metric", DEMO_METRICS.visitors, "last_7_days", "visitors"),
         ],
-        charts: [
-          spec(
-            source,
-            "line",
-            DEMO_METRICS.signups,
-            "last_30_days",
-            "Signups, 30 days",
-          ),
-        ],
-        trend: [
-          spec(
-            source,
-            "line",
-            DEMO_METRICS.signups,
-            "last_90_days",
-            "Signups, 90 days",
-          ),
-        ],
+        charts: [at("line", DEMO_METRICS.signups, "last_30_days", "signups")],
+        trend: [at("line", DEMO_METRICS.signups, "last_90_days", "signups")],
       };
     default:
       return null;
@@ -616,7 +600,8 @@ export function brandSupported(connectorId: string): boolean {
 export function buildBrandTemplate(
   input: BrandInput,
 ): TemplateDashboard | null {
-  const specs = brandSpecs(input.source);
+  const text = templateTexts(input.locale ?? DEFAULT_LOCALE);
+  const specs = brandSpecs(input.source, text);
   if (!specs) {
     return null;
   }
@@ -635,12 +620,12 @@ export function buildBrandTemplate(
     },
     slides: [
       layoutSlide(
-        "Today",
+        text.t("slides.today"),
         specs.metrics.map(filter),
         specs.charts.map(filter),
         lead,
       ),
-      layoutSlide("Trend", [], specs.trend.map(filter)),
+      layoutSlide(text.t("slides.trend"), [], specs.trend.map(filter)),
     ],
   };
 }
