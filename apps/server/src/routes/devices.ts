@@ -3,9 +3,12 @@ import { z } from "zod";
 
 import {
   DEVICE_API_VERSION,
+  DEVICE_DASHBOARD_SCHEMAS,
   approveDeviceRequestSchema,
   createPairingResponseSchema,
+  deviceDashboardQuerySchema,
   deviceDashboardResponseSchema,
+  deviceDashboardV2ResponseSchema,
   deviceHeartbeatRequestSchema,
   deviceListResponseSchema,
   deviceResponseSchema,
@@ -41,6 +44,8 @@ export interface DeviceRouteDeps {
   version: string;
   /** NETRICS_EXCHANGE_RATES: display-currency conversion (#191). */
   exchangeRates?: boolean;
+  /** Reuse of computed dashboard payloads; default 30 s, 0 for none. */
+  payloadCacheMs?: number;
 }
 
 const deviceParamsSchema = z.object({ deviceId: z.uuid() });
@@ -105,6 +110,7 @@ export function registerDeviceRoutes(
         deviceApiVersion: DEVICE_API_VERSION,
         version: deps.version,
         pairingUrl: deps.pairingUrl,
+        dashboardSchemas: [...DEVICE_DASHBOARD_SCHEMAS],
       }),
   );
 
@@ -218,17 +224,25 @@ export function registerDeviceRoutes(
         {
           schema: routeSchema({
             summary:
-              "The device's dashboard as tiles; send If-None-Match with the " +
-              "last ETag to get 304 when nothing changed",
+              "The device's dashboard: schema 1 (tiles) by default, schema 2 " +
+              "(slides, widgets, theme, images) with ?schema=2 when server " +
+              "info lists it; send If-None-Match with the last ETag to get " +
+              "304 when nothing changed",
             tags: ["devices"],
-            response: deviceDashboardResponseSchema,
+            querystring: deviceDashboardQuerySchema,
+            response: z.union([
+              deviceDashboardResponseSchema,
+              deviceDashboardV2ResponseSchema,
+            ]),
             device: true,
             notModified: true,
           }),
         },
         async (request, reply) => {
+          const query = deviceDashboardQuerySchema.parse(request.query);
+          const schema = query.schema === "2" ? 2 : 1;
           const dashboard = unwrap(
-            await devices.dashboard(request.device!, request.log),
+            await devices.dashboard(request.device!, request.log, schema),
             reply,
           );
           if (!dashboard) {
@@ -240,7 +254,9 @@ export function registerDeviceRoutes(
           if (matchesEtag(request.headers["if-none-match"], etag)) {
             return reply.code(304).send();
           }
-          return deviceDashboardResponseSchema.parse(dashboard);
+          return "schema" in dashboard
+            ? deviceDashboardV2ResponseSchema.parse(dashboard)
+            : deviceDashboardResponseSchema.parse(dashboard);
         },
       );
 
