@@ -61,6 +61,7 @@ distribution runs the signed images.
 | [08 — App Store Connect](./08-app-store-connect.md)                       | Signed-key auth and app-store metrics              |
 | [09 — Dashboard Studio](./09-dashboard-studio.md)                         | Slides, widgets, themes and images on every screen |
 | [09.1 — Internationalisation](./09.1-internationalisation.md)             | English and German everywhere                      |
+| [09.2 — Screen formats and display modes](./09.2-screen-formats.md)       | Any screen, auto and custom layouts, two modes     |
 | [10 — Apple Ads](./10-apple-ads.md)                                       | Client-credential auth and advertising metrics     |
 | [11 — Projects and derived metrics](./11-projects-and-derived-metrics.md) | Cross-connection analysis and organization         |
 | [12 — Community connector system](./12-community-connectors.md)           | Public SDK, template, catalog, and review pipeline |
@@ -86,6 +87,8 @@ distribution runs the signed images.
                         └── 07 Google Search Console
                             └── 08 App Store Connect
                                 └── 09 Dashboard Studio
+                                    ├── 09.1 internationalisation (cross-cutting)
+                                    ├── 09.2 screen formats and display modes
                                     └── 10 Apple Ads
                                         └── 11 projects and derived metrics
                                             └── 12 community connectors
@@ -122,6 +125,11 @@ team could parallelize independent connectors after milestone 07.
 - Planned: 09.1 (internationalisation, English + German). Decided in
   [ADR 0016](../decisions/0016-internationalisation.md); umbrella #162,
   issues #250–#257. Cross-cutting, runs alongside the next milestones.
+- Planned: 09.2 (screen formats and display modes: any aspect ratio,
+  portrait TVs, auto and custom layouts per format, Glance on phones,
+  Display on standby screens, Studio previews). Decided by the owner and
+  recorded in [ADR 0017](../decisions/0017-screen-formats-and-display-modes.md);
+  issues #273–#285. Builds on 09; no renumbering of later milestones.
 - Later: the web frontend on Vercel (#123).
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
