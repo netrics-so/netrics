@@ -70,6 +70,37 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     noProjects: "Noch keine Projekte.",
     cannotCreateProjects:
       "Deine Rolle kann in diesem Workspace keine Projekte anlegen.",
+    pages: {
+      dashboards: "Dashboards",
+      screens: "Bildschirme",
+      sources: "Quellen",
+      team: "Team",
+    },
+    dashboardCount:
+      "{count, plural, =0 {Noch keine Dashboards} one {# Dashboard} other {# Dashboards}}",
+    screenCount:
+      "{total, plural, =0 {Noch keine Bildschirme} one {# Bildschirm · {online} online} other {# Bildschirme · {online} online}}",
+    sourceCount:
+      "{count, plural, =0 {Noch keine Quellen} one {# Quelle} other {# Quellen}}",
+    projectsHint:
+      "Projekte fassen die Apps und Websites zusammen, über die deine Verbindungen berichten.",
+    home: {
+      metaTitle: "Start · netrics",
+      dashboards: "Dashboards",
+      screens: "Bildschirme",
+      sources: "Quellen",
+      allDashboards: "Alle Dashboards",
+      allScreens: "Alle Bildschirme",
+      allSources: "Alle Quellen",
+      online: "{online} von {total} online",
+      noScreens: "Noch keine Bildschirme",
+      allFresh: "Alle Quellen aktuell",
+      attention:
+        "{count, plural, one {# braucht Aufmerksamkeit} other {# brauchen Aufmerksamkeit}}",
+      quickActions: "Schnellzugriff",
+      newDashboard: "Neues Dashboard",
+      addSource: "Quelle hinzufügen",
+    },
     newDashboard: {
       legend: "Neues Dashboard",
       format: "Bildschirmformat",
@@ -162,11 +193,11 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       title: "Verbindung hinzufügen",
       roleCannot:
         "Deine Rolle ({role}) kann in diesem Workspace keine Verbindungen anlegen.",
-      back: "Zurück zum Workspace",
+      back: "Zurück zu den Quellen",
       finishSetup: "Einrichtung abschließen",
     },
     detail: {
-      back: "Zurück zum Workspace",
+      back: "Zurück zu den Quellen",
       setupFinished:
         "Einrichtung abgeschlossen. Die erste Synchronisierung ist eingeplant und liest bis zu 16 Monate zurück; danach kommen alle paar Stunden neue Daten.",
       pausedCredentials:

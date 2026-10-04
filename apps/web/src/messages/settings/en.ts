@@ -8,7 +8,12 @@ export const settingsEn = {
     title: "{workspace} — settings",
     metaTitle: "Settings · netrics",
     yourRole: "Your role: {role}",
-    backToWorkspace: "Back to workspace",
+    readOnly: "Only owners and admins can change this workspace’s settings.",
+    team: {
+      title: "Team",
+      hint: "Members, their roles and invitations now have their own page.",
+      manage: "Open team",
+    },
     workspace: {
       title: "Workspace",
       nameLabel: "Workspace name",

@@ -69,15 +69,14 @@ export function ConnectionActions({
     setPending(true);
     try {
       const result = await deleteConnection(workspaceId, connectionId);
-      // The workspace page says what happened at the provider.
-      // The workspace page says what happened at the provider, or for an
+      // Sources says what happened at the provider, or for an
       // uploaded key that it is still valid there until revoked.
       router.push(
         result.revocation
-          ? `/workspaces/${workspaceId}?${disconnectQuery(result.revocation)}`
+          ? `/workspaces/${workspaceId}/sources?${disconnectQuery(result.revocation)}`
           : signedKey
-            ? `/workspaces/${workspaceId}?${keyRemovedQuery(signedKey.provider)}`
-            : `/workspaces/${workspaceId}`,
+            ? `/workspaces/${workspaceId}/sources?${keyRemovedQuery(signedKey.provider)}`
+            : `/workspaces/${workspaceId}/sources`,
       );
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));

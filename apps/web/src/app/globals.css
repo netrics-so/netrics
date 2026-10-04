@@ -756,11 +756,6 @@ button.danger:hover:not(:disabled) {
 
 /* ─── Dashboards (#50) ───────────────────────────────────────────────── */
 
-/* Tile grids need more room than the form pages. */
-.container:has(.dashboard-page) {
-  max-width: 1120px;
-}
-
 .dashboard-header {
   display: flex;
   align-items: center;
@@ -1473,11 +1468,6 @@ a.health-badge:hover {
 }
 
 /* ─── Themes (#216) ─────────────────────────────────────────────────── */
-
-.container:has(.theme-editor-page),
-.container:has(.themes-page) {
-  max-width: 1120px;
-}
 
 .theme-list {
   list-style: none;
@@ -2599,19 +2589,17 @@ a.health-badge:hover {
 
 /* The dashboard page reaches the screen's edges (viewport-fit=cover):
    content stays inside the safe area; phones use the width. */
-.container:has(.dashboard-page),
-body:has(.dashboard-page) .nav {
-  padding-left: max(24px, env(safe-area-inset-left));
-  padding-right: max(24px, env(safe-area-inset-right));
+.shell-content:has(.dashboard-page) {
+  padding-left: max(28px, env(safe-area-inset-left));
+  padding-right: max(28px, env(safe-area-inset-right));
 }
 
-.container:has(.dashboard-page) {
+.shell-content:has(.dashboard-page) {
   padding-bottom: max(24px, env(safe-area-inset-bottom));
 }
 
 @media (max-width: 599px) {
-  .container:has(.dashboard-page),
-  body:has(.dashboard-page) .nav {
+  .shell-content:has(.dashboard-page) {
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
   }
@@ -2859,11 +2847,6 @@ body:has(.dashboard-page) .nav {
 }
 
 /* ─── Studio editor (ADR 0015 section 9, #223) ───────────────────────── */
-
-/* The Studio uses the whole window width: rail, canvas, inspector. */
-.container:has(.studio-page) {
-  max-width: none;
-}
 
 .studio .help {
   margin: 0;
@@ -4280,4 +4263,688 @@ body:has(.dashboard-page) .nav {
   border: 1px solid var(--border);
   border-radius: 4px;
   background: #0b0d10;
+}
+
+/* ─── App shell (ADR 0018 section 4, #302) ─────────────────────────────
+
+   Workspace pages: a 248 px sidebar with the whole product map, a 56 px
+   top bar (source health, account) and the page on paper. The Studio gets
+   a 56 px icon rail instead; phones get the sidebar as a drawer. */
+
+.brand-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.app-shell--rail {
+  grid-template-columns: 56px minmax(0, 1fr);
+}
+
+.shell-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 14px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.shell-brand-row {
+  display: flex;
+  align-items: center;
+  padding: 4px 10px 10px;
+}
+
+.shell-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.shell-drawer-close,
+.shell-menu-button,
+.shell-brand--topbar {
+  display: none;
+}
+
+.shell-nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.shell-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.shell-nav .shell-nav-list--bottom {
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.shell-nav-section-label {
+  display: block;
+  padding: 14px 10px 6px;
+  color: var(--muted);
+  font-size: var(--size-11);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.shell-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-nav);
+  color: var(--text-2);
+  font-size: var(--size-13-5);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.shell-nav-row--sub {
+  padding-left: 20px;
+}
+
+.shell-nav-row:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.shell-nav-row[aria-current],
+.shell-nav-row[aria-current]:hover {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+
+.shell-nav-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-attention-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+/* Menus: <details> with a floating panel. */
+.shell-menu {
+  position: relative;
+}
+
+.shell-menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.shell-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.shell-menu-panel {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 6px);
+  min-width: 220px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow:
+    0 1px 2px rgb(28 27 25 / 6%),
+    0 8px 24px rgb(28 27 25 / 12%);
+}
+
+.shell-menu-panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.shell-menu-label {
+  margin: 0;
+  padding: 6px 10px 4px;
+  color: var(--muted);
+  font-size: var(--size-12);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.shell-menu-item,
+button.shell-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-nav);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--size-13-5);
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+}
+
+.shell-menu-item:hover,
+button.shell-menu-item:hover:not(:disabled) {
+  background: var(--raised);
+}
+
+.shell-menu-item[aria-current] {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+
+.shell-menu-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.shell-menu-meta {
+  color: var(--muted);
+  font-size: var(--size-12);
+  font-weight: 600;
+}
+
+.shell-menu-item--new {
+  margin-top: 4px;
+  color: var(--accent-text);
+}
+
+button.shell-menu-item--danger {
+  color: var(--danger);
+}
+
+.workspace-switcher {
+  margin: 0 0 6px;
+}
+
+.workspace-switcher > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font-size: var(--size-13-5);
+  font-weight: 700;
+}
+
+.workspace-switcher > summary:hover {
+  background: var(--raised);
+}
+
+.workspace-switcher-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-switcher .chevron {
+  flex: none;
+  color: var(--muted);
+}
+
+.workspace-switcher .shell-menu-panel {
+  left: 0;
+  right: 0;
+}
+
+.shell-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.shell-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 28px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.shell-topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.source-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: var(--size-12);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.source-health:hover {
+  background: var(--raised);
+}
+
+.source-health-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-health-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.source-health--fresh .source-health-dot {
+  background: var(--success);
+}
+
+.source-health--attention {
+  background: var(--warning-wash);
+  color: var(--warning-text);
+}
+
+.source-health--attention .source-health-dot {
+  background: var(--warning);
+}
+
+.account-menu > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  color: var(--text-2);
+  font-size: var(--size-13);
+  font-weight: 600;
+}
+
+.account-menu-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu .shell-menu-panel {
+  right: 0;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  color: var(--text-2);
+  font-size: var(--size-13);
+  font-weight: 800;
+}
+
+.shell-content {
+  width: 100%;
+  max-width: calc(1120px + 56px);
+  padding: 24px 28px;
+}
+
+.shell-content--full {
+  max-width: none;
+  padding: 16px 20px;
+}
+
+/* The Studio's icon rail (design 3b). */
+.shell-rail {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.shell-rail-brand {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 8px;
+  border-radius: 9px;
+}
+
+.shell-rail nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.shell-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shell-rail-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: var(--muted);
+}
+
+.shell-rail-button:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.shell-rail-button[aria-current],
+.shell-rail-button[aria-current]:hover {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+
+.shell-rail-button .shell-attention-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.account-menu--rail {
+  margin-top: auto;
+}
+
+.account-menu--rail .shell-menu-panel {
+  top: auto;
+  right: auto;
+  bottom: 0;
+  left: calc(100% + 10px);
+}
+
+/* Area pages: title, one-line meta, actions on the right. */
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.page-header h1 {
+  margin: 0;
+}
+
+.page-meta {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: var(--size-13);
+}
+
+.page-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Links that look like buttons (page actions, quick actions). */
+a.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  font-size: var(--size-14);
+  text-decoration: none;
+}
+
+a.button:hover {
+  background: var(--raised);
+  border-color: var(--faint);
+}
+
+a.button.primary {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: #fff;
+}
+
+a.button.primary:hover {
+  background: color-mix(in srgb, var(--accent-fill) 88%, black);
+  border-color: color-mix(in srgb, var(--accent-fill) 88%, black);
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.overview-card p {
+  margin: 0;
+}
+
+.overview-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--size-20);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.overview-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--size-13);
+}
+
+.overview-health.attention {
+  color: var(--warning-text);
+}
+
+.overview-card .overview-link {
+  margin-top: auto;
+  padding-top: 6px;
+  font-size: var(--size-13-5);
+  font-weight: 600;
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Wide tables scroll inside their card on narrow screens. */
+.table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* Phones: the sidebar is a drawer behind the menu button. */
+@media (max-width: 760px) {
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell--rail {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .shell-sidebar {
+    position: fixed;
+    z-index: 50;
+    inset: 0 auto 0 0;
+    width: min(300px, 85vw);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform 0.2s ease,
+      visibility 0.2s;
+    box-shadow: 0 8px 32px rgb(28 27 25 / 18%);
+  }
+
+  .app-shell--drawer-open .shell-sidebar {
+    transform: none;
+    visibility: visible;
+  }
+
+  .shell-backdrop {
+    position: fixed;
+    z-index: 40;
+    inset: 0;
+    background: rgb(28 27 25 / 32%);
+  }
+
+  .shell-drawer-close {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    margin-left: auto;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  .shell-menu-button {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    margin-left: -8px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text);
+  }
+
+  .shell-brand--topbar {
+    display: inline-flex;
+  }
+
+  .shell-topbar {
+    gap: 8px;
+    padding: 0 16px;
+  }
+
+  .shell-topbar-end {
+    gap: 8px;
+  }
+
+  .account-menu-name {
+    display: none;
+  }
+
+  .shell-content {
+    padding: 16px;
+  }
+
+  .shell-content--full {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  /* Room for the brand: the health dot alone, its text for screen readers. */
+  .source-health--fresh .source-health-text,
+  .source-health--none .source-health-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-sidebar {
+    transition: none;
+  }
 }

@@ -8,7 +8,13 @@ export const settingsDe: Catalog<typeof settingsEn> = {
     title: "{workspace} – Einstellungen",
     metaTitle: "Einstellungen · netrics",
     yourRole: "Deine Rolle: {role}",
-    backToWorkspace: "Zurück zum Workspace",
+    readOnly:
+      "Nur Inhaber und Admins können die Einstellungen dieses Workspaces ändern.",
+    team: {
+      title: "Team",
+      hint: "Mitglieder, ihre Rollen und Einladungen haben jetzt eine eigene Seite.",
+      manage: "Team öffnen",
+    },
     workspace: {
       title: "Workspace",
       nameLabel: "Name des Workspaces",

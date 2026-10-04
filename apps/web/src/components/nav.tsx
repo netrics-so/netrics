@@ -10,6 +10,7 @@ export async function Nav() {
   return (
     <header className="container nav">
       <Link href="/" className="nav-brand">
+        <span className="brand-dot" aria-hidden="true" />
         netrics
       </Link>
       <nav className="nav-links">

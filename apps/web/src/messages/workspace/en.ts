@@ -61,6 +61,37 @@ export const workspaceEn = {
     projects: "Projects",
     noProjects: "No projects yet.",
     cannotCreateProjects: "Your role cannot create projects in this workspace.",
+    pages: {
+      dashboards: "Dashboards",
+      screens: "Screens",
+      sources: "Sources",
+      team: "Team",
+    },
+    dashboardCount:
+      "{count, plural, =0 {No dashboards yet} one {# dashboard} other {# dashboards}}",
+    screenCount:
+      "{total, plural, =0 {No screens yet} one {# screen · {online} online} other {# screens · {online} online}}",
+    sourceCount:
+      "{count, plural, =0 {No sources yet} one {# source} other {# sources}}",
+    projectsHint:
+      "Projects group the apps and sites your connections report on.",
+    home: {
+      metaTitle: "Home · netrics",
+      dashboards: "Dashboards",
+      screens: "Screens",
+      sources: "Sources",
+      allDashboards: "All dashboards",
+      allScreens: "All screens",
+      allSources: "All sources",
+      online: "{online} of {total} online",
+      noScreens: "No screens yet",
+      allFresh: "All sources fresh",
+      attention:
+        "{count, plural, one {# needs attention} other {# need attention}}",
+      quickActions: "Quick actions",
+      newDashboard: "New dashboard",
+      addSource: "Add source",
+    },
     newDashboard: {
       legend: "New dashboard",
       format: "Screen format",
@@ -149,11 +180,11 @@ export const workspaceEn = {
       title: "Add connection",
       roleCannot:
         "Your role ({role}) cannot create connections in this workspace.",
-      back: "Back to workspace",
+      back: "Back to sources",
       finishSetup: "Finish setup",
     },
     detail: {
-      back: "Back to workspace",
+      back: "Back to sources",
       setupFinished:
         "Setup finished. The first sync is queued and reads up to 16 months back; new data then arrives every few hours.",
       pausedCredentials:

@@ -1,57 +1,68 @@
+import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { can } from "@netrics/domain";
 
-import { CreateDashboardForm } from "./create-dashboard-form";
-import { CreateProjectForm } from "./create-project-form";
-import { DisconnectResult } from "./connections/disconnect-result";
 import { OAuthOutcomeBanner } from "./connections/oauth-outcome";
-import { DeviceControls } from "./device-controls";
-import { HealthBadge } from "./health-badge";
 import {
   getWorkspace,
   listConnections,
-  listConnectors,
   listDashboards,
   listDevices,
-  listProjects,
   listWorkspaces,
 } from "@/lib/api";
 import {
-  isAppleTv,
-  rotationKey,
-  summarizeHeartbeat,
-  summarizeScreen,
-} from "@/lib/device-heartbeat";
-import { parseDisconnected, parseOAuthOutcome } from "@/lib/oauth-connection";
-import { getLocale, getT } from "@/lib/i18n/server";
-import { relativeTime } from "@/lib/relative-time";
+  isScreenOnline,
+  sourcesNeedingAttention,
+  workspacePath,
+} from "@/lib/app-nav";
+import { getT } from "@/lib/i18n/server";
+import { parseOAuthOutcome } from "@/lib/oauth-connection";
 import { requireSession } from "@/lib/session";
-import { parseKeyRemoved } from "@/lib/signed-key";
-import { nextSyncLabel } from "@/lib/sync-schedule";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("workspace.home");
+  return { title: t("metaTitle") };
+}
 
 interface WorkspacePageProps {
   params: Promise<{ workspaceId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function WorkspacePage({
+/** Query keys of the old all-in-one page that belong to Sources now. */
+const SOURCES_QUERY = ["disconnected", "revoked", "keyRemoved"];
+
+/**
+ * Workspace home (#302): what the workspace has at a glance, with the way
+ * to each area and the first things to do.
+ */
+export default async function WorkspaceHomePage({
   params,
   searchParams,
 }: WorkspacePageProps) {
   const { workspaceId } = await params;
   const query = await searchParams;
+  // Links from before the split (a deleted connection's outcome) go on
+  // to Sources, where the connections are now.
+  if (Object.keys(query).some((key) => SOURCES_QUERY.includes(key))) {
+    const forward = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      for (const one of [value ?? []].flat()) {
+        forward.append(key, one);
+      }
+    }
+    redirect(`${workspacePath(workspaceId, "sources")}?${forward}`);
+  }
   const outcome = parseOAuthOutcome(query.oauth);
-  const disconnected = parseDisconnected(query);
-  const keyRemoved = parseKeyRemoved(query);
   const { cookieHeader } = await requireSession();
-  const locale = await getLocale();
-  const t = await getT("workspace");
-  const roles = await getT("common.roles");
-  const deviceT = await getT("devices");
+  const [t, roles] = await Promise.all([
+    getT("workspace"),
+    getT("common.roles"),
+  ]);
 
   const [{ workspaces }, workspaceResult] = await Promise.all([
     listWorkspaces(cookieHeader),
@@ -61,285 +72,121 @@ export default async function WorkspacePage({
   if (!workspaceResult || !membership) {
     notFound();
   }
-
-  const { projects } = await listProjects(cookieHeader, workspaceId);
-  const { connections } = await listConnections(cookieHeader, workspaceId);
-  const { dashboards } = await listDashboards(cookieHeader, workspaceId);
-  // After deleting a connection with an uploaded key: where to revoke it.
-  const removedKey = keyRemoved
-    ? (await listConnectors(cookieHeader)).connectors
-        .flatMap((connector) => connector.authStrategies)
-        .find(
-          (strategy) =>
-            strategy.strategy === "signed-key" &&
-            strategy.provider === keyRemoved,
-        )
-    : undefined;
   const role = membership.role;
-  // Active TVs first, revoked ones after (the sort is stable).
-  const devices = can(role, "devices:view")
-    ? (await listDevices(cookieHeader, workspaceId)).devices.toSorted(
-        (a, b) => Number(a.revokedAt !== null) - Number(b.revokedAt !== null),
-      )
-    : null;
-  const dashboardNames = new Map(dashboards.map((d) => [d.id, d.name]));
-  const connectTv = can(role, "devices:manage") ? (
-    <p>
-      <Link href="/devices/approve">{t("connectTv")}</Link>
-    </p>
-  ) : null;
+  const [{ dashboards }, { connections }, devices] = await Promise.all([
+    listDashboards(cookieHeader, workspaceId),
+    listConnections(cookieHeader, workspaceId),
+    can(role, "devices:view")
+      ? listDevices(cookieHeader, workspaceId).then((r) =>
+          r.devices.filter((device) => device.revokedAt === null),
+        )
+      : null,
+  ]);
+  const now = Date.now();
+  const online = devices?.filter((d) => isScreenOnline(d, now)).length ?? 0;
+  const attention = sourcesNeedingAttention(connections);
+  const at = (area: string) => workspacePath(workspaceId, area);
 
   return (
-    <>
-      <h1>{workspaceResult.workspace.name}</h1>
+    <div className="area-page home-page">
+      <header className="page-header">
+        <div>
+          <h1>{workspaceResult.workspace.name}</h1>
+          <p className="page-meta">
+            {t("yourRole")} <span className="role-badge">{roles(role)}</span>
+          </p>
+        </div>
+      </header>
       <OAuthOutcomeBanner outcome={outcome} />
-      <DisconnectResult revocation={disconnected} />
-      {removedKey ? (
-        <div className="notice page-alert" role="status">
-          <p>
-            {removedKey.providerName
-              ? t("keyRemoved", { name: removedKey.providerName })
-              : t("keyRemovedUnnamed")}{" "}
-            {removedKey.setup?.url ? (
-              <a href={removedKey.setup.url} target="_blank" rel="noreferrer">
-                {removedKey.providerName
-                  ? t("revokeIn", { name: removedKey.providerName })
-                  : t("revokeAtProvider")}{" "}
-                ↗
-              </a>
-            ) : null}
-          </p>
-        </div>
-      ) : null}
-      <p className="subtitle">
-        {t("yourRole")} <span className="role-badge">{roles(role)}</span>
-      </p>
 
-      <div className="card">
-        <h2>{t("workspaces")}</h2>
-        <ul className="workspace-list">
-          {workspaces.map((workspace) => (
-            <li key={workspace.id}>
-              {workspace.id === workspaceId ? (
-                <span className="current">
-                  {t("current", {
-                    name: workspace.name,
-                    role: roles(workspace.role),
-                  })}
-                </span>
+      <div className="overview-grid">
+        <section className="card overview-card" aria-labelledby="home-dash">
+          <h2 id="home-dash" className="section-label">
+            {t("home.dashboards")}
+          </h2>
+          <p className="overview-value">
+            {t("dashboardCount", { count: dashboards.length })}
+          </p>
+          <p className="overview-link">
+            <Link href={at("dashboards")}>{t("home.allDashboards")}</Link>
+          </p>
+        </section>
+
+        {devices ? (
+          <section className="card overview-card" aria-labelledby="home-tv">
+            <h2 id="home-tv" className="section-label">
+              {t("home.screens")}
+            </h2>
+            <p className="overview-value">
+              {devices.length === 0 ? (
+                t("home.noScreens")
               ) : (
-                <Link href={`/workspaces/${workspace.id}`}>
-                  {workspace.name}
-                </Link>
+                <>
+                  <span
+                    className={`dot ${online > 0 ? "up" : "down"}`}
+                    aria-hidden="true"
+                  />
+                  {t("home.online", { online, total: devices.length })}
+                </>
               )}
-            </li>
-          ))}
-        </ul>
-        <p className="muted">
-          <Link href={`/workspaces/${workspaceId}/settings`}>
-            {t("settings")}
-          </Link>
-        </p>
-      </div>
-
-      <div className="card">
-        <h2>{t("dashboards")}</h2>
-        {dashboards.length === 0 ? (
-          <p className="muted">{t("noDashboards")}</p>
-        ) : (
-          <ul className="workspace-list">
-            {dashboards.map((dashboard) => (
-              <li key={dashboard.id}>
-                <Link
-                  href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}`}
-                >
-                  {dashboard.name}
-                </Link>{" "}
-                <span className="muted">
-                  {t("dashboardMeta", {
-                    slides: dashboard.slideCount,
-                    widgets: dashboard.widgetCount,
-                    updated: relativeTime(dashboard.updatedAt, locale),
-                  })}
-                </span>
-                {can(role, "dashboards:update") ? (
-                  <>
-                    {" "}
-                    <Link
-                      href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}/studio`}
-                      className="studio-link"
-                      aria-label={t("openInStudio", { name: dashboard.name })}
-                    >
-                      {t("studio")}
-                    </Link>
-                  </>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-        {can(role, "dashboards:create") ? (
-          <CreateDashboardForm workspaceId={workspaceId} />
+            </p>
+            <p className="overview-link">
+              <Link href={at("screens")}>{t("home.allScreens")}</Link>
+            </p>
+          </section>
         ) : null}
-      </div>
 
-      {devices ? (
-        <div className="card">
-          <h2>{t("tvs")}</h2>
-          {devices.length === 0 ? (
-            <p className="muted">{t("noTvs")}</p>
-          ) : (
-            <ul className="workspace-list device-list">
-              {devices.map((device) => {
-                const heartbeat = summarizeHeartbeat(device.heartbeat, locale);
-                const screen = summarizeScreen(device.screen);
-                // "3840 × 2160 · 16:9 · Screen view", plus the orientation
-                // when the TV is turned (#276).
-                const screenLine = [
-                  ...(screen
-                    ? [
-                        t("screenSize", {
-                          width: screen.width,
-                          height: screen.height,
-                        }),
-                        ...(screen.format ? [screen.format] : []),
-                        deviceT(`modes.${screen.mode}`),
-                      ]
-                    : []),
-                  ...(device.rotation !== 0
-                    ? [deviceT(`rotations.${rotationKey(device.rotation)}`)]
-                    : []),
-                ].join(" · ");
-                return (
-                  <li key={device.id}>
-                    <strong>{device.name}</strong>{" "}
-                    {device.revokedAt ? (
-                      <span className="role-badge">{t("revoked")}</span>
-                    ) : null}{" "}
-                    <span className="muted">
-                      {(device.dashboardId &&
-                        dashboardNames.get(device.dashboardId)) ??
-                        t("noDashboard")}{" "}
-                      ·{" "}
-                      {t("lastSeen", {
-                        time: relativeTime(device.lastSeenAt, locale),
-                      })}
-                      {heartbeat
-                        ? ` · ${t("heartbeat", {
-                            version: heartbeat.version,
-                            time: heartbeat.at,
-                          })}`
-                        : null}
-                    </span>
-                    {heartbeat?.lastError ? (
-                      <p
-                        className="muted device-error"
-                        title={heartbeat.lastErrorFull ?? undefined}
-                      >
-                        {t("lastError", { error: heartbeat.lastError })}
-                      </p>
-                    ) : null}
-                    {screenLine && !device.revokedAt ? (
-                      <p className="muted device-screen">{screenLine}</p>
-                    ) : null}
-                    {can(role, "devices:manage") && !device.revokedAt ? (
-                      <DeviceControls
-                        workspaceId={workspaceId}
-                        device={device}
-                        appleTv={isAppleTv(device.heartbeat)}
-                        dashboards={dashboards}
-                      />
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {connectTv}
-        </div>
-      ) : null}
-
-      <div className="card">
-        <h2>{t("connections")}</h2>
-        {connections.length === 0 ? (
-          <p className="muted">{t("noConnections")}</p>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{t("table.name")}</th>
-                <th>{t("table.connector")}</th>
-                <th>{t("table.health")}</th>
-                <th>{t("table.lastSuccess")}</th>
-                <th>{t("table.nextSync")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {connections.map((connection) => (
-                <tr key={connection.id}>
-                  <td>
-                    <Link
-                      href={`/workspaces/${workspaceId}/connections/${connection.id}`}
-                    >
-                      {connection.name}
-                    </Link>
-                  </td>
-                  <td className="muted">
-                    {connection.connectorName} {connection.connectorVersion}
-                  </td>
-                  <td>
-                    {connection.setupPending ? (
-                      <Link
-                        className="health-badge pending"
-                        href={`/workspaces/${workspaceId}/connections/${connection.id}#finish-setup`}
-                      >
-                        {t("finishSetup")}
-                      </Link>
-                    ) : (
-                      <HealthBadge health={connection.state.health} />
-                    )}
-                  </td>
-                  <td className="muted">
-                    {relativeTime(connection.state.lastSuccessAt, locale)}
-                  </td>
-                  <td className="muted">
-                    {nextSyncLabel(connection.state, locale)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {can(role, "connections:create") ? (
-          <p>
-            <Link href={`/workspaces/${workspaceId}/connections/new`}>
-              <button type="button" className="primary">
-                {t("addConnection")}
-              </button>
-            </Link>
+        <section className="card overview-card" aria-labelledby="home-src">
+          <h2 id="home-src" className="section-label">
+            {t("home.sources")}
+          </h2>
+          <p className="overview-value">
+            {t("sourceCount", { count: connections.length })}
           </p>
-        ) : (
-          <p className="muted">{t("cannotCreateConnections")}</p>
-        )}
+          {connections.length > 0 ? (
+            <p
+              className={`overview-health ${attention > 0 ? "attention" : "fresh"}`}
+            >
+              <span
+                className={`dot ${attention > 0 ? "warning" : "up"}`}
+                aria-hidden="true"
+              />
+              {attention > 0
+                ? t("home.attention", { count: attention })
+                : t("home.allFresh")}
+            </p>
+          ) : null}
+          <p className="overview-link">
+            <Link href={at("sources")}>{t("home.allSources")}</Link>
+          </p>
+        </section>
       </div>
 
-      <div className="card">
-        <h2>{t("projects")}</h2>
-        {projects.length === 0 ? (
-          <p className="muted">{t("noProjects")}</p>
-        ) : (
-          <ul className="workspace-list">
-            {projects.map((project) => (
-              <li key={project.id}>{project.name}</li>
-            ))}
-          </ul>
-        )}
-        {can(role, "projects:create") ? (
-          <CreateProjectForm workspaceId={workspaceId} />
-        ) : (
-          <p className="muted">{t("cannotCreateProjects")}</p>
-        )}
-      </div>
-    </>
+      <section className="card" aria-labelledby="home-actions">
+        <h2 id="home-actions" className="section-label">
+          {t("home.quickActions")}
+        </h2>
+        <div className="quick-actions">
+          {can(role, "dashboards:create") ? (
+            <Link
+              href={`${at("dashboards")}#new-dashboard`}
+              className="button primary"
+            >
+              {t("home.newDashboard")}
+            </Link>
+          ) : null}
+          {can(role, "devices:manage") ? (
+            <Link href="/devices/approve" className="button">
+              {t("connectTv")}
+            </Link>
+          ) : null}
+          {can(role, "connections:create") ? (
+            <Link href={at("connections/new")} className="button">
+              {t("home.addSource")}
+            </Link>
+          ) : null}
+        </div>
+      </section>
+    </div>
   );
 }

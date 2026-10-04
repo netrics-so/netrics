@@ -14,6 +14,9 @@ export const authDe: Catalog<typeof authEn> = {
     withDemoHint:
       "– erzeugte Zahlen zum Ausprobieren; du kannst sie jederzeit löschen.",
     create: "Workspace erstellen",
+    newTitle: "Neuer Workspace",
+    newSubtitle:
+      "Ein Workspace hat eigene Dashboards, Quellen, Bildschirme und ein eigenes Team.",
   },
   authFields: {
     name: "Name",

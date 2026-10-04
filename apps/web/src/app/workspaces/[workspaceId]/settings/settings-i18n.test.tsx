@@ -4,7 +4,7 @@ import type { Invitation, Member, WorkspaceTheme } from "@netrics/contracts";
 import { BUILTIN_THEMES, type Locale } from "@netrics/domain";
 
 import { DisplayCurrencyForm } from "./display-currency-form";
-import { MembersManager } from "./members-manager";
+import { MembersManager } from "../team/members-manager";
 import { RenameWorkspaceForm } from "./rename-workspace-form";
 import { ThemeEditor } from "./themes/[themeId]/theme-editor";
 import { CopyBuiltinButton } from "./themes/copy-builtin-button";

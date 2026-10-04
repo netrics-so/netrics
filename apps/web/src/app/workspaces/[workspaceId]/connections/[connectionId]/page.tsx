@@ -117,7 +117,7 @@ export default async function ConnectionDetailPage({
         <HealthBadge health={connection.state.health} />
       </p>
       <p className="muted">
-        <Link href={`/workspaces/${workspaceId}`}>{t("back")}</Link>
+        <Link href={`/workspaces/${workspaceId}/sources`}>{t("back")}</Link>
       </p>
 
       <OAuthOutcomeBanner

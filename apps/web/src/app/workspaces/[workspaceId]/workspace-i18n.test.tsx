@@ -10,7 +10,7 @@ import { SignedKeyFields } from "./connections/signed-key-fields";
 import { ConnectionActions } from "./connections/[connectionId]/connection-actions";
 import { DeviceControls } from "./device-controls";
 import { HealthBadge } from "./health-badge";
-import { ApproveDeviceForm } from "@/app/devices/approve/approve-form";
+import { ApproveDeviceForm } from "@/app/(site)/devices/approve/approve-form";
 import { renderI18n } from "@/lib/i18n/test-render";
 import { signedKeyStrategyOf } from "@/lib/signed-key";
 
