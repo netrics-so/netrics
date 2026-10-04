@@ -5,21 +5,16 @@ import { useState } from "react";
 import type {
   BuiltinThemeView,
   DashboardSettings,
-  DashboardWidget,
-  WorkspaceMetric,
   WorkspaceTheme,
 } from "@netrics/contracts";
 import {
   SLIDE_SECONDS,
-  STUDIO_LIMITS,
   checkAccentContrast,
   isHexColor,
-  tileLabel,
   type ThemeTokens,
 } from "@netrics/domain";
 
 import {
-  widgetTypeName,
   type StudioAction,
   type StudioDocument,
   type StudioProblem,
@@ -315,122 +310,4 @@ export function DashboardSettingsPanel({
   );
 }
 
-/**
- * The selected widget: its title and, for text, its text; image widgets
- * pick their image. Data binding and style come with #225.
- */
-export function WidgetPanel({
-  widget,
-  metrics,
-  images,
-  problems,
-  dispatch,
-  onUploadImage,
-}: {
-  widget: DashboardWidget;
-  metrics: readonly WorkspaceMetric[];
-  images: PickableImage[];
-  problems: StudioProblem[];
-  dispatch: (action: StudioAction) => void;
-  onUploadImage?: (file: File) => Promise<string | null>;
-}) {
-  const update = (patch: Record<string, unknown>) =>
-    dispatch({ type: "updateWidget", widgetId: widget.id, patch });
-  const metric =
-    widget.type === "metric" || widget.type === "line" || widget.type === "bar"
-      ? metrics.find(
-          (candidate) =>
-            candidate.connectionId === widget.connectionId &&
-            candidate.key === widget.metricKey,
-        )
-      : undefined;
-  const defaultTitle =
-    widget.type === "metric" || widget.type === "line" || widget.type === "bar"
-      ? tileLabel({
-          title: null,
-          metricName: metric?.name ?? widget.metricKey,
-          dimensions: widget.dimensions,
-          resourceName: widget.resourceName,
-          allResourcesName: widget.allResourcesName,
-        })
-      : "";
-
-  return (
-    <section className="inspector-section" aria-labelledby="inspector-widget">
-      <h2 id="inspector-widget">{widgetTypeName(widget.type)}</h2>
-      <p className="help">
-        Column {widget.x + 1}, row {widget.y + 1} · {widget.w} × {widget.h}{" "}
-        cells
-        {metric ? ` · ${metric.connectionName}` : ""}
-      </p>
-      <Problems problems={problems} />
-      <div className="field">
-        <label htmlFor="widget-title">
-          Title{defaultTitle ? " (optional)" : ""}
-        </label>
-        <input
-          id="widget-title"
-          type="text"
-          value={widget.title ?? ""}
-          maxLength={STUDIO_LIMITS.widgetTitleLength}
-          placeholder={defaultTitle || undefined}
-          onChange={(event) =>
-            update({
-              title: event.target.value === "" ? null : event.target.value,
-            })
-          }
-        />
-      </div>
-      {widget.type === "text" ? (
-        <div className="field">
-          <label htmlFor="widget-text">Text</label>
-          <textarea
-            id="widget-text"
-            rows={6}
-            value={widget.text}
-            maxLength={STUDIO_LIMITS.textLength}
-            aria-describedby="widget-text-help"
-            onChange={(event) => update({ text: event.target.value })}
-          />
-          <p id="widget-text-help" className="help">
-            # and ## start headings, **bold**, *italic*. {widget.text.length}/
-            {STUDIO_LIMITS.textLength}
-          </p>
-        </div>
-      ) : null}
-      {widget.type === "image" ? (
-        <ImagePicker
-          id="widget-image"
-          label="Image"
-          images={images}
-          value={widget.imageId}
-          onChange={(imageId) => {
-            if (imageId) update({ imageId });
-          }}
-          onUpload={onUploadImage}
-        />
-      ) : null}
-      <p className="help">
-        Data, period and style settings for widgets are coming to the Studio
-        soon.
-      </p>
-      <div className="actions">
-        <button
-          type="button"
-          onClick={() => dispatch({ type: "selectWidget", widgetId: null })}
-        >
-          Done
-        </button>
-        <button
-          type="button"
-          className="danger"
-          onClick={() =>
-            dispatch({ type: "deleteWidget", widgetId: widget.id })
-          }
-        >
-          Delete widget
-        </button>
-      </div>
-    </section>
-  );
-}
+export { WidgetPanel } from "./widget-panel";

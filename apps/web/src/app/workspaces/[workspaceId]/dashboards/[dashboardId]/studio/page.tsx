@@ -4,6 +4,7 @@ import { can } from "@netrics/domain";
 
 import { StudioEditor } from "@/components/studio-editor/studio-editor";
 import {
+  getCurrencyConversion,
   getDashboard,
   getWorkspace,
   listConnections,
@@ -52,6 +53,7 @@ export default async function StudioPage({ params }: StudioPageProps) {
     { projects },
     { dashboards },
     devices,
+    conversion,
   ] = await Promise.all([
     listWorkspaceMetrics(cookieHeader, workspaceId),
     listConnections(cookieHeader, workspaceId),
@@ -61,6 +63,7 @@ export default async function StudioPage({ params }: StudioPageProps) {
     listProjects(cookieHeader, workspaceId),
     listDashboards(cookieHeader, workspaceId),
     canManageDevices ? listDevices(cookieHeader, workspaceId) : null,
+    getCurrencyConversion(cookieHeader, workspaceId),
   ]);
   const byId: Record<string, StudioConnection> = Object.fromEntries(
     connections.map((connection) => [
@@ -84,6 +87,10 @@ export default async function StudioPage({ params }: StudioPageProps) {
           name: project.name,
         }))}
         devices={devices?.devices ?? null}
+        currency={{
+          displayCurrency: workspaceResult?.workspace.displayCurrency ?? null,
+          convertible: conversion.enabled ? conversion.currencies : [],
+        }}
         dashboardNames={Object.fromEntries(
           dashboards.map((dashboard) => [dashboard.id, dashboard.name]),
         )}

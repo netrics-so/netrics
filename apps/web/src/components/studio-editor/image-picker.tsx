@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ChangeEvent } from "react";
+import { useState, type DragEvent } from "react";
 
 import { IMAGE_CONTENT_TYPES, IMAGE_MAX_BYTES } from "@netrics/contracts";
 
@@ -55,9 +55,9 @@ export function ImagePicker({
   const [uploading, setUploading] = useState(false);
   const current = images.find((image) => image.id === value) ?? null;
 
-  async function onFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
+  const [dragging, setDragging] = useState(false);
+
+  async function onFile(file: File | undefined) {
     if (!file || !onUpload) return;
     const local = uploadProblem(file);
     setProblem(local);
@@ -102,9 +102,26 @@ export function ImagePicker({
         </select>
       </div>
       {onUpload ? (
-        <div className="image-picker-upload">
+        <div
+          className={
+            dragging
+              ? "image-picker-upload image-picker-upload--drop"
+              : "image-picker-upload"
+          }
+          onDragOver={(event: DragEvent<HTMLDivElement>) => {
+            if (uploading) return;
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event: DragEvent<HTMLDivElement>) => {
+            event.preventDefault();
+            setDragging(false);
+            if (!uploading) void onFile(event.dataTransfer.files[0]);
+          }}
+        >
           <label htmlFor={`${id}-file`}>
-            Upload a new image{" "}
+            Upload a new image, or drop one here{" "}
             <span className="help">(PNG, JPEG or WebP, at most 1 MiB)</span>
           </label>
           <input
@@ -112,7 +129,11 @@ export function ImagePicker({
             type="file"
             accept={IMAGE_CONTENT_TYPES.join(",")}
             disabled={uploading}
-            onChange={(event) => void onFile(event)}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              void onFile(file);
+            }}
           />
           {uploading ? (
             <p className="help" role="status">
@@ -127,5 +148,72 @@ export function ImagePicker({
         </p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The workspace's images with a delete button for each one this draft
+ * does not use. The server refuses images a saved dashboard still uses
+ * (409 image_in_use, with their names), so a delete is always safe.
+ */
+export function ImageLibrary({
+  images,
+  inUse,
+  onDelete,
+}: {
+  images: PickableImage[];
+  /** Images the draft uses (logo, backgrounds, image widgets). */
+  inUse: ReadonlySet<string>;
+  /** Resolves to null when deleted, else why not. */
+  onDelete: (imageId: string) => Promise<string | null>;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  if (images.length === 0) return null;
+  return (
+    <details className="image-library">
+      <summary>Workspace images ({images.length})</summary>
+      <ul>
+        {images.map((image) => {
+          const used = inUse.has(image.id);
+          const name = image.name || "Untitled image";
+          return (
+            <li key={image.id}>
+              <img src={image.url} alt="" width={48} height={48} />
+              <span>
+                {name}
+                <span className="help">
+                  {" "}
+                  {image.width} × {image.height}
+                  {used ? " · used here" : ""}
+                </span>
+              </span>
+              <button
+                type="button"
+                className="danger"
+                disabled={used || busy !== null}
+                title={used ? "Used by this dashboard" : undefined}
+                aria-label={`Delete image ${name}`}
+                onClick={() => {
+                  if (!window.confirm(`Delete the image “${name}”?`)) return;
+                  setBusy(image.id);
+                  setProblem(null);
+                  void onDelete(image.id)
+                    .then(setProblem)
+                    .finally(() => setBusy(null));
+                }}
+              >
+                {busy === image.id ? "Deleting…" : "Delete"}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {problem ? (
+        <p className="error" role="alert">
+          {problem}
+        </p>
+      ) : null}
+    </details>
   );
 }

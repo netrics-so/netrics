@@ -29,6 +29,7 @@ import {
   resizePlacement,
   samePlacement,
 } from "./studio-grid";
+import { widgetInputProblem } from "./studio-inspector";
 import { slideTitle } from "./studio-widgets";
 
 // The Studio's draft of one dashboard (ADR 0015, section 9): the document
@@ -107,6 +108,14 @@ export type StudioAction =
   | { type: "nudgeWidget"; widgetId: string; dx: number; dy: number }
   /** Shift+Arrow keys: one cell wider, narrower, taller or shorter. */
   | { type: "resizeWidgetBy"; widgetId: string; dw: number; dh: number }
+  /** Merges into the widget's type-specific options (#225). */
+  | { type: "updateWidgetOptions"; widgetId: string; patch: object }
+  /**
+   * The widget becomes another type (#225): `widget` holds its new fields
+   * (see convertWidget); id and position stay, and the size grows to the
+   * new type's minimum where there is room.
+   */
+  | { type: "changeWidgetType"; widgetId: string; widget: NewWidget }
   | { type: "undo" }
   | { type: "redo" }
   | { type: "discard" }
@@ -226,6 +235,36 @@ export function findFreePlacement(
     }
   }
   return null;
+}
+
+/**
+ * The placement of a widget that becomes `type`: the same, grown to the
+ * type's minimum size where it is smaller (kept inside the grid, moved
+ * left or up when it would leave it); null when the grown widget would
+ * overlap another.
+ */
+export function grownPlacement(
+  placement: StudioPlacement,
+  type: WidgetType,
+  others: readonly StudioPlacement[],
+): StudioPlacement | null {
+  const minimum = STUDIO_MIN_WIDGET_SIZE[type];
+  const w = Math.max(placement.w, minimum.w);
+  const h = Math.max(placement.h, minimum.h);
+  const candidate = {
+    x: Math.max(0, Math.min(placement.x, STUDIO_GRID.columns - w)),
+    y: Math.max(0, Math.min(placement.y, STUDIO_GRID.rows - h)),
+    w,
+    h,
+  };
+  if (
+    w > STUDIO_GRID.columns ||
+    h > STUDIO_GRID.rows ||
+    others.some((other) => placementsOverlap(candidate, other))
+  ) {
+    return null;
+  }
+  return candidate;
 }
 
 /** Why a widget of `type` cannot be added to a slide, or null. */
@@ -372,6 +411,14 @@ export function documentProblems(document: StudioDocument): StudioProblem[] {
           at(
             `A text widget holds at most ${STUDIO_LIMITS.textLength} characters.`,
           );
+        }
+      }
+      // Anything else the API would refuse in the widget's own fields
+      // (options per type), unless a clearer message above says it.
+      if (!problems.some((problem) => problem.widgetId === widget.id)) {
+        const invalid = widgetInputProblem(widget);
+        if (invalid) {
+          at(`${name}: ${invalid}`);
         }
       }
     });
@@ -795,6 +842,77 @@ export function createStudioReducer(newId: () => string) {
       case "nudgeWidget":
       case "resizeWidgetBy":
         return placeWidget(state, action);
+      case "updateWidgetOptions": {
+        const slide = draft.slides.find((s) =>
+          s.widgets.some((widget) => widget.id === action.widgetId),
+        );
+        if (!slide) {
+          return state;
+        }
+        const keys = Object.keys(action.patch).sort().join(",");
+        return edit(
+          state,
+          mapSlide(draft, slide.id, (s) => ({
+            ...s,
+            widgets: s.widgets.map((widget) =>
+              widget.id === action.widgetId
+                ? ({
+                    ...widget,
+                    options: { ...widget.options, ...action.patch },
+                  } as DashboardWidget)
+                : widget,
+            ),
+          })),
+          `widget:${action.widgetId}:options:${keys}`,
+        );
+      }
+      case "changeWidgetType": {
+        const slide = draft.slides.find((s) =>
+          s.widgets.some((widget) => widget.id === action.widgetId),
+        );
+        const current = slide?.widgets.find((w) => w.id === action.widgetId);
+        if (!slide || !current) {
+          return state;
+        }
+        const to = action.widget.type;
+        if (
+          isDataWidgetType(to) &&
+          !isDataWidgetType(current.type) &&
+          dataWidgetCount(draft) >= STUDIO_LIMITS.dataWidgets
+        ) {
+          return announce(
+            state,
+            `A dashboard shows at most ${STUDIO_LIMITS.dataWidgets} data widgets.`,
+          );
+        }
+        const placement = grownPlacement(
+          current,
+          to,
+          slide.widgets.filter((w) => w.id !== current.id),
+        );
+        if (!placement) {
+          const minimum = STUDIO_MIN_WIDGET_SIZE[to];
+          return announce(
+            state,
+            `A ${widgetTypeName(to).toLowerCase()} needs at least ${minimum.w} × ${minimum.h} cells; there is no room for it here.`,
+          );
+        }
+        const widget = {
+          ...action.widget,
+          id: current.id,
+          ...placement,
+        } as DashboardWidget;
+        return announce(
+          edit(
+            state,
+            mapSlide(draft, slide.id, (s) => ({
+              ...s,
+              widgets: s.widgets.map((w) => (w.id === current.id ? widget : w)),
+            })),
+          ),
+          `${widgetName(current)} is now a ${widgetTypeName(to).toLowerCase()}.`,
+        );
+      }
       case "undo": {
         const previous = state.past.at(-1);
         if (!previous) {

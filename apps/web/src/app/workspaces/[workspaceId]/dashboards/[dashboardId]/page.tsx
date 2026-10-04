@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import { can } from "@netrics/domain";
 
 import {
-  getCurrencyConversion,
   getDashboard,
   getTheme,
   getWorkspace,
@@ -39,26 +38,19 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
     notFound();
   }
   const { dashboard } = dashboardResult;
-  const [
-    { metrics },
-    { connections },
-    workspaceResult,
-    conversion,
-    customTheme,
-    images,
-  ] = await Promise.all([
-    listWorkspaceMetrics(cookieHeader, workspaceId),
-    listConnections(cookieHeader, workspaceId),
-    getWorkspace(cookieHeader, workspaceId),
-    getCurrencyConversion(cookieHeader, workspaceId),
-    dashboard.settings.themeId
-      ? getTheme(cookieHeader, workspaceId, dashboard.settings.themeId)
-      : null,
-    // Only dashboards that show images ask for them.
-    referencedImageIds(dashboard).length > 0
-      ? listStudioImages(cookieHeader, workspaceId)
-      : [],
-  ]);
+  const [{ metrics }, { connections }, workspaceResult, customTheme, images] =
+    await Promise.all([
+      listWorkspaceMetrics(cookieHeader, workspaceId),
+      listConnections(cookieHeader, workspaceId),
+      getWorkspace(cookieHeader, workspaceId),
+      dashboard.settings.themeId
+        ? getTheme(cookieHeader, workspaceId, dashboard.settings.themeId)
+        : null,
+      // Only dashboards that show images ask for them.
+      referencedImageIds(dashboard).length > 0
+        ? listStudioImages(cookieHeader, workspaceId)
+        : [],
+    ]);
   const byId: Record<string, TileConnection> = Object.fromEntries(
     connections.map((connection) => [
       connection.id,
@@ -83,10 +75,6 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
         images={images}
         metrics={metrics}
         connections={byId}
-        currency={{
-          displayCurrency: workspaceResult?.workspace.displayCurrency ?? null,
-          convertible: conversion.enabled ? conversion.currencies : [],
-        }}
         canEdit={can(membership.role, "dashboards:update")}
         canDuplicate={can(membership.role, "dashboards:create")}
         canDelete={can(membership.role, "dashboards:delete")}

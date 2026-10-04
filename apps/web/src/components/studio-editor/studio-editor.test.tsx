@@ -232,6 +232,7 @@ describe("inspector", () => {
     const html = renderToStaticMarkup(
       <WidgetPanel
         widget={textWidget}
+        workspaceId={ID(3)}
         metrics={[]}
         images={[]}
         problems={[{ slideId: ID(2), widgetId: ID(21), message: "Overlaps." }]}
