@@ -113,6 +113,14 @@ To run without it, for example offline, set `NETRICS_EXCHANGE_RATES=off` in
 ECB, the option is hidden, and tiles show amounts per currency. Stored rates
 are kept; turning it back on resumes the daily fetch.
 
+### Language
+
+netrics speaks English and German. Each person picks a language under
+Account, and each workspace a language for its TVs and kiosks. For people
+and workspaces that have not chosen one, `NETRICS_DEFAULT_LOCALE=de` in
+`.env` makes German the default (unset: English; it applies to the `api`
+and the `web` app).
+
 ### Image quota
 
 Dashboards can show uploaded images (PNG, JPEG or WebP, at most 1 MiB and

@@ -51,13 +51,24 @@ export async function findUserByEmail(
  */
 export async function provisionDomainUser(
   db: Db,
-  input: { authUserId: string; email: string; name?: string | null },
+  input: {
+    authUserId: string;
+    email: string;
+    name?: string | null;
+    /** The language the account was created in (ADR 0016). */
+    locale?: string | null;
+  },
 ): Promise<DomainUser> {
   const email = input.email.toLowerCase();
   const displayName = input.name?.trim() || email.split("@")[0] || email;
   await db
     .insert(schema.users)
-    .values({ authUserId: input.authUserId, email, displayName })
+    .values({
+      authUserId: input.authUserId,
+      email,
+      displayName,
+      locale: input.locale ?? null,
+    })
     .onConflictDoNothing();
   const user = await findUserByAuthUserId(db, input.authUserId);
   if (!user) {
@@ -66,6 +77,24 @@ export async function provisionDomainUser(
     );
   }
   return user;
+}
+
+/**
+ * Sets a user's own language (null: follow the instance default and the
+ * browser). Installation-level row, so the caller must pass the
+ * authenticated user's id; nothing else is written.
+ */
+export async function setUserLocale(
+  db: Db,
+  userId: string,
+  locale: string | null,
+): Promise<DomainUser | null> {
+  const rows = await db
+    .update(schema.users)
+    .set({ locale })
+    .where(eq(schema.users.id, userId))
+    .returning();
+  return rows[0] ?? null;
 }
 
 export interface MembershipInfo {

@@ -96,6 +96,9 @@ NETRICS_SIGNUP=closed
 # from www.ecb.europa.eu. "off" makes no request and keeps amounts per
 # currency.
 # NETRICS_EXCHANGE_RATES=off
+
+# Default language for people and screens without their own: en or de.
+# NETRICS_DEFAULT_LOCALE=de
 ENV
 chmod 600 .env
 

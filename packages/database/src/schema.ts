@@ -36,18 +36,31 @@ export const schemaInfo = pgTable("schema_info", {
 });
 
 // users is installation-level: no tenant RLS (see migration 0001).
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  authUserId: text("auth_user_id").unique(),
-  email: text("email").notNull().unique(),
-  displayName: text("display_name").notNull(),
-  // May use the installation admin API (/v1/admin/*). The first-run setup
-  // account is one; installation-level, never granted by a workspace role.
-  isInstanceAdmin: boolean("is_instance_admin").notNull().default(false),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    authUserId: text("auth_user_id").unique(),
+    email: text("email").notNull().unique(),
+    displayName: text("display_name").notNull(),
+    // May use the installation admin API (/v1/admin/*). The first-run setup
+    // account is one; installation-level, never granted by a workspace role.
+    isInstanceAdmin: boolean("is_instance_admin").notNull().default(false),
+    // The user's language (ADR 0016); null follows the instance default and
+    // the browser. The API validates against SUPPORTED_LOCALES; the check
+    // only guards the shape, so adding a language needs no migration.
+    locale: text("locale"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "users_locale_format",
+      sql`${table.locale} is null or ${table.locale} ~ '^[a-z]{2,3}$'`,
+    ),
+  ],
+);
 
 // Bearer tokens for non-session principals (ADR 0009): installation service
 // accounts ("service") and, later, paired screens ("device"). Only the
@@ -118,18 +131,30 @@ export const installationSetup = pgTable(
   (table) => [check("installation_setup_singleton", sql`${table.id} = 1`)],
 );
 
-export const workspaces = pgTable("workspaces", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  // IANA zone for "today" and daily buckets (#48); validated by the API.
-  timeZone: text("time_zone").notNull().default("UTC"),
-  // Amounts of "currency_minor" metrics converted into this ISO 4217 code
-  // with ECB reference rates (#191); null shows them per currency (exact).
-  displayCurrency: text("display_currency"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const workspaces = pgTable(
+  "workspaces",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    // IANA zone for "today" and daily buckets (#48); validated by the API.
+    timeZone: text("time_zone").notNull().default("UTC"),
+    // Amounts of "currency_minor" metrics converted into this ISO 4217 code
+    // with ECB reference rates (#191); null shows them per currency (exact).
+    displayCurrency: text("display_currency"),
+    // The language of the workspace's screens (kiosk, Apple TV; ADR 0016);
+    // null follows the instance default.
+    screenLocale: text("screen_locale"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "workspaces_screen_locale_format",
+      sql`${table.screenLocale} is null or ${table.screenLocale} ~ '^[a-z]{2,3}$'`,
+    ),
+  ],
+);
 
 export const memberships = pgTable(
   "memberships",

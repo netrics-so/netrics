@@ -43,7 +43,7 @@ import {
   type Project,
   type Workspace,
 } from "@netrics/database";
-import { can, canManageMember } from "@netrics/domain";
+import { can, canManageMember, isLocale } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
 import { conversionOptions } from "../metrics/query.js";
@@ -70,6 +70,9 @@ function toWorkspace(workspace: Workspace) {
     name: workspace.name,
     timeZone: workspace.timeZone,
     displayCurrency: workspace.displayCurrency,
+    screenLocale: isLocale(workspace.screenLocale)
+      ? workspace.screenLocale
+      : null,
     createdAt: workspace.createdAt.toISOString(),
   };
 }
@@ -205,7 +208,7 @@ export function registerWorkspaceRoutes(
         {
           schema: routeSchema({
             summary:
-              "Rename a workspace, or change its time zone or display currency",
+              "Rename a workspace, or change its time zone, display currency or screen language",
             tags: ["workspaces"],
             body: renameWorkspaceRequestSchema,
             response: workspaceResponseSchema,
@@ -255,6 +258,9 @@ export function registerWorkspaceRoutes(
                   ? { timeZone: body.timeZone }
                   : {}),
                 ...(displayCurrency !== undefined ? { displayCurrency } : {}),
+                ...(body.screenLocale !== undefined
+                  ? { screenLocale: body.screenLocale }
+                  : {}),
               });
               if (body.name !== undefined) {
                 await insertAuditEvent(tx, {
@@ -289,6 +295,21 @@ export function registerWorkspaceRoutes(
                   metadata: {
                     oldDisplayCurrency: current.displayCurrency,
                     newDisplayCurrency: displayCurrency,
+                  },
+                });
+              }
+              if (
+                body.screenLocale !== undefined &&
+                body.screenLocale !== current.screenLocale
+              ) {
+                await insertAuditEvent(tx, {
+                  workspaceId: access.workspaceId,
+                  actorUserId: access.callerId,
+                  action: "workspace.screen_locale_changed",
+                  target: access.workspaceId,
+                  metadata: {
+                    oldScreenLocale: current.screenLocale,
+                    newScreenLocale: body.screenLocale,
                   },
                 });
               }

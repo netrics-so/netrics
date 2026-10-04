@@ -15,6 +15,7 @@ import {
   recordSetupOwner,
   type Database,
 } from "@netrics/database";
+import { localeFromAcceptLanguage, resolveLocale } from "@netrics/domain";
 
 import type { Config } from "../env.js";
 import { SETUP_TOKEN_HEADER, hashSetupToken } from "../setup.js";
@@ -154,11 +155,19 @@ export function createAuthService(
           },
           // Mirror every auth user into the installation-level domain users
           // table (the row tenants reference via memberships).
-          after: async (user) => {
+          // The account keeps the language its sign-up page was shown in:
+          // the instance default, else the browser's (ADR 0016).
+          after: async (user, context) => {
             const domainUser = await provisionDomainUser(db, {
               authUserId: user.id,
               email: user.email,
               name: user.name,
+              locale: resolveLocale([
+                config.defaultLocale,
+                localeFromAcceptLanguage(
+                  context?.headers?.get("accept-language"),
+                ),
+              ]),
             });
             if (config.signup === "closed") {
               await recordSetupOwner(db, domainUser.id);

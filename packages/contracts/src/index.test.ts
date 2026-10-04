@@ -126,6 +126,8 @@ describe("session contracts", () => {
       ],
     });
     expect(parsed.memberships).toHaveLength(1);
+    // An API from before #250 sends no language: read as unset.
+    expect(parsed.user.locale).toBeNull();
   });
 
   it("rejects a membership with an unknown role", () => {

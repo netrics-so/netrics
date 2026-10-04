@@ -70,6 +70,56 @@ function webApiFetchRestrictions() {
   ];
 }
 
+/**
+ * Web files whose user-facing text comes from the message catalogs (ADR
+ * 0016). Each area issue adds its directories; the last one replaces the
+ * list with all of apps/web/src.
+ */
+export const I18N_FILES = [
+  "apps/web/src/app/layout.tsx",
+  "apps/web/src/components/nav.tsx",
+  "apps/web/src/app/settings/account/**/*.tsx",
+  "apps/web/src/app/workspaces/[[]workspaceId]/settings/screen-language-form.tsx",
+];
+
+function i18nRestrictions() {
+  const message =
+    "User-facing text comes from the message catalog (apps/web/src/messages, ADR 0016): use getT/useT.";
+  // Two or more letters; the brand name and punctuation are allowed.
+  const words = String.raw`/\p{L}{2,}/u`;
+  const attributes = "/^(aria-label|title|placeholder|alt|label)$/";
+  return [
+    {
+      selector: String.raw`JSXText[value=${words}]:not([value=/^\s*netrics\s*$/])`,
+      message,
+    },
+    {
+      selector: `JSXAttribute[name.name=${attributes}] > Literal[value=${words}]`,
+      message,
+    },
+    // {"Text"}, {cond ? "A" : "B"}, {cond && "A"} as children or as one of
+    // the attributes above.
+    ...[
+      "JSXElement > JSXExpressionContainer",
+      `JSXAttribute[name.name=${attributes}] > JSXExpressionContainer`,
+    ].flatMap((container) => [
+      { selector: `${container} > Literal[value=${words}]`, message },
+      {
+        selector: `${container} > TemplateLiteral > TemplateElement[value.raw=${words}]`,
+        message,
+      },
+      {
+        selector: `${container} > ConditionalExpression > Literal[value=${words}]`,
+        message,
+      },
+      {
+        selector: `${container} > LogicalExpression > Literal[value=${words}]`,
+        message,
+      },
+    ]),
+  ];
+}
+
 const layering = [
   ...Object.entries(PACKAGE_LAYERS).map(([name, allowed]) => ({
     files: [`packages/${name}/**/*.{ts,tsx}`],
@@ -115,6 +165,19 @@ const layering = [
     ignores: ["apps/web/src/lib/api-fetch.ts", "apps/web/src/**/*.test.ts"],
     rules: {
       "no-restricted-syntax": ["error", ...webApiFetchRestrictions()],
+    },
+  },
+  // No hard-coded UI text in translated web files (ADR 0016). The rule
+  // repeats the apiFetch restrictions: flat config replaces, not merges.
+  {
+    files: I18N_FILES,
+    ignores: ["apps/web/src/**/*.test.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...webApiFetchRestrictions(),
+        ...i18nRestrictions(),
+      ],
     },
   },
   // Runtime tests exercise the real demo connector as a fixture.
