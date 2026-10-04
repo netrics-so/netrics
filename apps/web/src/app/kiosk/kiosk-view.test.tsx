@@ -11,7 +11,7 @@ import { WEB_CATALOGS } from "@/lib/i18n/catalogs";
 import { I18nProvider } from "@/lib/i18n/client";
 import type { KioskState } from "@/lib/kiosk-client";
 
-import { KioskScreen, kioskLocale } from "./kiosk-view";
+import { KioskScreen, kioskLocale, payloadRotation } from "./kiosk-view";
 
 // The kiosk in the workspace's screen language (ADR 0016, #256): labels
 // arrive finished in the payload; chrome, periods, comparisons, notices and
@@ -237,5 +237,24 @@ describe("kiosk language", () => {
     expect(html).toContain("vs. gestern");
     expect(html).toContain("1.500");
     expect(html).toContain("Zuletzt synchronisiert");
+  });
+});
+
+describe("kiosk screen view (ADR 0017, #281)", () => {
+  it("renders the slides in screen view, upright on schema 2", () => {
+    const html = render(paired(slides("en")));
+    expect(html).toContain('data-rotation="0"');
+    // Until measured, the 16:9 canvas as before; the real viewport then
+    // picks the format (the player measures itself).
+    expect(html).toContain('data-format="16x9"');
+    expect(html).not.toContain("rotate(");
+  });
+
+  it("reads the device rotation of a schema 3 payload (#277)", () => {
+    expect(payloadRotation(slides("en"))).toBe(0);
+    expect(payloadRotation({ device: { rotation: 90 } })).toBe(90);
+    expect(payloadRotation({ device: { rotation: 270 } })).toBe(270);
+    expect(payloadRotation({ device: { rotation: 45 } })).toBe(0);
+    expect(payloadRotation({ device: null })).toBe(0);
   });
 });

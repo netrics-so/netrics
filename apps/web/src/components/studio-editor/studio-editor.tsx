@@ -208,6 +208,12 @@ export function StudioEditor({
       studioImages,
     ],
   );
+  // The custom layouts as loaded (ADR 0017): Play completes them against
+  // the draft. The Studio does not edit them yet (#284).
+  const savedLayouts = useMemo(
+    () => new Map(dashboard.slides.map((slide) => [slide.id, slide.layouts])),
+    [dashboard.slides],
+  );
 
   const onUploadImage = useCallback(
     async (file: File): Promise<string | null> => {
@@ -588,6 +594,8 @@ export function StudioEditor({
           document={draft}
           tokens={theme.tokens}
           env={env}
+          primaryFormat={dashboard.primaryFormat}
+          layouts={savedLayouts}
           startSlideId={slide.id}
           onClose={stopPlaying}
         />

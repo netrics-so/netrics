@@ -355,6 +355,8 @@ export const studioDe: Catalog<typeof studioEn> = {
     breadcrumb: "Dashboards",
     slides: "Folien",
     slideOff: "aus",
+    fullScreen: "Vollbild",
+    exitFullScreen: "Vollbild beenden",
     slideEmpty: "Diese Folie hat noch keine Widgets.",
     tvPageTitle: "TV-Modus · netrics",
     source: "Quelle",

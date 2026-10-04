@@ -1442,10 +1442,13 @@ a.health-badge:hover {
 
 /* ─── Studio slides (ADR 0015, #220) ─────────────────────────────────── */
 
-/* A 16:9 slide. Positions are percentages and text sizes multiples of
-   --u (canvas height / 1080), both computed by studioLayout, so a slide
-   reads the same at 720p, 1080p and 4K. Colours are the theme's tokens
-   (--t-*, from themeStyle); nothing here hard-codes a theme colour. */
+/* A slide. Positions are percentages and text sizes multiples of --u
+   (canvas height / 1080 on a 16:9 canvas), both computed by studioLayout,
+   so a slide reads the same at 720p, 1080p and 4K. Colours are the theme's
+   tokens (--t-*, from themeStyle); nothing here hard-codes a theme colour.
+   On any other screen (ADR 0017) SlideCanvas sets --u in pixels and places
+   the format's grid itself; the canvas background is the theme's, so a
+   letterboxed grid has bars in it. */
 .studio-canvas {
   container-type: inline-size;
   --u: calc(100cqw / 1920);
@@ -1456,6 +1459,12 @@ a.health-badge:hover {
   background: var(--t-background);
   color: var(--t-text);
   line-height: 1.15;
+}
+
+/* Screen view: the canvas is the whole screen, whatever its shape. */
+.studio-canvas--fill {
+  height: 100%;
+  aspect-ratio: auto;
 }
 
 /* The slide background: its cover sizing is inline (BACKGROUND_COVER in
@@ -1500,6 +1509,12 @@ a.health-badge:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+.studio-header-page {
+  flex: none;
+  color: var(--t-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .studio-header-meta {
@@ -1851,15 +1866,26 @@ a.health-badge:hover {
 }
 
 /*
- * The slide player (#221): every slide stacked on one 16:9 canvas, only the
- * current one visible. "fade" cross-fades; reduced motion cuts.
+ * The slide player (#221, ADR 0017): every slide (and page) stacked over
+ * the whole player, only the current one visible. "fade" cross-fades;
+ * reduced motion cuts. It fills its container: the screen.
  */
 .slide-player {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  height: 100%;
   overflow: hidden;
   background: var(--t-background);
+}
+
+/* No slide to show: the notice in the middle of the screen. */
+.slide-player-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 24px;
 }
 
 .slide-player-slide {
@@ -1893,19 +1919,14 @@ a.health-badge:hover {
   }
 }
 
-/* A screen playing slides: the canvas as large as fits, letterboxed. */
+/* A screen playing slides: the slides over the whole screen, in its
+   format (ADR 0017); the player letterboxes only extreme shapes. */
 .slide-screen {
   position: fixed;
   inset: 0;
   z-index: 10;
-  display: grid;
-  place-items: center;
   background: var(--t-background, #07090c);
   overflow: hidden;
-}
-
-.slide-screen .slide-player {
-  width: min(100vw, calc(100vh * 16 / 9));
 }
 
 .slide-screen-status {
@@ -1951,9 +1972,39 @@ a.health-badge:hover {
 }
 
 .slide-frame {
+  position: relative;
   border: 1px solid #23272e;
   border-radius: 8px;
   overflow: hidden;
+  /* The viewport's shape (ADR 0017 section 11), set by SlideViewer. */
+  aspect-ratio: var(--screen-aspect, 16 / 9);
+}
+
+/* Full screen: the slide is the whole screen, in the screen's format. */
+.slide-frame:fullscreen {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0;
+}
+
+.slide-viewer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.slide-viewer-bar .slide-tabs {
+  flex: 1;
+  min-width: 0;
+}
+
+.slide-viewer-bar .slide-fullscreen {
+  margin: 0 0 12px auto;
+  font-size: 13px;
 }
 
 /* ─── Display modes and scroll view (ADR 0017 section 5, #279) ────────── */
@@ -3079,7 +3130,8 @@ body:has(.dashboard-page) .nav {
 }
 
 .play-stage {
-  width: min(100vw, calc(100vh * 16 / 9));
+  position: absolute;
+  inset: 0;
 }
 
 .play-empty {

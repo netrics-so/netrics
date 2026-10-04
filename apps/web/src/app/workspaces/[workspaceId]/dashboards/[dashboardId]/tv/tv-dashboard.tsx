@@ -16,6 +16,7 @@ import {
   type StudioEnv,
   type StudioImage,
 } from "@/lib/studio-widgets";
+import { useWakeLock } from "@/lib/use-screen";
 
 import type { TileConnection } from "../metric-tile";
 import { useServerRefresh } from "../use-server-refresh";
@@ -25,7 +26,8 @@ import { useServerRefresh } from "../use-server-refresh";
  * kiosk, fed by the dashboard document and live widget queries instead of
  * the device payload. The session already authorises those queries, so no
  * second, session-side payload builder is needed; the rotation rules
- * (enabled slides, durations, transition) are the payload's.
+ * (enabled slides, durations, transition) are the payload's. Screen view
+ * on the whole window in its format (ADR 0017), kept awake.
  */
 export function TvDashboard({
   workspaceId,
@@ -50,6 +52,7 @@ export function TvDashboard({
   const offline = useOffline();
   const t = useT("screen.tv");
   const { settings } = dashboard;
+  useWakeLock(true);
 
   const env: StudioEnv = useMemo(
     () => ({
@@ -100,6 +103,7 @@ export function TvDashboard({
         }}
         images={env.images}
         renderWidget={(widget) => <LiveWidget widget={widget} env={env} />}
+        primaryFormat={dashboard.primaryFormat}
         empty={<p className="tv-empty">{t("allHidden")}</p>}
       />
       <div className="slide-screen-status">

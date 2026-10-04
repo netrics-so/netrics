@@ -8,6 +8,11 @@ import type {
 } from "@netrics/contracts";
 import { conversionNote, matchLocale, type Locale } from "@netrics/domain";
 
+import {
+  RotatedScreen,
+  screenRotationOf,
+  type ScreenRotation,
+} from "@/components/screen-rotation";
 import { DeviceWidgetView } from "@/components/studio/device-widget";
 import { SlidePlayer } from "@/components/studio/slide-player";
 import { TileNotice, TileView } from "@/components/tile-view";
@@ -25,6 +30,7 @@ import { browserImageCache } from "@/lib/kiosk-image-cache";
 import { themeStyle } from "@/lib/studio-theme";
 import { pairingAddress } from "@/lib/pairing-address";
 import { deviceTileNotice } from "@/lib/tile-status";
+import { useWakeLock } from "@/lib/use-screen";
 
 /** The product name, the same in every language. */
 const BRAND = "netrics";
@@ -74,6 +80,8 @@ export function KioskView({ appVersion }: { appVersion: string }) {
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
+  // A wall screen: kept awake where the browser allows (ADR 0017).
+  useWakeLock(true);
 
   useEffect(() => {
     const client = createKioskClient({
@@ -207,8 +215,23 @@ function OfflineMarker({
 }
 
 /**
- * A schema 2 payload (#221): the dashboard's slides on the studio canvas,
- * rotating by each slide's duration, drawn from the payload alone.
+ * The device's rotation setting (ADR 0017 section 7): payload schema 3
+ * carries it as `device.rotation`. TODO(#277): the kiosk still asks for
+ * schema 2, which has none, so screens stay upright until it moves to
+ * schema 3; `RotatedScreen` then turns the whole screen.
+ */
+export function payloadRotation(payload: object): ScreenRotation {
+  const device = (payload as { device?: { rotation?: unknown } }).device;
+  return screenRotationOf(device?.rotation);
+}
+
+/**
+ * A schema 2 payload (#221): the dashboard's slides in screen view,
+ * rotating by each slide's duration, drawn from the payload alone. The
+ * format comes from the real viewport, live (ADR 0017 sections 2 and 7):
+ * schema 2 carries the `16x9` layout, so other formats are reflowed here
+ * from it with the domain's functions. TODO(#277): on schema 3, pass the
+ * payload's `primaryFormat` and each slide's custom `layouts` instead.
  */
 function KioskSlides({
   state,
@@ -229,35 +252,40 @@ function KioskSlides({
     images: state.images,
   };
   return (
-    <div
-      className={idle ? "slide-screen slide-screen--idle" : "slide-screen"}
-      style={themeStyle(theme.tokens)}
-    >
-      <SlidePlayer
-        slides={payload.slides}
-        autoAdvance={payload.rotation.autoAdvance}
-        transition={payload.rotation.transition}
-        tokens={theme.tokens}
-        showHeader={dashboard.showHeader}
-        header={{
-          name: dashboard.name,
-          logoImageId: dashboard.logo?.imageId ?? null,
-          timeZone,
-          offline: dashboard.showHeader && state.offline,
-        }}
-        images={state.images}
-        renderWidget={(widget) => (
-          <DeviceWidgetView widget={widget} env={env} />
-        )}
-        empty={<p className="kiosk-text slide-screen-empty">{t("noSlides")}</p>}
-      />
-      {/* With the header the marker is in it; without, in the corner. */}
-      {state.offline && !dashboard.showHeader ? (
-        <div className="slide-screen-status">
-          <OfflineMarker state={state} timeZone={timeZone} />
-        </div>
-      ) : null}
-    </div>
+    <RotatedScreen rotation={payloadRotation(payload)}>
+      <div
+        className={idle ? "slide-screen slide-screen--idle" : "slide-screen"}
+        style={themeStyle(theme.tokens)}
+      >
+        <SlidePlayer
+          slides={payload.slides}
+          primaryFormat="16x9"
+          autoAdvance={payload.rotation.autoAdvance}
+          transition={payload.rotation.transition}
+          tokens={theme.tokens}
+          showHeader={dashboard.showHeader}
+          header={{
+            name: dashboard.name,
+            logoImageId: dashboard.logo?.imageId ?? null,
+            timeZone,
+            offline: dashboard.showHeader && state.offline,
+          }}
+          images={state.images}
+          renderWidget={(widget) => (
+            <DeviceWidgetView widget={widget} env={env} />
+          )}
+          empty={
+            <p className="kiosk-text slide-screen-empty">{t("noSlides")}</p>
+          }
+        />
+        {/* With the header the marker is in it; without, in the corner. */}
+        {state.offline && !dashboard.showHeader ? (
+          <div className="slide-screen-status">
+            <OfflineMarker state={state} timeZone={timeZone} />
+          </div>
+        ) : null}
+      </div>
+    </RotatedScreen>
   );
 }
 
