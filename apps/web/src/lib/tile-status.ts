@@ -54,6 +54,7 @@ export function deviceTileNotice(
         ? lastSyncNotice(updatedAt, locale)
         : notice("firstSync", locale);
     case "no_data":
+    case "backfilling":
     case "ok":
       return null;
   }
@@ -85,7 +86,9 @@ export function connectionStatus(
     return "auth_failed";
   }
   if (!state || !hasData) {
-    return "no_data";
+    // The first sync has not succeeded yet: its backfill is queued or
+    // running (the server also knows later backfills, from its jobs).
+    return state?.health === "pending" ? "backfilling" : "no_data";
   }
   if (!state.lastSuccessAt) {
     return "stale";

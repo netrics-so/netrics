@@ -251,7 +251,7 @@ public enum TileNotices {
             guard let updatedAt else { return KitStrings.text(.noticeFirstSync, language) }
             return KitStrings.text(
                 .noticeLastSync, language, RelativeTime.describe(updatedAt, now: now, language: language))
-        case .noData, .ok:
+        case .noData, .backfilling, .ok:
             return nil
         }
     }

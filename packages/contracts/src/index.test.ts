@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   bootstrapRequestSchema,
   dashboardTileInputSchema,
+  deviceTileStatusSchema,
   metricPeriodSchema,
   metricQueryRequestSchema,
   healthLiveResponseSchema,
@@ -166,5 +167,18 @@ describe("metric periods (#212)", () => {
 
   it("rejects periods the server does not know", () => {
     expect(metricPeriodSchema.safeParse("last_year").success).toBe(false);
+  });
+});
+
+describe("deviceTileStatusSchema", () => {
+  it("knows backfilling besides the first statuses (#311)", () => {
+    expect(deviceTileStatusSchema.options).toEqual([
+      "ok",
+      "stale",
+      "auth_failed",
+      "outage",
+      "no_data",
+      "backfilling",
+    ]);
   });
 });

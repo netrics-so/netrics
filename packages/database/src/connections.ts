@@ -267,6 +267,31 @@ export async function deleteConnection(
     .where(connectionScope(workspaceId, connectionId));
 }
 
+/**
+ * The workspace's connections with a backfill of their history queued or
+ * running (the first one is queued when a connection is created, a new one
+ * after a config change that refetches, #153). Screens show a widget
+ * without data of such a connection as backfilling (#311).
+ */
+export async function findBackfillingConnectionIds(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<Set<string>> {
+  const rows = await tx
+    .selectDistinct({ connectionId: schema.jobs.connectionId })
+    .from(schema.jobs)
+    .where(
+      and(
+        eq(schema.jobs.workspaceId, workspaceId),
+        eq(schema.jobs.kind, "connection.backfill"),
+        inArray(schema.jobs.status, ["pending", "running"]),
+      ),
+    );
+  return new Set(
+    rows.flatMap((row) => (row.connectionId ? [row.connectionId] : [])),
+  );
+}
+
 export async function listRecentSyncRuns(
   tx: Transaction,
   workspaceId: string,

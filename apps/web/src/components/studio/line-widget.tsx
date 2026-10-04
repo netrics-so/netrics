@@ -33,9 +33,12 @@ import { useCountUp } from "./enter-motion";
 import { countFormat, dataWidgetLabel, liveDataState } from "./metric-widget";
 import { useMetricData } from "./use-widget-data";
 import {
+  DataStateWidget,
   WidgetFooter,
   WidgetLabel,
   WidgetNotice,
+  dataSurfaceOf,
+  statusClass,
   useFooterCandidates,
 } from "./widget-parts";
 
@@ -112,6 +115,22 @@ export function LineWidgetView(props: LineWidgetViewProps) {
     countFormat(shown, { full, compact }, reading, locale),
     shown,
   );
+  const surface = dataSurfaceOf(props.status);
+  if (surface) {
+    return (
+      <DataStateWidget
+        type="line"
+        surface={surface}
+        label={layout.label}
+        small={layout.sizes.small}
+        source={props.source}
+        updatedAt={props.updatedAt}
+        placement={props.placement}
+        showHeader={props.showHeader}
+        fontScale={props.fontScale}
+      />
+    );
+  }
   const { width, height } = layout.chart;
   const geometry = reading
     ? lineChartGeometry({
@@ -137,7 +156,10 @@ export function LineWidgetView(props: LineWidgetViewProps) {
     : props.label;
 
   return (
-    <article className="sw sw-line" aria-busy={props.loading ?? false}>
+    <article
+      className={`sw sw-line${statusClass(props.status)}`}
+      aria-busy={props.loading ?? false}
+    >
       <WidgetLabel layout={layout.label} />
       {layout.value ? (
         <p

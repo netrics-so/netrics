@@ -21,9 +21,12 @@ import {
 import { dataWidgetLabel, liveDataState } from "./metric-widget";
 import { useBreakdownData } from "./use-widget-data";
 import {
+  DataStateWidget,
   WidgetFooter,
   WidgetLabel,
   WidgetNotice,
+  dataSurfaceOf,
+  statusClass,
   useFooterCandidates,
 } from "./widget-parts";
 
@@ -78,6 +81,22 @@ export function BarWidgetView(props: BarWidgetViewProps) {
       fontScale: props.fontScale,
     }),
   );
+  const surface = dataSurfaceOf(props.status);
+  if (surface) {
+    return (
+      <DataStateWidget
+        type="bar"
+        surface={surface}
+        label={layout.label}
+        small={layout.sizes.small}
+        source={props.source}
+        updatedAt={props.updatedAt}
+        placement={props.placement}
+        showHeader={props.showHeader}
+        fontScale={props.fontScale}
+      />
+    );
+  }
   const approx = reading?.approximate ? "≈ " : "";
   const bars = reading
     ? barLayout({
@@ -93,7 +112,10 @@ export function BarWidgetView(props: BarWidgetViewProps) {
     : null;
 
   return (
-    <article className="sw sw-bar" aria-busy={props.loading ?? false}>
+    <article
+      className={`sw sw-bar${statusClass(props.status)}`}
+      aria-busy={props.loading ?? false}
+    >
       <WidgetLabel layout={layout.label} />
       <div className="sw-chart" style={{ height: u(layout.chart.height) }}>
         {bars && bars.rows.length > 0 ? (

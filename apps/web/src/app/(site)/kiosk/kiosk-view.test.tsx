@@ -176,9 +176,10 @@ describe("kiosk language", () => {
     expect(html).toContain("vs. vorherige 30 Tage");
     expect(html).toContain("12,3\u00a0Tsd.");
     expect(html).toContain("+23%");
-    expect(html).toContain("Keine Daten zum Vergleich");
+    // The widget whose access failed asks to reconnect (#311).
+    expect(html).toContain("Quelle neu verbinden");
     // Notices and chrome.
-    expect(html).toContain("Verbindung braucht neue Zugangsdaten");
+    expect(html).toContain("Der Zugriff wurde abgelehnt.");
     expect(html).toContain("Offline");
     expect(html).not.toContain("Last 30 days");
     expect(html).not.toContain("vs previous");
@@ -190,7 +191,7 @@ describe("kiosk language", () => {
     expect(html).toContain("Last 30 days · Total");
     expect(html).toContain("vs previous 30 days");
     expect(html).toContain("12.3K");
-    expect(html).toContain("Connection needs new credentials");
+    expect(html).toContain("Reconnect the source");
   });
 
   it("says in German that no dashboard is assigned", () => {
