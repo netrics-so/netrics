@@ -46,6 +46,8 @@ export interface FakeAscTeam {
 }
 
 export interface FakeAscReview {
+  /** Apple's review id; default: the review's position in the list. */
+  id?: string;
   rating: number;
   /** ISO date-time with offset, as Apple returns it. */
   createdDate: string;
@@ -268,7 +270,7 @@ export function createFakeAsc(teams: FakeAscTeam[]): FakeAsc {
         return reply(200, {
           data: page.map((review, index) => ({
             type: "customerReviews",
-            id: `review-${reviews[1]}-${offset + index}`,
+            id: review.id ?? `review-${reviews[1]}-${offset + index}`,
             attributes: Object.fromEntries(
               Object.entries(review).filter(([field]) =>
                 fields.includes(field),

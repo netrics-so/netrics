@@ -281,6 +281,13 @@
       "when": 1791127280686,
       "tag": "0039_periods_to_date",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791128148742,
+      "tag": "0040_app_reviews",
+      "breakpoints": true
     }
   ]
 }

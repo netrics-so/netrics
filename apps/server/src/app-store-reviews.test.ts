@@ -52,7 +52,8 @@ import { createTestDatabase } from "./test-db.js";
 // 2) through the API: a Customer Support key is checked against Apple
 // before it is stored next to the Sales key in the same envelope, its own
 // tokens read the reviews, and a refused reviews key pauses only the
-// review metrics.
+// review metrics. Since #334 (ADR 0019 §11) the same pages bring the
+// newest reviews' text, stored in app_reviews only while the key is there.
 
 const ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const KEYRING = createCredentialKeyring(ENCRYPTION_KEY);
@@ -97,15 +98,28 @@ const REPORT = [
 const reviews: Record<string, FakeAscReview[]> = {
   [NOTES]: [
     {
+      id: "rv-1",
       rating: 5,
       createdDate: "2026-10-01T09:00:00-07:00",
       territory: "USA",
       title: "Synthetic title",
-      body: "Synthetic body text netrics must never store.",
+      body: "Synthetic body text that only the widget may show.",
       reviewerNickname: "synthetic-nickname",
     },
-    { rating: 2, createdDate: "2026-09-30T22:15:00-07:00", territory: "DEU" },
-    { rating: 4, createdDate: "2026-09-29T07:30:00-07:00", territory: "USA" },
+    {
+      id: "rv-2",
+      rating: 2,
+      createdDate: "2026-09-30T22:15:00-07:00",
+      territory: "DEU",
+      body: "Synthetic second body.",
+      reviewerNickname: "synthetic-second",
+    },
+    {
+      id: "rv-3",
+      rating: 4,
+      createdDate: "2026-09-29T07:30:00-07:00",
+      territory: "USA",
+    },
   ],
 };
 
@@ -158,7 +172,17 @@ const OTHER_TEAM_SUPPORT: FakeAscTeam = {
   vendorNumbers: ["86000001"],
   role: "customer-support",
 };
+// The same apps and vendor number under another issuer: a Sales key of
+// another team, which drops the reviews key on rotation.
+const OTHER_TEAM_SALES: FakeAscTeam = {
+  ...base,
+  issuerId: "1b2e3f4a-5b6c-4d7e-8f90-a1b2c3d4e5f6",
+  keyId: "0THERSALE1",
+  key: p256KeyPair(),
+  role: "sales",
+};
 const asc = createFakeAsc([
+  OTHER_TEAM_SALES,
   SALES_KEY,
   NEXT_SALES_KEY,
   SUPPORT_KEY,
@@ -177,10 +201,18 @@ function towardsFake(connector: Connector): Connector {
     check: (context, runtime) => connector.check(context, rewrite(runtime)),
     discover: (context, runtime) =>
       connector.discover(context, rewrite(runtime)),
-    sync: (context, request, runtime) =>
-      connector.sync(context, request, rewrite(runtime)),
+    sync: async (context, request, runtime) => {
+      const result = await connector.sync(context, request, rewrite(runtime));
+      if (request.cursor?.startsWith("reviews:")) {
+        await afterReviewsPage?.();
+      }
+      return result;
+    },
   };
 }
+
+/** Runs after a reviews page was read, before the host stores it. */
+let afterReviewsPage: (() => Promise<void>) | undefined;
 
 const connectorLogs: string[] = [];
 
@@ -405,6 +437,26 @@ function reviewRequests() {
   );
 }
 
+async function storedReviews() {
+  const rows = await admin`
+    select provider_review_id, resource_id, rating, title, body, author,
+      territory, hidden_at, workspace_id
+    from app_reviews where connection_id = ${connectionId}
+    order by created_at desc
+  `;
+  return rows.map((row) => ({ ...row }));
+}
+
+/** Review text and nicknames of the fixtures, which must stay out of sight. */
+const REVIEW_TEXT = [
+  "Synthetic title",
+  "Synthetic body",
+  "Synthetic second",
+  "Synthetic edited",
+  "synthetic-nickname",
+  "synthetic-second",
+];
+
 async function connectionState() {
   const [state] = await admin`
     select auth_state, auth_reason, cursor from connection_state
@@ -503,7 +555,7 @@ describe("adding a reviews key", () => {
     });
   });
 
-  it("syncs reviews with the reviews key's own tokens, and never their text", async () => {
+  it("syncs reviews with the reviews key's own tokens, their text only in app_reviews", async () => {
     const before = asc.requests.length;
     await runSync();
     const made = asc.requests.slice(before);
@@ -558,6 +610,125 @@ describe("adding a reviews key", () => {
     expect(text).not.toContain("Synthetic");
     expect(text).not.toContain("synthetic-nickname");
     expect((await connectionState()).auth_state).toBe("ok");
+
+    // The newest reviews with their text (ADR 0019 §11).
+    expect(await storedReviews()).toEqual([
+      {
+        provider_review_id: "rv-1",
+        resource_id: NOTES,
+        rating: 5,
+        title: "Synthetic title",
+        body: "Synthetic body text that only the widget may show.",
+        author: "synthetic-nickname",
+        territory: "US",
+        hidden_at: null,
+        workspace_id: workspaceId,
+      },
+      {
+        provider_review_id: "rv-2",
+        resource_id: NOTES,
+        rating: 2,
+        title: null,
+        body: "Synthetic second body.",
+        author: "synthetic-second",
+        territory: "DE",
+        hidden_at: null,
+        workspace_id: workspaceId,
+      },
+      {
+        provider_review_id: "rv-3",
+        resource_id: NOTES,
+        rating: 4,
+        title: null,
+        body: null,
+        author: null,
+        territory: "US",
+        hidden_at: null,
+        workspace_id: workspaceId,
+      },
+    ]);
+  });
+
+  it("follows an edited and a deleted review on the next sync", async () => {
+    const original = [...reviews[NOTES]!];
+    reviews[NOTES]!.splice(0, 2, {
+      ...original[0]!,
+      rating: 3,
+      body: "Synthetic edited body.",
+    });
+    try {
+      await runSync();
+      const stored = await storedReviews();
+      expect(stored.map((row) => row.provider_review_id)).toEqual([
+        "rv-1",
+        "rv-3",
+      ]);
+      expect(stored[0]).toMatchObject({
+        rating: 3,
+        body: "Synthetic edited body.",
+      });
+    } finally {
+      reviews[NOTES]!.splice(0, reviews[NOTES]!.length, ...original);
+    }
+    await runSync();
+    expect(
+      (await storedReviews()).map((row) => row.provider_review_id),
+    ).toEqual(["rv-1", "rv-2", "rv-3"]);
+  });
+
+  it("hides a review for every widget, audited without its text", async () => {
+    const hide = (path: string) => call("POST", `/connections/${path}/hide`);
+    expect((await hide(`${connectionId}/reviews/rv-2`)).statusCode).toBe(204);
+    // Hiding twice keeps the first time.
+    const [first] = await storedReviews().then((rows) =>
+      rows.filter((row) => row.provider_review_id === "rv-2"),
+    );
+    expect(first!.hidden_at).toBeInstanceOf(Date);
+    expect((await hide(`${connectionId}/reviews/rv-2`)).statusCode).toBe(204);
+    const [again] = await storedReviews().then((rows) =>
+      rows.filter((row) => row.provider_review_id === "rv-2"),
+    );
+    expect(again!.hidden_at).toEqual(first!.hidden_at);
+    // A sync that returns the review again keeps it hidden.
+    await runSync();
+    const [synced] = await storedReviews().then((rows) =>
+      rows.filter((row) => row.provider_review_id === "rv-2"),
+    );
+    expect(synced!.hidden_at).toEqual(first!.hidden_at);
+
+    const unknown = await hide(`${connectionId}/reviews/rv-404`);
+    expect(unknown.statusCode).toBe(404);
+    expect(errorResponseSchema.parse(unknown.json()).error).toBe(
+      "review_not_found",
+    );
+    expect((await hide("not-a-uuid/reviews/rv-2")).statusCode).toBe(404);
+
+    const [event] = await admin`
+      select target, metadata from audit_events
+      where action = 'review.hidden' order by created_at limit 1
+    `;
+    expect(event!.target).toBe(connectionId);
+    expect(event!.metadata).toEqual({ resource: NOTES, reviewId: "rv-2" });
+
+    // Another workspace of the same user cannot hide this connection's
+    // reviews: the connection is not found there.
+    const other = await app.inject({
+      method: "POST",
+      url: "/v1/workspaces",
+      headers: { cookie },
+      payload: { name: "Other" },
+    });
+    expect(other.statusCode).toBe(200);
+    const otherId = (other.json() as { workspace: { id: string } }).workspace
+      .id;
+    const cross = await app.inject({
+      method: "POST",
+      url: `/v1/workspaces/${otherId}/connections/${connectionId}/reviews/rv-1/hide`,
+      headers: { cookie },
+    });
+    expect(cross.statusCode).toBe(404);
+    const [rv1] = await storedReviews();
+    expect(rv1!.hidden_at).toBeNull();
   });
 
   it("pauses only the review metrics when the reviews key is revoked; sales keep syncing", async () => {
@@ -594,6 +765,8 @@ describe("adding a reviews key", () => {
       expect(paused.message).toBe(
         `${REVIEWS_PAUSED_PREFIX} ${REVIEWS_KEY_MISMATCH_MESSAGE}`,
       );
+      // A paused key is still configured: the stored text stays.
+      expect(await storedReviews()).toHaveLength(3);
 
       // A paused reviews key never blocks a config change of the connection.
       const config = await call("PATCH", `/connections/${connectionId}`, {
@@ -610,6 +783,7 @@ describe("adding a reviews key", () => {
       credentials: credentialsOf(NEXT_SALES_KEY),
     });
     expect(rotated.statusCode).toBe(200);
+    expect(await storedReviews()).toHaveLength(3);
     expect(await envelope()).toEqual({
       ...credentialsOf(NEXT_SALES_KEY),
       reviews: {
@@ -628,10 +802,14 @@ describe("adding a reviews key", () => {
     });
     expect((await status()).keyId).toBe(NEXT_SUPPORT_KEY.keyId);
 
+    expect(await storedReviews()).toHaveLength(3);
+
     const removed = await patchReviews(null);
     expect(removed.statusCode).toBe(200);
     expect(await envelope()).toEqual(credentialsOf(NEXT_SALES_KEY));
     expect((await status()).status).toBe("not_configured");
+    // Removing the key deletes the stored review text in the same commit.
+    expect(await storedReviews()).toEqual([]);
     expect((await credentialEvents()).slice(-2)).toEqual([
       {
         connectorId: CONNECTOR_ID,
@@ -639,8 +817,70 @@ describe("adding a reviews key", () => {
         change: "replaced",
         backfillRequested: true,
       },
-      { connectorId: CONNECTOR_ID, key: "reviews", change: "removed" },
+      {
+        connectorId: CONNECTOR_ID,
+        key: "reviews",
+        change: "removed",
+        reviewTextDeleted: 3,
+      },
     ]);
+    // Without the key, a sync stores no text.
+    await runSync();
+    expect(await storedReviews()).toEqual([]);
+  });
+
+  it("stores no text read with a reviews key removed during the sync", async () => {
+    expect((await patchReviews(reviewsKeyOf(SUPPORT_KEY))).statusCode).toBe(
+      200,
+    );
+    afterReviewsPage = async () => {
+      afterReviewsPage = undefined;
+      expect((await patchReviews(null)).statusCode).toBe(200);
+    };
+    try {
+      await runSync();
+    } finally {
+      afterReviewsPage = undefined;
+    }
+    expect((await envelope()).reviews).toBeUndefined();
+    expect(await storedReviews()).toEqual([]);
+  });
+
+  it("deletes the review text when a main key of another team drops the reviews key", async () => {
+    expect((await patchReviews(reviewsKeyOf(SUPPORT_KEY))).statusCode).toBe(
+      200,
+    );
+    await runSync();
+    expect(await storedReviews()).toHaveLength(3);
+    const rotated = await call("PATCH", `/connections/${connectionId}`, {
+      credentials: credentialsOf(OTHER_TEAM_SALES),
+    });
+    expect(rotated.statusCode).toBe(200);
+    expect((await envelope()).reviews).toBeUndefined();
+    expect(await storedReviews()).toEqual([]);
+    expect((await credentialEvents()).at(-1)).toEqual({
+      connectorId: CONNECTOR_ID,
+      reviewTextDeleted: 3,
+    });
+  });
+
+  it("puts no review text in any other table, response or log line", async () => {
+    const tables = await admin`
+      select table_name from information_schema.tables
+      where table_schema = 'public' and table_type = 'BASE TABLE'
+        and table_name <> 'app_reviews'
+    `;
+    const dump: string[] = [];
+    for (const { table_name: table } of tables) {
+      const rows = await admin.unsafe(
+        `select row_to_json(t)::text as row from "${String(table)}" t`,
+      );
+      dump.push(...rows.map((row) => String(row.row)));
+    }
+    const text = [...dump, ...bodies, ...logs, ...connectorLogs].join("\n");
+    for (const needle of REVIEW_TEXT) {
+      expect(text).not.toContain(needle);
+    }
   });
 
   it("puts no reviews key material in the database, the job queue, responses or logs", async () => {

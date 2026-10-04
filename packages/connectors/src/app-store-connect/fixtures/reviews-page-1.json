@@ -5,6 +5,9 @@
       "id": "00000000-0000-4000-8000-0000000a0001",
       "attributes": {
         "rating": 5,
+        "title": "Synthetic five stars",
+        "body": "Synthetic body of the newest review.",
+        "reviewerNickname": "synthetic-reviewer-one",
         "createdDate": "2026-10-01T09:12:00-07:00",
         "territory": "USA"
       },
@@ -17,6 +20,8 @@
       "id": "00000000-0000-4000-8000-0000000a0002",
       "attributes": {
         "rating": 4,
+        "body": "Synthetic body without a title.",
+        "reviewerNickname": "synthetic-reviewer-two",
         "createdDate": "2026-09-30T23:30:00-07:00",
         "territory": "DEU"
       },
@@ -38,8 +43,8 @@
     }
   ],
   "links": {
-    "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000001/customerReviews?sort=-createdDate&limit=200&fields%5BcustomerReviews%5D=rating%2CcreatedDate%2Cterritory",
-    "next": "https://api.appstoreconnect.apple.com/v1/apps/1000000001/customerReviews?cursor=Mw.AJ5kVmQ&sort=-createdDate&limit=200&fields%5BcustomerReviews%5D=rating%2CcreatedDate%2Cterritory"
+    "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000001/customerReviews?sort=-createdDate&limit=200&fields%5BcustomerReviews%5D=rating%2Ctitle%2Cbody%2CreviewerNickname%2CcreatedDate%2Cterritory",
+    "next": "https://api.appstoreconnect.apple.com/v1/apps/1000000001/customerReviews?cursor=Mw.AJ5kVmQ&sort=-createdDate&limit=200&fields%5BcustomerReviews%5D=rating%2Ctitle%2Cbody%2CreviewerNickname%2CcreatedDate%2Cterritory"
   },
   "meta": {
     "paging": {

@@ -51,6 +51,10 @@ export interface ConnectionRouteDeps {
 }
 
 const connectionParamsSchema = z.object({ connectionId: z.uuid() });
+const reviewParamsSchema = z.object({
+  connectionId: z.uuid(),
+  reviewId: z.string().min(1).max(200),
+});
 
 /** Sends the failure and returns null, or returns the value. */
 function unwrap<T>(result: Result<T>, reply: FastifyReply): T | null {
@@ -487,6 +491,42 @@ export function registerConnectionRoutes(
             return;
           }
           return enqueueSyncResponseSchema.parse({ jobId });
+        },
+      );
+
+      // "Hide this review" (ADR 0019 §11): a moderation action of the
+      // latest-review widget, so it needs dashboards:update. There is no
+      // list or export of reviews; they reach clients only as widget data.
+      scope.post(
+        "/workspaces/:workspaceId/connections/:connectionId/reviews/:reviewId/hide",
+        {
+          schema: routeSchema({
+            summary: "Hide a review from every widget",
+            tags: ["connections"],
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "dashboards:update")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = reviewParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "review_not_found");
+          }
+          const result = await connections.hideReview(
+            access,
+            params.data.connectionId,
+            params.data.reviewId,
+          );
+          if (!result.ok) {
+            return sendError(reply, result.status, result.error);
+          }
+          return reply.code(204).send();
         },
       );
 

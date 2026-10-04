@@ -61,6 +61,22 @@ export type {
   SecurityRetentionPolicy,
 } from "./security-retention.js";
 export {
+  APP_REVIEW_LIMITS,
+  APP_REVIEW_RETENTION,
+  AppReviewStoreError,
+  capAppReviewText,
+  deleteConnectionAppReviews,
+  hideAppReview,
+  ingestAppReviews,
+  pruneAppReviews,
+} from "./app-reviews.js";
+export type {
+  AppReviewInput,
+  AppReviewPruneResult,
+  AppReviewRetentionPolicy,
+  AppReviewWindow,
+} from "./app-reviews.js";
+export {
   AcceptInvitationFailure,
   acceptInvitation,
   createInvitation,

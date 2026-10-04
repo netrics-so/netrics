@@ -1,4 +1,8 @@
-import type { Observation } from "@netrics/connector-sdk";
+import type {
+  Observation,
+  ReviewWindow,
+  SyncReview,
+} from "@netrics/connector-sdk";
 import { z } from "zod";
 
 import {
@@ -25,11 +29,16 @@ import { territoryAlpha2 } from "./territories.js";
 //
 // `GET /v1/apps/{id}/customerReviews`
 // (https://developer.apple.com/documentation/appstoreconnectapi/get-v1-apps-_id_-customerreviews)
-// sorted by `-createdDate`, 200 per page, following `links.next`. Only
-// `rating`, `createdDate` and `territory` are requested: review titles,
-// bodies and reviewer nicknames are never fetched, so they cannot be
-// stored. The API has no aggregate store rating; these are counts and
-// rating sums of the reviews Apple returns.
+// sorted by `-createdDate`, 200 per page, following `links.next`. The API
+// has no aggregate store rating; the metrics are counts and rating sums of
+// the reviews Apple returns.
+//
+// Review text (ADR 0019 §11, amending ADR 0014 decision 2, #334): the same
+// pages also request the title, body and reviewer nickname. The newest
+// reviews of each app (at most REVIEW_TEXT_PER_APP, none older than
+// REVIEW_TEXT_DAYS) go to the host as `SyncResult.reviews`, with the span
+// read completely as a `reviewWindows` entry. Review text and nicknames are
+// personal data: they never appear in log lines or error messages here.
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PREFIX = "app_store_connect";
@@ -42,7 +51,24 @@ export const REVIEW_METRIC_KEYS = {
 } as const;
 
 /** The only review fields netrics asks Apple for. */
-export const REVIEW_FIELDS = "rating,createdDate,territory";
+export const REVIEW_FIELDS =
+  "rating,title,body,reviewerNickname,createdDate,territory";
+/** Reviews with text handed to the host per app and sync (its retention). */
+export const REVIEW_TEXT_PER_APP = 50;
+/** Reviews older than this are never handed to the host with text. */
+export const REVIEW_TEXT_DAYS = 90;
+/** Character caps of the stored text (the host cuts again on ingest). */
+export const REVIEW_TEXT_LIMITS = {
+  title: 300,
+  body: 4_000,
+  author: 100,
+} as const;
+/**
+ * The latest start of a Pacific day after its UTC midnight (PST, UTC−8): a
+ * review read for Pacific day D was created at or after D + 8 h at the
+ * latest, so a window starting there never claims an unread instant.
+ */
+const PACIFIC_DAY_START_MAX_MS = 8 * 60 * 60 * 1000;
 /** Reviews per page (Apple's maximum). */
 export const REVIEWS_PAGE_SIZE = 200;
 /**
@@ -86,6 +112,11 @@ const reviewsPageSchema = z.object({
             rating: z.number().int().min(1).max(5),
             createdDate: z.string(),
             territory: z.string().optional(),
+            // Text fields are taken only when they are strings; anything
+            // else is treated as absent instead of failing the page.
+            title: z.unknown().optional(),
+            body: z.unknown().optional(),
+            reviewerNickname: z.unknown().optional(),
           })
           .loose(),
       })
@@ -94,12 +125,32 @@ const reviewsPageSchema = z.object({
   links: z.object({ next: z.string().optional() }).loose().optional(),
 });
 
-/** One review as netrics keeps it: its Pacific day, rating and territory. */
+/** One review as read: its Pacific day, rating, territory and text. */
 export interface ReviewEntry {
   /** The Pacific-Time day of `createdDate`, as UTC midnight (ms). */
   day: number;
   rating: number;
+  /** Alpha-2, or UNKNOWN (for the territory metric). */
   territory: string;
+  /** Apple's review id. */
+  id?: string;
+  /** `createdDate` as epoch ms. */
+  createdMs?: number;
+  title?: string | null;
+  body?: string | null;
+  author?: string | null;
+}
+
+/**
+ * Text as stored: at most `max` characters (code points, as PostgreSQL's
+ * char_length counts them), surrounding whitespace trimmed, empty as null.
+ */
+export function capReviewText(value: unknown, max: number): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  const chars = Array.from(trimmed);
+  return chars.length > max ? chars.slice(0, max).join("").trimEnd() : trimmed;
 }
 
 export type AppReviewsResult =
@@ -178,6 +229,14 @@ export async function readAppReviews(
         day,
         rating: review.attributes.rating,
         territory: territoryAlpha2(review.attributes.territory) ?? UNKNOWN,
+        id: review.id,
+        createdMs: created,
+        title: capReviewText(review.attributes.title, REVIEW_TEXT_LIMITS.title),
+        body: capReviewText(review.attributes.body, REVIEW_TEXT_LIMITS.body),
+        author: capReviewText(
+          review.attributes.reviewerNickname,
+          REVIEW_TEXT_LIMITS.author,
+        ),
       });
     }
     // links.next carries every query parameter (and the page cursor).
@@ -356,6 +415,58 @@ export function reviewsWindow(
   };
 }
 
+/**
+ * The reviews with text of one app for the host (ADR 0019 §11): the newest
+ * REVIEW_TEXT_PER_APP created in the last REVIEW_TEXT_DAYS, inside the span
+ * the read covered completely, and that span as a review window. When more
+ * reviews qualify than are handed over, the window starts at the oldest one
+ * handed over, so the host never deletes a review it was not shown for a
+ * reason other than its absence at Apple (or its retention).
+ */
+export function reviewTextOf(
+  appId: string,
+  result: { reviews: readonly ReviewEntry[]; truncatedAt?: number },
+  options: { now: number; readFrom: number },
+): { reviews: SyncReview[]; window: ReviewWindow | null } {
+  const coveredFrom =
+    (result.truncatedAt !== undefined
+      ? result.truncatedAt + DAY_MS
+      : options.readFrom) + PACIFIC_DAY_START_MAX_MS;
+  const from = Math.max(coveredFrom, options.now - REVIEW_TEXT_DAYS * DAY_MS);
+  const eligible = result.reviews
+    .filter(
+      (review): review is ReviewEntry & { id: string; createdMs: number } =>
+        review.id !== undefined &&
+        review.createdMs !== undefined &&
+        review.createdMs >= from,
+    )
+    .sort((a, b) => b.createdMs - a.createdMs || a.id.localeCompare(b.id));
+  const kept = eligible.slice(0, REVIEW_TEXT_PER_APP);
+  const windowFrom =
+    eligible.length > REVIEW_TEXT_PER_APP ? kept.at(-1)!.createdMs : from;
+  const reviews = kept.map((review): SyncReview => ({
+    id: review.id,
+    resource: appId,
+    rating: review.rating,
+    title: review.title ?? null,
+    body: review.body ?? null,
+    author: review.author ?? null,
+    territory: review.territory === UNKNOWN ? null : review.territory,
+    createdAt: new Date(review.createdMs).toISOString(),
+  }));
+  return {
+    reviews,
+    window:
+      windowFrom < options.now
+        ? {
+            resource: appId,
+            from: new Date(windowFrom).toISOString(),
+            to: new Date(options.now).toISOString(),
+          }
+        : null,
+  };
+}
+
 function isRateLimited(error: unknown): boolean {
   return (
     error instanceof AppStoreConnectRateBudgetError ||
@@ -378,9 +489,22 @@ export async function syncReviewApps(
     maxDays: number;
     log: (message: string) => void;
   },
-): Promise<{ observations: Observation[]; stop: boolean }> {
+): Promise<{
+  observations: Observation[];
+  reviews: SyncReview[];
+  reviewWindows: ReviewWindow[];
+  stop: boolean;
+}> {
   const window = reviewsWindow(options.from, options.now, options.maxDays);
   const observations: Observation[] = [];
+  const reviews: SyncReview[] = [];
+  const reviewWindows: ReviewWindow[] = [];
+  const done = (stop: boolean) => ({
+    observations,
+    reviews,
+    reviewWindows,
+    stop,
+  });
   for (const appId of appIds) {
     let result: AppReviewsResult;
     try {
@@ -390,7 +514,7 @@ export async function syncReviewApps(
         options.log(
           "App Store reviews postponed: the reviews key's hourly request budget is used up",
         );
-        return { observations, stop: true };
+        return done(true);
       }
       const message =
         error instanceof AppStoreConnectApiError
@@ -407,7 +531,7 @@ export async function syncReviewApps(
       options.log(
         `${REVIEWS_PAUSED_MESSAGE} (HTTP ${result.httpStatus} for app ${appId})`,
       );
-      return { observations, stop: true };
+      return done(true);
     }
     let emitFrom = window.emitFrom;
     if (result.truncatedAt !== undefined) {
@@ -428,8 +552,14 @@ export async function syncReviewApps(
         emitTo: window.emitTo,
       }),
     );
+    const text = reviewTextOf(appId, result, {
+      now: options.now,
+      readFrom: window.readFrom,
+    });
+    reviews.push(...text.reviews);
+    if (text.window) reviewWindows.push(text.window);
   }
-  return { observations, stop: false };
+  return done(false);
 }
 
 // ─── Probes of a candidate reviews key (run by the host before storing) ────

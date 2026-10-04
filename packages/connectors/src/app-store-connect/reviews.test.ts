@@ -15,13 +15,17 @@ import {
   REVIEWS_ROLE_MESSAGE,
   REVIEW_FIELDS,
   REVIEW_METRIC_KEYS,
+  REVIEW_TEXT_LIMITS,
+  REVIEW_TEXT_PER_APP,
   appStoreConnectManifest,
+  capReviewText,
   createAppStoreConnectClient,
   createAppStoreConnectConnector,
   probeCustomerReviews,
   probeReviewsKeyNotAdmin,
   readAppReviews,
   reviewObservations,
+  reviewTextOf,
   reviewsProbeApp,
   reviewsWindow,
   territoryAlpha2,
@@ -125,7 +129,12 @@ async function runAll(
     expect(result.nextCursor).not.toBe(cursor);
     cursor = result.nextCursor;
   }
-  return { pages, observations: pages.flatMap((page) => page.observations) };
+  return {
+    pages,
+    observations: pages.flatMap((page) => page.observations),
+    reviews: pages.flatMap((page) => page.reviews ?? []),
+    reviewWindows: pages.flatMap((page) => page.reviewWindows ?? []),
+  };
 }
 
 const reviewKeys = new Set<string>(Object.values(REVIEW_METRIC_KEYS));
@@ -238,8 +247,9 @@ describe("reviews sync", () => {
         `Bearer ${reviews ? REVIEWS_TOKEN : TOKEN}`,
       );
     }
-    // Newest first, Apple's maximum page size, only rating, date and
-    // territory; the second page through links.next.
+    // Newest first, Apple's maximum page size, the rating, date and
+    // territory plus the text (ADR 0019 §11); the second page through
+    // links.next.
     const [first, second] = reviewRequests(api).filter((entry) =>
       entry.url.pathname.includes(APP),
     );
@@ -248,7 +258,9 @@ describe("reviews sync", () => {
     expect(first!.url.searchParams.get("fields[customerReviews]")).toBe(
       REVIEW_FIELDS,
     );
-    expect(REVIEW_FIELDS).toBe("rating,createdDate,territory");
+    expect(REVIEW_FIELDS).toBe(
+      "rating,title,body,reviewerNickname,createdDate,territory",
+    );
     expect(second!.url.searchParams.get("cursor")).toBe("Mw.AJ5kVmQ");
 
     const rows = reviewRows(observations);
@@ -314,11 +326,96 @@ describe("reviews sync", () => {
     ]);
   });
 
-  it("never keeps review text or nicknames", async () => {
-    const { observations } = await runAll(fake());
-    const text = JSON.stringify(observations);
-    expect(text).not.toContain("Synthetic review");
-    expect(text).not.toContain("synthetic-reviewer");
+  it("keeps review text and nicknames out of observations and log lines", async () => {
+    const log: string[] = [];
+    const { observations, reviews } = await runAll(fake(), { log });
+    expect(reviews.length).toBeGreaterThan(0);
+    for (const text of [JSON.stringify(observations), log.join("\n")]) {
+      expect(text).not.toContain("Synthetic");
+      expect(text).not.toContain("synthetic-reviewer");
+    }
+  });
+
+  it("hands the host the reviews with text and the span read completely", async () => {
+    const { reviews, reviewWindows } = await runAll(fake());
+    expect(reviews).toEqual([
+      {
+        id: "00000000-0000-4000-8000-0000000a0001",
+        resource: APP,
+        rating: 5,
+        title: "Synthetic five stars",
+        body: "Synthetic body of the newest review.",
+        author: "synthetic-reviewer-one",
+        territory: "US",
+        createdAt: "2026-10-01T16:12:00.000Z",
+      },
+      {
+        id: "00000000-0000-4000-8000-0000000a0002",
+        resource: APP,
+        rating: 4,
+        title: null,
+        body: "Synthetic body without a title.",
+        author: "synthetic-reviewer-two",
+        territory: "DE",
+        createdAt: "2026-10-01T06:30:00.000Z",
+      },
+      {
+        id: "00000000-0000-4000-8000-0000000a0003",
+        resource: APP,
+        rating: 1,
+        title: null,
+        body: null,
+        author: null,
+        territory: "US",
+        createdAt: "2026-09-30T15:00:00.000Z",
+      },
+      {
+        id: "00000000-0000-4000-8000-0000000a0004",
+        resource: APP,
+        rating: 3,
+        title: "Synthetic review title",
+        body: "Synthetic review body that netrics must never store.",
+        author: "synthetic-reviewer",
+        territory: "GB",
+        createdAt: "2026-09-28T19:00:00.000Z",
+      },
+    ]);
+    // Incremental: read back to Sept 1 (Pacific), so the window starts
+    // there at the latest Pacific day start; one per app, the quiet one too.
+    expect(reviewWindows).toEqual([
+      {
+        resource: APP,
+        from: "2026-09-01T08:00:00.000Z",
+        to: new Date(NOW).toISOString(),
+      },
+      {
+        resource: QUIET_APP,
+        from: "2026-09-01T08:00:00.000Z",
+        to: new Date(NOW).toISOString(),
+      },
+    ]);
+  });
+
+  it("hands over text from the last 90 days only on a backfill", async () => {
+    const { reviews, reviewWindows } = await runAll(fake(), {
+      extra: {
+        mode: "backfill",
+        from: new Date(NOW - 365 * DAY_MS).toISOString(),
+      },
+    });
+    // Aug 15 is 47 days back: inside the 90 days.
+    expect(reviews.map((review) => review.id.slice(-2))).toEqual([
+      "01",
+      "02",
+      "03",
+      "04",
+      "05",
+    ]);
+    expect(reviewWindows[0]).toEqual({
+      resource: APP,
+      from: new Date(NOW - 90 * DAY_MS).toISOString(),
+      to: new Date(NOW).toISOString(),
+    });
   });
 
   it("reads the backfill window back to a year", async () => {
@@ -442,9 +539,24 @@ describe("reading one app", () => {
       status: "read",
       unreadable: 0,
       reviews: [
-        { day: Date.parse("2026-10-01T00:00:00Z"), rating: 5, territory: "US" },
-        { day: Date.parse("2026-09-30T00:00:00Z"), rating: 4, territory: "DE" },
-        { day: Date.parse("2026-09-30T00:00:00Z"), rating: 1, territory: "US" },
+        expect.objectContaining({
+          day: Date.parse("2026-10-01T00:00:00Z"),
+          rating: 5,
+          territory: "US",
+          title: "Synthetic five stars",
+        }),
+        expect.objectContaining({
+          day: Date.parse("2026-09-30T00:00:00Z"),
+          rating: 4,
+          territory: "DE",
+          title: null,
+        }),
+        expect.objectContaining({
+          day: Date.parse("2026-09-30T00:00:00Z"),
+          rating: 1,
+          territory: "US",
+          body: null,
+        }),
       ],
     });
     // The second page holds the first older review; nothing after it.
@@ -464,6 +576,83 @@ describe("reading one app", () => {
       truncatedAt: Date.parse("2026-09-30T00:00:00Z"),
     });
     expect(MAX_REVIEW_PAGES).toBe(15);
+  });
+});
+
+describe("review text", () => {
+  const hour = 60 * 60 * 1000;
+  const entry = (index: number, createdMs: number): ReviewEntry => ({
+    day: 0,
+    rating: 1 + (index % 5),
+    territory: "US",
+    id: `review-${String(index).padStart(3, "0")}`,
+    createdMs,
+    title: `Title ${index}`,
+    body: null,
+    author: null,
+  });
+
+  it("hands over the newest 50 of an app, the window starting at the oldest of them", () => {
+    const reviews = Array.from({ length: 60 }, (_, index) =>
+      entry(index, NOW - (index + 1) * hour),
+    );
+    const text = reviewTextOf(
+      APP,
+      { reviews },
+      { now: NOW, readFrom: NOW - 30 * DAY_MS },
+    );
+    expect(text.reviews).toHaveLength(REVIEW_TEXT_PER_APP);
+    expect(text.reviews[0]!.id).toBe("review-000");
+    expect(text.reviews.at(-1)!.id).toBe("review-049");
+    expect(text.window).toEqual({
+      resource: APP,
+      from: new Date(NOW - 50 * hour).toISOString(),
+      to: new Date(NOW).toISOString(),
+    });
+  });
+
+  it("starts the window after a truncated read's incomplete day", () => {
+    const truncatedAt = Date.parse("2026-09-20T00:00:00Z");
+    const text = reviewTextOf(
+      APP,
+      {
+        reviews: [entry(1, NOW - hour), entry(2, truncatedAt + 2 * hour)],
+        truncatedAt,
+      },
+      { now: NOW, readFrom: Date.parse("2026-09-01T00:00:00Z") },
+    );
+    expect(text.window!.from).toBe("2026-09-21T08:00:00.000Z");
+    expect(text.reviews.map((review) => review.id)).toEqual(["review-001"]);
+  });
+
+  it("leaves out reviews without an id or a creation time, and unknown territories", () => {
+    const text = reviewTextOf(
+      APP,
+      {
+        reviews: [
+          { day: 0, rating: 3, territory: "Unknown", id: "a", createdMs: NOW },
+          { day: 0, rating: 3, territory: "US" },
+        ],
+      },
+      { now: NOW + hour, readFrom: NOW - DAY_MS },
+    );
+    expect(text.reviews).toEqual([
+      expect.objectContaining({ id: "a", territory: null, title: null }),
+    ]);
+  });
+
+  it("cuts text at the caps in characters, never inside a character", () => {
+    expect(capReviewText("  Hi  ", 300)).toBe("Hi");
+    expect(capReviewText("   ", 300)).toBeNull();
+    expect(capReviewText(42, 300)).toBeNull();
+    expect(capReviewText(null, 300)).toBeNull();
+    const emoji = "😀".repeat(REVIEW_TEXT_LIMITS.title + 5);
+    const cut = capReviewText(emoji, REVIEW_TEXT_LIMITS.title)!;
+    expect(Array.from(cut)).toHaveLength(REVIEW_TEXT_LIMITS.title);
+    expect(cut.endsWith("😀")).toBe(true);
+    expect(
+      Array.from(capReviewText("x".repeat(5000), REVIEW_TEXT_LIMITS.body)!),
+    ).toHaveLength(4_000);
   });
 });
 

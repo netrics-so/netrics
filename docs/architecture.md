@@ -313,16 +313,17 @@ The testing kit (`@netrics/connector-sdk/testing`) builds fixture responses:
 SDK versions are additive within 0.2: a connector that declares `^0.2.0`
 keeps loading on every 0.2.x runtime.
 
-| SDK   | Adds                                                             |
-| ----- | ---------------------------------------------------------------- |
-| 0.2.0 | The contract above; `token` and `none` auth strategies           |
-| 0.2.1 | The `oauth2` auth strategy (ADR 0012)                            |
-| 0.2.2 | The `signed-key` auth strategy and `bytes()` (ADR 0014)          |
-| 0.2.3 | The `currency_minor` unit with a `currency` dimension (ADR 0014) |
-| 0.2.4 | `resourceNoun`: what the connector calls its resources (#208)    |
-| 0.2.5 | Optional `resourceIcons` capability (resource icons, #226)       |
-| 0.2.6 | Optional `translations` of the manifest's texts (ADR 0016, #257) |
-| 0.2.7 | Optional `category` and `brandColor` for the catalogue (#306)    |
+| SDK   | Adds                                                              |
+| ----- | ----------------------------------------------------------------- |
+| 0.2.0 | The contract above; `token` and `none` auth strategies            |
+| 0.2.1 | The `oauth2` auth strategy (ADR 0012)                             |
+| 0.2.2 | The `signed-key` auth strategy and `bytes()` (ADR 0014)           |
+| 0.2.3 | The `currency_minor` unit with a `currency` dimension (ADR 0014)  |
+| 0.2.4 | `resourceNoun`: what the connector calls its resources (#208)     |
+| 0.2.5 | Optional `resourceIcons` capability (resource icons, #226)        |
+| 0.2.6 | Optional `translations` of the manifest's texts (ADR 0016, #257)  |
+| 0.2.7 | Optional `category` and `brandColor` for the catalogue (#306)     |
+| 0.2.8 | Optional `reviews` and `reviewWindows` in `SyncResult` (ADR 0019) |
 
 ### Connector translations
 
@@ -515,6 +516,16 @@ configuration; the same hourly maintenance applies it through the owner-role
 | Sign-in sessions                              | Until 24 hours after expiry; IP and browser cleared 12 months after sign-in |
 | Auth rate-limit counters (keyed by client IP) | 24 hours after the last request                                             |
 | Device pairings (hashed client IP)            | 24 hours after expiry                                                       |
+
+App Store review text (ADR 0019 §11) holds reviewer nicknames and text
+customers wrote. Its retention is fixed in code as well
+(`APP_REVIEW_RETENTION` in `packages/database/src/app-reviews.ts`) and
+applied by the same hourly maintenance through the owner-role
+`prune_app_reviews` function:
+
+| Data                                                         | Kept                                                                                                                     |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| App Store review text (`app_reviews`: nickname, title, text) | Newest 50 per connection and app, none older than 90 days; deleted with the reviews key, the connection or the workspace |
 
 Process logs go to stdout and are not stored in the database; their retention
 is set where they are collected (the hosting platform, or a self-hoster's log

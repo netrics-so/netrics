@@ -399,4 +399,40 @@ describe("createScheduler loop", () => {
       await admin.end({ timeout: 5 }).catch(() => undefined);
     }
   });
+
+  it("prunes review text older than 90 days by its clock (ADR 0019 §11)", async () => {
+    const now = new Date("2031-03-15T12:00:00.000Z");
+    const admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+    try {
+      await admin`
+        insert into app_reviews (connection_id, workspace_id,
+          provider_review_id, resource_id, rating, body, created_at)
+        values
+          (${connFuture!}, ${workspaceId}, 'old', '1', 4, 'Old text',
+           '2030-12-01T00:00:00Z'),
+          (${connFuture!}, ${workspaceId}, 'recent', '1', 4, 'Recent text',
+           '2031-03-01T00:00:00Z')`;
+      const scheduler = createScheduler({
+        schedulerDb,
+        pollMs: 50,
+        schedulerId: "scheduler-review-prune-test",
+        now: () => now,
+      });
+      scheduler.start();
+      try {
+        await waitFor(async () => {
+          const rows = await admin`
+            select 1 from app_reviews where provider_review_id = 'old'`;
+          return rows.length === 0;
+        });
+      } finally {
+        await scheduler.stop();
+      }
+      const kept = await admin`
+        select 1 from app_reviews where provider_review_id = 'recent'`;
+      expect(kept).toHaveLength(1);
+    } finally {
+      await admin.end({ timeout: 5 }).catch(() => undefined);
+    }
+  });
 });

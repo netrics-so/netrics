@@ -277,9 +277,10 @@ days with the next sync.
 
 **Replace or remove.** **Replace reviews key** checks and stores a new key
 the same way, then reminds you to revoke the old one; **Remove reviews key**
-deletes it (review metrics stop updating, the data already read stays).
-Rotating the Sales key keeps the reviews key when the new Sales key is of
-the same team; a Sales key of another team drops it.
+deletes it together with the stored review text (review metrics stop
+updating; the counts already read stay). Rotating the Sales key keeps the
+reviews key when the new Sales key is of the same team; a Sales key of
+another team drops it, and its review text with it.
 
 **Paused.** If Apple refuses the reviews key during a sync (it was revoked,
 or its role changed), only the review metrics pause. The connection stays
@@ -288,10 +289,28 @@ reviews paused — upload a new reviews key".
 
 ### What is read and kept
 
-- Reviews are read newest first (`sort=-createdDate`, 200 per page), and
-  only `rating`, `createdDate` and `territory` are requested. **Review
-  titles, texts and reviewer nicknames are never fetched or stored**; only
-  counts and star sums are kept.
+- Reviews are read newest first (`sort=-createdDate`, 200 per page) with
+  `fields[customerReviews]=rating,title,body,reviewerNickname,createdDate,territory`.
+  The metrics below keep counts and star sums only.
+- **Review text** (ADR 0019 §11, amending ADR 0014 decision 2): for the
+  latest-review widget, netrics also keeps the **title, text, reviewer
+  nickname, rating, country and creation time** of each app's newest
+  reviews, in their own table (`app_reviews`), never in the metrics. Per
+  app it keeps at most the **newest 50** and **none older than 90 days**;
+  the hourly maintenance deletes the rest, and a backfill stores text only
+  inside that window (older history stays counts). Titles are cut at 300
+  characters, texts at 4,000 and nicknames at 100. The API has no app
+  version per review, so none is stored.
+- Each sync reads the reviews of at least the last 7 days again; a review
+  edited at Apple gets its new rating and text, and one Apple no longer
+  returns inside the span read is deleted.
+- Review text is kept only while a reviews key is stored: removing the key,
+  deleting the connection or deleting the workspace deletes it. It never
+  appears in log lines, error messages or sync history, there is no API to
+  list or export it, and it reaches clients only as the latest-review
+  widget's data. **Hide this review** on that widget (it needs the right to
+  edit dashboards; audited as `review.hidden`, without the text) keeps a
+  review off every widget.
 - A review counts on the **Pacific Time** day of its creation date, like
   sales.
 - Each sync reads at least the last 7 days again (from the start of that
@@ -314,6 +333,19 @@ reviews paused — upload a new reviews key".
 
 Territories are ISO alpha-2 codes, like the sales report's (Apple's reviews
 API uses alpha-3 codes; netrics maps them).
+
+### Personal data in review text
+
+A reviewer's nickname is personal data, and review text is content its
+author wrote. For the hosted service, the privacy policy and the data
+processing agreement (#164) list this processing category:
+
+| Category                                                                                       | Source                                                    | Kept                                                                                      |
+| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| App Store customer reviews (nickname, title, text, rating, country) of the customer's own apps | Apple, App Store Connect API (the customer's reviews key) | Newest 50 per app, at most 90 days; deleted with the reviews key, connection or workspace |
+
+Self-hosters who show review text on their walls process the same data
+under their own policies.
 
 ## Currencies
 

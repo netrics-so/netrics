@@ -29,7 +29,7 @@
     }
   ],
   "links": {
-    "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000001/customerReviews?cursor=Mw.AJ5kVmQ&sort=-createdDate&limit=200&fields%5BcustomerReviews%5D=rating%2CcreatedDate%2Cterritory"
+    "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000001/customerReviews?cursor=Mw.AJ5kVmQ&sort=-createdDate&limit=200&fields%5BcustomerReviews%5D=rating%2Ctitle%2Cbody%2CreviewerNickname%2CcreatedDate%2Cterritory"
   },
   "meta": {
     "paging": {
