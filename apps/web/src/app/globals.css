@@ -2028,6 +2028,10 @@ a.health-badge:hover {
   color: #e3b341;
 }
 
+.studio-state--attention {
+  color: #e3b341;
+}
+
 .studio-actions {
   margin: 0;
 }

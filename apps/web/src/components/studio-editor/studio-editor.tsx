@@ -48,6 +48,7 @@ import {
   useWidgetClipboard,
 } from "./canvas-extras";
 import { EditorCanvas, type CanvasOutline } from "./editor-canvas";
+import { FormatAttention } from "./format-attention";
 import { useResourceIcons, type PickableImage } from "./image-picker";
 import {
   DashboardSettingsPanel,
@@ -113,6 +114,8 @@ export function StudioEditor({
   const [state, dispatch] = useReducer(reducer, dashboard, (initial) =>
     initialStudioState(initial, locale),
   );
+  // Readability per format of the saved version (ADR 0017 §6, #280).
+  const [savedSlides, setSavedSlides] = useState(dashboard.slides);
   const [images, setImages] = useState(initialImages);
   const [devices, setDevices] = useState(initialDevices);
   const [saving, setSaving] = useState(false);
@@ -280,6 +283,7 @@ export function StudioEditor({
         toReplaceRequest(state),
       );
       dispatch({ type: "saved", dashboard: saved });
+      setSavedSlides(saved.slides);
       setShowProblems(false);
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === "version_conflict") {
@@ -300,6 +304,7 @@ export function StudioEditor({
         state.dashboardId,
       );
       dispatch({ type: "reload", dashboard: current });
+      setSavedSlides(current.slides);
       setConflict(false);
       setError(null);
     } catch (cause) {
@@ -369,6 +374,7 @@ export function StudioEditor({
           >
             {saving ? common("saving") : dirty ? t("unsaved") : t("saved")}
           </span>
+          {dirty ? null : <FormatAttention slides={savedSlides} />}
         </div>
         <div className="actions studio-actions">
           <button

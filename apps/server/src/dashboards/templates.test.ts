@@ -19,6 +19,8 @@ import {
   labelFits,
   localizedMetric,
   localizedResourceNoun,
+  SCREEN_FORMAT_KEYS,
+  slideFormatWarnings,
   slideLayoutProblem,
   tileLabel,
   type Locale,
@@ -112,6 +114,7 @@ function autoLabel(
 function expectValid(
   template: TemplateDashboard | null,
   locale: Locale = "en",
+  options: { nameFitsHeader?: boolean } = {},
 ) {
   expect(template).not.toBeNull();
   const parsed = createDashboardRequestSchema.parse(template);
@@ -146,7 +149,68 @@ function expectValid(
       }
     }
   }
+  expectNoFormatWarnings(parsed, locale, options.nameFitsHeader ?? true);
   return parsed;
+}
+
+/**
+ * ADR 0017 section 6: a template produces no readability warnings in any
+ * format (labels, text, header), at font scale 1 and 1.3, with and without
+ * a logo. Continuation pages in narrow formats are information, not a
+ * warning: auto reflow never truncates.
+ */
+function expectNoFormatWarnings(
+  parsed: ReturnType<typeof createDashboardRequestSchema.parse>,
+  locale: Locale,
+  nameFitsHeader: boolean,
+) {
+  for (const slide of parsed.slides!) {
+    const widgets = slide.widgets.map((widget, index) => ({
+      id: `w${index}`,
+      type: widget.type,
+      x: widget.x,
+      y: widget.y,
+      w: widget.w,
+      h: widget.h,
+      label:
+        widget.type === "metric" ||
+        widget.type === "line" ||
+        widget.type === "bar"
+          ? (widget.title ?? autoLabel(widget, locale))
+          : null,
+      text: widget.type === "text" ? widget.text : null,
+      textSize: widget.type === "text" ? widget.options.size : null,
+    }));
+    for (const fontScale of [1, 1.3]) {
+      const warnings = slideFormatWarnings(
+        { name: slide.name ?? null, widgets, layouts: {} },
+        {
+          primaryFormat: "16x9",
+          fontScale,
+          showHeader: parsed.settings?.showHeader ?? true,
+          dashboardName: parsed.name,
+          logoAspect: parsed.settings?.logoImageId ? 1 : null,
+        },
+      );
+      const attention = warnings
+        .filter((warning) => warning.severity === "attention")
+        .map((warning) => `${warning.format} ${warning.code}`);
+      expect(
+        attention,
+        `"${parsed.name}" / "${slide.name}" at ${fontScale}`,
+      ).toEqual(
+        nameFitsHeader
+          ? []
+          : SCREEN_FORMAT_KEYS.map((format) => `${format} header_name_cut`),
+      );
+      expect(
+        warnings.every(
+          (warning) =>
+            warning.severity === "attention" || warning.code === "continues",
+        ),
+      ).toBe(true);
+    }
+  }
 }
 
 function titles(template: { slides?: TemplateDashboard["slides"] }) {
@@ -360,6 +424,9 @@ describe("Brand template", () => {
         logoImageId: null,
         accentColor: null,
       }),
+      "en",
+      // 100 capitals are too long for any header: the Studio warns.
+      { nameFitsHeader: false },
     );
     expect(template.name.length).toBe(100);
   });

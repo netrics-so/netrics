@@ -1,4 +1,5 @@
 import {
+  STUDIO_LINE_HEIGHT,
   STUDIO_REFERENCE_CANVAS,
   STUDIO_SPACING,
   STUDIO_TEXT_MINIMUMS,
@@ -20,7 +21,7 @@ import {
 // variable (--u: canvas height / 1080), so 720p, 1080p and 4K read alike.
 
 /** Line height of titles, labels and small text. */
-export const LINE_HEIGHT = 1.15;
+export const LINE_HEIGHT = STUDIO_LINE_HEIGHT;
 /** Line height of a value or the clock: tight, figures have no descenders. */
 export const VALUE_LINE_HEIGHT = 1;
 /** Space between the parts of a widget, in units. */

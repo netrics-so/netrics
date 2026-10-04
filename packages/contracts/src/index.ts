@@ -8,6 +8,7 @@ import {
   PERIODS,
   BACKGROUND_DIM,
   CUSTOM_LAYOUT_MAX_PAGES,
+  FORMAT_WARNING_CODES,
   SCREEN_FORMAT_KEYS,
   SCREEN_FORMAT_MAX_GRID,
   SLIDE_SECONDS,
@@ -1560,15 +1561,27 @@ export const slideLayoutInputSchema = z.object({
 export type SlideLayoutInput = z.input<typeof slideLayoutInputSchema>;
 
 /**
- * A readability warning of a slide in a format (ADR 0017 section 6).
- * Read-only; filled by the readability checks (#280), empty until then.
+ * A readability warning of a slide in a format (ADR 0017 section 6),
+ * computed on every read for every format, auto or custom: label_cut (a
+ * data widget's title or resource line needs more than two lines),
+ * text_cut (a text widget's text does not fit even at body size),
+ * continues (the slide takes `pages` pages), widget_hidden,
+ * widget_to_review (placed automatically in a custom layout),
+ * widget_too_small (a custom placement below the minimum) and
+ * header_name_cut (the dashboard name does not fit the header). Read-only.
  */
 export const formatWarningSchema = z.object({
   format: screenFormatSchema,
-  /** What is wrong, e.g. a label that does not fit. */
-  code: z.string(),
-  /** The widget concerned, or null for the slide (e.g. its header). */
+  code: z.enum(FORMAT_WARNING_CODES),
+  /**
+   * attention: cut off, too small or to review (the Studio counts the
+   * formats with any); info: continuation pages and hidden widgets.
+   */
+  severity: z.enum(["attention", "info"]),
+  /** The widget concerned, or null for the slide (pages, header). */
   widgetId: z.uuid().nullable(),
+  /** continues: the number of pages; else null. */
+  pages: z.number().int().min(2).nullable(),
 });
 export type FormatWarning = z.infer<typeof formatWarningSchema>;
 
@@ -1795,7 +1808,11 @@ export const dashboardSlideSchema = z.object({
   widgets: z.array(dashboardWidgetSchema),
   /** Custom layouts by format; formats not listed (and the primary) are auto. */
   layouts: z.array(slideLayoutSchema),
-  /** Readability warnings per format (#280). Read-only. */
+  /**
+   * Readability warnings per format, every format in turn (widest first),
+   * then the slide's and its widgets' in reading order (ADR 0017 §6).
+   * Read-only; ignored on PUT.
+   */
   formatWarnings: z.array(formatWarningSchema),
 });
 export type DashboardSlide = z.infer<typeof dashboardSlideSchema>;

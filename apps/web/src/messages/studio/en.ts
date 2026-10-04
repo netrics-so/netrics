@@ -267,6 +267,10 @@ export const studioEn = {
       textCut: "The text is cut off on TVs. Shorten the text.",
       labelWarning:
         "On a TV this label needs {lines} lines at this width and would be cut (at most {max}). Shorten the title or make the widget wider.",
+      formatsAttention:
+        "{count, plural, one {# format needs attention} other {# formats need attention}}",
+      formatsAttentionTitle:
+        "As saved, in {formats}: a label or text is cut off, the name does not fit the header, or widgets wait for review.",
     },
     document: {
       noSpace: "There is no free space on this slide for it.",
