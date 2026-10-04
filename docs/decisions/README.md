@@ -23,4 +23,4 @@ product is built.
 | [0016](./0016-internationalisation.md)              | Internationalisation: typed catalogs, no locale in URLs      |
 | [0017](./0017-screen-formats-and-display-modes.md)  | Screen formats, adaptive layouts and display modes           |
 | [0018](./0018-signal-design.md)                     | Signal: the netrics visual identity                          |
-| [0019](./0019-signal-widget-types.md)               | TV widget types: goal, table, status board, countdown        |
+| [0019](./0019-signal-widget-types.md)               | Widget types, goals, new periods and review text             |
