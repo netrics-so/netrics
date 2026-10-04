@@ -47,6 +47,13 @@ struct WidgetView: View {
                     now: context.date)
             }
             .surface(env, state: SurfaceState(data.status))
+        case .status(let options, let data):
+            TimelineView(.everyMinute) { context in
+                StatusWidgetView(
+                    label: widget.label ?? "", placement: placement, options: options, data: data, env: env,
+                    now: context.date)
+            }
+            .surface(env, state: SurfaceState(data.status))
         case .image(_, let options):
             ImageWidgetView(stored: image, options: options, label: widget.label, env: env)
         case .text(let text, let options):
@@ -853,6 +860,121 @@ struct TableRowView: View {
         }
         .frame(height: env.pt(sizes.cell * 1.15))
         .padding(.top, env.pt(StudioLayout.TableSpacing.rowGap))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: Status board
+
+/**
+ * The status board (ADR 0019 section 7, design 4a "Sources"; web:
+ * `StatusWidgetView`): one row per source with a health dot (`up`,
+ * `warning`, `muted`, `down`, with a soft glow), the name (shrunk to 24 u,
+ * then cut) and the age of its last successful sync (`warning` when stale),
+ * attention first as sent; "+N more" when they do not fit, and the footer
+ * "4 connected · 1 failing · 1 delayed". Rows rise on slide enter.
+ */
+struct StatusWidgetView: View {
+    let label: String
+    let placement: ScreenPlacement
+    let options: StatusWidgetOptions
+    let data: StatusWidgetData
+    let env: WidgetEnv
+    var now = Date()
+
+    @Environment(\.enterProgress) private var progressValue
+
+    var body: some View {
+        let language = env.language
+        let box = StudioRender.contentBox(placement.cells, showHeader: env.showHeader, unitBox: placement.unitBox)
+        let sizes = StudioLayout.typeScale(
+            .status, placement: placement.cells, fontScale: env.fontScale, showHeader: env.showHeader)
+        let labelLayout = StudioRender.labelLayout(label, width: box.width, sizes: sizes)
+        let layout = StudioLayout.statusLayout(
+            label: label, width: box.width, height: box.height, fontScale: env.fontScale, showAge: options.showAge)
+        let rows = StatusBoard.rows(data.items, capacity: layout.rowCapacity)
+        let rise = env.pt(EnterMotion.rowRise)
+
+        VStack(alignment: .leading, spacing: 0) {
+            WidgetLabelView(layout: labelLayout, env: env)
+            if data.items.isEmpty {
+                Text(KitStrings.text(.statusEmpty, language))
+                    .font(env.font(layout.sizes.cell))
+                    .foregroundStyle(env.colors.muted)
+                    .padding(.top, env.pt(StudioLayout.StatusSpacing.rowGap))
+            } else {
+                ForEach(Array(rows.shown.enumerated()), id: \.offset) { index, item in
+                    StatusRowView(
+                        name: item.name, tone: StatusBoard.tone(item.status),
+                        age: options.showAge ? StatusBoard.ageText(item.lastSuccessAt, now: now, language: language) : nil,
+                        stale: item.status == .stale, layout: layout, env: env
+                    )
+                    .modifier(RowRise(progress: progressValue, index: index, rise: rise))
+                }
+                if rows.more > 0 {
+                    StatusRowView(
+                        name: KitStrings.text(.statusMore, language, rows.more), tone: rows.moreTone, age: nil,
+                        stale: false, layout: layout, env: env, more: true
+                    )
+                    .modifier(RowRise(progress: progressValue, index: rows.shown.count, rise: rise))
+                }
+            }
+            Spacer(minLength: 0)
+            if !data.items.isEmpty {
+                FooterLine(
+                    text: StatusBoard.footer(
+                        data.items, language: language, width: box.width, size: layout.sizes.footer),
+                    size: layout.sizes.footer, env: env)
+            }
+        }
+    }
+}
+
+/** One source: dot, name (shrunk, then cut) and age; or the "+N more" row without a dot. */
+struct StatusRowView: View {
+    let name: String
+    let tone: StatusTone
+    let age: String?
+    let stale: Bool
+    let layout: StudioLayout.StatusLayout
+    let env: WidgetEnv
+    var more = false
+
+    private var color: Color {
+        switch tone {
+        case .up: return env.colors.up
+        case .warning: return env.colors.warning
+        case .down: return env.colors.down
+        case .muted: return env.colors.muted
+        }
+    }
+
+    var body: some View {
+        let sizes = layout.sizes
+        let fitted = StudioLayout.statusRowLabel(
+            name, nameWidth: layout.columns.name, cell: sizes.cell, cellMin: sizes.cellMin)
+        HStack(alignment: .center, spacing: env.pt(layout.columns.gap)) {
+            Circle()
+                .fill(color)
+                .frame(width: env.pt(layout.columns.dot), height: env.pt(layout.columns.dot))
+                .shadow(color: tone == .muted ? .clear : color.opacity(0.55), radius: env.pt(4))
+                .opacity(more ? 0 : 1)
+            Text(name)
+                .font(env.font(fitted.size))
+                .foregroundStyle(more ? (tone == .muted ? env.colors.muted : color) : env.colors.label)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let age {
+                Text(age)
+                    .font(env.font(sizes.age).monospacedDigit())
+                    .foregroundStyle(stale ? env.colors.warning : env.colors.muted)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .frame(height: env.pt(sizes.cell * 1.15))
+        .padding(.top, env.pt(StudioLayout.StatusSpacing.rowGap))
         .accessibilityElement(children: .combine)
     }
 }

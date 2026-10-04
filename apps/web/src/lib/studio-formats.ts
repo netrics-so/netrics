@@ -221,8 +221,13 @@ export interface DraftReadabilityContext {
   logoAspect: number | null;
   /** The workspace's time zone, for clocks without their own. */
   timeZone?: string;
-  /** A data widget's label as screens show it ("Downloads · Wurfel"). */
+  /**
+   * A data widget's label as screens show it ("Downloads · Wurfel"); a
+   * status board's title or "Sources".
+   */
   labelOf(widget: DashboardWidget): string | null;
+  /** The workspace's connections: what a board of every source lists. */
+  sourceCount?: number;
 }
 
 /** A slide of the draft, with the custom layouts stored for it. */
@@ -240,6 +245,13 @@ function readabilityWidget(
   const [base] = layoutWidgets([widget]);
   if (isDataWidgetType(widget.type)) {
     return { ...base!, label: context.labelOf(widget) };
+  }
+  if (widget.type === "status") {
+    return {
+      ...base!,
+      label: context.labelOf(widget),
+      rows: widget.options.connectionIds?.length ?? context.sourceCount ?? 0,
+    };
   }
   if (widget.type === "text") {
     return {

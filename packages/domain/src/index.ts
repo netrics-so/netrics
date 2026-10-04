@@ -12,3 +12,4 @@ export * from "./theme.js";
 export * from "./i18n/index.js";
 export * from "./compact-format.js";
 export * from "./goals.js";
+export * from "./source-status.js";

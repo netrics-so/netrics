@@ -1716,6 +1716,17 @@ export const clockWidgetOptionsSchema = z.object({
   showZone: z.boolean().default(false),
 });
 
+/**
+ * A status board (ADR 0019 section 7): the health of the workspace's
+ * sources. `connectionIds` null lists every connection; else 1–12 of them,
+ * validated on save (a deleted one drops out).
+ */
+export const statusWidgetOptionsSchema = z.object({
+  connectionIds: z.array(z.uuid()).min(1).max(12).nullable().default(null),
+  /** The age of each source's last successful sync ("14 m"). */
+  showAge: z.boolean().default(true),
+});
+
 /** The metric a data widget shows, validated like a tile's. */
 const dataBindingInputShape = {
   connectionId: z.uuid(),
@@ -1783,6 +1794,11 @@ export const dashboardWidgetInputSchema = z.discriminatedUnion("type", [
     type: z.literal("clock"),
     ...widgetInputShape,
     options: clockWidgetOptionsSchema.prefault({}),
+  }),
+  z.object({
+    type: z.literal("status"),
+    ...widgetInputShape,
+    options: statusWidgetOptionsSchema.prefault({}),
   }),
 ]);
 export type DashboardWidgetInput = z.input<typeof dashboardWidgetInputSchema>;
@@ -1897,6 +1913,11 @@ export const dashboardWidgetSchema = z.discriminatedUnion("type", [
     type: z.literal("clock"),
     ...widgetShape,
     options: clockWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("status"),
+    ...widgetShape,
+    options: statusWidgetOptionsSchema,
   }),
 ]);
 export type DashboardWidget = z.infer<typeof dashboardWidgetSchema>;
@@ -2571,6 +2592,38 @@ export const deviceTableDataSchema = z.object({
 });
 export type DeviceTableData = z.infer<typeof deviceTableDataSchema>;
 
+/** A source's health on a status board (ADR 0019 section 7). */
+export const deviceStatusItemStatusSchema = z.enum([
+  "ok",
+  "stale",
+  "backfilling",
+  "auth_failed",
+  "outage",
+]);
+export type DeviceStatusItemStatus = z.infer<
+  typeof deviceStatusItemStatusSchema
+>;
+
+/**
+ * A status board's data: one item per source, attention first
+ * (auth_failed, outage, stale, backfilling, ok), then by name. No
+ * credentials, configuration or error texts. Screens compute each age
+ * from `lastSuccessAt`.
+ */
+export const deviceStatusDataSchema = z.object({
+  /** A status display: always ok (empty: "No sources connected"). */
+  status: deviceTileStatusSchema,
+  items: z.array(
+    z.object({
+      connectionId: z.uuid(),
+      name: z.string().min(1),
+      status: deviceStatusItemStatusSchema,
+      lastSuccessAt: z.iso.datetime().nullable(),
+    }),
+  ),
+});
+export type DeviceStatusData = z.infer<typeof deviceStatusDataSchema>;
+
 /** A widget's id and placement in a grid of `columns` × `rows`. */
 function deviceWidgetPlacementShape(grid: { columns: number; rows: number }) {
   return {
@@ -2672,6 +2725,14 @@ function deviceWidgetUnion<E extends z.ZodRawShape>(
         dateStyle: z.enum(["short", "long"]).optional(),
         showZone: z.boolean().optional(),
       }),
+    }),
+    z.object({
+      type: z.literal("status"),
+      ...deviceWidgetShape,
+      /** The title, else "Sources" in the payload's language. */
+      label: deviceDataLabelSchema,
+      options: statusWidgetOptionsSchema,
+      data: deviceStatusDataSchema,
     }),
   ]);
 }

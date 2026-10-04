@@ -13,6 +13,7 @@ import {
   RESOURCE_DIMENSION,
   STUDIO_LIMITS,
   GOAL_PERIODS,
+  STATUS_MAX_CONNECTIONS,
   PERIODS,
   WIDGET_TYPES,
   isGoalAggregation,
@@ -54,7 +55,7 @@ import {
 } from "@/lib/studio-inspector";
 import { fitCheck } from "@/lib/studio-fit-check";
 import type { UnreadableLabel } from "@/lib/studio-readability";
-import type { DataWidget } from "@/lib/studio-widgets";
+import type { DataWidget, StudioConnection } from "@/lib/studio-widgets";
 import {
   choiceValue,
   currencyOptionLabel,
@@ -99,6 +100,8 @@ export interface WidgetPanelProps {
   showHeader?: boolean;
   /** The canvas's readability warning for this widget, if any (#241). */
   unreadable?: UnreadableLabel;
+  /** The workspace's connections, by id: a status board's sources. */
+  connections?: Readonly<Record<string, StudioConnection>>;
   dispatch: (action: StudioAction) => void;
   onUploadImage?: (file: File) => Promise<string | null>;
   /** Resolves to null when deleted, else why not. */
@@ -826,16 +829,19 @@ function Check({
   checked,
   onChange,
   children,
+  disabled,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   children: string;
+  disabled?: boolean;
 }) {
   return (
     <label className="check">
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
       />
       {children}
@@ -874,11 +880,102 @@ function AlignField({
   );
 }
 
+/**
+ * A status board's sources (ADR 0019 section 7): every connection, or a
+ * checklist of up to 12; and whether rows show the age of the last sync.
+ */
+function StatusFields({
+  widget,
+  connections,
+  onOptions,
+}: {
+  widget: Extract<DashboardWidget, { type: "status" }>;
+  connections: Readonly<Record<string, StudioConnection>>;
+  onOptions: (patch: object) => void;
+}) {
+  const t = useT("studio.widgetPanel");
+  const locale = useLocale();
+  const all = Object.entries(connections).sort(([, a], [, b]) =>
+    a.name.localeCompare(b.name, locale),
+  );
+  const chosen = widget.options.connectionIds;
+  const selected = new Set(chosen ?? []);
+  const toggle = (id: string, on: boolean) => {
+    const next = all
+      .map(([key]) => key)
+      .filter((key) => (key === id ? on : selected.has(key)));
+    // At least one chosen source; none left means every source again.
+    onOptions({ connectionIds: next.length > 0 ? next : null });
+  };
+  return (
+    <>
+      <fieldset>
+        <legend>{t("sources")}</legend>
+        {all.length === 0 ? <p className="help">{t("noSources")}</p> : null}
+        <label className="check">
+          <input
+            type="radio"
+            name="status-sources"
+            checked={chosen === null}
+            onChange={() => onOptions({ connectionIds: null })}
+          />
+          {t("allSources")}
+        </label>
+        <label className="check">
+          <input
+            type="radio"
+            name="status-sources"
+            checked={chosen !== null}
+            disabled={all.length === 0}
+            onChange={() =>
+              onOptions({
+                connectionIds: all
+                  .slice(0, STATUS_MAX_CONNECTIONS)
+                  .map(([id]) => id),
+              })
+            }
+          />
+          {t("chosenSources")}
+        </label>
+        {chosen !== null ? (
+          <div className="status-sources" role="group">
+            {all.map(([id, connection]) => (
+              <Check
+                key={id}
+                checked={selected.has(id)}
+                disabled={
+                  !selected.has(id) && selected.size >= STATUS_MAX_CONNECTIONS
+                }
+                onChange={(on) => toggle(id, on)}
+              >
+                {connection.name}
+              </Check>
+            ))}
+          </div>
+        ) : null}
+        <p className="help">
+          {t("sourcesHelp", { max: STATUS_MAX_CONNECTIONS })}
+        </p>
+      </fieldset>
+      <fieldset>
+        <legend>{t("style")}</legend>
+        <Check
+          checked={widget.options.showAge}
+          onChange={(showAge) => onOptions({ showAge })}
+        >
+          {t("showAge")}
+        </Check>
+      </fieldset>
+    </>
+  );
+}
+
 function StyleFields({
   widget,
   images,
   imagesInUse,
   timeZone,
+  connections,
   dispatch,
   onUploadImage,
   onDeleteImage,
@@ -928,6 +1025,14 @@ function StyleFields({
       );
     case "bar":
       return null;
+    case "status":
+      return (
+        <StatusFields
+          widget={widget}
+          connections={connections ?? {}}
+          onOptions={options}
+        />
+      );
     case "table":
       return (
         <fieldset>

@@ -5,6 +5,7 @@ import {
   imageWidgetOptionsSchema,
   lineWidgetOptionsSchema,
   metricWidgetOptionsSchema,
+  statusWidgetOptionsSchema,
   textWidgetOptionsSchema,
   type CreateDashboardRequest,
   type Dashboard as DashboardView,
@@ -27,6 +28,7 @@ import {
   findProject,
   insertAuditEvent,
   insertDashboard,
+  listConnectionIds,
   listDashboards,
   metricWidgets,
   replaceDashboard,
@@ -136,6 +138,8 @@ function optionsOf(widget: DashboardWidgetRow) {
       return textWidgetOptionsSchema.parse(options);
     case "clock":
       return clockWidgetOptionsSchema.parse(options);
+    case "status":
+      return statusWidgetOptionsSchema.parse(options);
   }
 }
 
@@ -255,6 +259,13 @@ export async function presentDashboard(
         ...base,
         imageId: widget.imageId!,
         options: imageWidgetOptionsSchema.parse(widget.options),
+      };
+    }
+    if (widget.type === "status") {
+      return {
+        type: "status",
+        ...base,
+        options: statusWidgetOptionsSchema.parse(widget.options),
       };
     }
     return widget.type === "text"
@@ -418,10 +429,65 @@ const EMPTY_WIDGET_DATA = {
   imageId: null,
 } as const;
 
+/**
+ * What checking a status board's sources needs (ADR 0019 section 7): the
+ * workspace's connections, loaded once per save, and the sources the saved
+ * dashboard's boards named, so one deleted since drops out instead of
+ * failing the save.
+ */
+interface StatusSources {
+  connections(): Promise<ReadonlySet<string>>;
+  stored: ReadonlySet<string>;
+}
+
+function statusSourcesOf(
+  tx: Transaction,
+  workspaceId: string,
+  stored: Dashboard | null,
+): StatusSources {
+  let loaded: Promise<ReadonlySet<string>> | null = null;
+  const named = new Set<string>();
+  for (const slide of stored?.slides ?? []) {
+    for (const widget of slide.widgets) {
+      if (widget.type !== "status") continue;
+      const ids = statusWidgetOptionsSchema.safeParse(widget.options).data
+        ?.connectionIds;
+      for (const id of ids ?? []) named.add(id);
+    }
+  }
+  return {
+    connections() {
+      loaded ??= listConnectionIds(tx, workspaceId).then((ids) => new Set(ids));
+      return loaded;
+    },
+    stored: named,
+  };
+}
+
+/**
+ * A status board's sources as stored: each a connection of the workspace.
+ * One the saved dashboard named and that is gone since is dropped (all of
+ * them gone: every source, null); any other unknown one is refused.
+ */
+async function validateStatusSources(
+  ids: readonly string[] | null,
+  sources: StatusSources,
+): Promise<Result<string[] | null>> {
+  if (ids === null) return ok(null);
+  const connections = await sources.connections();
+  const kept: string[] = [];
+  for (const id of new Set(ids)) {
+    if (connections.has(id)) kept.push(id);
+    else if (!sources.stored.has(id)) return fail(400, "connection_not_found");
+  }
+  return ok(kept.length > 0 ? kept : null);
+}
+
 async function validateWidget(
   tx: Transaction,
   workspaceId: string,
   widget: DashboardWidgetInputParsed,
+  sources: StatusSources,
 ): Promise<Result<WidgetInput>> {
   const base = {
     id: widget.id ?? null,
@@ -440,6 +506,20 @@ async function validateWidget(
       ...EMPTY_WIDGET_DATA,
       imageId: widget.imageId,
       options: widget.options,
+    });
+  }
+  if (widget.type === "status") {
+    const connectionIds = await validateStatusSources(
+      widget.options.connectionIds,
+      sources,
+    );
+    if (!connectionIds.ok) {
+      return connectionIds;
+    }
+    return ok({
+      ...base,
+      ...EMPTY_WIDGET_DATA,
+      options: { ...widget.options, connectionIds: connectionIds.value },
     });
   }
   if (widget.type === "text" || widget.type === "clock") {
@@ -501,6 +581,7 @@ async function validateSlides(
   const storedSlides = new Map(
     (stored?.slides ?? []).map((slide) => [slide.id, slide]),
   );
+  const sources = statusSourcesOf(tx, workspaceId, stored);
   for (const slide of slides) {
     const problem = slideLayoutProblem(slide.widgets, primary);
     if (problem) {
@@ -508,7 +589,7 @@ async function validateSlides(
     }
     const widgets: WidgetInput[] = [];
     for (const widget of slide.widgets) {
-      const checked = await validateWidget(tx, workspaceId, widget);
+      const checked = await validateWidget(tx, workspaceId, widget, sources);
       if (!checked.ok) {
         return checked;
       }

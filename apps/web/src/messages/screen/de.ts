@@ -34,6 +34,16 @@ export const screenDe: Catalog<typeof screenEn> = {
       tableNew: "neu",
       tableNoChange: "–",
       tableChangeHead: "Δ",
+      statusEmpty: "Keine Quellen verbunden",
+      statusMore: "+{count} weitere",
+      statusConnected: "{count} verbunden",
+      statusDelayed: "{count} verzögert",
+      statusFailing: "{count} gestört",
+      statusAge:
+        "{unit, select, m {{count} min} h {{count} h} other {{count} T}}",
+      statusNever: "nie",
+      statusItem:
+        "{name}: {status, select, ok {aktuell} stale {verzögert} backfilling {lädt Verlauf} auth_failed {braucht Aufmerksamkeit} outage {nicht erreichbar} other {unbekannt}}",
       noDataYet: "Noch keine Daten für diesen Zeitraum",
       noDataShort: "Noch keine Daten",
       noComparison: "Keine Daten zum Vergleich ({comparison})",

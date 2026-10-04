@@ -77,7 +77,11 @@ export default async function StudioPage({ params }: StudioPageProps) {
   const byId: Record<string, StudioConnection> = Object.fromEntries(
     connections.map((connection) => [
       connection.id,
-      { name: connection.name, state: connection.state },
+      {
+        name: connection.name,
+        state: connection.state,
+        setupPending: connection.setupPending,
+      },
     ]),
   );
 

@@ -43,6 +43,7 @@ import {
 } from "@/lib/studio-widgets";
 
 import { LiveBarWidget } from "./bar-widget";
+import { LiveStatusWidget } from "./status-widget";
 import { LiveTableWidget } from "./table-widget";
 import { LiveClockWidget, useNow } from "./clock-widget";
 import { ImageWidgetView } from "./image-widget";
@@ -110,6 +111,8 @@ export function LiveWidget({
       return <LiveBarWidget widget={widget} env={env} />;
     case "table":
       return <LiveTableWidget widget={widget} env={env} />;
+    case "status":
+      return <LiveStatusWidget widget={widget} env={env} />;
     case "image":
       return (
         <ImageWidgetView

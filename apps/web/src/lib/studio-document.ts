@@ -333,6 +333,7 @@ export const DEFAULT_WIDGET_SIZE: Readonly<
   clock: { w: 3, h: 2 },
   // Its minimum (ADR 0019 section 2).
   table: { w: 4, h: 4 },
+  status: { w: 3, h: 3 },
 };
 
 /**

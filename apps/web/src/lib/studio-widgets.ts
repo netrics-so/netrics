@@ -168,6 +168,8 @@ export function textWidgetLayout(input: {
 export interface StudioConnection {
   name: string;
   state: ConnectionStateView;
+  /** Setup not finished (ADR 0012): a status board lists it as failing. */
+  setupPending?: boolean;
 }
 
 /** What live widgets read besides their own settings. */

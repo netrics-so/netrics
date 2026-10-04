@@ -155,5 +155,15 @@ export function newWidget(
           },
         },
       };
+    case "status":
+      // Every source of the workspace, with the age of its last sync
+      // (ADR 0019 section 7).
+      return {
+        widget: {
+          type,
+          title: null,
+          options: { connectionIds: null, showAge: true },
+        },
+      };
   }
 }

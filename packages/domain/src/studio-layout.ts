@@ -15,7 +15,7 @@
  */
 
 export type StudioWidgetType =
-  "metric" | "line" | "bar" | "image" | "text" | "clock" | "table";
+  "metric" | "line" | "bar" | "image" | "text" | "clock" | "table" | "status";
 
 export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "metric",
@@ -25,6 +25,7 @@ export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "text",
   "clock",
   "table",
+  "status",
 ];
 
 /** A widget's cells: 0-based column and row, width and height in cells. */
@@ -80,6 +81,7 @@ export const STUDIO_MIN_WIDGET_SIZE: Readonly<
   text: { w: 2, h: 1 },
   clock: { w: 2, h: 1 },
   table: { w: 4, h: 4 },
+  status: { w: 3, h: 3 },
 };
 
 /** Widgets with a title and resource line (bound to a metric). */
@@ -554,6 +556,13 @@ export function widgetTypeScale(
         columnHead: m.columnHead * scale,
         cell: m.cell * scale,
       };
+    case "status":
+      return {
+        any,
+        title: m.title * scale,
+        resource: m.resource * scale,
+        cell: m.cell * scale,
+      };
     case "clock": {
       const clockMin = m.clock * scale;
       return {
@@ -994,6 +1003,174 @@ export function tableChangeKind(row: {
     return "new";
   }
   return "none";
+}
+
+// ---------------------------------------------------------------------------
+// Status board (ADR 0019 section 7)
+
+/** A status board's spacing in units. */
+export const STATUS_SPACING = {
+  /** Between the rows and the footer. */
+  stack: 8,
+  /** Above every row: the row pitch is the cell line plus this. */
+  rowGap: 12,
+  /** Between the dot, the name and the age. */
+  columnGap: 16,
+  /** The health dot's diameter. */
+  dot: 14,
+} as const;
+
+/** The widest age the age column reserves room for ("14 m", "3 h", "2 d"). */
+export const STATUS_AGE_SAMPLE = "99 m";
+
+export interface StatusLayoutInput {
+  /** The widget's label as screens show it ("Sources"). */
+  label: string;
+  /** The content box in units: the widget's rect less its padding. */
+  width: number;
+  height: number;
+  fontScale?: number;
+  /** The age column (`showAge`); default true. */
+  showAge?: boolean;
+}
+
+export interface StatusLayout {
+  /** Text sizes in units; `cellMin` is what a name shrinks to. */
+  sizes: {
+    title: number;
+    resource: number;
+    cell: number;
+    cellMin: number;
+    age: number;
+    footer: number;
+  };
+  /** Lines of the title (1–2) and of the resource line (0–2). */
+  titleLines: number;
+  resourceLines: number;
+  /** The label, in units. */
+  headHeight: number;
+  /** The footer line and its gap, in units. */
+  footerHeight: number;
+  /** A row's line plus the gap above it, in units. */
+  rowPitch: number;
+  /** Rows that fit between the label and the footer ("+N more" included). */
+  rowCapacity: number;
+  /** Column widths in units; `age` is 0 without the age column. */
+  columns: { dot: number; name: number; age: number; gap: number };
+}
+
+/**
+ * A status board's layout: the label (title and resource line, at most two
+ * lines each), the rows (a 14 u dot, the name in the cell role, 28 u, and
+ * right-aligned the age, 24 u; each row a cell line plus a 12 u gap) and
+ * the footer ("4 connected · 1 delayed"). At 16:9 a 3 × 3 board (404 ×
+ * 295 u) fits five rows at font scale 1 and three at 1.3.
+ */
+export function statusLayout(input: StatusLayoutInput): StatusLayout {
+  const scale = effectiveFontScale(input.fontScale);
+  const m = STUDIO_TEXT_MINIMUMS;
+  const sizes = {
+    title: m.title * scale,
+    resource: m.resource * scale,
+    cell: m.cell * scale,
+    cellMin: m.any * scale,
+    age: m.any * scale,
+    footer: m.any * scale,
+  };
+  const width = Math.max(0, input.width);
+  const parts = labelParts(input.label);
+  const titleLines = Math.min(
+    STUDIO_LABEL_MAX_LINES,
+    Math.max(1, wrappedLineCount(parts.title, width, sizes.title, "semibold")),
+  );
+  const resourceLines =
+    parts.resource === null
+      ? 0
+      : Math.min(
+          STUDIO_LABEL_MAX_LINES,
+          Math.max(
+            1,
+            wrappedLineCount(parts.resource, width, sizes.resource, "semibold"),
+          ),
+        );
+  const headHeight =
+    titleLines * sizes.title * TABLE_LINE_HEIGHT +
+    resourceLines * sizes.resource * TABLE_LINE_HEIGHT;
+  const footerHeight = STATUS_SPACING.stack + sizes.footer * TABLE_LINE_HEIGHT;
+  const rowPitch = sizes.cell * TABLE_LINE_HEIGHT + STATUS_SPACING.rowGap;
+  const rowCapacity = Math.max(
+    0,
+    Math.floor((input.height - headHeight - footerHeight) / rowPitch),
+  );
+  const gap = STATUS_SPACING.columnGap;
+  const dot = STATUS_SPACING.dot * scale;
+  const age =
+    (input.showAge ?? true)
+      ? estimateTextWidth(STATUS_AGE_SAMPLE, sizes.age, "regular")
+      : 0;
+  return {
+    sizes,
+    titleLines,
+    resourceLines,
+    headHeight,
+    footerHeight,
+    rowPitch,
+    rowCapacity,
+    columns: {
+      dot,
+      name: Math.max(0, width - dot - gap - (age > 0 ? age + gap : 0)),
+      age,
+      gap,
+    },
+  };
+}
+
+/**
+ * How many items a status board lists and what "+N more" says: every item
+ * when they fit; else the first `rowCapacity − 1` and a last row "+N more"
+ * for the rest. Items come attention first, so a problem is never the one
+ * hidden while the board has a row for every problem.
+ */
+export function statusRowsShown(
+  items: number,
+  rowCapacity: number,
+): { shown: number; more: number } {
+  const count = Math.max(0, items);
+  const capacity = Math.max(0, rowCapacity);
+  if (count <= capacity) return { shown: count, more: 0 };
+  if (capacity === 0) return { shown: 0, more: 0 };
+  return { shown: capacity - 1, more: count - (capacity - 1) };
+}
+
+/** A name's size: the cell size, shrunk to `cellMin`, then an ellipsis. */
+export function statusRowLabel(
+  text: string,
+  nameWidth: number,
+  sizes: { cell: number; cellMin: number },
+): { size: number; truncated: boolean } {
+  return tableRowLabel(text, nameWidth, sizes);
+}
+
+export type StatusAgeUnit = "m" | "h" | "d";
+
+/**
+ * The age of a source's last successful sync, as the board shows it ("14
+ * m", "3 h", "2 d"): whole minutes under an hour, whole hours under a day,
+ * else whole days; null without a success. Screens compute it from
+ * `lastSuccessAt` every minute.
+ */
+export function statusAge(
+  lastSuccessAt: string | null,
+  now: number,
+): { amount: number; unit: StatusAgeUnit } | null {
+  if (lastSuccessAt === null) return null;
+  const at = Date.parse(lastSuccessAt);
+  if (!Number.isFinite(at)) return null;
+  const minutes = Math.max(0, Math.floor((now - at) / 60_000));
+  if (minutes < 60) return { amount: minutes, unit: "m" };
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return { amount: hours, unit: "h" };
+  return { amount: Math.floor(hours / 24), unit: "d" };
 }
 
 // ---------------------------------------------------------------------------
@@ -1470,6 +1647,10 @@ export const studioLayout = {
   tableRowsShown,
   tableRowLabel,
   tableChangeKind,
+  statusLayout,
+  statusRowsShown,
+  statusRowLabel,
+  statusAge,
   legacyGrid,
   legacyLayout,
   parseTextWidget,

@@ -256,6 +256,60 @@ private func weight(_ any: Any?) -> StudioFontWeight {
         }
     }
 
+    @Test func statusLayouts() {
+        let cases = StudioVectors.cases("statusLayouts")
+        #expect(!cases.isEmpty)
+        for c in cases {
+            let layout = StudioLayout.statusLayout(
+                label: c["label"] as! String, width: double(c["width"]), height: double(c["height"]),
+                fontScale: double(c["fontScale"]), showAge: bool(c["showAge"]))
+            let e = c["layout"] as! [String: Any]
+            let sizes = e["sizes"] as! [String: Any]
+            #expect(close(layout.sizes.title, double(sizes["title"])), "\(c)")
+            #expect(close(layout.sizes.resource, double(sizes["resource"])), "\(c)")
+            #expect(close(layout.sizes.cell, double(sizes["cell"])), "\(c)")
+            #expect(close(layout.sizes.cellMin, double(sizes["cellMin"])), "\(c)")
+            #expect(close(layout.sizes.age, double(sizes["age"])), "\(c)")
+            #expect(close(layout.sizes.footer, double(sizes["footer"])), "\(c)")
+            #expect(layout.titleLines == int(e["titleLines"]), "\(c)")
+            #expect(layout.resourceLines == int(e["resourceLines"]), "\(c)")
+            #expect(close(layout.headHeight, double(e["headHeight"])), "\(c)")
+            #expect(close(layout.footerHeight, double(e["footerHeight"])), "\(c)")
+            #expect(close(layout.rowPitch, double(e["rowPitch"])), "\(c)")
+            #expect(layout.rowCapacity == int(e["rowCapacity"]), "\(c)")
+            let columns = e["columns"] as! [String: Any]
+            #expect(close(layout.columns.dot, double(columns["dot"])), "\(c)")
+            #expect(close(layout.columns.name, double(columns["name"])), "\(c)")
+            #expect(close(layout.columns.age, double(columns["age"])), "\(c)")
+            #expect(close(layout.columns.gap, double(columns["gap"])), "\(c)")
+        }
+    }
+
+    @Test func statusRowsShown() {
+        let cases = StudioVectors.cases("statusRowsShown")
+        #expect(!cases.isEmpty)
+        for c in cases {
+            let shown = StudioLayout.statusRowsShown(items: int(c["items"]), rowCapacity: int(c["capacity"]))
+            #expect(shown.shown == int(c["shown"]), "\(c)")
+            #expect(shown.more == int(c["more"]), "\(c)")
+        }
+    }
+
+    @Test func statusAges() {
+        let cases = StudioVectors.cases("statusAges")
+        #expect(!cases.isEmpty)
+        for c in cases {
+            let now = Date(timeIntervalSince1970: double(c["now"]) / 1000)
+            let age = StudioLayout.statusAge(c["lastSuccessAt"] as? String, now: now)
+            if let expected = c["age"] as? [String: Any] {
+                #expect(age?.amount == int(expected["amount"]), "\(c)")
+                #expect(age?.unit.rawValue == expected["unit"] as? String, "\(c)")
+            } else {
+                #expect(age == nil, "\(c)")
+            }
+        }
+    }
+
     @Test func legacy() {
         for c in StudioVectors.cases("legacy") {
             let tiles = int(c["tiles"])

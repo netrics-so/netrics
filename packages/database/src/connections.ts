@@ -110,6 +110,18 @@ export async function listConnections(
   return rows;
 }
 
+/** The ids of the workspace's connections (a status board's sources). */
+export async function listConnectionIds(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<string[]> {
+  const rows = await tx
+    .select({ id: schema.connections.id })
+    .from(schema.connections)
+    .where(eq(schema.connections.workspaceId, workspaceId));
+  return rows.map((row) => row.id);
+}
+
 export interface NewConnection {
   id: string;
   workspaceId: string;

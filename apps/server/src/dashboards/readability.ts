@@ -1,5 +1,6 @@
 import {
   clockWidgetOptionsSchema,
+  statusWidgetOptionsSchema,
   tableWidgetOptionsSchema,
   textWidgetOptionsSchema,
   type FormatWarning,
@@ -7,6 +8,7 @@ import {
 import {
   findImages,
   findWorkspace,
+  listConnectionIds,
   listWorkspaceMetrics,
   type Dashboard,
   type DashboardWidgetRow,
@@ -17,6 +19,7 @@ import {
   isDataWidgetType,
   isScreenFormat,
   slideFormatWarnings,
+  sourcesLabel,
   type CustomLayout,
   type Locale,
   type ReadabilityWidget,
@@ -42,6 +45,10 @@ export interface ReadabilityInputs {
   timeZone: string;
   /** The label of a data widget, as screens show it. */
   labelOf(widget: DashboardWidgetRow): string | null;
+  /** A status board's label without a title ("Sources"). */
+  sourcesLabel: string;
+  /** The workspace's connections: what a board of every source lists. */
+  sourceCount: number;
 }
 
 export async function loadReadabilityInputs(
@@ -81,10 +88,24 @@ export async function loadReadabilityInputs(
   const timeZone = hasZoneLine
     ? ((await findWorkspace(tx, workspaceId))?.timeZone ?? "UTC")
     : "UTC";
+  // A board of every source lists every connection (ADR 0019 section 7).
+  const listsAll = dashboard.slides.some((slide) =>
+    slide.widgets.some(
+      (widget) =>
+        widget.type === "status" &&
+        (statusWidgetOptionsSchema.safeParse(widget.options).data
+          ?.connectionIds ?? null) === null,
+    ),
+  );
+  const sourceCount = listsAll
+    ? (await listConnectionIds(tx, workspaceId)).length
+    : 0;
   return {
     fontScale: effectiveFontScale(tokens?.fontScale),
     logoAspect,
     timeZone,
+    sourcesLabel: sourcesLabel(locale),
+    sourceCount,
     labelOf(widget) {
       if (widget.connectionId === null || widget.metricKey === null) {
         return null;
@@ -134,6 +155,16 @@ export function dashboardFormatWarnings(
       }
       if (isDataWidgetType(type)) {
         return { ...base, label: inputs.labelOf(widget) };
+      }
+      if (type === "status") {
+        const options = statusWidgetOptionsSchema.safeParse(
+          widget.options,
+        ).data;
+        return {
+          ...base,
+          label: widget.title ?? inputs.sourcesLabel,
+          rows: options?.connectionIds?.length ?? inputs.sourceCount,
+        };
       }
       if (type === "text") {
         return {

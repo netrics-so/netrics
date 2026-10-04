@@ -32,6 +32,8 @@ import {
   parseTextWidget,
   placementRect,
   screenFrame,
+  statusLayout,
+  statusRowsShown,
   tableLayout,
   textWidgetSizes,
   wrappedLineCount,
@@ -289,9 +291,13 @@ export const FORMAT_WARNING_SEVERITY: Readonly<
   widget_too_small: "attention",
   header_name_cut: "attention",
   clock_parts_hidden: "info",
-  // Tables (ADR 0019 section 6); a status board's will be info.
+  // Tables (ADR 0019 section 6); a status board's is info (section 7,
+  // `STATUS_ROWS_CUT_SEVERITY`).
   rows_cut: "attention",
 };
+
+/** A status board's `rows_cut`: "+N more" is expected, so info. */
+export const STATUS_ROWS_CUT_SEVERITY: FormatWarningSeverity = "info";
 
 export interface FormatWarningItem {
   format: ScreenFormat;
@@ -321,7 +327,10 @@ export interface ReadabilityWidget extends LayoutWidget {
     dateStyle: ClockDateStyle;
     zone: string | null;
   } | null;
-  /** Tables: the rows asked for (`limit`). */
+  /**
+   * Tables: the rows asked for (`limit`); status boards: the sources they
+   * list (the chosen ones, or every connection of the workspace).
+   */
   rows?: number | null;
 }
 
@@ -364,11 +373,12 @@ export function formatWarnings(
     widgetId: string | null,
     pages: number | null = null,
     rows: FormatWarningItem["rows"] = null,
+    severity: FormatWarningSeverity = FORMAT_WARNING_SEVERITY[code],
   ) =>
     warnings.push({
       format,
       code,
-      severity: FORMAT_WARNING_SEVERITY[code],
+      severity,
       widgetId,
       pages,
       rows,
@@ -447,6 +457,26 @@ export function formatWarnings(
           shown: rowCapacity,
           limit: widget.rows,
         });
+      }
+    } else if (widget.type === "status" && widget.rows) {
+      // More sources than rows: the last row says "+N more" (info; the
+      // problems sort first, ADR 0019 section 7).
+      const box = contentBoxIn(placement, format, context.showHeader);
+      const { rowCapacity } = statusLayout({
+        label: widget.label ?? "",
+        width: box.width,
+        height: box.height,
+        fontScale: context.fontScale,
+      });
+      const { shown } = statusRowsShown(widget.rows, rowCapacity);
+      if (shown < widget.rows) {
+        warn(
+          "rows_cut",
+          widget.id,
+          null,
+          { shown, limit: widget.rows },
+          STATUS_ROWS_CUT_SEVERITY,
+        );
       }
     } else if (widget.type === "text" && widget.text) {
       const fit = textWidgetFit({

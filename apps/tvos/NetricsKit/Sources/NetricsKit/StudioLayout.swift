@@ -9,7 +9,7 @@ import Foundation
 // canvas answer in canvas points; the type scale answers in units.
 
 public enum StudioWidgetType: String, Sendable, Equatable, CaseIterable, Codable {
-    case metric, line, bar, image, text, clock, table
+    case metric, line, bar, image, text, clock, table, status
 
     /** Widgets with a title and resource line (bound to a metric). */
     public var isData: Bool { self == .metric || self == .line || self == .bar || self == .table }
@@ -146,6 +146,7 @@ public enum StudioLayout {
         case .image: return (1, 1)
         case .text, .clock: return (2, 1)
         case .table: return (4, 4)
+        case .status: return (3, 3)
         }
     }
 
@@ -271,6 +272,11 @@ public enum StudioLayout {
             return [
                 .any: any, .title: Minimum.title * scale, .resource: Minimum.resource * scale,
                 .columnHead: Minimum.columnHead * scale, .cell: Minimum.cell * scale,
+            ]
+        case .status:
+            return [
+                .any: any, .title: Minimum.title * scale, .resource: Minimum.resource * scale,
+                .cell: Minimum.cell * scale,
             ]
         case .image:
             return [.any: any]
@@ -674,6 +680,141 @@ public enum StudioLayout {
         if let ratio, ratio.isFinite { return .ratio }
         if let value, value != 0, previousValue == nil || previousValue == 0 { return .new }
         return .none
+    }
+
+    // MARK: Status board (ADR 0019 section 7)
+
+    /** A status board's spacing in units. */
+    public enum StatusSpacing {
+        /** Between the rows and the footer. */
+        public static let stack = 8.0
+        /** Above every row: the row pitch is the cell line plus this. */
+        public static let rowGap = 12.0
+        /** Between the dot, the name and the age. */
+        public static let columnGap = 16.0
+        /** The health dot's diameter. */
+        public static let dot = 14.0
+    }
+
+    /** The widest age the age column reserves room for. */
+    public static let statusAgeSample = "99 m"
+
+    public struct StatusSizes: Sendable, Equatable {
+        public var title: Double
+        public var resource: Double
+        public var cell: Double
+        public var cellMin: Double
+        public var age: Double
+        public var footer: Double
+    }
+
+    public struct StatusColumns: Sendable, Equatable {
+        public var dot: Double
+        public var name: Double
+        public var age: Double
+        public var gap: Double
+    }
+
+    public struct StatusLayout: Sendable, Equatable {
+        public var sizes: StatusSizes
+        public var titleLines: Int
+        public var resourceLines: Int
+        public var headHeight: Double
+        public var footerHeight: Double
+        public var rowPitch: Double
+        /** Rows between the label and the footer ("+N more" included). */
+        public var rowCapacity: Int
+        public var columns: StatusColumns
+    }
+
+    /**
+     * A status board's layout (statusLayout in the TypeScript): the label,
+     * rows of a 14 u dot, the name (cell, 28 u) and the age (24 u), each a
+     * cell line plus a 12 u gap, and the footer. A 3 × 3 board at 16:9
+     * fits five rows at font scale 1 and three at 1.3.
+     */
+    public static func statusLayout(
+        label: String, width inputWidth: Double, height: Double, fontScale: Double? = nil, showAge: Bool = true
+    ) -> StatusLayout {
+        let scale = effectiveFontScale(fontScale)
+        let sizes = StatusSizes(
+            title: Minimum.title * scale,
+            resource: Minimum.resource * scale,
+            cell: Minimum.cell * scale,
+            cellMin: Minimum.any * scale,
+            age: Minimum.any * scale,
+            footer: Minimum.any * scale)
+        let width = Swift.max(0, inputWidth)
+        let parts = labelParts(label)
+        let titleLines = Swift.min(
+            labelMaxLines,
+            Swift.max(1, wrappedLineCount(parts.title, maxWidth: width, fontSize: sizes.title, weight: .semibold)))
+        let resourceLines = parts.resource.map {
+            Swift.min(
+                labelMaxLines,
+                Swift.max(1, wrappedLineCount($0, maxWidth: width, fontSize: sizes.resource, weight: .semibold)))
+        } ?? 0
+        let headHeight =
+            Double(titleLines) * sizes.title * tableLineHeight
+            + Double(resourceLines) * sizes.resource * tableLineHeight
+        let footerHeight = StatusSpacing.stack + sizes.footer * tableLineHeight
+        let rowPitch = sizes.cell * tableLineHeight + StatusSpacing.rowGap
+        let rowCapacity = Swift.max(0, Int(((height - headHeight - footerHeight) / rowPitch).rounded(.down)))
+        let gap = StatusSpacing.columnGap
+        let dot = StatusSpacing.dot * scale
+        let age = showAge ? estimateTextWidth(statusAgeSample, fontSize: sizes.age, weight: .regular) : 0
+        return StatusLayout(
+            sizes: sizes, titleLines: titleLines, resourceLines: resourceLines, headHeight: headHeight,
+            footerHeight: footerHeight, rowPitch: rowPitch, rowCapacity: rowCapacity,
+            columns: StatusColumns(
+                dot: dot, name: Swift.max(0, width - dot - gap - (age > 0 ? age + gap : 0)), age: age, gap: gap))
+    }
+
+    /**
+     * Items a board lists and what "+N more" counts: all when they fit, else
+     * the first rowCapacity − 1 and "+N more" for the rest.
+     */
+    public static func statusRowsShown(items: Int, rowCapacity: Int) -> (shown: Int, more: Int) {
+        let count = Swift.max(0, items)
+        let capacity = Swift.max(0, rowCapacity)
+        if count <= capacity { return (count, 0) }
+        if capacity == 0 { return (0, 0) }
+        return (capacity - 1, count - (capacity - 1))
+    }
+
+    /** A name's size: shrunk down to cellMin, then truncated. */
+    public static func statusRowLabel(_ text: String, nameWidth: Double, cell: Double, cellMin: Double)
+        -> (size: Double, truncated: Bool)
+    {
+        tableRowLabel(text, labelWidth: nameWidth, cell: cell, cellMin: cellMin)
+    }
+
+    public enum StatusAgeUnit: String, Sendable, Equatable {
+        case m, h, d
+    }
+
+    /**
+     * The age of a last successful sync: whole minutes under an hour, whole
+     * hours under a day, else whole days; nil without one (statusAge in the
+     * TypeScript).
+     */
+    public static func statusAge(_ lastSuccessAt: String?, now: Date) -> (amount: Int, unit: StatusAgeUnit)? {
+        guard let lastSuccessAt, let at = parseISODate(lastSuccessAt) else { return nil }
+        let minutes = Swift.max(0, Int((now.timeIntervalSince(at) * 1000 / 60_000).rounded(.down)))
+        if minutes < 60 { return (minutes, .m) }
+        let hours = minutes / 60
+        if hours < 24 { return (hours, .h) }
+        return (hours / 24, .d)
+    }
+
+    /** An ISO 8601 timestamp, with or without fractional seconds. */
+    static func parseISODate(_ text: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: text) { return date }
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return plain.date(from: text)
     }
 
     // MARK: Legacy layout (tile migration)

@@ -57,6 +57,8 @@ public enum KitText: String, Sendable, CaseIterable {
     case conversionSource, conversionNotConverted
     case weekOf, others
     case tableTop, tableNew
+    case statusEmpty, statusMore, statusConnected, statusDelayed, statusFailing
+    case statusAgeMinutes, statusAgeHours, statusAgeDays, statusNever
     case updated, updatedFrom, reconnect, reconnectSource, reconnectHint, loadingHistory
     case nextRefresh, slidePosition, nextSlide
     case serverInvalidAddress, serverPlainHTTPToPublicHost, serverPlainHTTPNeedsSetting, serverUnreachable
@@ -119,6 +121,15 @@ public enum KitStrings {
         .others: "Others",
         .tableTop: "Top %d",
         .tableNew: "new",
+        .statusEmpty: "No sources connected",
+        .statusMore: "+%d more",
+        .statusConnected: "%d connected",
+        .statusDelayed: "%d delayed",
+        .statusFailing: "%d failing",
+        .statusAgeMinutes: "%d m",
+        .statusAgeHours: "%d h",
+        .statusAgeDays: "%d d",
+        .statusNever: "never",
         .updated: "updated %@",
         .updatedFrom: "updated %@ · %@",
         .reconnect: "Reconnect %@",
@@ -202,6 +213,15 @@ public enum KitStrings {
         .others: "Andere",
         .tableTop: "Top %d",
         .tableNew: "neu",
+        .statusEmpty: "Keine Quellen verbunden",
+        .statusMore: "+%d weitere",
+        .statusConnected: "%d verbunden",
+        .statusDelayed: "%d verzögert",
+        .statusFailing: "%d gestört",
+        .statusAgeMinutes: "%d min",
+        .statusAgeHours: "%d h",
+        .statusAgeDays: "%d T",
+        .statusNever: "nie",
         .updated: "aktualisiert %@",
         .updatedFrom: "aktualisiert %@ · %@",
         .reconnect: "%@ neu verbinden",

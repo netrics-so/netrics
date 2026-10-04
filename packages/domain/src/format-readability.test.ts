@@ -192,6 +192,32 @@ describe("formatWarnings", () => {
     ]);
   });
 
+  it("rows_cut (info): a 3 × 3 status board lists five sources, then +N more", () => {
+    const board = (rows: number): ReadabilityWidget => ({
+      id: "s",
+      type: "status",
+      x: 0,
+      y: 0,
+      w: 3,
+      h: 3,
+      label: "Sources",
+      rows,
+    });
+    expect(formatWarnings(slide([board(5)]), "16x9", context)).toEqual([]);
+    const warnings = formatWarnings(slide([board(8)]), "16x9", context);
+    expect(codes(warnings)).toEqual(["16x9 rows_cut s"]);
+    // Four sources and "+4 more".
+    expect(warnings[0]).toMatchObject({
+      severity: "info",
+      rows: { shown: 4, limit: 8 },
+    });
+    const at13 = { ...context, fontScale: 1.3 };
+    expect(codes(formatWarnings(slide([board(4)]), "16x9", at13))).toEqual([
+      "16x9 rows_cut s",
+    ]);
+    expect(formatWarnings(slide([board(3)]), "16x9", at13)).toEqual([]);
+  });
+
   it("label_cut is checked on tables like on every type with a label", () => {
     const warnings = formatWarnings(
       slide([
