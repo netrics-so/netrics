@@ -1,6 +1,12 @@
-import { ZodError, z, type ZodType } from "zod";
+import { ZodError, type ZodType } from "zod";
 
 import {
+  IMAGE_NAME_HEADER,
+  imageListResponseSchema,
+  imageResponseSchema,
+  type ImageContentType,
+  type ImageListResponse,
+  type ImageResponse,
   createWorkspaceResponseSchema,
   type CreateWorkspaceResponse,
   createDashboardRequestSchema,
@@ -124,7 +130,7 @@ import {
 } from "@netrics/contracts";
 
 import { apiFetch } from "./api-fetch";
-import { imageContentUrl, type StudioImage } from "./studio-widgets";
+import { toStudioImage, type StudioImage } from "./studio-widgets";
 
 /**
  * API failures carry a machine-readable code in the response body
@@ -195,6 +201,32 @@ export function apiErrorMessage(error: unknown): string {
           ? `Dashboards still use this theme: ${names.join(", ")}. Pick another theme for them first.`
           : "Dashboards still use this theme. Pick another theme for them first.";
       }
+      case "widget_out_of_bounds":
+        return "A widget lies outside its slide's grid.";
+      case "widget_too_small":
+        return "A widget is smaller than its type allows.";
+      case "widgets_overlap":
+        return "Two widgets on a slide overlap.";
+      case "too_many_data_widgets":
+        return "A dashboard shows at most 48 data widgets.";
+      case "unknown_resource":
+        return "A widget shows an app or project its connection no longer has.";
+      case "image_not_found":
+        return "An image this dashboard uses no longer exists.";
+      case "image_in_use":
+        return "Dashboards still use this image.";
+      case "image_too_large":
+        return "That image is larger than 1 MiB. Export it smaller and try again.";
+      case "image_dimensions_too_large":
+        return "That image is too large: at most 4096 pixels per side.";
+      case "image_animated":
+        return "Animated images are not supported. Use a still PNG, JPEG or WebP.";
+      case "image_type_mismatch":
+      case "image_invalid":
+      case "unsupported_media_type":
+        return "That file is not a PNG, JPEG or WebP image.";
+      case "image_quota_exceeded":
+        return "This workspace has no room for more images. Delete some first.";
       case "device_not_found":
         return "That TV no longer exists.";
       case "pairing_not_found":
@@ -829,6 +861,18 @@ export function saveDashboard(
   );
 }
 
+/** The saved copy, from the browser (the Studio's reload after a conflict). */
+export async function loadDashboard(
+  workspaceId: string,
+  dashboardId: string,
+): Promise<DashboardResponse> {
+  const response = await fetch(
+    `/v1/workspaces/${workspaceId}/dashboards/${dashboardId}`,
+    { cache: "no-store" },
+  );
+  return parseResponse(dashboardResponseSchema, response);
+}
+
 export function duplicateDashboard(
   workspaceId: string,
   dashboardId: string,
@@ -929,40 +973,44 @@ export async function deleteTheme(
 // Workspace images (ADR 0015, section 5; #217)
 // ---------------------------------------------------------------------------
 
-/** The fields of a listed image the slide renderers use. */
-const imageListSchema = z.object({
-  images: z.array(
-    z.object({
-      id: z.uuid(),
-      sha256: z.string().regex(/^[0-9a-f]{64}$/),
-      width: z.number().int().positive(),
-      height: z.number().int().positive(),
-      url: z.string().min(1).optional(),
-    }),
-  ),
-});
+/** The workspace's images with their quota (metadata, never bytes). */
+export function listImages(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<ImageListResponse> {
+  return serverGet(
+    imageListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/images`,
+  );
+}
 
-/**
- * The workspace's images for logos, backgrounds and image widgets. An API
- * without images (before #217) answers 404: then there are none.
- */
+/** The workspace's images for logos, backgrounds and image widgets. */
 export async function listStudioImages(
   cookieHeader: string,
   workspaceId: string,
 ): Promise<StudioImage[]> {
-  const response = await apiFetch(`/v1/workspaces/${workspaceId}/images`, {
-    headers: { cookie: cookieHeader },
-  });
-  if (response.status === 404) {
-    return [];
-  }
-  const { images } = await parseResponse(imageListSchema, response);
-  return images.map((image) => ({
-    id: image.id,
-    url: image.url ?? imageContentUrl(workspaceId, image),
-    width: image.width,
-    height: image.height,
-  }));
+  const { images } = await listImages(cookieHeader, workspaceId);
+  return images.map((image) => toStudioImage(workspaceId, image));
+}
+
+/**
+ * Uploads an image as its raw bytes (no multipart, ADR 0015 section 5);
+ * the display name travels percent-encoded in a header. Throws ApiError
+ * image_too_large, image_invalid, image_animated, image_quota_exceeded …
+ */
+export function uploadImage(
+  workspaceId: string,
+  file: { name: string; type: ImageContentType; body: Blob },
+): Promise<ImageResponse> {
+  return fetch(`/v1/workspaces/${workspaceId}/images`, {
+    method: "POST",
+    headers: {
+      "content-type": file.type,
+      [IMAGE_NAME_HEADER]: encodeURIComponent(file.name.slice(0, 100)),
+    },
+    body: file.body,
+  }).then((response) => parseResponse(imageResponseSchema, response));
 }
 
 /** One tile's numbers (browser; tiles refresh themselves). */

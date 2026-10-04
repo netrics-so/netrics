@@ -19,7 +19,9 @@ export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
       const { dashboard } = await createDashboard(workspaceId, {
         name: String(form.get("name") ?? ""),
       });
-      router.push(`/workspaces/${workspaceId}/dashboards/${dashboard.id}`);
+      router.push(
+        `/workspaces/${workspaceId}/dashboards/${dashboard.id}/studio`,
+      );
     } catch (cause) {
       setError(apiErrorMessage(cause));
       setPending(false);

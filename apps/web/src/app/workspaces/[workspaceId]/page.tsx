@@ -140,10 +140,24 @@ export default async function WorkspacePage({
                   {dashboard.name}
                 </Link>{" "}
                 <span className="muted">
-                  {dashboard.tileCount} tile
-                  {dashboard.tileCount === 1 ? "" : "s"} · updated{" "}
+                  {dashboard.slideCount} slide
+                  {dashboard.slideCount === 1 ? "" : "s"} ·{" "}
+                  {dashboard.widgetCount} widget
+                  {dashboard.widgetCount === 1 ? "" : "s"} · updated{" "}
                   {relativeTime(dashboard.updatedAt)}
                 </span>
+                {can(role, "dashboards:update") ? (
+                  <>
+                    {" "}
+                    <Link
+                      href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}/studio`}
+                      className="studio-link"
+                      aria-label={`Open ${dashboard.name} in Studio`}
+                    >
+                      Studio
+                    </Link>
+                  </>
+                ) : null}
               </li>
             ))}
           </ul>

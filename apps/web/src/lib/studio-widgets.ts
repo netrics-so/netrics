@@ -18,30 +18,11 @@ import { LINE_HEIGHT, contentBox } from "./studio-render";
 
 // The studio's widgets as the web renders them (ADR 0015, sections 1–2).
 
-/**
- * The image widget as ADR 0015 defines it. Images arrive with #217; until
- * the contract has the type this shape stands in, and once it does the
- * contract's own type is used.
- */
-export interface ImageWidgetShape {
-  type: "image";
-  id: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  title: string | null;
-  imageId: string;
-  options: { fit: "contain" | "cover"; align: "start" | "center" | "end" };
-}
-
-type ContractImageWidget = Extract<DashboardWidget, { type: "image" }>;
-export type ImageWidget = [ContractImageWidget] extends [never]
-  ? ImageWidgetShape
-  : ContractImageWidget;
+/** The image widget (#217). */
+export type ImageWidget = Extract<DashboardWidget, { type: "image" }>;
 
 /** Every widget a slide can hold. */
-export type StudioWidget = DashboardWidget | ImageWidget;
+export type StudioWidget = DashboardWidget;
 
 export type DataWidget = Extract<
   StudioWidget,
@@ -66,20 +47,58 @@ export function imageContentUrl(
   return `/v1/workspaces/${encodeURIComponent(workspaceId)}/images/${encodeURIComponent(image.id)}/content?v=${encodeURIComponent(image.sha256)}`;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+const ORIGIN_PROBE = "https://origin.invalid";
+
+/**
+ * The URL a page loads an image from: the API's own `url` when it is a
+ * same-origin path under /v1/ (the web proxy serves it with the session
+ * cookie), else the content URL built here. An absolute or
+ * protocol-relative URL is never used, so a listing cannot point the page
+ * at another origin.
+ */
+export function studioImageUrl(
+  workspaceId: string,
+  image: { id: string; sha256: string; url?: string | null },
+): string {
+  const url = image.url;
+  if (url && url.startsWith("/v1/") && !url.includes("\\")) {
+    try {
+      const parsed = new URL(url, ORIGIN_PROBE);
+      if (parsed.origin === ORIGIN_PROBE) {
+        return parsed.pathname + parsed.search;
+      }
+    } catch {
+      // Not a URL: fall through to the built one.
+    }
+  }
+  return imageContentUrl(workspaceId, image);
+}
+
+/** A listed workspace image as the renderers need it. */
+export function toStudioImage(
+  workspaceId: string,
+  image: {
+    id: string;
+    sha256: string;
+    width: number;
+    height: number;
+    url?: string | null;
+  },
+): StudioImage {
+  return {
+    id: image.id,
+    url: studioImageUrl(workspaceId, image),
+    width: image.width,
+    height: image.height,
+  };
 }
 
 /** A slide's background image and dim (#217), or null. */
 export function slideBackground(
-  slide: DashboardSlide,
+  slide: Pick<DashboardSlide, "background">,
 ): { imageId: string; dim: number } | null {
-  const background: unknown = (slide as { background?: unknown }).background;
-  if (
-    !isRecord(background) ||
-    typeof background.imageId !== "string" ||
-    typeof background.dim !== "number"
-  ) {
+  const background = slide.background;
+  if (!background) {
     return null;
   }
   return {
@@ -89,15 +108,16 @@ export function slideBackground(
 }
 
 /** The dashboard's logo image (#217), or null. */
-export function logoImageId(settings: DashboardSettings): string | null {
-  const id: unknown = (settings as { logoImageId?: unknown }).logoImageId;
-  return typeof id === "string" ? id : null;
+export function logoImageId(
+  settings: Pick<DashboardSettings, "logoImageId">,
+): string | null {
+  return settings.logoImageId;
 }
 
 /** Every image a dashboard's slides show: logo, backgrounds, widgets. */
 export function referencedImageIds(dashboard: {
-  settings: DashboardSettings;
-  slides: DashboardSlide[];
+  settings: Pick<DashboardSettings, "logoImageId">;
+  slides: ReadonlyArray<Pick<DashboardSlide, "background" | "widgets">>;
 }): string[] {
   const ids = new Set<string>();
   const logo = logoImageId(dashboard.settings);
@@ -105,7 +125,7 @@ export function referencedImageIds(dashboard: {
   for (const slide of dashboard.slides) {
     const background = slideBackground(slide);
     if (background) ids.add(background.imageId);
-    for (const widget of slide.widgets as StudioWidget[]) {
+    for (const widget of slide.widgets) {
       if (widget.type === "image") ids.add(widget.imageId);
     }
   }
@@ -126,9 +146,7 @@ export function isTileDashboard(dashboard: { slides: DashboardSlide[] }) {
   return (
     dashboard.slides.length <= 1 &&
     dashboard.slides.every((slide) =>
-      (slide.widgets as StudioWidget[]).every(
-        (widget) => widget.type === "metric",
-      ),
+      slide.widgets.every((widget) => widget.type === "metric"),
     )
   );
 }
