@@ -457,8 +457,10 @@ export function StudioEditor({
                 dispatch={dispatch}
               />
               <p className="help">
-                {theme.name} theme. Click a widget to edit it; click the
-                slide&apos;s background for the dashboard settings.
+                {theme.name} theme. Click a widget to edit it, drag it to move
+                it and its edges to resize it (arrow keys and Shift+arrow keys
+                do the same); click the slide&apos;s background for the
+                dashboard settings.
               </p>
             </>
           ) : null}

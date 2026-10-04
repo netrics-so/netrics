@@ -23,6 +23,12 @@ import {
   type WidgetType,
 } from "@netrics/domain";
 
+import {
+  nudgePlacement,
+  placementBlocker,
+  resizePlacement,
+  samePlacement,
+} from "./studio-grid";
 import { slideTitle } from "./studio-widgets";
 
 // The Studio's draft of one dashboard (ADR 0015, section 9): the document
@@ -95,6 +101,12 @@ export type StudioAction =
   | { type: "addWidget"; widget: NewWidget }
   | { type: "updateWidget"; widgetId: string; patch: WidgetPatch }
   | { type: "deleteWidget"; widgetId: string }
+  /** A finished drag on the canvas: one undo step, refused on overlap. */
+  | { type: "placeWidget"; widgetId: string; placement: StudioPlacement }
+  /** Arrow keys: one cell that way (over widgets in the way). */
+  | { type: "nudgeWidget"; widgetId: string; dx: number; dy: number }
+  /** Shift+Arrow keys: one cell wider, narrower, taller or shorter. */
+  | { type: "resizeWidgetBy"; widgetId: string; dw: number; dh: number }
   | { type: "undo" }
   | { type: "redo" }
   | { type: "discard" }
@@ -779,6 +791,10 @@ export function createStudioReducer(newId: () => string) {
           `${widgetName(widget)} deleted.`,
         );
       }
+      case "placeWidget":
+      case "nudgeWidget":
+      case "resizeWidgetBy":
+        return placeWidget(state, action);
       case "undo": {
         const previous = state.past.at(-1);
         if (!previous) {
@@ -876,4 +892,108 @@ export function createStudioReducer(newId: () => string) {
         return announce(state, action.text);
     }
   };
+}
+
+// ---------------------------------------------------------------------------
+// Moving and resizing on the grid (#224)
+
+type PlacementAction = Extract<
+  StudioAction,
+  { type: "placeWidget" | "nudgeWidget" | "resizeWidgetBy" }
+>;
+
+function placementText(widget: DashboardWidget, to: StudioPlacement): string {
+  const name = widgetName(widget);
+  const at = `column ${to.x + 1}, row ${to.y + 1}`;
+  const size = `${to.w} × ${to.h} cells`;
+  const moved = widget.x !== to.x || widget.y !== to.y;
+  const resized = widget.w !== to.w || widget.h !== to.h;
+  if (moved && resized) {
+    return `${name} resized to ${size} at ${at}.`;
+  }
+  return resized ? `${name} resized to ${size}.` : `${name} moved to ${at}.`;
+}
+
+/**
+ * A widget's new place on its slide, from a drag or the keyboard. Refused,
+ * with an announcement and no undo step, when it would leave the grid, go
+ * below the type's minimum size or overlap another widget. The widget is
+ * selected either way.
+ */
+function placeWidget(state: StudioState, action: PlacementAction): StudioState {
+  const slide = state.draft.slides.find((s) =>
+    s.widgets.some((widget) => widget.id === action.widgetId),
+  );
+  const widget = slide?.widgets.find((w) => w.id === action.widgetId);
+  if (!slide || !widget) {
+    return state;
+  }
+  const selected: StudioState = {
+    ...state,
+    selectedSlideId: slide.id,
+    selectedWidgetId: widget.id,
+    lastEditKey: null,
+  };
+  const name = widgetName(widget);
+  const others = slide.widgets.filter((w) => w.id !== widget.id);
+  let target: StudioPlacement | null;
+  if (action.type === "nudgeWidget") {
+    target = nudgePlacement(widget, action.dx, action.dy, others);
+    if (!target) {
+      return announce(selected, `${name} cannot move further that way.`);
+    }
+  } else if (action.type === "resizeWidgetBy") {
+    target = resizePlacement(widget, action.dw, action.dh, widget.type);
+    if (!target) {
+      const minimum = STUDIO_MIN_WIDGET_SIZE[widget.type];
+      const shrinking = action.dw < 0 || action.dh < 0;
+      return announce(
+        selected,
+        shrinking
+          ? `${name} is at its minimum size, ${minimum.w} × ${minimum.h} cells.`
+          : `${name} is at the edge of the slide.`,
+      );
+    }
+  } else {
+    target = {
+      x: action.placement.x,
+      y: action.placement.y,
+      w: action.placement.w,
+      h: action.placement.h,
+    };
+  }
+  if (samePlacement(widget, target)) {
+    return selected;
+  }
+  const blocker = placementBlocker(target, widget.type, others);
+  const sameSize = widget.w === target.w && widget.h === target.h;
+  if (blocker && !(blocker.kind === "tooSmall" && sameSize)) {
+    switch (blocker.kind) {
+      case "outside":
+        return announce(selected, `${name} must stay on the slide.`);
+      case "tooSmall":
+        return announce(
+          selected,
+          `${name} must be at least ${blocker.minimum.w} × ${blocker.minimum.h} cells.`,
+        );
+      case "overlap":
+        return announce(
+          selected,
+          `${name} would overlap ${widgetName(others[blocker.index]!)}; it stays where it was.`,
+        );
+    }
+  }
+  const placed = target;
+  return announce(
+    edit(
+      selected,
+      mapSlide(state.draft, slide.id, (s) => ({
+        ...s,
+        widgets: s.widgets.map((w) =>
+          w.id === widget.id ? ({ ...w, ...placed } as DashboardWidget) : w,
+        ),
+      })),
+    ),
+    placementText(widget, placed),
+  );
 }
