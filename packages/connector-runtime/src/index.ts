@@ -11,8 +11,11 @@ export {
   ContractViolationError,
   executeCheck,
   executeDiscover,
+  executeResourceIcons,
   executeSync,
+  supportsResourceIcons,
   type ExecuteOptions,
+  type FetchedResourceIcon,
 } from "./execute.js";
 export {
   redactConnectorError,

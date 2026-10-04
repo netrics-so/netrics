@@ -2,6 +2,13 @@ import { ZodError, type ZodType } from "zod";
 
 import {
   IMAGE_NAME_HEADER,
+  createDashboardFromTemplateRequestSchema,
+  dashboardTemplateOptionsResponseSchema,
+  resourceIconListResponseSchema,
+  useResourceIconRequestSchema,
+  type CreateDashboardFromTemplateRequest,
+  type DashboardTemplateOptionsResponse,
+  type ResourceIconListResponse,
   imageListResponseSchema,
   imageResponseSchema,
   type ImageContentType,
@@ -231,6 +238,18 @@ export function apiErrorMessage(error: unknown): string {
         return "That file is not a PNG, JPEG or WebP image.";
       case "image_quota_exceeded":
         return "This workspace has no room for more images. Delete some first.";
+      case "resource_icon_not_found":
+        return "The App Store does not list this app (yet), so it has no icon to use. Upload one instead.";
+      case "resource_icon_unavailable":
+        return "The app icon could not be fetched right now. Try again later, or upload one.";
+      case "resource_icons_unsupported":
+        return "This connection has no icons to offer. Upload an image instead.";
+      case "resource_not_found":
+        return "That app or project is no longer part of its connection.";
+      case "none_connected":
+        return "Connect a source first: the Overview shows the numbers of your connections.";
+      case "template_unsupported":
+        return "There is no Brand template for this connection yet.";
       case "device_not_found":
         return "That TV no longer exists.";
       case "pairing_not_found":
@@ -1015,6 +1034,59 @@ export function uploadImage(
     },
     body: file.body,
   }).then((response) => parseResponse(imageResponseSchema, response));
+}
+
+/** Resources whose icon can be used as an image (#226), from the browser. */
+export function listResourceIcons(
+  workspaceId: string,
+): Promise<ResourceIconListResponse> {
+  return browserSend(
+    resourceIconListResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/resource-icons`,
+  );
+}
+
+/**
+ * A resource's icon as a workspace image: fetched by the server through
+ * the connector (never by the browser), or the stored one while fresh.
+ * Throws ApiError resource_icon_not_found, resource_icon_unavailable …
+ */
+export function fetchResourceIcon(
+  workspaceId: string,
+  connectionId: string,
+  resourceId: string,
+): Promise<ImageResponse> {
+  return browserSend(
+    imageResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/resource-icons`,
+    useResourceIconRequestSchema.parse({ connectionId, resourceId }),
+  );
+}
+
+/** What the dashboard templates can be built from (#226). */
+export function getDashboardTemplates(
+  workspaceId: string,
+): Promise<DashboardTemplateOptionsResponse> {
+  return browserSend(
+    dashboardTemplateOptionsResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/dashboard-templates`,
+  );
+}
+
+/** A new dashboard from the Overview or Brand template. */
+export function createDashboardFromTemplate(
+  workspaceId: string,
+  body: CreateDashboardFromTemplateRequest,
+): Promise<DashboardResponse> {
+  return browserSend(
+    dashboardResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/dashboard-templates`,
+    createDashboardFromTemplateRequestSchema.parse(body),
+  );
 }
 
 /**

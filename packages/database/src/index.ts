@@ -177,10 +177,13 @@ export {
   findImageIds,
   findImageUsers,
   findImages,
+  findResourceIcon,
   imageUsage,
   insertImageWithinQuota,
   listImages,
+  listResourceIcons,
   readImageContent,
+  replaceImageReferences,
 } from "./images.js";
 export type {
   ImageInput,
@@ -232,10 +235,16 @@ export {
   findResourceNames,
   listMetricResources,
   findConnectionResourceNoun,
+  listNamedResources,
   resourceNameKey,
+  resourceTopTerritories,
   upsertConnectionResources,
 } from "./resources.js";
-export type { DiscoveredResourceName, MetricResource } from "./resources.js";
+export type {
+  DiscoveredResourceName,
+  MetricResource,
+  NamedResource,
+} from "./resources.js";
 export {
   consumeOAuthAuthorization,
   findConnectionOAuth,
