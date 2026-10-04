@@ -19,9 +19,12 @@ import {
   isInsideGrid,
   meetsMinimumSize,
   placementsOverlap,
+  type Locale,
   type StudioPlacement,
   type WidgetType,
 } from "@netrics/domain";
+
+import { webTranslator } from "./i18n/catalogs";
 
 import {
   nearestFreePlacement,
@@ -68,6 +71,8 @@ export interface StudioState {
   lastEditKey: string | null;
   /** For the polite live region; the counter makes a repeat re-announce. */
   announcement: { id: number; text: string } | null;
+  /** The editor's language: announcements and problems use it. */
+  locale: Locale;
 }
 
 /** A widget as the add menu creates it: no id or placement yet. */
@@ -146,7 +151,10 @@ export function toDocument(dashboard: Dashboard): StudioDocument {
   };
 }
 
-export function initialStudioState(dashboard: Dashboard): StudioState {
+export function initialStudioState(
+  dashboard: Dashboard,
+  locale: Locale,
+): StudioState {
   const document = toDocument(dashboard);
   return {
     dashboardId: dashboard.id,
@@ -159,7 +167,13 @@ export function initialStudioState(dashboard: Dashboard): StudioState {
     future: [],
     lastEditKey: null,
     announcement: null,
+    locale,
   };
+}
+
+/** The Studio's messages about the document, in `locale`. */
+function messages(locale: Locale) {
+  return webTranslator(locale, "studio.document");
 }
 
 /** JSON with sorted keys, so equal documents compare equal. */
@@ -279,18 +293,14 @@ export function addWidgetBlocker(
   document: StudioDocument,
   slide: StudioSlide,
   type: WidgetType,
+  locale: Locale,
 ): string | null {
-  if (slide.widgets.length >= STUDIO_LIMITS.widgetsPerSlide) {
-    return `A slide holds at most ${STUDIO_LIMITS.widgetsPerSlide} widgets.`;
-  }
-  if (
-    isDataWidgetType(type) &&
-    dataWidgetCount(document) >= STUDIO_LIMITS.dataWidgets
-  ) {
-    return `A dashboard shows at most ${STUDIO_LIMITS.dataWidgets} data widgets.`;
+  const limit = widgetLimitBlocker(document, slide, type, locale);
+  if (limit) {
+    return limit;
   }
   if (!findFreePlacement(slide.widgets, type)) {
-    return "There is no free space on this slide for it.";
+    return messages(locale)("noSpace");
   }
   return null;
 }
@@ -337,35 +347,36 @@ function durationOk(seconds: number) {
   );
 }
 
-const DURATION_HINT = `between ${SLIDE_SECONDS.min} and ${SLIDE_SECONDS.max} seconds`;
-
 /**
  * What the server would refuse, found before saving: names, durations,
  * limits, and every widget outside the grid, below its minimum size or
  * overlapping another (the same rules as slideLayoutProblem).
  */
-export function documentProblems(document: StudioDocument): StudioProblem[] {
+export function documentProblems(
+  document: StudioDocument,
+  locale: Locale,
+): StudioProblem[] {
+  const t = messages(locale);
+  const seconds = { min: SLIDE_SECONDS.min, max: SLIDE_SECONDS.max };
   const problems: StudioProblem[] = [];
   const dashboard = (message: string) =>
     problems.push({ slideId: null, widgetId: null, message });
   if (document.name.trim() === "") {
-    dashboard("The dashboard needs a name.");
+    dashboard(t("problems.nameMissing"));
   } else if (document.name.trim().length > 100) {
-    dashboard("The dashboard name is longer than 100 characters.");
+    dashboard(t("problems.nameTooLong", { max: 100 }));
   }
   if (!durationOk(document.settings.defaultSlideSeconds)) {
-    dashboard(`The default slide duration must be ${DURATION_HINT}.`);
+    dashboard(t("problems.defaultDuration", seconds));
   }
   if (document.slides.length > STUDIO_LIMITS.slides) {
-    dashboard(`A dashboard holds at most ${STUDIO_LIMITS.slides} slides.`);
+    dashboard(t("limits.slides", { max: STUDIO_LIMITS.slides }));
   }
   if (dataWidgetCount(document) > STUDIO_LIMITS.dataWidgets) {
-    dashboard(
-      `A dashboard shows at most ${STUDIO_LIMITS.dataWidgets} data widgets.`,
-    );
+    dashboard(t("limits.dataWidgets", { max: STUDIO_LIMITS.dataWidgets }));
   }
   document.slides.forEach((slide, index) => {
-    const title = slideTitle(slide, index);
+    const title = slideTitle(slide, index, locale);
     const atSlide = (message: string, widgetId: string | null = null) =>
       problems.push({ slideId: slide.id, widgetId, message });
     if (
@@ -373,51 +384,58 @@ export function documentProblems(document: StudioDocument): StudioProblem[] {
       slide.name.trim().length > STUDIO_LIMITS.slideNameLength
     ) {
       atSlide(
-        `${title}: the name is longer than ${STUDIO_LIMITS.slideNameLength} characters.`,
+        t("problems.slideNameTooLong", {
+          slide: title,
+          max: STUDIO_LIMITS.slideNameLength,
+        }),
       );
     }
     if (slide.durationSeconds !== null && !durationOk(slide.durationSeconds)) {
-      atSlide(`${title}: the duration must be ${DURATION_HINT}.`);
+      atSlide(t("problems.slideDuration", { slide: title, ...seconds }));
     }
     if (slide.widgets.length > STUDIO_LIMITS.widgetsPerSlide) {
       atSlide(
-        `${title}: a slide holds at most ${STUDIO_LIMITS.widgetsPerSlide} widgets.`,
+        t("problems.slideWidgets", {
+          slide: title,
+          max: STUDIO_LIMITS.widgetsPerSlide,
+        }),
       );
     }
     slide.widgets.forEach((widget, widgetIndex) => {
       const at = (message: string) =>
-        atSlide(`${title}: ${message}`, widget.id);
-      const name = widgetName(widget);
+        atSlide(t("problems.atSlide", { slide: title, message }), widget.id);
+      const name = widgetName(widget, locale);
       if (!isInsideGrid(widget)) {
-        at(`${name} lies outside the grid.`);
+        at(t("problems.outside", { name }));
       } else if (!meetsMinimumSize(widget.type, widget)) {
         const minimum = STUDIO_MIN_WIDGET_SIZE[widget.type];
-        at(`${name} must be at least ${minimum.w} × ${minimum.h} cells.`);
+        at(t("problems.tooSmall", { name, w: minimum.w, h: minimum.h }));
       }
       const overlaps = slide.widgets.some(
         (other, otherIndex) =>
           otherIndex !== widgetIndex && placementsOverlap(widget, other),
       );
       if (overlaps) {
-        at(`${name} overlaps another widget.`);
+        at(t("problems.overlaps", { name }));
       }
       if (widget.title !== null && widget.title.trim() === "") {
-        at(`${name} has an empty title.`);
+        at(t("problems.emptyTitle", { name }));
       } else if (
         widget.title !== null &&
         widget.title.trim().length > STUDIO_LIMITS.widgetTitleLength
       ) {
         at(
-          `${name}: the title is longer than ${STUDIO_LIMITS.widgetTitleLength} characters.`,
+          t("problems.titleTooLong", {
+            name,
+            max: STUDIO_LIMITS.widgetTitleLength,
+          }),
         );
       }
       if (widget.type === "text") {
         if (widget.text.trim() === "") {
-          at("A text widget needs some text.");
+          at(t("problems.textEmpty"));
         } else if (widget.text.length > STUDIO_LIMITS.textLength) {
-          at(
-            `A text widget holds at most ${STUDIO_LIMITS.textLength} characters.`,
-          );
+          at(t("problems.textTooLong", { max: STUDIO_LIMITS.textLength }));
         }
       }
       // Anything else the API would refuse in the widget's own fields
@@ -425,7 +443,7 @@ export function documentProblems(document: StudioDocument): StudioProblem[] {
       if (!problems.some((problem) => problem.widgetId === widget.id)) {
         const invalid = widgetInputProblem(widget);
         if (invalid) {
-          at(`${name}: ${invalid}`);
+          at(t("problems.invalid", { name, problem: invalid }));
         }
       }
     });
@@ -433,23 +451,17 @@ export function documentProblems(document: StudioDocument): StudioProblem[] {
   return problems;
 }
 
-const TYPE_NAMES: Record<WidgetType, string> = {
-  metric: "Metric",
-  line: "Line chart",
-  bar: "Bar chart",
-  image: "Image",
-  text: "Text",
-  clock: "Clock",
-};
-
 /** "Downloads (metric)", "Text", … for announcements and problems. */
-export function widgetName(widget: DashboardWidget): string {
-  const type = TYPE_NAMES[widget.type] ?? "Widget";
-  return widget.title ? `${widget.title} (${type.toLowerCase()})` : type;
+export function widgetName(widget: DashboardWidget, locale: Locale): string {
+  const t = messages(locale);
+  return widget.title
+    ? t("namedWidget", { title: widget.title, type: widget.type })
+    : widgetTypeName(widget.type, locale);
 }
 
-export function widgetTypeName(type: WidgetType): string {
-  return TYPE_NAMES[type];
+/** "Metric", "Line chart", … */
+export function widgetTypeName(type: WidgetType, locale: Locale): string {
+  return messages(locale)("typeName", { type });
 }
 
 // ---------------------------------------------------------------------------
@@ -538,9 +550,17 @@ export function toCopyRequest(
 }
 
 /** "Overview (copy)", kept within the 100-character name limit. */
-export function copyName(name: string): string {
-  const suffix = " (copy)";
-  return `${name.trim().slice(0, 100 - suffix.length)}${suffix}`;
+export function copyName(name: string, locale: Locale): string {
+  return copyOf(name, 100, locale);
+}
+
+/** "<name> (copy)" in `locale`, the name cut so it stays within `max`. */
+function copyOf(name: string, max: number, locale: Locale): string {
+  const t = messages(locale);
+  const suffix = t("copyOf", { name: "" });
+  return t("copyOf", {
+    name: name.trim().slice(0, Math.max(0, max - suffix.length)),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -629,7 +649,8 @@ export function createStudioReducer(newId: () => string) {
     state: StudioState,
     action: StudioAction,
   ): StudioState {
-    const { draft } = state;
+    const { draft, locale } = state;
+    const t = messages(locale);
     switch (action.type) {
       case "selectSlide":
         if (!draft.slides.some((slide) => slide.id === action.slideId)) {
@@ -670,7 +691,7 @@ export function createStudioReducer(newId: () => string) {
         if (draft.slides.length >= STUDIO_LIMITS.slides) {
           return announce(
             state,
-            `A dashboard holds at most ${STUDIO_LIMITS.slides} slides.`,
+            t("limits.slides", { max: STUDIO_LIMITS.slides }),
           );
         }
         const at =
@@ -685,7 +706,7 @@ export function createStudioReducer(newId: () => string) {
             selectedSlideId: slide.id,
             selectedWidgetId: null,
           },
-          `Slide ${at + 1} added.`,
+          t("announce.slideAdded", { number: at + 1 }),
         );
       }
       case "duplicateSlide": {
@@ -697,14 +718,14 @@ export function createStudioReducer(newId: () => string) {
         if (draft.slides.length >= STUDIO_LIMITS.slides) {
           return announce(
             state,
-            `A dashboard holds at most ${STUDIO_LIMITS.slides} slides.`,
+            t("limits.slides", { max: STUDIO_LIMITS.slides }),
           );
         }
         const copy: StudioSlide = {
           ...source,
           id: newId(),
           name: source.name
-            ? `${source.name.slice(0, STUDIO_LIMITS.slideNameLength - 7)} (copy)`
+            ? copyOf(source.name, STUDIO_LIMITS.slideNameLength, locale)
             : null,
           widgets: source.widgets.map((widget) => ({
             ...widget,
@@ -717,7 +738,7 @@ export function createStudioReducer(newId: () => string) {
         if (dataWidgetCount(next) > STUDIO_LIMITS.dataWidgets) {
           return announce(
             state,
-            `A dashboard shows at most ${STUDIO_LIMITS.dataWidgets} data widgets.`,
+            t("limits.dataWidgets", { max: STUDIO_LIMITS.dataWidgets }),
           );
         }
         return announce(
@@ -726,7 +747,10 @@ export function createStudioReducer(newId: () => string) {
             selectedSlideId: copy.id,
             selectedWidgetId: null,
           },
-          `${slideTitle(source, index)} duplicated as slide ${index + 2}.`,
+          t("announce.slideDuplicated", {
+            slide: slideTitle(source, index, locale),
+            number: index + 2,
+          }),
         );
       }
       case "deleteSlide": {
@@ -741,7 +765,7 @@ export function createStudioReducer(newId: () => string) {
         };
         return announce(
           { ...edit(state, next), ...keepSelection(state, next, index - 1) },
-          `${slideTitle(removed, index)} deleted.`,
+          t("announce.deleted", { name: slideTitle(removed, index, locale) }),
         );
       }
       case "moveSlide": {
@@ -753,10 +777,16 @@ export function createStudioReducer(newId: () => string) {
         const slides = [...draft.slides];
         const [slide] = slides.splice(from, 1);
         slides.splice(to, 0, slide!);
-        const label = slide!.name ? `“${slide!.name}”` : `Slide ${from + 1}`;
+        const label = slide!.name
+          ? t("quoted", { name: slide!.name })
+          : slideTitle(slide!, from, locale);
         return announce(
           { ...edit(state, { ...draft, slides }), selectedSlideId: slide!.id },
-          `${label} moved to position ${to + 1} of ${slides.length}.`,
+          t("announce.slideMoved", {
+            slide: label,
+            position: to + 1,
+            count: slides.length,
+          }),
         );
       }
       case "updateSlide": {
@@ -775,7 +805,12 @@ export function createStudioReducer(newId: () => string) {
         if (!slide) {
           return state;
         }
-        const blocker = addWidgetBlocker(draft, slide, action.widget.type);
+        const blocker = addWidgetBlocker(
+          draft,
+          slide,
+          action.widget.type,
+          locale,
+        );
         if (blocker) {
           return announce(state, blocker);
         }
@@ -796,7 +831,12 @@ export function createStudioReducer(newId: () => string) {
             ),
             selectedWidgetId: widget.id,
           },
-          `${widgetName(widget)} added at column ${placement.x + 1}, row ${placement.y + 1}.`,
+          t("announce.widgetPlaced", {
+            name: widgetName(widget, locale),
+            verb: "added",
+            column: placement.x + 1,
+            row: placement.y + 1,
+          }),
         );
       }
       case "updateWidget": {
@@ -842,7 +882,7 @@ export function createStudioReducer(newId: () => string) {
                 ? null
                 : state.selectedWidgetId,
           },
-          `${widgetName(widget)} deleted.`,
+          t("announce.deleted", { name: widgetName(widget, locale) }),
         );
       }
       case "placeWidget":
@@ -889,7 +929,7 @@ export function createStudioReducer(newId: () => string) {
         ) {
           return announce(
             state,
-            `A dashboard shows at most ${STUDIO_LIMITS.dataWidgets} data widgets.`,
+            t("limits.dataWidgets", { max: STUDIO_LIMITS.dataWidgets }),
           );
         }
         const placement = grownPlacement(
@@ -901,7 +941,7 @@ export function createStudioReducer(newId: () => string) {
           const minimum = STUDIO_MIN_WIDGET_SIZE[to];
           return announce(
             state,
-            `A ${widgetTypeName(to).toLowerCase()} needs at least ${minimum.w} × ${minimum.h} cells; there is no room for it here.`,
+            t("announce.typeNoRoom", { type: to, w: minimum.w, h: minimum.h }),
           );
         }
         const widget = {
@@ -917,7 +957,10 @@ export function createStudioReducer(newId: () => string) {
               widgets: s.widgets.map((w) => (w.id === current.id ? widget : w)),
             })),
           ),
-          `${widgetName(current)} is now a ${widgetTypeName(to).toLowerCase()}.`,
+          t("announce.typeChanged", {
+            name: widgetName(current, locale),
+            type: to,
+          }),
         );
       }
       case "duplicateWidget":
@@ -938,7 +981,7 @@ export function createStudioReducer(newId: () => string) {
             lastEditKey: null,
             ...keepSelection(state, previous),
           },
-          "Undone.",
+          t("announce.undone"),
         );
       }
       case "redo": {
@@ -955,7 +998,7 @@ export function createStudioReducer(newId: () => string) {
             lastEditKey: null,
             ...keepSelection(state, next),
           },
-          "Redone.",
+          t("announce.redone"),
         );
       }
       case "discard":
@@ -968,7 +1011,7 @@ export function createStudioReducer(newId: () => string) {
             lastEditKey: null,
             ...keepSelection(state, state.saved),
           },
-          "Changes discarded.",
+          t("announce.discarded"),
         );
       case "saved": {
         // New slides and widgets got their ids on the server: keep the
@@ -998,7 +1041,7 @@ export function createStudioReducer(newId: () => string) {
                 ? (slide?.widgets[widgetIndex]?.id ?? null)
                 : null,
           },
-          "Saved. Screens show the new version.",
+          t("announce.saved"),
         );
       }
       case "reload": {
@@ -1014,7 +1057,7 @@ export function createStudioReducer(newId: () => string) {
             lastEditKey: null,
             ...keepSelection(state, document),
           },
-          "Reloaded the saved version.",
+          t("announce.reloaded"),
         );
       }
       case "announce":
@@ -1031,16 +1074,25 @@ type PlacementAction = Extract<
   { type: "placeWidget" | "nudgeWidget" | "resizeWidgetBy" }
 >;
 
-function placementText(widget: DashboardWidget, to: StudioPlacement): string {
-  const name = widgetName(widget);
-  const at = `column ${to.x + 1}, row ${to.y + 1}`;
-  const size = `${to.w} × ${to.h} cells`;
+function placementText(
+  widget: DashboardWidget,
+  to: StudioPlacement,
+  locale: Locale,
+): string {
+  const t = messages(locale);
+  const values = {
+    name: widgetName(widget, locale),
+    column: to.x + 1,
+    row: to.y + 1,
+    w: to.w,
+    h: to.h,
+  };
   const moved = widget.x !== to.x || widget.y !== to.y;
   const resized = widget.w !== to.w || widget.h !== to.h;
   if (moved && resized) {
-    return `${name} resized to ${size} at ${at}.`;
+    return t("announce.resizedAt", values);
   }
-  return resized ? `${name} resized to ${size}.` : `${name} moved to ${at}.`;
+  return resized ? t("announce.resized", values) : t("announce.moved", values);
 }
 
 /**
@@ -1063,13 +1115,15 @@ function placeWidget(state: StudioState, action: PlacementAction): StudioState {
     selectedWidgetId: widget.id,
     lastEditKey: null,
   };
-  const name = widgetName(widget);
+  const { locale } = state;
+  const t = messages(locale);
+  const name = widgetName(widget, locale);
   const others = slide.widgets.filter((w) => w.id !== widget.id);
   let target: StudioPlacement | null;
   if (action.type === "nudgeWidget") {
     target = nudgePlacement(widget, action.dx, action.dy, others);
     if (!target) {
-      return announce(selected, `${name} cannot move further that way.`);
+      return announce(selected, t("announce.cannotMove", { name }));
     }
   } else if (action.type === "resizeWidgetBy") {
     target = resizePlacement(widget, action.dw, action.dh, widget.type);
@@ -1079,8 +1133,8 @@ function placeWidget(state: StudioState, action: PlacementAction): StudioState {
       return announce(
         selected,
         shrinking
-          ? `${name} is at its minimum size, ${minimum.w} × ${minimum.h} cells.`
-          : `${name} is at the edge of the slide.`,
+          ? t("announce.minimumSize", { name, w: minimum.w, h: minimum.h })
+          : t("announce.atEdge", { name }),
       );
     }
   } else {
@@ -1099,16 +1153,23 @@ function placeWidget(state: StudioState, action: PlacementAction): StudioState {
   if (blocker && !(blocker.kind === "tooSmall" && sameSize)) {
     switch (blocker.kind) {
       case "outside":
-        return announce(selected, `${name} must stay on the slide.`);
+        return announce(selected, t("announce.mustStay", { name }));
       case "tooSmall":
         return announce(
           selected,
-          `${name} must be at least ${blocker.minimum.w} × ${blocker.minimum.h} cells.`,
+          t("problems.tooSmall", {
+            name,
+            w: blocker.minimum.w,
+            h: blocker.minimum.h,
+          }),
         );
       case "overlap":
         return announce(
           selected,
-          `${name} would overlap ${widgetName(others[blocker.index]!)}; it stays where it was.`,
+          t("announce.wouldOverlap", {
+            name,
+            other: widgetName(others[blocker.index]!, locale),
+          }),
         );
     }
   }
@@ -1123,7 +1184,7 @@ function placeWidget(state: StudioState, action: PlacementAction): StudioState {
         ),
       })),
     ),
-    placementText(widget, placed),
+    placementText(widget, placed, locale),
   );
 }
 
@@ -1140,15 +1201,17 @@ export function widgetLimitBlocker(
   document: StudioDocument,
   slide: StudioSlide,
   type: WidgetType,
+  locale: Locale,
 ): string | null {
+  const t = messages(locale);
   if (slide.widgets.length >= STUDIO_LIMITS.widgetsPerSlide) {
-    return `A slide holds at most ${STUDIO_LIMITS.widgetsPerSlide} widgets.`;
+    return t("limits.widgetsPerSlide", { max: STUDIO_LIMITS.widgetsPerSlide });
   }
   if (
     isDataWidgetType(type) &&
     dataWidgetCount(document) >= STUDIO_LIMITS.dataWidgets
   ) {
-    return `A dashboard shows at most ${STUDIO_LIMITS.dataWidgets} data widgets.`;
+    return t("limits.dataWidgets", { max: STUDIO_LIMITS.dataWidgets });
   }
   return null;
 }
@@ -1165,10 +1228,11 @@ function insertWidget(
   action: InsertAction,
   newId: () => string,
 ): StudioState {
-  const { draft } = state;
+  const { draft, locale } = state;
+  const t = messages(locale);
   let slide: StudioSlide | undefined;
   let source: DashboardWidget | NewWidget;
-  let verb: string;
+  let verb: "added" | "duplicated" | "pasted";
   if (action.type === "duplicateWidget") {
     slide = draft.slides.find((s) =>
       s.widgets.some((widget) => widget.id === action.widgetId),
@@ -1187,7 +1251,7 @@ function insertWidget(
     source = action.widget;
     verb = action.type === "pasteWidget" ? "pasted" : "added";
   }
-  const blocker = widgetLimitBlocker(draft, slide, source.type);
+  const blocker = widgetLimitBlocker(draft, slide, source.type, locale);
   if (blocker) {
     return announce(state, blocker);
   }
@@ -1197,13 +1261,13 @@ function insertWidget(
       ? null
       : action.placement;
     if (!placement) {
-      return announce(state, "That spot is taken; the widget was not added.");
+      return announce(state, t("spotTaken"));
     }
   } else {
     const from = source as DashboardWidget;
     placement = nearestFreePlacement(from, from.type, slide.widgets);
     if (!placement) {
-      return announce(state, "There is no free space on this slide for it.");
+      return announce(state, t("noSpace"));
     }
   }
   const widget = {
@@ -1224,6 +1288,11 @@ function insertWidget(
       selectedSlideId: target.id,
       selectedWidgetId: widget.id,
     },
-    `${widgetName(widget)} ${verb} at column ${placement.x + 1}, row ${placement.y + 1}.`,
+    t("announce.widgetPlaced", {
+      name: widgetName(widget, locale),
+      verb,
+      column: placement.x + 1,
+      row: placement.y + 1,
+    }),
   );
 }

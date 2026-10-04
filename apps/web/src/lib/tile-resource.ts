@@ -2,8 +2,11 @@ import type { MetricResourcesResponse } from "@netrics/contracts";
 import {
   RESOURCE_DIMENSION,
   allResourcesName,
+  type Locale,
   type ResourceNoun,
 } from "@netrics/domain";
+
+import { webTranslator } from "./i18n/catalogs";
 
 /**
  * The tile editor's resource choice (#194): a tile shows all of a
@@ -50,8 +53,10 @@ export function resourceFieldLabel(noun: ResourceNoun): string {
 }
 
 /** The picker's choice of all resources added up: "All apps". */
-export function allResourcesOption(noun: ResourceNoun): string {
-  return `All ${noun.plural}`;
+export function allResourcesOption(noun: ResourceNoun, locale: Locale): string {
+  return webTranslator(locale, "studio.widgetPanel")("allResources", {
+    plural: noun.plural,
+  });
 }
 
 /**

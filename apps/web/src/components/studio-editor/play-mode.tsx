@@ -12,6 +12,7 @@ import {
 import { documentRotation } from "@/lib/slide-rotation";
 import type { StudioDocument } from "@/lib/studio-document";
 import type { StudioEnv } from "@/lib/studio-widgets";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * "Play" (ADR 0015, section 9): the draft's rotation full-screen, as a
@@ -33,6 +34,7 @@ export function PlayMode({
   startSlideId: string;
   onClose: () => void;
 }) {
+  const t = useT("studio.play");
   const root = useRef<HTMLDivElement>(null);
   const controls = useRef<SlidePlayerControls | null>(null);
   const { settings } = document;
@@ -85,7 +87,7 @@ export function PlayMode({
       className="play-mode"
       role="dialog"
       aria-modal="true"
-      aria-label={`Playing ${document.name}`}
+      aria-label={t("label", { name: document.name })}
       tabIndex={-1}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -109,7 +111,7 @@ export function PlayMode({
           tokens={tokens}
           showHeader={settings.showHeader}
           header={{
-            name: document.name.trim() || "Untitled",
+            name: document.name.trim() || t("untitled"),
             logoImageId: settings.logoImageId,
             timeZone: env.timeZone,
           }}
@@ -119,25 +121,24 @@ export function PlayMode({
           paused={paused}
           controlsRef={controls}
           onSlideChange={setCurrentId}
-          empty={
-            <p className="play-empty">
-              Every slide is hidden. Show at least one slide on screens to play
-              the dashboard.
-            </p>
-          }
+          empty={<p className="play-empty">{t("allHidden")}</p>}
         />
       </div>
       <div className="play-controls">
         <span aria-live="polite">
           {count > 0
-            ? `Slide ${Math.min(index, count - 1) + 1} of ${count}${paused && count > 1 ? " · paused" : ""}`
+            ? t("position", {
+                number: Math.min(index, count - 1) + 1,
+                count,
+                paused: paused && count > 1 ? "yes" : "no",
+              })
             : ""}
         </span>
         <button
           type="button"
           onClick={() => step(-1)}
           disabled={count <= 1}
-          aria-label="Previous slide"
+          aria-label={t("previous")}
         >
           ←
         </button>
@@ -146,18 +147,18 @@ export function PlayMode({
           onClick={() => setPaused((value) => !value)}
           disabled={count <= 1}
         >
-          {paused ? "Resume" : "Pause"}
+          {paused ? t("resume") : t("pause")}
         </button>
         <button
           type="button"
           onClick={() => step(1)}
           disabled={count <= 1}
-          aria-label="Next slide"
+          aria-label={t("next")}
         >
           →
         </button>
         <button type="button" onClick={onClose}>
-          Exit
+          {t("exit")}
         </button>
       </div>
     </div>

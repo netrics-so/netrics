@@ -11,9 +11,11 @@ import {
   wrappedLineCount,
   type StudioPlacement,
   type StudioTextBlock,
+  type Locale,
   type StudioTextSize,
 } from "@netrics/domain";
 
+import { webTranslator } from "./i18n/catalogs";
 import { LINE_HEIGHT, contentBox } from "./studio-render";
 
 // The studio's widgets as the web renders them (ADR 0015, sections 1–2).
@@ -133,8 +135,15 @@ export function referencedImageIds(dashboard: {
 }
 
 /** "Sales", or "Slide 2" for a slide without a name. */
-export function slideTitle(slide: { name: string | null }, index: number) {
-  return slide.name ?? `Slide ${index + 1}`;
+export function slideTitle(
+  slide: { name: string | null },
+  index: number,
+  locale: Locale,
+): string {
+  return (
+    slide.name ??
+    webTranslator(locale, "studio.document")("slide", { number: index + 1 })
+  );
 }
 
 const SMALLER: Record<StudioTextSize, StudioTextSize | null> = {

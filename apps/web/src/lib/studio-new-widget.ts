@@ -1,8 +1,13 @@
 import type { WorkspaceMetric } from "@netrics/contracts";
-import { RESOURCE_DIMENSION, type WidgetType } from "@netrics/domain";
+import {
+  RESOURCE_DIMENSION,
+  type Locale,
+  type WidgetType,
+} from "@netrics/domain";
 
 import type { NewWidget } from "./studio-document";
 import { pickableMetrics } from "./format-metric";
+import { webTranslator } from "./i18n/catalogs";
 import { needsCurrency } from "./tile-currency";
 
 // What "Add widget" creates (ADR 0015, section 2): every type with
@@ -34,14 +39,17 @@ export function newWidget(
     metrics: readonly WorkspaceMetric[];
     /** Workspace images, newest first. */
     imageIds: readonly string[];
+    /** The language of the reasons and of a new text widget's text. */
+    locale: Locale;
   },
 ): { widget: NewWidget } | { reason: string } {
+  const t = webTranslator(input.locale, "studio.newWidget");
   switch (type) {
     case "metric":
     case "line": {
       const metric = startingMetrics(input.metrics)[0];
       if (!metric) {
-        return { reason: "Add a connection with metrics first." };
+        return { reason: t("noMetrics") };
       }
       const binding = {
         title: null,
@@ -75,7 +83,7 @@ export function newWidget(
         (candidate) => groupBy(candidate) !== null,
       );
       if (!metric) {
-        return { reason: "No metric can be broken down yet." };
+        return { reason: t("noBreakdown") };
       }
       return {
         widget: {
@@ -96,7 +104,7 @@ export function newWidget(
     case "image": {
       const imageId = input.imageIds[0];
       if (!imageId) {
-        return { reason: "Upload an image first (dashboard settings, Logo)." };
+        return { reason: t("noImage") };
       }
       return {
         widget: {
@@ -112,7 +120,7 @@ export function newWidget(
         widget: {
           type,
           title: null,
-          text: "## Heading\nSome text",
+          text: t("text"),
           options: { size: "body", align: "start" },
         },
       };

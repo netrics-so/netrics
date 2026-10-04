@@ -14,7 +14,7 @@ import { tileLabel } from "@netrics/domain";
 import { TileNotice, TileView } from "@/components/tile-view";
 import { apiErrorMessage, queryMetric } from "@/lib/api";
 import { displayUnit } from "@/lib/format-metric";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 import { conversionNote } from "@/lib/tile-currency";
 import { connectionNotice } from "@/lib/tile-status";
 
@@ -40,6 +40,10 @@ export function MetricTile({
   variant?: "default" | "tv";
 }) {
   const locale = useLocale();
+  const t = useT("screen.widget");
+  const screen = useT("screen.kiosk");
+  const dashboardText = useT("dashboard");
+  const common = useT("common");
   const [data, setData] = useState<MetricQueryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -130,7 +134,7 @@ export function MetricTile({
               target="_blank"
               rel="noreferrer"
             >
-              source
+              {dashboardText("source")}
             </a>
             )
             {conversion.unconverted.map((line) => (
@@ -148,10 +152,10 @@ export function MetricTile({
           </div>
         ) : (
           <div className="tile-error" role="alert">
-            <p>This tile could not load.</p>
+            <p>{screen("tileFailed")}</p>
             {error ? <p className="muted">{error}</p> : null}
             <button type="button" onClick={() => void load()}>
-              Retry
+              {common("retry")}
             </button>
           </div>
         )
@@ -164,7 +168,7 @@ export function MetricTile({
               // Leads to the connection page, where the problem can be fixed.
               <Link
                 className="tile-stale"
-                title="The numbers may be out of date"
+                title={t("mayBeOutdated")}
                 href={`/workspaces/${workspaceId}/connections/${tile.connectionId}`}
               >
                 <span aria-hidden="true">⚠</span> {stale}
@@ -174,7 +178,7 @@ export function MetricTile({
             )
           ) : null}
           {data && error ? (
-            <TileNotice title={error}>Refresh failed</TileNotice>
+            <TileNotice title={error}>{t("refreshFailed")}</TileNotice>
           ) : null}
         </>
       }

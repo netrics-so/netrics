@@ -4,9 +4,11 @@ import {
   STUDIO_LABEL_MAX_LINES,
   isDataWidget,
   studioLayout,
+  type Locale,
   type StudioLabelFit,
 } from "@netrics/domain";
 
+import { webTranslator } from "./i18n/catalogs";
 import type { StudioDocument } from "./studio-document";
 import { textWidgetLayout } from "./studio-widgets";
 
@@ -57,22 +59,19 @@ function hintFor(
   fit: StudioLabelFit,
   fitsAtWidth: number | null,
   hasCustomTitle: boolean,
+  locale: Locale,
 ): string {
-  const which =
-    fit.titleLines > STUDIO_LABEL_MAX_LINES ? "The title" : "The resource name";
-  const cut = `${which} is cut off on TVs.`;
-  const wider =
-    fitsAtWidth !== null ? `make it ${fitsAtWidth} cells wide` : null;
-  const shorter =
-    fit.titleLines > STUDIO_LABEL_MAX_LINES
-      ? hasCustomTitle
-        ? "shorten the title"
-        : "set a shorter title"
-      : null;
-  const fixes = [wider, shorter].filter(Boolean).join(" or ");
-  return fixes
-    ? `${cut} ${fixes[0]!.toUpperCase()}${fixes.slice(1)}.`
-    : `${cut} Show fewer resources in it.`;
+  const t = webTranslator(locale, "studio.readability");
+  const titleCut = fit.titleLines > STUDIO_LABEL_MAX_LINES;
+  const cut = titleCut ? t("titleCut") : t("resourceCut");
+  const title = !titleCut ? "none" : hasCustomTitle ? "shorten" : "set";
+  const fix =
+    fitsAtWidth !== null
+      ? t("wider", { width: fitsAtWidth, title })
+      : title !== "none"
+        ? t("shorterTitle", { title })
+        : t("fewerResources");
+  return `${cut} ${fix}`;
 }
 
 /** Whether a text widget's text overflows its box (as screens render it). */
@@ -118,10 +117,14 @@ export function textSizeToFit(
   return best;
 }
 
-function textHint(fitsAtSize: { w: number; h: number } | null): string {
+function textHint(
+  fitsAtSize: { w: number; h: number } | null,
+  locale: Locale,
+): string {
+  const t = webTranslator(locale, "studio.readability");
   return fitsAtSize
-    ? `The text is cut off on TVs. Make it ${fitsAtSize.w} × ${fitsAtSize.h} cells or shorten the text.`
-    : "The text is cut off on TVs. Shorten the text.";
+    ? t("textCutResize", { w: fitsAtSize.w, h: fitsAtSize.h })
+    : t("textCut");
 }
 
 /**
@@ -134,6 +137,7 @@ export function unreadableLabels(
   document: StudioDocument,
   labelOf: (widget: DashboardWidget) => string,
   fontScale: number,
+  locale: Locale,
 ): UnreadableLabel[] {
   const found: UnreadableLabel[] = [];
   for (const slide of document.slides) {
@@ -152,7 +156,7 @@ export function unreadableLabels(
           fit: { fits: false, titleLines: 0, resourceLines: 0 },
           fitsAtWidth: null,
           fitsAtSize,
-          hint: textHint(fitsAtSize),
+          hint: textHint(fitsAtSize, locale),
         });
         continue;
       }
@@ -172,7 +176,7 @@ export function unreadableLabels(
         label,
         fit,
         fitsAtWidth,
-        hint: hintFor(fit, fitsAtWidth, Boolean(widget.title?.trim())),
+        hint: hintFor(fit, fitsAtWidth, Boolean(widget.title?.trim()), locale),
       });
     }
   }

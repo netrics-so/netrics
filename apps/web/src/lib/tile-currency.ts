@@ -75,14 +75,16 @@ export function currencyOptionLabel(
 export function workspaceChoiceLabel(
   displayCurrency: string | null,
   totals: CurrencyTotals | null,
+  locale: Locale,
 ): string {
+  const t = webTranslator(locale, "tileCurrency");
   if (displayCurrency) {
-    return `Workspace: converted to ${displayCurrency} (≈)`;
+    return t("workspaceConverted", { currency: displayCurrency });
   }
   const largest = totals?.[0]?.currency;
   return largest
-    ? `Workspace: per currency, the largest (now ${largest})`
-    : "Workspace: per currency, the largest";
+    ? t("workspaceLargestNow", { currency: largest })
+    : t("workspaceLargest");
 }
 
 /** What a tile saves for its choice. */
@@ -129,9 +131,8 @@ export function conversionNote(
   unconverted: string[];
 } {
   return {
-    text: `≈ ${conversion.displayCurrency}, ${shortSource(conversion)}`,
-    title:
-      "Converted with the ECB reference rate of each day (the last published one on weekends and holidays). Apple's own reports use different rates.",
+    text: `≈ ${conversion.displayCurrency}, ${shortSource(conversion, locale)}`,
+    title: webTranslator(locale, "tileCurrency")("conversionTitle"),
     unconverted: conversion.unconverted
       .filter((entry) => entry.value !== null)
       .map((entry) =>
@@ -142,8 +143,8 @@ export function conversionNote(
   };
 }
 
-function shortSource(conversion: CurrencyConversion): string {
+function shortSource(conversion: CurrencyConversion, locale: Locale): string {
   return conversion.source.name.startsWith("ECB")
-    ? "ECB reference rates"
+    ? webTranslator(locale, "tileCurrency")("ecbRates")
     : conversion.source.name;
 }

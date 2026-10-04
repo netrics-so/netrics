@@ -113,7 +113,7 @@ const clockWidget: DashboardWidget = {
   options: { showDate: true, hour12: false, timeZone: null },
 };
 
-const context = { metrics, imageIds: [ID(50)] };
+const context = { metrics, imageIds: [ID(50)], locale: "en" as const };
 
 /** The widget with its placement, as the API receives it. */
 function asInput(fields: object) {
@@ -233,6 +233,9 @@ describe("metric choices", () => {
     const all = { ...metricWidget, dimensions: {}, resourceName: null };
     const apps = { singular: "app", plural: "apps" };
     expect(scopePatch(all, 3, apps)).toEqual({ allResourcesName: "All apps" });
+    expect(
+      scopePatch(all, 3, { singular: "App", plural: "Apps" }, "de"),
+    ).toEqual({ allResourcesName: "Alle Apps" });
     expect(scopePatch({ ...all, allResourcesName: "All apps" }, 3, apps)).toBe(
       null,
     );
@@ -363,17 +366,25 @@ describe("changing the type", () => {
       ),
     ).toEqual({ reason: "This metric cannot be broken down into bars." });
     expect(
-      convertWidget(clockWidget, "image", { metrics, imageIds: [] }),
+      convertWidget(clockWidget, "image", {
+        metrics,
+        imageIds: [],
+        locale: "en",
+      }),
     ).toMatchObject({ reason: expect.stringMatching(/Upload an image/) });
     expect(
-      convertWidget(clockWidget, "metric", { metrics: [], imageIds: [] }),
+      convertWidget(clockWidget, "metric", {
+        metrics: [],
+        imageIds: [],
+        locale: "en",
+      }),
     ).toMatchObject({ reason: expect.stringMatching(/connection/) });
   });
 });
 
 describe("label preview", () => {
   it("is the label TVs show, with the resource or All apps", () => {
-    expect(labelPreview(metricWidget, downloads)).toMatchObject({
+    expect(labelPreview(metricWidget, downloads, "en")).toMatchObject({
       label: "Downloads · Wurfel",
       defaultLabel: "Downloads · Wurfel",
       warning: null,
@@ -384,14 +395,16 @@ describe("label preview", () => {
       resourceName: null,
       allResourcesName: "All apps",
     };
-    expect(labelPreview(all, downloads)?.label).toBe("Downloads · All apps");
+    expect(labelPreview(all, downloads, "en")?.label).toBe(
+      "Downloads · All apps",
+    );
     expect(
-      labelPreview({ ...all, title: "  App downloads " }, downloads),
+      labelPreview({ ...all, title: "  App downloads " }, downloads, "en"),
     ).toMatchObject({
       label: "App downloads",
       defaultLabel: "Downloads · All apps",
     });
-    expect(labelPreview(clockWidget, undefined)).toBeNull();
+    expect(labelPreview(clockWidget, undefined, "en")).toBeNull();
   });
 
   it("warns when the label would be cut at the widget's size", () => {
@@ -401,11 +414,13 @@ describe("label preview", () => {
       title:
         "Downloads of every app in every territory over the whole period, combined",
     };
-    const preview = labelPreview(long, downloads)!;
+    const preview = labelPreview(long, downloads, "en")!;
     expect(preview.fit.fits).toBe(false);
     expect(preview.warning).toMatch(/would be cut/);
     // Wider, the same title fits.
-    expect(labelPreview({ ...long, w: 12 }, downloads)!.warning).toBeNull();
+    expect(
+      labelPreview({ ...long, w: 12 }, downloads, "en")!.warning,
+    ).toBeNull();
   });
 });
 
@@ -480,7 +495,7 @@ const widgets = (state: StudioState) => state.draft.slides[0]!.widgets;
 
 describe("inspector reducer actions", () => {
   it("merges style options, undoably", () => {
-    const start = initialStudioState(dashboard([metricWidget]));
+    const start = initialStudioState(dashboard([metricWidget]), "en");
     const state = run(start, {
       type: "updateWidgetOptions",
       widgetId: ID(11),
@@ -494,7 +509,10 @@ describe("inspector reducer actions", () => {
   });
 
   it("changes the type in place and grows it to the type's minimum", () => {
-    const start = initialStudioState(dashboard([metricWidget, clockWidget]));
+    const start = initialStudioState(
+      dashboard([metricWidget, clockWidget]),
+      "en",
+    );
     const made = convertWidget(clockWidget, "line", context);
     if (!("widget" in made)) throw new Error("no line");
     const state = run(start, {
@@ -511,7 +529,7 @@ describe("inspector reducer actions", () => {
       h: 3,
     });
     expect(state.announcement?.text).toBe("Clock is now a line chart.");
-    expect(documentProblems(state.draft)).toEqual([]);
+    expect(documentProblems(state.draft, "en")).toEqual([]);
     expect(() => toReplaceRequest(state)).not.toThrow();
   });
 
@@ -526,6 +544,7 @@ describe("inspector reducer actions", () => {
     };
     const start = initialStudioState(
       dashboard([metricWidget, clockWidget, below]),
+      "en",
     );
     const made = convertWidget(clockWidget, "bar", context);
     if (!("widget" in made)) throw new Error("no bar");
@@ -561,7 +580,7 @@ describe("inspector reducer actions", () => {
     ];
     const made = convertWidget(clockWidget, "metric", context);
     if (!("widget" in made)) throw new Error("no metric");
-    const state = run(initialStudioState(doc), {
+    const state = run(initialStudioState(doc, "en"), {
       type: "changeWidgetType",
       widgetId: ID(12),
       widget: made.widget,
@@ -592,12 +611,12 @@ describe("inspector reducer actions", () => {
       h: 3,
       options: { groupBy: "territory", limit: 5 },
     } as DashboardWidget;
-    const state = run(initialStudioState(dashboard([bar])), {
+    const state = run(initialStudioState(dashboard([bar]), "en"), {
       type: "updateWidgetOptions",
       widgetId: ID(11),
       patch: { limit: 12 },
     });
-    const problems = documentProblems(state.draft);
+    const problems = documentProblems(state.draft, "en");
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatchObject({ widgetId: ID(11) });
     expect(problems[0]!.message).toMatch(/options\.limit/);

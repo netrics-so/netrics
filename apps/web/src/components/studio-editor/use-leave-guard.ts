@@ -2,8 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-export const LEAVE_MESSAGE =
-  "This dashboard has unsaved changes. Leave and lose them?";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * Whether a click on `anchor` leaves the page in this tab: same-origin
@@ -45,8 +44,12 @@ export function leavesPage(
  * autosave): on reload, closing the tab and leaving by a link in the app.
  */
 export function useLeaveGuard(dirty: boolean) {
+  const t = useT("studio.editor");
+  const message = t("leaveConfirm");
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
+  const messageRef = useRef(message);
+  messageRef.current = message;
 
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent) {
@@ -60,7 +63,7 @@ export function useLeaveGuard(dirty: boolean) {
       const anchor = (event.target as Element | null)?.closest?.("a[href]");
       if (!(anchor instanceof HTMLAnchorElement)) return;
       if (!leavesPage(anchor, event, window.location)) return;
-      if (!window.confirm(LEAVE_MESSAGE)) {
+      if (!window.confirm(messageRef.current)) {
         event.preventDefault();
         event.stopPropagation();
       }

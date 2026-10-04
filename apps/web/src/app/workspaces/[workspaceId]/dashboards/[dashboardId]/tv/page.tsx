@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import {
@@ -8,6 +9,7 @@ import {
   listStudioImages,
   listWorkspaceMetrics,
 } from "@/lib/api";
+import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
 import { resolveDashboardTheme } from "@/lib/studio-theme";
 import { referencedImageIds } from "@/lib/studio-widgets";
@@ -16,6 +18,11 @@ import type { TileConnection } from "../metric-tile";
 import { TvDashboard } from "./tv-dashboard";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("dashboard");
+  return { title: t("tvPageTitle") };
+}
 
 interface TvPageProps {
   params: Promise<{ workspaceId: string; dashboardId: string }>;

@@ -17,6 +17,7 @@ import {
   type UnreadableLabel,
 } from "@/lib/studio-readability";
 import { metricKeyOf, type DataWidget } from "@/lib/studio-widgets";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 // Canvas additions of #241: readability warnings, and copy, paste and
 // duplicate for widgets (keyboard shortcuts and buttons).
@@ -33,6 +34,7 @@ export function useUnreadableLabels(
   byWidget: ReadonlyMap<string, UnreadableLabel>;
   perSlide: ReadonlyMap<string, number>;
 } {
+  const locale = useLocale();
   return useMemo(() => {
     const labels = unreadableLabels(
       document,
@@ -44,12 +46,13 @@ export function useUnreadableLabels(
             )
           : "",
       fontScale,
+      locale,
     );
     return {
       byWidget: new Map(labels.map((label) => [label.widgetId, label])),
       perSlide: unreadableCounts(labels),
     };
-  }, [document, metrics, fontScale]);
+  }, [document, metrics, fontScale, locale]);
 }
 
 /** What a Cmd/Ctrl shortcut does to widgets, or null for other keys. */
@@ -94,14 +97,19 @@ export function useWidgetClipboard(
   dispatch: (action: StudioAction) => void,
   enabled: boolean,
 ) {
+  const locale = useLocale();
+  const t = useT("studio.clipboard");
   const [clipboard, setClipboard] = useState<DashboardWidget | null>(null);
 
   const copy = useCallback(() => {
     if (selected) {
       setClipboard(selected);
-      dispatch({ type: "announce", text: `${widgetName(selected)} copied.` });
+      dispatch({
+        type: "announce",
+        text: t("copied", { name: widgetName(selected, locale) }),
+      });
     }
-  }, [selected, dispatch]);
+  }, [selected, dispatch, locale, t]);
   const paste = useCallback(() => {
     if (clipboard) {
       dispatch({ type: "pasteWidget", widget: clipboard });
@@ -145,15 +153,17 @@ export function WidgetClipboardBar({
   onPaste: () => void;
   onDuplicate: () => void;
 }) {
+  const locale = useLocale();
+  const t = useT("studio.clipboard");
   return (
-    <div className="widget-clipboard" role="group" aria-label="Widget">
+    <div className="widget-clipboard" role="group" aria-label={t("group")}>
       <button
         type="button"
         disabled={!selected}
         onClick={onDuplicate}
         aria-keyshortcuts="Control+D Meta+D"
       >
-        Duplicate
+        {t("duplicate")}
       </button>
       <button
         type="button"
@@ -161,16 +171,20 @@ export function WidgetClipboardBar({
         onClick={onCopy}
         aria-keyshortcuts="Control+C Meta+C"
       >
-        Copy
+        {t("copy")}
       </button>
       <button
         type="button"
         disabled={!clipboard}
         onClick={onPaste}
         aria-keyshortcuts="Control+V Meta+V"
-        title={clipboard ? `Paste ${widgetName(clipboard)}` : undefined}
+        title={
+          clipboard
+            ? t("pasteNamed", { name: widgetName(clipboard, locale) })
+            : undefined
+        }
       >
-        Paste
+        {t("paste")}
       </button>
     </div>
   );

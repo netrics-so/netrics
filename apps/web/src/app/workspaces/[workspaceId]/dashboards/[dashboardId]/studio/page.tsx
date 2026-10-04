@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
 import { can } from "@netrics/domain";
@@ -16,10 +17,16 @@ import {
   listWorkspaceMetrics,
   listWorkspaces,
 } from "@/lib/api";
+import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
 import type { StudioConnection } from "@/lib/studio-widgets";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("studio.editor");
+  return { title: t("pageTitle") };
+}
 
 interface StudioPageProps {
   params: Promise<{ workspaceId: string; dashboardId: string }>;

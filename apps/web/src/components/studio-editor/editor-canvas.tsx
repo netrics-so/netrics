@@ -5,6 +5,7 @@ import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { DashboardSettings, DashboardWidget } from "@netrics/contracts";
 import {
   STUDIO_GRID,
+  type Locale,
   type StudioPlacement,
   type ThemeTokens,
 } from "@netrics/domain";
@@ -27,8 +28,10 @@ import {
 } from "@/lib/studio-grid";
 import type { UnreadableLabel } from "@/lib/studio-readability";
 import { widgetBoxStyle } from "@/lib/studio-render";
+import { useLocale, useT } from "@/lib/i18n/client";
 import { themeStyle } from "@/lib/studio-theme";
 import type { StudioEnv } from "@/lib/studio-widgets";
+import { webTranslator } from "@/lib/i18n/catalogs";
 
 /** Pixels a pointer travels before a press becomes a drag (not a click). */
 const DRAG_THRESHOLD = 4;
@@ -99,7 +102,9 @@ export function canvasKeyAction(
 export function dragOutline(
   drag: Pick<CanvasDrag, "widgetId" | "placement">,
   widgets: readonly DashboardWidget[],
+  locale: Locale,
 ): { placement: StudioPlacement; blocked: boolean; label: string } {
+  const t = webTranslator(locale, "studio.canvas");
   const widget = widgets.find((w) => w.id === drag.widgetId);
   const others = widgets.filter((w) => w.id !== drag.widgetId);
   const sameSize =
@@ -117,8 +122,12 @@ export function dragOutline(
     blocked,
     label:
       blocker?.kind === "overlap"
-        ? `${w} × ${h} · overlaps ${widgetName(others[blocker.index]!)}`
-        : `${w} × ${h} · column ${x + 1}, row ${y + 1}`,
+        ? t("readoutOverlap", {
+            w,
+            h,
+            other: widgetName(others[blocker.index]!, locale),
+          })
+        : t("readout", { w, h, column: x + 1, row: y + 1 }),
   };
 }
 
@@ -162,6 +171,8 @@ export function EditorCanvas({
   /** For tests: render as if a drag were in progress. */
   initialDrag?: CanvasDrag | null;
 }) {
+  const locale = useLocale();
+  const t = useT("studio.canvas");
   const overlayRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<CanvasDrag | null>(initialDrag);
   /** The element holding pointer capture during a drag. */
@@ -265,7 +276,7 @@ export function EditorCanvas({
     if (target?.hasPointerCapture(drag.pointerId)) {
       target.releasePointerCapture(drag.pointerId);
     }
-    dispatch({ type: "announce", text: "Drag cancelled." });
+    dispatch({ type: "announce", text: t("dragCancelled") });
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>, id: string) {
@@ -289,7 +300,7 @@ export function EditorCanvas({
   }
 
   const outline: CanvasOutline | null = drag?.moved
-    ? dragOutline(drag, slide.widgets)
+    ? dragOutline(drag, slide.widgets, locale)
     : incoming;
 
   return (
@@ -299,7 +310,7 @@ export function EditorCanvas({
         tokens={tokens}
         showHeader={settings.showHeader}
         header={{
-          name: dashboardName.trim() || "Untitled",
+          name: dashboardName.trim() || t("untitled"),
           slideName: slide.name,
           logoImageId: settings.logoImageId,
           timeZone: env.timeZone,
@@ -317,7 +328,7 @@ export function EditorCanvas({
         data-editor-overlay=""
         role="group"
         tabIndex={-1}
-        aria-label="Slide canvas"
+        aria-label={t("label")}
         onPointerDown={(event) => {
           if (event.target === event.currentTarget) {
             dispatch({ type: "selectWidget", widgetId: null });
@@ -365,7 +376,14 @@ export function EditorCanvas({
                 .join(" ")}
               style={widgetBoxStyle(widget, settings.showHeader)}
               aria-pressed={selected}
-              aria-label={`${widgetName(widget)}, column ${widget.x + 1}, row ${widget.y + 1}, ${widget.w} by ${widget.h} cells${problem ? ", has a problem" : ""}${cut ? `. ${cut.hint}` : ""}`}
+              aria-label={`${t("widgetLabel", {
+                name: widgetName(widget, locale),
+                column: widget.x + 1,
+                row: widget.y + 1,
+                w: widget.w,
+                h: widget.h,
+                problem: problem ? "yes" : "no",
+              })}${cut ? `. ${cut.hint}` : ""}`}
               aria-describedby={HELP_ID}
               onClick={() =>
                 dispatch({ type: "selectWidget", widgetId: widget.id })
@@ -386,8 +404,8 @@ export function EditorCanvas({
                   {selected
                     ? cut.hint
                     : cut.kind === "text"
-                      ? "Text cut off"
-                      : "Label cut off"}
+                      ? t("textCut")
+                      : t("labelCut")}
                 </span>
               ) : null}
               {selected
@@ -421,12 +439,10 @@ export function EditorCanvas({
         ) : null}
       </div>
       <p id={HELP_ID} className="visually-hidden">
-        Arrow keys move the widget by one cell, Shift and arrow keys resize it,
-        Delete removes it, Escape goes back to the slide. Control or Command
-        with D duplicates it, with C copies it, and with V pastes a copy.
+        {t("keyboardHelp")}
       </p>
       {slide.widgets.length === 0 ? (
-        <p className="editor-empty">This slide is empty. Add a widget above.</p>
+        <p className="editor-empty">{t("empty")}</p>
       ) : null}
     </div>
   );

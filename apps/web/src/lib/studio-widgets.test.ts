@@ -131,8 +131,8 @@ describe("image references", () => {
 
 describe("slideTitle", () => {
   it("names unnamed slides by position", () => {
-    expect(slideTitle({ name: "Sales" }, 0)).toBe("Sales");
-    expect(slideTitle({ name: null }, 1)).toBe("Slide 2");
+    expect(slideTitle({ name: "Sales" }, 0, "en")).toBe("Sales");
+    expect(slideTitle({ name: null }, 1, "en")).toBe("Slide 2");
   });
 });
 

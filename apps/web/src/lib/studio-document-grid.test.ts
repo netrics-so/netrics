@@ -108,7 +108,7 @@ const placement = (state: StudioState, id: number) => {
 
 describe("placeWidget (a finished drag)", () => {
   it("moves a widget, selects it and announces where it went", () => {
-    const state = run(initialStudioState(dashboard()), {
+    const state = run(initialStudioState(dashboard(), "en"), {
       type: "placeWidget",
       widgetId: ID(11),
       placement: { x: 4, y: 1, w: 4, h: 3 },
@@ -119,11 +119,11 @@ describe("placeWidget (a finished drag)", () => {
       "Downloads (metric) moved to column 5, row 2.",
     );
     expect(isDirty(state)).toBe(true);
-    expect(documentProblems(state.draft)).toEqual([]);
+    expect(documentProblems(state.draft, "en")).toEqual([]);
   });
 
   it("resizes a widget and says the new size", () => {
-    const resized = run(initialStudioState(dashboard()), {
+    const resized = run(initialStudioState(dashboard(), "en"), {
       type: "placeWidget",
       widgetId: ID(11),
       placement: { x: 0, y: 0, w: 6, h: 4 },
@@ -131,7 +131,7 @@ describe("placeWidget (a finished drag)", () => {
     expect(resized.announcement?.text).toBe(
       "Downloads (metric) resized to 6 × 4 cells.",
     );
-    const fromCorner = run(initialStudioState(dashboard()), {
+    const fromCorner = run(initialStudioState(dashboard(), "en"), {
       type: "placeWidget",
       widgetId: ID(12),
       placement: { x: 7, y: 1, w: 5, h: 2 },
@@ -142,7 +142,7 @@ describe("placeWidget (a finished drag)", () => {
   });
 
   it("is one undo step per drop, and redo puts it back", () => {
-    const start = initialStudioState(dashboard());
+    const start = initialStudioState(dashboard(), "en");
     const moved = run(
       start,
       {
@@ -171,7 +171,7 @@ describe("placeWidget (a finished drag)", () => {
   });
 
   it("refuses a drop on another widget, without an undo step", () => {
-    const start = initialStudioState(dashboard());
+    const start = initialStudioState(dashboard(), "en");
     const state = run(start, {
       type: "placeWidget",
       widgetId: ID(11),
@@ -185,7 +185,7 @@ describe("placeWidget (a finished drag)", () => {
   });
 
   it("refuses placements off the grid or below the minimum size", () => {
-    const start = initialStudioState(dashboard());
+    const start = initialStudioState(dashboard(), "en");
     const outside = run(start, {
       type: "placeWidget",
       widgetId: ID(11),
@@ -205,7 +205,7 @@ describe("placeWidget (a finished drag)", () => {
   });
 
   it("ignores a drop where the widget already is", () => {
-    const start = initialStudioState(dashboard());
+    const start = initialStudioState(dashboard(), "en");
     const state = run(start, {
       type: "placeWidget",
       widgetId: ID(11),
@@ -216,7 +216,7 @@ describe("placeWidget (a finished drag)", () => {
   });
 
   it("ignores widgets that do not exist", () => {
-    const start = initialStudioState(dashboard());
+    const start = initialStudioState(dashboard(), "en");
     expect(
       run(start, {
         type: "placeWidget",
@@ -230,7 +230,7 @@ describe("placeWidget (a finished drag)", () => {
 describe("keyboard moves and resizes", () => {
   it("moves one cell per arrow key, each an undo step", () => {
     const state = run(
-      initialStudioState(dashboard()),
+      initialStudioState(dashboard(), "en"),
       { type: "nudgeWidget", widgetId: ID(11), dx: 0, dy: 1 },
       { type: "nudgeWidget", widgetId: ID(11), dx: 1, dy: 0 },
     );
@@ -244,7 +244,7 @@ describe("keyboard moves and resizes", () => {
 
   it("stops where nothing is free that way, and says so", () => {
     const state = run(
-      initialStudioState(dashboard()),
+      initialStudioState(dashboard(), "en"),
       { type: "nudgeWidget", widgetId: ID(11), dx: 0, dy: 1 },
       { type: "nudgeWidget", widgetId: ID(11), dx: 0, dy: 1 },
       { type: "nudgeWidget", widgetId: ID(11), dx: 0, dy: 1 },
@@ -262,7 +262,7 @@ describe("keyboard moves and resizes", () => {
     expect(blocked.announcement?.text).toBe(
       "Downloads (metric) cannot move further that way.",
     );
-    const edge = run(initialStudioState(dashboard()), {
+    const edge = run(initialStudioState(dashboard(), "en"), {
       type: "nudgeWidget",
       widgetId: ID(11),
       dx: -1,
@@ -273,7 +273,7 @@ describe("keyboard moves and resizes", () => {
 
   it("jumps over a widget to the next free spot in the row", () => {
     const state = run(
-      initialStudioState(dashboard()),
+      initialStudioState(dashboard(), "en"),
       {
         type: "placeWidget",
         widgetId: ID(12),
@@ -285,7 +285,7 @@ describe("keyboard moves and resizes", () => {
   });
 
   it("resizes with Shift+arrows and stops at the minimum and the edge", () => {
-    const start = initialStudioState(dashboard());
+    const start = initialStudioState(dashboard(), "en");
     const wider = run(start, {
       type: "resizeWidgetBy",
       widgetId: ID(11),
@@ -317,7 +317,7 @@ describe("keyboard moves and resizes", () => {
   });
 
   it("refuses a resize into another widget", () => {
-    const start = run(initialStudioState(dashboard()), {
+    const start = run(initialStudioState(dashboard(), "en"), {
       type: "placeWidget",
       widgetId: ID(12),
       placement: { x: 4, y: 0, w: 4, h: 3 },
@@ -335,7 +335,7 @@ describe("keyboard moves and resizes", () => {
   });
 
   it("deletes the widget with Delete, and undo brings it back", () => {
-    const start = initialStudioState(dashboard());
+    const start = initialStudioState(dashboard(), "en");
     const deleted = run(
       start,
       { type: "selectWidget", widgetId: ID(11) },

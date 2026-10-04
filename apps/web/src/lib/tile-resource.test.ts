@@ -21,7 +21,7 @@ const appNoun = { singular: "app", plural: "apps" };
 describe("tile resources", () => {
   it("names the picker after what the connector calls its resources", () => {
     expect(resourceFieldLabel(appNoun)).toBe("App");
-    expect(allResourcesOption(appNoun)).toBe("All apps");
+    expect(allResourcesOption(appNoun, "en")).toBe("All apps");
     expect(
       resourceFieldLabel({ singular: "resource", plural: "resources" }),
     ).toBe("Resource");
