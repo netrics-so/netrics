@@ -1,5 +1,7 @@
 import { currencyExponent, isCurrencyCode } from "./currency.js";
 import { addDays, type BucketValue, type CivilDate } from "./metrics.js";
+import { sharedTranslator } from "./i18n/shared/index.js";
+import type { Locale } from "./i18n/locale.js";
 
 /**
  * Display currency (ADR 0014, #191): amounts of a "currency_minor" metric
@@ -267,10 +269,19 @@ export function isDisplayCurrency(
 
 /**
  * The note screens show under a converted amount (kiosk, tvOS): the source,
- * and the currencies left out: "ECB reference rates · TWD not converted".
+ * and the currencies left out: "ECB reference rates · TWD not converted",
+ * in the screen's language (ADR 0016).
  */
-export function conversionNote(unconverted: readonly string[]): string {
+export function conversionNote(
+  unconverted: readonly string[],
+  locale: Locale = "en",
+): string {
+  const t = sharedTranslator(locale);
+  const source = t("conversion.source");
   return unconverted.length > 0
-    ? `${EXCHANGE_RATE_SOURCE.shortName} · ${unconverted.join(", ")} not converted`
-    : EXCHANGE_RATE_SOURCE.shortName;
+    ? t("conversion.notConverted", {
+        source,
+        currencies: unconverted.join(", "),
+      })
+    : source;
 }

@@ -21,7 +21,7 @@ import {
   updateDeviceRequestSchema,
 } from "@netrics/contracts";
 import type { Database } from "@netrics/database";
-import { can, type WorkspaceAction } from "@netrics/domain";
+import { can, type Locale, type WorkspaceAction } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
 import { createDeviceService, type Result } from "../devices/service.js";
@@ -46,6 +46,8 @@ export interface DeviceRouteDeps {
   exchangeRates?: boolean;
   /** Reuse of computed dashboard payloads; default 30 s, 0 for none. */
   payloadCacheMs?: number;
+  /** NETRICS_DEFAULT_LOCALE: screens of workspaces without a language. */
+  defaultLocale?: Locale | null;
 }
 
 const deviceParamsSchema = z.object({ deviceId: z.uuid() });

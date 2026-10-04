@@ -50,6 +50,7 @@ import {
   convertBuckets,
   compatibleAggregations,
   dimensionValueLabel,
+  othersLabel,
   isCurrencyCode,
   isPerCurrencyUnit,
   planBuckets,
@@ -113,8 +114,9 @@ export interface QueryOptions {
    */
   exchangeRates?: boolean;
   /**
-   * The language of the response's metric name and description: the
-   * caller's, or a screen's (#257). Default English.
+   * The language of what the query names: the metric's name and
+   * description (#257), a breakdown's "Others" and country names (ADR
+   * 0016). The caller's, or a screen's; English when absent.
    */
   locale?: Locale;
 }
@@ -333,9 +335,6 @@ export async function queryMetric(
   );
 }
 
-/** The label of a breakdown's remainder. */
-export const OTHERS_LABEL = "Others";
-
 /** Postgres: canceling statement due to statement timeout. */
 const QUERY_CANCELED = "57014";
 
@@ -523,11 +522,12 @@ export async function queryMetricBreakdown(
           request.groupBy,
           group.key,
           resourceNames.get(resourceNameKey(metric.connectionId, group.key)),
+          options.locale,
         ),
         value: group.value,
       })),
       others: breakdown.others && {
-        label: OTHERS_LABEL,
+        label: othersLabel(options.locale),
         value: breakdown.others.value,
         groups: breakdown.others.groups,
       },
@@ -763,6 +763,7 @@ export async function findAllResourcesNames(
   tx: Transaction,
   workspaceId: string,
   tiles: readonly ScopedTile[],
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<Map<string, string>> {
   const names = new Map<string, string>();
   const done = new Set<string>();
@@ -786,11 +787,19 @@ export async function findAllResourcesNames(
       connectionId: tile.connectionId,
       metricKey: tile.metricKey,
     });
+    // The connector's noun in the language when it has a translation
+    // (#257), else its English one.
     const name = allResourcesName(
       resources.length > 1
-        ? await findConnectionResourceNoun(tx, workspaceId, tile.connectionId)
+        ? await findConnectionResourceNoun(
+            tx,
+            workspaceId,
+            tile.connectionId,
+            locale,
+          )
         : null,
       resources.length,
+      locale,
     );
     if (name !== null) {
       names.set(key, name);

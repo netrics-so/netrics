@@ -15,7 +15,7 @@ import {
   type Database,
   type Sql,
 } from "@netrics/database";
-import { BUILTIN_THEMES } from "@netrics/domain";
+import { BUILTIN_THEMES, type Locale } from "@netrics/domain";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -381,20 +381,22 @@ afterAll(async () => {
   await db?.$client.end({ timeout: 5 }).catch(() => undefined);
 });
 
-function v2(dashboardId: string | null, now = NOW) {
+function v2(dashboardId: string | null, now = NOW, locale?: Locale) {
   return withWorkspace(db, { workspaceId }, (tx) =>
     buildDeviceDashboardV2(tx, workspaceId, dashboardId, {
       now,
       exchangeRates: true,
+      ...(locale ? { locale } : {}),
     }),
   );
 }
 
-function v1(dashboardId: string | null) {
+function v1(dashboardId: string | null, locale?: Locale) {
   return withWorkspace(db, { workspaceId }, (tx) =>
     buildDeviceDashboard(tx, workspaceId, dashboardId, {
       now: NOW,
       exchangeRates: true,
+      ...(locale ? { locale } : {}),
     }),
   );
 }
@@ -449,6 +451,7 @@ describe("device payload schema 2", () => {
             "width": 24,
           },
         ],
+        "locale": "en",
         "refreshAfterSec": 60,
         "rotation": {
           "autoAdvance": true,
@@ -770,7 +773,7 @@ describe("device payload schema 2", () => {
           },
         },
         "timeZone": "Europe/Berlin",
-        "version": "BKHy2Pv4cwSKgCjNRzWF54doGNLExOXN",
+        "version": "vkS3519PLTrdKahmZu4VSTgmws72uAFK",
       }
     `);
   });
@@ -884,6 +887,53 @@ describe("device payload schema 1 of a studio dashboard", () => {
   });
 });
 
+describe("screen language (ADR 0016)", () => {
+  const labels = (payload: DeviceDashboardV2Response) =>
+    widgetsOf(payload).map((widget) => [widget.id, widget.label]);
+
+  it("labels schema 2 in German and names the language", async () => {
+    const payload = deviceDashboardV2ResponseSchema.parse(
+      await v2(STUDIO, NOW, "de"),
+    );
+    expect(payload.locale).toBe("de");
+    expect(labels(payload)).toEqual([
+      [id(1, 101), "Downloads · Wurfel"],
+      [id(1, 102), "Downloads this week"],
+      [id(1, 103), "Downloads · Alle Ressourcen"],
+      [id(1, 104), null],
+      [id(1, 105), null],
+      [id(1, 106), null],
+      [id(1, 107), "snap.proceeds · Alle Ressourcen"],
+      [id(1, 301), "Downloads · voilà"],
+    ]);
+    // Same data, other labels: a new version, so every screen refetches.
+    const english = await v2(STUDIO);
+    expect(english.locale).toBe("en");
+    expect(labels(english)).toContainEqual([
+      id(1, 103),
+      "Downloads · All resources",
+    ]);
+    expect(payload.version).not.toBe(english.version);
+    // English is the default.
+    expect((await v2(STUDIO, NOW, "en")).version).toBe(english.version);
+  });
+
+  it("labels schema 1 in German and adds the language only then", async () => {
+    const german = deviceDashboardResponseSchema.parse(await v1(STUDIO, "de"));
+    expect(german.locale).toBe("de");
+    expect(german.tiles.map((tile) => tile.label)).toEqual([
+      "Downloads · Wurfel",
+      "snap.proceeds · Alle Ressourcen",
+      "Downloads · voilà",
+    ]);
+    // English stays byte for byte what old screens got: no locale field.
+    const english = await v1(STUDIO, "en");
+    expect(english).not.toHaveProperty("locale");
+    expect(JSON.stringify(english)).toBe(JSON.stringify(await v1(STUDIO)));
+    expect(german.version).not.toBe(english.version);
+  });
+});
+
 describe("payload memo", () => {
   let clock: Date;
   let deviceA: string;
@@ -969,6 +1019,45 @@ describe("payload memo", () => {
       expect((await read(devices, deviceB)).version).not.toBe(first.version);
     } finally {
       await setToday(140);
+    }
+  });
+
+  it("follows the workspace screen language at once, then the instance default", async () => {
+    const devices = service();
+    const english = await read(devices, deviceA);
+    expect(english.locale).toBe("en");
+    await owner`update workspaces set screen_locale = 'de'
+                where id = ${workspaceId}`;
+    try {
+      // Within the memo's 30 s: the language is part of the key.
+      const german = await read(devices, deviceB);
+      expect(german.locale).toBe("de");
+      expect(german.version).not.toBe(english.version);
+      const tiles = await read(devices, deviceA, 1);
+      expect("tiles" in tiles && tiles.tiles[1]!.label).toBe(
+        "snap.proceeds · Alle Ressourcen",
+      );
+    } finally {
+      await owner`update workspaces set screen_locale = null
+                  where id = ${workspaceId}`;
+    }
+    expect((await read(devices, deviceA)).locale).toBe("en");
+    // NETRICS_DEFAULT_LOCALE applies to workspaces without a language.
+    const instanceGerman = createDeviceService({
+      db,
+      pairingUrl: "http://localhost:3000/devices/approve",
+      exchangeRates: true,
+      now: () => clock,
+      defaultLocale: "de",
+    });
+    expect((await read(instanceGerman, deviceA)).locale).toBe("de");
+    await owner`update workspaces set screen_locale = 'en'
+                where id = ${workspaceId}`;
+    try {
+      expect((await read(instanceGerman, deviceA)).locale).toBe("en");
+    } finally {
+      await owner`update workspaces set screen_locale = null
+                  where id = ${workspaceId}`;
     }
   });
 

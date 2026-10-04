@@ -39,6 +39,7 @@ import {
 } from "@netrics/database";
 import {
   BUILTIN_THEMES,
+  DEFAULT_LOCALE,
   DEFAULT_THEME_KEY,
   EXCHANGE_RATE_SOURCE,
   RESOURCE_DIMENSION,
@@ -46,6 +47,7 @@ import {
   isBuiltinThemeKey,
   isDataWidgetType,
   tileLabel,
+  type Locale,
   type ThemeTokens,
 } from "@netrics/domain";
 
@@ -55,6 +57,7 @@ import {
   queryMetric,
   queryMetricBreakdown,
   tileAllResourcesName,
+  type QueryOptions,
 } from "../metrics/query.js";
 
 // The device dashboard read model (ADR 0007, #57), computed by the same
@@ -83,6 +86,11 @@ export interface BuildOptions {
   log?: TileErrorLogger;
   /** NETRICS_EXCHANGE_RATES: display-currency conversion (#191). */
   exchangeRates?: boolean;
+  /**
+   * The screen language (ADR 0016): labels are built in it, and the
+   * payload names it in `locale`. English when absent.
+   */
+  locale?: Locale;
 }
 
 function tileStatus(
@@ -185,6 +193,7 @@ async function loadDataContext(
       metricKey: widget.metricKey,
       dimensions: dimensionsOf(widget),
     })),
+    options.locale,
   );
   return {
     workspaceId,
@@ -193,6 +202,8 @@ async function loadDataContext(
     label(widget, metricName) {
       const dimensions = dimensionsOf(widget);
       const resourceId = dimensions[RESOURCE_DIMENSION];
+      // The metric name comes from the metric query, in the screen
+      // language when the connector translates it (#257).
       return tileLabel({
         title: widget.title,
         metricName: metricName ?? widget.metricKey,
@@ -210,6 +221,13 @@ async function loadDataContext(
         }),
       });
     },
+  };
+}
+
+function queryOptions(options: BuildOptions): QueryOptions {
+  return {
+    exchangeRates: options.exchangeRates ?? false,
+    ...(options.locale ? { locale: options.locale } : {}),
   };
 }
 
@@ -264,7 +282,7 @@ function queryWidget(
       context.workspaceId,
       metricRequest(widget),
       context.options.now,
-      { exchangeRates: context.options.exchangeRates ?? false },
+      queryOptions(context.options),
     ),
   );
 }
@@ -354,11 +372,15 @@ export async function buildDeviceDashboard(
       tiles.push(tileOf(tile, await queryWidget(tx, tile, context), context));
     }
   }
+  const locale = options.locale ?? DEFAULT_LOCALE;
   const content = {
     refreshAfterSec: DEVICE_REFRESH_AFTER_SECONDS,
     timeZone: workspace?.timeZone ?? "UTC",
     dashboard: dashboard ? { id: dashboard.id, name: dashboard.name } : null,
     tiles,
+    // Only when not English: an English payload stays byte for byte what
+    // screens got before (#214), and screens read a missing one as "en".
+    ...(locale !== DEFAULT_LOCALE ? { locale } : {}),
   };
   return { version: versionOf(content), ...content };
 }
@@ -434,7 +456,7 @@ async function dataWidgetOf(
           context.workspaceId,
           { ...request, groupBy: options.groupBy, limit: options.limit },
           context.options.now,
-          { exchangeRates: context.options.exchangeRates ?? false },
+          queryOptions(context.options),
         ),
     );
     const hasData =
@@ -605,6 +627,7 @@ export async function buildDeviceDashboardV2(
     schema: 2 as const,
     refreshAfterSec: DEVICE_REFRESH_AFTER_SECONDS,
     timeZone,
+    locale: options.locale ?? DEFAULT_LOCALE,
     dashboard: dashboard
       ? {
           id: dashboard.id,

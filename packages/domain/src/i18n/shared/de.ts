@@ -1,0 +1,48 @@
+import type { Catalog } from "../catalog.js";
+
+import type { SharedMessages } from "./en.js";
+
+/** The shared catalog in German ("du", sentence case; ADR 0016). */
+export const sharedDe: Catalog<SharedMessages> = {
+  scope: {
+    all: "Alle {plural}",
+  },
+  resources: {
+    singular: "Ressource",
+    plural: "Ressourcen",
+  },
+  others: "Andere",
+  none: "(keine)",
+  periods: {
+    today: "Heute",
+    last_7_days: "Letzte 7 Tage",
+    last_30_days: "Letzte 30 Tage",
+    this_month: "Dieser Monat",
+    last_90_days: "Letzte 90 Tage",
+    last_12_months: "Letzte 12 Monate",
+  },
+  comparisons: {
+    today: "vs. gestern",
+    last_7_days: "vs. vorherige 7 Tage",
+    last_30_days: "vs. vorherige 30 Tage",
+    this_month: "vs. Vormonat",
+    last_90_days: "vs. vorherige 90 Tage",
+    last_12_months: "vs. vorherige 12 Monate",
+  },
+  aggregations: {
+    sum: "Summe",
+    avg: "Durchschnitt",
+    min: "Minimum",
+    max: "Maximum",
+    last: "Letzter Wert",
+  },
+  dailyAggregations: {
+    last: "Letzter Tag",
+    min: "Niedrigster Tag",
+    max: "Höchster Tag",
+  },
+  conversion: {
+    source: "EZB-Referenzkurse",
+    notConverted: "{source} · {currencies} nicht umgerechnet",
+  },
+};

@@ -21,6 +21,7 @@ import {
   findDashboardVersion,
   findDevice,
   findPendingPairing,
+  findWorkspace,
   insertAuditEvent,
   insertDevice,
   insertPairing,
@@ -37,6 +38,7 @@ import {
   type Database,
   type DeviceRow,
 } from "@netrics/database";
+import { resolveLocale, type Locale } from "@netrics/domain";
 
 import { generatePrincipalToken, generateToken, hashToken } from "../tokens.js";
 import {
@@ -146,6 +148,11 @@ export interface DeviceServiceDeps {
    * shows it (default 30 s); 0 computes it on every request.
    */
   payloadCacheMs?: number;
+  /**
+   * NETRICS_DEFAULT_LOCALE: the language of screens whose workspace has no
+   * screen language (ADR 0016 section 3).
+   */
+  defaultLocale?: Locale | null;
 }
 
 /** The device dashboard payload in schema 1 or 2 (ADR 0015 section 7). */
@@ -448,7 +455,8 @@ export function createDeviceService(deps: DeviceServiceDeps) {
      * The read model of the calling device's dashboard (ADR 0007), in
      * schema 1 or 2 (ADR 0015 section 7). Computed inside the device's
      * workspace transaction, and reused for up to 30 s per (workspace,
-     * dashboard, dashboard version, schema).
+     * dashboard, dashboard version, schema, language). Labels are in the
+     * workspace's screen language, else the instance default (ADR 0016).
      */
     async dashboard(
       principal: { workspaceId: string; deviceId: string },
@@ -461,8 +469,14 @@ export function createDeviceService(deps: DeviceServiceDeps) {
         if (!device || device.revokedAt) {
           return fail<DeviceDashboardPayload>(401, "unauthorized");
         }
+        const workspace = await findWorkspace(tx, workspaceId);
+        const locale = resolveLocale([
+          workspace?.screenLocale,
+          deps.defaultLocale,
+        ]);
         const options = {
           now: now(),
+          locale,
           exchangeRates: deps.exchangeRates ?? false,
           ...(log ? { log } : {}),
         };
@@ -486,9 +500,13 @@ export function createDeviceService(deps: DeviceServiceDeps) {
         if (version === null) {
           return ok<DeviceDashboardPayload>(await build());
         }
-        const key = [workspaceId, device.dashboardId, version, schema].join(
-          ":",
-        );
+        const key = [
+          workspaceId,
+          device.dashboardId,
+          version,
+          schema,
+          locale,
+        ].join(":");
         return ok<DeviceDashboardPayload>(await payloads.get(key, build));
       });
     },

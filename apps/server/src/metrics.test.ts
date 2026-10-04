@@ -1623,6 +1623,33 @@ describe("chart queries (#218)", () => {
       expect(result.others).toEqual({ label: "Others", value: 8, groups: 2 });
     });
 
+    it("labels Others and territories in a screen's language", async () => {
+      const result = await withWorkspace(
+        db,
+        { workspaceId: chartWorkspace },
+        (tx) =>
+          queryMetricBreakdown(
+            tx,
+            chartWorkspace,
+            {
+              connectionId: chart,
+              metricKey: "chart.downloads",
+              period: "last_7_days",
+              groupBy: "territory",
+              limit: 3,
+            },
+            NOW,
+            { locale: "de" },
+          ),
+      );
+      expect(result.ok && result.value.groups.map((g) => g.label)).toEqual([
+        "Deutschland",
+        "Frankreich",
+        "Vereinigte Staaten",
+      ]);
+      expect(result.ok && result.value.others?.label).toBe("Andere");
+    });
+
     it("filters by other dimensions and aggregates like the tile", async () => {
       const filtered = metricBreakdownResponseSchema.parse(
         (
