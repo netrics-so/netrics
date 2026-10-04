@@ -5,8 +5,13 @@ import { defineConfig } from "vitest/config";
 const r = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 export default defineConfig({
+  // Web components are rendered in tests (react-dom/server); apps/web's
+  // tsconfig keeps JSX for Next.js ("preserve"), so transform it here.
+  oxc: { jsx: { runtime: "automatic" } },
   resolve: {
     alias: {
+      // apps/web's own path alias (tsconfig "@/*").
+      "@": r("./apps/web/src"),
       "@netrics/contracts": r("./packages/contracts/src/index.ts"),
       "@netrics/connector-sdk/testing": r(
         "./packages/connector-sdk/src/testing/index.ts",
@@ -25,6 +30,7 @@ export default defineConfig({
     environment: "node",
     include: [
       "apps/*/src/**/*.test.ts",
+      "apps/web/src/**/*.test.tsx",
       "packages/*/src/**/*.test.ts",
       "*.test.ts",
     ],

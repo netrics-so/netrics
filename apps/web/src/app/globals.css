@@ -1452,3 +1452,438 @@ a.health-badge:hover {
 .theme-editor .actions {
   align-items: center;
 }
+
+/* ─── Studio slides (ADR 0015, #220) ─────────────────────────────────── */
+
+/* A 16:9 slide. Positions are percentages and text sizes multiples of
+   --u (canvas height / 1080), both computed by studioLayout, so a slide
+   reads the same at 720p, 1080p and 4K. Colours are the theme's tokens
+   (--t-*, from themeStyle); nothing here hard-codes a theme colour. */
+.studio-canvas {
+  container-type: inline-size;
+  --u: calc(100cqw / 1920);
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--t-background);
+  color: var(--t-text);
+  line-height: 1.15;
+}
+
+.studio-background {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The theme background over the image keeps text readable. */
+.studio-background-dim {
+  position: absolute;
+  inset: 0;
+  background: var(--t-background);
+}
+
+.studio-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.studio-logo {
+  width: auto;
+  object-fit: contain;
+  flex: none;
+}
+
+.studio-header-name {
+  font-weight: 600;
+  color: var(--t-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.studio-header-slide {
+  color: var(--t-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.studio-header-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  flex: none;
+  color: var(--t-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-header-clock {
+  color: var(--t-accent);
+}
+
+.studio-offline {
+  color: var(--t-warning);
+}
+
+.studio-widget {
+  position: absolute;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* One widget's box. Data widgets and the clock sit on the surface. */
+.sw {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: calc(var(--u) * 24);
+  border-radius: calc(var(--u) * 12);
+}
+
+.sw-metric,
+.sw-line,
+.sw-bar,
+.sw-clock,
+.sw-failed {
+  background: var(--t-surface);
+  border: max(1px, calc(var(--u) * 1.5)) solid var(--t-border);
+}
+
+.sw p,
+.sw h3,
+.sw h4 {
+  margin: 0;
+}
+
+/* Titles and resource names wrap to two lines; the ellipsis is the last
+   resort, after shrinking to the minimum (data-truncated marks it). */
+.sw-label {
+  margin-bottom: calc(var(--u) * 8);
+}
+
+.sw-title,
+.sw-resource {
+  font-weight: 600;
+  color: var(--t-label);
+  line-height: 1.15;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.sw-muted {
+  color: var(--t-muted);
+}
+
+.sw-source {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-value {
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--t-text);
+}
+
+.sw-placeholder {
+  color: var(--t-muted);
+}
+
+.sw-change {
+  color: var(--t-muted);
+}
+
+.sw-change.good {
+  color: var(--t-up);
+}
+
+.sw-change.bad {
+  color: var(--t-down);
+}
+
+.sw-comparison {
+  color: var(--t-muted);
+}
+
+.sw-notice {
+  color: var(--t-warning);
+}
+
+.sw-spark {
+  margin-top: calc(var(--u) * 8);
+  min-height: 0;
+}
+
+.sw .sparkline {
+  height: 100%;
+  margin: 0;
+}
+
+.sw .sparkline-plot {
+  height: 100%;
+}
+
+.sw .sparkline svg {
+  cursor: default;
+}
+
+.sw .sparkline-line {
+  stroke: var(--t-chart-line);
+  stroke-width: max(2px, calc(var(--u) * 3));
+}
+
+.sw .sparkline-hairline {
+  stroke: var(--t-border);
+}
+
+.sw .sparkline-last {
+  width: calc(var(--u) * 10);
+  height: calc(var(--u) * 10);
+  margin: 0;
+  transform: translate(-50%, -50%);
+  background: var(--t-accent);
+}
+
+/* Nobody hovers a TV: no readout line. */
+.sw .sparkline-readout {
+  display: none;
+}
+
+.sw-chart {
+  flex: none;
+  min-height: 0;
+}
+
+.sw-chart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.sw-line-current {
+  fill: none;
+  stroke: var(--t-chart-line);
+  stroke-width: 4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sw-line-area {
+  fill: var(--t-chart-fill);
+  opacity: 0.35;
+}
+
+.sw-line-previous {
+  fill: none;
+  stroke: var(--t-muted);
+  stroke-width: 3;
+  stroke-dasharray: 10 8;
+  opacity: 0.8;
+}
+
+.sw-line-last {
+  fill: var(--t-accent);
+}
+
+.sw-axis {
+  stroke: var(--t-border);
+  stroke-width: 2;
+}
+
+.sw-axis-label {
+  fill: var(--t-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sw-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.sw-bar-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.sw-bar-text {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: calc(var(--u) * 16);
+}
+
+.sw-bar-label {
+  font-weight: 600;
+  color: var(--t-label);
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.sw-bar-value {
+  flex: none;
+  text-align: right;
+  font-weight: 600;
+  color: var(--t-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sw-bar-track {
+  display: block;
+  width: 100%;
+}
+
+.sw-bar-fill {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: calc(var(--u) * 4);
+  background: var(--t-chart-fill);
+}
+
+.sw-bar-row.others .sw-bar-label,
+.sw-bar-row.others .sw-bar-value {
+  color: var(--t-muted);
+}
+
+.sw-bar-row.others .sw-bar-fill {
+  opacity: 0.6;
+}
+
+/* Images and text sit on the slide itself, without a box. */
+.sw-image {
+  padding: 0;
+}
+
+.sw-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sw-image--missing {
+  justify-content: center;
+  align-items: center;
+  border: max(1px, calc(var(--u) * 1.5)) dashed var(--t-border);
+}
+
+.sw-text {
+  color: var(--t-text);
+  overflow-wrap: anywhere;
+}
+
+.sw-text h3,
+.sw-text h4 {
+  font-weight: 700;
+}
+
+.sw-text > * + * {
+  margin-top: 0.5em;
+}
+
+.sw-text--center {
+  text-align: center;
+}
+
+.sw-text--end {
+  text-align: right;
+}
+
+.sw-clock {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.sw-clock-time {
+  font-weight: 600;
+  line-height: 1;
+  color: var(--t-accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sw-clock-date {
+  color: var(--t-muted);
+}
+
+.sw-failed {
+  justify-content: center;
+}
+
+/* Slides fade in over 400 ms; with reduced motion they just switch. */
+.studio-slide-enter {
+  animation: studio-fade 400ms ease-out;
+}
+
+@keyframes studio-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-slide-enter {
+    animation: none;
+  }
+}
+
+/* The dashboard page: slide tabs above the canvas. */
+.slide-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.slide-tab {
+  font-size: 13px;
+}
+
+.slide-tab[aria-selected="true"] {
+  border-color: #7aa2f7;
+  color: #e6e9ed;
+}
+
+.slide-tab-off {
+  color: #8a919c;
+  font-style: italic;
+}
+
+.slide-frame {
+  border: 1px solid #23272e;
+  border-radius: 8px;
+  overflow: hidden;
+}

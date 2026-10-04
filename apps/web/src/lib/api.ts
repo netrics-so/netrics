@@ -1,4 +1,4 @@
-import { ZodError, type ZodType } from "zod";
+import { ZodError, z, type ZodType } from "zod";
 
 import {
   createWorkspaceResponseSchema,
@@ -14,6 +14,8 @@ import {
   metricCurrenciesResponseSchema,
   metricResourcesRequestSchema,
   metricResourcesResponseSchema,
+  metricBreakdownRequestSchema,
+  metricBreakdownResponseSchema,
   metricQueryRequestSchema,
   metricQueryResponseSchema,
   replaceDashboardRequestSchema,
@@ -31,6 +33,8 @@ import {
   type MetricCurrenciesResponse,
   type MetricResourcesRequest,
   type MetricResourcesResponse,
+  type MetricBreakdownRequest,
+  type MetricBreakdownResponse,
   type MetricQueryRequest,
   type MetricQueryResponse,
   type ReplaceDashboardRequest,
@@ -120,6 +124,7 @@ import {
 } from "@netrics/contracts";
 
 import { apiFetch } from "./api-fetch";
+import { imageContentUrl, type StudioImage } from "./studio-widgets";
 
 /**
  * API failures carry a machine-readable code in the response body
@@ -920,6 +925,46 @@ export async function deleteTheme(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Workspace images (ADR 0015, section 5; #217)
+// ---------------------------------------------------------------------------
+
+/** The fields of a listed image the slide renderers use. */
+const imageListSchema = z.object({
+  images: z.array(
+    z.object({
+      id: z.uuid(),
+      sha256: z.string().regex(/^[0-9a-f]{64}$/),
+      width: z.number().int().positive(),
+      height: z.number().int().positive(),
+      url: z.string().min(1).optional(),
+    }),
+  ),
+});
+
+/**
+ * The workspace's images for logos, backgrounds and image widgets. An API
+ * without images (before #217) answers 404: then there are none.
+ */
+export async function listStudioImages(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<StudioImage[]> {
+  const response = await apiFetch(`/v1/workspaces/${workspaceId}/images`, {
+    headers: { cookie: cookieHeader },
+  });
+  if (response.status === 404) {
+    return [];
+  }
+  const { images } = await parseResponse(imageListSchema, response);
+  return images.map((image) => ({
+    id: image.id,
+    url: image.url ?? imageContentUrl(workspaceId, image),
+    width: image.width,
+    height: image.height,
+  }));
+}
+
 /** One tile's numbers (browser; tiles refresh themselves). */
 export function queryMetric(
   workspaceId: string,
@@ -930,6 +975,19 @@ export function queryMetric(
     "POST",
     `/v1/workspaces/${workspaceId}/metrics/query`,
     metricQueryRequestSchema.parse(body),
+  );
+}
+
+/** A metric by one of its dimensions: a bar widget's groups (ADR 0015). */
+export function queryMetricBreakdown(
+  workspaceId: string,
+  body: MetricBreakdownRequest,
+): Promise<MetricBreakdownResponse> {
+  return browserSend(
+    metricBreakdownResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/metrics/breakdown`,
+    metricBreakdownRequestSchema.parse(body),
   );
 }
 
