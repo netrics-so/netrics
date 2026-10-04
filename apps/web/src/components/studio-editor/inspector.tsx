@@ -17,6 +17,7 @@ import {
 
 import { webTranslator } from "@/lib/i18n/catalogs";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { builtinThemeName } from "@/lib/theme-name";
 
 import {
   type StudioAction,
@@ -175,7 +176,7 @@ export function DashboardSettingsPanel({
             <optgroup label={t("builtIn")}>
               {themes.builtins.map((theme) => (
                 <option key={theme.key} value={`builtin:${theme.key}`}>
-                  {theme.name}
+                  {builtinThemeName(theme.key, locale)}
                 </option>
               ))}
             </optgroup>

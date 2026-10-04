@@ -179,40 +179,42 @@ describe("editor canvas", () => {
 describe("inspector", () => {
   const state = initialStudioState(dashboard, "en");
 
+  const settingsPanel = (
+    <DashboardSettingsPanel
+      document={{
+        ...state.draft,
+        settings: { ...state.draft.settings, accentColor: "#20242c" },
+      }}
+      themes={{
+        builtins: Object.entries(BUILTIN_THEMES).map(([key, theme]) => ({
+          key: key as "netrics_dark",
+          name: theme.name,
+          tokens: theme.tokens,
+        })),
+        custom: [
+          {
+            id: ID(40),
+            name: "Wurfel",
+            base: "netrics_dark",
+            tokens: dark,
+            version: 1,
+            warnings: [],
+            createdAt: "2026-10-01T00:00:00.000Z",
+            updatedAt: "2026-10-01T00:00:00.000Z",
+          },
+        ],
+      }}
+      baseTokens={dark}
+      projects={[]}
+      images={[]}
+      problems={[]}
+      themesHref="/themes"
+      dispatch={noop}
+    />
+  );
+
   it("shows the dashboard settings as labelled controls", () => {
-    const html = renderI18n(
-      <DashboardSettingsPanel
-        document={{
-          ...state.draft,
-          settings: { ...state.draft.settings, accentColor: "#20242c" },
-        }}
-        themes={{
-          builtins: Object.entries(BUILTIN_THEMES).map(([key, theme]) => ({
-            key: key as "netrics_dark",
-            name: theme.name,
-            tokens: theme.tokens,
-          })),
-          custom: [
-            {
-              id: ID(40),
-              name: "Wurfel",
-              base: "netrics_dark",
-              tokens: dark,
-              version: 1,
-              warnings: [],
-              createdAt: "2026-10-01T00:00:00.000Z",
-              updatedAt: "2026-10-01T00:00:00.000Z",
-            },
-          ],
-        }}
-        baseTokens={dark}
-        projects={[]}
-        images={[]}
-        problems={[]}
-        themesHref="/themes"
-        dispatch={noop}
-      />,
-    );
+    const html = renderI18n(settingsPanel);
     for (const label of [
       '<label for="dashboard-name">Name</label>',
       '<label for="dashboard-theme">Theme</label>',
@@ -226,6 +228,14 @@ describe("inspector", () => {
     expect(html).toContain(`value="custom:${ID(40)}"`);
     // A dark accent on a dark surface is flagged as unreadable.
     expect(html).toContain("too low to read on a TV");
+    expect(html).toContain(">Paper</option>");
+  });
+
+  it("names the built-in themes in the viewer's language", () => {
+    const html = renderI18n(settingsPanel, "de");
+    expect(html).toContain(">Papier</option>");
+    expect(html).toContain(">netrics Dunkel</option>");
+    expect(html).not.toContain(">Paper</option>");
   });
 
   it("edits a text widget's title and text", () => {

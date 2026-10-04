@@ -6,6 +6,7 @@ import {
   DEFAULT_THEME_KEY,
   isBuiltinThemeKey,
   isHexColor,
+  type BuiltinThemeKey,
   type ThemeTokens,
 } from "@netrics/domain";
 
@@ -15,6 +16,8 @@ import {
 
 export interface ResolvedTheme {
   name: string;
+  /** The built-in theme shown, to name it in the viewer's language. */
+  builtin: BuiltinThemeKey | null;
   tokens: ThemeTokens;
 }
 
@@ -27,20 +30,20 @@ export function resolveDashboardTheme(
   settings: Pick<DashboardSettings, "themeBuiltin" | "themeId" | "accentColor">,
   custom: { name: string; tokens: ThemeTokens } | null,
 ): ResolvedTheme {
-  const base =
+  const builtin: BuiltinThemeKey | null =
     settings.themeId && custom
-      ? custom
-      : BUILTIN_THEMES[
-          settings.themeBuiltin && isBuiltinThemeKey(settings.themeBuiltin)
-            ? settings.themeBuiltin
-            : DEFAULT_THEME_KEY
-        ];
+      ? null
+      : settings.themeBuiltin && isBuiltinThemeKey(settings.themeBuiltin)
+        ? settings.themeBuiltin
+        : DEFAULT_THEME_KEY;
+  const base = builtin ? BUILTIN_THEMES[builtin] : custom!;
   const accent =
     settings.accentColor && isHexColor(settings.accentColor.toLowerCase())
       ? settings.accentColor.toLowerCase()
       : null;
   return {
     name: base.name,
+    builtin,
     tokens: accent ? { ...base.tokens, accent } : base.tokens,
   };
 }

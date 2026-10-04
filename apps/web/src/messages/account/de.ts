@@ -15,7 +15,6 @@ export const accountDe: Catalog<typeof accountEn> = {
     newPassword: "Neues Passwort",
     changing: "Wird geändert…",
     passwordChanged: "Passwort geändert.",
-    passwordChangeFailed: "Das Passwort konnte nicht geändert werden.",
     session: "Sitzung",
     signOut: "Abmelden",
     signingOut: "Wird abgemeldet…",

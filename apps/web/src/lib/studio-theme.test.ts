@@ -14,6 +14,7 @@ describe("resolveDashboardTheme", () => {
   it("uses the built-in, netrics Dark by default", () => {
     expect(resolveDashboardTheme(builtin("paper"), null)).toEqual({
       name: "Paper",
+      builtin: "paper",
       tokens: BUILTIN_THEMES.paper.tokens,
     });
     expect(resolveDashboardTheme(builtin(null), null).name).toBe(
@@ -34,7 +35,11 @@ describe("resolveDashboardTheme", () => {
       themeId: "3f0f3c55-77b8-4a5f-a3a5-5f6b2a7f1e01",
       accentColor: null,
     };
-    expect(resolveDashboardTheme(settings, custom)).toEqual(custom);
+    expect(resolveDashboardTheme(settings, custom)).toEqual({
+      ...custom,
+      builtin: null,
+    });
+    expect(resolveDashboardTheme(settings, null).builtin).toBe("netrics_dark");
     expect(resolveDashboardTheme(settings, null).name).toBe("netrics Dark");
   });
 
