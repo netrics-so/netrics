@@ -28,7 +28,7 @@ import { PREVIEW_FORMAT_ORDER } from "@/lib/studio-formats";
 import { formatRatio } from "@/components/studio-editor/format-attention";
 import { FormatGlyph } from "@/components/studio-editor/format-switcher";
 
-type Choice = "blank" | "overview" | "brand";
+export type Choice = "blank" | "overview" | "brand";
 type BrandResource =
   DashboardTemplateOptionsResponse["brand"]["resources"][number];
 
@@ -49,12 +49,19 @@ function resourceKey(resource: { connectionId: string; resourceId: string }) {
  * made readable on the theme (or the theme's own accent). Every choice
  * opens the new dashboard in the Studio.
  */
-export function CreateDashboardForm({ workspaceId }: { workspaceId: string }) {
+export function CreateDashboardForm({
+  workspaceId,
+  initialChoice = "blank",
+}: {
+  workspaceId: string;
+  /** The template preselected, e.g. from a template card (#304). */
+  initialChoice?: Choice;
+}) {
   const locale = useLocale();
   const t = useT("workspace.newDashboard");
   const common = useT("common");
   const router = useRouter();
-  const [choice, setChoice] = useState<Choice>("blank");
+  const [choice, setChoice] = useState<Choice>(initialChoice);
   // The primary format of a blank dashboard (ADR 0017); templates are 16:9.
   const [format, setFormat] = useState<ScreenFormat>("16x9");
   const formatsT = useT("studio.formats");

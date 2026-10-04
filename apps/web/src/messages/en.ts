@@ -2,6 +2,7 @@ import { accountEn } from "./account/en";
 import { apiErrorsEn } from "./api-errors/en";
 import { authEn } from "./auth/en";
 import { commonEn } from "./common/en";
+import { dashboardsEn } from "./dashboards/en";
 import { formatsEn } from "./formats/en";
 import { screenEn } from "./screen/en";
 import { settingsEn } from "./settings/en";
@@ -26,6 +27,7 @@ export const EN_AREAS = {
   formats: formatsEn,
   auth: authEn,
   workspace: workspaceEn,
+  dashboards: dashboardsEn,
   studio: studioEn,
   settings: settingsEn,
   screen: screenEn,
@@ -39,6 +41,7 @@ export const en = {
   ...formatsEn,
   ...authEn,
   ...workspaceEn,
+  ...dashboardsEn,
   ...studioEn,
   ...settingsEn,
   ...screenEn,

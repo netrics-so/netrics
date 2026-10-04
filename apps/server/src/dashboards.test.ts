@@ -7,6 +7,7 @@ import {
   dashboardResponseSchema,
   errorResponseSchema,
   MAX_DASHBOARD_TILES,
+  themeResponseSchema,
   workspaceResponseSchema,
 } from "@netrics/contracts";
 import {
@@ -15,6 +16,7 @@ import {
   type Database,
   type Sql,
 } from "@netrics/database";
+import { BUILTIN_THEMES } from "@netrics/domain";
 
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
@@ -802,6 +804,89 @@ describe("dashboard studio API", () => {
     );
     const { dashboard } = dashboardResponseSchema.parse(response.json());
     expectError(await put(dashboard, {}), 400, "invalid_request");
+  });
+
+  it("lists theme, accent, thumbnail and screens per workspace (#304)", async () => {
+    const theme = themeResponseSchema.parse(
+      (
+        await call("POST", `/v1/workspaces/${workspaceId}/themes`, owner, {
+          name: "Wall green",
+          base: "midnight",
+        })
+      ).json(),
+    ).theme;
+    const branded = await studio({
+      name: "Branded",
+      settings: { themeId: theme.id, accentColor: "#E5572F" },
+    });
+    const plain = await studio({
+      name: "Plain",
+      settings: { themeBuiltin: "paper" },
+      slides: [{ enabled: false, widgets: [metricWidget()] }],
+    });
+    await admin`insert into devices (workspace_id, name, dashboard_id, revoked_at)
+                values (${workspaceId}, 'Wall', ${branded.id}, null),
+                       (${workspaceId}, 'Gone', ${branded.id}, now())`;
+
+    const strangers = await newWorkspace(stranger);
+    const theirs = dashboardResponseSchema.parse(
+      (
+        await call("POST", `/v1/workspaces/${strangers}/dashboards`, stranger, {
+          name: "Theirs",
+        })
+      ).json(),
+    ).dashboard;
+    await admin`insert into devices (workspace_id, name, dashboard_id)
+                values (${strangers}, 'Their wall', ${theirs.id}),
+                       (${strangers}, 'Their lobby', ${theirs.id})`;
+
+    const list = dashboardListResponseSchema.parse(
+      (await call("GET", base(), viewer)).json(),
+    ).dashboards;
+    expect(list.find((d) => d.id === branded.id)).toMatchObject({
+      theme: { builtin: null, id: theme.id, name: "Wall green" },
+      accent: "#e5572f",
+      primaryFormat: "16x9",
+      screenCount: 1,
+      preview: {
+        background: theme.tokens.background,
+        surface: theme.tokens.surface,
+        border: theme.tokens.border,
+        // The first slide's widgets in reading order.
+        widgets: [
+          { type: "metric", x: 0, y: 0, w: 3, h: 2 },
+          { type: "metric", x: 4, y: 0, w: 3, h: 2 },
+          { type: "line", x: 0, y: 2, w: 6, h: 4 },
+          { type: "bar", x: 6, y: 2, w: 6, h: 6 },
+        ],
+      },
+    });
+    expect(list.find((d) => d.id === plain.id)).toMatchObject({
+      theme: { builtin: "paper", id: null, name: "Paper" },
+      accent: BUILTIN_THEMES.paper.tokens.accent,
+      screenCount: 0,
+      preview: {
+        background: BUILTIN_THEMES.paper.tokens.background,
+        widgets: [],
+      },
+    });
+    expect(list.map((d) => d.id)).not.toContain(theirs.id);
+
+    // The stranger sees only their own dashboard and screens, and cannot
+    // list this workspace.
+    const strangersList = dashboardListResponseSchema.parse(
+      (
+        await call("GET", `/v1/workspaces/${strangers}/dashboards`, stranger)
+      ).json(),
+    ).dashboards;
+    expect(strangersList.map((d) => [d.id, d.screenCount])).toEqual([
+      [theirs.id, 2],
+    ]);
+    expectError(
+      await call("GET", base(), stranger),
+      404,
+      "workspace_not_found",
+    );
   });
 
   it("keeps slides and widgets inside their workspace", async () => {

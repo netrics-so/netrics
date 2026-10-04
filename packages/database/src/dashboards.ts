@@ -56,6 +56,27 @@ export interface DashboardSummary {
   slideCount: number;
   widgetCount: number;
   updatedAt: Date;
+  /** The theme reference and brand accent, as stored (resolved by callers). */
+  themeBuiltin: string | null;
+  themeId: string | null;
+  accentColor: string | null;
+  primaryFormat: string;
+  /** Screens (not revoked) that show the dashboard. */
+  screenCount: number;
+  /**
+   * The widgets of the first enabled slide, in the primary format's grid,
+   * for a thumbnail; empty when no slide is enabled.
+   */
+  previewWidgets: PreviewWidget[];
+}
+
+/** A widget's type and place, enough to draw a thumbnail stub. */
+export interface PreviewWidget {
+  type: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 export interface DashboardSettings {
@@ -172,20 +193,90 @@ export async function listDashboards(
     select count(*)::int from ${sql.identifier(table)} c
     where c.dashboard_id = "dashboards"."id"
       and c.workspace_id = ${workspaceId} ${filter})`;
-  return tx
+  const rows = await tx
     .select({
       id: schema.dashboards.id,
       name: schema.dashboards.name,
       projectId: schema.dashboards.projectId,
       version: schema.dashboards.version,
       updatedAt: schema.dashboards.updatedAt,
+      themeBuiltin: schema.dashboards.themeBuiltin,
+      themeId: schema.dashboards.themeId,
+      accentColor: schema.dashboards.accentColor,
+      primaryFormat: schema.dashboards.primaryFormat,
       tileCount: count("dashboard_widgets", sql`and c.type = 'metric'`),
       widgetCount: count("dashboard_widgets"),
       slideCount: count("dashboard_slides"),
+      screenCount: count("devices", sql`and c.revoked_at is null`),
     })
     .from(schema.dashboards)
     .where(eq(schema.dashboards.workspaceId, workspaceId))
     .orderBy(desc(schema.dashboards.updatedAt));
+  const previews = await loadPreviewWidgets(tx, workspaceId);
+  return rows.map((row) => ({
+    ...row,
+    previewWidgets: previews.get(row.id) ?? [],
+  }));
+}
+
+/**
+ * The widgets of each dashboard's first enabled slide, by dashboard id
+ * (thumbnails on the dashboards page, #304).
+ */
+async function loadPreviewWidgets(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<Map<string, PreviewWidget[]>> {
+  const first = await tx
+    .selectDistinctOn([schema.dashboardSlides.dashboardId], {
+      id: schema.dashboardSlides.id,
+    })
+    .from(schema.dashboardSlides)
+    .where(
+      and(
+        eq(schema.dashboardSlides.workspaceId, workspaceId),
+        eq(schema.dashboardSlides.enabled, true),
+      ),
+    )
+    .orderBy(
+      asc(schema.dashboardSlides.dashboardId),
+      asc(schema.dashboardSlides.position),
+    );
+  const byDashboard = new Map<string, PreviewWidget[]>();
+  if (first.length === 0) {
+    return byDashboard;
+  }
+  const widgets = await tx
+    .select({
+      dashboardId: schema.dashboardWidgets.dashboardId,
+      type: schema.dashboardWidgets.type,
+      x: schema.dashboardWidgets.x,
+      y: schema.dashboardWidgets.y,
+      w: schema.dashboardWidgets.w,
+      h: schema.dashboardWidgets.h,
+    })
+    .from(schema.dashboardWidgets)
+    .where(
+      and(
+        eq(schema.dashboardWidgets.workspaceId, workspaceId),
+        inArray(
+          schema.dashboardWidgets.slideId,
+          first.map((slide) => slide.id),
+        ),
+      ),
+    )
+    .orderBy(
+      asc(schema.dashboardWidgets.y),
+      asc(schema.dashboardWidgets.x),
+      asc(schema.dashboardWidgets.id),
+    );
+  for (const { dashboardId, ...widget } of widgets) {
+    byDashboard.set(dashboardId, [
+      ...(byDashboard.get(dashboardId) ?? []),
+      widget,
+    ]);
+  }
+  return byDashboard;
 }
 
 async function loadSlides(

@@ -40,9 +40,6 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     current: "{name} (aktuell, {role})",
     settings: "Workspace-Einstellungen",
     dashboards: "Dashboards",
-    noDashboards: "Noch keine Dashboards.",
-    dashboardMeta:
-      "{slides, plural, one {# Folie} other {# Folien}} · {widgets, plural, one {# Widget} other {# Widgets}} · aktualisiert {updated}",
     openInStudio: "{name} im Studio öffnen",
     studio: "Studio",
     tvs: "TVs",
