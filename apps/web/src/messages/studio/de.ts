@@ -271,6 +271,10 @@ export const studioDe: Catalog<typeof studioEn> = {
       textCut: "Der Text wird auf TVs abgeschnitten. Kürze den Text.",
       labelWarning:
         "Auf einem TV braucht diese Beschriftung bei dieser Breite {lines} Zeilen und würde abgeschnitten (höchstens {max}). Kürze den Titel oder mach das Widget breiter.",
+      formatsAttention:
+        "{count, plural, one {# Format braucht Aufmerksamkeit} other {# Formate brauchen Aufmerksamkeit}}",
+      formatsAttentionTitle:
+        "Im gespeicherten Stand, in {formats}: Eine Beschriftung oder ein Text wird abgeschnitten, der Name passt nicht in die Kopfzeile oder Widgets warten auf deine Prüfung.",
     },
     document: {
       noSpace: "Auf dieser Folie ist kein Platz mehr dafür.",

@@ -845,3 +845,166 @@ describe("primary format and custom layouts", () => {
     expect(await payloads()).toBe(before);
   });
 });
+
+describe("readability per format (#280)", () => {
+  /** Fits half the 16:9 grid; needs three lines at half a portrait grid. */
+  const LONG =
+    "Registrierungen · Durchschnittliche Bestellwerte aller Neukunden";
+
+  const codes = (slide: DashboardSlide) =>
+    slide.formatWarnings.map(
+      (warning) =>
+        `${warning.format} ${warning.code} ${warning.widgetId ?? "-"}${warning.pages === null ? "" : ` ${warning.pages}`}`,
+    );
+
+  it("returns warnings per slide and format on GET and PUT", async () => {
+    const dashboard = await create({
+      slides: [
+        {
+          name: "Umsatz",
+          widgets: [
+            metric(0, 0, { w: 6, title: LONG }),
+            metric(6, 0, { w: 6, title: LONG }),
+            // Untitled: "Signups · All sites", short in every format.
+            metric(0, 2),
+          ],
+        },
+        { name: "Time", widgets: [clock(0, 0)] },
+      ],
+    });
+    const [sales, time] = dashboard.slides;
+    const [a, b] = sales!.widgets;
+    expect(codes(sales!)).toEqual([
+      `3x4 label_cut ${a!.id}`,
+      `3x4 label_cut ${b!.id}`,
+      `9x16 label_cut ${a!.id}`,
+      `9x16 label_cut ${b!.id}`,
+    ]);
+    expect(sales!.formatWarnings[0]).toEqual({
+      format: "3x4",
+      code: "label_cut",
+      severity: "attention",
+      widgetId: a!.id,
+      pages: null,
+    });
+    expect(time!.formatWarnings).toEqual([]);
+    expect(await get(dashboard.id)).toEqual(dashboard);
+
+    // A custom 9:16 layout: one widget full width, one hidden, the third
+    // left for review; read-only warnings sent back are ignored.
+    const [, , c] = sales!.widgets;
+    const saved = parsed(
+      await put(dashboard, {
+        slides: [
+          {
+            ...sendable(sales!),
+            formatWarnings: [],
+            layouts: [
+              {
+                format: "9x16",
+                pages: 1,
+                placements: [
+                  { widgetId: a!.id, page: 0, x: 0, y: 0, w: 6, h: 2 },
+                  {
+                    widgetId: b!.id,
+                    page: 0,
+                    x: 0,
+                    y: 2,
+                    w: 3,
+                    h: 2,
+                    hidden: true,
+                  },
+                  {
+                    widgetId: c!.id,
+                    page: 0,
+                    x: 0,
+                    y: 4,
+                    w: 3,
+                    h: 2,
+                    autoPlaced: true,
+                  },
+                ],
+              },
+            ],
+          },
+          sendable(time!),
+        ],
+      }),
+    );
+    expect(codes(saved.slides[0]!)).toEqual([
+      `3x4 label_cut ${a!.id}`,
+      `3x4 label_cut ${b!.id}`,
+      `9x16 widget_hidden ${b!.id}`,
+      `9x16 widget_to_review ${c!.id}`,
+    ]);
+    expect(await get(dashboard.id)).toEqual(saved);
+  });
+
+  it("reports continuation pages and a dashboard name too long for narrow headers", async () => {
+    const dashboard = await create({
+      name: "Unternehmenskennzahlen Vertrieb und Marketing Europa, Naher Osten und Afrika Q3",
+      slides: [
+        {
+          name: "Alles",
+          widgets: [
+            metric(0, 0),
+            metric(3, 0),
+            metric(6, 0),
+            metric(9, 0),
+            metric(0, 2),
+            metric(3, 2),
+            metric(6, 2),
+            metric(9, 2),
+            line(0, 4, 12, 4),
+          ],
+        },
+      ],
+    });
+    const warnings = dashboard.slides[0]!.formatWarnings;
+    expect(
+      warnings.filter((warning) => warning.code === "header_name_cut"),
+    ).toEqual(
+      ["4x3", "3x4", "9x16"].map((format) => ({
+        format,
+        code: "header_name_cut",
+        severity: "attention",
+        widgetId: null,
+        pages: null,
+      })),
+    );
+    expect(
+      warnings.filter((warning) => warning.code === "continues"),
+    ).toContainEqual({
+      format: "3x4",
+      code: "continues",
+      severity: "info",
+      widgetId: null,
+      pages: 2,
+    });
+    // Without the header only the pages remain.
+    const hidden = parsed(
+      await put(dashboard, {
+        settings: { ...dashboard.settings, showHeader: false },
+        slides: dashboard.slides.map((slide) => sendable(slide)),
+      }),
+    );
+    expect(
+      hidden.slides[0]!.formatWarnings.every(
+        (warning) => warning.code === "continues",
+      ),
+    ).toBe(true);
+  });
+
+  it("computes the warnings with labels in the reader's language", async () => {
+    const dashboard = await create();
+    const german = await app.inject({
+      method: "GET",
+      url: `${base()}/${dashboard.id}`,
+      headers: { cookie: owner, "accept-language": "de" },
+    });
+    // "Registrierungen · Alle Websites" fits as "Signups · All sites" does.
+    expect(parsed(german).slides.map((slide) => slide.formatWarnings)).toEqual(
+      dashboard.slides.map((slide) => slide.formatWarnings),
+    );
+  });
+});

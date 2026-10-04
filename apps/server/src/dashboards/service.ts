@@ -55,6 +55,7 @@ import {
   isPerCurrencyUnit,
   legacyLayout,
   slideLayoutProblem,
+  tileLabel,
   type Aggregation,
   type Locale,
   type MetricKind,
@@ -65,6 +66,10 @@ import {
 
 import { resolveThemeTokens } from "../themes/service.js";
 import { copyLayouts, rebaseSlides, resolveSlideLayouts } from "./layouts.js";
+import {
+  dashboardFormatWarnings,
+  loadReadabilityInputs,
+} from "./readability.js";
 import {
   findAllResourcesNames,
   tileAllResourcesName,
@@ -201,6 +206,28 @@ export async function presentDashboard(
       }),
     };
   };
+  // Readability per format (ADR 0017 §6, #280), labelled as screens show
+  // the widgets, in the reader's language.
+  const warnings = dashboardFormatWarnings(
+    dashboard,
+    await loadReadabilityInputs(
+      tx,
+      workspaceId,
+      dashboard,
+      locale,
+      (widget, metricName) => {
+        if (!isDataRow(widget)) return null;
+        const { dimensions, resourceName, allResourcesName } = binding(widget);
+        return tileLabel({
+          title: widget.title,
+          metricName,
+          dimensions,
+          resourceName,
+          allResourcesName,
+        });
+      },
+    ),
+  );
   const present = (widget: DashboardWidgetRow): DashboardWidget => {
     const base = {
       id: widget.id,
@@ -273,8 +300,7 @@ export async function presentDashboard(
           autoPlaced: placement.autoPlaced,
         })),
       })),
-      // Filled by the readability checks per format (#280).
-      formatWarnings: [],
+      formatWarnings: warnings.get(slide.id) ?? [],
     })),
     tiles: metricWidgets(dashboard.slides, { enabledOnly: false })
       .filter(isDataRow)

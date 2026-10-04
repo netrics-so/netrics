@@ -6,17 +6,14 @@ import type {
   WorkspaceMetric,
 } from "@netrics/contracts";
 import {
-  parseTextWidget,
-  textWidgetSizes,
-  wrappedLineCount,
-  type StudioPlacement,
-  type StudioTextBlock,
+  textWidgetFit,
   type Locale,
+  type StudioPlacement,
   type StudioTextSize,
+  type TextWidgetFit,
 } from "@netrics/domain";
 
 import { webTranslator } from "./i18n/catalogs";
-import { LINE_HEIGHT, contentBox } from "./studio-render";
 
 // The studio's widgets as the web renders them (ADR 0015, sections 1–2).
 
@@ -146,57 +143,14 @@ export function slideTitle(
   );
 }
 
-const SMALLER: Record<StudioTextSize, StudioTextSize | null> = {
-  display: "heading",
-  heading: "body",
-  body: null,
-};
-
-function spansText(spans: ReadonlyArray<{ text: string }>): string {
-  return spans.map((span) => span.text).join("");
-}
-
-function blocksHeight(
-  blocks: readonly StudioTextBlock[],
-  width: number,
-  sizes: { paragraph: number; heading1: number; heading2: number },
-): number {
-  let height = 0;
-  blocks.forEach((block, index) => {
-    if (index > 0) height += sizes.paragraph * 0.5;
-    if (block.kind === "heading") {
-      const size = block.level === 1 ? sizes.heading1 : sizes.heading2;
-      height +=
-        wrappedLineCount(spansText(block.spans), width, size, "bold") *
-        size *
-        LINE_HEIGHT;
-      return;
-    }
-    for (const line of block.lines) {
-      height +=
-        Math.max(
-          1,
-          wrappedLineCount(spansText(line), width, sizes.paragraph, "bold"),
-        ) *
-        sizes.paragraph *
-        LINE_HEIGHT;
-    }
-  });
-  return height;
-}
-
-export interface TextWidgetLayout {
-  blocks: StudioTextBlock[];
-  size: StudioTextSize;
-  sizes: { paragraph: number; heading1: number; heading2: number };
-  /** Even body size does not fit: the end is cut off (the studio warns). */
-  overflow: boolean;
-}
+/** A text widget's blocks and sizes; see the domain's `textWidgetFit`. */
+export type TextWidgetLayout = TextWidgetFit;
 
 /**
- * A text widget's blocks and sizes: its size option when the text fits
- * (estimated with the conservative glyph widths, bold), else the next
- * smaller option down to body. Never below the minimums.
+ * A text widget's blocks and sizes at 1080p: its size option when the text
+ * fits (estimated with the conservative glyph widths, bold), else the next
+ * smaller option down to body. Never below the minimums. The rule is the
+ * domain's, which the server's readability checks use per format (#280).
  */
 export function textWidgetLayout(input: {
   text: string;
@@ -205,18 +159,7 @@ export function textWidgetLayout(input: {
   fontScale: number;
   showHeader: boolean;
 }): TextWidgetLayout {
-  const blocks = parseTextWidget(input.text);
-  const box = contentBox(input.placement, input.showHeader);
-  let size: StudioTextSize = input.size;
-  for (;;) {
-    const sizes = textWidgetSizes(size, input.fontScale);
-    const fits = blocksHeight(blocks, box.width, sizes) <= box.height;
-    const next = SMALLER[size];
-    if (fits || next === null) {
-      return { blocks, size, sizes, overflow: !fits };
-    }
-    size = next;
-  }
+  return textWidgetFit(input);
 }
 
 /** A connection as a widget's footer and status notice need it. */
