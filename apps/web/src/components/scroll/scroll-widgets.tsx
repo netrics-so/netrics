@@ -19,6 +19,10 @@ import {
   type LineReadingProps,
 } from "@/components/studio/line-widget";
 import {
+  useLiveStatus,
+  type StatusReadingProps,
+} from "@/components/studio/status-widget";
+import {
   useLiveTable,
   type TableReadingProps,
 } from "@/components/studio/table-widget";
@@ -46,6 +50,11 @@ import {
 } from "@/lib/scroll-view";
 import { lineChartGeometry } from "@/lib/studio-chart";
 import { clockText } from "@/lib/studio-clock";
+import {
+  statusAgeText,
+  statusFooterText,
+  statusTone,
+} from "@/lib/studio-status";
 import { tableRowTexts, tableSubtitle } from "@/lib/studio-table";
 import { LINE_HEIGHT, u } from "@/lib/studio-render";
 import {
@@ -558,6 +567,82 @@ export function ScrollTableCard(props: TableReadingProps & ScrollCardSize) {
   );
 }
 
+/**
+ * The status board card (ADR 0019 section 7): every source, attention
+ * first, names wrapped in full; the card grows instead of "+N more".
+ */
+export function ScrollStatusCard(props: StatusReadingProps & ScrollCardSize) {
+  const locale = useLocale();
+  const t = useT("screen.widget");
+  const now = useNow().getTime();
+  return (
+    <article className="sw scroll-card scroll-card--status">
+      <ScrollLabel label={props.label} />
+      {props.items.length === 0 ? (
+        <p className="sw-muted" style={{ fontSize: u(SCROLL_TYPE.small) }}>
+          {t("statusEmpty")}
+        </p>
+      ) : (
+        <ol
+          className="sw-status-rows scroll-status-rows"
+          style={{ fontSize: u(SCROLL_TYPE.resource) }}
+        >
+          {props.items.map((item) => (
+            <li
+              key={item.connectionId}
+              className={`sw-status-row ${statusTone(item.status)}`}
+              aria-label={t("statusItem", {
+                name: item.name,
+                status: item.status,
+              })}
+            >
+              <span
+                className="sw-status-dot"
+                style={{ width: u(14), height: u(14) }}
+                aria-hidden="true"
+              />
+              <span className="scroll-status-name" aria-hidden="true">
+                {item.name}
+              </span>
+              {props.options.showAge ? (
+                <span
+                  className={
+                    item.status === "stale"
+                      ? "sw-status-age stale"
+                      : "sw-status-age"
+                  }
+                  style={{ fontSize: u(SCROLL_TYPE.small) }}
+                  aria-hidden="true"
+                  suppressHydrationWarning
+                >
+                  {statusAgeText(item.lastSuccessAt, now, locale)}
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      )}
+      {props.items.length > 0 ? (
+        <WidgetFooter size={SCROLL_TYPE.small}>
+          {statusFooterText(props.items, locale)}
+        </WidgetFooter>
+      ) : null}
+    </article>
+  );
+}
+
+function LiveScrollStatus({
+  widget,
+  env,
+  size,
+}: {
+  widget: Extract<StudioWidget, { type: "status" }>;
+  env: StudioEnv;
+  size: ScrollCardSize;
+}) {
+  return <ScrollStatusCard {...useLiveStatus(widget, env)} {...size} />;
+}
+
 function LiveScrollTable({
   widget,
   env,
@@ -645,6 +730,8 @@ export function LiveScrollWidget({
       return <LiveScrollBar widget={widget} env={env} size={size} />;
     case "table":
       return <LiveScrollTable widget={widget} env={env} size={size} />;
+    case "status":
+      return <LiveScrollStatus widget={widget} env={env} size={size} />;
     case "clock":
       return <LiveScrollClock widget={widget} env={env} size={size} />;
     case "text":

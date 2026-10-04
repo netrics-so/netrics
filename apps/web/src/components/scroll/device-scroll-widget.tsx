@@ -7,6 +7,7 @@ import {
   deviceBarReading,
   deviceLineReading,
   deviceMetricReading,
+  deviceStatusReading,
   deviceTableReading,
   type DeviceWidgetEnv,
 } from "@/components/studio/device-widget";
@@ -19,6 +20,7 @@ import {
   ScrollImageCard,
   ScrollLineCard,
   ScrollMetricCard,
+  ScrollStatusCard,
   ScrollTableCard,
   ScrollTextCard,
   type ScrollCardSize,
@@ -80,6 +82,8 @@ export function DeviceScrollWidget({
       return (
         <ScrollTableCard {...deviceTableReading(widget, locale)} {...size} />
       );
+    case "status":
+      return <ScrollStatusCard {...deviceStatusReading(widget)} {...size} />;
     case "clock":
       return <DeviceScrollClock widget={widget} env={env} size={size} />;
     case "text":

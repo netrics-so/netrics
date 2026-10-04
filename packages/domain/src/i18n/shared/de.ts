@@ -12,6 +12,7 @@ export const sharedDe: Catalog<SharedMessages> = {
     plural: "Ressourcen",
   },
   others: "Andere",
+  sources: "Quellen",
   none: "(keine)",
   periods: {
     today: "Heute",

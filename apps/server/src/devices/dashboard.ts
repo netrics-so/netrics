@@ -7,6 +7,7 @@ import {
   imageWidgetOptionsSchema,
   lineWidgetOptionsSchema,
   metricWidgetOptionsSchema,
+  statusWidgetOptionsSchema,
   tableWidgetOptionsSchema,
   textWidgetOptionsSchema,
   themeTokensSchema,
@@ -16,6 +17,7 @@ import {
   type DeviceDashboardV3Response,
   type DeviceImage,
   type DeviceSlide,
+  type DeviceStatusData,
   type DeviceTile,
   type DeviceTileStatus,
   type DeviceWidget,
@@ -56,6 +58,9 @@ import {
   type LayoutWidget,
   type ScreenFormat,
   isDataWidgetType,
+  sortSourceItems,
+  sourceItemStatus,
+  sourcesLabel,
   tileLabel,
   type Locale,
   type ThemeTokens,
@@ -179,6 +184,12 @@ interface DataContext {
   workspaceId: string;
   options: BuildOptions;
   states: Map<string, ConnectionStateView>;
+  /**
+   * Every connection of the workspace as a status board lists it (ADR
+   * 0019 section 7), from the same query as `states`: shared by all
+   * boards of the payload.
+   */
+  sources: DeviceStatusData["items"];
   /** Connections with a backfill queued or running. */
   backfilling: Set<string>;
   label(widget: DataWidget, metricName: string | undefined): string;
@@ -190,13 +201,32 @@ async function loadDataContext(
   widgets: readonly DataWidget[],
   options: BuildOptions,
 ): Promise<DataContext> {
+  const connections = await listConnections(tx, workspaceId);
   const states = new Map(
-    (await listConnections(tx, workspaceId)).map(({ row, state }) => [
-      row.id,
-      toStateView(state),
-    ]),
+    connections.map(({ row, state }) => [row.id, toStateView(state)]),
   );
   const backfilling = await findBackfillingConnectionIds(tx, workspaceId);
+  // Only what a board shows: never credentials, configuration or errors.
+  const sources = sortSourceItems(
+    connections.map(({ row }) => {
+      const state = states.get(row.id)!;
+      return {
+        connectionId: row.id,
+        name: row.name,
+        status: sourceItemStatus(
+          {
+            health: state.health,
+            lastSuccessAt: state.lastSuccessAt,
+            pollIntervalSeconds: state.pollIntervalSeconds,
+            setupPending: row.setupPending,
+            backfilling: backfilling.has(row.id),
+          },
+          options.now.getTime(),
+        ),
+        lastSuccessAt: state.lastSuccessAt,
+      };
+    }),
+  );
   // Widgets of one resource are labelled with its name (#194).
   const resourceNames = await findResourceNames(
     tx,
@@ -223,6 +253,7 @@ async function loadDataContext(
     workspaceId,
     options,
     states,
+    sources,
     backfilling,
     label(widget, metricName) {
       const dimensions = dimensionsOf(widget);
@@ -627,6 +658,33 @@ async function tableWidgetOf(
   };
 }
 
+/**
+ * A status board (ADR 0019 section 7): the workspace's sources, or the
+ * chosen ones (a connection deleted since is left out), attention first,
+ * from the payload's one connection query. Always `ok`: the board is the
+ * status display; no sources reads "No sources connected" on screens.
+ */
+function statusWidgetOf(
+  widget: DashboardWidgetRow,
+  placement: { id: string; x: number; y: number; w: number; h: number },
+  context: DataContext,
+): DeviceWidget {
+  const options = parsedOptions(statusWidgetOptionsSchema, widget.options);
+  const chosen = options.connectionIds ? new Set(options.connectionIds) : null;
+  return {
+    type: "status",
+    ...placement,
+    label: widget.title ?? sourcesLabel(context.options.locale),
+    options,
+    data: {
+      status: "ok",
+      items: chosen
+        ? context.sources.filter((item) => chosen.has(item.connectionId))
+        : context.sources,
+    },
+  };
+}
+
 /** A built slide: its device form, before any layout is applied. */
 interface BuiltSlide {
   slide: Dashboard["slides"][number];
@@ -736,6 +794,8 @@ async function buildSlides(
           text: widget.text ?? "",
           options: parsedOptions(textWidgetOptionsSchema, widget.options),
         });
+      } else if (widget.type === "status") {
+        widgets.push(statusWidgetOf(widget, placement, context));
       } else if (widget.type === "clock") {
         const { dateStyle, showZone, ...clock } = parsedOptions(
           clockWidgetOptionsSchema,

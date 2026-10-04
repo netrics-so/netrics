@@ -27,6 +27,9 @@ import {
   parseTextWidget,
   clockLayout,
   studioFrame,
+  statusAge,
+  statusLayout,
+  statusRowsShown,
   tableChangeKind,
   tableLayout,
   tableRowLabel,
@@ -466,6 +469,69 @@ export function buildStudioLayoutVectors() {
     { value: 3, previousValue: 4, ratio: -0.25 },
   ].map((row) => ({ ...row, kind: tableChangeKind(row) }));
 
+  // Status boards (ADR 0019 section 7): 3 × 3, 3 × 4, 4 × 3 and 6 × 8 at
+  // 16:9 with the header, and odd ones.
+  const statusBoxes = [
+    { width: 404, height: 294.65 },
+    { width: 404, height: 414.2 },
+    { width: 560, height: 294.65 },
+    { width: 872, height: 892.4 },
+    { width: 200, height: 100 },
+    { width: 0, height: 0 },
+  ];
+  const statusLayouts = statusBoxes.flatMap((box) =>
+    ["Sources", "Quellen · netrics.so", LABELS[5]!].flatMap((label) =>
+      FONT_SCALES.flatMap((fontScale) =>
+        [true, false].map((showAge) => ({
+          label,
+          width: box.width,
+          height: box.height,
+          fontScale,
+          showAge,
+          layout: statusLayout({
+            label,
+            width: box.width,
+            height: box.height,
+            fontScale,
+            showAge,
+          }),
+        })),
+      ),
+    ),
+  );
+  const statusRowsShownCases = [
+    [0, 5],
+    [3, 5],
+    [5, 5],
+    [6, 5],
+    [12, 3],
+    [2, 1],
+    [4, 0],
+  ].map(([items, capacity]) => ({
+    items: items!,
+    capacity: capacity!,
+    ...statusRowsShown(items!, capacity!),
+  }));
+  const STATUS_NOW = Date.parse("2026-10-04T12:00:00Z");
+  const statusAges = [
+    null,
+    "2026-10-04T12:00:00Z",
+    "2026-10-04T11:59:30Z",
+    "2026-10-04T11:46:00Z",
+    "2026-10-04T11:00:01Z",
+    "2026-10-04T11:00:00Z",
+    "2026-10-04T09:00:00Z",
+    "2026-10-03T12:00:01Z",
+    "2026-10-03T12:00:00Z",
+    "2026-10-02T09:00:00Z",
+    "2026-07-04T12:00:00Z",
+    "2026-10-04T12:05:00Z",
+  ].map((lastSuccessAt) => ({
+    lastSuccessAt,
+    now: STATUS_NOW,
+    age: statusAge(lastSuccessAt, STATUS_NOW),
+  }));
+
   const legacy = Array.from({ length: 41 }, (_, tiles) => ({
     tiles,
     grid: legacyGrid(tiles),
@@ -538,6 +604,9 @@ export function buildStudioLayoutVectors() {
     tableRowsShown: tableRowsShownCases,
     tableRowLabels,
     tableChanges,
+    statusLayouts,
+    statusRowsShown: statusRowsShownCases,
+    statusAges,
     legacy,
     markdown,
     compact,

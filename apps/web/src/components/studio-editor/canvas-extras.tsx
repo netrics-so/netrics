@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { DashboardWidget, WorkspaceMetric } from "@netrics/contracts";
-import { isDataWidgetType } from "@netrics/domain";
+import { isDataWidgetType, sourcesLabel } from "@netrics/domain";
 
 import { dataWidgetLabel } from "@/components/studio/metric-widget";
 import {
@@ -44,7 +44,9 @@ export function useUnreadableLabels(
               widget as DataWidget,
               metrics.get(metricKeyOf(widget as DataWidget)),
             )
-          : "",
+          : widget.type === "status"
+            ? (widget.title ?? sourcesLabel(locale))
+            : "",
       fontScale,
       locale,
     );

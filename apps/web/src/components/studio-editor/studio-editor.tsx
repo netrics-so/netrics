@@ -18,7 +18,11 @@ import type {
   WorkspaceImage,
   WorkspaceMetric,
 } from "@netrics/contracts";
-import { isDataWidgetType, type ScreenFormat } from "@netrics/domain";
+import {
+  isDataWidgetType,
+  sourcesLabel,
+  type ScreenFormat,
+} from "@netrics/domain";
 
 import {
   ApiError,
@@ -308,13 +312,16 @@ export function StudioEditor({
           ? logoImage.width / logoImage.height
           : null,
       timeZone,
-      labelOf: (entry: DataWidget | { type: string }) =>
+      labelOf: (entry: DataWidget | { type: string; title?: string | null }) =>
         isDataWidgetType(entry.type)
           ? dataWidgetLabel(
               entry as DataWidget,
               metricsById.get(metricKeyOf(entry as DataWidget)),
             )
-          : null,
+          : entry.type === "status"
+            ? (entry.title ?? sourcesLabel(locale))
+            : null,
+      sourceCount: Object.keys(connections).length,
     };
     return new Map(
       draft.slides.map((entry) => [
@@ -333,6 +340,8 @@ export function StudioEditor({
     metricsById,
     draftLayouts,
     timeZone,
+    connections,
+    locale,
   ]);
   const previewContext: PreviewContext = useMemo(
     () => ({
@@ -918,6 +927,7 @@ export function StudioEditor({
               showHeader={draft.settings.showHeader}
               unreadable={unreadable.byWidget.get(widget.id)}
               currency={currency}
+              connections={connections}
               dispatch={dispatch}
               onUploadImage={onUploadImage}
               onDeleteImage={onDeleteImage}

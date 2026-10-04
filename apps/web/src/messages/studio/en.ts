@@ -73,7 +73,7 @@ export const studioEn = {
       add: "Add widget",
       hint: "Click to add it in the first free spot, or drag it onto the slide",
       addType:
-        "Add {type, select, metric {metric} line {line chart} bar {bar chart} table {table} image {image} text {text} clock {clock} other {widget}}",
+        "Add {type, select, metric {metric} line {line chart} bar {bar chart} table {table} image {image} text {text} clock {clock} status {status board} other {widget}}",
     },
     assignTvs: {
       title: "Show “{name}” on TVs",
@@ -248,6 +248,14 @@ export const studioEn = {
         end: "Right",
       },
       style: "Style",
+      /** Status boards (ADR 0019 section 7). */
+      sources: "Sources",
+      allSources: "All sources",
+      chosenSources: "Chosen sources",
+      sourcesHelp:
+        "Up to {max}. Sources that need attention are listed first; a new source joins “All sources” by itself.",
+      noSources: "No sources connected yet.",
+      showAge: "Show age",
       showChange: "Change against the previous period",
       sparkline: "Sparkline",
       showPrevious: "Previous period (dashed)",
@@ -460,9 +468,9 @@ export const studioEn = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} table {Table} image {Image} text {Text} clock {Clock} other {Widget}}",
+        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} table {Table} image {Image} text {Text} clock {Clock} status {Status} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} image {image} text {text} clock {clock} other {widget}})",
+        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} image {image} text {text} clock {clock} status {status board} other {widget}})",
       copyOf: "{name} (copy)",
       slide: "Slide {number}",
       quoted: "“{name}”",
@@ -474,9 +482,9 @@ export const studioEn = {
         widgetPlaced:
           "{name} {verb, select, duplicated {duplicated} pasted {pasted} other {added}} at column {column}, row {row}.",
         typeNoRoom:
-          "{type, select, metric {A metric} line {A line chart} bar {A bar chart} table {A table} image {An image} text {A text} clock {A clock} other {A widget}} needs at least {w} × {h} cells; there is no room for it here.",
+          "{type, select, metric {A metric} line {A line chart} bar {A bar chart} table {A table} image {An image} text {A text} clock {A clock} status {A status board} other {A widget}} needs at least {w} × {h} cells; there is no room for it here.",
         typeChanged:
-          "{name} is now {type, select, metric {a metric} line {a line chart} bar {a bar chart} table {a table} image {an image} text {a text} clock {a clock} other {a widget}}.",
+          "{name} is now {type, select, metric {a metric} line {a line chart} bar {a bar chart} table {a table} image {an image} text {a text} clock {a clock} status {a status board} other {a widget}}.",
         undone: "Undone.",
         redone: "Redone.",
         discarded: "Changes discarded.",

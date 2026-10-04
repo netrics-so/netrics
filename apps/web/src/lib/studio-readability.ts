@@ -165,7 +165,8 @@ export function unreadableLabels(
         });
         continue;
       }
-      if (!isDataWidget(widget.type)) {
+      // Data widgets and status boards have a label (ADR 0019 section 2).
+      if (!isDataWidget(widget.type) && widget.type !== "status") {
         continue;
       }
       const label = labelOf(widget);

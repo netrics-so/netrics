@@ -65,7 +65,11 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
   const byId: Record<string, TileConnection> = Object.fromEntries(
     connections.map((connection) => [
       connection.id,
-      { name: connection.name, state: connection.state },
+      {
+        name: connection.name,
+        state: connection.state,
+        setupPending: connection.setupPending,
+      },
     ]),
   );
 

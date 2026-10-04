@@ -302,6 +302,13 @@
       "when": 1791134233369,
       "tag": "0042_goals",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791135689650,
+      "tag": "0043_status_widget",
+      "breakpoints": true
     }
   ]
 }

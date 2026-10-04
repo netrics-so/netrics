@@ -447,6 +447,130 @@ describe("dashboard studio API", () => {
       on conflict do nothing`;
   });
 
+  it("stores a status board with its defaults and validates its sources (ADR 0019 §7)", async () => {
+    const response = await createDashboard(owner, {
+      name: "Status",
+      slides: [{ widgets: [{ type: "status", x: 0, y: 0, w: 3, h: 3 }] }],
+    });
+    expect(response.statusCode).toBe(200);
+    const dashboard = dashboardResponseSchema.parse(response.json()).dashboard;
+    expect(dashboard.slides[0]!.widgets[0]).toMatchObject({
+      type: "status",
+      title: null,
+      options: { connectionIds: null, showAge: true },
+    });
+    // Not a data widget: no tile, no binding.
+    expect(dashboard.tiles).toEqual([]);
+    expect(
+      dashboard.slides[0]!.formatWarnings.filter(
+        (warning) => warning.code === "rows_cut",
+      ),
+    ).toEqual([]);
+
+    // Chosen sources: this workspace's connections only.
+    const gone = await newConnection(workspaceId);
+    const chosen = await put(dashboard, {
+      slides: [
+        {
+          widgets: [
+            {
+              type: "status",
+              x: 0,
+              y: 0,
+              w: 3,
+              h: 3,
+              title: "Feeds",
+              options: { connectionIds: [connectionId, gone], showAge: false },
+            },
+          ],
+        },
+      ],
+    });
+    expect(chosen.statusCode).toBe(200);
+    const saved = dashboardResponseSchema.parse(chosen.json()).dashboard;
+    expect(saved.slides[0]!.widgets[0]).toMatchObject({
+      title: "Feeds",
+      options: { connectionIds: [connectionId, gone], showAge: false },
+    });
+    const foreign = await put(saved, {
+      slides: [
+        {
+          widgets: [
+            {
+              type: "status",
+              x: 0,
+              y: 0,
+              w: 3,
+              h: 3,
+              options: { connectionIds: [connectionId, foreignConnectionId] },
+            },
+          ],
+        },
+      ],
+    });
+    expectError(foreign, 400, "connection_not_found");
+
+    // A source deleted since drops out on the next save; the board's other
+    // sources stay.
+    await admin`delete from connections where id = ${gone}`;
+    const resaved = await put(saved, {
+      slides: [
+        {
+          widgets: [
+            {
+              type: "status",
+              x: 0,
+              y: 0,
+              w: 3,
+              h: 3,
+              options: { connectionIds: [connectionId, gone] },
+            },
+          ],
+        },
+      ],
+    });
+    expect(resaved.statusCode).toBe(200);
+    expect(
+      dashboardResponseSchema.parse(resaved.json()).dashboard.slides[0]!
+        .widgets[0],
+    ).toMatchObject({ options: { connectionIds: [connectionId] } });
+  });
+
+  it("warns (info) when a status board lists more sources than fit", async () => {
+    const ids: string[] = [];
+    for (let n = 0; n < 6; n++) ids.push(await newConnection(workspaceId));
+    const response = await createDashboard(owner, {
+      name: "Many sources",
+      slides: [
+        {
+          widgets: [
+            {
+              type: "status",
+              x: 0,
+              y: 0,
+              w: 3,
+              h: 3,
+              options: { connectionIds: ids },
+            },
+          ],
+        },
+      ],
+    });
+    expect(response.statusCode).toBe(200);
+    const dashboard = dashboardResponseSchema.parse(response.json()).dashboard;
+    // Five rows fit a 3 × 3 board in 16:9: four sources and "+2 more".
+    expect(
+      dashboard.slides[0]!.formatWarnings.find(
+        (warning) => warning.format === "16x9" && warning.code === "rows_cut",
+      ),
+    ).toMatchObject({
+      severity: "info",
+      widgetId: dashboard.slides[0]!.widgets[0]!.id,
+      rows: { shown: 4, limit: 6 },
+    });
+    await admin`delete from connections where id = any(${ids})`;
+  });
+
   it("stores a table with its defaults and warns when its rows do not fit (ADR 0019)", async () => {
     const table = metricWidget({
       type: "table",
@@ -743,6 +867,56 @@ describe("dashboard studio API", () => {
       ],
       400,
       "unknown_dimension",
+    ],
+    [
+      "a status board below its 3 × 3 minimum",
+      [{ widgets: [{ type: "status", x: 0, y: 0, w: 3, h: 2 }] }],
+      400,
+      "widget_too_small",
+    ],
+    [
+      "a status board with more than 12 sources",
+      [
+        {
+          widgets: [
+            {
+              type: "status",
+              x: 0,
+              y: 0,
+              w: 3,
+              h: 3,
+              options: {
+                connectionIds: Array.from(
+                  { length: 13 },
+                  (_, n) =>
+                    `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+                ),
+              },
+            },
+          ],
+        },
+      ],
+      400,
+      "invalid_request",
+    ],
+    [
+      "a status board with an empty list of sources",
+      [
+        {
+          widgets: [
+            {
+              type: "status",
+              x: 0,
+              y: 0,
+              w: 3,
+              h: 3,
+              options: { connectionIds: [] },
+            },
+          ],
+        },
+      ],
+      400,
+      "invalid_request",
     ],
     [
       "a table with more than 10 rows",

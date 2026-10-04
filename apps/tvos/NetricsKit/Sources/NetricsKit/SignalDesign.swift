@@ -557,3 +557,83 @@ public enum EnterMotion {
         return text.utf16.count > final.utf16.count ? final : text
     }
 }
+
+// MARK: Status board (ADR 0019 section 7)
+
+/** A status dot's colour, from the theme's tokens (web: `statusTone`). */
+public enum StatusTone: String, Sendable, Equatable {
+    case up, warning, muted, down
+}
+
+/**
+ * What a status board shows besides its layout (web: lib/studio-status.ts):
+ * the dot's tone, the age of a last sync, which items fit with "+N more",
+ * and the footer.
+ */
+public enum StatusBoard {
+    public static func tone(_ status: StatusItemStatus) -> StatusTone {
+        switch status {
+        case .ok: return .up
+        case .stale: return .warning
+        case .authFailed, .outage: return .down
+        case .backfilling: return .muted
+        }
+    }
+
+    /** "14 m", "3 h", "2 d" ("14 min", "3 h", "2 T"); "never" without one. */
+    public static func ageText(_ lastSuccessAt: String?, now: Date, language: ScreenLanguage = .en) -> String {
+        guard let age = StudioLayout.statusAge(lastSuccessAt, now: now) else {
+            return KitStrings.text(.statusNever, language)
+        }
+        switch age.unit {
+        case .m: return KitStrings.text(.statusAgeMinutes, language, age.amount)
+        case .h: return KitStrings.text(.statusAgeHours, language, age.amount)
+        case .d: return KitStrings.text(.statusAgeDays, language, age.amount)
+        }
+    }
+
+    public struct Rows: Sendable, Equatable {
+        /** The items listed, attention first as sent. */
+        public var shown: [StatusItem]
+        /** "+N more": the items not listed; 0 when all are. */
+        public var more: Int
+        /** The worst tone among the hidden items: down or warning, else muted. */
+        public var moreTone: StatusTone
+    }
+
+    /** The items a board of `capacity` rows lists, the last row "+N more" when they do not fit. */
+    public static func rows(_ items: [StatusItem], capacity: Int) -> Rows {
+        let fit = StudioLayout.statusRowsShown(items: items.count, rowCapacity: capacity)
+        let hidden = items.dropFirst(fit.shown).map { tone($0.status) }
+        let moreTone: StatusTone =
+            hidden.contains(.down) ? .down : hidden.contains(.warning) ? .warning : .muted
+        return Rows(shown: Array(items.prefix(fit.shown)), more: fit.more, moreTone: moreTone)
+    }
+
+    /**
+     * "4 connected · 1 failing · 1 delayed", dropping counts from the end
+     * until it fits one line of `width` units at `size` (when given).
+     */
+    public static func footer(
+        _ items: [StatusItem], language: ScreenLanguage = .en, width: Double? = nil, size: Double = 24
+    ) -> String {
+        var failing = 0
+        var delayed = 0
+        for item in items {
+            switch item.status {
+            case .authFailed, .outage: failing += 1
+            case .stale: delayed += 1
+            default: break
+            }
+        }
+        var parts = [KitStrings.text(.statusConnected, language, items.count)]
+        if failing > 0 { parts.append(KitStrings.text(.statusFailing, language, failing)) }
+        if delayed > 0 { parts.append(KitStrings.text(.statusDelayed, language, delayed)) }
+        while let width, parts.count > 1,
+            StudioLayout.wrappedLineCount(parts.joined(separator: " · "), maxWidth: width, fontSize: size) > 1
+        {
+            parts.removeLast()
+        }
+        return parts.joined(separator: " · ")
+    }
+}

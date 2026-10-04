@@ -475,6 +475,15 @@ input[type="checkbox"].toggle:checked::before,
   transform: translateX(12px);
 }
 
+/* A status board's chosen sources (ADR 0019 section 7). */
+.studio-inspector .status-sources {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
+
 input[type="checkbox"].toggle:focus,
 .studio-inspector label.check > input[type="checkbox"]:focus,
 .rail-slide label.check > input[type="checkbox"]:focus {
@@ -2005,6 +2014,7 @@ a.health-badge:hover {
 .sw-line,
 .sw-bar,
 .sw-table,
+.sw-status,
 .sw-clock,
 .sw-failed {
   background: var(--sw-surface, var(--t-surface));
@@ -2097,6 +2107,7 @@ a.health-badge:hover {
 .sw-bar > .sw-notice,
 .sw-table > .sw-notice,
 .sw-table > .sw-footer,
+.sw-status > .sw-footer,
 .sw-footer {
   margin-top: auto;
 }
@@ -2371,6 +2382,111 @@ a.health-badge:hover {
 }
 
 .scroll-table-label {
+  min-width: 0;
+  color: var(--t-label);
+  overflow-wrap: anywhere;
+}
+
+/* Status boards (ADR 0019 section 7, design 4a "Sources"): a dot, the
+   name and the age per row; sizes and the row pitch come from the domain's
+   statusLayout. Dots are the theme's up, warning, muted and down with a
+   soft glow of their own colour; the age is muted, warning when stale. */
+.sw-status-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sw-status-row {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  flex: none;
+  min-width: 0;
+  --sw-dot: var(--t-muted);
+}
+
+.sw-status-row.up {
+  --sw-dot: var(--t-up);
+}
+
+.sw-status-row.warning {
+  --sw-dot: var(--t-warning);
+}
+
+.sw-status-row.down {
+  --sw-dot: var(--t-down);
+}
+
+.sw-status-dot {
+  flex: none;
+  border-radius: 50%;
+  background: var(--sw-dot);
+  box-shadow: 0 0 calc(var(--u) * 8)
+    color-mix(in srgb, var(--sw-dot) 55%, transparent);
+}
+
+.sw-status-row.muted .sw-status-dot {
+  box-shadow: none;
+}
+
+/* Names are data: shrunk to 24 units first, then an ellipsis. */
+.sw-status-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--t-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-status-age {
+  flex: none;
+  margin-left: auto;
+  color: var(--t-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.sw-status-age.stale {
+  color: var(--t-warning);
+}
+
+.sw-status-more .sw-status-name {
+  color: var(--t-muted);
+}
+
+.sw-status-more.warning .sw-status-name {
+  color: var(--t-warning);
+}
+
+.sw-status-more.down .sw-status-name {
+  color: var(--t-down);
+}
+
+.sw-status-empty {
+  margin-top: calc(var(--u) * 12);
+}
+
+/* The scroll view's card lists every source, names wrapped in full. */
+.scroll-status-rows {
+  row-gap: calc(var(--u) * 12);
+  margin-top: calc(var(--u) * 12);
+}
+
+.scroll-status-rows .sw-status-row {
+  column-gap: calc(var(--u) * 16);
+  align-items: baseline;
+}
+
+.scroll-status-rows .sw-status-dot {
+  align-self: center;
+}
+
+.scroll-status-name {
+  flex: 1 1 auto;
   min-width: 0;
   color: var(--t-label);
   overflow-wrap: anywhere;

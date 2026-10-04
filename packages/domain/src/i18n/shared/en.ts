@@ -17,6 +17,8 @@ export const sharedEn = {
   },
   /** A breakdown's remainder: the smaller groups added up. */
   others: "Others",
+  /** A status board's default label (ADR 0019 section 7). */
+  sources: "Sources",
   /** A breakdown group without a value. */
   none: "(none)",
   periods: {

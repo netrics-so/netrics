@@ -24,6 +24,9 @@ import {
   parseTextWidget,
   placementsOverlap,
   studioFrame,
+  statusAge,
+  statusLayout,
+  statusRowsShown,
   studioLayout,
   tableChangeKind,
   tableLayout,
@@ -112,6 +115,7 @@ describe("placement rules", () => {
       text: { w: 2, h: 1 },
       clock: { w: 2, h: 1 },
       table: { w: 4, h: 4 },
+      status: { w: 3, h: 3 },
     });
     expect(meetsMinimumSize("metric", { x: 0, y: 0, w: 3, h: 2 })).toBe(true);
     expect(meetsMinimumSize("metric", { x: 0, y: 0, w: 2, h: 4 })).toBe(false);
@@ -308,6 +312,91 @@ describe("label fit", () => {
 
   it("always fits widgets without a label", () => {
     expect(labelFits("x".repeat(500), { type: "text", w: 2, h: 1 })).toBe(true);
+  });
+});
+
+describe("statusLayout (ADR 0019 section 7)", () => {
+  // A 3 × 3 widget's content box at 16:9 with the header.
+  const box = { width: 404, height: 294.65 };
+
+  it("fits five rows at font scale 1 and three at 1.3 on a 3 × 3 board", () => {
+    const layout = statusLayout({ label: "Sources", ...box });
+    expect(layout.rowCapacity).toBe(5);
+    expect(layout.rowPitch).toBeCloseTo(44.2, 9);
+    const large = statusLayout({ label: "Sources", ...box, fontScale: 1.3 });
+    expect(large.rowCapacity).toBe(3);
+    expect(large.rowPitch).toBeCloseTo(28 * 1.3 * 1.15 + 12, 9);
+  });
+
+  it("is the minimum size of the type, with the cell role", () => {
+    expect(STUDIO_MIN_WIDGET_SIZE.status).toEqual({ w: 3, h: 3 });
+    expect(
+      widgetTypeScale("status", { x: 0, y: 0, w: 3, h: 3 }, { fontScale: 1 }),
+    ).toEqual({ any: 24, title: 30, resource: 30, cell: 28 });
+    const layout = statusLayout({ label: "Sources", ...box });
+    expect(layout.sizes).toMatchObject({ cell: 28, cellMin: 24, age: 24 });
+  });
+
+  it("gives the name what the dot and the age leave", () => {
+    const layout = statusLayout({ label: "Sources", ...box });
+    expect(layout.columns.dot).toBe(14);
+    expect(layout.columns.age).toBeGreaterThan(0);
+    expect(layout.columns.name).toBeCloseTo(
+      404 - 14 - 16 - layout.columns.age - 16,
+      9,
+    );
+    const noAge = statusLayout({ label: "Sources", ...box, showAge: false });
+    expect(noAge.columns.age).toBe(0);
+    expect(noAge.columns.name).toBeCloseTo(404 - 14 - 16, 9);
+  });
+
+  it("loses rows to a second label line", () => {
+    const long = "Every source this office depends on, at a glance";
+    expect(statusLayout({ label: long, ...box }).titleLines).toBe(2);
+    expect(statusLayout({ label: long, ...box }).rowCapacity).toBe(4);
+  });
+});
+
+describe("statusRowsShown", () => {
+  it("lists every item that fits, else ends with +N more", () => {
+    expect(statusRowsShown(4, 5)).toEqual({ shown: 4, more: 0 });
+    expect(statusRowsShown(5, 5)).toEqual({ shown: 5, more: 0 });
+    expect(statusRowsShown(6, 5)).toEqual({ shown: 4, more: 2 });
+    expect(statusRowsShown(12, 3)).toEqual({ shown: 2, more: 10 });
+    expect(statusRowsShown(3, 0)).toEqual({ shown: 0, more: 0 });
+    expect(statusRowsShown(0, 3)).toEqual({ shown: 0, more: 0 });
+  });
+});
+
+describe("statusAge", () => {
+  const now = Date.parse("2026-10-04T12:00:00Z");
+
+  it("counts minutes, then hours, then days", () => {
+    expect(statusAge("2026-10-04T11:46:00Z", now)).toEqual({
+      amount: 14,
+      unit: "m",
+    });
+    expect(statusAge("2026-10-04T09:00:00Z", now)).toEqual({
+      amount: 3,
+      unit: "h",
+    });
+    expect(statusAge("2026-10-02T09:00:00Z", now)).toEqual({
+      amount: 2,
+      unit: "d",
+    });
+    expect(statusAge("2026-10-04T11:00:01Z", now)).toEqual({
+      amount: 59,
+      unit: "m",
+    });
+  });
+
+  it("is null without a success, and never negative", () => {
+    expect(statusAge(null, now)).toBeNull();
+    expect(statusAge("not a date", now)).toBeNull();
+    expect(statusAge("2026-10-04T12:05:00Z", now)).toEqual({
+      amount: 0,
+      unit: "m",
+    });
   });
 });
 

@@ -63,6 +63,18 @@ export const screenEn = {
       tableNew: "new",
       tableNoChange: "–",
       tableChangeHead: "Δ",
+      /** Status boards (ADR 0019 section 7). */
+      statusEmpty: "No sources connected",
+      statusMore: "+{count} more",
+      statusConnected: "{count} connected",
+      statusDelayed: "{count} delayed",
+      statusFailing: "{count} failing",
+      /** A sync's age: "14 m", "3 h", "2 d". */
+      statusAge:
+        "{unit, select, m {{count} m} h {{count} h} other {{count} d}}",
+      statusNever: "never",
+      statusItem:
+        "{name}: {status, select, ok {up to date} stale {delayed} backfilling {loading history} auth_failed {needs attention} outage {unreachable} other {unknown}}",
     },
     /** What a playing screen shows around its slides (ADR 0018, section 5). */
     player: {

@@ -76,7 +76,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       add: "Widget hinzufügen",
       hint: "Klick, um es am ersten freien Platz einzufügen, oder zieh es auf die Folie",
       addType:
-        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} image {Bild} text {Text} clock {Uhr} other {Widget}} hinzufügen",
+        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} image {Bild} text {Text} clock {Uhr} status {Status} other {Widget}} hinzufügen",
     },
     assignTvs: {
       title: "„{name}“ auf TVs zeigen",
@@ -253,6 +253,13 @@ export const studioDe: Catalog<typeof studioEn> = {
         end: "Rechts",
       },
       style: "Darstellung",
+      sources: "Quellen",
+      allSources: "Alle Quellen",
+      chosenSources: "Ausgewählte Quellen",
+      sourcesHelp:
+        "Bis zu {max}. Quellen, die Aufmerksamkeit brauchen, stehen oben; eine neue Quelle kommt bei „Alle Quellen“ von selbst dazu.",
+      noSources: "Noch keine Quellen verbunden.",
+      showAge: "Alter anzeigen",
       showChange: "Veränderung zum vorherigen Zeitraum",
       sparkline: "Sparkline",
       showPrevious: "Vorheriger Zeitraum (gestrichelt)",
@@ -468,9 +475,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} image {Bild} text {Text} clock {Uhr} other {Widget}}",
+        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} image {Bild} text {Text} clock {Uhr} status {Status} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} image {Bild} text {Text} clock {Uhr} other {Widget}})",
+        "{title} ({type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} image {Bild} text {Text} clock {Uhr} status {Status} other {Widget}})",
       copyOf: "{name} (Kopie)",
       slide: "Folie {number}",
       quoted: "„{name}“",
@@ -482,9 +489,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         widgetPlaced:
           "{name} in Spalte {column}, Zeile {row} {verb, select, duplicated {dupliziert} pasted {eingefügt} other {hinzugefügt}}.",
         typeNoRoom:
-          "{type, select, metric {Eine Metrik} line {Ein Liniendiagramm} bar {Ein Balkendiagramm} table {Eine Tabelle} image {Ein Bild} text {Ein Text} clock {Eine Uhr} other {Ein Widget}} braucht mindestens {w} × {h} Zellen; hier ist kein Platz dafür.",
+          "{type, select, metric {Eine Metrik} line {Ein Liniendiagramm} bar {Ein Balkendiagramm} table {Eine Tabelle} image {Ein Bild} text {Ein Text} clock {Eine Uhr} status {Eine Statusübersicht} other {Ein Widget}} braucht mindestens {w} × {h} Zellen; hier ist kein Platz dafür.",
         typeChanged:
-          "{name} ist jetzt {type, select, metric {eine Metrik} line {ein Liniendiagramm} bar {ein Balkendiagramm} table {eine Tabelle} image {ein Bild} text {ein Text} clock {eine Uhr} other {ein Widget}}.",
+          "{name} ist jetzt {type, select, metric {eine Metrik} line {ein Liniendiagramm} bar {ein Balkendiagramm} table {eine Tabelle} image {ein Bild} text {ein Text} clock {eine Uhr} status {eine Statusübersicht} other {ein Widget}}.",
         undone: "Rückgängig gemacht.",
         redone: "Wiederholt.",
         discarded: "Änderungen verworfen.",

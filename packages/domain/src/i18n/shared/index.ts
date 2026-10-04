@@ -69,3 +69,8 @@ export function aggregationName(
 export function othersLabel(locale: Locale = "en"): string {
   return sharedTranslator(locale)("others");
 }
+
+/** A status board's label without a title: "Sources", "Quellen". */
+export function sourcesLabel(locale: Locale = "en"): string {
+  return sharedTranslator(locale)("sources");
+}

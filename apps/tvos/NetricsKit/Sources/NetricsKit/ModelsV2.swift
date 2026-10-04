@@ -632,6 +632,80 @@ public struct TableWidgetData: Codable, Sendable, Equatable {
     }
 }
 
+/** A status board's options (ADR 0019 section 7). */
+public struct StatusWidgetOptions: Codable, Sendable, Equatable {
+    /** nil: every source of the workspace. */
+    public var connectionIds: [String]?
+    public var showAge: Bool
+
+    public init(connectionIds: [String]? = nil, showAge: Bool = true) {
+        self.connectionIds = connectionIds
+        self.showAge = showAge
+    }
+
+    private enum CodingKeys: String, CodingKey { case connectionIds, showAge }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        connectionIds = c.lenient([String].self, .connectionIds)
+        showAge = c.lenient(Bool.self, .showAge) ?? true
+    }
+}
+
+/** A source's health on a status board; an unknown one shows a muted dot. */
+public enum StatusItemStatus: String, OpenAPIEnum {
+    case ok, stale, backfilling
+    case authFailed = "auth_failed"
+    case outage
+
+    public static var fallback: StatusItemStatus { .backfilling }
+}
+
+/** One source on a status board. */
+public struct StatusItem: Codable, Sendable, Equatable {
+    public var connectionId: String
+    public var name: String
+    public var status: StatusItemStatus
+    /** The last successful sync (ISO 8601); the age is computed on screen. */
+    public var lastSuccessAt: String?
+
+    public init(connectionId: String, name: String, status: StatusItemStatus, lastSuccessAt: String?) {
+        self.connectionId = connectionId
+        self.name = name
+        self.status = status
+        self.lastSuccessAt = lastSuccessAt
+    }
+
+    private enum CodingKeys: String, CodingKey { case connectionId, name, status, lastSuccessAt }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        connectionId = try c.decode(String.self, forKey: .connectionId)
+        name = try c.decode(String.self, forKey: .name)
+        status = c.lenient(StatusItemStatus.self, .status) ?? .fallback
+        lastSuccessAt = c.lenient(String.self, .lastSuccessAt)
+    }
+}
+
+/** A status board's data: attention first, then by name (the server sorts). */
+public struct StatusWidgetData: Codable, Sendable, Equatable {
+    public var status: DeviceTileStatus
+    public var items: [StatusItem]
+
+    public init(status: DeviceTileStatus = .ok, items: [StatusItem]) {
+        self.status = status
+        self.items = items
+    }
+
+    private enum CodingKeys: String, CodingKey { case status, items }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
+        items = c.lossyArray(StatusItem.self, .items)
+    }
+}
+
 // MARK: Widgets and slides
 
 public enum WidgetContent: Sendable, Equatable {
@@ -639,6 +713,7 @@ public enum WidgetContent: Sendable, Equatable {
     case line(LineWidgetOptions, LineWidgetData)
     case bar(BarWidgetOptions, BarWidgetData)
     case table(TableWidgetOptions, TableWidgetData)
+    case status(StatusWidgetOptions, StatusWidgetData)
     case image(imageId: String, ImageWidgetOptions)
     case text(String, TextWidgetOptions)
     case clock(ClockWidgetOptions)
@@ -711,6 +786,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
         case "table":
             guard let data = c.lenient(TableWidgetData.self, .data) else { return .unsupported }
             return .table(c.lenient(TableWidgetOptions.self, .options) ?? .init(), data)
+        case "status":
+            guard let data = c.lenient(StatusWidgetData.self, .data) else { return .unsupported }
+            return .status(c.lenient(StatusWidgetOptions.self, .options) ?? .init(), data)
         case "image":
             guard let imageId = c.lenient(String.self, .imageId) else { return .unsupported }
             return .image(imageId: imageId, c.lenient(ImageWidgetOptions.self, .options) ?? .init())
@@ -745,6 +823,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .table(let options, let data):
+            try c.encode(options, forKey: .options)
+            try c.encode(data, forKey: .data)
+        case .status(let options, let data):
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .image(let imageId, let options):

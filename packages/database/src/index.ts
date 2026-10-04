@@ -259,6 +259,7 @@ export {
   findConnection,
   finishConnectionSetup,
   insertConnection,
+  listConnectionIds,
   listConnections,
   latestObservationByResource,
   listObservations,

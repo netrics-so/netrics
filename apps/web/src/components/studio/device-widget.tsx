@@ -13,6 +13,7 @@ import { LiveClockWidget } from "./clock-widget";
 import { ImageWidgetView } from "./image-widget";
 import { LineWidgetView, type LineReadingProps } from "./line-widget";
 import { MetricWidgetView, type MetricReadingProps } from "./metric-widget";
+import { StatusWidgetView, type StatusReadingProps } from "./status-widget";
 import { TableWidgetView, type TableReadingProps } from "./table-widget";
 import { WidgetFailed } from "./slide-canvas";
 import { TextWidgetView } from "./text-widget";
@@ -172,6 +173,17 @@ export function deviceTableReading(
   };
 }
 
+/** A payload status board's reading (ADR 0019 section 7). */
+export function deviceStatusReading(
+  widget: Extract<DeviceWidget, { type: "status" }>,
+): StatusReadingProps {
+  return {
+    label: widget.label,
+    options: widget.options,
+    items: widget.data.items,
+  };
+}
+
 /**
  * A widget of a device payload (schema 2 or 3, #219, #281) with the data
  * the server computed: the same display components as the signed-in
@@ -215,6 +227,8 @@ export function DeviceWidgetView({
       return (
         <TableWidgetView {...common} {...deviceTableReading(widget, locale)} />
       );
+    case "status":
+      return <StatusWidgetView {...common} {...deviceStatusReading(widget)} />;
     case "image":
       return (
         <ImageWidgetView
