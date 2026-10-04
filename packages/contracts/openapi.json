@@ -16204,7 +16204,7 @@
     },
     "/v1/device/dashboard": {
       "get": {
-        "summary": "The device's dashboard: schema 1 (tiles) by default, schema 2 (slides, widgets, theme, images) with ?schema=2 when server info lists it; send If-None-Match with the last ETag to get 304 when nothing changed",
+        "summary": "The device's dashboard: schema 1 (tiles) by default, schema 2 (slides, widgets, theme, images in the 16:9 layout) with ?schema=2, schema 3 (primary and custom layouts per screen format, device rotation and display mode) with ?schema=3, each when server info lists it; ETags are per schema: send If-None-Match with the last ETag to get 304 when nothing changed",
         "tags": [
           "devices"
         ],
@@ -16214,7 +16214,8 @@
               "type": "string",
               "enum": [
                 "1",
-                "2"
+                "2",
+                "3"
               ]
             },
             "in": "query",
@@ -17956,6 +17957,1768 @@
                         "theme",
                         "rotation",
                         "grid",
+                        "slides",
+                        "images"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "schema": {
+                          "type": "number",
+                          "enum": [
+                            3
+                          ]
+                        },
+                        "refreshAfterSec": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "timeZone": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "locale": {
+                          "type": "string",
+                          "pattern": "^[a-z]{2,3}$"
+                        },
+                        "primaryFormat": {
+                          "type": "string",
+                          "enum": [
+                            "21x9",
+                            "16x9",
+                            "4x3",
+                            "3x4",
+                            "9x16"
+                          ]
+                        },
+                        "formats": {
+                          "type": "object",
+                          "properties": {
+                            "16x9": {
+                              "type": "object",
+                              "properties": {
+                                "columns": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "rows": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reference": {
+                                  "type": "array",
+                                  "prefixItems": [
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  ],
+                                  "items": false,
+                                  "minItems": 2,
+                                  "maxItems": 2
+                                }
+                              },
+                              "required": [
+                                "columns",
+                                "rows",
+                                "reference"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "21x9": {
+                              "type": "object",
+                              "properties": {
+                                "columns": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "rows": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reference": {
+                                  "type": "array",
+                                  "prefixItems": [
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  ],
+                                  "items": false,
+                                  "minItems": 2,
+                                  "maxItems": 2
+                                }
+                              },
+                              "required": [
+                                "columns",
+                                "rows",
+                                "reference"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "4x3": {
+                              "type": "object",
+                              "properties": {
+                                "columns": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "rows": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reference": {
+                                  "type": "array",
+                                  "prefixItems": [
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  ],
+                                  "items": false,
+                                  "minItems": 2,
+                                  "maxItems": 2
+                                }
+                              },
+                              "required": [
+                                "columns",
+                                "rows",
+                                "reference"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "3x4": {
+                              "type": "object",
+                              "properties": {
+                                "columns": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "rows": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reference": {
+                                  "type": "array",
+                                  "prefixItems": [
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  ],
+                                  "items": false,
+                                  "minItems": 2,
+                                  "maxItems": 2
+                                }
+                              },
+                              "required": [
+                                "columns",
+                                "rows",
+                                "reference"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "9x16": {
+                              "type": "object",
+                              "properties": {
+                                "columns": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "rows": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reference": {
+                                  "type": "array",
+                                  "prefixItems": [
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  ],
+                                  "items": false,
+                                  "minItems": 2,
+                                  "maxItems": 2
+                                }
+                              },
+                              "required": [
+                                "columns",
+                                "rows",
+                                "reference"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "16x9",
+                            "21x9",
+                            "4x3",
+                            "3x4",
+                            "9x16"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "device": {
+                          "type": "object",
+                          "properties": {
+                            "rotation": {
+                              "type": "number",
+                              "enum": [
+                                0,
+                                90,
+                                180,
+                                270
+                              ]
+                            },
+                            "displayMode": {
+                              "type": "string",
+                              "enum": [
+                                "screen",
+                                "scroll"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "rotation",
+                            "displayMode"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "dashboard": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "showHeader": {
+                                  "type": "boolean"
+                                },
+                                "logo": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "imageId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        }
+                                      },
+                                      "required": [
+                                        "imageId"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "showHeader",
+                                "logo"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "theme": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "tokens": {
+                              "type": "object",
+                              "properties": {
+                                "background": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                },
+                                "surface": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                },
+                                "border": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                },
+                                "text": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                },
+                                "muted": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                },
+                                "accent": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                },
+                                "up": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                },
+                                "down": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                },
+                                "warning": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                },
+                                "chartLine": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                },
+                                "chartFill": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                },
+                                "fontScale": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number",
+                                      "enum": [
+                                        1
+                                      ]
+                                    },
+                                    {
+                                      "type": "number",
+                                      "enum": [
+                                        1.15
+                                      ]
+                                    },
+                                    {
+                                      "type": "number",
+                                      "enum": [
+                                        1.3
+                                      ]
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "background",
+                                "surface",
+                                "border",
+                                "text",
+                                "label",
+                                "muted",
+                                "accent",
+                                "up",
+                                "down",
+                                "warning",
+                                "chartLine",
+                                "chartFill",
+                                "fontScale"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "tokens"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "properties": {
+                            "autoAdvance": {
+                              "type": "boolean"
+                            },
+                            "transition": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "fade"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "autoAdvance",
+                            "transition"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "slides": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "name": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "durationSec": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "background": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "imageId": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      "dim": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 80
+                                      }
+                                    },
+                                    "required": [
+                                      "imageId",
+                                      "dim"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "widgets": {
+                                "type": "array",
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "metric"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "showSparkline": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "showChange": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "showSparkline",
+                                            "showChange"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "data": {
+                                          "type": "object",
+                                          "properties": {
+                                            "period": {
+                                              "type": "string",
+                                              "enum": [
+                                                "today",
+                                                "last_7_days",
+                                                "last_30_days",
+                                                "this_month",
+                                                "last_90_days",
+                                                "last_12_months"
+                                              ]
+                                            },
+                                            "aggregation": {
+                                              "type": "string",
+                                              "enum": [
+                                                "sum",
+                                                "avg",
+                                                "min",
+                                                "max",
+                                                "last"
+                                              ]
+                                            },
+                                            "unit": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "conversion": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "displayCurrency": {
+                                                      "type": "string",
+                                                      "minLength": 3,
+                                                      "maxLength": 3
+                                                    },
+                                                    "source": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "unconverted": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "currency": {
+                                                            "type": "string",
+                                                            "minLength": 3,
+                                                            "maxLength": 3
+                                                          },
+                                                          "value": {
+                                                            "type": [
+                                                              "number",
+                                                              "null"
+                                                            ]
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "currency",
+                                                          "value"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "displayCurrency",
+                                                    "source",
+                                                    "unconverted"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "kind": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "gauge",
+                                                    "delta",
+                                                    "counter"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "granularity": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "day",
+                                                    "hour",
+                                                    "instant"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "better": {
+                                              "type": "string",
+                                              "enum": [
+                                                "higher",
+                                                "lower"
+                                              ]
+                                            },
+                                            "status": {
+                                              "type": "string",
+                                              "enum": [
+                                                "ok",
+                                                "stale",
+                                                "auth_failed",
+                                                "outage",
+                                                "no_data"
+                                              ]
+                                            },
+                                            "updatedAt": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": [
+                                                "number",
+                                                "null"
+                                              ]
+                                            },
+                                            "change": {
+                                              "type": "object",
+                                              "properties": {
+                                                "previousValue": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "delta": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "ratio": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "previousValue",
+                                                "delta",
+                                                "ratio"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "spark": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": [
+                                                  "number",
+                                                  "null"
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "period",
+                                            "aggregation",
+                                            "unit",
+                                            "conversion",
+                                            "kind",
+                                            "granularity",
+                                            "better",
+                                            "status",
+                                            "updatedAt",
+                                            "value",
+                                            "change",
+                                            "spark"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "label",
+                                        "options",
+                                        "data"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "line"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "showPrevious": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "showAxis": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "showPrevious",
+                                            "showAxis"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "data": {
+                                          "type": "object",
+                                          "properties": {
+                                            "period": {
+                                              "type": "string",
+                                              "enum": [
+                                                "today",
+                                                "last_7_days",
+                                                "last_30_days",
+                                                "this_month",
+                                                "last_90_days",
+                                                "last_12_months"
+                                              ]
+                                            },
+                                            "aggregation": {
+                                              "type": "string",
+                                              "enum": [
+                                                "sum",
+                                                "avg",
+                                                "min",
+                                                "max",
+                                                "last"
+                                              ]
+                                            },
+                                            "unit": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "conversion": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "displayCurrency": {
+                                                      "type": "string",
+                                                      "minLength": 3,
+                                                      "maxLength": 3
+                                                    },
+                                                    "source": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "unconverted": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "currency": {
+                                                            "type": "string",
+                                                            "minLength": 3,
+                                                            "maxLength": 3
+                                                          },
+                                                          "value": {
+                                                            "type": [
+                                                              "number",
+                                                              "null"
+                                                            ]
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "currency",
+                                                          "value"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "displayCurrency",
+                                                    "source",
+                                                    "unconverted"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "kind": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "gauge",
+                                                    "delta",
+                                                    "counter"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "granularity": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "day",
+                                                    "hour",
+                                                    "instant"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "better": {
+                                              "type": "string",
+                                              "enum": [
+                                                "higher",
+                                                "lower"
+                                              ]
+                                            },
+                                            "status": {
+                                              "type": "string",
+                                              "enum": [
+                                                "ok",
+                                                "stale",
+                                                "auth_failed",
+                                                "outage",
+                                                "no_data"
+                                              ]
+                                            },
+                                            "updatedAt": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": [
+                                                "number",
+                                                "null"
+                                              ]
+                                            },
+                                            "change": {
+                                              "type": "object",
+                                              "properties": {
+                                                "previousValue": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "delta": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "ratio": {
+                                                  "type": [
+                                                    "number",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "previousValue",
+                                                "delta",
+                                                "ratio"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "buckets": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "format": "date-time",
+                                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                              }
+                                            },
+                                            "values": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": [
+                                                  "number",
+                                                  "null"
+                                                ]
+                                              }
+                                            },
+                                            "previous": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": [
+                                                  "number",
+                                                  "null"
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "period",
+                                            "aggregation",
+                                            "unit",
+                                            "conversion",
+                                            "kind",
+                                            "granularity",
+                                            "better",
+                                            "status",
+                                            "updatedAt",
+                                            "value",
+                                            "change",
+                                            "buckets",
+                                            "values",
+                                            "previous"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "label",
+                                        "options",
+                                        "data"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "bar"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "groupBy": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 100
+                                            },
+                                            "limit": {
+                                              "default": 5,
+                                              "type": "integer",
+                                              "minimum": 3,
+                                              "maximum": 10
+                                            }
+                                          },
+                                          "required": [
+                                            "groupBy",
+                                            "limit"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "data": {
+                                          "type": "object",
+                                          "properties": {
+                                            "period": {
+                                              "type": "string",
+                                              "enum": [
+                                                "today",
+                                                "last_7_days",
+                                                "last_30_days",
+                                                "this_month",
+                                                "last_90_days",
+                                                "last_12_months"
+                                              ]
+                                            },
+                                            "aggregation": {
+                                              "type": "string",
+                                              "enum": [
+                                                "sum",
+                                                "avg",
+                                                "min",
+                                                "max",
+                                                "last"
+                                              ]
+                                            },
+                                            "unit": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "conversion": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "displayCurrency": {
+                                                      "type": "string",
+                                                      "minLength": 3,
+                                                      "maxLength": 3
+                                                    },
+                                                    "source": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "unconverted": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "currency": {
+                                                            "type": "string",
+                                                            "minLength": 3,
+                                                            "maxLength": 3
+                                                          },
+                                                          "value": {
+                                                            "type": [
+                                                              "number",
+                                                              "null"
+                                                            ]
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "currency",
+                                                          "value"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "displayCurrency",
+                                                    "source",
+                                                    "unconverted"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "kind": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "gauge",
+                                                    "delta",
+                                                    "counter"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "granularity": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "day",
+                                                    "hour",
+                                                    "instant"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "better": {
+                                              "type": "string",
+                                              "enum": [
+                                                "higher",
+                                                "lower"
+                                              ]
+                                            },
+                                            "status": {
+                                              "type": "string",
+                                              "enum": [
+                                                "ok",
+                                                "stale",
+                                                "auth_failed",
+                                                "outage",
+                                                "no_data"
+                                              ]
+                                            },
+                                            "updatedAt": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "groupBy": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "bars": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "label": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "value": {
+                                                    "type": "number"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "label",
+                                                  "value"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "others": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "label": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "value": {
+                                                      "type": "number"
+                                                    },
+                                                    "groups": {
+                                                      "type": "integer",
+                                                      "minimum": 0,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "label",
+                                                    "value",
+                                                    "groups"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "period",
+                                            "aggregation",
+                                            "unit",
+                                            "conversion",
+                                            "kind",
+                                            "granularity",
+                                            "better",
+                                            "status",
+                                            "updatedAt",
+                                            "groupBy",
+                                            "bars",
+                                            "others"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "label",
+                                        "options",
+                                        "data"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "image"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "label": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "imageId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "fit": {
+                                              "default": "contain",
+                                              "type": "string",
+                                              "enum": [
+                                                "contain",
+                                                "cover"
+                                              ]
+                                            },
+                                            "align": {
+                                              "default": "center",
+                                              "type": "string",
+                                              "enum": [
+                                                "start",
+                                                "center",
+                                                "end"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "fit",
+                                            "align"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "label",
+                                        "imageId",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "text"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "label": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "size": {
+                                              "default": "body",
+                                              "type": "string",
+                                              "enum": [
+                                                "body",
+                                                "heading",
+                                                "display"
+                                              ]
+                                            },
+                                            "align": {
+                                              "default": "start",
+                                              "type": "string",
+                                              "enum": [
+                                                "start",
+                                                "center",
+                                                "end"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "size",
+                                            "align"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "label",
+                                        "text",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "clock"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "label": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "showDate": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "hour12": {
+                                              "default": false,
+                                              "type": "boolean"
+                                            },
+                                            "timeZone": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "required": [
+                                            "showDate",
+                                            "hour12",
+                                            "timeZone"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "label",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                }
+                              },
+                              "layouts": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "format": {
+                                      "type": "string",
+                                      "enum": [
+                                        "21x9",
+                                        "16x9",
+                                        "4x3",
+                                        "3x4",
+                                        "9x16"
+                                      ]
+                                    },
+                                    "pages": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 8
+                                    },
+                                    "placements": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "widgetId": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "page": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 7
+                                          },
+                                          "x": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 16
+                                          },
+                                          "y": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 14
+                                          },
+                                          "w": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 16
+                                          },
+                                          "h": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 14
+                                          },
+                                          "hidden": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "widgetId",
+                                          "page",
+                                          "x",
+                                          "y",
+                                          "w",
+                                          "h",
+                                          "hidden"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "format",
+                                    "pages",
+                                    "placements"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "durationSec",
+                              "background",
+                              "widgets",
+                              "layouts"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "images": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "contentType": {
+                                "type": "string",
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/webp"
+                                ]
+                              },
+                              "width": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "height": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "bytes": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "url": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "sha256",
+                              "contentType",
+                              "width",
+                              "height",
+                              "bytes",
+                              "url"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "schema",
+                        "refreshAfterSec",
+                        "timeZone",
+                        "locale",
+                        "primaryFormat",
+                        "formats",
+                        "device",
+                        "dashboard",
+                        "theme",
+                        "rotation",
                         "slides",
                         "images"
                       ],

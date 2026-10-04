@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   deviceDashboardResponseSchema,
   deviceDashboardV2ResponseSchema,
+  deviceDashboardV3ResponseSchema,
   type DeviceDashboardV2Response,
   type ImageContentType,
 } from "@netrics/contracts";
@@ -21,6 +22,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   buildDeviceDashboard,
   buildDeviceDashboardV2,
+  buildDeviceDashboardV3,
+  withDevice,
 } from "./devices/dashboard.js";
 import { createDeviceService } from "./devices/service.js";
 import { sanitizeImage } from "./images/format.js";
@@ -862,6 +865,47 @@ describe("device payload schema 2", () => {
   it("hashes the schema: versions differ between schema 1 and 2", async () => {
     expect((await v2(EMPTY)).version).not.toBe((await v1(EMPTY)).version);
     expect((await v2(null)).version).not.toBe((await v1(null)).version);
+  });
+});
+
+describe("device payload schema 3 (#277)", () => {
+  function v3(dashboardId: string | null) {
+    return withWorkspace(db, { workspaceId }, async (tx) =>
+      withDevice(
+        await buildDeviceDashboardV3(tx, workspaceId, dashboardId, {
+          now: NOW,
+          exchangeRates: true,
+        }),
+        { rotation: 180, displayMode: "screen" },
+      ),
+    );
+  }
+
+  it("carries every widget type as schema 2 does, in the primary layout", async () => {
+    for (const dashboardId of [STUDIO, CUSTOM, EMPTY, MAXIMAL, null]) {
+      const payload = await v3(dashboardId);
+      expect(deviceDashboardV3ResponseSchema.parse(payload)).toEqual(payload);
+      const legacy = await v2(dashboardId);
+      const { schema: _s, grid: _g, version: _v, slides, ...shared } = legacy;
+      expect(payload).toMatchObject({
+        ...shared,
+        schema: 3,
+        primaryFormat: "16x9",
+        device: { rotation: 180, displayMode: "screen" },
+      });
+      // A 16x9 dashboard: schema 2's slides, widgets, data and background,
+      // with no custom layouts.
+      expect(payload.slides).toEqual(
+        slides.map((slide) => ({ ...slide, layouts: [] })),
+      );
+    }
+    const studio = await v3(STUDIO);
+    expect([
+      ...new Set(studio.slides.flatMap((s) => s.widgets.map((w) => w.type))),
+    ]).toEqual(["metric", "line", "bar", "image", "text", "clock"]);
+    // Stable: the same content and settings, the same version.
+    expect((await v3(STUDIO)).version).toBe(studio.version);
+    expect(studio.version).not.toBe((await v2(STUDIO)).version);
   });
 });
 

@@ -2312,11 +2312,11 @@ export type DeviceDashboardResponse = z.infer<
 // answers schema 1 (`deviceDashboardResponseSchema`), unchanged.
 
 /** The payload schemas this server answers (`dashboardSchemas` in server info). */
-export const DEVICE_DASHBOARD_SCHEMAS = [1, 2] as const;
+export const DEVICE_DASHBOARD_SCHEMAS = [1, 2, 3] as const;
 
 export const deviceDashboardQuerySchema = z.object({
-  /** "2" for schema 2; missing or "1" for schema 1. */
-  schema: z.enum(["1", "2"]).optional(),
+  /** "3" for schema 3, "2" for schema 2; missing or "1" for schema 1. */
+  schema: z.enum(["1", "2", "3"]).optional(),
 });
 export type DeviceDashboardQuery = z.infer<typeof deviceDashboardQuerySchema>;
 
@@ -2393,14 +2393,17 @@ export const deviceBarDataSchema = z.object({
 });
 export type DeviceBarData = z.infer<typeof deviceBarDataSchema>;
 
-const deviceWidgetShape = {
-  id: z.uuid(),
-  /** Grid cell of the top left corner and size in cells (12 × 8 grid). */
-  x: z.number().int().min(0).max(STUDIO_GRID.columns),
-  y: z.number().int().min(0).max(STUDIO_GRID.rows),
-  w: z.number().int().min(1).max(STUDIO_GRID.columns),
-  h: z.number().int().min(1).max(STUDIO_GRID.rows),
-};
+/** A widget's id and placement in a grid of `columns` × `rows`. */
+function deviceWidgetPlacementShape(grid: { columns: number; rows: number }) {
+  return {
+    id: z.uuid(),
+    /** Grid cell of the top left corner and size in cells. */
+    x: z.number().int().min(0).max(grid.columns),
+    y: z.number().int().min(0).max(grid.rows),
+    w: z.number().int().min(1).max(grid.columns),
+    h: z.number().int().min(1).max(grid.rows),
+  };
+}
 
 /**
  * A data widget's label: its title, else the metric name with the
@@ -2409,53 +2412,60 @@ const deviceWidgetShape = {
  */
 const deviceDataLabelSchema = z.string().min(1);
 
-export const deviceWidgetSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("metric"),
-    ...deviceWidgetShape,
-    label: deviceDataLabelSchema,
-    options: metricWidgetOptionsSchema,
-    data: deviceMetricDataSchema,
-  }),
-  z.object({
-    type: z.literal("line"),
-    ...deviceWidgetShape,
-    label: deviceDataLabelSchema,
-    options: lineWidgetOptionsSchema,
-    data: deviceLineDataSchema,
-  }),
-  z.object({
-    type: z.literal("bar"),
-    ...deviceWidgetShape,
-    label: deviceDataLabelSchema,
-    options: barWidgetOptionsSchema,
-    data: deviceBarDataSchema,
-  }),
-  z.object({
-    type: z.literal("image"),
-    ...deviceWidgetShape,
-    /** The widget's title (alternative text), else null. */
-    label: z.string().nullable(),
-    /** One of the payload's `images`. */
-    imageId: z.uuid(),
-    options: imageWidgetOptionsSchema,
-  }),
-  z.object({
-    type: z.literal("text"),
-    ...deviceWidgetShape,
-    label: z.string().nullable(),
-    /** Markdown-lite (ADR 0015 section 2); never interpreted as HTML. */
-    text: z.string(),
-    options: textWidgetOptionsSchema,
-  }),
-  z.object({
-    type: z.literal("clock"),
-    ...deviceWidgetShape,
-    label: z.string().nullable(),
-    /** `timeZone` resolved: the widget's, else the workspace's. */
-    options: clockWidgetOptionsSchema.extend({ timeZone: z.string().min(1) }),
-  }),
-]);
+/** The widget union with placements in the given grid. */
+function deviceWidgetUnion(grid: { columns: number; rows: number }) {
+  const deviceWidgetShape = deviceWidgetPlacementShape(grid);
+  return z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("metric"),
+      ...deviceWidgetShape,
+      label: deviceDataLabelSchema,
+      options: metricWidgetOptionsSchema,
+      data: deviceMetricDataSchema,
+    }),
+    z.object({
+      type: z.literal("line"),
+      ...deviceWidgetShape,
+      label: deviceDataLabelSchema,
+      options: lineWidgetOptionsSchema,
+      data: deviceLineDataSchema,
+    }),
+    z.object({
+      type: z.literal("bar"),
+      ...deviceWidgetShape,
+      label: deviceDataLabelSchema,
+      options: barWidgetOptionsSchema,
+      data: deviceBarDataSchema,
+    }),
+    z.object({
+      type: z.literal("image"),
+      ...deviceWidgetShape,
+      /** The widget's title (alternative text), else null. */
+      label: z.string().nullable(),
+      /** One of the payload's `images`. */
+      imageId: z.uuid(),
+      options: imageWidgetOptionsSchema,
+    }),
+    z.object({
+      type: z.literal("text"),
+      ...deviceWidgetShape,
+      label: z.string().nullable(),
+      /** Markdown-lite (ADR 0015 section 2); never interpreted as HTML. */
+      text: z.string(),
+      options: textWidgetOptionsSchema,
+    }),
+    z.object({
+      type: z.literal("clock"),
+      ...deviceWidgetShape,
+      label: z.string().nullable(),
+      /** `timeZone` resolved: the widget's, else the workspace's. */
+      options: clockWidgetOptionsSchema.extend({ timeZone: z.string().min(1) }),
+    }),
+  ]);
+}
+
+/** A schema 2 widget: placed in the 12 × 8 grid of the `16x9` layout. */
+export const deviceWidgetSchema = deviceWidgetUnion(STUDIO_GRID);
 export type DeviceWidget = z.infer<typeof deviceWidgetSchema>;
 
 export const deviceSlideSchema = z.object({
@@ -2535,6 +2545,106 @@ export const deviceDashboardV2ResponseSchema = z.object({
 });
 export type DeviceDashboardV2Response = z.infer<
   typeof deviceDashboardV2ResponseSchema
+>;
+
+// ─── Device payload schema 3 (ADR 0017, section 9; #277) ────────────────────
+//
+// GET /v1/device/dashboard?schema=3. Schema 2's content for every screen
+// alike: the primary layout and the custom layouts of other formats. Each
+// screen picks its format (`formatFor`) and lays a slide out itself
+// (`slideLayoutFor` / `reflowSlide`), so the payload does not depend on the
+// screen and a screen that turns re-lays out offline. Schema 2 is the same
+// dashboard reduced to the `16x9` layout, for screens that know no formats.
+
+/** A widget placed in the primary format's grid. */
+export const deviceWidgetV3Schema = deviceWidgetUnion(SCREEN_FORMAT_MAX_GRID);
+export type DeviceWidgetV3 = z.infer<typeof deviceWidgetV3Schema>;
+
+/** A widget's place in a custom layout, as screens get it. */
+export const deviceLayoutPlacementSchema = z.object({
+  /** One of the slide's `widgets`. */
+  widgetId: z.uuid(),
+  /** 0-based page (continuation pages). */
+  page: z
+    .number()
+    .int()
+    .min(0)
+    .max(CUSTOM_LAYOUT_MAX_PAGES - 1),
+  ...widgetPlacementShape,
+  /** Not shown in this format. */
+  hidden: z.boolean(),
+});
+export type DeviceLayoutPlacement = z.infer<typeof deviceLayoutPlacementSchema>;
+
+/**
+ * A slide's custom layout in one format other than the primary. Formats
+ * not listed are auto: the screen reflows the primary placements.
+ */
+export const deviceSlideLayoutSchema = z.object({
+  format: screenFormatSchema,
+  pages: z.number().int().min(1).max(CUSTOM_LAYOUT_MAX_PAGES),
+  /** For the slide's widgets in this payload, in the slide's widget order. */
+  placements: z.array(deviceLayoutPlacementSchema),
+});
+export type DeviceSlideLayout = z.infer<typeof deviceSlideLayoutSchema>;
+
+export const deviceSlideV3Schema = deviceSlideSchema.extend({
+  /** In reading order of the primary layout, placed in its grid. */
+  widgets: z.array(deviceWidgetV3Schema),
+  /** Custom formats only, in the fixed format order. */
+  layouts: z.array(deviceSlideLayoutSchema),
+});
+export type DeviceSlideV3 = z.infer<typeof deviceSlideV3Schema>;
+
+/** A format's grid and reference canvas ([width, height], ADR 0017 §1). */
+export const deviceFormatSchema = z.object({
+  columns: z.number().int().positive(),
+  rows: z.number().int().positive(),
+  reference: z.tuple([
+    z.number().int().positive(),
+    z.number().int().positive(),
+  ]),
+});
+export type DeviceFormat = z.infer<typeof deviceFormatSchema>;
+
+const v2Shape = deviceDashboardV2ResponseSchema.shape;
+
+export const deviceDashboardV3ResponseSchema = z.object({
+  /** Hash of the content below (device settings included); also the ETag. */
+  version: z.string().min(1),
+  schema: z.literal(3),
+  refreshAfterSec: v2Shape.refreshAfterSec,
+  timeZone: v2Shape.timeZone,
+  /** The language the labels are in (ADR 0016). */
+  locale: deviceLocaleSchema,
+  /** The format the dashboard is designed in; widgets are placed in it. */
+  primaryFormat: screenFormatSchema,
+  /** Every format's grid, so screens need no table of their own. */
+  formats: z.object({
+    "16x9": deviceFormatSchema,
+    "21x9": deviceFormatSchema,
+    "4x3": deviceFormatSchema,
+    "3x4": deviceFormatSchema,
+    "9x16": deviceFormatSchema,
+  }),
+  /**
+   * This device's settings (#276): the screen rotates its whole rendering
+   * by `rotation` degrees before choosing its format; `displayMode` is for
+   * kiosks (tvOS is always screen view).
+   */
+  device: z.object({
+    rotation: deviceRotationSchema,
+    displayMode: displayModeSchema,
+  }),
+  dashboard: v2Shape.dashboard,
+  theme: v2Shape.theme,
+  rotation: v2Shape.rotation,
+  /** Enabled slides only, in order. */
+  slides: z.array(deviceSlideV3Schema),
+  images: v2Shape.images,
+});
+export type DeviceDashboardV3Response = z.infer<
+  typeof deviceDashboardV3ResponseSchema
 >;
 
 export const deviceHeartbeatRequestSchema = z.object({
