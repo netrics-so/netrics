@@ -1,12 +1,19 @@
+import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { SignupForm } from "./signup-form";
 import { getSetupStatus } from "@/lib/api";
+import { getT } from "@/lib/i18n/server";
 import { getSessionUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("signup");
+  return { title: `${t("title")} · netrics` };
+}
 
 export default async function SignupPage() {
   const cookieHeader = (await headers()).get("cookie") ?? "";
@@ -17,16 +24,20 @@ export default async function SignupPage() {
   if (setup.setupRequired) {
     redirect("/setup");
   }
+  const t = await getT("signup");
   if (setup.signup === "closed") {
     return (
       <>
-        <h1>Sign-up is closed</h1>
-        <p className="subtitle">
-          Accounts on this installation are created by invitation. Ask an
-          administrator to invite you.
-        </p>
+        <h1>{t("closedTitle")}</h1>
+        <p className="subtitle">{t("closedText")}</p>
         <p className="muted">
-          Already have an account? <Link href="/login">Sign in</Link>
+          {t.rich("haveAccount", {
+            link: (
+              <Link key="link" href="/login">
+                {t("signIn")}
+              </Link>
+            ),
+          })}
         </p>
       </>
     );
@@ -34,13 +45,19 @@ export default async function SignupPage() {
 
   return (
     <>
-      <h1>Create account</h1>
-      <p className="subtitle">Register for netrics</p>
+      <h1>{t("title")}</h1>
+      <p className="subtitle">{t("subtitle")}</p>
       <div className="card">
         <SignupForm />
       </div>
       <p className="muted">
-        Already have an account? <Link href="/login">Sign in</Link>
+        {t.rich("haveAccount", {
+          link: (
+            <Link key="link" href="/login">
+              {t("signIn")}
+            </Link>
+          ),
+        })}
       </p>
     </>
   );

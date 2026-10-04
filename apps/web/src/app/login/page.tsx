@@ -1,13 +1,20 @@
+import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { LoginForm } from "./login-form";
 import { getSetupStatus } from "@/lib/api";
+import { getT } from "@/lib/i18n/server";
 import { safeNextPath } from "@/lib/next-path";
 import { getSessionUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("login");
+  return { title: `${t("title")} · netrics` };
+}
 
 export default async function LoginPage({
   searchParams,
@@ -24,19 +31,26 @@ export default async function LoginPage({
     redirect("/setup");
   }
 
+  const t = await getT("login");
   return (
     <>
-      <h1>Sign in</h1>
-      <p className="subtitle">Sign in to your netrics account</p>
+      <h1>{t("title")}</h1>
+      <p className="subtitle">{t("subtitle")}</p>
       <div className="card">
         <LoginForm next={next} />
       </div>
       <p className="muted">
-        <Link href="/forgot-password">Forgot password?</Link>
+        <Link href="/forgot-password">{t("forgot")}</Link>
       </p>
       {setup.signup === "open" ? (
         <p className="muted">
-          No account yet? <Link href="/signup">Create one</Link>
+          {t.rich("noAccount", {
+            link: (
+              <Link key="link" href="/signup">
+                {t("createOne")}
+              </Link>
+            ),
+          })}
         </p>
       ) : null}
     </>

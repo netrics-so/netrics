@@ -12,8 +12,8 @@ import {
 
 import { apiErrorMessage, setMyLocale } from "@/lib/api";
 import { changePassword, signOut } from "@/lib/auth";
-import { useT } from "@/lib/i18n/client";
-import { useLocale } from "@/lib/i18n/client";
+import { authErrorMessage } from "@/lib/auth-errors";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 /**
  * The user's language (ADR 0016). Saving re-renders the server components,
@@ -82,6 +82,7 @@ export function LanguageForm({
 }
 
 export function ChangePasswordForm() {
+  const locale = useLocale();
   const t = useT("account");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -101,7 +102,7 @@ export function ChangePasswordForm() {
     });
     setPending(false);
     if (authError) {
-      setError(authError.message ?? t("passwordChangeFailed"));
+      setError(authErrorMessage(authError, locale, "changePassword"));
       return;
     }
     formEl.reset();

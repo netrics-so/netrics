@@ -4,17 +4,20 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
 import { resetPassword } from "@/lib/auth";
+import { authErrorMessage } from "@/lib/auth-errors";
+import { useLocale, useT } from "@/lib/i18n/client";
 import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   isInvalidTokenError,
   newPasswordProblem,
-  resetErrorMessage,
 } from "@/lib/password-reset";
 
 type State = "form" | "done" | "expired";
 
 export function ResetPasswordForm({ token }: { token: string }) {
+  const locale = useLocale();
+  const t = useT("passwordReset");
   const [state, setState] = useState<State>("form");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -27,6 +30,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
     const problem = newPasswordProblem(
       newPassword,
       String(form.get("confirmPassword") ?? ""),
+      locale,
     );
     if (problem) {
       setError(problem);
@@ -40,7 +44,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
         setState("expired");
         return;
       }
-      setError(resetErrorMessage(authError));
+      setError(authErrorMessage(authError, locale));
       return;
     }
     setState("done");
@@ -49,8 +53,13 @@ export function ResetPasswordForm({ token }: { token: string }) {
   if (state === "done") {
     return (
       <div className="notice" role="status">
-        Password changed. Other sessions were signed out.{" "}
-        <Link href="/login">Sign in</Link> with the new password.
+        {t.rich("done", {
+          link: (
+            <Link key="link" href="/login">
+              {t("signIn")}
+            </Link>
+          ),
+        })}
       </div>
     );
   }
@@ -58,9 +67,9 @@ export function ResetPasswordForm({ token }: { token: string }) {
   if (state === "expired") {
     return (
       <div className="error" role="alert">
-        <p>This reset link is invalid or has expired.</p>
+        <p>{t("invalidLink")}</p>
         <p>
-          <Link href="/forgot-password">Request a new link</Link>
+          <Link href="/forgot-password">{t("requestNew")}</Link>
         </p>
       </div>
     );
@@ -69,7 +78,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
   return (
     <form className="stack" onSubmit={onSubmit}>
       <div className="field">
-        <label htmlFor="newPassword">New password</label>
+        <label htmlFor="newPassword">{t("newPassword")}</label>
         <input
           id="newPassword"
           name="newPassword"
@@ -82,11 +91,11 @@ export function ResetPasswordForm({ token }: { token: string }) {
           disabled={pending}
         />
         <p className="help" id="newPassword-help">
-          At least {PASSWORD_MIN_LENGTH} characters.
+          {t("minLengthHint", { count: PASSWORD_MIN_LENGTH })}
         </p>
       </div>
       <div className="field">
-        <label htmlFor="confirmPassword">Confirm new password</label>
+        <label htmlFor="confirmPassword">{t("confirmPassword")}</label>
         <input
           id="confirmPassword"
           name="confirmPassword"
@@ -100,7 +109,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
       </div>
       {error ? <div className="error">{error}</div> : null}
       <button type="submit" className="primary" disabled={pending}>
-        {pending ? "Saving…" : "Set new password"}
+        {pending ? t("saving") : t("submit")}
       </button>
     </form>
   );

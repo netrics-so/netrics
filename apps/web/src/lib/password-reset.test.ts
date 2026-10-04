@@ -5,7 +5,6 @@ import {
   isInvalidTokenError,
   newPasswordProblem,
   readResetLink,
-  resetErrorMessage,
   resetPasswordRedirect,
 } from "./password-reset";
 
@@ -51,21 +50,30 @@ describe("newPasswordProblem", () => {
   const ok = "x".repeat(PASSWORD_MIN_LENGTH);
 
   it("accepts a long enough, confirmed password", () => {
-    expect(newPasswordProblem(ok, ok)).toBeNull();
+    expect(newPasswordProblem(ok, ok, "en")).toBeNull();
   });
 
   it("rejects a short one", () => {
     const short = "x".repeat(PASSWORD_MIN_LENGTH - 1);
-    expect(newPasswordProblem(short, short)).toMatch(/at least 8/);
+    expect(newPasswordProblem(short, short, "en")).toMatch(/at least 8/);
   });
 
   it("rejects a too long one", () => {
     const long = "x".repeat(129);
-    expect(newPasswordProblem(long, long)).toMatch(/at most 128/);
+    expect(newPasswordProblem(long, long, "en")).toMatch(/at most 128/);
+  });
+
+  it("words problems in German", () => {
+    expect(newPasswordProblem("kurz", "kurz", "de")).toBe(
+      "Verwende mindestens 8 Zeichen.",
+    );
+    expect(newPasswordProblem(ok, `${ok}y`, "de")).toBe(
+      "Die Passwörter stimmen nicht überein.",
+    );
   });
 
   it("rejects a mismatch", () => {
-    expect(newPasswordProblem(ok, `${ok}y`)).toMatch(/do not match/);
+    expect(newPasswordProblem(ok, `${ok}y`, "en")).toMatch(/do not match/);
   });
 });
 
@@ -77,15 +85,5 @@ describe("reset errors", () => {
     expect(
       isInvalidTokenError({ status: 400, code: "PASSWORD_TOO_SHORT" }),
     ).toBe(false);
-  });
-
-  it("words rate limits and length errors plainly", () => {
-    expect(resetErrorMessage({ status: 429 })).toMatch(/Too many attempts/);
-    expect(
-      resetErrorMessage({ status: 400, code: "PASSWORD_TOO_SHORT" }),
-    ).toMatch(/at least 8/);
-    expect(resetErrorMessage({ status: 500, message: "boom" })).toBe(
-      "Something went wrong. Try again.",
-    );
   });
 });

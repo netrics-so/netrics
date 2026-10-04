@@ -3,10 +3,16 @@
  * mirror the API's better-auth config (apps/server/src/auth/index.ts).
  */
 
+import type { Locale } from "@netrics/domain";
+
+import type { AuthErrorLike } from "./auth-errors";
+import { webTranslator } from "./i18n/catalogs";
+
 export const PASSWORD_MIN_LENGTH = 8;
 /** better-auth's default maximum. */
 export const PASSWORD_MAX_LENGTH = 128;
-export const RESET_LINK_LIFETIME = "1 hour";
+/** How long an emailed reset link works (the API's resetPasswordTokenExpiresIn). */
+export const RESET_LINK_LIFETIME_HOURS = 1;
 
 /**
  * Where the emailed link leads after the API checked its token. Absolute on
@@ -42,40 +48,22 @@ export function readResetLink(query: {
 export function newPasswordProblem(
   password: string,
   confirmation: string,
+  locale: Locale,
 ): string | null {
+  const t = webTranslator(locale, "authErrors");
   if (password.length < PASSWORD_MIN_LENGTH) {
-    return `Use at least ${PASSWORD_MIN_LENGTH} characters.`;
+    return t("passwordTooShort", { count: PASSWORD_MIN_LENGTH });
   }
   if (password.length > PASSWORD_MAX_LENGTH) {
-    return `Use at most ${PASSWORD_MAX_LENGTH} characters.`;
+    return t("passwordTooLong", { count: PASSWORD_MAX_LENGTH });
   }
   if (password !== confirmation) {
-    return "The passwords do not match.";
+    return webTranslator(locale, "passwordReset")("mismatch");
   }
   return null;
-}
-
-export interface AuthErrorLike {
-  status?: number;
-  code?: string;
-  message?: string;
 }
 
 /** Whether a reset failed because the link can no longer be used. */
 export function isInvalidTokenError(error: AuthErrorLike): boolean {
   return error.code === "INVALID_TOKEN" || error.code === "USER_NOT_FOUND";
-}
-
-/** Plain wording for a failed request; never echoes input back. */
-export function resetErrorMessage(error: AuthErrorLike): string {
-  if (error.status === 429) {
-    return "Too many attempts. Wait a few minutes and try again.";
-  }
-  if (error.code === "PASSWORD_TOO_SHORT") {
-    return `Use at least ${PASSWORD_MIN_LENGTH} characters.`;
-  }
-  if (error.code === "PASSWORD_TOO_LONG") {
-    return `Use at most ${PASSWORD_MAX_LENGTH} characters.`;
-  }
-  return "Something went wrong. Try again.";
 }

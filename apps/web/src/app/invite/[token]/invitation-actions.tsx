@@ -5,7 +5,8 @@ import { useState, type FormEvent } from "react";
 
 import { acceptInvitation, apiErrorMessage } from "@/lib/api";
 import { signOut, signUp } from "@/lib/auth";
-import { useLocale } from "@/lib/i18n/client";
+import { authErrorMessage } from "@/lib/auth-errors";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 // Must match INVITATION_TOKEN_HEADER in apps/server/src/auth/index.ts.
 const INVITATION_TOKEN_HEADER = "x-netrics-invitation-token";
@@ -20,6 +21,8 @@ export function InvitationActions({
   signedInEmail: string | null;
 }) {
   const locale = useLocale();
+  const t = useT("invite");
+  const fields = useT("authFields");
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -45,8 +48,10 @@ export function InvitationActions({
     return (
       <div className="stack">
         <p>
-          You are signed in as {signedInEmail}, but this invitation is for{" "}
-          {invitedEmail}.
+          {t("wrongAccount", {
+            signedIn: signedInEmail,
+            invited: invitedEmail,
+          })}
         </p>
         <button
           type="button"
@@ -58,7 +63,7 @@ export function InvitationActions({
             })
           }
         >
-          Sign out
+          {t("signOut")}
         </button>
       </div>
     );
@@ -73,7 +78,7 @@ export function InvitationActions({
           disabled={pending}
           onClick={() => run(accept)}
         >
-          {pending ? "Joining…" : "Accept invitation"}
+          {pending ? t("joining") : t("accept")}
         </button>
         {error ? <div className="error">{error}</div> : null}
       </div>
@@ -91,7 +96,7 @@ export function InvitationActions({
         fetchOptions: { headers: { [INVITATION_TOKEN_HEADER]: token } },
       });
       if (authError) {
-        throw new Error(authError.message ?? "Sign-up failed.");
+        throw new Error(authErrorMessage(authError, locale, "signUp"));
       }
       await accept();
     });
@@ -100,7 +105,7 @@ export function InvitationActions({
   return (
     <form className="stack" onSubmit={onSignUp}>
       <div className="field">
-        <label htmlFor="invite-account-email">Email</label>
+        <label htmlFor="invite-account-email">{fields("email")}</label>
         <input
           id="invite-account-email"
           type="email"
@@ -109,7 +114,7 @@ export function InvitationActions({
         />
       </div>
       <div className="field">
-        <label htmlFor="invite-name">Name</label>
+        <label htmlFor="invite-name">{fields("name")}</label>
         <input
           id="invite-name"
           name="name"
@@ -120,7 +125,7 @@ export function InvitationActions({
         />
       </div>
       <div className="field">
-        <label htmlFor="invite-password">Password</label>
+        <label htmlFor="invite-password">{fields("password")}</label>
         <input
           id="invite-password"
           name="password"
@@ -133,7 +138,7 @@ export function InvitationActions({
       </div>
       {error ? <div className="error">{error}</div> : null}
       <button type="submit" className="primary" disabled={pending}>
-        {pending ? "Creating account…" : "Create account and join"}
+        {pending ? t("creating") : t("createAndJoin")}
       </button>
     </form>
   );

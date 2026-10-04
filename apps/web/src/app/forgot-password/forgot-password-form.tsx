@@ -3,12 +3,15 @@
 import { useState, type FormEvent } from "react";
 
 import { requestPasswordReset } from "@/lib/auth";
+import { useT } from "@/lib/i18n/client";
 import {
-  RESET_LINK_LIFETIME,
+  RESET_LINK_LIFETIME_HOURS,
   resetPasswordRedirect,
 } from "@/lib/password-reset";
 
 export function ForgotPasswordForm() {
+  const t = useT("passwordReset");
+  const fields = useT("authFields");
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [pending, setPending] = useState(false);
@@ -25,9 +28,7 @@ export function ForgotPasswordForm() {
     setPending(false);
     if (authError) {
       setError(
-        authError.status === 429
-          ? "Too many requests. Wait a few minutes and try again."
-          : "We could not send the email. Try again later.",
+        authError.status === 429 ? t("tooManyRequests") : t("sendFailed"),
       );
       return;
     }
@@ -38,8 +39,7 @@ export function ForgotPasswordForm() {
   if (sent) {
     return (
       <div className="notice" role="status">
-        If an account exists for that address, we sent a link to reset the
-        password. It is valid for {RESET_LINK_LIFETIME}.
+        {t("sent", { hours: RESET_LINK_LIFETIME_HOURS })}
       </div>
     );
   }
@@ -47,7 +47,7 @@ export function ForgotPasswordForm() {
   return (
     <form className="stack" onSubmit={onSubmit}>
       <div className="field">
-        <label htmlFor="email">Email</label>
+        <label htmlFor="email">{fields("email")}</label>
         <input
           id="email"
           name="email"
@@ -59,7 +59,7 @@ export function ForgotPasswordForm() {
       </div>
       {error ? <div className="error">{error}</div> : null}
       <button type="submit" className="primary" disabled={pending}>
-        {pending ? "Sending…" : "Send reset link"}
+        {pending ? t("sending") : t("send")}
       </button>
     </form>
   );

@@ -1,21 +1,35 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ForgotPasswordForm } from "./forgot-password-form";
+import { getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("passwordReset");
+  return { title: `${t("forgotTitle")} · netrics` };
+}
+
 // Reachable signed out: the only way back in for someone who lost the
 // password.
-export default function ForgotPasswordPage() {
+export default async function ForgotPasswordPage() {
+  const t = await getT("passwordReset");
   return (
     <>
-      <h1>Reset password</h1>
-      <p className="subtitle">We email you a link to choose a new password</p>
+      <h1>{t("forgotTitle")}</h1>
+      <p className="subtitle">{t("forgotSubtitle")}</p>
       <div className="card">
         <ForgotPasswordForm />
       </div>
       <p className="muted">
-        Remembered it? <Link href="/login">Sign in</Link>
+        {t.rich("remembered", {
+          link: (
+            <Link key="link" href="/login">
+              {t("signIn")}
+            </Link>
+          ),
+        })}
       </p>
     </>
   );

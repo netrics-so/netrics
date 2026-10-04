@@ -4,10 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { apiErrorMessage, createWorkspace } from "@/lib/api";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 export function CreateWorkspaceForm() {
   const locale = useLocale();
+  const t = useT("home");
+  const common = useT("common");
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -38,7 +40,7 @@ export function CreateWorkspaceForm() {
   return (
     <form className="stack" onSubmit={onSubmit}>
       <div className="field">
-        <label htmlFor="name">Workspace name</label>
+        <label htmlFor="name">{t("workspaceName")}</label>
         <input
           id="name"
           name="name"
@@ -56,16 +58,13 @@ export function CreateWorkspaceForm() {
           disabled={pending}
         />
         <span>
-          Add demo data and a sample dashboard
-          <span className="muted">
-            {" "}
-            — generated numbers to explore with; delete them any time.
-          </span>
+          {t("withDemo")}
+          <span className="muted"> {t("withDemoHint")}</span>
         </span>
       </label>
       {error ? <div className="error">{error}</div> : null}
       <button type="submit" className="primary" disabled={pending}>
-        {pending ? "Creating…" : "Create workspace"}
+        {pending ? common("creating") : t("create")}
       </button>
     </form>
   );
