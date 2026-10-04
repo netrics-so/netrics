@@ -3,6 +3,7 @@ import type {
   ConnectionContext,
   Connector,
   ConnectorManifest,
+  ManifestTranslation,
   Resource,
   SyncRequest,
   SyncResult,
@@ -170,10 +171,103 @@ export const APPS_PAGE_SIZE = 100;
 /** Pages of apps read at most (5,000 apps). */
 const MAX_APP_PAGES = 50;
 
+/**
+ * German texts of the manifest (ADR 0016, #257): "du" where the text
+ * addresses the reader; product names and stored values stay as they are.
+ */
+const appStoreConnectDe: ManifestTranslation = {
+  name: "App Store Connect",
+  description:
+    "Downloads, In-App-Käufe und Erlöse deiner Apps aus den Verkaufsberichten von App Store Connect, pro App; Impressionen, Produktseitenaufrufe und Downloads nach Quelle, sobald die App-Store-Analysen aktiviert sind; Bewertungen und Rezensionen mit einem optionalen Customer-Support-Schlüssel.",
+  resourceNoun: { singular: "App", plural: "Apps" },
+  config: {
+    vendorNumber: {
+      title: "Anbieternummer",
+      description:
+        "Die Nummer, die App Store Connect unter Zahlungen und Finanzberichte neben dem Namen deiner juristischen Person anzeigt (nur Ziffern, z. B. 85012345).",
+    },
+  },
+  metrics: {
+    [SALES_METRIC_KEYS.downloads]: {
+      name: "Downloads",
+      description:
+        "Erstdownloads pro Tag und App (kostenlose, kostenpflichtige, Bundle- und Custom-Apps) aus dem täglichen App-Store-Verkaufsbericht. Berichtstage folgen der pazifischen Zeit; Rückerstattungen zählen negativ.",
+    },
+    [SALES_METRIC_KEYS.downloadsByTerritory]: {
+      name: "Downloads nach Land",
+      description: `Erstdownloads pro Tag für die ${TOP_TERRITORIES} größten App-Store-Länder jeder App und jedes Kalendermonats (ISO-Ländercodes); andere Länder werden als „${OTHERS}“ zusammengefasst.`,
+    },
+    [SALES_METRIC_KEYS.downloadsByDevice]: {
+      name: "Downloads nach Gerät",
+      description:
+        "Erstdownloads pro Tag und Gerät (iPhone, iPad, Desktop, Apple TV, Apple Vision, …).",
+    },
+    [SALES_METRIC_KEYS.redownloads]: {
+      name: "Erneute Downloads",
+      description:
+        "Downloads einer App durch Personen, die sie schon einmal geladen haben, pro Tag und App.",
+    },
+    [SALES_METRIC_KEYS.updates]: {
+      name: "Updates",
+      description: "Installierte App-Updates pro Tag und App.",
+    },
+    [SALES_METRIC_KEYS.iapUnits]: {
+      name: "In-App-Käufe",
+      description:
+        "In-App-Käufe und Abo-Käufe pro Tag, gezählt für ihre App; wiederhergestellte Käufe zählen nicht, Rückerstattungen zählen negativ.",
+    },
+    [SALES_METRIC_KEYS.proceeds]: {
+      name: "Erlöse",
+      description:
+        "Was Apple dir auszahlt (Einheiten × Entwicklererlös) pro Tag und App, in jeder Erlöswährung, ohne Umrechnung. Rückerstattungen zählen negativ.",
+    },
+    [ANALYTICS_METRIC_KEYS.impressions]: {
+      name: "App-Store-Impressionen",
+      description:
+        "Wie oft das Icon der App im App Store gezeigt wurde (Suchergebnisse, Charts, Heute, Apps und Spiele), pro Tag und App. Aus den App-Store-Analysen, die einmal aktiviert werden müssen; ein Tag ist etwa zwei Tage später vollständig.",
+    },
+    [ANALYTICS_METRIC_KEYS.productPageViews]: {
+      name: "Produktseitenaufrufe",
+      description:
+        "Aufrufe der App-Store-Produktseite der App (auch Produktseiten, die in anderen Apps angezeigt werden), pro Tag und App. Aus den App-Store-Analysen.",
+    },
+    [ANALYTICS_METRIC_KEYS.storeDownloads]: {
+      name: "Downloads nach Quelle",
+      description: `Erstdownloads pro Tag, App und Ort, an dem Personen die App gefunden haben: ${ANALYTICS_SOURCE_TYPES.join(", ")} (alles Neue ist „${OTHER_SOURCE}“). Aus den App-Store-Analysen.`,
+    },
+    [REVIEW_METRIC_KEYS.reviews]: {
+      name: "Rezensionen",
+      description:
+        "Kundenrezensionen pro Tag und App, wie die App Store Connect API sie liefert (Tage in pazifischer Zeit). Braucht den optionalen Customer-Support-Schlüssel. Nicht die Sternebewertung im App Store: Die API liefert keine Gesamtbewertung.",
+    },
+    [REVIEW_METRIC_KEYS.reviewRatingSum]: {
+      name: "Rezensionssterne",
+      description:
+        "Die Summe der Sternebewertungen (1–5) der Rezensionen pro Tag und App. Geteilt durch Rezensionen ergibt sie die durchschnittliche Bewertung dieser Rezensionen. Braucht den optionalen Customer-Support-Schlüssel.",
+    },
+    [REVIEW_METRIC_KEYS.reviewsByRating]: {
+      name: "Rezensionen nach Bewertung",
+      description: `Kundenrezensionen pro Tag, App und Sternebewertung (${RATINGS.join(", ")}). Braucht den optionalen Customer-Support-Schlüssel.`,
+    },
+    [REVIEW_METRIC_KEYS.reviewsByTerritory]: {
+      name: "Rezensionen nach Land",
+      description: `Kundenrezensionen pro Tag für die ${TOP_REVIEW_TERRITORIES} Länder mit den meisten Rezensionen jeder App und jedes Kalendermonats (ISO-Ländercodes); andere Länder werden als „${OTHERS}“ zusammengefasst. Braucht den optionalen Customer-Support-Schlüssel.`,
+    },
+  },
+  dimensions: {
+    resource: "App",
+    territory: "Land",
+    device: "Gerät",
+    currency: "Währung",
+    source: "Quelle",
+    rating: "Bewertung",
+  },
+};
+
 export const appStoreConnectManifest: ConnectorManifest = {
   id: "app-store-connect",
-  version: "0.1.1",
-  sdkVersion: "^0.2.3",
+  version: "0.1.2",
+  sdkVersion: "^0.2.6",
   name: "App Store Connect",
   description:
     "Downloads, in-app purchases and proceeds of your apps from App Store Connect sales reports, per app; impressions, product page views and downloads by source once App Store analytics are enabled; ratings and reviews with an optional Customer Support key.",
@@ -361,6 +455,7 @@ export const appStoreConnectManifest: ConnectorManifest = {
     ...ARTWORK_HOSTS,
   ],
   resourceNoun: { singular: "app", plural: "apps" },
+  translations: { de: appStoreConnectDe },
   // Apple's limit is per key and rolling hour; connections sharing a key
   // share it (ADR 0014).
   rateLimit: { maxRequests: 3500, windowSeconds: 3600, scope: "key" },

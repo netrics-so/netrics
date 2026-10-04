@@ -68,7 +68,12 @@ export function registerMetricRoutes(
           const metrics = await withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            (tx) => listMetrics(tx, access.workspaceId),
+            (tx) =>
+              listMetrics(
+                tx,
+                access.workspaceId,
+                request.sessionIdentity!.locale,
+              ),
           );
           return workspaceMetricListResponseSchema.parse({ metrics });
         },
@@ -105,6 +110,7 @@ export function registerMetricRoutes(
             (tx) =>
               queryMetric(tx, access.workspaceId, body, now(), {
                 exchangeRates: deps.exchangeRates ?? false,
+                locale: request.sessionIdentity!.locale,
               }),
           );
           if (!result.ok) {
@@ -145,6 +151,7 @@ export function registerMetricRoutes(
             (tx) =>
               queryMetricBreakdown(tx, access.workspaceId, body, now(), {
                 exchangeRates: deps.exchangeRates ?? false,
+                locale: request.sessionIdentity!.locale,
               }),
           );
           if (!result.ok) {
@@ -249,7 +256,13 @@ export function registerMetricRoutes(
           const result = await withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            (tx) => listResourcesOfMetric(tx, access.workspaceId, body),
+            (tx) =>
+              listResourcesOfMetric(
+                tx,
+                access.workspaceId,
+                body,
+                request.sessionIdentity!.locale,
+              ),
           );
           if (!result.ok) {
             return sendError(reply, result.status, result.error);

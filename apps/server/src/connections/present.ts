@@ -6,6 +6,11 @@ import type {
   ConnectionStateView,
 } from "@netrics/contracts";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
+import {
+  DEFAULT_LOCALE,
+  localizedManifest,
+  type Locale,
+} from "@netrics/domain";
 import type {
   ConnectionStateRow,
   ConnectionWithState,
@@ -45,13 +50,17 @@ export function toStateView(
 export function presentConnection(
   registry: ConnectorRegistry,
   { row, state, oauth }: ConnectionWithState,
+  /** The language of the connector's name (#257). */
+  locale: Locale = DEFAULT_LOCALE,
 ) {
   const manifest = registry.get(row.connectorId)?.manifest;
   return {
     id: row.id,
     name: row.name,
     connectorId: row.connectorId,
-    connectorName: manifest?.name ?? row.connectorId,
+    connectorName: manifest
+      ? localizedManifest(manifest, locale).name
+      : row.connectorId,
     connectorVersion: manifest?.version ?? "unknown",
     projectId: row.projectId,
     hasCredentials: row.credentialsEncrypted != null,
@@ -75,13 +84,14 @@ export function presentConnectionDetail(
   loaded: ConnectionWithState,
   /** The stored signed key's non-secret fields (ADR 0014), if any. */
   signedKey: ConnectionSignedKeyView | null = null,
+  locale: Locale = DEFAULT_LOCALE,
 ) {
   // Strip the reserved resource-selection key from the echoed config; it is
   // an engine concern, not a manifest config property.
   const { resourceSelection: _resourceSelection, ...config } = loaded.row
     .config as Record<string, unknown>;
   return {
-    ...presentConnection(registry, loaded),
+    ...presentConnection(registry, loaded, locale),
     config,
     signedKey,
   };

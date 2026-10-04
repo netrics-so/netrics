@@ -6,6 +6,7 @@ import {
   workspaceRoleSchema,
   type WorkspaceRole,
 } from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
 import {
   findMembership,
   withUserContext,
@@ -36,6 +37,8 @@ export interface WorkspaceAccess {
   workspaceId: string;
   callerId: string;
   role: WorkspaceRole;
+  /** The caller's language (ADR 0016 section 3). */
+  locale: Locale;
 }
 
 const workspaceParamsSchema = z.object({ workspaceId: z.uuid() });
@@ -56,7 +59,7 @@ export async function resolveAccess(
     sendError(reply, 404, "workspace_not_found");
     return null;
   }
-  const callerId = request.sessionIdentity!.domainUserId;
+  const { domainUserId: callerId, locale } = request.sessionIdentity!;
   const membership = await withUserContext(db, { userId: callerId }, (tx) =>
     findMembership(tx, params.data.workspaceId, callerId),
   );
@@ -68,5 +71,6 @@ export async function resolveAccess(
     workspaceId: params.data.workspaceId,
     callerId,
     role: workspaceRoleSchema.parse(membership.role),
+    locale,
   };
 }

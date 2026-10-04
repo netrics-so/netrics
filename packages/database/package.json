@@ -28,6 +28,7 @@
     "migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@netrics/domain": "workspace:*",
     "drizzle-orm": "0.45.2",
     "postgres": "3.4.9",
     "zod": "4.6.5"

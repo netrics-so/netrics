@@ -178,6 +178,74 @@ export const resourceNounSchema = z.object({
 });
 export type ResourceNoun = z.infer<typeof resourceNounSchema>;
 
+/** A translated title and description of a configuration or credential field. */
+export const fieldTranslationSchema = z.strictObject({
+  title: z.string().min(1).optional(),
+  description: z.string().min(1).optional(),
+});
+
+/**
+ * What one locale translates of a manifest (ADR 0016 section 6). Every
+ * field is optional and falls back on its own to the English manifest
+ * value. Unknown fields are rejected, so a typo does not silently leave
+ * text in English. Since SDK 0.2.6.
+ */
+export const manifestTranslationSchema = z.strictObject({
+  name: z.string().min(1).optional(),
+  description: z.string().min(1).optional(),
+  resourceNoun: resourceNounSchema.optional(),
+  /** By metric key; every key must be one of the manifest's metrics. */
+  metrics: z
+    .record(
+      z.string().min(1),
+      z.strictObject({
+        name: z.string().min(1).optional(),
+        description: z.string().min(1).optional(),
+      }),
+    )
+    .optional(),
+  /** Display names of dimensions the metrics declare ("territory" → "Land"). */
+  dimensions: z.record(z.string().min(1), z.string().min(1).max(60)).optional(),
+  /** Titles and descriptions of configSchema properties, by property key. */
+  config: z.record(z.string().min(1), fieldTranslationSchema).optional(),
+  /** Titles and descriptions of "token" credentialsSchema properties. */
+  credentials: z.record(z.string().min(1), fieldTranslationSchema).optional(),
+  /** The credential setup steps, one for each English step. */
+  setupSteps: z.array(z.string().min(1)).min(1).max(8).optional(),
+});
+export type ManifestTranslation = z.infer<typeof manifestTranslationSchema>;
+
+/**
+ * A locale as a lowercase language subtag ("de"). English is the manifest
+ * itself and has no entry.
+ */
+export const translationLocaleSchema = z
+  .string()
+  .regex(/^[a-z]{2,3}$/, {
+    message: 'locales are language subtags such as "de"',
+  })
+  .refine((locale) => locale !== "en", {
+    message: "English is the manifest itself; translate into other locales",
+  });
+
+export const manifestTranslationsSchema = z.record(
+  translationLocaleSchema,
+  manifestTranslationSchema,
+);
+export type ManifestTranslations = z.infer<typeof manifestTranslationsSchema>;
+
+function propertyKeys(schema: unknown): Set<string> {
+  const properties =
+    schema && typeof schema === "object"
+      ? (schema as { properties?: unknown }).properties
+      : undefined;
+  return new Set(
+    properties && typeof properties === "object" && !Array.isArray(properties)
+      ? Object.keys(properties)
+      : [],
+  );
+}
+
 export const connectorManifestSchema = z
   .object({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -210,6 +278,11 @@ export const connectorManifestSchema = z
     outboundDomains: z.array(z.string().min(1)),
     rateLimit: rateLimitHintSchema.optional(),
     resourceNoun: resourceNounSchema.optional(),
+    /**
+     * Texts in other languages, by locale (SDK 0.2.6, ADR 0016). Optional;
+     * hosts show the English values for anything not translated.
+     */
+    translations: manifestTranslationsSchema.optional(),
   })
   .refine(
     (manifest) =>
@@ -218,5 +291,84 @@ export const connectorManifestSchema = z
       message: "backfillDays is required when supportsBackfill is true",
       path: ["backfillDays"],
     },
-  );
+  )
+  .superRefine((manifest, context) => {
+    if (!manifest.translations) {
+      return;
+    }
+    // Translations may only name what the manifest has.
+    const metricKeys = new Set(manifest.metrics.map((metric) => metric.key));
+    const dimensions = new Set(
+      manifest.metrics.flatMap((metric) => metric.dimensions),
+    );
+    const configKeys = propertyKeys(manifest.configSchema);
+    const tokenStrategies = manifest.authStrategies.flatMap((strategy) =>
+      strategy.strategy === "token" ? [strategy] : [],
+    );
+    const credentialKeys = new Set(
+      tokenStrategies.flatMap((strategy) => [
+        ...propertyKeys(strategy.credentialsSchema),
+      ]),
+    );
+    const stepCounts = new Set(
+      tokenStrategies.flatMap((strategy) =>
+        strategy.setup ? [strategy.setup.steps.length] : [],
+      ),
+    );
+    const unknownKeys = (
+      locale: string,
+      field: string,
+      keys: readonly string[],
+      known: ReadonlySet<string>,
+      what: string,
+    ) => {
+      for (const key of keys) {
+        if (!known.has(key)) {
+          context.addIssue({
+            code: "custom",
+            message: `translations.${locale}.${field} names unknown ${what} "${key}"`,
+            path: ["translations", locale, field, key],
+          });
+        }
+      }
+    };
+    for (const [locale, translation] of Object.entries(manifest.translations)) {
+      unknownKeys(
+        locale,
+        "metrics",
+        Object.keys(translation.metrics ?? {}),
+        metricKeys,
+        "metric",
+      );
+      unknownKeys(
+        locale,
+        "dimensions",
+        Object.keys(translation.dimensions ?? {}),
+        dimensions,
+        "dimension",
+      );
+      unknownKeys(
+        locale,
+        "config",
+        Object.keys(translation.config ?? {}),
+        configKeys,
+        "config field",
+      );
+      unknownKeys(
+        locale,
+        "credentials",
+        Object.keys(translation.credentials ?? {}),
+        credentialKeys,
+        "credential field",
+      );
+      const steps = translation.setupSteps;
+      if (steps && !(stepCounts.size === 1 && stepCounts.has(steps.length))) {
+        context.addIssue({
+          code: "custom",
+          message: `translations.${locale}.setupSteps needs one step for each English setup step`,
+          path: ["translations", locale, "setupSteps"],
+        });
+      }
+    }
+  });
 export type ConnectorManifest = z.infer<typeof connectorManifestSchema>;

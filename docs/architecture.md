@@ -257,6 +257,7 @@ The manifest declares:
 - Minimum refresh interval and backfill support
 - Declared outbound domains
 - Expected quota and rate-limit behavior
+- Optionally, translations of its texts (SDK 0.2.6, see below)
 
 `sync` receives a time range or cursor and returns normalized observations plus
 the next cursor. Connectors receive no direct database, queue, or internal API
@@ -318,6 +319,38 @@ keeps loading on every 0.2.x runtime.
 | 0.2.3 | The `currency_minor` unit with a `currency` dimension (ADR 0014) |
 | 0.2.4 | `resourceNoun`: what the connector calls its resources (#208)    |
 | 0.2.5 | Optional `resourceIcons` capability (resource icons, #226)       |
+| 0.2.6 | Optional `translations` of the manifest's texts (ADR 0016, #257) |
+
+### Connector translations
+
+A manifest is written in English. Since SDK 0.2.6 it may carry
+`translations`, keyed by language subtag (`"de"`; not `"en"`, which is the
+manifest itself). Every field is optional and falls back on its own to the
+English value, so a partial translation still shows:
+
+```ts
+translations: {
+  de: {
+    name: "Acme Analytics",            // product names stay as they are
+    description: "Besucher und Seitenaufrufe aus Acme, pro Website.",
+    resourceNoun: { singular: "Website", plural: "Websites" },
+    metrics: { "acme.visitors": { name: "Besucher", description: "…" } },
+    dimensions: { territory: "Land" }, // a dimension of some metric
+    config: { teamId: { title: "Team-ID", description: "…" } },
+    credentials: { token: { title: "Zugriffstoken", description: "…" } },
+    setupSteps: ["…", "…"],            // one per English setup step
+  },
+},
+```
+
+The schema rejects unknown fields and keys that name nothing in the manifest
+(a metric, dimension, config or credential field it does not have, or a
+different number of setup steps). The catalog stores translations with the
+manifest; the API answers in the caller's language (a user's setting, a
+screen's workspace language), through `localizedManifest`,
+`localizedMetric`, `localizedResourceNoun` and `localizedDimensionName` in
+`@netrics/domain`. Units are not translated; hosts format them. German copy
+addresses the reader with "du".
 
 ### Authentication strategies
 
