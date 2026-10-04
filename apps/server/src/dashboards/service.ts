@@ -3,6 +3,7 @@ import {
   compareWidgetOptionsSchema,
   tableWidgetOptionsSchema,
   clockWidgetOptionsSchema,
+  countdownWidgetOptionsSchema,
   imageWidgetOptionsSchema,
   lineWidgetOptionsSchema,
   metricWidgetOptionsSchema,
@@ -167,6 +168,8 @@ function optionsOf(widget: DashboardWidgetRow) {
       return clockWidgetOptionsSchema.parse(options);
     case "status":
       return statusWidgetOptionsSchema.parse(options);
+    case "countdown":
+      return countdownWidgetOptionsSchema.parse(options);
   }
 }
 
@@ -316,6 +319,13 @@ export async function presentDashboard(
         type: "status",
         ...base,
         options: statusWidgetOptionsSchema.parse(widget.options),
+      };
+    }
+    if (widget.type === "countdown") {
+      return {
+        type: "countdown",
+        ...base,
+        options: countdownWidgetOptionsSchema.parse(widget.options),
       };
     }
     return widget.type === "text"
@@ -575,7 +585,13 @@ async function validateWidget(
       options: { ...widget.options, connectionIds: connectionIds.value },
     });
   }
-  if (widget.type === "text" || widget.type === "clock") {
+  // No binding. A countdown's target may have passed: it still saves
+  // (ADR 0019 section 8; the Studio shows `countdown_passed`).
+  if (
+    widget.type === "text" ||
+    widget.type === "clock" ||
+    widget.type === "countdown"
+  ) {
     return ok({
       ...base,
       ...EMPTY_WIDGET_DATA,

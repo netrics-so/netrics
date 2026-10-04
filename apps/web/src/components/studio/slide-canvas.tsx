@@ -47,6 +47,7 @@ import { LiveStatusWidget } from "./status-widget";
 import { LiveTableWidget } from "./table-widget";
 import { LiveCompareWidget } from "./compare-widget";
 import { LiveClockWidget, useNow } from "./clock-widget";
+import { LiveCountdownWidget } from "./countdown-widget";
 import { ImageWidgetView } from "./image-widget";
 import { LiveLineWidget } from "./line-widget";
 import { LiveMetricWidget } from "./metric-widget";
@@ -138,6 +139,17 @@ export function LiveWidget({
         <LiveClockWidget
           options={widget.options}
           timeZone={widget.options.timeZone}
+          workspaceTimeZone={env.timeZone}
+          placement={widget}
+          showHeader={env.showHeader}
+          fontScale={env.fontScale}
+        />
+      );
+    case "countdown":
+      return (
+        <LiveCountdownWidget
+          title={widget.title}
+          options={widget.options}
           workspaceTimeZone={env.timeZone}
           placement={widget}
           showHeader={env.showHeader}

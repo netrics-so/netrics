@@ -2,6 +2,7 @@ import { createTranslator, type Catalog, type Translator } from "../catalog.js";
 import type { Locale } from "../locale.js";
 import type { MessageKey } from "../catalog.js";
 import type { Aggregation, Period } from "../../metrics.js";
+import type { CountdownUnit } from "../../studio-layout.js";
 
 import { sharedDe } from "./de.js";
 import { sharedEn, type SharedMessages } from "./en.js";
@@ -73,4 +74,34 @@ export function othersLabel(locale: Locale = "en"): string {
 /** A status board's label without a title: "Sources", "Quellen". */
 export function sourcesLabel(locale: Locale = "en"): string {
   return sharedTranslator(locale)("sources");
+}
+
+/** A countdown's label (ADR 0019 section 8): its title, else "Countdown". */
+export function countdownLabel(
+  title: string | null,
+  locale: Locale = "en",
+): string {
+  const trimmed = title?.trim() ?? "";
+  return trimmed !== "" ? trimmed : sharedTranslator(locale)("countdown.label");
+}
+
+/** What a countdown shows at its target: its own text, else "Now"/"Jetzt". */
+export function countdownDoneText(
+  doneText: string | null,
+  locale: Locale = "en",
+): string {
+  const trimmed = doneText?.trim() ?? "";
+  return trimmed !== "" ? trimmed : sharedTranslator(locale)("countdown.done");
+}
+
+/** The unit letters after a countdown's numbers: d/h/m, T/Std/Min. */
+export function countdownUnits(
+  locale: Locale = "en",
+): Readonly<Record<CountdownUnit, string>> {
+  const t = sharedTranslator(locale);
+  return {
+    d: t("countdown.units.d"),
+    h: t("countdown.units.h"),
+    m: t("countdown.units.m"),
+  };
 }

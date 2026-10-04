@@ -59,6 +59,15 @@ export const sharedEn = {
   },
   /** A sparkline point of a week: "Week of Sep 28". */
   weekOf: "Week of {date}",
+  /** The countdown widget (ADR 0019 section 8). */
+  countdown: {
+    /** Its label without a title. */
+    label: "Countdown",
+    /** Shown once the target is reached, without its own text. */
+    done: "Now",
+    /** The unit letters after each number: "2 d 14 h 05 m". */
+    units: { d: "d", h: "h", m: "m" },
+  },
   conversion: {
     source: "ECB reference rates",
     notConverted: "{source} · {currencies} not converted",

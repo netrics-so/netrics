@@ -19,8 +19,10 @@ import {
   isGoalAggregation,
   aggregationName,
   allResourcesName,
+  countdownDoneText,
   periodLabel,
   isDataWidgetType,
+  parseCountdownTarget,
   parseTextWidget,
 } from "@netrics/domain";
 
@@ -1046,6 +1048,7 @@ function StyleFields({
   onDeleteImage,
 }: WidgetPanelProps) {
   const t = useT("studio.widgetPanel");
+  const locale = useLocale();
   const update = (patch: WidgetPatch) =>
     dispatch({ type: "updateWidget", widgetId: widget.id, patch });
   const options = (patch: object) =>
@@ -1294,6 +1297,86 @@ function StyleFields({
             {t("showZone")}
           </Check>
           <p className="help">{t("zoneHelp")}</p>
+        </fieldset>
+      );
+    }
+    case "countdown": {
+      // ADR 0019 section 8: a local date and time in a zone; a past one
+      // still saves (the fit check and the formats say so).
+      const workspaceZone = timeZone ?? "UTC";
+      return (
+        <fieldset>
+          <legend>{t("countdown")}</legend>
+          <div className="field">
+            <label htmlFor="widget-countdown-target">
+              {t("countdownTarget")}
+            </label>
+            <input
+              id="widget-countdown-target"
+              type="datetime-local"
+              value={widget.options.target}
+              min="2000-01-01T00:00"
+              max="2100-12-31T23:59"
+              required
+              aria-describedby="widget-countdown-target-help"
+              onChange={(event) => {
+                const target = event.target.value.slice(0, 16);
+                if (parseCountdownTarget(target)) options({ target });
+              }}
+            />
+            <p id="widget-countdown-target-help" className="help">
+              {t("countdownTargetHelp")}
+            </p>
+          </div>
+          <div className="field">
+            <label htmlFor="widget-time-zone">{t("timeZone")}</label>
+            <select
+              id="widget-time-zone"
+              value={widget.options.timeZone ?? ""}
+              onChange={(event) =>
+                options({ timeZone: event.target.value || null })
+              }
+            >
+              <option value="">
+                {t("workspaceZone", { zone: workspaceZone })}
+              </option>
+              {clockTimeZones(workspaceZone)
+                .slice(1)
+                .map((zone) => (
+                  <option key={zone} value={zone}>
+                    {zone.replaceAll("_", " ")}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <Check
+            checked={widget.options.showTarget}
+            onChange={(showTarget) => options({ showTarget })}
+          >
+            {t("showTarget")}
+          </Check>
+          <div className="field">
+            <label htmlFor="widget-done-text">{t("doneText")}</label>
+            <input
+              id="widget-done-text"
+              type="text"
+              value={widget.options.doneText ?? ""}
+              maxLength={40}
+              placeholder={countdownDoneText(null, locale)}
+              aria-describedby="widget-done-text-help"
+              onChange={(event) =>
+                options({
+                  doneText:
+                    event.target.value.trim() === ""
+                      ? null
+                      : event.target.value,
+                })
+              }
+            />
+            <p id="widget-done-text-help" className="help">
+              {t("doneTextHelp")}
+            </p>
+          </div>
         </fieldset>
       );
     }

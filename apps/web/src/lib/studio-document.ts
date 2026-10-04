@@ -336,6 +336,8 @@ export const DEFAULT_WIDGET_SIZE: Readonly<
   table: { w: 4, h: 4 },
   status: { w: 3, h: 3 },
   compare: { w: 4, h: 3 },
+  // Its minimum (ADR 0019 section 8).
+  countdown: { w: 3, h: 2 },
 };
 
 /**

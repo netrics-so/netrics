@@ -16,6 +16,8 @@ import {
   STUDIO_MIN_WIDGET_SIZE,
   STUDIO_WIDGET_TYPES,
   compactNumber,
+  countdownLayout,
+  countdownParts,
   estimateTextWidth,
   findOverlaps,
   fitTextSize,
@@ -40,6 +42,7 @@ import {
   wrappedLineCount,
   zoneLabel,
   zoneLabelSample,
+  zonedInstant,
   type ClockDateStyle,
   type StudioCanvas,
   type StudioFontWeight,
@@ -706,5 +709,165 @@ export function buildStudioLayoutVectors() {
     clockDateSamples: CLOCK_DATE_SAMPLES,
     zoneLabels,
     clockLayouts,
+    ...countdownVectors(),
+  };
+}
+
+// Countdown (ADR 0019 section 8): targets in zones with and without DST,
+// in gaps and twice-existing hours, at the edges of the years.
+const COUNTDOWN_TARGETS = [
+  "2026-10-07T10:00",
+  "2026-03-29T02:30",
+  "2026-03-29T03:00",
+  "2026-10-25T02:30",
+  "2026-10-25T03:00",
+  "2026-03-08T02:15",
+  "2026-11-01T01:30",
+  "2026-04-05T02:30",
+  "2026-10-04T02:00",
+  "2000-01-01T00:00",
+  "2100-12-31T23:59",
+  "2028-02-29T12:00",
+  "2027-02-29T12:00",
+  "2026-10-07T24:00",
+  "1999-12-31T23:59",
+  "2026-10-07 10:00",
+];
+
+const COUNTDOWN_ZONES = [
+  "Europe/Berlin",
+  "America/New_York",
+  "Australia/Sydney",
+  "Australia/Lord_Howe",
+  "Asia/Kathmandu",
+  "America/St_Johns",
+  "Pacific/Chatham",
+  "UTC",
+  "Etc/GMT-14",
+];
+
+const COUNTDOWN_NOWS = [
+  "2026-10-04T17:55:00.000Z",
+  "2026-10-06T07:00:00.000Z",
+  "2026-10-06T17:55:00.000Z",
+  "2026-10-07T07:00:00.000Z",
+  "2026-10-07T07:00:00.300Z",
+  "2026-10-07T07:00:01.000Z",
+  "2026-10-07T07:19:00.000Z",
+  "2026-10-07T07:59:00.000Z",
+  "2026-10-07T07:59:30.000Z",
+  "2026-10-07T07:59:59.999Z",
+  "2026-10-07T08:00:00.000Z",
+  "2026-10-09T00:00:00.000Z",
+  "2025-01-01T00:00:00.000Z",
+];
+
+const COUNTDOWN_SIZES = [
+  { w: 3, h: 2 },
+  { w: 4, h: 2 },
+  { w: 3, h: 3 },
+  { w: 6, h: 4 },
+  { w: 12, h: 8 },
+];
+
+const COUNTDOWN_CONTENTS: Array<{
+  label: string;
+  groups: Array<{ value: string; unit: string }>;
+  target: string | null;
+  doneText: string | null;
+}> = [
+  {
+    label: "Launch in",
+    groups: [
+      { value: "2", unit: "d" },
+      { value: "14", unit: "h" },
+      { value: "05", unit: "m" },
+    ],
+    target: "Wed 7 Oct · 10:00",
+    doneText: null,
+  },
+  {
+    label: "Countdown",
+    groups: [
+      { value: "1234", unit: "T" },
+      { value: "08", unit: "Std" },
+      { value: "41", unit: "Min" },
+    ],
+    target: "Mo., 7. Okt. 2030 · 10:00",
+    doneText: null,
+  },
+  {
+    label: "Launch · netrics.so",
+    groups: [{ value: "< 1", unit: "m" }],
+    target: null,
+    doneText: null,
+  },
+  {
+    label: "Bis zum Start der neuen Version unserer Anwendung für alle",
+    groups: [
+      { value: "14", unit: "h" },
+      { value: "05", unit: "m" },
+    ],
+    target: "Wed 7 Oct · 10:00",
+    doneText: null,
+  },
+  {
+    label: "Launch in",
+    groups: [],
+    target: "Wed 7 Oct · 10:00",
+    doneText: "Now",
+  },
+  {
+    label: "Launch in",
+    groups: [],
+    target: null,
+    doneText: "We launched, thank you all for your help",
+  },
+];
+
+function countdownVectors() {
+  const zonedInstants = COUNTDOWN_ZONES.flatMap((timeZone) =>
+    COUNTDOWN_TARGETS.map((target) => ({
+      target,
+      timeZone,
+      targetAt: zonedInstant(target, timeZone)?.toISOString() ?? null,
+    })),
+  );
+  const targetAt = "2026-10-07T08:00:00.000Z";
+  const countdownPartsCases = COUNTDOWN_NOWS.map((now) => ({
+    now,
+    targetAt,
+    ...countdownParts(new Date(now), new Date(targetAt)),
+  }));
+  const countdownLayouts = COUNTDOWN_SIZES.flatMap((size) =>
+    [1, 1.3].flatMap((fontScale) =>
+      COUNTDOWN_CONTENTS.map((content) => {
+        const placement = { x: 0, y: 0, w: size.w, h: size.h };
+        const rect = widgetRect(placement, STUDIO_REFERENCE_CANVAS, true);
+        const box = {
+          width: rect.width - 2 * STUDIO_SPACING.widgetPadding,
+          height: rect.height - 2 * STUDIO_SPACING.widgetPadding,
+        };
+        return {
+          w: size.w,
+          h: size.h,
+          box,
+          fontScale,
+          ...content,
+          layout: countdownLayout({
+            placement,
+            box,
+            fontScale,
+            showHeader: true,
+            ...content,
+          }),
+        };
+      }),
+    ),
+  );
+  return {
+    zonedInstants,
+    countdownParts: countdownPartsCases,
+    countdownLayouts,
   };
 }

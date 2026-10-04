@@ -10,6 +10,7 @@ import { deviceTileNotice } from "@/lib/tile-status";
 
 import { BarWidgetView, type BarReadingProps } from "./bar-widget";
 import { LiveClockWidget } from "./clock-widget";
+import { LiveCountdownWidget } from "./countdown-widget";
 import { ImageWidgetView } from "./image-widget";
 import { LineWidgetView, type LineReadingProps } from "./line-widget";
 import { MetricWidgetView, type MetricReadingProps } from "./metric-widget";
@@ -292,6 +293,16 @@ export function DeviceWidgetView({
           {...common}
           options={widget.options}
           timeZone={widget.options.timeZone}
+          workspaceTimeZone={env.timeZone}
+        />
+      );
+    case "countdown":
+      return (
+        <LiveCountdownWidget
+          {...common}
+          title={null}
+          label={widget.label}
+          options={widget.options}
           workspaceTimeZone={env.timeZone}
         />
       );

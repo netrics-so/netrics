@@ -2017,6 +2017,7 @@ a.health-badge:hover {
 .sw-status,
 .sw-compare,
 .sw-clock,
+.sw-countdown,
 .sw-failed {
   background: var(--sw-surface, var(--t-surface));
   border: max(1px, calc(var(--u) * 1.5)) solid var(--t-border);
@@ -2640,6 +2641,41 @@ a.health-badge:hover {
 .sw-clock-zone {
   color: var(--t-muted);
   white-space: nowrap;
+}
+
+/* Countdown (ADR 0019 section 8): numbers in the value role with unit
+   letters a third of their size, both on one baseline; the target line
+   at the bottom. Sizes and gaps come from the domain's countdownLayout. */
+.sw-countdown-time {
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--t-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.sw-countdown-unit {
+  font-weight: 500;
+  color: var(--t-muted);
+  letter-spacing: 0;
+}
+
+/* The text when reached: heading size, in the accent colour. */
+.sw-countdown-done {
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--t-accent);
+  overflow-wrap: anywhere;
+}
+
+/* At the bottom, as a footer (`.sw p` would reset the margin). */
+.sw .sw-countdown-target {
+  margin-top: auto;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sw-failed {

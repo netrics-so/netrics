@@ -1035,7 +1035,7 @@ export const dashboardWidgets = pgTable(
     index("dashboard_widgets_image_idx").on(table.imageId),
     check(
       "dashboard_widgets_type_valid",
-      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table', 'status', 'compare')`,
+      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table', 'status', 'compare', 'countdown')`,
     ),
     // An image widget names its image; no other widget does.
     check(

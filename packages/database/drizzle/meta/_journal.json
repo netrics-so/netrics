@@ -316,6 +316,13 @@
       "when": 1791136323296,
       "tag": "0044_compare_widget",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1791137090285,
+      "tag": "0045_countdown_widget",
+      "breakpoints": true
     }
   ]
 }

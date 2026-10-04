@@ -347,6 +347,59 @@ public struct TextWidgetOptions: Codable, Sendable, Equatable {
     }
 }
 
+/**
+ * A countdown's options (ADR 0019 section 8) as the server resolves them:
+ * the zone and `targetAt`, the target as an instant. Screens count down to
+ * `targetAt` from their own clock.
+ */
+public struct CountdownWidgetOptions: Codable, Sendable, Equatable {
+    /** The local target as set, "YYYY-MM-DDTHH:mm". */
+    public var target: String
+    /** The target's zone, resolved by the server. */
+    public var timeZone: String?
+    public var targetAt: Date
+    /** The target line below the time left. */
+    public var showTarget: Bool
+    /** Shown at the target; nil shows "Now" in the screen's language. */
+    public var doneText: String?
+
+    public init(
+        target: String, timeZone: String? = nil, targetAt: Date, showTarget: Bool = true, doneText: String? = nil
+    ) {
+        self.target = target
+        self.timeZone = timeZone
+        self.targetAt = targetAt
+        self.showTarget = showTarget
+        self.doneText = doneText
+    }
+
+    private enum CodingKeys: String, CodingKey { case target, timeZone, targetAt, showTarget, doneText }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        target = c.lenient(String.self, .target) ?? ""
+        timeZone = c.lenient(String.self, .timeZone)
+        // Without a readable instant the widget is an empty themed cell.
+        guard let at = c.lenient(String.self, .targetAt).flatMap(ISODate.parse) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .targetAt, in: c, debugDescription: "countdown without targetAt")
+        }
+        targetAt = at
+        showTarget = c.lenient(Bool.self, .showTarget) ?? true
+        let text = c.lenient(String.self, .doneText)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        doneText = text?.isEmpty == false ? text : nil
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(target, forKey: .target)
+        try c.encodeIfPresent(timeZone, forKey: .timeZone)
+        try c.encode(ISODate.format(targetAt), forKey: .targetAt)
+        try c.encode(showTarget, forKey: .showTarget)
+        try c.encodeIfPresent(doneText, forKey: .doneText)
+    }
+}
+
 public struct ClockWidgetOptions: Codable, Sendable, Equatable {
     public var showDate: Bool
     public var hour12: Bool
@@ -838,6 +891,7 @@ public enum WidgetContent: Sendable, Equatable {
     case image(imageId: String, ImageWidgetOptions)
     case text(String, TextWidgetOptions)
     case clock(ClockWidgetOptions)
+    case countdown(CountdownWidgetOptions)
     /** A type this build does not know, or fields it cannot read. */
     case unsupported
 }
@@ -921,6 +975,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
             return .text(text, c.lenient(TextWidgetOptions.self, .options) ?? .init())
         case "clock":
             return .clock(c.lenient(ClockWidgetOptions.self, .options) ?? .init())
+        case "countdown":
+            guard let options = c.lenient(CountdownWidgetOptions.self, .options) else { return .unsupported }
+            return .countdown(options)
         default:
             return .unsupported
         }
@@ -962,6 +1019,8 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
             try c.encode(text, forKey: .text)
             try c.encode(options, forKey: .options)
         case .clock(let options):
+            try c.encode(options, forKey: .options)
+        case .countdown(let options):
             try c.encode(options, forKey: .options)
         case .unsupported:
             break

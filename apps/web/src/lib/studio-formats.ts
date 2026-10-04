@@ -1,10 +1,13 @@
 import type { DashboardWidget, Device } from "@netrics/contracts";
 import {
+  countdownLabel,
   effectiveFontScale,
   formatFor,
   formatWarnings,
   isDataWidgetType,
+  zonedInstant,
   type FormatWarningItem,
+  type Locale,
   type ReadabilityWidget,
   type ScreenFormat,
 } from "@netrics/domain";
@@ -219,8 +222,12 @@ export interface DraftReadabilityContext {
   showHeader: boolean;
   dashboardName: string;
   logoAspect: number | null;
-  /** The workspace's time zone, for clocks without their own. */
+  /** The workspace's time zone, for clocks and countdowns without their own. */
   timeZone?: string;
+  /** The Studio's language: a countdown's label without a title. */
+  locale?: Locale;
+  /** Now, for countdowns whose target has passed (default: the call's time). */
+  now?: Date;
   /**
    * A data widget's label as screens show it ("Downloads · Wurfel"); a
    * status board's title or "Sources".
@@ -272,6 +279,19 @@ function readabilityWidget(
       },
     };
   }
+  if (widget.type === "countdown") {
+    return {
+      ...base!,
+      label: countdownLabel(widget.title, context.locale ?? "en"),
+      countdown: {
+        targetAt:
+          zonedInstant(
+            widget.options.target,
+            widget.options.timeZone ?? context.timeZone ?? "UTC",
+          )?.toISOString() ?? null,
+      },
+    };
+  }
   return base!;
 }
 
@@ -294,6 +314,7 @@ export function draftFormatWarnings(
     showHeader: context.showHeader,
     dashboardName: context.dashboardName,
     logoAspect: context.logoAspect,
+    now: context.now ?? new Date(),
   };
   return PREVIEW_FORMAT_ORDER.flatMap((format) => {
     const custom = completedLayout(widgets, {

@@ -43,6 +43,8 @@ export function newWidget(
     imageIds: readonly string[];
     /** The language of the reasons and of a new text widget's text. */
     locale: Locale;
+    /** Now, for a new countdown's target (a week ahead). */
+    now?: Date;
   },
 ): { widget: NewWidget } | { reason: string } {
   const t = webTranslator(input.locale, "studio.newWidget");
@@ -210,5 +212,28 @@ export function newWidget(
           options: { connectionIds: null, showAge: true },
         },
       };
+    case "countdown":
+      return {
+        widget: {
+          type,
+          title: null,
+          options: {
+            target: defaultCountdownTarget(input.now ?? new Date()),
+            timeZone: null,
+            showTarget: true,
+            doneText: null,
+          },
+        },
+      };
   }
+}
+
+/**
+ * A new countdown's target: a week from `now` at 10:00, a date the user
+ * then changes ("YYYY-MM-DDTHH:mm" from the browser's calendar day).
+ */
+export function defaultCountdownTarget(now: Date): string {
+  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7);
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${day.getFullYear()}-${two(day.getMonth() + 1)}-${two(day.getDate())}T10:00`;
 }

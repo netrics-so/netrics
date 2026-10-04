@@ -64,6 +64,7 @@ const IMAGES = {
 const THEME = id(7, 1);
 const TABLES = id(9, 0);
 const COMPARES = id(9, 200);
+const COUNTDOWNS = id(9, 400);
 
 const fixture = (name: string) =>
   readFileSync(path.join(import.meta.dirname, "images", "fixtures", name));
@@ -460,6 +461,40 @@ beforeAll(async () => {
     update dashboard_widgets
     set denominator_dimensions = ${owner.json({ resource: "app-404" })}
     where id = ${id(9, 303)}`;
+  // Countdowns (ADR 0019 section 8): in the workspace's zone, in their
+  // own, and one whose target is in Berlin's fall-back hour.
+  await insertDashboard(COUNTDOWNS, "Countdowns");
+  await insertSlide(id(9, 410), COUNTDOWNS, 0);
+  await insertWidget(id(9, 411), id(9, 410), COUNTDOWNS, {
+    type: "countdown",
+    x: 0,
+    y: 0,
+    w: 3,
+    h: 2,
+    title: "Launch in",
+    options: { target: "2026-10-07T10:00" },
+  });
+  await insertWidget(id(9, 412), id(9, 410), COUNTDOWNS, {
+    type: "countdown",
+    x: 3,
+    y: 0,
+    w: 3,
+    h: 2,
+    options: {
+      target: "2026-10-07T10:00",
+      timeZone: "America/New_York",
+      showTarget: false,
+      doneText: "We are live",
+    },
+  });
+  await insertWidget(id(9, 413), id(9, 410), COUNTDOWNS, {
+    type: "countdown",
+    x: 6,
+    y: 0,
+    w: 3,
+    h: 2,
+    options: { target: "2026-10-25T02:30" },
+  });
 
   await insertDashboard(OTHER, "Other", {}, otherWorkspaceId);
   await insertSlide(id(5, 100), OTHER, 0, {}, otherWorkspaceId);
@@ -984,6 +1019,71 @@ describe("device payload schema 2", () => {
     expect(Buffer.byteLength(JSON.stringify(await v2(STUDIO)))).toBeLessThan(
       8 * 1024,
     );
+  });
+
+  it("resolves each countdown's target to an instant (ADR 0019 §8)", async () => {
+    const payload = deviceDashboardV2ResponseSchema.parse(await v2(COUNTDOWNS));
+    expect(widgetsOf(payload)).toEqual([
+      {
+        type: "countdown",
+        id: id(9, 411),
+        x: 0,
+        y: 0,
+        w: 3,
+        h: 2,
+        label: "Launch in",
+        options: {
+          target: "2026-10-07T10:00",
+          timeZone: "Europe/Berlin",
+          showTarget: true,
+          doneText: null,
+          targetAt: "2026-10-07T08:00:00.000Z",
+        },
+      },
+      {
+        type: "countdown",
+        id: id(9, 412),
+        x: 3,
+        y: 0,
+        w: 3,
+        h: 2,
+        label: "Countdown",
+        options: {
+          target: "2026-10-07T10:00",
+          timeZone: "America/New_York",
+          showTarget: false,
+          doneText: "We are live",
+          targetAt: "2026-10-07T14:00:00.000Z",
+        },
+      },
+      {
+        type: "countdown",
+        id: id(9, 413),
+        x: 6,
+        y: 0,
+        w: 3,
+        h: 2,
+        label: "Countdown",
+        // The first 02:30 of the night Berlin falls back (UTC+2).
+        options: expect.objectContaining({
+          targetAt: "2026-10-25T00:30:00.000Z",
+        }),
+      },
+    ]);
+    // The default label in the screen's language.
+    const german = await v2(COUNTDOWNS, NOW, "de");
+    expect(widgetsOf(german).map((widget) => widget.label)).toEqual([
+      "Launch in",
+      "Countdown",
+      "Countdown",
+    ]);
+  });
+
+  it("keeps a countdown's payload and version as time passes", async () => {
+    const before = await v2(COUNTDOWNS, new Date("2026-10-01T00:00:00Z"));
+    const after = await v2(COUNTDOWNS, new Date("2026-10-30T00:00:00Z"));
+    expect(after.version).toBe(before.version);
+    expect(after.slides).toEqual(before.slides);
   });
 
   it("carries a table's rows with their previous window (ADR 0019 §6)", async () => {

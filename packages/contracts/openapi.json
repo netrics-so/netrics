@@ -5984,7 +5984,8 @@
                                         "clock",
                                         "table",
                                         "status",
-                                        "compare"
+                                        "compare",
+                                        "countdown"
                                       ]
                                     },
                                     "x": {
@@ -7371,6 +7372,103 @@
                                   "y",
                                   "w",
                                   "h"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "countdown"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "x": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 16
+                                  },
+                                  "y": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 14
+                                  },
+                                  "w": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 16
+                                  },
+                                  "h": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 14
+                                  },
+                                  "title": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "options": {
+                                    "type": "object",
+                                    "properties": {
+                                      "target": {
+                                        "type": "string"
+                                      },
+                                      "timeZone": {
+                                        "default": null,
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 64
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "showTarget": {
+                                        "default": true,
+                                        "type": "boolean"
+                                      },
+                                      "doneText": {
+                                        "default": null,
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 40
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "target"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "x",
+                                  "y",
+                                  "w",
+                                  "h",
+                                  "options"
                                 ]
                               }
                             ]
@@ -8905,6 +9003,104 @@
                                         "options"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "countdown"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "target": {
+                                              "type": "string"
+                                            },
+                                            "timeZone": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 64
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "showTarget": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "doneText": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 40
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "target",
+                                            "timeZone",
+                                            "showTarget",
+                                            "doneText"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   ]
                                 }
@@ -9019,7 +9215,8 @@
                                         "widget_too_small",
                                         "header_name_cut",
                                         "clock_parts_hidden",
-                                        "rows_cut"
+                                        "rows_cut",
+                                        "countdown_passed"
                                       ]
                                     },
                                     "severity": {
@@ -10678,6 +10875,104 @@
                                         "options"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "countdown"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "target": {
+                                              "type": "string"
+                                            },
+                                            "timeZone": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 64
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "showTarget": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "doneText": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 40
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "target",
+                                            "timeZone",
+                                            "showTarget",
+                                            "doneText"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   ]
                                 }
@@ -10792,7 +11087,8 @@
                                         "widget_too_small",
                                         "header_name_cut",
                                         "clock_parts_hidden",
-                                        "rows_cut"
+                                        "rows_cut",
+                                        "countdown_passed"
                                       ]
                                     },
                                     "severity": {
@@ -12323,6 +12619,103 @@
                                   "y",
                                   "w",
                                   "h"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "countdown"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "x": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 16
+                                  },
+                                  "y": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 14
+                                  },
+                                  "w": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 16
+                                  },
+                                  "h": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 14
+                                  },
+                                  "title": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "options": {
+                                    "type": "object",
+                                    "properties": {
+                                      "target": {
+                                        "type": "string"
+                                      },
+                                      "timeZone": {
+                                        "default": null,
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 64
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "showTarget": {
+                                        "default": true,
+                                        "type": "boolean"
+                                      },
+                                      "doneText": {
+                                        "default": null,
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 40
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "target"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "x",
+                                  "y",
+                                  "w",
+                                  "h",
+                                  "options"
                                 ]
                               }
                             ]
@@ -13867,6 +14260,104 @@
                                         "options"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "countdown"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "target": {
+                                              "type": "string"
+                                            },
+                                            "timeZone": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 64
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "showTarget": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "doneText": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 40
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "target",
+                                            "timeZone",
+                                            "showTarget",
+                                            "doneText"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   ]
                                 }
@@ -13981,7 +14472,8 @@
                                         "widget_too_small",
                                         "header_name_cut",
                                         "clock_parts_hidden",
-                                        "rows_cut"
+                                        "rows_cut",
+                                        "countdown_passed"
                                       ]
                                     },
                                     "severity": {
@@ -15775,6 +16267,104 @@
                                         "options"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "countdown"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "target": {
+                                              "type": "string"
+                                            },
+                                            "timeZone": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 64
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "showTarget": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "doneText": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 40
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "target",
+                                            "timeZone",
+                                            "showTarget",
+                                            "doneText"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   ]
                                 }
@@ -15889,7 +16479,8 @@
                                         "widget_too_small",
                                         "header_name_cut",
                                         "clock_parts_hidden",
-                                        "rows_cut"
+                                        "rows_cut",
+                                        "countdown_passed"
                                       ]
                                     },
                                     "severity": {
@@ -23488,6 +24079,99 @@
                                         "data"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "countdown"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 12
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 8
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 12
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 8
+                                        },
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "target": {
+                                              "type": "string"
+                                            },
+                                            "timeZone": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "showTarget": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "doneText": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 40
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "targetAt": {
+                                              "type": "string",
+                                              "format": "date-time",
+                                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                            }
+                                          },
+                                          "required": [
+                                            "target",
+                                            "timeZone",
+                                            "showTarget",
+                                            "doneText",
+                                            "targetAt"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "label",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   ]
                                 }
@@ -26194,6 +26878,120 @@
                                         "label",
                                         "options",
                                         "data"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "countdown"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "min": {
+                                          "type": "object",
+                                          "properties": {
+                                            "w": {
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "h": {
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 9007199254740991
+                                            }
+                                          },
+                                          "required": [
+                                            "w",
+                                            "h"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "target": {
+                                              "type": "string"
+                                            },
+                                            "timeZone": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "showTarget": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "doneText": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 40
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "targetAt": {
+                                              "type": "string",
+                                              "format": "date-time",
+                                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                            }
+                                          },
+                                          "required": [
+                                            "target",
+                                            "timeZone",
+                                            "showTarget",
+                                            "doneText",
+                                            "targetAt"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "min",
+                                        "label",
+                                        "options"
                                       ],
                                       "additionalProperties": false
                                     }
@@ -33433,6 +34231,104 @@
                                         "options"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "countdown"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "target": {
+                                              "type": "string"
+                                            },
+                                            "timeZone": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 64
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "showTarget": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "doneText": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 40
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "target",
+                                            "timeZone",
+                                            "showTarget",
+                                            "doneText"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   ]
                                 }
@@ -33547,7 +34443,8 @@
                                         "widget_too_small",
                                         "header_name_cut",
                                         "clock_parts_hidden",
-                                        "rows_cut"
+                                        "rows_cut",
+                                        "countdown_passed"
                                       ]
                                     },
                                     "severity": {

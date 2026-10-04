@@ -3,7 +3,7 @@ import {
   STUDIO_GRID,
   STUDIO_LABEL_MAX_LINES,
   contentBoxIn,
-  isDataWidget,
+  hasWidgetLabel,
   studioLayout,
   tableLayout,
   type Locale,
@@ -165,8 +165,9 @@ export function unreadableLabels(
         });
         continue;
       }
-      // Data widgets and status boards have a label (ADR 0019 section 2).
-      if (!isDataWidget(widget.type) && widget.type !== "status") {
+      // Every type with a label (ADR 0019 section 2): data widgets and
+      // countdowns.
+      if (!hasWidgetLabel(widget.type)) {
         continue;
       }
       const label = labelOf(widget);

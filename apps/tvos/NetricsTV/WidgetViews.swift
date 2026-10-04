@@ -68,6 +68,12 @@ struct WidgetView: View {
         case .clock(let options):
             ClockWidgetView(options: options, placement: placement, env: env)
                 .surface(env)
+        case .countdown(let options):
+            CountdownWidgetView(
+                label: widget.label ?? KitStrings.text(.countdownLabel, env.language), options: options,
+                placement: placement, env: env
+            )
+            .surface(env)
         case .unsupported:
             // A type this build does not know (a newer server), or one it
             // cannot read: its cell stays, empty and themed.
@@ -1333,6 +1339,69 @@ struct TextWidgetView: View {
  * The time in the accent colour, the date and the zone line, centred as on
  * the web; lines that do not fit are left out (StudioLayout.clockLayout).
  */
+/**
+ * The countdown widget (ADR 0019 section 8; web: `CountdownWidgetView`):
+ * the label, the time left as numbers with unit letters a third of their
+ * size, as large as fits, and the target line at the bottom. At and after
+ * `targetAt` the text when reached at heading size in the accent colour.
+ * It ticks each minute from the Apple TV's clock; no data states, and no
+ * motion beyond the slide's fade.
+ */
+struct CountdownWidgetView: View {
+    let label: String
+    let options: CountdownWidgetOptions
+    let placement: ScreenPlacement
+    let env: WidgetEnv
+
+    var body: some View {
+        TimelineView(.everyMinute) { context in
+            let view = StudioRender.countdownView(
+                now: context.date, label: label, options: options, timeZone: options.timeZone ?? env.timeZone,
+                placement: placement.cells, fontScale: env.fontScale, showHeader: env.showHeader,
+                unitBox: placement.unitBox, language: env.language)
+            let box = StudioRender.contentBox(placement.cells, showHeader: env.showHeader, unitBox: placement.unitBox)
+            let sizes = StudioLayout.typeScale(
+                .countdown, placement: placement.cells, fontScale: env.fontScale, showHeader: env.showHeader)
+            let layout = view.layout
+            VStack(alignment: .leading, spacing: 0) {
+                WidgetLabelView(layout: StudioRender.labelLayout(label, width: box.width, sizes: sizes), env: env)
+                if let doneText = view.doneText {
+                    Text(doneText)
+                        .font(env.font(layout.done, .semibold))
+                        .foregroundStyle(env.colors.accent)
+                        .lineLimit(max(1, layout.doneLines))
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        ForEach(Array(view.groups.enumerated()), id: \.offset) { index, group in
+                            HStack(alignment: .firstTextBaseline, spacing: env.pt(layout.unitGap)) {
+                                Text(group.value)
+                                    .font(env.font(layout.value, .semibold).monospacedDigit())
+                                    .foregroundStyle(env.colors.text)
+                                Text(group.unit)
+                                    .font(env.font(layout.unit, .medium))
+                                    .foregroundStyle(env.colors.muted)
+                            }
+                            .padding(.leading, index > 0 ? env.pt(layout.groupGap) : 0)
+                        }
+                    }
+                    .lineLimit(1)
+                    .fixedSize()
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(view.text)
+                }
+                Spacer(minLength: 0)
+                if layout.showTarget, let target = view.target {
+                    Text(target)
+                        .font(env.font(layout.target))
+                        .foregroundStyle(env.colors.muted)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+}
+
 struct ClockWidgetView: View {
     let options: ClockWidgetOptions
     let placement: ScreenPlacement

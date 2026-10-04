@@ -36,6 +36,10 @@
     "compare": {
       "w": 4,
       "h": 3
+    },
+    "countdown": {
+      "w": 3,
+      "h": 2
     }
   },
   "frames": [
@@ -1507,6 +1511,42 @@
     },
     {
       "type": "compare",
+      "w": 12,
+      "h": 8,
+      "meets": true
+    },
+    {
+      "type": "countdown",
+      "w": 1,
+      "h": 1,
+      "meets": false
+    },
+    {
+      "type": "countdown",
+      "w": 2,
+      "h": 1,
+      "meets": false
+    },
+    {
+      "type": "countdown",
+      "w": 3,
+      "h": 2,
+      "meets": true
+    },
+    {
+      "type": "countdown",
+      "w": 4,
+      "h": 3,
+      "meets": true
+    },
+    {
+      "type": "countdown",
+      "w": 6,
+      "h": 4,
+      "meets": true
+    },
+    {
+      "type": "countdown",
       "w": 12,
       "h": 8,
       "meets": true
@@ -5281,6 +5321,518 @@
         "operand": 48,
         "valueMin": 64,
         "valueMax": 290.4
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 3,
+      "h": 2,
+      "fontScale": 1,
+      "showHeader": true,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 105.05999999999999
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 3,
+      "h": 2,
+      "fontScale": 1,
+      "showHeader": false,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 116.39999999999999
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 3,
+      "h": 2,
+      "fontScale": 1.15,
+      "showHeader": true,
+      "sizes": {
+        "any": 27.599999999999998,
+        "title": 34.5,
+        "resource": 34.5,
+        "change": 32.199999999999996,
+        "heading": 64.39999999999999,
+        "valueMin": 73.6,
+        "valueMax": 105.05999999999999
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 3,
+      "h": 2,
+      "fontScale": 1.15,
+      "showHeader": false,
+      "sizes": {
+        "any": 27.599999999999998,
+        "title": 34.5,
+        "resource": 34.5,
+        "change": 32.199999999999996,
+        "heading": 64.39999999999999,
+        "valueMin": 73.6,
+        "valueMax": 116.39999999999999
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 3,
+      "h": 2,
+      "fontScale": 1.3,
+      "showHeader": true,
+      "sizes": {
+        "any": 31.200000000000003,
+        "title": 39,
+        "resource": 39,
+        "change": 36.4,
+        "heading": 72.8,
+        "valueMin": 83.2,
+        "valueMax": 105.05999999999999
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 3,
+      "h": 2,
+      "fontScale": 1.3,
+      "showHeader": false,
+      "sizes": {
+        "any": 31.200000000000003,
+        "title": 39,
+        "resource": 39,
+        "change": 36.4,
+        "heading": 72.8,
+        "valueMin": 83.2,
+        "valueMax": 116.39999999999999
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 3,
+      "h": 2,
+      "fontScale": 0.8,
+      "showHeader": true,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 105.05999999999999
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 3,
+      "h": 2,
+      "fontScale": 0.8,
+      "showHeader": false,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 116.39999999999999
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 4,
+      "h": 3,
+      "fontScale": 1,
+      "showHeader": true,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 176.79
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 4,
+      "h": 3,
+      "fontScale": 1,
+      "showHeader": false,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 193.79999999999998
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 4,
+      "h": 3,
+      "fontScale": 1.15,
+      "showHeader": true,
+      "sizes": {
+        "any": 27.599999999999998,
+        "title": 34.5,
+        "resource": 34.5,
+        "change": 32.199999999999996,
+        "heading": 64.39999999999999,
+        "valueMin": 73.6,
+        "valueMax": 176.79
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 4,
+      "h": 3,
+      "fontScale": 1.15,
+      "showHeader": false,
+      "sizes": {
+        "any": 27.599999999999998,
+        "title": 34.5,
+        "resource": 34.5,
+        "change": 32.199999999999996,
+        "heading": 64.39999999999999,
+        "valueMin": 73.6,
+        "valueMax": 193.79999999999998
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 4,
+      "h": 3,
+      "fontScale": 1.3,
+      "showHeader": true,
+      "sizes": {
+        "any": 31.200000000000003,
+        "title": 39,
+        "resource": 39,
+        "change": 36.4,
+        "heading": 72.8,
+        "valueMin": 83.2,
+        "valueMax": 176.79
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 4,
+      "h": 3,
+      "fontScale": 1.3,
+      "showHeader": false,
+      "sizes": {
+        "any": 31.200000000000003,
+        "title": 39,
+        "resource": 39,
+        "change": 36.4,
+        "heading": 72.8,
+        "valueMin": 83.2,
+        "valueMax": 193.79999999999998
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 4,
+      "h": 3,
+      "fontScale": 0.8,
+      "showHeader": true,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 176.79
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 4,
+      "h": 3,
+      "fontScale": 0.8,
+      "showHeader": false,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 193.79999999999998
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 6,
+      "h": 4,
+      "fontScale": 1,
+      "showHeader": true,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 248.51999999999998
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 6,
+      "h": 4,
+      "fontScale": 1,
+      "showHeader": false,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 271.2
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 6,
+      "h": 4,
+      "fontScale": 1.15,
+      "showHeader": true,
+      "sizes": {
+        "any": 27.599999999999998,
+        "title": 34.5,
+        "resource": 34.5,
+        "change": 32.199999999999996,
+        "heading": 64.39999999999999,
+        "valueMin": 73.6,
+        "valueMax": 248.51999999999998
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 6,
+      "h": 4,
+      "fontScale": 1.15,
+      "showHeader": false,
+      "sizes": {
+        "any": 27.599999999999998,
+        "title": 34.5,
+        "resource": 34.5,
+        "change": 32.199999999999996,
+        "heading": 64.39999999999999,
+        "valueMin": 73.6,
+        "valueMax": 271.2
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 6,
+      "h": 4,
+      "fontScale": 1.3,
+      "showHeader": true,
+      "sizes": {
+        "any": 31.200000000000003,
+        "title": 39,
+        "resource": 39,
+        "change": 36.4,
+        "heading": 72.8,
+        "valueMin": 83.2,
+        "valueMax": 248.51999999999998
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 6,
+      "h": 4,
+      "fontScale": 1.3,
+      "showHeader": false,
+      "sizes": {
+        "any": 31.200000000000003,
+        "title": 39,
+        "resource": 39,
+        "change": 36.4,
+        "heading": 72.8,
+        "valueMin": 83.2,
+        "valueMax": 271.2
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 6,
+      "h": 4,
+      "fontScale": 0.8,
+      "showHeader": true,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 248.51999999999998
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 6,
+      "h": 4,
+      "fontScale": 0.8,
+      "showHeader": false,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 271.2
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 12,
+      "h": 8,
+      "fontScale": 1,
+      "showHeader": true,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 535.4399999999999
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 12,
+      "h": 8,
+      "fontScale": 1,
+      "showHeader": false,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 580.8
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 12,
+      "h": 8,
+      "fontScale": 1.15,
+      "showHeader": true,
+      "sizes": {
+        "any": 27.599999999999998,
+        "title": 34.5,
+        "resource": 34.5,
+        "change": 32.199999999999996,
+        "heading": 64.39999999999999,
+        "valueMin": 73.6,
+        "valueMax": 535.4399999999999
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 12,
+      "h": 8,
+      "fontScale": 1.15,
+      "showHeader": false,
+      "sizes": {
+        "any": 27.599999999999998,
+        "title": 34.5,
+        "resource": 34.5,
+        "change": 32.199999999999996,
+        "heading": 64.39999999999999,
+        "valueMin": 73.6,
+        "valueMax": 580.8
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 12,
+      "h": 8,
+      "fontScale": 1.3,
+      "showHeader": true,
+      "sizes": {
+        "any": 31.200000000000003,
+        "title": 39,
+        "resource": 39,
+        "change": 36.4,
+        "heading": 72.8,
+        "valueMin": 83.2,
+        "valueMax": 535.4399999999999
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 12,
+      "h": 8,
+      "fontScale": 1.3,
+      "showHeader": false,
+      "sizes": {
+        "any": 31.200000000000003,
+        "title": 39,
+        "resource": 39,
+        "change": 36.4,
+        "heading": 72.8,
+        "valueMin": 83.2,
+        "valueMax": 580.8
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 12,
+      "h": 8,
+      "fontScale": 0.8,
+      "showHeader": true,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 535.4399999999999
+      }
+    },
+    {
+      "type": "countdown",
+      "w": 12,
+      "h": 8,
+      "fontScale": 0.8,
+      "showHeader": false,
+      "sizes": {
+        "any": 24,
+        "title": 30,
+        "resource": 30,
+        "change": 28,
+        "heading": 56,
+        "valueMin": 64,
+        "valueMax": 580.8
       }
     }
   ],
@@ -45813,6 +46365,3045 @@
         "date": 39,
         "zone": 31.200000000000003,
         "hidden": false
+      }
+    }
+  ],
+  "zonedInstants": [
+    {
+      "target": "2026-10-07T10:00",
+      "timeZone": "Europe/Berlin",
+      "targetAt": "2026-10-07T08:00:00.000Z"
+    },
+    {
+      "target": "2026-03-29T02:30",
+      "timeZone": "Europe/Berlin",
+      "targetAt": "2026-03-29T01:30:00.000Z"
+    },
+    {
+      "target": "2026-03-29T03:00",
+      "timeZone": "Europe/Berlin",
+      "targetAt": "2026-03-29T01:00:00.000Z"
+    },
+    {
+      "target": "2026-10-25T02:30",
+      "timeZone": "Europe/Berlin",
+      "targetAt": "2026-10-25T00:30:00.000Z"
+    },
+    {
+      "target": "2026-10-25T03:00",
+      "timeZone": "Europe/Berlin",
+      "targetAt": "2026-10-25T02:00:00.000Z"
+    },
+    {
+      "target": "2026-03-08T02:15",
+      "timeZone": "Europe/Berlin",
+      "targetAt": "2026-03-08T01:15:00.000Z"
+    },
+    {
+      "target": "2026-11-01T01:30",
+      "timeZone": "Europe/Berlin",
+      "targetAt": "2026-11-01T00:30:00.000Z"
+    },
+    {
+      "target": "2026-04-05T02:30",
+      "timeZone": "Europe/Berlin",
+      "targetAt": "2026-04-05T00:30:00.000Z"
+    },
+    {
+      "target": "2026-10-04T02:00",
+      "timeZone": "Europe/Berlin",
+      "targetAt": "2026-10-04T00:00:00.000Z"
+    },
+    {
+      "target": "2000-01-01T00:00",
+      "timeZone": "Europe/Berlin",
+      "targetAt": "1999-12-31T23:00:00.000Z"
+    },
+    {
+      "target": "2100-12-31T23:59",
+      "timeZone": "Europe/Berlin",
+      "targetAt": "2100-12-31T22:59:00.000Z"
+    },
+    {
+      "target": "2028-02-29T12:00",
+      "timeZone": "Europe/Berlin",
+      "targetAt": "2028-02-29T11:00:00.000Z"
+    },
+    {
+      "target": "2027-02-29T12:00",
+      "timeZone": "Europe/Berlin",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T24:00",
+      "timeZone": "Europe/Berlin",
+      "targetAt": null
+    },
+    {
+      "target": "1999-12-31T23:59",
+      "timeZone": "Europe/Berlin",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07 10:00",
+      "timeZone": "Europe/Berlin",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T10:00",
+      "timeZone": "America/New_York",
+      "targetAt": "2026-10-07T14:00:00.000Z"
+    },
+    {
+      "target": "2026-03-29T02:30",
+      "timeZone": "America/New_York",
+      "targetAt": "2026-03-29T06:30:00.000Z"
+    },
+    {
+      "target": "2026-03-29T03:00",
+      "timeZone": "America/New_York",
+      "targetAt": "2026-03-29T07:00:00.000Z"
+    },
+    {
+      "target": "2026-10-25T02:30",
+      "timeZone": "America/New_York",
+      "targetAt": "2026-10-25T06:30:00.000Z"
+    },
+    {
+      "target": "2026-10-25T03:00",
+      "timeZone": "America/New_York",
+      "targetAt": "2026-10-25T07:00:00.000Z"
+    },
+    {
+      "target": "2026-03-08T02:15",
+      "timeZone": "America/New_York",
+      "targetAt": "2026-03-08T07:15:00.000Z"
+    },
+    {
+      "target": "2026-11-01T01:30",
+      "timeZone": "America/New_York",
+      "targetAt": "2026-11-01T05:30:00.000Z"
+    },
+    {
+      "target": "2026-04-05T02:30",
+      "timeZone": "America/New_York",
+      "targetAt": "2026-04-05T06:30:00.000Z"
+    },
+    {
+      "target": "2026-10-04T02:00",
+      "timeZone": "America/New_York",
+      "targetAt": "2026-10-04T06:00:00.000Z"
+    },
+    {
+      "target": "2000-01-01T00:00",
+      "timeZone": "America/New_York",
+      "targetAt": "2000-01-01T05:00:00.000Z"
+    },
+    {
+      "target": "2100-12-31T23:59",
+      "timeZone": "America/New_York",
+      "targetAt": "2101-01-01T04:59:00.000Z"
+    },
+    {
+      "target": "2028-02-29T12:00",
+      "timeZone": "America/New_York",
+      "targetAt": "2028-02-29T17:00:00.000Z"
+    },
+    {
+      "target": "2027-02-29T12:00",
+      "timeZone": "America/New_York",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T24:00",
+      "timeZone": "America/New_York",
+      "targetAt": null
+    },
+    {
+      "target": "1999-12-31T23:59",
+      "timeZone": "America/New_York",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07 10:00",
+      "timeZone": "America/New_York",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T10:00",
+      "timeZone": "Australia/Sydney",
+      "targetAt": "2026-10-06T23:00:00.000Z"
+    },
+    {
+      "target": "2026-03-29T02:30",
+      "timeZone": "Australia/Sydney",
+      "targetAt": "2026-03-28T15:30:00.000Z"
+    },
+    {
+      "target": "2026-03-29T03:00",
+      "timeZone": "Australia/Sydney",
+      "targetAt": "2026-03-28T16:00:00.000Z"
+    },
+    {
+      "target": "2026-10-25T02:30",
+      "timeZone": "Australia/Sydney",
+      "targetAt": "2026-10-24T15:30:00.000Z"
+    },
+    {
+      "target": "2026-10-25T03:00",
+      "timeZone": "Australia/Sydney",
+      "targetAt": "2026-10-24T16:00:00.000Z"
+    },
+    {
+      "target": "2026-03-08T02:15",
+      "timeZone": "Australia/Sydney",
+      "targetAt": "2026-03-07T15:15:00.000Z"
+    },
+    {
+      "target": "2026-11-01T01:30",
+      "timeZone": "Australia/Sydney",
+      "targetAt": "2026-10-31T14:30:00.000Z"
+    },
+    {
+      "target": "2026-04-05T02:30",
+      "timeZone": "Australia/Sydney",
+      "targetAt": "2026-04-04T15:30:00.000Z"
+    },
+    {
+      "target": "2026-10-04T02:00",
+      "timeZone": "Australia/Sydney",
+      "targetAt": "2026-10-03T16:00:00.000Z"
+    },
+    {
+      "target": "2000-01-01T00:00",
+      "timeZone": "Australia/Sydney",
+      "targetAt": "1999-12-31T13:00:00.000Z"
+    },
+    {
+      "target": "2100-12-31T23:59",
+      "timeZone": "Australia/Sydney",
+      "targetAt": "2100-12-31T12:59:00.000Z"
+    },
+    {
+      "target": "2028-02-29T12:00",
+      "timeZone": "Australia/Sydney",
+      "targetAt": "2028-02-29T01:00:00.000Z"
+    },
+    {
+      "target": "2027-02-29T12:00",
+      "timeZone": "Australia/Sydney",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T24:00",
+      "timeZone": "Australia/Sydney",
+      "targetAt": null
+    },
+    {
+      "target": "1999-12-31T23:59",
+      "timeZone": "Australia/Sydney",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07 10:00",
+      "timeZone": "Australia/Sydney",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T10:00",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": "2026-10-06T23:00:00.000Z"
+    },
+    {
+      "target": "2026-03-29T02:30",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": "2026-03-28T15:30:00.000Z"
+    },
+    {
+      "target": "2026-03-29T03:00",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": "2026-03-28T16:00:00.000Z"
+    },
+    {
+      "target": "2026-10-25T02:30",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": "2026-10-24T15:30:00.000Z"
+    },
+    {
+      "target": "2026-10-25T03:00",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": "2026-10-24T16:00:00.000Z"
+    },
+    {
+      "target": "2026-03-08T02:15",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": "2026-03-07T15:15:00.000Z"
+    },
+    {
+      "target": "2026-11-01T01:30",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": "2026-10-31T14:30:00.000Z"
+    },
+    {
+      "target": "2026-04-05T02:30",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": "2026-04-04T16:00:00.000Z"
+    },
+    {
+      "target": "2026-10-04T02:00",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": "2026-10-03T15:30:00.000Z"
+    },
+    {
+      "target": "2000-01-01T00:00",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": "1999-12-31T13:00:00.000Z"
+    },
+    {
+      "target": "2100-12-31T23:59",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": "2100-12-31T12:59:00.000Z"
+    },
+    {
+      "target": "2028-02-29T12:00",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": "2028-02-29T01:00:00.000Z"
+    },
+    {
+      "target": "2027-02-29T12:00",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T24:00",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": null
+    },
+    {
+      "target": "1999-12-31T23:59",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07 10:00",
+      "timeZone": "Australia/Lord_Howe",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T10:00",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": "2026-10-07T04:15:00.000Z"
+    },
+    {
+      "target": "2026-03-29T02:30",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": "2026-03-28T20:45:00.000Z"
+    },
+    {
+      "target": "2026-03-29T03:00",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": "2026-03-28T21:15:00.000Z"
+    },
+    {
+      "target": "2026-10-25T02:30",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": "2026-10-24T20:45:00.000Z"
+    },
+    {
+      "target": "2026-10-25T03:00",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": "2026-10-24T21:15:00.000Z"
+    },
+    {
+      "target": "2026-03-08T02:15",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": "2026-03-07T20:30:00.000Z"
+    },
+    {
+      "target": "2026-11-01T01:30",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": "2026-10-31T19:45:00.000Z"
+    },
+    {
+      "target": "2026-04-05T02:30",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": "2026-04-04T20:45:00.000Z"
+    },
+    {
+      "target": "2026-10-04T02:00",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": "2026-10-03T20:15:00.000Z"
+    },
+    {
+      "target": "2000-01-01T00:00",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": "1999-12-31T18:15:00.000Z"
+    },
+    {
+      "target": "2100-12-31T23:59",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": "2100-12-31T18:14:00.000Z"
+    },
+    {
+      "target": "2028-02-29T12:00",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": "2028-02-29T06:15:00.000Z"
+    },
+    {
+      "target": "2027-02-29T12:00",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T24:00",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": null
+    },
+    {
+      "target": "1999-12-31T23:59",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07 10:00",
+      "timeZone": "Asia/Kathmandu",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T10:00",
+      "timeZone": "America/St_Johns",
+      "targetAt": "2026-10-07T12:30:00.000Z"
+    },
+    {
+      "target": "2026-03-29T02:30",
+      "timeZone": "America/St_Johns",
+      "targetAt": "2026-03-29T05:00:00.000Z"
+    },
+    {
+      "target": "2026-03-29T03:00",
+      "timeZone": "America/St_Johns",
+      "targetAt": "2026-03-29T05:30:00.000Z"
+    },
+    {
+      "target": "2026-10-25T02:30",
+      "timeZone": "America/St_Johns",
+      "targetAt": "2026-10-25T05:00:00.000Z"
+    },
+    {
+      "target": "2026-10-25T03:00",
+      "timeZone": "America/St_Johns",
+      "targetAt": "2026-10-25T05:30:00.000Z"
+    },
+    {
+      "target": "2026-03-08T02:15",
+      "timeZone": "America/St_Johns",
+      "targetAt": "2026-03-08T05:45:00.000Z"
+    },
+    {
+      "target": "2026-11-01T01:30",
+      "timeZone": "America/St_Johns",
+      "targetAt": "2026-11-01T04:00:00.000Z"
+    },
+    {
+      "target": "2026-04-05T02:30",
+      "timeZone": "America/St_Johns",
+      "targetAt": "2026-04-05T05:00:00.000Z"
+    },
+    {
+      "target": "2026-10-04T02:00",
+      "timeZone": "America/St_Johns",
+      "targetAt": "2026-10-04T04:30:00.000Z"
+    },
+    {
+      "target": "2000-01-01T00:00",
+      "timeZone": "America/St_Johns",
+      "targetAt": "2000-01-01T03:30:00.000Z"
+    },
+    {
+      "target": "2100-12-31T23:59",
+      "timeZone": "America/St_Johns",
+      "targetAt": "2101-01-01T03:29:00.000Z"
+    },
+    {
+      "target": "2028-02-29T12:00",
+      "timeZone": "America/St_Johns",
+      "targetAt": "2028-02-29T15:30:00.000Z"
+    },
+    {
+      "target": "2027-02-29T12:00",
+      "timeZone": "America/St_Johns",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T24:00",
+      "timeZone": "America/St_Johns",
+      "targetAt": null
+    },
+    {
+      "target": "1999-12-31T23:59",
+      "timeZone": "America/St_Johns",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07 10:00",
+      "timeZone": "America/St_Johns",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T10:00",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": "2026-10-06T20:15:00.000Z"
+    },
+    {
+      "target": "2026-03-29T02:30",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": "2026-03-28T12:45:00.000Z"
+    },
+    {
+      "target": "2026-03-29T03:00",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": "2026-03-28T13:15:00.000Z"
+    },
+    {
+      "target": "2026-10-25T02:30",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": "2026-10-24T12:45:00.000Z"
+    },
+    {
+      "target": "2026-10-25T03:00",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": "2026-10-24T13:15:00.000Z"
+    },
+    {
+      "target": "2026-03-08T02:15",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": "2026-03-07T12:30:00.000Z"
+    },
+    {
+      "target": "2026-11-01T01:30",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": "2026-10-31T11:45:00.000Z"
+    },
+    {
+      "target": "2026-04-05T02:30",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": "2026-04-04T12:45:00.000Z"
+    },
+    {
+      "target": "2026-10-04T02:00",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": "2026-10-03T12:15:00.000Z"
+    },
+    {
+      "target": "2000-01-01T00:00",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": "1999-12-31T10:15:00.000Z"
+    },
+    {
+      "target": "2100-12-31T23:59",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": "2100-12-31T10:14:00.000Z"
+    },
+    {
+      "target": "2028-02-29T12:00",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": "2028-02-28T22:15:00.000Z"
+    },
+    {
+      "target": "2027-02-29T12:00",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T24:00",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": null
+    },
+    {
+      "target": "1999-12-31T23:59",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07 10:00",
+      "timeZone": "Pacific/Chatham",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T10:00",
+      "timeZone": "UTC",
+      "targetAt": "2026-10-07T10:00:00.000Z"
+    },
+    {
+      "target": "2026-03-29T02:30",
+      "timeZone": "UTC",
+      "targetAt": "2026-03-29T02:30:00.000Z"
+    },
+    {
+      "target": "2026-03-29T03:00",
+      "timeZone": "UTC",
+      "targetAt": "2026-03-29T03:00:00.000Z"
+    },
+    {
+      "target": "2026-10-25T02:30",
+      "timeZone": "UTC",
+      "targetAt": "2026-10-25T02:30:00.000Z"
+    },
+    {
+      "target": "2026-10-25T03:00",
+      "timeZone": "UTC",
+      "targetAt": "2026-10-25T03:00:00.000Z"
+    },
+    {
+      "target": "2026-03-08T02:15",
+      "timeZone": "UTC",
+      "targetAt": "2026-03-08T02:15:00.000Z"
+    },
+    {
+      "target": "2026-11-01T01:30",
+      "timeZone": "UTC",
+      "targetAt": "2026-11-01T01:30:00.000Z"
+    },
+    {
+      "target": "2026-04-05T02:30",
+      "timeZone": "UTC",
+      "targetAt": "2026-04-05T02:30:00.000Z"
+    },
+    {
+      "target": "2026-10-04T02:00",
+      "timeZone": "UTC",
+      "targetAt": "2026-10-04T02:00:00.000Z"
+    },
+    {
+      "target": "2000-01-01T00:00",
+      "timeZone": "UTC",
+      "targetAt": "2000-01-01T00:00:00.000Z"
+    },
+    {
+      "target": "2100-12-31T23:59",
+      "timeZone": "UTC",
+      "targetAt": "2100-12-31T23:59:00.000Z"
+    },
+    {
+      "target": "2028-02-29T12:00",
+      "timeZone": "UTC",
+      "targetAt": "2028-02-29T12:00:00.000Z"
+    },
+    {
+      "target": "2027-02-29T12:00",
+      "timeZone": "UTC",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T24:00",
+      "timeZone": "UTC",
+      "targetAt": null
+    },
+    {
+      "target": "1999-12-31T23:59",
+      "timeZone": "UTC",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07 10:00",
+      "timeZone": "UTC",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T10:00",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": "2026-10-06T20:00:00.000Z"
+    },
+    {
+      "target": "2026-03-29T02:30",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": "2026-03-28T12:30:00.000Z"
+    },
+    {
+      "target": "2026-03-29T03:00",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": "2026-03-28T13:00:00.000Z"
+    },
+    {
+      "target": "2026-10-25T02:30",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": "2026-10-24T12:30:00.000Z"
+    },
+    {
+      "target": "2026-10-25T03:00",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": "2026-10-24T13:00:00.000Z"
+    },
+    {
+      "target": "2026-03-08T02:15",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": "2026-03-07T12:15:00.000Z"
+    },
+    {
+      "target": "2026-11-01T01:30",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": "2026-10-31T11:30:00.000Z"
+    },
+    {
+      "target": "2026-04-05T02:30",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": "2026-04-04T12:30:00.000Z"
+    },
+    {
+      "target": "2026-10-04T02:00",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": "2026-10-03T12:00:00.000Z"
+    },
+    {
+      "target": "2000-01-01T00:00",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": "1999-12-31T10:00:00.000Z"
+    },
+    {
+      "target": "2100-12-31T23:59",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": "2100-12-31T09:59:00.000Z"
+    },
+    {
+      "target": "2028-02-29T12:00",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": "2028-02-28T22:00:00.000Z"
+    },
+    {
+      "target": "2027-02-29T12:00",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07T24:00",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": null
+    },
+    {
+      "target": "1999-12-31T23:59",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": null
+    },
+    {
+      "target": "2026-10-07 10:00",
+      "timeZone": "Etc/GMT-14",
+      "targetAt": null
+    }
+  ],
+  "countdownParts": [
+    {
+      "now": "2026-10-04T17:55:00.000Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": false,
+      "groups": [
+        {
+          "value": "2",
+          "unit": "d"
+        },
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "now": "2026-10-06T07:00:00.000Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": false,
+      "groups": [
+        {
+          "value": "1",
+          "unit": "d"
+        },
+        {
+          "value": "01",
+          "unit": "h"
+        },
+        {
+          "value": "00",
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "now": "2026-10-06T17:55:00.000Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": false,
+      "groups": [
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "now": "2026-10-07T07:00:00.000Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": false,
+      "groups": [
+        {
+          "value": "1",
+          "unit": "h"
+        },
+        {
+          "value": "00",
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "now": "2026-10-07T07:00:00.300Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": false,
+      "groups": [
+        {
+          "value": "1",
+          "unit": "h"
+        },
+        {
+          "value": "00",
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "now": "2026-10-07T07:00:01.000Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": false,
+      "groups": [
+        {
+          "value": "1",
+          "unit": "h"
+        },
+        {
+          "value": "00",
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "now": "2026-10-07T07:19:00.000Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": false,
+      "groups": [
+        {
+          "value": "41",
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "now": "2026-10-07T07:59:00.000Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": false,
+      "groups": [
+        {
+          "value": "1",
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "now": "2026-10-07T07:59:30.000Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": false,
+      "groups": [
+        {
+          "value": "< 1",
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "now": "2026-10-07T07:59:59.999Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": false,
+      "groups": [
+        {
+          "value": "< 1",
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "now": "2026-10-07T08:00:00.000Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": true,
+      "groups": []
+    },
+    {
+      "now": "2026-10-09T00:00:00.000Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": true,
+      "groups": []
+    },
+    {
+      "now": "2025-01-01T00:00:00.000Z",
+      "targetAt": "2026-10-07T08:00:00.000Z",
+      "done": false,
+      "groups": [
+        {
+          "value": "644",
+          "unit": "d"
+        },
+        {
+          "value": "08",
+          "unit": "h"
+        },
+        {
+          "value": "00",
+          "unit": "m"
+        }
+      ]
+    }
+  ],
+  "countdownLayouts": [
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [
+        {
+          "value": "2",
+          "unit": "d"
+        },
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 83.95604395604397,
+          "unit": 28,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 6.7164835164835175,
+        "groupGap": 25.18681318681319,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "label": "Countdown",
+      "groups": [
+        {
+          "value": "1234",
+          "unit": "T"
+        },
+        {
+          "value": "08",
+          "unit": "Std"
+        },
+        {
+          "value": "41",
+          "unit": "Min"
+        }
+      ],
+      "target": "Mo., 7. Okt. 2030 · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 64,
+          "unit": 28,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 5.12,
+        "groupGap": 19.2,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "label": "Launch · netrics.so",
+      "groups": [
+        {
+          "value": "< 1",
+          "unit": "m"
+        }
+      ],
+      "target": null,
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 98.1,
+          "unit": 32.699999999999996,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 1,
+        "unitGap": 7.848,
+        "groupGap": 29.429999999999996,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "label": "Bis zum Start der neuen Version unserer Anwendung für alle",
+      "groups": [
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 98.1,
+          "unit": 32.699999999999996,
+          "done": 56
+        },
+        "titleLines": 2,
+        "resourceLines": 0,
+        "unitGap": 7.848,
+        "groupGap": 29.429999999999996,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": "Now",
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 97,
+          "unit": 32.33333333333333,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 7.76,
+        "groupGap": 29.099999999999998,
+        "showTarget": true,
+        "doneLines": 1
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [],
+      "target": null,
+      "doneText": "We launched, thank you all for your help",
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 105.05999999999999,
+          "unit": 35.019999999999996,
+          "done": 38
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 8.4048,
+        "groupGap": 31.517999999999994,
+        "showTarget": false,
+        "doneLines": 2
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [
+        {
+          "value": "2",
+          "unit": "d"
+        },
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 83.2,
+          "unit": 36.4,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 6.656000000000001,
+        "groupGap": 24.96,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "label": "Countdown",
+      "groups": [
+        {
+          "value": "1234",
+          "unit": "T"
+        },
+        {
+          "value": "08",
+          "unit": "Std"
+        },
+        {
+          "value": "41",
+          "unit": "Min"
+        }
+      ],
+      "target": "Mo., 7. Okt. 2030 · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 83.2,
+          "unit": 36.4,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 6.656000000000001,
+        "groupGap": 24.96,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "label": "Launch · netrics.so",
+      "groups": [
+        {
+          "value": "< 1",
+          "unit": "m"
+        }
+      ],
+      "target": null,
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 83.2,
+          "unit": 36.4,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 1,
+        "unitGap": 6.656000000000001,
+        "groupGap": 24.96,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "label": "Bis zum Start der neuen Version unserer Anwendung für alle",
+      "groups": [
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 83.2,
+          "unit": 36.4,
+          "done": 72.8
+        },
+        "titleLines": 2,
+        "resourceLines": 0,
+        "unitGap": 6.656000000000001,
+        "groupGap": 24.96,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": "Now",
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 105.05999999999999,
+          "unit": 36.4,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 8.4048,
+        "groupGap": 31.517999999999994,
+        "showTarget": false,
+        "doneLines": 1
+      }
+    },
+    {
+      "w": 3,
+      "h": 2,
+      "box": {
+        "width": 404,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [],
+      "target": null,
+      "doneText": "We launched, thank you all for your help",
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 105.05999999999999,
+          "unit": 36.4,
+          "done": 37.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 8.4048,
+        "groupGap": 31.517999999999994,
+        "showTarget": false,
+        "doneLines": 2
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [
+        {
+          "value": "2",
+          "unit": "d"
+        },
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 97,
+          "unit": 32.33333333333333,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 7.76,
+        "groupGap": 29.099999999999998,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "label": "Countdown",
+      "groups": [
+        {
+          "value": "1234",
+          "unit": "T"
+        },
+        {
+          "value": "08",
+          "unit": "Std"
+        },
+        {
+          "value": "41",
+          "unit": "Min"
+        }
+      ],
+      "target": "Mo., 7. Okt. 2030 · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 72.54629629629629,
+          "unit": 28,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 5.803703703703703,
+        "groupGap": 21.763888888888886,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "label": "Launch · netrics.so",
+      "groups": [
+        {
+          "value": "< 1",
+          "unit": "m"
+        }
+      ],
+      "target": null,
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 98.1,
+          "unit": 32.699999999999996,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 1,
+        "unitGap": 7.848,
+        "groupGap": 29.429999999999996,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "label": "Bis zum Start der neuen Version unserer Anwendung für alle",
+      "groups": [
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 98.1,
+          "unit": 32.699999999999996,
+          "done": 56
+        },
+        "titleLines": 2,
+        "resourceLines": 0,
+        "unitGap": 7.848,
+        "groupGap": 29.429999999999996,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": "Now",
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 97,
+          "unit": 32.33333333333333,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 7.76,
+        "groupGap": 29.099999999999998,
+        "showTarget": true,
+        "doneLines": 1
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [],
+      "target": null,
+      "doneText": "We launched, thank you all for your help",
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 105.05999999999999,
+          "unit": 35.019999999999996,
+          "done": 53
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 8.4048,
+        "groupGap": 31.517999999999994,
+        "showTarget": false,
+        "doneLines": 2
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [
+        {
+          "value": "2",
+          "unit": "d"
+        },
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 105.05999999999999,
+          "unit": 36.4,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 8.4048,
+        "groupGap": 31.517999999999994,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "label": "Countdown",
+      "groups": [
+        {
+          "value": "1234",
+          "unit": "T"
+        },
+        {
+          "value": "08",
+          "unit": "Std"
+        },
+        {
+          "value": "41",
+          "unit": "Min"
+        }
+      ],
+      "target": "Mo., 7. Okt. 2030 · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 83.2,
+          "unit": 36.4,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 6.656000000000001,
+        "groupGap": 24.96,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "label": "Launch · netrics.so",
+      "groups": [
+        {
+          "value": "< 1",
+          "unit": "m"
+        }
+      ],
+      "target": null,
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 83.2,
+          "unit": 36.4,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 1,
+        "unitGap": 6.656000000000001,
+        "groupGap": 24.96,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "label": "Bis zum Start der neuen Version unserer Anwendung für alle",
+      "groups": [
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 83.2,
+          "unit": 36.4,
+          "done": 72.8
+        },
+        "titleLines": 2,
+        "resourceLines": 0,
+        "unitGap": 6.656000000000001,
+        "groupGap": 24.96,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": "Now",
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 105.05999999999999,
+          "unit": 36.4,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 8.4048,
+        "groupGap": 31.517999999999994,
+        "showTarget": false,
+        "doneLines": 1
+      }
+    },
+    {
+      "w": 4,
+      "h": 2,
+      "box": {
+        "width": 560,
+        "height": 175.1
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [],
+      "target": null,
+      "doneText": "We launched, thank you all for your help",
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 105.05999999999999,
+          "unit": 36.4,
+          "done": 52.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 8.4048,
+        "groupGap": 31.517999999999994,
+        "showTarget": false,
+        "doneLines": 2
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [
+        {
+          "value": "2",
+          "unit": "d"
+        },
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 83.95604395604397,
+          "unit": 28,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 6.7164835164835175,
+        "groupGap": 25.18681318681319,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1,
+      "label": "Countdown",
+      "groups": [
+        {
+          "value": "1234",
+          "unit": "T"
+        },
+        {
+          "value": "08",
+          "unit": "Std"
+        },
+        {
+          "value": "41",
+          "unit": "Min"
+        }
+      ],
+      "target": "Mo., 7. Okt. 2030 · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 64,
+          "unit": 28,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 5.12,
+        "groupGap": 19.2,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1,
+      "label": "Launch · netrics.so",
+      "groups": [
+        {
+          "value": "< 1",
+          "unit": "m"
+        }
+      ],
+      "target": null,
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 176.79,
+          "unit": 58.92999999999999,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 1,
+        "unitGap": 14.1432,
+        "groupGap": 53.037,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1,
+      "label": "Bis zum Start der neuen Version unserer Anwendung für alle",
+      "groups": [
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 112.82815118227518,
+          "unit": 37.609383727425055,
+          "done": 56
+        },
+        "titleLines": 2,
+        "resourceLines": 0,
+        "unitGap": 9.026252094582015,
+        "groupGap": 33.84844535468255,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": "Now",
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 176.79,
+          "unit": 58.92999999999999,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 14.1432,
+        "groupGap": 53.037,
+        "showTarget": true,
+        "doneLines": 1
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [],
+      "target": null,
+      "doneText": "We launched, thank you all for your help",
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 176.79,
+          "unit": 58.92999999999999,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 14.1432,
+        "groupGap": 53.037,
+        "showTarget": false,
+        "doneLines": 3
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [
+        {
+          "value": "2",
+          "unit": "d"
+        },
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 83.2,
+          "unit": 36.4,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 6.656000000000001,
+        "groupGap": 24.96,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1.3,
+      "label": "Countdown",
+      "groups": [
+        {
+          "value": "1234",
+          "unit": "T"
+        },
+        {
+          "value": "08",
+          "unit": "Std"
+        },
+        {
+          "value": "41",
+          "unit": "Min"
+        }
+      ],
+      "target": "Mo., 7. Okt. 2030 · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 83.2,
+          "unit": 36.4,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 6.656000000000001,
+        "groupGap": 24.96,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1.3,
+      "label": "Launch · netrics.so",
+      "groups": [
+        {
+          "value": "< 1",
+          "unit": "m"
+        }
+      ],
+      "target": null,
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 176.79,
+          "unit": 58.92999999999999,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 1,
+        "unitGap": 14.1432,
+        "groupGap": 53.037,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1.3,
+      "label": "Bis zum Start der neuen Version unserer Anwendung für alle",
+      "groups": [
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 112.82815118227518,
+          "unit": 37.609383727425055,
+          "done": 72.8
+        },
+        "titleLines": 2,
+        "resourceLines": 0,
+        "unitGap": 9.026252094582015,
+        "groupGap": 33.84844535468255,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": "Now",
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 176.79,
+          "unit": 58.92999999999999,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 14.1432,
+        "groupGap": 53.037,
+        "showTarget": true,
+        "doneLines": 1
+      }
+    },
+    {
+      "w": 3,
+      "h": 3,
+      "box": {
+        "width": 404,
+        "height": 294.65
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [],
+      "target": null,
+      "doneText": "We launched, thank you all for your help",
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 176.79,
+          "unit": 58.92999999999999,
+          "done": 56.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 14.1432,
+        "groupGap": 53.037,
+        "showTarget": false,
+        "doneLines": 3
+      }
+    },
+    {
+      "w": 6,
+      "h": 4,
+      "box": {
+        "width": 872,
+        "height": 414.2
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [
+        {
+          "value": "2",
+          "unit": "d"
+        },
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 181.22618635261517,
+          "unit": 60.40872878420505,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 14.498094908209215,
+        "groupGap": 54.36785590578455,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 6,
+      "h": 4,
+      "box": {
+        "width": 872,
+        "height": 414.2
+      },
+      "fontScale": 1,
+      "label": "Countdown",
+      "groups": [
+        {
+          "value": "1234",
+          "unit": "T"
+        },
+        {
+          "value": "08",
+          "unit": "Std"
+        },
+        {
+          "value": "41",
+          "unit": "Min"
+        }
+      ],
+      "target": "Mo., 7. Okt. 2030 · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 116.40117469075376,
+          "unit": 38.80039156358458,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 9.312093975260302,
+        "groupGap": 34.920352407226126,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 6,
+      "h": 4,
+      "box": {
+        "width": 872,
+        "height": 414.2
+      },
+      "fontScale": 1,
+      "label": "Launch · netrics.so",
+      "groups": [
+        {
+          "value": "< 1",
+          "unit": "m"
+        }
+      ],
+      "target": null,
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 248.51999999999998,
+          "unit": 82.83999999999999,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 1,
+        "unitGap": 19.8816,
+        "groupGap": 74.556,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 6,
+      "h": 4,
+      "box": {
+        "width": 872,
+        "height": 414.2
+      },
+      "fontScale": 1,
+      "label": "Bis zum Start der neuen Version unserer Anwendung für alle",
+      "groups": [
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 243.53006888847514,
+          "unit": 81.1766896294917,
+          "done": 56
+        },
+        "titleLines": 2,
+        "resourceLines": 0,
+        "unitGap": 19.48240551107801,
+        "groupGap": 73.05902066654254,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 6,
+      "h": 4,
+      "box": {
+        "width": 872,
+        "height": 414.2
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": "Now",
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 248.51999999999998,
+          "unit": 82.83999999999999,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 19.8816,
+        "groupGap": 74.556,
+        "showTarget": true,
+        "doneLines": 1
+      }
+    },
+    {
+      "w": 6,
+      "h": 4,
+      "box": {
+        "width": 872,
+        "height": 414.2
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [],
+      "target": null,
+      "doneText": "We launched, thank you all for your help",
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 248.51999999999998,
+          "unit": 82.83999999999999,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 19.8816,
+        "groupGap": 74.556,
+        "showTarget": false,
+        "doneLines": 2
+      }
+    },
+    {
+      "w": 6,
+      "h": 4,
+      "box": {
+        "width": 872,
+        "height": 414.2
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [
+        {
+          "value": "2",
+          "unit": "d"
+        },
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 181.22618635261517,
+          "unit": 60.40872878420505,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 14.498094908209215,
+        "groupGap": 54.36785590578455,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 6,
+      "h": 4,
+      "box": {
+        "width": 872,
+        "height": 414.2
+      },
+      "fontScale": 1.3,
+      "label": "Countdown",
+      "groups": [
+        {
+          "value": "1234",
+          "unit": "T"
+        },
+        {
+          "value": "08",
+          "unit": "Std"
+        },
+        {
+          "value": "41",
+          "unit": "Min"
+        }
+      ],
+      "target": "Mo., 7. Okt. 2030 · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 116.40117469075376,
+          "unit": 38.80039156358458,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 9.312093975260302,
+        "groupGap": 34.920352407226126,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 6,
+      "h": 4,
+      "box": {
+        "width": 872,
+        "height": 414.2
+      },
+      "fontScale": 1.3,
+      "label": "Launch · netrics.so",
+      "groups": [
+        {
+          "value": "< 1",
+          "unit": "m"
+        }
+      ],
+      "target": null,
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 248.51999999999998,
+          "unit": 82.83999999999999,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 1,
+        "unitGap": 19.8816,
+        "groupGap": 74.556,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 6,
+      "h": 4,
+      "box": {
+        "width": 872,
+        "height": 414.2
+      },
+      "fontScale": 1.3,
+      "label": "Bis zum Start der neuen Version unserer Anwendung für alle",
+      "groups": [
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 243.53006888847514,
+          "unit": 81.1766896294917,
+          "done": 72.8
+        },
+        "titleLines": 2,
+        "resourceLines": 0,
+        "unitGap": 19.48240551107801,
+        "groupGap": 73.05902066654254,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 6,
+      "h": 4,
+      "box": {
+        "width": 872,
+        "height": 414.2
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": "Now",
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 248.51999999999998,
+          "unit": 82.83999999999999,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 19.8816,
+        "groupGap": 74.556,
+        "showTarget": true,
+        "doneLines": 1
+      }
+    },
+    {
+      "w": 6,
+      "h": 4,
+      "box": {
+        "width": 872,
+        "height": 414.2
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [],
+      "target": null,
+      "doneText": "We launched, thank you all for your help",
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 248.51999999999998,
+          "unit": 82.83999999999999,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 19.8816,
+        "groupGap": 74.556,
+        "showTarget": false,
+        "doneLines": 2
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [
+        {
+          "value": "2",
+          "unit": "d"
+        },
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 375.7533772081746,
+          "unit": 125.25112573605819,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 30.06027017665397,
+        "groupGap": 112.72601316245238,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1,
+      "label": "Countdown",
+      "groups": [
+        {
+          "value": "1234",
+          "unit": "T"
+        },
+        {
+          "value": "08",
+          "unit": "Std"
+        },
+        {
+          "value": "41",
+          "unit": "Min"
+        }
+      ],
+      "target": "Mo., 7. Okt. 2030 · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 241.3455548633977,
+          "unit": 80.44851828779923,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 19.307644389071815,
+        "groupGap": 72.4036664590193,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1,
+      "label": "Launch · netrics.so",
+      "groups": [
+        {
+          "value": "< 1",
+          "unit": "m"
+        }
+      ],
+      "target": null,
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 535.4399999999999,
+          "unit": 178.47999999999996,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 1,
+        "unitGap": 42.83519999999999,
+        "groupGap": 160.63199999999998,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1,
+      "label": "Bis zum Start der neuen Version unserer Anwendung für alle",
+      "groups": [
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 504.93390430087504,
+          "unit": 168.311301433625,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 40.39471234407,
+        "groupGap": 151.48017129026252,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": "Now",
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 535.4399999999999,
+          "unit": 178.47999999999996,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 42.83519999999999,
+        "groupGap": 160.63199999999998,
+        "showTarget": true,
+        "doneLines": 1
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1,
+      "label": "Launch in",
+      "groups": [],
+      "target": null,
+      "doneText": "We launched, thank you all for your help",
+      "layout": {
+        "sizes": {
+          "title": 30,
+          "resource": 30,
+          "target": 24,
+          "value": 535.4399999999999,
+          "unit": 178.47999999999996,
+          "done": 56
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 42.83519999999999,
+        "groupGap": 160.63199999999998,
+        "showTarget": false,
+        "doneLines": 1
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [
+        {
+          "value": "2",
+          "unit": "d"
+        },
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 375.7533772081746,
+          "unit": 125.25112573605819,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 30.06027017665397,
+        "groupGap": 112.72601316245238,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1.3,
+      "label": "Countdown",
+      "groups": [
+        {
+          "value": "1234",
+          "unit": "T"
+        },
+        {
+          "value": "08",
+          "unit": "Std"
+        },
+        {
+          "value": "41",
+          "unit": "Min"
+        }
+      ],
+      "target": "Mo., 7. Okt. 2030 · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 241.3455548633977,
+          "unit": 80.44851828779923,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 19.307644389071815,
+        "groupGap": 72.4036664590193,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1.3,
+      "label": "Launch · netrics.so",
+      "groups": [
+        {
+          "value": "< 1",
+          "unit": "m"
+        }
+      ],
+      "target": null,
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 535.4399999999999,
+          "unit": 178.47999999999996,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 1,
+        "unitGap": 42.83519999999999,
+        "groupGap": 160.63199999999998,
+        "showTarget": false,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1.3,
+      "label": "Bis zum Start der neuen Version unserer Anwendung für alle",
+      "groups": [
+        {
+          "value": "14",
+          "unit": "h"
+        },
+        {
+          "value": "05",
+          "unit": "m"
+        }
+      ],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": null,
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 504.93390430087504,
+          "unit": 168.311301433625,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 40.39471234407,
+        "groupGap": 151.48017129026252,
+        "showTarget": true,
+        "doneLines": 0
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [],
+      "target": "Wed 7 Oct · 10:00",
+      "doneText": "Now",
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 535.4399999999999,
+          "unit": 178.47999999999996,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 42.83519999999999,
+        "groupGap": 160.63199999999998,
+        "showTarget": true,
+        "doneLines": 1
+      }
+    },
+    {
+      "w": 12,
+      "h": 8,
+      "box": {
+        "width": 1808,
+        "height": 892.4
+      },
+      "fontScale": 1.3,
+      "label": "Launch in",
+      "groups": [],
+      "target": null,
+      "doneText": "We launched, thank you all for your help",
+      "layout": {
+        "sizes": {
+          "title": 39,
+          "resource": 39,
+          "target": 31.200000000000003,
+          "value": 535.4399999999999,
+          "unit": 178.47999999999996,
+          "done": 72.8
+        },
+        "titleLines": 1,
+        "resourceLines": 0,
+        "unitGap": 42.83519999999999,
+        "groupGap": 160.63199999999998,
+        "showTarget": false,
+        "doneLines": 1
       }
     }
   ]

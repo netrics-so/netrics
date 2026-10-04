@@ -23,7 +23,8 @@ export type StudioWidgetType =
   | "clock"
   | "table"
   | "status"
-  | "compare";
+  | "compare"
+  | "countdown";
 
 export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "metric",
@@ -35,6 +36,7 @@ export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "table",
   "status",
   "compare",
+  "countdown",
 ];
 
 /** A widget's cells: 0-based column and row, width and height in cells. */
@@ -93,6 +95,7 @@ export const STUDIO_MIN_WIDGET_SIZE: Readonly<
   status: { w: 3, h: 3 },
   // Two five-character operands at 48 u and the separator (ADR 0019 §10).
   compare: { w: 4, h: 3 },
+  countdown: { w: 3, h: 2 },
 };
 
 /** Widgets with a title and resource line (bound to a metric). */
@@ -512,6 +515,8 @@ const VALUE_HEIGHT_SHARE: Readonly<Record<"metric" | "line" | "bar", number>> =
 const CLOCK_HEIGHT_SHARE = 0.6;
 /** Share of a compare widget's content height its ratio may take at most. */
 const COMPARE_VALUE_HEIGHT_SHARE = 0.3;
+/** Share of a countdown's content height its numbers may take at most. */
+const COUNTDOWN_HEIGHT_SHARE = 0.6;
 
 /** Content height of a widget in units: its height less the padding. */
 function contentHeight(
@@ -596,6 +601,23 @@ export function widgetTypeScale(
         valueMax: Math.max(
           valueMin,
           contentHeight(placement, showHeader) * COMPARE_VALUE_HEIGHT_SHARE,
+        ),
+      };
+    }
+    case "countdown": {
+      // ADR 0019 section 8: numbers in the value role, unit letters in the
+      // change role, the text when reached at heading size.
+      const valueMin = m.value * scale;
+      return {
+        any,
+        title: m.title * scale,
+        resource: m.resource * scale,
+        change: m.change * scale,
+        heading: m.heading * scale,
+        valueMin,
+        valueMax: Math.max(
+          valueMin,
+          contentHeight(placement, showHeader) * COUNTDOWN_HEIGHT_SHARE,
         ),
       };
     }
@@ -1657,6 +1679,340 @@ export function clockLayout(input: ClockLayoutInput): ClockLayout {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Countdown (ADR 0019, section 8)
+
+/** The years a countdown's target may lie in. */
+export const COUNTDOWN_TARGET_YEARS = { min: 2000, max: 2100 } as const;
+
+const COUNTDOWN_TARGET_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+
+export interface CountdownTargetParts {
+  year: number;
+  /** 1–12. */
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+}
+
+/**
+ * A countdown's target, a local date and time `YYYY-MM-DDTHH:mm`, as its
+ * parts; null unless it is a real date (no 30 February) and time in the
+ * years 2000–2100.
+ */
+export function parseCountdownTarget(
+  target: string,
+): CountdownTargetParts | null {
+  const match = COUNTDOWN_TARGET_PATTERN.exec(target);
+  if (!match) return null;
+  const [year, month, day, hour, minute] = match.slice(1).map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  if (
+    year < COUNTDOWN_TARGET_YEARS.min ||
+    year > COUNTDOWN_TARGET_YEARS.max ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    hour > 23 ||
+    minute > 59
+  ) {
+    return null;
+  }
+  // The day exists in the month (leap years included).
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) {
+    return null;
+  }
+  return { year, month, day, hour, minute };
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The instant of a local date and time in a zone: a countdown's `targetAt`
+ * in UTC. A time that does not exist (a spring-forward gap) moves forward
+ * by the gap: 02:30 on the night Berlin goes from 02:00 to 03:00 is 03:30.
+ * A time that exists twice (fall back) takes the earlier offset, so the
+ * first 02:30. Null for a target `parseCountdownTarget` refuses; a zone the
+ * runtime does not know counts as UTC.
+ */
+export function zonedInstant(target: string, timeZone: string): Date | null {
+  const parts = parseCountdownTarget(target);
+  if (!parts) return null;
+  const local = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+  );
+  const offsetAt = (instant: number) =>
+    zoneOffsetMinutes(timeZone, new Date(instant)) ?? 0;
+  // A zone changes its offset at most once within a day either side.
+  const before = offsetAt(local - DAY_MS);
+  const after = offsetAt(local + DAY_MS);
+  let found: number | null = null;
+  for (const offset of [before, after]) {
+    const instant = local - offset * 60_000;
+    if (offsetAt(instant) === offset && (found === null || instant < found)) {
+      found = instant;
+    }
+  }
+  // In a gap neither offset matches: the offset before the change lands
+  // the time after it.
+  return new Date(found ?? local - before * 60_000);
+}
+
+export type CountdownUnit = "d" | "h" | "m";
+
+/** One number of the time left and its unit: "14" and "h". */
+export interface CountdownGroup {
+  /** The number as shown: "2", "05" after a larger unit, "< 1". */
+  value: string;
+  unit: CountdownUnit;
+}
+
+export interface CountdownParts {
+  /** At or after the target: the widget shows its text when reached. */
+  done: boolean;
+  /** "2 d 14 h 05 m" as groups; empty once done. */
+  groups: CountdownGroup[];
+}
+
+/**
+ * A screen's minute tick lands just after the minute starts; this much
+ * late still counts as on the minute, so 09:00:00.3 to a 10:00 target
+ * reads "1 h 00 m", not "59 m".
+ */
+const COUNTDOWN_TICK_TOLERANCE_MS = 1000;
+
+/**
+ * The time left from `now` to `targetAt` in whole minutes: "2 d 14 h 05 m"
+ * from one day on, "14 h 05 m" below that, "41 m" below an hour, "< 1 m"
+ * in the last minute and done at the target. Numbers after a larger unit
+ * have two digits.
+ */
+export function countdownParts(now: Date, targetAt: Date): CountdownParts {
+  const left = targetAt.getTime() - now.getTime();
+  if (!(left > 0)) return { done: true, groups: [] };
+  const total = Math.floor((left + COUNTDOWN_TICK_TOLERANCE_MS) / 60_000);
+  if (total < 1) return { done: false, groups: [{ value: "< 1", unit: "m" }] };
+  const days = Math.floor(total / 1440);
+  const hours = Math.floor((total % 1440) / 60);
+  const minutes = total % 60;
+  const two = (value: number) => String(value).padStart(2, "0");
+  if (days > 0) {
+    return {
+      done: false,
+      groups: [
+        { value: String(days), unit: "d" },
+        { value: two(hours), unit: "h" },
+        { value: two(minutes), unit: "m" },
+      ],
+    };
+  }
+  if (hours > 0) {
+    return {
+      done: false,
+      groups: [
+        { value: String(hours), unit: "h" },
+        { value: two(minutes), unit: "m" },
+      ],
+    };
+  }
+  return { done: false, groups: [{ value: String(minutes), unit: "m" }] };
+}
+
+/** "2 d 14 h 05 m": the groups with their unit letters (English by default). */
+export function countdownText(
+  groups: readonly CountdownGroup[],
+  units: Readonly<Record<CountdownUnit, string>> = { d: "d", h: "h", m: "m" },
+): string {
+  return groups.map((group) => `${group.value} ${units[group.unit]}`).join(" ");
+}
+
+/** Unit letters are a third of the numbers' size, never below the change role. */
+export const COUNTDOWN_UNIT_SHARE = 1 / 3;
+/** Between a number and its unit letter, as a share of the numbers' size. */
+export const COUNTDOWN_UNIT_GAP = 0.08;
+/** Between two groups, as a share of the numbers' size. */
+export const COUNTDOWN_GROUP_GAP = 0.3;
+/** Space between the label, the time left and the target line, in units. */
+const COUNTDOWN_STACK_GAP = 8;
+/** Line height of the label, the target line and the text when reached. */
+const COUNTDOWN_LINE_HEIGHT = 1.15;
+
+export interface CountdownLayoutInput {
+  /** Cells of the widget (its type scale). */
+  placement: StudioPlacement;
+  /** The content box in units (the format's, or the 16:9 reference's). */
+  box: { width: number; height: number };
+  fontScale?: number;
+  showHeader?: boolean;
+  /** The label as shown: the title, or the localised "Countdown". */
+  label: string;
+  /**
+   * The time left with the unit letters in the screen's language ("14",
+   * "Std"); empty once done. Digits count as the widest.
+   */
+  groups: ReadonlyArray<{ value: string; unit: string }>;
+  /** The target line ("Tue 7 Oct · 10:00"), or null when it is off. */
+  target: string | null;
+  /** Once done: the text when reached ("Now"); else null. */
+  doneText: string | null;
+}
+
+export interface CountdownLayout {
+  /** Sizes in units. `value` is the numbers', `unit` their letters'. */
+  sizes: {
+    title: number;
+    resource: number;
+    target: number;
+    value: number;
+    unit: number;
+    done: number;
+  };
+  /** Lines of the title (1–2) and of the resource line (0–2). */
+  titleLines: number;
+  resourceLines: number;
+  /** Between a number and its letter, and between groups, in units. */
+  unitGap: number;
+  groupGap: number;
+  /** The target line is on and fits below the time left. */
+  showTarget: boolean;
+  /** Lines the text when reached takes at `sizes.done`; 0 before. */
+  doneLines: number;
+}
+
+/**
+ * The countdown's content (ADR 0019, section 8): the label, the time left
+ * as numbers (the value role: at least 64 units and as large as fits, sized
+ * on their widest digits) with unit letters a third of their size (at least
+ * the change role, 28), and the target line (24) below; once done, the text
+ * when reached at heading size (56, smaller only to fit the box) instead of
+ * the numbers. The target line goes when the numbers at their minimum leave
+ * no room for it.
+ */
+export function countdownLayout(input: CountdownLayoutInput): CountdownLayout {
+  const scale = effectiveFontScale(input.fontScale);
+  const sizes = widgetTypeScale("countdown", input.placement, {
+    fontScale: scale,
+    showHeader: input.showHeader ?? true,
+  });
+  const width = Math.max(0, input.box.width);
+  const height = input.box.height;
+  const title = sizes.title!;
+  const resource = sizes.resource!;
+  const target = sizes.any!;
+  const unitMin = sizes.change!;
+  const valueMin = sizes.valueMin!;
+  const heading = sizes.heading!;
+
+  const parts = labelParts(input.label);
+  const titleLines = Math.min(
+    STUDIO_LABEL_MAX_LINES,
+    Math.max(1, wrappedLineCount(parts.title, width, title, "semibold")),
+  );
+  const resourceLines =
+    parts.resource === null
+      ? 0
+      : Math.min(
+          STUDIO_LABEL_MAX_LINES,
+          Math.max(
+            1,
+            wrappedLineCount(parts.resource, width, resource, "semibold"),
+          ),
+        );
+  const labelHeight =
+    titleLines * title * COUNTDOWN_LINE_HEIGHT +
+    resourceLines * resource * COUNTDOWN_LINE_HEIGHT;
+  const targetHeight = COUNTDOWN_STACK_GAP + target * COUNTDOWN_LINE_HEIGHT;
+  const done = input.doneText !== null;
+
+  // What the target line needs beside the label and the smallest middle.
+  const middleMin = done ? heading * COUNTDOWN_LINE_HEIGHT : valueMin;
+  const showTarget =
+    input.target !== null &&
+    labelHeight + COUNTDOWN_STACK_GAP + middleMin + targetHeight <= height;
+  const middle =
+    height -
+    labelHeight -
+    COUNTDOWN_STACK_GAP -
+    (showTarget ? targetHeight : 0);
+
+  // The text when reached: heading size, wrapped, smaller only to fit.
+  let doneSize = heading;
+  let doneLines = 0;
+  if (done) {
+    const text = input.doneText ?? "";
+    const floor = Math.min(target, heading);
+    const linesAt = (size: number) =>
+      Math.max(1, wrappedLineCount(text, width, size, "semibold"));
+    doneSize = floor;
+    for (let size = heading; size > floor; size -= 1) {
+      if (linesAt(size) * size * COUNTDOWN_LINE_HEIGHT <= middle) {
+        doneSize = size;
+        break;
+      }
+    }
+    doneLines = linesAt(doneSize);
+  }
+
+  // The numbers: W(v) = a·v + b·max(unitMin, k·v) for the widest digits.
+  let numbers = 0;
+  let letters = 0;
+  for (const group of input.groups) {
+    numbers += estimateTextWidth(
+      group.value.replace(/\d/g, "0"),
+      1,
+      "semibold",
+    );
+    letters += estimateTextWidth(group.unit, 1);
+  }
+  const count = input.groups.length;
+  const a =
+    count === 0
+      ? 0
+      : numbers +
+        COUNTDOWN_UNIT_GAP * count +
+        COUNTDOWN_GROUP_GAP * (count - 1);
+  const b = letters;
+  const k = COUNTDOWN_UNIT_SHARE;
+  const valueMax = Math.max(valueMin, Math.min(sizes.valueMax!, middle));
+  let value = valueMax;
+  if (a > 0) {
+    const knee = unitMin / k;
+    const fit =
+      a * knee + b * unitMin <= width
+        ? width / (a + b * k)
+        : (width - b * unitMin) / a;
+    value = Math.max(valueMin, Math.min(valueMax, fit));
+  }
+  const unit = Math.max(unitMin, k * value);
+  return {
+    sizes: {
+      title,
+      resource,
+      target,
+      value,
+      unit,
+      done: doneSize,
+    },
+    titleLines,
+    resourceLines,
+    unitGap: COUNTDOWN_UNIT_GAP * value,
+    groupGap: COUNTDOWN_GROUP_GAP * value,
+    showTarget,
+    doneLines,
+  };
+}
+
 /** The module as one object, as ADR 0015 names it (`studioLayout.fits`). */
 export const studioLayout = {
   canvasUnit,
@@ -1693,4 +2049,7 @@ export const studioLayout = {
   compactNumber,
   zoneLabel,
   clockLayout,
+  zonedInstant,
+  countdownParts,
+  countdownLayout,
 } as const;

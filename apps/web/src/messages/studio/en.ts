@@ -73,7 +73,7 @@ export const studioEn = {
       add: "Add widget",
       hint: "Click to add it in the first free spot, or drag it onto the slide",
       addType:
-        "Add {type, select, metric {metric} line {line chart} bar {bar chart} table {table} compare {comparison} image {image} text {text} clock {clock} status {status board} other {widget}}",
+        "Add {type, select, metric {metric} line {line chart} bar {bar chart} table {table} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} other {widget}}",
     },
     assignTvs: {
       title: "Show “{name}” on TVs",
@@ -296,6 +296,13 @@ export const studioEn = {
       dateLong: "Long (Saturday, 4 October)",
       showZone: "Show time zone",
       zoneHelp: "City and UTC offset, such as Berlin · UTC+2.",
+      countdown: "Countdown",
+      countdownTarget: "Date and time",
+      countdownTargetHelp:
+        "Counts down to this moment in the time zone below. A date in the past still saves: the widget then shows its text.",
+      showTarget: "Show target",
+      doneText: "Text when reached",
+      doneTextHelp: "Up to 40 characters. Empty shows “Now”.",
       image: "Image",
       fit: "Fit",
       fitContain: "Whole image (contain)",
@@ -335,6 +342,10 @@ export const studioEn = {
       clockFits: "Everything the clock shows fits at 1080p",
       clockPartsHidden:
         "{hidden, select, zone {The time zone does not fit, so it is left out.} date {The date does not fit, so it is left out.} other {The date and time zone do not fit, so they are left out.}} A larger clock shows more.",
+      countdownPassed:
+        "The target has passed: screens show the text when reached. Pick a later date to count down again.",
+      countdownTargetHidden:
+        "Label fits at 1080p. The target line does not fit and is left out.",
     },
     readability: {
       titleCut: "The title is cut off on TVs.",
@@ -416,6 +427,8 @@ export const studioEn = {
         header_name_cut: "The dashboard name does not fit the header.",
         clock_parts_hidden:
           "{widget}: the date or time zone does not fit, so only part of the clock shows.",
+        countdown_passed:
+          "{widget}: the target has passed, so it shows its text when reached.",
         rows_cut: "{widget}: shows {shown} of {limit} rows.",
       },
       showInEditor: "Select in {primary}",
@@ -481,9 +494,9 @@ export const studioEn = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} table {Table} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} other {Widget}}",
+        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} table {Table} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} countdown {Countdown} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} compare {comparison} image {image} text {text} clock {clock} status {status board} other {widget}})",
+        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} other {widget}})",
       copyOf: "{name} (copy)",
       slide: "Slide {number}",
       quoted: "“{name}”",
@@ -495,9 +508,9 @@ export const studioEn = {
         widgetPlaced:
           "{name} {verb, select, duplicated {duplicated} pasted {pasted} other {added}} at column {column}, row {row}.",
         typeNoRoom:
-          "{type, select, metric {A metric} line {A line chart} bar {A bar chart} table {A table} compare {A comparison} image {An image} text {A text} clock {A clock} status {A status board} other {A widget}} needs at least {w} × {h} cells; there is no room for it here.",
+          "{type, select, metric {A metric} line {A line chart} bar {A bar chart} table {A table} compare {A comparison} image {An image} text {A text} clock {A clock} status {A status board} countdown {A countdown} other {A widget}} needs at least {w} × {h} cells; there is no room for it here.",
         typeChanged:
-          "{name} is now {type, select, metric {a metric} line {a line chart} bar {a bar chart} table {a table} compare {a comparison} image {an image} text {a text} clock {a clock} status {a status board} other {a widget}}.",
+          "{name} is now {type, select, metric {a metric} line {a line chart} bar {a bar chart} table {a table} compare {a comparison} image {an image} text {a text} clock {a clock} status {a status board} countdown {a countdown} other {a widget}}.",
         undone: "Undone.",
         redone: "Redone.",
         discarded: "Changes discarded.",

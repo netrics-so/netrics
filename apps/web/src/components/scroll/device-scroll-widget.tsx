@@ -18,6 +18,7 @@ import { useLocale } from "@/lib/i18n/client";
 import {
   ScrollBarCard,
   ScrollClockCard,
+  ScrollCountdownCard,
   ScrollImageCard,
   ScrollLineCard,
   ScrollMetricCard,
@@ -42,6 +43,24 @@ function DeviceScrollClock({
     <ScrollClockCard
       now={now}
       timeZone={widget.options.timeZone ?? env.timeZone}
+      options={widget.options}
+      {...size}
+    />
+  );
+}
+
+function DeviceScrollCountdown({
+  widget,
+  size,
+}: {
+  widget: Extract<DeviceWidget, { type: "countdown" }>;
+  size: ScrollCardSize;
+}) {
+  const now = useNow();
+  return (
+    <ScrollCountdownCard
+      now={now}
+      label={widget.label}
       options={widget.options}
       {...size}
     />
@@ -95,6 +114,8 @@ export function DeviceScrollWidget({
       );
     case "clock":
       return <DeviceScrollClock widget={widget} env={env} size={size} />;
+    case "countdown":
+      return <DeviceScrollCountdown widget={widget} size={size} />;
     case "text":
       return <ScrollTextCard text={widget.text} options={widget.options} />;
     case "image":

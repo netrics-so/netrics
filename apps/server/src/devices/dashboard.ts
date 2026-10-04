@@ -5,6 +5,7 @@ import {
   barWidgetOptionsSchema,
   clockWidgetOptionsSchema,
   compareWidgetOptionsSchema,
+  countdownWidgetOptionsSchema,
   imageWidgetOptionsSchema,
   lineWidgetOptionsSchema,
   metricWidgetOptionsSchema,
@@ -54,9 +55,11 @@ import {
   STUDIO_MIN_WIDGET_SIZE,
   amountCurrency,
   compareRatioUnit,
+  countdownLabel,
   isBuiltinThemeKey,
   isScreenFormat,
   slideLayoutFor,
+  zonedInstant,
   type CustomLayout,
   type LayoutWidget,
   type ScreenFormat,
@@ -937,6 +940,33 @@ async function buildSlides(
             ...(showZone ? { showZone } : {}),
           },
         });
+      } else if (widget.type === "countdown") {
+        // ADR 0019 section 8: the target resolved to an instant once, so
+        // screens count down from their own clock and the payload (and its
+        // version) never changes with time.
+        // Options that do not parse (never stored by the API) leave it out.
+        const countdown = countdownWidgetOptionsSchema.safeParse(
+          widget.options,
+        ).data;
+        const zone = countdown?.timeZone ?? timeZone;
+        const targetAt = countdown
+          ? zonedInstant(countdown.target, zone)
+          : null;
+        if (countdown && targetAt !== null) {
+          widgets.push({
+            type: "countdown",
+            ...placement,
+            label: countdownLabel(
+              widget.title,
+              options.locale ?? DEFAULT_LOCALE,
+            ),
+            options: {
+              ...countdown,
+              timeZone: zone,
+              targetAt: targetAt.toISOString(),
+            },
+          });
+        }
       }
     }
     const background = imageRef(slide.backgroundImageId);

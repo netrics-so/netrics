@@ -1,12 +1,16 @@
 import type { DashboardWidget } from "@netrics/contracts";
 import {
   clockLayout,
+  countdownLayout,
+  countdownUnits,
   isDataWidgetType,
+  zonedInstant,
   periodLabel,
   type Locale,
 } from "@netrics/domain";
 
 import { webTranslator } from "./i18n/catalogs";
+import { countdownTargetLine } from "./studio-countdown";
 import type { UnreadableLabel } from "./studio-readability";
 import { contentBox, metricWidgetLayout } from "./studio-render";
 
@@ -68,8 +72,10 @@ export function fitCheck(input: {
   fontScale: number;
   showHeader: boolean;
   locale: Locale;
-  /** The workspace's time zone, for a clock without its own. */
+  /** The workspace's time zone, for a clock or countdown without its own. */
   timeZone?: string;
+  /** Now, for a countdown whose target has passed (default: the call's). */
+  now?: Date;
 }): FitCheck | null {
   const { widget, unreadable, locale } = input;
   const t = webTranslator(locale, "studio.fit");
@@ -97,6 +103,37 @@ export function fitCheck(input: {
     const hidden =
       dateHidden && zoneHidden ? "both" : dateHidden ? "date" : "zone";
     return { state: "partial", text: t("clockPartsHidden", { hidden }) };
+  }
+  if (widget.type === "countdown") {
+    // ADR 0019 section 8: a past target saves; the inspector says what
+    // screens show, and whether the target line has room.
+    const now = input.now ?? new Date();
+    const timeZone = widget.options.timeZone ?? input.timeZone ?? "UTC";
+    const targetAt = zonedInstant(widget.options.target, timeZone);
+    if (targetAt !== null && targetAt.getTime() <= now.getTime()) {
+      return { state: "partial", text: t("countdownPassed") };
+    }
+    if (widget.options.showTarget && targetAt !== null) {
+      const units = countdownUnits(locale);
+      const layout = countdownLayout({
+        placement: widget,
+        box: contentBox(widget, input.showHeader),
+        fontScale: input.fontScale,
+        showHeader: input.showHeader,
+        label: input.label,
+        groups: [
+          { value: "0", unit: units.d },
+          { value: "00", unit: units.h },
+          { value: "00", unit: units.m },
+        ],
+        target: countdownTargetLine(targetAt, timeZone, locale, now),
+        doneText: null,
+      });
+      if (!layout.showTarget) {
+        return { state: "partial", text: t("countdownTargetHidden") };
+      }
+    }
+    return { state: "fits", text: t("labelFits") };
   }
   if (widget.type === "text") {
     return { state: "fits", text: t("textFits") };
