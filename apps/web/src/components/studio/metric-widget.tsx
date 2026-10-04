@@ -5,16 +5,21 @@ import type {
   MetricPeriod,
   WorkspaceMetric,
 } from "@netrics/contracts";
-import { tileLabel, type StudioPlacement } from "@netrics/domain";
+import {
+  aggregationName,
+  tileLabel,
+  type Locale,
+  type StudioPlacement,
+} from "@netrics/domain";
 
 import { Sparkline } from "@/components/sparkline";
 import type { TileMetric, TileReading } from "@/components/tile-view";
+import { useLocale, useT } from "@/lib/i18n/client";
 import {
-  AGGREGATION_LABELS,
-  COMPARISON_LABELS,
-  PERIOD_LABELS,
   aggregationLabel,
+  comparisonLabel,
   displayUnit,
+  periodLabel,
   formatChange,
   formatCompactValue,
   formatValue,
@@ -25,6 +30,7 @@ import {
   type DataWidget,
   type StudioEnv,
 } from "@/lib/studio-widgets";
+import { webTranslator } from "@/lib/i18n/catalogs";
 import { connectionNotice } from "@/lib/tile-status";
 
 import { useMetricData } from "./use-widget-data";
@@ -56,15 +62,18 @@ export interface MetricWidgetViewProps {
  */
 export function MetricWidgetView(props: MetricWidgetViewProps) {
   const { reading, metric, period } = props;
+  const locale = useLocale();
+  const t = useT("screen.widget");
   const change = reading
     ? formatChange(
         reading.delta,
         reading.ratio,
         reading.unit,
         metric?.better ?? "higher",
+        locale,
       )
     : null;
-  const comparison = COMPARISON_LABELS[period];
+  const comparison = comparisonLabel(period, locale);
   const changeLine = !props.options.showChange
     ? null
     : !reading
@@ -77,28 +86,28 @@ export function MetricWidgetView(props: MetricWidgetViewProps) {
           }
         : reading.value === null
           ? {
-              full: "No data for this period yet",
-              short: "No data yet",
+              full: t("noDataYet"),
+              short: t("noDataShort"),
               comparison: null,
             }
           : {
-              full: `No data to compare ${comparison}`,
-              short: "No comparison",
+              full: t("noComparison", { comparison }),
+              short: t("noComparisonShort"),
               comparison: null,
             };
-  const periodText = `${PERIOD_LABELS[period]} · ${
+  const periodText = `${periodLabel(period, locale)} · ${
     metric
-      ? aggregationLabel(props.aggregation, metric)
-      : AGGREGATION_LABELS[props.aggregation]
+      ? aggregationLabel(props.aggregation, metric, locale)
+      : aggregationName(props.aggregation, null, locale)
   }`;
   const approx = reading?.approximate && reading.value !== null ? "≈ " : "";
   const full = reading
-    ? `${approx}${formatValue(reading.value, reading.unit)}`
+    ? `${approx}${formatValue(reading.value, reading.unit, locale)}`
     : props.loading
       ? "…"
       : "—";
   const compact = reading
-    ? `${approx}${formatCompactValue(reading.value, reading.unit)}`
+    ? `${approx}${formatCompactValue(reading.value, reading.unit, locale)}`
     : full;
   const layout = metricWidgetLayout({
     label: props.label,
@@ -196,9 +205,11 @@ export function dataNotice(
   error: string | null,
   hasData: boolean,
   stale: string | null,
+  locale: Locale = "en",
 ): string | null {
   if (error) {
-    return hasData ? "Refresh failed" : "Could not load";
+    const t = webTranslator(locale, "screen.widget");
+    return hasData ? t("refreshFailed") : t("couldNotLoad");
   }
   return stale;
 }
@@ -212,6 +223,7 @@ export function LiveMetricWidget({
   env: StudioEnv;
 }) {
   const { data, error, loading } = useMetricData(env.workspaceId, widget);
+  const locale = useLocale();
   const metric = env.metrics.get(metricKeyOf(widget));
   const connection = env.connections[widget.connectionId];
   const unit = displayUnit(
@@ -237,7 +249,12 @@ export function LiveMetricWidget({
             }
           : null
       }
-      notice={dataNotice(error, data !== null, connectionNotice(connection))}
+      notice={dataNotice(
+        error,
+        data !== null,
+        connectionNotice(connection, Date.now(), locale),
+        locale,
+      )}
       source={connection?.name ?? null}
       placement={widget}
       showHeader={env.showHeader}

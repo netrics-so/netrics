@@ -745,12 +745,15 @@ public struct DeviceDashboardV2: Codable, Sendable, Equatable {
     /** Enabled slides only, in order. */
     public var slides: [DeviceSlide]
     public var images: [DeviceImage]
+    /** The language of the labels (ADR 0016); nil from servers before it (English). */
+    public var locale: String?
 
     public init(
         version: String, refreshAfterSec: Int = 60, timeZone: String = "UTC", dashboard: Info?,
         theme: DashboardTheme = .fallback, rotation: SlideRotationSettings = .init(), slides: [DeviceSlide],
-        images: [DeviceImage] = []
+        images: [DeviceImage] = [], locale: String? = nil
     ) {
+        self.locale = locale
         self.version = version
         schema = 2
         self.refreshAfterSec = refreshAfterSec
@@ -763,7 +766,7 @@ public struct DeviceDashboardV2: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, schema, refreshAfterSec, timeZone, dashboard, theme, rotation, slides, images
+        case version, schema, refreshAfterSec, timeZone, locale, dashboard, theme, rotation, slides, images
     }
 
     public init(from decoder: Decoder) throws {
@@ -775,12 +778,16 @@ public struct DeviceDashboardV2: Codable, Sendable, Equatable {
         }
         refreshAfterSec = c.lenient(Int.self, .refreshAfterSec) ?? 60
         timeZone = c.lenient(String.self, .timeZone) ?? "UTC"
+        locale = c.lenient(String.self, .locale)
         dashboard = c.lenient(Info.self, .dashboard)
         theme = c.lenient(DashboardTheme.self, .theme) ?? .fallback
         rotation = c.lenient(SlideRotationSettings.self, .rotation) ?? .init()
         slides = try c.decode(LossyArray<DeviceSlide>.self, forKey: .slides).elements
         images = c.lossyArray(DeviceImage.self, .images)
     }
+
+    /** The language of the labels; English when the server sent none. */
+    public var language: ScreenLanguage { ScreenLanguage(tag: locale) }
 
     /** The image with this id, if the payload lists it. */
     public func image(_ id: String?) -> DeviceImage? {
@@ -823,6 +830,14 @@ public enum DashboardPayload: Codable, Sendable, Equatable {
         switch self {
         case .v1(let payload): return payload.timeZone
         case .v2(let payload): return payload.timeZone
+        }
+    }
+
+    /** The language the server labelled the payload in (ADR 0016). */
+    public var language: ScreenLanguage {
+        switch self {
+        case .v1(let payload): return payload.language
+        case .v2(let payload): return payload.language
         }
     }
 

@@ -15620,6 +15620,10 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "locale": {
+                          "type": "string",
+                          "pattern": "^[a-z]{2,3}$"
                         }
                       },
                       "required": [
@@ -15652,6 +15656,10 @@
                         "timeZone": {
                           "type": "string",
                           "minLength": 1
+                        },
+                        "locale": {
+                          "type": "string",
+                          "pattern": "^[a-z]{2,3}$"
                         },
                         "dashboard": {
                           "anyOf": [

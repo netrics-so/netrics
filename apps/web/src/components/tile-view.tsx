@@ -8,14 +8,16 @@ import type {
   WorkspaceMetric,
 } from "@netrics/contracts";
 
+import { aggregationName } from "@netrics/domain";
+
 import {
-  AGGREGATION_LABELS,
-  COMPARISON_LABELS,
   aggregationLabel,
-  PERIOD_LABELS,
+  comparisonLabel,
   formatChange,
   formatValue,
+  periodLabel,
 } from "@/lib/format-metric";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 import { Sparkline, type SparkPoint } from "./sparkline";
 
@@ -71,14 +73,18 @@ export function TileView({
   /** "tv": sized by its grid cell for reading at a distance (#52). */
   variant?: "default" | "tv";
 }) {
+  const locale = useLocale();
+  const t = useT("screen.widget");
   const change = reading
     ? formatChange(
         reading.delta,
         reading.ratio,
         reading.unit,
         metric?.better ?? "higher",
+        locale,
       )
     : null;
+  const comparison = comparisonLabel(period, locale);
 
   return (
     <article
@@ -88,10 +94,10 @@ export function TileView({
       <header className="tile-header">
         <h3 className="tile-label">{label}</h3>
         <span className="tile-period">
-          {PERIOD_LABELS[period]} ·{" "}
+          {periodLabel(period, locale)} ·{" "}
           {metric
-            ? aggregationLabel(aggregation, metric)
-            : AGGREGATION_LABELS[aggregation]}
+            ? aggregationLabel(aggregation, metric, locale)
+            : aggregationName(aggregation, null, locale)}
         </span>
       </header>
 
@@ -99,27 +105,25 @@ export function TileView({
         <>
           <div className="tile-value">
             {reading.approximate && reading.value !== null ? (
-              <span className="tile-approx" title="Approximate">
+              <span className="tile-approx" title={t("approximate")}>
                 ≈{" "}
               </span>
             ) : null}
-            {formatValue(reading.value, reading.unit)}
+            {formatValue(reading.value, reading.unit, locale)}
           </div>
           {note}
           {change ? (
             <div className={`tile-change ${change.tone}`}>
               <span aria-hidden="true">{ARROWS[change.direction]}</span>{" "}
               {change.text}{" "}
-              <span className="tile-comparison">
-                {COMPARISON_LABELS[period]}
-              </span>
+              <span className="tile-comparison">{comparison}</span>
             </div>
           ) : (
             <div className="tile-change flat">
               <span className="tile-comparison">
                 {reading.value === null
-                  ? "No data for this period yet"
-                  : `No data to compare ${COMPARISON_LABELS[period]}`}
+                  ? t("noDataYet")
+                  : t("noComparison", { comparison })}
               </span>
             </div>
           )}
@@ -142,13 +146,14 @@ export function TileView({
 /** A warning in a tile's footer: the numbers may be out of date. */
 export function TileNotice({
   children,
-  title = "The numbers may be out of date",
+  title,
 }: {
   children: ReactNode;
   title?: string;
 }) {
+  const t = useT("screen.widget");
   return (
-    <span className="tile-stale" title={title}>
+    <span className="tile-stale" title={title ?? t("mayBeOutdated")}>
       <span aria-hidden="true">⚠</span> {children}
     </span>
   );

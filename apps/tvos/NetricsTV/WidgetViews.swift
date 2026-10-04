@@ -101,11 +101,11 @@ struct NoticeLine: View {
 }
 
 /** A data widget's notice: its connection's state, or that it could not load. */
-func dataNotice(status: DeviceTileStatus, updatedAt: String?, unit: String?) -> String? {
-    if let notice = TileNotices.notice(status: status, updatedAt: updatedAt) {
+func dataNotice(status: DeviceTileStatus, updatedAt: String?, unit: String?, language: ScreenLanguage) -> String? {
+    if let notice = TileNotices.notice(status: status, updatedAt: updatedAt, language: language) {
         return notice
     }
-    return unit == nil ? "Could not load" : nil
+    return unit == nil ? KitStrings.text(.couldNotLoad, language) : nil
 }
 
 // MARK: Metric
@@ -121,10 +121,11 @@ struct MetricWidgetView: View {
         let tile = data.tile(id: "", label: label)
         let unit = data.unit ?? "count"
         let approx = data.conversion != nil && data.value != nil ? "≈ " : ""
-        let full = data.unit == nil ? "—" : approx + MetricFormat.value(data.value, unit: unit)
-        let compact = data.unit == nil ? "—" : approx + MetricFormat.compactValue(data.value, unit: unit)
-        let change = MetricFormat.change(delta: data.change.delta, ratio: data.change.ratio, unit: unit)
-        let comparison = MetricFormat.comparisonLabel(data.period)
+        let full = data.unit == nil ? "—" : approx + MetricFormat.value(data.value, unit: unit, language: env.language)
+        let compact = data.unit == nil ? "—" : approx + MetricFormat.compactValue(data.value, unit: unit, language: env.language)
+        let change = MetricFormat.change(
+            delta: data.change.delta, ratio: data.change.ratio, unit: unit, language: env.language)
+        let comparison = MetricFormat.comparisonLabel(data.period, language: env.language)
         let changeLine: (full: String, short: String, comparison: String?)? =
             !options.showChange || data.unit == nil
             ? nil
@@ -132,12 +133,15 @@ struct MetricWidgetView: View {
                 ("\($0.direction.arrow) \($0.text) \(comparison)", "\($0.direction.arrow) \($0.text)", comparison)
             }
                 ?? (data.value == nil
-                    ? ("No data for this period yet", "No data yet", nil)
-                    : ("No data to compare \(comparison)", "No comparison", nil))
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit)
-        let note = ConversionFormat.note(data.conversion)
+                    ? (KitStrings.text(.noDataForPeriod, env.language), KitStrings.text(.noDataYet, env.language), nil)
+                    : (
+                        KitStrings.text(.noDataToCompare, env.language, comparison),
+                        KitStrings.text(.noComparison, env.language), nil
+                    ))
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: env.language)
+        let note = ConversionFormat.note(data.conversion, language: env.language)
         let layout = StudioRender.metricLayout(
-            label: label, value: (full, compact), periodText: MetricFormat.subtitle(tile), change: changeLine,
+            label: label, value: (full, compact), periodText: MetricFormat.subtitle(tile, language: env.language), change: changeLine,
             notice: notice, note: note, placement: placement, showHeader: env.showHeader, fontScale: env.fontScale,
             showSparkline: options.showSparkline && Sparkline.isDrawable(data.spark))
         let tone = change.map { MetricFormat.tone($0.direction, better: data.better) } ?? .flat
@@ -145,7 +149,7 @@ struct MetricWidgetView: View {
         VStack(alignment: .leading, spacing: 0) {
             WidgetLabelView(layout: layout.label, env: env)
             if layout.showPeriod {
-                Text(MetricFormat.subtitle(tile))
+                Text(MetricFormat.subtitle(tile, language: env.language))
                     .font(env.font(layout.small))
                     .foregroundStyle(env.colors.muted)
                     .lineLimit(2)
@@ -246,9 +250,9 @@ struct LineWidgetView: View {
     var body: some View {
         let unit = data.unit ?? "count"
         let approx = data.conversion != nil && data.value != nil ? "≈ " : ""
-        let full = data.unit == nil ? "—" : approx + MetricFormat.value(data.value, unit: unit)
-        let compact = data.unit == nil ? "—" : approx + MetricFormat.compactValue(data.value, unit: unit)
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit)
+        let full = data.unit == nil ? "—" : approx + MetricFormat.value(data.value, unit: unit, language: env.language)
+        let compact = data.unit == nil ? "—" : approx + MetricFormat.compactValue(data.value, unit: unit, language: env.language)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: env.language)
         let layout = StudioRender.chartLayout(
             type: .line, label: label, value: (full, compact), notice: notice, placement: placement,
             showHeader: env.showHeader, fontScale: env.fontScale)
@@ -271,7 +275,7 @@ struct LineWidgetView: View {
                     unit: unit, env: env, timeZone: env.timeZone)
                 .frame(maxHeight: .infinity)
             } else {
-                Text(data.unit == nil ? "" : "No data for this period yet")
+                Text(data.unit == nil ? "" : KitStrings.text(.noDataForPeriod, env.language))
                     .font(env.font(layout.small))
                     .foregroundStyle(env.colors.muted)
                 Spacer(minLength: 0)
@@ -349,9 +353,9 @@ struct LineChartView: View {
             VStack(spacing: env.pt(8)) {
                 HStack(alignment: .top, spacing: env.pt(12)) {
                     VStack(alignment: .trailing) {
-                        Text(MetricFormat.compactValue(domain.upperBound, unit: unit))
+                        Text(MetricFormat.compactValue(domain.upperBound, unit: unit, language: env.language))
                         Spacer(minLength: 0)
-                        Text(MetricFormat.compactValue(domain.lowerBound, unit: unit))
+                        Text(MetricFormat.compactValue(domain.lowerBound, unit: unit, language: env.language))
                     }
                     .font(font)
                     .foregroundStyle(colors.muted)
@@ -359,10 +363,10 @@ struct LineChartView: View {
                     chart
                 }
                 HStack {
-                    Text(data.buckets.first.flatMap { MetricFormat.bucketLabel($0, period: data.period, timeZone: timeZone) } ?? "")
+                    Text(data.buckets.first.flatMap { MetricFormat.bucketLabel($0, period: data.period, timeZone: timeZone, language: env.language) } ?? "")
                     Spacer(minLength: env.pt(12))
                     if data.buckets.count > 1 {
-                        Text(data.buckets.last.flatMap { MetricFormat.bucketLabel($0, period: data.period, timeZone: timeZone) } ?? "")
+                        Text(data.buckets.last.flatMap { MetricFormat.bucketLabel($0, period: data.period, timeZone: timeZone, language: env.language) } ?? "")
                     }
                 }
                 .font(env.font(axisSize))
@@ -386,18 +390,19 @@ struct BarWidgetView: View {
     var body: some View {
         let unit = data.unit ?? "count"
         let approx = data.conversion != nil ? "≈ " : ""
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: env.language)
         let layout = StudioRender.chartLayout(
             type: .bar, label: label, value: nil, notice: notice, placement: placement, showHeader: env.showHeader,
             fontScale: env.fontScale)
         let bars = StudioRender.barLayout(
             bars: data.bars, others: data.others, width: layout.chartWidth, height: layout.chartHeight,
-            size: layout.resource, format: { approx + MetricFormat.value($0, unit: unit) })
+            size: layout.resource, format: { approx + MetricFormat.value($0, unit: unit, language: env.language) },
+            othersLabel: KitStrings.text(.others, env.language))
 
         VStack(alignment: .leading, spacing: 0) {
             WidgetLabelView(layout: layout.label, env: env)
             if bars.rows.isEmpty {
-                Text(data.unit == nil ? "—" : "No data for this period yet")
+                Text(data.unit == nil ? "—" : KitStrings.text(.noDataForPeriod, env.language))
                     .font(env.font(layout.small))
                     .foregroundStyle(env.colors.muted)
                 Spacer(minLength: 0)
@@ -623,7 +628,9 @@ struct ClockWidgetView: View {
     var body: some View {
         TimelineView(.everyMinute) { context in
             let zone = options.timeZone ?? env.timeZone
-            let text = TVTime.clockWidget(context.date, timeZone: zone, hour12: options.hour12, showDate: options.showDate)
+            let text = TVTime.clockWidget(
+                context.date, timeZone: zone, hour12: options.hour12, showDate: options.showDate,
+                language: env.language)
             let sizes = StudioRender.clockSize(
                 time: text.time, hasDate: text.date != nil, placement: placement, fontScale: env.fontScale,
                 showHeader: env.showHeader)

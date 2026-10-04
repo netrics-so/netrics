@@ -1,3 +1,6 @@
+import { sharedTranslator } from "./i18n/shared/index.js";
+import type { Locale } from "./i18n/locale.js";
+
 /**
  * Metric semantics for dashboards and the TV endpoint (#48): which
  * aggregations fit which metric kind, which time windows a tile can show, and
@@ -681,36 +684,42 @@ export function rankBreakdown(
 
 /** Dimensions whose values are ISO 3166-1 alpha-2 region codes. */
 const REGION_DIMENSIONS = new Set(["territory", "country"]);
-let regionNames: Intl.DisplayNames | null | undefined;
+const regionNames = new Map<Locale, Intl.DisplayNames | null>();
+
+function regionNamesIn(locale: Locale): Intl.DisplayNames | null {
+  if (!regionNames.has(locale)) {
+    try {
+      regionNames.set(
+        locale,
+        new Intl.DisplayNames([locale], { type: "region", fallback: "none" }),
+      );
+    } catch {
+      regionNames.set(locale, null);
+    }
+  }
+  return regionNames.get(locale) ?? null;
+}
 
 /**
  * A breakdown group's label: a resource's discovered name, a territory's or
- * country's English name ("DE" → "Germany"), else the value itself.
+ * country's name in the given language ("DE" → "Germany", "Deutschland"),
+ * else the value itself.
  */
 export function dimensionValueLabel(
   dimension: string,
   value: string,
   resourceName?: string | null,
+  locale: Locale = "en",
 ): string {
   if (resourceName) {
     return resourceName;
   }
   if (value === "") {
-    return "(none)";
+    return sharedTranslator(locale)("none");
   }
   if (REGION_DIMENSIONS.has(dimension) && /^[A-Z]{2}$/.test(value)) {
-    if (regionNames === undefined) {
-      try {
-        regionNames = new Intl.DisplayNames(["en"], {
-          type: "region",
-          fallback: "none",
-        });
-      } catch {
-        regionNames = null;
-      }
-    }
     try {
-      return regionNames?.of(value) ?? value;
+      return regionNamesIn(locale)?.of(value) ?? value;
     } catch {
       return value;
     }

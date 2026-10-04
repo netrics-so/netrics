@@ -51,11 +51,12 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        let language = model.language
         ZStack {
             Theme.background.ignoresSafeArea()
             switch model.route {
             case .launching:
-                MessageView(title: "netrics", text: "Loading…")
+                MessageView(title: "netrics", text: L10n.tr("Loading…", language))
             case .connectingCloud:
                 ConnectingCloudView()
             case .ownServer:
@@ -64,12 +65,16 @@ struct RootView: View {
                 DeviceView()
             }
         }
+        // Chrome and numbers in the screen language (ADR 0016).
+        .environment(\.screenLanguage, language)
+        .environment(\.locale, language.locale)
     }
 }
 
 /** What a paired or pairing TV shows, by the client's phase. */
 struct DeviceView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.screenLanguage) private var language
     @State private var showSettings = false
 
     var body: some View {
@@ -77,11 +82,12 @@ struct DeviceView: View {
         Group {
             switch state.phase {
             case .starting, .unpaired:
-                MessageView(title: "netrics", text: "Loading…")
+                MessageView(title: "netrics", text: L10n.tr("Loading…", language))
             case .pairing:
                 PairingView(state: state, openSettings: { showSettings = true })
             case .blocked(let message):
-                BlockedView(message: message, openSettings: { showSettings = true })
+                BlockedView(
+                    message: KitStrings.translate(message, to: language), openSettings: { showSettings = true })
             case .paired:
                 if let payload = state.payload {
                     if let v2 = state.dashboardV2, v2.dashboard != nil {
@@ -95,16 +101,20 @@ struct DeviceView: View {
                             .remoteSettingsGesture { showSettings = true }
                     } else {
                         MessageView(
-                            title: "No dashboard assigned yet",
-                            text: "Choose one under TVs in netrics; this screen picks it up on its own.",
+                            title: L10n.tr("No dashboard assigned yet", language),
+                            text: L10n.tr(
+                                "Choose one under TVs in netrics; this screen picks it up on its own.", language),
                             marker: state.offline
-                                ? TVTime.offlineMarker(updatedAt: state.updatedAt, timeZone: payload.timeZone)
+                                ? TVTime.offlineMarker(
+                                    updatedAt: state.updatedAt, timeZone: payload.timeZone, language: language)
                                 : nil
                         )
                         .remoteSettingsGesture { showSettings = true }
                     }
                 } else {
-                    MessageView(title: "netrics", text: state.offline ? "Connecting to netrics…" : "Loading…")
+                    MessageView(
+                        title: "netrics",
+                        text: L10n.tr(state.offline ? "Connecting to netrics…" : "Loading…", language))
                         .remoteSettingsGesture { showSettings = true }
                 }
             }
@@ -165,12 +175,13 @@ struct MessageView: View {
 
 /** The pinned certificate changed: stop and warn instead of connecting. */
 struct BlockedView: View {
+    @Environment(\.screenLanguage) private var language
     let message: String
     let openSettings: () -> Void
 
     var body: some View {
         VStack(spacing: 40) {
-            Text("⚠ Connection stopped")
+            Text(L10n.tr("⚠ Connection stopped", language))
                 .font(.system(size: 56, weight: .semibold))
                 .foregroundStyle(Theme.warning)
             Text(message)
@@ -178,7 +189,7 @@ struct BlockedView: View {
                 .foregroundStyle(Theme.text)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 1400)
-            Button("Settings", action: openSettings)
+            Button(L10n.tr("Settings", language), action: openSettings)
         }
         .padding(80)
     }

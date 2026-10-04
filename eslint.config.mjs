@@ -80,6 +80,13 @@ export const I18N_FILES = [
   "apps/web/src/components/nav.tsx",
   "apps/web/src/app/settings/account/**/*.tsx",
   "apps/web/src/app/workspaces/[[]workspaceId]/settings/screen-language-form.tsx",
+  // Screens (#256): the kiosk, the signed-in TV mode and what they draw.
+  "apps/web/src/app/kiosk/**/*.tsx",
+  "apps/web/src/app/workspaces/[[]workspaceId]/dashboards/[[]dashboardId]/tv/**/*.tsx",
+  "apps/web/src/components/tv-frame.tsx",
+  "apps/web/src/components/tile-view.tsx",
+  "apps/web/src/components/sparkline.tsx",
+  "apps/web/src/components/studio/**/*.tsx",
 ];
 
 function i18nRestrictions() {

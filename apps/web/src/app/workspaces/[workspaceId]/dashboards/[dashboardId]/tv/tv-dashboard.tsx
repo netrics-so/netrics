@@ -8,6 +8,7 @@ import type { Dashboard, WorkspaceMetric } from "@netrics/contracts";
 import { LiveWidget, useOffline } from "@/components/studio/slide-canvas";
 import { SlidePlayer } from "@/components/studio/slide-player";
 import { useIdle } from "@/components/tv-frame";
+import { useT } from "@/lib/i18n/client";
 import { documentRotation } from "@/lib/slide-rotation";
 import { themeStyle, type ResolvedTheme } from "@/lib/studio-theme";
 import {
@@ -47,6 +48,7 @@ export function TvDashboard({
   useServerRefresh();
   const idle = useIdle();
   const offline = useOffline();
+  const t = useT("screen.tv");
   const { settings } = dashboard;
 
   const env: StudioEnv = useMemo(
@@ -98,19 +100,14 @@ export function TvDashboard({
         }}
         images={env.images}
         renderWidget={(widget) => <LiveWidget widget={widget} env={env} />}
-        empty={
-          <p className="tv-empty">
-            Every slide is hidden. Show at least one slide to play this
-            dashboard.
-          </p>
-        }
+        empty={<p className="tv-empty">{t("allHidden")}</p>}
       />
       <div className="slide-screen-status">
         <Link
           className="tv-exit"
           href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}`}
         >
-          Exit TV mode
+          {t("exit")}
         </Link>
       </div>
     </div>

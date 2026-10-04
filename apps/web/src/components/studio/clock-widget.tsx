@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { fitTextSize, type StudioPlacement } from "@netrics/domain";
 
+import { useLocale } from "@/lib/i18n/client";
 import { clockText, msUntilNextMinute } from "@/lib/studio-clock";
 import {
   LINE_HEIGHT,
@@ -45,7 +46,9 @@ export interface ClockWidgetViewProps {
  * allows (at least 56 units), and the date below it.
  */
 export function ClockWidgetView(props: ClockWidgetViewProps) {
+  const locale = useLocale();
   const text = clockText(props.now, {
+    locale,
     timeZone: props.timeZone,
     hour12: props.options.hour12,
     showDate: props.options.showDate,

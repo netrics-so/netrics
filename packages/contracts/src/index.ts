@@ -2097,6 +2097,13 @@ export const deviceTileSchema = z.object({
 });
 export type DeviceTile = z.infer<typeof deviceTileSchema>;
 
+/**
+ * The language of a device payload's labels (ADR 0016 section 3), a
+ * language tag such as "de". Screens format numbers, dates and their own
+ * text in it, and fall back to English for a language they do not know.
+ */
+export const deviceLocaleSchema = z.string().regex(/^[a-z]{2,3}$/);
+
 export const deviceDashboardResponseSchema = z.object({
   /** Hash of the content below; also the ETag. */
   version: z.string().min(1),
@@ -2106,6 +2113,12 @@ export const deviceDashboardResponseSchema = z.object({
   /** Null when no dashboard is assigned; tiles is then empty. */
   dashboard: z.object({ id: z.uuid(), name: z.string().min(1) }).nullable(),
   tiles: z.array(deviceTileSchema),
+  /**
+   * The language the labels are in (ADR 0016): the workspace's screen
+   * language. Present only when it is not English, so an English payload
+   * stays byte for byte what screens got before; absent means "en".
+   */
+  locale: deviceLocaleSchema.optional(),
 });
 export type DeviceDashboardResponse = z.infer<
   typeof deviceDashboardResponseSchema
@@ -2302,6 +2315,11 @@ export const deviceDashboardV2ResponseSchema = z.object({
   refreshAfterSec: z.number().int().positive(),
   /** The workspace's time zone, which the buckets follow. */
   timeZone: z.string().min(1),
+  /**
+   * The language the labels are in: the workspace's screen language, else
+   * the instance default, else "en" (ADR 0016). Servers before it omit it.
+   */
+  locale: deviceLocaleSchema.optional(),
   /** Null when no dashboard is assigned; `slides` is then empty. */
   dashboard: z
     .object({

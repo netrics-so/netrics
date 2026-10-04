@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 
+import { getT } from "@/lib/i18n/server";
+
 import { KioskView } from "./kiosk-view";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "netrics kiosk",
-  robots: { index: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("screen.kiosk");
+  return { title: t("title"), robots: { index: false } };
+}
 
 /**
  * A browser on any screen as a netrics TV (#59): pairs like the tvOS app

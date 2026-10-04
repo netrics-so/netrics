@@ -5,6 +5,7 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { Catalog, Locale } from "@netrics/domain";
 
 import {
+  WEB_CATALOGS,
   webTranslator,
   type WebMessages,
   type WebNamespace,
@@ -31,12 +32,15 @@ export function I18nProvider({
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
+/**
+ * English when there is no provider above: the root layout always gives
+ * one, so this only applies to components rendered on their own (unit
+ * tests of shared widgets).
+ */
+const ENGLISH: I18nContextValue = { locale: "en", messages: WEB_CATALOGS.en };
+
 function useI18n(): I18nContextValue {
-  const value = useContext(I18nContext);
-  if (!value) {
-    throw new Error("useT and useLocale need an I18nProvider above them");
-  }
-  return value;
+  return useContext(I18nContext) ?? ENGLISH;
 }
 
 export function useLocale(): Locale {

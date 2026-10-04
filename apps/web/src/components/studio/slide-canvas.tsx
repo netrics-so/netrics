@@ -16,6 +16,7 @@ import {
   type ThemeTokens,
 } from "@netrics/domain";
 
+import { useLocale, useT } from "@/lib/i18n/client";
 import { clockText } from "@/lib/studio-clock";
 import { u, widgetBoxStyle } from "@/lib/studio-render";
 import { themeStyle } from "@/lib/studio-theme";
@@ -62,11 +63,10 @@ export class WidgetBoundary extends Component<
 }
 
 export function WidgetFailed() {
+  const t = useT("screen.widget");
   return (
     <div className="sw sw-failed">
-      <WidgetNotice size={STUDIO_TEXT_MINIMUMS.any}>
-        This widget could not be shown
-      </WidgetNotice>
+      <WidgetNotice size={STUDIO_TEXT_MINIMUMS.any}>{t("failed")}</WidgetNotice>
     </div>
   );
 }
@@ -149,9 +149,10 @@ export function useOffline(): boolean {
 
 function HeaderClock({ timeZone }: { timeZone: string }) {
   const now = useNow();
+  const locale = useLocale();
   return (
     <time className="studio-header-clock" suppressHydrationWarning>
-      {clockText(now, { timeZone }).time}
+      {clockText(now, { timeZone, locale }).time}
     </time>
   );
 }
@@ -164,6 +165,7 @@ function SlideHeader({
   images: StudioImages;
 }) {
   const logo = header.logoImageId ? images.get(header.logoImageId) : null;
+  const t = useT("screen.widget");
   return (
     <header
       className="studio-header"
@@ -205,7 +207,7 @@ function SlideHeader({
       >
         {header.offline ? (
           <span className="studio-offline">
-            <span aria-hidden="true">⚠</span> Offline
+            <span aria-hidden="true">⚠</span> {t("offline")}
           </span>
         ) : null}
         <HeaderClock timeZone={header.timeZone} />

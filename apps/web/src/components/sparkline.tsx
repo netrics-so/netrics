@@ -5,6 +5,7 @@ import { useState, type PointerEvent } from "react";
 import type { MetricPeriod } from "@netrics/contracts";
 
 import { formatValue, sparkBucketLabel } from "@/lib/format-metric";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 export interface SparkPoint {
   /** The bucket's start; absent when only the values are known (devices). */
@@ -33,6 +34,8 @@ export function Sparkline({
   timeZone: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  const locale = useLocale();
+  const t = useT("screen.widget");
   const values = series
     .map((point) => point.value)
     .filter((value): value is number => value !== null);
@@ -83,12 +86,17 @@ export function Sparkline({
   }
 
   const hovered = hover === null ? null : series[hover]!;
-  const lastLabel = sparkBucketLabel(last.bucket, period, timeZone);
-  const summary =
-    `Trend from ${formatValue(min, unit)} to ${formatValue(max, unit)}, ` +
-    `latest ${formatValue(last.value, unit)}${lastLabel ? ` (${lastLabel})` : ""}.`;
+  const lastLabel = sparkBucketLabel(last.bucket, period, timeZone, locale);
+  const trend = {
+    min: formatValue(min, unit, locale),
+    max: formatValue(max, unit, locale),
+    latest: formatValue(last.value, unit, locale),
+  };
+  const summary = lastLabel
+    ? t("trendAt", { ...trend, date: lastLabel })
+    : t("trend", trend);
   const hoveredLabel = hovered
-    ? sparkBucketLabel(hovered.bucket, period, timeZone)
+    ? sparkBucketLabel(hovered.bucket, period, timeZone, locale)
     : null;
 
   return (
@@ -134,7 +142,7 @@ export function Sparkline({
       </div>
       <div className="sparkline-readout" aria-hidden="true">
         {hovered
-          ? `${hoveredLabel ? `${hoveredLabel}: ` : ""}${formatValue(hovered.value, unit)}`
+          ? `${hoveredLabel ? `${hoveredLabel}: ` : ""}${formatValue(hovered.value, unit, locale)}`
           : " "}
       </div>
     </div>

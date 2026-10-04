@@ -185,6 +185,7 @@ export async function buildApp(
     pairingUrl: config.pairingUrl,
     version: config.version,
     exchangeRates: config.exchangeRates,
+    defaultLocale: config.defaultLocale,
     ...(deps.devicePayloadCacheMs !== undefined
       ? { payloadCacheMs: deps.devicePayloadCacheMs }
       : {}),

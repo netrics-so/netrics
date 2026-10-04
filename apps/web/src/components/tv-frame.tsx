@@ -2,12 +2,18 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
+import { useLocale, useT } from "@/lib/i18n/client";
 import { tvGrid } from "@/lib/tv-grid";
 
 const IDLE_MS = 3000;
 
-function formatClock(timeZone: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+/** The screen clock's language: English keeps the British "Sat 4 Oct". */
+export function clockLocale(locale: string): string {
+  return locale === "en" ? "en-GB" : locale;
+}
+
+function formatClock(timeZone: string, locale: string): string {
+  return new Intl.DateTimeFormat(clockLocale(locale), {
     timeZone,
     weekday: "short",
     day: "numeric",
@@ -17,14 +23,21 @@ function formatClock(timeZone: string): string {
   }).format(new Date());
 }
 
-/** The time in the workspace's zone, updated every 15 seconds. */
+/**
+ * The time in the workspace's zone and the screen's language, updated
+ * every 15 seconds.
+ */
 export function useClock(timeZone: string): string {
-  const [now, setNow] = useState(() => formatClock(timeZone));
+  const locale = useLocale();
+  const [now, setNow] = useState(() => formatClock(timeZone, locale));
   useEffect(() => {
-    setNow(formatClock(timeZone));
-    const timer = setInterval(() => setNow(formatClock(timeZone)), 15_000);
+    setNow(formatClock(timeZone, locale));
+    const timer = setInterval(
+      () => setNow(formatClock(timeZone, locale)),
+      15_000,
+    );
     return () => clearInterval(timer);
-  }, [timeZone]);
+  }, [timeZone, locale]);
   return now;
 }
 
@@ -57,7 +70,7 @@ export function TvFrame({
   title,
   meta,
   tileCount,
-  emptyText = "This dashboard has no tiles yet.",
+  emptyText,
   children,
 }: {
   title: string;
@@ -67,6 +80,7 @@ export function TvFrame({
   children: ReactNode;
 }) {
   const idle = useIdle();
+  const t = useT("screen.kiosk");
   const { columns, rows } = tvGrid(tileCount);
 
   return (
@@ -76,7 +90,7 @@ export function TvFrame({
         <div className="tv-meta">{meta}</div>
       </header>
       {tileCount === 0 ? (
-        <p className="tv-empty">{emptyText}</p>
+        <p className="tv-empty">{emptyText ?? t("noTiles")}</p>
       ) : (
         <div
           className="tv-grid"

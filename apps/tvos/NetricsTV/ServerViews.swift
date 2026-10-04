@@ -8,6 +8,7 @@ import SwiftUI
  */
 struct ConnectingCloudView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.screenLanguage) private var language
 
     var body: some View {
         VStack(spacing: 48) {
@@ -17,10 +18,11 @@ struct ConnectingCloudView: View {
                 .foregroundStyle(Theme.text)
             StatusLine(
                 checking: model.cloudError == nil,
-                checkingText: "Connecting to netrics cloud…",
-                error: model.cloudError.map { "\($0)\nRetrying…" } ?? model.storageError)
+                checkingText: L10n.tr("Connecting to netrics cloud…", language),
+                error: model.cloudError.map { "\($0.message(in: language))\n\(L10n.tr("Retrying…", language))" }
+                    ?? model.storageError)
             Spacer()
-            Button("Use your own server") { model.switchToOwnServer() }
+            Button(L10n.tr("Use your own server", language)) { model.switchToOwnServer() }
                 .font(.system(size: 24))
         }
         .padding(.vertical, 60)
@@ -31,7 +33,7 @@ struct ConnectingCloudView: View {
 
 private struct StatusLine: View {
     let checking: Bool
-    var checkingText = "Checking the server…"
+    let checkingText: String
     let error: String?
 
     var body: some View {
@@ -56,6 +58,7 @@ private struct StatusLine: View {
 /** "Your own server": the address once, and the transport setting. */
 struct ServerEntryView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.screenLanguage) private var language
     @State private var address = DebugLaunch.server ?? ""
     @State private var allowInsecure = DebugLaunch.allowInsecure
     @State private var checking = false
@@ -63,10 +66,10 @@ struct ServerEntryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 36) {
-            Text("Your own server")
+            Text(L10n.tr("Your own server", language))
                 .font(.system(size: 56, weight: .semibold))
                 .foregroundStyle(Theme.text)
-            Text("Enter the address of your netrics server, as you open it in a browser.")
+            Text(L10n.tr("Enter the address of your netrics server, as you open it in a browser.", language))
                 .font(.system(size: 30))
                 .foregroundStyle(Theme.muted)
 
@@ -79,11 +82,12 @@ struct ServerEntryView: View {
 
             Toggle(isOn: $allowInsecure) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Allow insecure connections")
+                    Text(L10n.tr("Allow insecure connections", language))
                         .font(.system(size: 30, weight: .medium))
                     Text(
-                        "Not recommended. Allows plain HTTP to servers on your local network, and a self-signed certificate that is trusted on first use."
-                    )
+                        L10n.tr(
+                            "Not recommended. Allows plain HTTP to servers on your local network, and a self-signed certificate that is trusted on first use.",
+                            language))
                     .font(.system(size: 22))
                     .multilineTextAlignment(.leading)
                     .opacity(0.7)
@@ -97,13 +101,13 @@ struct ServerEntryView: View {
             Button {
                 Task { await check() }
             } label: {
-                Text("Connect").font(.system(size: 32, weight: .semibold)).padding(.horizontal, 40)
+                Text(L10n.tr("Connect", language)).font(.system(size: 32, weight: .semibold)).padding(.horizontal, 40)
             }
             .disabled(checking || address.trimmingCharacters(in: .whitespaces).isEmpty)
 
-            StatusLine(checking: checking, error: error)
+            StatusLine(checking: checking, checkingText: L10n.tr("Checking the server…", language), error: error)
 
-            Button("Use netrics cloud instead") { model.switchToCloud() }
+            Button(L10n.tr("Use netrics cloud instead", language)) { model.switchToCloud() }
                 .font(.system(size: 24))
                 .disabled(checking)
         }
@@ -129,15 +133,17 @@ struct ServerEntryView: View {
         case .success(let checked):
             model.use(checked)
         case .failure(let failure):
-            error = failure.message
+            error = failure.message(in: language)
         }
     }
 }
 
 /** Shown wherever the server is shown while the insecure setting is on. */
 struct InsecureBadge: View {
+    @Environment(\.screenLanguage) private var language
+
     var body: some View {
-        Text("⚠ Insecure connections allowed (not recommended)")
+        Text(L10n.tr("⚠ Insecure connections allowed (not recommended)", language))
             .font(.system(size: 24, weight: .medium))
             .foregroundStyle(Theme.warning)
     }

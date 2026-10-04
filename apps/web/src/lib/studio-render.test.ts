@@ -297,6 +297,135 @@ describe("metricWidgetLayout", () => {
     expect(wide.comparisonText).toBeNull();
   });
 
+  it("keeps German labels readable (#256)", () => {
+    // German is longer: "vs. vorherige 30 Tage", "Letzte 12 Monate ·
+    // Mittelwert", "Alle Ressourcen". The same rules keep the title, the
+    // value and the change readable, and the comparison on a line of its
+    // own when the change line would wrap.
+    const german = {
+      ...base,
+      label: "Downloads · Alle Ressourcen",
+      value: { full: "12.480", compact: "12,5K" },
+      periodText: "Letzte 30 Tage · Summe",
+      change: {
+        full: "▼ −28% vs. vorherige 30 Tage",
+        short: "▼ −28%",
+        comparison: "vs. vorherige 30 Tage",
+      },
+      placement: { x: 0, y: 0, w: 3, h: 4 },
+    };
+    for (const fontScale of [1, 1.15, 1.3]) {
+      const layout = metricWidgetLayout({ ...german, fontScale });
+      expect(layout.label.title.truncated).toBe(false);
+      expect(layout.label.resource?.text).toBe("Alle Ressourcen");
+      expect(layout.label.resource?.truncated).toBe(false);
+      expect(layout.changeText).toBe("▼ −28%");
+      expect(layout.comparisonText).toBe("vs. vorherige 30 Tage");
+      expect(layout.sizes.comparison).toBeGreaterThanOrEqual(
+        STUDIO_TEXT_MINIMUMS.any,
+      );
+      expect(layout.showPeriod).toBe(true);
+      expect(layout.value.size).toBeGreaterThanOrEqual(
+        STUDIO_TEXT_MINIMUMS.value,
+      );
+    }
+    // German shows what English shows: the longer words never cost the
+    // label, the value, the change or the sparkline, and nothing is cut
+    // off or set below the minimums. Only the period line, the least
+    // important, may give way sooner at a larger font scale (it would
+    // wrap); at the default scale it stays as in English.
+    const pairs = [
+      {
+        en: {
+          label: "Proceeds · All resources",
+          value: { full: "€1,234.56", compact: "€1.2K" },
+          periodText: "Last 12 months · Average",
+          change: {
+            full: "▲ +1,234.5% vs previous 12 months",
+            short: "▲ +1,234.5%",
+            comparison: "vs previous 12 months",
+          },
+          noticeText: "Connection needs new credentials",
+        },
+        de: {
+          label: "Proceeds · Alle Ressourcen",
+          value: { full: "1.234,56 €", compact: "1,2K €" },
+          periodText: "Letzte 12 Monate · Mittelwert",
+          change: {
+            full: "▲ +1.234,5% vs. vorherige 12 Monate",
+            short: "▲ +1.234,5%",
+            comparison: "vs. vorherige 12 Monate",
+          },
+          noticeText: "Verbindung braucht neue Zugangsdaten",
+        },
+      },
+      {
+        en: {
+          label: "Downloads · All apps",
+          value: { full: "718", compact: "718" },
+          periodText: "This month · Latest day",
+          change: {
+            full: "▼ −28% vs last month",
+            short: "▼ −28%",
+            comparison: "vs last month",
+          },
+          noticeText: null,
+        },
+        de: {
+          label: "Downloads · Alle Apps",
+          value: { full: "718", compact: "718" },
+          periodText: "Dieser Monat · Letzter Tag",
+          change: {
+            full: "▼ −28% vs. Vormonat",
+            short: "▼ −28%",
+            comparison: "vs. Vormonat",
+          },
+          noticeText: null,
+        },
+      },
+    ];
+    const shown = (layout: ReturnType<typeof metricWidgetLayout>) => ({
+      change: layout.changeText !== null,
+      period: layout.showPeriod,
+      sparkline: layout.sparkline > 0,
+      truncated:
+        layout.label.title.truncated ||
+        (layout.label.resource?.truncated ?? false),
+    });
+    for (const pair of pairs) {
+      for (const [w, h] of [
+        [3, 2],
+        [3, 3],
+        [3, 4],
+        [4, 3],
+        [6, 4],
+      ] as const) {
+        for (const fontScale of [1, 1.15, 1.3]) {
+          const at = { ...base, fontScale, placement: { x: 0, y: 0, w, h } };
+          const de = metricWidgetLayout({ ...at, ...pair.de });
+          const en = metricWidgetLayout({ ...at, ...pair.en });
+          const what = `${w}×${h} @${fontScale}`;
+          const { period, ...rest } = shown(de);
+          const { period: enPeriod, ...enRest } = shown(en);
+          expect(rest, what).toEqual(enRest);
+          if (fontScale === 1) expect(period, what).toBe(enPeriod);
+          expect(de.label.title.size).toBeGreaterThanOrEqual(
+            STUDIO_TEXT_MINIMUMS.title,
+          );
+          expect(de.value.size).toBeGreaterThanOrEqual(
+            STUDIO_TEXT_MINIMUMS.value,
+          );
+        }
+      }
+    }
+    // Wide enough, the German change keeps its comparison on one line.
+    const wide = metricWidgetLayout({
+      ...german,
+      placement: { x: 0, y: 0, w: 6, h: 4 },
+    });
+    expect(wide.changeText).toBe("▼ −28% vs. vorherige 30 Tage");
+  });
+
   it("drops the comparison line before the period line on a short widget", () => {
     const layout = metricWidgetLayout({
       ...base,

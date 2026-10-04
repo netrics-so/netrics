@@ -367,16 +367,38 @@ public struct DeviceDashboard: Codable, Sendable, Equatable {
     /** Null when no dashboard is assigned; tiles is then empty. */
     public var dashboard: Info?
     public var tiles: [DeviceTile]
+    /**
+     * The language of the labels (ADR 0016): sent only when it is not
+     * English, and missing from servers before it; nil means English.
+     */
+    public var locale: String?
 
-    public init(version: String, refreshAfterSec: Int, timeZone: String, dashboard: Info?, tiles: [DeviceTile]) {
+    public init(
+        version: String, refreshAfterSec: Int, timeZone: String, dashboard: Info?, tiles: [DeviceTile],
+        locale: String? = nil
+    ) {
         self.version = version
         self.refreshAfterSec = refreshAfterSec
         self.timeZone = timeZone
         self.dashboard = dashboard
         self.tiles = tiles
+        self.locale = locale
     }
 
-    private enum CodingKeys: String, CodingKey { case version, refreshAfterSec, timeZone, dashboard, tiles }
+    private enum CodingKeys: String, CodingKey { case version, refreshAfterSec, timeZone, dashboard, tiles, locale }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(String.self, forKey: .version)
+        refreshAfterSec = try c.decode(Int.self, forKey: .refreshAfterSec)
+        timeZone = try c.decode(String.self, forKey: .timeZone)
+        dashboard = try c.decodeIfPresent(Info.self, forKey: .dashboard)
+        tiles = try c.decode([DeviceTile].self, forKey: .tiles)
+        locale = try? c.decodeIfPresent(String.self, forKey: .locale)
+    }
+
+    /** The language of the labels; English when the server sent none. */
+    public var language: ScreenLanguage { ScreenLanguage(tag: locale) }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -385,6 +407,7 @@ public struct DeviceDashboard: Codable, Sendable, Equatable {
         try container.encode(timeZone, forKey: .timeZone)
         try container.encode(dashboard, forKey: .dashboard)
         try container.encode(tiles, forKey: .tiles)
+        try container.encodeIfPresent(locale, forKey: .locale)
     }
 }
 

@@ -40,7 +40,9 @@ struct SlideshowView: View {
                 .id(slide.id)
                 .transition(.opacity)
             } else {
-                MessageView(title: payload.dashboard?.name ?? "netrics", text: "This dashboard has no slides yet.")
+                MessageView(
+                    title: payload.dashboard?.name ?? "netrics",
+                    text: L10n.tr("This dashboard has no slides yet.", payload.language))
             }
         }
         .ignoresSafeArea()
@@ -130,6 +132,8 @@ struct WidgetEnv {
     let timeZone: String
     /** The pixels per point of the screen (image decoding). */
     let displayScale: CGFloat
+    /** The screen language: chrome and numbers (ADR 0016). */
+    var language: ScreenLanguage = .en
 
     var fontScale: Double { colors.fontScale }
 
@@ -164,7 +168,7 @@ struct SlideCanvasView: View {
             let showHeader = payload.dashboard?.showHeader ?? true
             let env = WidgetEnv(
                 u: height / 1080, colors: colors, showHeader: showHeader, timeZone: payload.timeZone,
-                displayScale: displayScale)
+                displayScale: displayScale, language: payload.language)
             ZStack(alignment: .topLeading) {
                 colors.background
                 if let background = slide.background, let file = imageFile(background.imageId) {
@@ -256,18 +260,18 @@ struct SlideHeaderView: View {
             Spacer(minLength: env.pt(24))
             HStack(spacing: env.pt(24)) {
                 if paused {
-                    Text("❚❚ Paused")
+                    Text("❚❚ \(L10n.tr("Paused", env.language))")
                         .font(env.font(30))
                         .foregroundStyle(colors.muted)
                 }
                 if state.offline {
-                    Text("⚠ \(TVTime.offlineMarker(updatedAt: state.updatedAt, timeZone: payload.timeZone))")
+                    Text("⚠ \(TVTime.offlineMarker(updatedAt: state.updatedAt, timeZone: payload.timeZone, language: env.language))")
                         .font(env.font(30))
                         .foregroundStyle(colors.warning)
                         .lineLimit(1)
                 }
                 TimelineView(.everyMinute) { context in
-                    Text(TVTime.hourMinute(context.date, timeZone: payload.timeZone))
+                    Text(TVTime.hourMinute(context.date, timeZone: payload.timeZone, language: env.language))
                         .font(env.font(30).monospacedDigit())
                         .foregroundStyle(colors.accent)
                 }

@@ -312,9 +312,8 @@ public actor DeviceClient {
         epoch += 1
         running = false
         update {
-            $0.phase = .blocked(
-                "The server's certificate has changed. This can mean someone is intercepting the connection. Unpair this TV and set up the server again if you replaced the certificate."
-            )
+            // English here; the app shows it in its language (KitStrings.translate).
+            $0.phase = .blocked(KitStrings.text(.certificateChangedBlocked))
             $0.offline = true
             $0.lastError = describe(TransportError.certificateChanged)
         }

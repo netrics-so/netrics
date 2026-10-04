@@ -6,12 +6,14 @@ import type {
   DeviceDashboardResponse,
   DeviceDashboardV2Response,
 } from "@netrics/contracts";
-import { conversionNote } from "@netrics/domain";
+import { conversionNote, matchLocale, type Locale } from "@netrics/domain";
 
 import { DeviceWidgetView } from "@/components/studio/device-widget";
 import { SlidePlayer } from "@/components/studio/slide-player";
 import { TileNotice, TileView } from "@/components/tile-view";
-import { TvFrame, useClock, useIdle } from "@/components/tv-frame";
+import { TvFrame, clockLocale, useClock, useIdle } from "@/components/tv-frame";
+import { WEB_CATALOGS } from "@/lib/i18n/catalogs";
+import { I18nProvider, useLocale, useT } from "@/lib/i18n/client";
 import {
   createKioskClient,
   isSlidesDashboard,
@@ -21,6 +23,9 @@ import { browserImageCache } from "@/lib/kiosk-image-cache";
 import { themeStyle } from "@/lib/studio-theme";
 import { pairingAddress } from "@/lib/pairing-address";
 import { deviceTileNotice } from "@/lib/tile-status";
+
+/** The product name, the same in every language. */
+const BRAND = "netrics";
 
 const INITIAL: KioskState = {
   phase: "starting",
@@ -47,8 +52,26 @@ const memoryStorage = {
   removeItem: (key: string) => void memory.delete(key),
 };
 
+/**
+ * The screen's language (ADR 0016 section 3): once paired, the payload's
+ * (the workspace's screen language, else the instance default; a payload
+ * without one is English); before, the page's (the instance default, else
+ * the browser's).
+ */
+export function kioskLocale(state: KioskState, pageLocale: Locale): Locale {
+  if (state.phase === "paired" && state.dashboard) {
+    return matchLocale(state.dashboard.locale) ?? "en";
+  }
+  return pageLocale;
+}
+
 export function KioskView({ appVersion }: { appVersion: string }) {
   const [state, setState] = useState<KioskState>(INITIAL);
+  const locale = kioskLocale(state, useLocale());
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   useEffect(() => {
     const client = createKioskClient({
@@ -62,6 +85,16 @@ export function KioskView({ appVersion }: { appVersion: string }) {
     return () => client.stop();
   }, [appVersion]);
 
+  return (
+    <I18nProvider locale={locale} messages={WEB_CATALOGS[locale]}>
+      <KioskScreen state={state} />
+    </I18nProvider>
+  );
+}
+
+/** What the kiosk shows for its state, in the screen's language. */
+export function KioskScreen({ state }: { state: KioskState }) {
+  const t = useT("screen.kiosk");
   if (state.phase === "pairing") {
     return <PairingScreen state={state} />;
   }
@@ -79,15 +112,15 @@ export function KioskView({ appVersion }: { appVersion: string }) {
     return payload.dashboard && !isSlidesDashboard(payload) ? (
       <KioskDashboard state={state} dashboard={payload} />
     ) : (
-      <Message title="No dashboard assigned yet">
-        Choose one under TVs in netrics; this screen picks it up on its own.
+      <Message title={t("noDashboardTitle")}>
+        {t("noDashboardText")}
         <OfflineMarker state={state} timeZone={state.dashboard.timeZone} />
       </Message>
     );
   }
   return (
-    <Message title="netrics">
-      {state.offline ? "Connecting to netrics…" : "Loading…"}
+    <Message title={BRAND}>
+      {state.offline ? t("connecting") : t("loading")}
     </Message>
   );
 }
@@ -103,20 +136,23 @@ function Message({ title, children }: { title: string; children: ReactNode }) {
 
 function PairingScreen({ state }: { state: KioskState }) {
   const { pairing } = state;
+  const t = useT("screen.kiosk");
   return (
     <div className="tv kiosk-message">
-      <p className="kiosk-text">Show a netrics dashboard on this screen</p>
+      <p className="kiosk-text">{t("pairingPrompt")}</p>
       {pairing ? (
         <>
-          <p className="kiosk-code" aria-label="Pairing code">
+          <p className="kiosk-code" aria-label={t("pairingCode")}>
             {pairing.code}
           </p>
           <p className="kiosk-text">
-            Go to{" "}
-            <strong className="kiosk-url">
-              {pairingAddress(pairing.pairingUrl)}
-            </strong>{" "}
-            and enter the code.
+            {t.rich("pairingGoTo", {
+              url: (
+                <strong key="url" className="kiosk-url">
+                  {pairingAddress(pairing.pairingUrl)}
+                </strong>
+              ),
+            })}
           </p>
         </>
       ) : (
@@ -125,14 +161,14 @@ function PairingScreen({ state }: { state: KioskState }) {
         </p>
       )}
       {state.offline ? (
-        <p className="kiosk-offline">Cannot reach netrics — retrying</p>
+        <p className="kiosk-offline">{t("unreachable")}</p>
       ) : null}
     </div>
   );
 }
 
-function formatTime(epochMs: number, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatTime(epochMs: number, timeZone: string, locale: Locale): string {
+  return new Intl.DateTimeFormat(clockLocale(locale), {
     timeZone,
     hour: "2-digit",
     minute: "2-digit",
@@ -146,15 +182,18 @@ function OfflineMarker({
   state: KioskState;
   timeZone: string;
 }) {
+  const t = useT("screen.kiosk");
+  const locale = useLocale();
   if (!state.offline) {
     return null;
   }
   return (
     <span className="kiosk-offline" role="status" title={state.lastError ?? ""}>
-      Offline
       {state.updatedAt
-        ? ` — last update ${formatTime(state.updatedAt, timeZone)}`
-        : ""}
+        ? t("offlineSince", {
+            time: formatTime(state.updatedAt, timeZone, locale),
+          })
+        : t("offline")}
     </span>
   );
 }
@@ -173,6 +212,7 @@ function KioskSlides({
   dashboard: NonNullable<DeviceDashboardV2Response["dashboard"]>;
 }) {
   const idle = useIdle();
+  const t = useT("screen.kiosk");
   const { theme, timeZone } = payload;
   const env = {
     timeZone,
@@ -201,11 +241,7 @@ function KioskSlides({
         renderWidget={(widget) => (
           <DeviceWidgetView widget={widget} env={env} />
         )}
-        empty={
-          <p className="kiosk-text slide-screen-empty">
-            This dashboard has no slides to show.
-          </p>
-        }
+        empty={<p className="kiosk-text slide-screen-empty">{t("noSlides")}</p>}
       />
       {/* With the header the marker is in it; without, in the corner. */}
       {state.offline && !dashboard.showHeader ? (
@@ -225,9 +261,11 @@ function KioskDashboard({
   dashboard: DeviceDashboardResponse;
 }) {
   const clock = useClock(dashboard.timeZone);
+  const t = useT("screen.kiosk");
+  const locale = useLocale();
   return (
     <TvFrame
-      title={dashboard.dashboard?.name ?? "netrics"}
+      title={dashboard.dashboard?.name ?? BRAND}
       tileCount={dashboard.tiles.length}
       meta={
         <>
@@ -237,7 +275,7 @@ function KioskDashboard({
       }
     >
       {dashboard.tiles.map((tile) => {
-        const notice = deviceTileNotice(tile.status, tile.updatedAt);
+        const notice = deviceTileNotice(tile.status, tile.updatedAt, locale);
         return (
           <TileView
             key={tile.id}
@@ -269,7 +307,7 @@ function KioskDashboard({
             }
             fallback={
               <div className="tile-error">
-                <p>This tile could not load.</p>
+                <p>{t("tileFailed")}</p>
               </div>
             }
             // Converted amounts cite the ECB and name what was left out
@@ -279,6 +317,7 @@ function KioskDashboard({
                 <p className="tile-conversion">
                   {conversionNote(
                     tile.conversion.unconverted.map((entry) => entry.currency),
+                    locale,
                   )}
                 </p>
               ) : null
