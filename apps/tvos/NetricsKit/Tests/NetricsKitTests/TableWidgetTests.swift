@@ -31,7 +31,7 @@ private func table(_ id: String, data: String? = nil, min: String = #"{"w": 4, "
 private func later(_ id: String, _ x: Int, _ y: Int, _ w: Int, _ h: Int, min: String?) -> String {
     let minimum = min.map { #", "min": \#($0)"# } ?? ""
     return """
-        {"id": "\(id)", "type": "gauge", "x": \(x), "y": \(y), "w": \(w), "h": \(h)\(minimum),
+        {"id": "\(id)", "type": "heatmap", "x": \(x), "y": \(y), "w": \(w), "h": \(h)\(minimum),
          "label": "Goal", "options": {}, "data": {"value": 1}}
         """
 }

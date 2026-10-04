@@ -201,7 +201,7 @@ describe("table widget", () => {
     expect(html).toContain(">+12%<");
     const later = renderI18n(
       <DeviceWidgetView
-        widget={{ ...widget, type: "gauge" } as unknown as DeviceWidget}
+        widget={{ ...widget, type: "heatmap" } as unknown as DeviceWidget}
         env={env}
       />,
     );

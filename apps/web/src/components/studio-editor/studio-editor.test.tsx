@@ -341,6 +341,7 @@ describe("add widget", () => {
         metrics: [metric],
         imageIds: [ID(50)],
         locale: "en",
+        goals: [{ id: ID(70), name: "Monthly downloads" }],
       });
       expect("widget" in made).toBe(true);
       if ("widget" in made) {

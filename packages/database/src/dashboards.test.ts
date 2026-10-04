@@ -45,6 +45,7 @@ function metric(
     displayCurrency: null,
     text: null,
     imageId: null,
+    goalId: null,
     options: {},
     ...overrides,
   };

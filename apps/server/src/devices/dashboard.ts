@@ -6,6 +6,7 @@ import {
   clockWidgetOptionsSchema,
   compareWidgetOptionsSchema,
   countdownWidgetOptionsSchema,
+  gaugeWidgetOptionsSchema,
   imageWidgetOptionsSchema,
   lineWidgetOptionsSchema,
   metricWidgetOptionsSchema,
@@ -33,6 +34,7 @@ import {
 import {
   findBackfillingConnectionIds,
   findDashboard,
+  findGoalsByIds,
   findImages,
   findResourceNames,
   findTheme,
@@ -42,6 +44,7 @@ import {
   schema1Tiles,
   type Dashboard,
   type DashboardWidgetRow,
+  type GoalRow,
   type Transaction,
 } from "@netrics/database";
 import {
@@ -68,12 +71,18 @@ import {
   sourceItemStatus,
   sourcesLabel,
   ratioOf,
+  goalLabel,
+  goalPeriodEnd,
   tileLabel,
+  zonedIsoString,
+  type GoalAggregation,
+  type GoalPeriod,
   type Locale,
   type ThemeTokens,
 } from "@netrics/domain";
 
 import { toStateView } from "../connections/present.js";
+import { readGoal } from "../goals/progress.js";
 import {
   findAllResourcesNames,
   queryMetric,
@@ -811,6 +820,93 @@ async function compareWidgetOf(
   };
 }
 
+/**
+ * A goal widget (ADR 0019 section 5): its goal's metric read over the
+ * goal's current period and where the goal stands, with the shared data
+ * fields of that metric. Screens word the time left themselves. A deleted
+ * goal is `goal: null` with status `no_data` ("Goal deleted").
+ */
+async function gaugeWidgetOf(
+  tx: Transaction,
+  widget: DashboardWidgetRow,
+  goal: GoalRow | null,
+  context: DataContext,
+  timeZone: string,
+): Promise<DeviceWidget> {
+  const placement = {
+    id: widget.id,
+    x: widget.x,
+    y: widget.y,
+    w: widget.w,
+    h: widget.h,
+  };
+  const options = parsedOptions(gaugeWidgetOptionsSchema, widget.options);
+  const locale = context.options.locale ?? DEFAULT_LOCALE;
+  if (goal === null) {
+    return {
+      type: "gauge",
+      ...placement,
+      label: widget.title ?? goalLabel(locale),
+      options,
+      data: {
+        period: null,
+        aggregation: null,
+        unit: null,
+        conversion: null,
+        kind: null,
+        granularity: null,
+        better: "higher",
+        status: "no_data",
+        updatedAt: null,
+        goal: null,
+        value: null,
+        target: null,
+        progress: null,
+        reachedAt: null,
+        periodEnd: null,
+      },
+    };
+  }
+  const now = context.options.now;
+  const period = goal.period as GoalPeriod;
+  const reading = await readGoal(tx, context.workspaceId, goal, now, {
+    exchangeRates: context.options.exchangeRates ?? false,
+    locale,
+  });
+  const state = context.states.get(goal.connectionId) ?? null;
+  const value = reading?.progress.value ?? null;
+  return {
+    type: "gauge",
+    ...placement,
+    label: widget.title ?? goal.name,
+    options,
+    data: {
+      period,
+      aggregation: goal.aggregation as GoalAggregation,
+      unit: unitOf(reading?.read ?? null),
+      conversion: conversionOf(reading?.read.conversion ?? null),
+      kind: reading?.read.metric.kind ?? null,
+      granularity: reading?.read.metric.granularity ?? null,
+      better: reading?.read.metric.better ?? "higher",
+      status: tileStatus(
+        state,
+        value !== null,
+        now,
+        context.backfilling.has(goal.connectionId),
+      ),
+      updatedAt: state?.lastSuccessAt ?? null,
+      goal: { id: goal.id, name: goal.name },
+      value,
+      target: goal.target,
+      progress: reading?.progress.progress ?? null,
+      reachedAt: reading?.progress.reachedAt ?? null,
+      periodEnd:
+        reading?.progress.periodEnd ??
+        zonedIsoString(goalPeriodEnd(period, now, timeZone), timeZone),
+    },
+  };
+}
+
 /** A built slide: its device form, before any layout is applied. */
 interface BuiltSlide {
   slide: Dashboard["slides"][number];
@@ -888,6 +984,18 @@ async function buildSlides(
     slides.flatMap((slide) => slide.widgets.filter(isDataWidget)),
     options,
   );
+  // The goals of the goal widgets; an id not found is a deleted goal.
+  const goals = await findGoalsByIds(
+    tx,
+    workspaceId,
+    slides.flatMap((slide) =>
+      slide.widgets.flatMap((widget) =>
+        widget.type === "gauge" && widget.goalId !== null
+          ? [widget.goalId]
+          : [],
+      ),
+    ),
+  );
   const built: BuiltSlide[] = [];
   for (const slide of slides) {
     const widgets: DeviceWidget[] = [];
@@ -901,6 +1009,10 @@ async function buildSlides(
       };
       if (isDataWidget(widget)) {
         widgets.push(await dataWidgetOf(tx, widget, context));
+      } else if (widget.type === "gauge") {
+        const goal =
+          widget.goalId === null ? null : (goals.get(widget.goalId) ?? null);
+        widgets.push(await gaugeWidgetOf(tx, widget, goal, context, timeZone));
       } else if (widget.type === "image") {
         const imageId = imageRef(widget.imageId);
         if (imageId !== null) {

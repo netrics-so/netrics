@@ -9,7 +9,7 @@ import Foundation
 // canvas answer in canvas points; the type scale answers in units.
 
 public enum StudioWidgetType: String, Sendable, Equatable, CaseIterable, Codable {
-    case metric, line, bar, image, text, clock, table, status, compare, countdown
+    case metric, line, bar, image, text, clock, table, status, compare, countdown, gauge
 
     /** Widgets with a title and resource line (bound to a metric). */
     public var isData: Bool {
@@ -151,6 +151,7 @@ public enum StudioLayout {
         case .status: return (3, 3)
         case .compare: return (4, 3)
         case .countdown: return (3, 2)
+        case .gauge: return (3, 3)
         }
     }
 
@@ -304,6 +305,14 @@ public enum StudioLayout {
                 .any: any, .title: Minimum.title * scale, .resource: Minimum.resource * scale,
                 .change: Minimum.change * scale, .heading: Minimum.heading * scale, .valueMin: valueMin,
                 .valueMax: max(valueMin, contentHeight(placement, showHeader: showHeader) * 0.6),
+            ]
+        case .gauge:
+            // The value sits inside the ring, which gaugeLayout sizes.
+            let valueMin = Minimum.value * scale
+            return [
+                .any: any, .title: Minimum.title * scale, .resource: Minimum.resource * scale,
+                .change: Minimum.change * scale, .valueMin: valueMin,
+                .valueMax: max(valueMin, contentHeight(placement, showHeader: showHeader) * 0.36),
             ]
         case .image:
             return [.any: any]
@@ -842,6 +851,162 @@ public enum StudioLayout {
         let plain = ISO8601DateFormatter()
         plain.formatOptions = [.withInternetDateTime]
         return plain.date(from: text)
+    }
+
+    // MARK: Goal widget: a full ring (ADR 0019 section 5)
+
+    /** Line height of a gauge's text, as STUDIO_LINE_HEIGHT. */
+    static let gaugeLineHeight = 1.15
+
+    /** The gauge's spacing and ring rules, in units (GAUGE_SPACING). */
+    public enum GaugeSpacing {
+        /** Between the label, target line, ring, progress line and footer. */
+        public static let stack = 8.0
+        /** Between the text column and the ring in the side layout. */
+        public static let side = 16.0
+        /** The ring is at least this wide. */
+        public static let ringMin = 160.0
+        /** Its stroke is this share of the diameter, at least strokeMin. */
+        public static let strokeShare = 0.1
+        public static let strokeMin = 16.0
+        /** The value may take this share of the ring's inner diameter. */
+        public static let valueWidthShare = 0.86
+        /** Space before the suffix ("%"), as a share of its size. */
+        public static let suffixGap = 0.1
+        /** The side layout from this content aspect (width ÷ height) on. */
+        public static let sideAspect = 1.6
+    }
+
+    public enum GaugeOrientation: String, Sendable, Equatable {
+        case stack, side
+    }
+
+    public struct GaugeSizes: Sendable, Equatable {
+        public var title: Double
+        public var resource: Double
+        public var target: Double
+        public var progress: Double
+        public var footer: Double
+        public var value: Double
+        public var suffix: Double
+    }
+
+    public struct GaugeLayout: Sendable, Equatable {
+        public var orientation: GaugeOrientation
+        public var sizes: GaugeSizes
+        public var titleLines: Int
+        public var resourceLines: Int
+        public var showTarget: Bool
+        public var showFooter: Bool
+        public var progressLines: Int
+        public var textWidth: Double
+        public var ringDiameter: Double
+        public var ringStroke: Double
+        public var compact: Bool
+        public var fits: Bool
+    }
+
+    /**
+     * A goal widget's layout (gaugeLayout in the TypeScript): label, target
+     * line, a full ring with the value inside, progress line and footer;
+     * the footer goes first, then the target line; side by side from 1.6:1.
+     */
+    public static func gaugeLayout(
+        label: String, width inputWidth: Double, height inputHeight: Double, fontScale: Double? = nil,
+        value: TableValueText? = nil, suffix: String? = nil, progress: String? = nil
+    ) -> GaugeLayout {
+        let scale = effectiveFontScale(fontScale)
+        let width = Swift.max(0, inputWidth)
+        let height = Swift.max(0, inputHeight)
+        let title = Minimum.title * scale
+        let resource = Minimum.resource * scale
+        let target = Minimum.resource * scale
+        let progressSize = Minimum.change * scale
+        let footer = Minimum.any * scale
+        let gap = GaugeSpacing.stack
+        let side = height > 0 && width >= GaugeSpacing.sideAspect * height
+        let sideDiameter = side ? Swift.max(0, Swift.min(height, (width - GaugeSpacing.side) / 2)) : 0
+        let textWidth = side ? Swift.max(0, width - sideDiameter - GaugeSpacing.side) : width
+
+        let parts = labelParts(label)
+        let titleLines = Swift.min(
+            labelMaxLines,
+            Swift.max(1, wrappedLineCount(parts.title, maxWidth: textWidth, fontSize: title, weight: .semibold)))
+        let resourceLines = parts.resource.map {
+            Swift.min(
+                labelMaxLines,
+                Swift.max(1, wrappedLineCount($0, maxWidth: textWidth, fontSize: resource, weight: .semibold)))
+        } ?? 0
+        var progressWrapped = 1
+        if let progress, !progress.isEmpty {
+            progressWrapped = wrappedLineCount(progress, maxWidth: textWidth, fontSize: progressSize, weight: .semibold)
+        }
+        let progressLines = Swift.min(2, Swift.max(1, progressWrapped))
+        let labelHeight =
+            Double(titleLines) * title * gaugeLineHeight + Double(resourceLines) * resource * gaugeLineHeight
+        let targetHeight = target * gaugeLineHeight
+        let progressHeight = Double(progressLines) * progressSize * gaugeLineHeight
+        let footerHeight = footer * gaugeLineHeight
+
+        func textHeight(_ withTarget: Bool, _ withFooter: Bool) -> Double {
+            labelHeight + (withTarget ? gap + targetHeight : 0) + gap + progressHeight
+                + (withFooter ? gap + footerHeight : 0)
+        }
+        func ringRoom(_ withTarget: Bool, _ withFooter: Bool) -> Double {
+            side ? sideDiameter : Swift.min(width, height - textHeight(withTarget, withFooter) - gap)
+        }
+        func fitsWith(_ withTarget: Bool, _ withFooter: Bool) -> Bool {
+            side
+                ? textHeight(withTarget, withFooter) <= height && sideDiameter >= GaugeSpacing.ringMin
+                : ringRoom(withTarget, withFooter) >= GaugeSpacing.ringMin
+        }
+        // The footer goes first, then the target line.
+        let candidates: [(Bool, Bool)] = [(true, true), (true, false), (false, false)]
+        let (showTarget, showFooter) = candidates.first { fitsWith($0.0, $0.1) } ?? (false, false)
+        let diameter = Swift.max(0, ringRoom(showTarget, showFooter))
+        let stroke = Swift.max(GaugeSpacing.strokeMin, diameter * GaugeSpacing.strokeShare)
+
+        // The value inside the ring.
+        let valueMin = Minimum.value * scale
+        let anyMin = Minimum.any * scale
+        let suffixSize = progressSize
+        let inner = Swift.max(0, diameter - 2 * stroke)
+        var suffixWidth = 0.0
+        if let suffix, !suffix.isEmpty {
+            suffixWidth =
+                estimateTextWidth(suffix, fontSize: suffixSize, weight: .semibold) + suffixSize * GaugeSpacing.suffixGap
+        }
+        let room = Swift.max(0, inner * GaugeSpacing.valueWidthShare - suffixWidth)
+        let valueMax = Swift.max(valueMin, inner * 0.45)
+        // Widest digits, so a count-up and tomorrow's value keep one size.
+        func sized(_ text: String, _ min: Double) -> Double? {
+            let widest = String(text.map { ("0"..."9").contains($0) ? "0" : $0 })
+            return fitTextSize(widest, maxWidth: room, min: min, max: valueMax, weight: .semibold)
+        }
+        var valueSize = valueMin
+        var compact = false
+        if let value {
+            let full = sized(value.full, valueMin)
+            let short = value.compact == value.full ? nil : sized(value.compact, valueMin)
+            if let full {
+                valueSize = full
+            } else if let short {
+                valueSize = short
+                compact = true
+            } else {
+                // The ring's interior is the limit, never below the smallest text.
+                valueSize = Swift.max(anyMin, sized(value.compact, 0) ?? anyMin)
+                compact = value.compact != value.full
+            }
+        }
+        return GaugeLayout(
+            orientation: side ? .side : .stack,
+            sizes: GaugeSizes(
+                title: title, resource: resource, target: target, progress: progressSize, footer: footer,
+                value: valueSize, suffix: suffixSize),
+            titleLines: titleLines, resourceLines: resourceLines, showTarget: showTarget, showFooter: showFooter,
+            progressLines: progressLines, textWidth: textWidth, ringDiameter: diameter, ringStroke: stroke,
+            compact: compact, fits: diameter >= GaugeSpacing.ringMin)
     }
 
     // MARK: Legacy layout (tile migration)

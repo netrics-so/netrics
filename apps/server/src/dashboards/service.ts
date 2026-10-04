@@ -1,6 +1,7 @@
 import {
   barWidgetOptionsSchema,
   compareWidgetOptionsSchema,
+  gaugeWidgetOptionsSchema,
   tableWidgetOptionsSchema,
   clockWidgetOptionsSchema,
   countdownWidgetOptionsSchema,
@@ -26,6 +27,7 @@ import {
   findConnectionMetric,
   findResourceNames,
   findDashboard,
+  findGoal,
   findImageIds,
   findProject,
   insertAuditEvent,
@@ -160,6 +162,8 @@ function optionsOf(widget: DashboardWidgetRow) {
       return tableWidgetOptionsSchema.parse(options);
     case "compare":
       return compareWidgetOptionsSchema.parse(options);
+    case "gauge":
+      return gaugeWidgetOptionsSchema.parse(options);
     case "image":
       return imageWidgetOptionsSchema.parse(options);
     case "text":
@@ -251,26 +255,24 @@ export async function presentDashboard(
   };
   // Readability per format (ADR 0017 §6, #280), labelled as screens show
   // the widgets, in the reader's language.
-  const warnings = dashboardFormatWarnings(
+  const readability = await loadReadabilityInputs(
+    tx,
+    workspaceId,
     dashboard,
-    await loadReadabilityInputs(
-      tx,
-      workspaceId,
-      dashboard,
-      locale,
-      (widget, metricName) => {
-        if (!isDataRow(widget)) return null;
-        const { dimensions, resourceName, allResourcesName } = binding(widget);
-        return tileLabel({
-          title: widget.title,
-          metricName,
-          dimensions,
-          resourceName,
-          allResourcesName,
-        });
-      },
-    ),
+    locale,
+    (widget, metricName) => {
+      if (!isDataRow(widget)) return null;
+      const { dimensions, resourceName, allResourcesName } = binding(widget);
+      return tileLabel({
+        title: widget.title,
+        metricName,
+        dimensions,
+        resourceName,
+        allResourcesName,
+      });
+    },
   );
+  const warnings = dashboardFormatWarnings(dashboard, readability);
   const present = (widget: DashboardWidgetRow): DashboardWidget => {
     const base = {
       id: widget.id,
@@ -305,6 +307,19 @@ export async function presentDashboard(
         ...binding(widget),
         options: optionsOf(widget),
       } as DashboardWidget;
+    }
+    if (widget.type === "gauge") {
+      const goalId =
+        widget.goalId !== null && readability.goalNames.has(widget.goalId)
+          ? widget.goalId
+          : null;
+      return {
+        type: "gauge",
+        ...base,
+        goalId,
+        goalName: goalId === null ? null : readability.goalNames.get(goalId)!,
+        options: gaugeWidgetOptionsSchema.parse(widget.options),
+      };
     }
     if (widget.type === "image") {
       return {
@@ -490,6 +505,7 @@ const EMPTY_WIDGET_DATA = {
   displayCurrency: null,
   text: null,
   imageId: null,
+  goalId: null,
 } as const;
 
 /**
@@ -585,6 +601,21 @@ async function validateWidget(
       options: { ...widget.options, connectionIds: connectionIds.value },
     });
   }
+  if (widget.type === "gauge") {
+    // A goal of this workspace, or none: a goal deleted since the client
+    // loaded the dashboard is stored as null, so the dashboard still saves
+    // and the gauge shows "Goal deleted" (ADR 0019 section 5).
+    const goal =
+      widget.goalId === null
+        ? null
+        : await findGoal(tx, workspaceId, widget.goalId);
+    return ok({
+      ...base,
+      ...EMPTY_WIDGET_DATA,
+      goalId: goal?.id ?? null,
+      options: widget.options,
+    });
+  }
   // No binding. A countdown's target may have passed: it still saves
   // (ADR 0019 section 8; the Studio shows `countdown_passed`).
   if (
@@ -626,6 +657,7 @@ async function validateWidget(
     ...valid,
     text: null,
     imageId: null,
+    goalId: null,
     options: widget.options,
   });
 }
@@ -681,6 +713,7 @@ async function validateCompare(
     displayCurrency,
     text: null,
     imageId: null,
+    goalId: null,
     options: widget.options,
     denominator: {
       connectionId: denominator.value.connectionId,
@@ -704,7 +737,8 @@ async function validateSlides(
   primary: ScreenFormat,
   stored: Dashboard | null = null,
 ): Promise<Result<SlideInput[]>> {
-  // A compare widget runs two metric queries and counts twice.
+  // A compare widget runs two metric queries and counts twice; a goal
+  // widget once (ADR 0019 section 2).
   const dataWidgets = slides
     .flatMap((slide) => slide.widgets)
     .reduce((sum, widget) => sum + dataWidgetCost(widget.type), 0);
@@ -813,6 +847,7 @@ async function tilesToSlides(
       ...valid,
       text: null,
       imageId: null,
+      goalId: null,
       options: { ...DEFAULT_METRIC_OPTIONS },
     });
   }
@@ -1313,6 +1348,7 @@ export function createDashboardService(deps: { db: Database }) {
               displayCurrency: widget.displayCurrency,
               text: widget.text,
               imageId: widget.imageId,
+              goalId: widget.goalId,
               options: widget.options as Record<string, unknown>,
               denominator: denominatorInputOf(widget),
             })),

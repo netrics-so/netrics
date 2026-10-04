@@ -112,6 +112,8 @@ export interface WidgetInput {
   text: string | null;
   /** Image widgets (#217). */
   imageId: string | null;
+  /** Goal widgets (ADR 0019 section 5); null: none, or deleted. */
+  goalId: string | null;
   options: Record<string, unknown>;
   /**
    * Compare widgets: the denominator's binding (ADR 0019 section 10);
@@ -540,6 +542,7 @@ async function writeSlides(
       displayCurrency: widget.displayCurrency,
       text: widget.text,
       imageId: widget.imageId,
+      goalId: widget.goalId,
       options: widget.options,
       denominatorConnectionId: widget.denominator?.connectionId ?? null,
       denominatorMetricKey: widget.denominator?.metricKey ?? null,

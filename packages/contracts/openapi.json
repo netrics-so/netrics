@@ -5985,7 +5985,8 @@
                                         "table",
                                         "status",
                                         "compare",
-                                        "countdown"
+                                        "countdown",
+                                        "gauge"
                                       ]
                                     },
                                     "x": {
@@ -6431,6 +6432,84 @@
                                   "connectionId",
                                   "metricKey",
                                   "period"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "gauge"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "x": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 16
+                                  },
+                                  "y": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 14
+                                  },
+                                  "w": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 16
+                                  },
+                                  "h": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 14
+                                  },
+                                  "title": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "goalId": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "options": {
+                                    "default": {},
+                                    "type": "object",
+                                    "properties": {
+                                      "showTimeLeft": {
+                                        "default": true,
+                                        "type": "boolean"
+                                      }
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "x",
+                                  "y",
+                                  "w",
+                                  "h",
+                                  "goalId"
                                 ]
                               },
                               {
@@ -8010,6 +8089,92 @@
                                         "type": {
                                           "type": "string",
                                           "enum": [
+                                            "gauge"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "goalId": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "goalName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "showTimeLeft": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "showTimeLeft"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "goalId",
+                                        "goalName",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
                                             "line"
                                           ]
                                         },
@@ -9216,7 +9381,8 @@
                                         "header_name_cut",
                                         "clock_parts_hidden",
                                         "rows_cut",
-                                        "countdown_passed"
+                                        "countdown_passed",
+                                        "goal_missing"
                                       ]
                                     },
                                     "severity": {
@@ -9882,6 +10048,92 @@
                                         "type": {
                                           "type": "string",
                                           "enum": [
+                                            "gauge"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "goalId": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "goalName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "showTimeLeft": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "showTimeLeft"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "goalId",
+                                        "goalName",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
                                             "line"
                                           ]
                                         },
@@ -11088,7 +11340,8 @@
                                         "header_name_cut",
                                         "clock_parts_hidden",
                                         "rows_cut",
-                                        "countdown_passed"
+                                        "countdown_passed",
+                                        "goal_missing"
                                       ]
                                     },
                                     "severity": {
@@ -11678,6 +11931,84 @@
                                   "connectionId",
                                   "metricKey",
                                   "period"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "gauge"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "x": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 16
+                                  },
+                                  "y": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 14
+                                  },
+                                  "w": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 16
+                                  },
+                                  "h": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 14
+                                  },
+                                  "title": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "goalId": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "options": {
+                                    "default": {},
+                                    "type": "object",
+                                    "properties": {
+                                      "showTimeLeft": {
+                                        "default": true,
+                                        "type": "boolean"
+                                      }
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "x",
+                                  "y",
+                                  "w",
+                                  "h",
+                                  "goalId"
                                 ]
                               },
                               {
@@ -13267,6 +13598,92 @@
                                         "type": {
                                           "type": "string",
                                           "enum": [
+                                            "gauge"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "goalId": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "goalName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "showTimeLeft": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "showTimeLeft"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "goalId",
+                                        "goalName",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
                                             "line"
                                           ]
                                         },
@@ -14473,7 +14890,8 @@
                                         "header_name_cut",
                                         "clock_parts_hidden",
                                         "rows_cut",
-                                        "countdown_passed"
+                                        "countdown_passed",
+                                        "goal_missing"
                                       ]
                                     },
                                     "severity": {
@@ -15274,6 +15692,92 @@
                                         "type": {
                                           "type": "string",
                                           "enum": [
+                                            "gauge"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "goalId": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "goalName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "showTimeLeft": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "showTimeLeft"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "goalId",
+                                        "goalName",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
                                             "line"
                                           ]
                                         },
@@ -16480,7 +16984,8 @@
                                         "header_name_cut",
                                         "clock_parts_hidden",
                                         "rows_cut",
-                                        "countdown_passed"
+                                        "countdown_passed",
+                                        "goal_missing"
                                       ]
                                     },
                                     "severity": {
@@ -22424,6 +22929,317 @@
                                         "type": {
                                           "type": "string",
                                           "enum": [
+                                            "gauge"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 12
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 8
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 12
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 8
+                                        },
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "showTimeLeft": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "showTimeLeft"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "data": {
+                                          "type": "object",
+                                          "properties": {
+                                            "period": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "today",
+                                                    "this_week",
+                                                    "last_7_days",
+                                                    "this_month",
+                                                    "last_30_days",
+                                                    "this_quarter",
+                                                    "last_90_days",
+                                                    "this_year",
+                                                    "last_12_months"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "aggregation": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "sum",
+                                                    "avg",
+                                                    "min",
+                                                    "max",
+                                                    "last"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "unit": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "conversion": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "displayCurrency": {
+                                                      "type": "string",
+                                                      "minLength": 3,
+                                                      "maxLength": 3
+                                                    },
+                                                    "source": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "unconverted": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "currency": {
+                                                            "type": "string",
+                                                            "minLength": 3,
+                                                            "maxLength": 3
+                                                          },
+                                                          "value": {
+                                                            "type": [
+                                                              "number",
+                                                              "null"
+                                                            ]
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "currency",
+                                                          "value"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "displayCurrency",
+                                                    "source",
+                                                    "unconverted"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "kind": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "gauge",
+                                                    "delta",
+                                                    "counter"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "granularity": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "day",
+                                                    "hour",
+                                                    "instant"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "better": {
+                                              "type": "string",
+                                              "enum": [
+                                                "higher",
+                                                "lower"
+                                              ]
+                                            },
+                                            "status": {
+                                              "type": "string",
+                                              "enum": [
+                                                "ok",
+                                                "stale",
+                                                "auth_failed",
+                                                "outage",
+                                                "no_data",
+                                                "backfilling"
+                                              ]
+                                            },
+                                            "updatedAt": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "goal": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "id": {
+                                                      "type": "string",
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                    },
+                                                    "name": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "id",
+                                                    "name"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": [
+                                                "number",
+                                                "null"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": [
+                                                "number",
+                                                "null"
+                                              ]
+                                            },
+                                            "progress": {
+                                              "type": [
+                                                "number",
+                                                "null"
+                                              ]
+                                            },
+                                            "reachedAt": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "periodEnd": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "period",
+                                            "aggregation",
+                                            "unit",
+                                            "conversion",
+                                            "kind",
+                                            "granularity",
+                                            "better",
+                                            "status",
+                                            "updatedAt",
+                                            "goal",
+                                            "value",
+                                            "target",
+                                            "progress",
+                                            "reachedAt",
+                                            "periodEnd"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "label",
+                                        "options",
+                                        "data"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
                                             "line"
                                           ]
                                         },
@@ -25033,6 +25849,338 @@
                                             "value",
                                             "change",
                                             "spark"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "min",
+                                        "label",
+                                        "options",
+                                        "data"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "gauge"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "min": {
+                                          "type": "object",
+                                          "properties": {
+                                            "w": {
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "h": {
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 9007199254740991
+                                            }
+                                          },
+                                          "required": [
+                                            "w",
+                                            "h"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "showTimeLeft": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "showTimeLeft"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "data": {
+                                          "type": "object",
+                                          "properties": {
+                                            "period": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "today",
+                                                    "this_week",
+                                                    "last_7_days",
+                                                    "this_month",
+                                                    "last_30_days",
+                                                    "this_quarter",
+                                                    "last_90_days",
+                                                    "this_year",
+                                                    "last_12_months"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "aggregation": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "sum",
+                                                    "avg",
+                                                    "min",
+                                                    "max",
+                                                    "last"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "unit": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "conversion": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "displayCurrency": {
+                                                      "type": "string",
+                                                      "minLength": 3,
+                                                      "maxLength": 3
+                                                    },
+                                                    "source": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "unconverted": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "currency": {
+                                                            "type": "string",
+                                                            "minLength": 3,
+                                                            "maxLength": 3
+                                                          },
+                                                          "value": {
+                                                            "type": [
+                                                              "number",
+                                                              "null"
+                                                            ]
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "currency",
+                                                          "value"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "displayCurrency",
+                                                    "source",
+                                                    "unconverted"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "kind": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "gauge",
+                                                    "delta",
+                                                    "counter"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "granularity": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "day",
+                                                    "hour",
+                                                    "instant"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "better": {
+                                              "type": "string",
+                                              "enum": [
+                                                "higher",
+                                                "lower"
+                                              ]
+                                            },
+                                            "status": {
+                                              "type": "string",
+                                              "enum": [
+                                                "ok",
+                                                "stale",
+                                                "auth_failed",
+                                                "outage",
+                                                "no_data",
+                                                "backfilling"
+                                              ]
+                                            },
+                                            "updatedAt": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "goal": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "id": {
+                                                      "type": "string",
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                    },
+                                                    "name": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "id",
+                                                    "name"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": [
+                                                "number",
+                                                "null"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": [
+                                                "number",
+                                                "null"
+                                              ]
+                                            },
+                                            "progress": {
+                                              "type": [
+                                                "number",
+                                                "null"
+                                              ]
+                                            },
+                                            "reachedAt": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "periodEnd": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "period",
+                                            "aggregation",
+                                            "unit",
+                                            "conversion",
+                                            "kind",
+                                            "granularity",
+                                            "better",
+                                            "status",
+                                            "updatedAt",
+                                            "goal",
+                                            "value",
+                                            "target",
+                                            "progress",
+                                            "reachedAt",
+                                            "periodEnd"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -33238,6 +34386,92 @@
                                         "type": {
                                           "type": "string",
                                           "enum": [
+                                            "gauge"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "goalId": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "goalName": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "showTimeLeft": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "showTimeLeft"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "goalId",
+                                        "goalName",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
                                             "line"
                                           ]
                                         },
@@ -34444,7 +35678,8 @@
                                         "header_name_cut",
                                         "clock_parts_hidden",
                                         "rows_cut",
-                                        "countdown_passed"
+                                        "countdown_passed",
+                                        "goal_missing"
                                       ]
                                     },
                                     "severity": {

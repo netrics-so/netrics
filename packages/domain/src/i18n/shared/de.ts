@@ -13,6 +13,7 @@ export const sharedDe: Catalog<SharedMessages> = {
   },
   others: "Andere",
   sources: "Quellen",
+  goal: "Ziel",
   none: "(keine)",
   periods: {
     today: "Heute",

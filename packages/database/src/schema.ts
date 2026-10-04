@@ -982,6 +982,11 @@ export const dashboardWidgets = pgTable(
     text: text("text"),
     /** Image widgets (#217). */
     imageId: uuid("image_id"),
+    /**
+     * Goal widgets (ADR 0019 section 5): the goal shown; null once the goal
+     * is deleted (the screens then say "Goal deleted").
+     */
+    goalId: uuid("goal_id"),
     /** Type-specific style, validated per type by the API contract. */
     options: jsonb("options").notNull().default({}),
     // Compare widgets (ADR 0019 section 10): the second metric, the
@@ -1033,9 +1038,24 @@ export const dashboardWidgets = pgTable(
       foreignColumns: [workspaceImages.id, workspaceImages.workspaceId],
     }),
     index("dashboard_widgets_image_idx").on(table.imageId),
+    // A goal of the widget's own workspace. Deleting the goal clears only
+    // goal_id: the gauge migration declares ON DELETE SET NULL (goal_id)
+    // (PostgreSQL 15+), which drizzle cannot express; the workspace column
+    // must stay.
+    foreignKey({
+      name: "dashboard_widgets_goal_fk",
+      columns: [table.goalId, table.workspaceId],
+      foreignColumns: [goals.id, goals.workspaceId],
+    }).onDelete("set null"),
+    index("dashboard_widgets_goal_idx").on(table.goalId),
     check(
       "dashboard_widgets_type_valid",
-      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table', 'status', 'compare', 'countdown')`,
+      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table', 'status', 'compare', 'countdown', 'gauge')`,
+    ),
+    // Only goal widgets name a goal (theirs may be null: deleted).
+    check(
+      "dashboard_widgets_goal_valid",
+      sql`${table.goalId} is null or ${table.type} = 'gauge'`,
     ),
     // An image widget names its image; no other widget does.
     check(

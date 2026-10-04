@@ -123,7 +123,12 @@ const clockWidget: DashboardWidget = {
   },
 };
 
-const context = { metrics, imageIds: [ID(50)], locale: "en" as const };
+const context = {
+  metrics,
+  imageIds: [ID(50)],
+  locale: "en" as const,
+  goals: [{ id: ID(70), name: "Monthly downloads" }],
+};
 
 /** The widget with its placement, as the API receives it. */
 function asInput(fields: object) {

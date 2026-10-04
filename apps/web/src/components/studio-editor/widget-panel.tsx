@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import type {
   DashboardWidget,
+  Goal,
   MetricAggregation,
   MetricPeriod,
   WorkspaceMetric,
@@ -75,6 +76,7 @@ import {
   resourceOptionLabel,
 } from "@/lib/tile-resource";
 
+import { GoalFields } from "./goal-fields";
 import { ImageLibrary, ImagePicker, type PickableImage } from "./image-picker";
 import {
   useCurrencies,
@@ -111,6 +113,12 @@ export interface WidgetPanelProps {
   onUploadImage?: (file: File) => Promise<string | null>;
   /** Resolves to null when deleted, else why not. */
   onDeleteImage?: (imageId: string) => Promise<string | null>;
+  /** The workspace's goals with their progress (goal widgets). */
+  goals?: readonly Goal[];
+  /** Whether "New goal…" may create one (dashboards:create). */
+  canCreateGoals?: boolean;
+  /** A goal made from the inspector joins the list. */
+  onGoalCreated?: (goal: Goal) => void;
 }
 
 function Problems({ problems }: { problems: StudioProblem[] }) {
@@ -197,6 +205,20 @@ export function WidgetPanel(props: WidgetPanelProps) {
       ) : isDataWidgetType(widget.type) ? (
         <DataFields {...props} widget={widget as DataWidget} metric={metric} />
       ) : null}
+      {widget.type === "gauge" ? (
+        <GoalFields
+          widget={widget}
+          workspaceId={props.workspaceId}
+          goals={props.goals ?? []}
+          metrics={metrics}
+          {...(props.currency ? { currency: props.currency } : {})}
+          canCreateGoals={props.canCreateGoals ?? false}
+          {...(props.onGoalCreated
+            ? { onGoalCreated: props.onGoalCreated }
+            : {})}
+          dispatch={dispatch}
+        />
+      ) : null}
       <StyleFields {...props} />
 
       <div className="actions inspector-actions">
@@ -252,13 +274,20 @@ function FitCheckNote({
   );
 }
 
-function TypeField({ widget, metrics, images, dispatch }: WidgetPanelProps) {
+function TypeField({
+  widget,
+  metrics,
+  images,
+  goals,
+  dispatch,
+}: WidgetPanelProps) {
   const locale = useLocale();
   const t = useT("studio.widgetPanel");
   const context = {
     metrics,
     imageIds: images.map((image) => image.id),
     locale,
+    goals: goals ?? [],
   };
   const options = WIDGET_TYPES.map((type) => ({
     type,
@@ -1093,6 +1122,18 @@ function StyleFields({
       );
     case "bar":
       return null;
+    case "gauge":
+      return (
+        <fieldset>
+          <legend>{t("style")}</legend>
+          <Check
+            checked={widget.options.showTimeLeft}
+            onChange={(showTimeLeft) => options({ showTimeLeft })}
+          >
+            {t("showTimeLeft")}
+          </Check>
+        </fieldset>
+      );
     case "compare":
       return (
         <fieldset>

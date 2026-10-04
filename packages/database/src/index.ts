@@ -169,6 +169,7 @@ export {
   deleteGoal,
   findDashboardsUsingGoal,
   findGoal,
+  findGoalsByIds,
   insertGoal,
   listGoals,
   updateGoal,

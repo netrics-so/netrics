@@ -61,6 +61,8 @@ public enum KitText: String, Sendable, CaseIterable {
     case statusAgeMinutes, statusAgeHours, statusAgeDays, statusNever
     case compareRatio, comparePoints, compareDerived
     case countdownLabel, countdownDone, countdownDays, countdownHours, countdownMinutes
+    case goalTarget, goalToGo, goalDaysLeftOne, goalDaysLeftOther, goalLastDay, goalHoursLeft, goalUnderHour
+    case goalReached, goalEarlyOne, goalEarlyOther, goalDeleted, goalDeletedHint
     case updated, updatedFrom, reconnect, reconnectSource, reconnectHint, loadingHistory
     case nextRefresh, slidePosition, nextSlide
     case serverInvalidAddress, serverPlainHTTPToPublicHost, serverPlainHTTPNeedsSetting, serverUnreachable
@@ -140,6 +142,18 @@ public enum KitStrings {
         .countdownDays: "d",
         .countdownHours: "h",
         .countdownMinutes: "m",
+        .goalTarget: "Goal %@",
+        .goalToGo: "%@ to go",
+        .goalDaysLeftOne: "1 day left",
+        .goalDaysLeftOther: "%d days left",
+        .goalLastDay: "last day",
+        .goalHoursLeft: "%d h left",
+        .goalUnderHour: "< 1 h left",
+        .goalReached: "✓ Reached",
+        .goalEarlyOne: "1 day early",
+        .goalEarlyOther: "%d days early",
+        .goalDeleted: "Goal deleted",
+        .goalDeletedHint: "Pick another goal in the Studio",
         .updated: "updated %@",
         .updatedFrom: "updated %@ · %@",
         .reconnect: "Reconnect %@",
@@ -240,6 +254,18 @@ public enum KitStrings {
         .countdownDays: "T",
         .countdownHours: "Std",
         .countdownMinutes: "Min",
+        .goalTarget: "Ziel %@",
+        .goalToGo: "noch %@",
+        .goalDaysLeftOne: "noch 1 Tag",
+        .goalDaysLeftOther: "noch %d Tage",
+        .goalLastDay: "letzter Tag",
+        .goalHoursLeft: "noch %d Std.",
+        .goalUnderHour: "noch < 1 Std.",
+        .goalReached: "✓ Erreicht",
+        .goalEarlyOne: "1 Tag früher",
+        .goalEarlyOther: "%d Tage früher",
+        .goalDeleted: "Ziel gelöscht",
+        .goalDeletedHint: "Wähl im Studio ein anderes Ziel",
         .updated: "aktualisiert %@",
         .updatedFrom: "aktualisiert %@ · %@",
         .reconnect: "%@ neu verbinden",

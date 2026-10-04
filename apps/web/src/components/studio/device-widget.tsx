@@ -9,6 +9,7 @@ import type { StudioImages } from "@/lib/studio-widgets";
 import { deviceTileNotice } from "@/lib/tile-status";
 
 import { BarWidgetView, type BarReadingProps } from "./bar-widget";
+import { GaugeWidgetView, type GaugeReadingProps } from "./gauge-widget";
 import { LiveClockWidget } from "./clock-widget";
 import { LiveCountdownWidget } from "./countdown-widget";
 import { ImageWidgetView } from "./image-widget";
@@ -221,6 +222,44 @@ export function deviceCompareReading(
 }
 
 /**
+ * A payload goal widget's reading (ADR 0019 section 5): the server
+ * resolved the goal; the time left is worded here from the screen's clock
+ * in the payload's zone.
+ */
+export function deviceGaugeReading(
+  widget: Extract<DeviceWidget, { type: "gauge" }>,
+  timeZone: string,
+  locale: Locale,
+): GaugeReadingProps {
+  const { data } = widget;
+  return {
+    label: widget.label,
+    deleted: data.goal === null,
+    options: widget.options,
+    reading:
+      data.unit === null ||
+      data.target === null ||
+      data.periodEnd === null ||
+      data.period === null
+        ? null
+        : {
+            period: data.period,
+            value: data.value,
+            target: data.target,
+            progress: data.progress,
+            reachedAt: data.reachedAt,
+            periodEnd: data.periodEnd,
+            unit: data.unit,
+            approximate: data.conversion !== null,
+          },
+    notice: deviceTileNotice(data.status, data.updatedAt, locale),
+    status: data.status,
+    updatedAt: data.updatedAt,
+    timeZone,
+  };
+}
+
+/**
  * A widget of a device payload (schema 2 or 3, #219, #281) with the data
  * the server computed: the same display components as the signed-in
  * pages, no further requests (images arrive as `blob:` URLs in
@@ -270,6 +309,13 @@ export function DeviceWidgetView({
         <CompareWidgetView
           {...common}
           {...deviceCompareReading(widget, locale)}
+        />
+      );
+    case "gauge":
+      return (
+        <GaugeWidgetView
+          {...common}
+          {...deviceGaugeReading(widget, env.timeZone, locale)}
         />
       );
     case "image":

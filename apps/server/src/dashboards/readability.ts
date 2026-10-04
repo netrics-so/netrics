@@ -7,6 +7,7 @@ import {
   type FormatWarning,
 } from "@netrics/contracts";
 import {
+  findGoalsByIds,
   findImages,
   findWorkspace,
   listConnectionIds,
@@ -59,6 +60,8 @@ export interface ReadabilityInputs {
   sourcesLabel: string;
   /** The workspace's connections: what a board of every source lists. */
   sourceCount: number;
+  /** The names of the goals the dashboard's goal widgets show, by id. */
+  goalNames: ReadonlyMap<string, string>;
 }
 
 export async function loadReadabilityInputs(
@@ -79,6 +82,21 @@ export async function loadReadabilityInputs(
       names.set(`${metric.connectionId}|${metric.key}`, metric.name);
     }
   }
+  // Goal widgets are labelled with their goal's name (ADR 0019 §2).
+  const goals = await findGoalsByIds(
+    tx,
+    workspaceId,
+    dashboard.slides.flatMap((slide) =>
+      slide.widgets.flatMap((widget) =>
+        widget.type === "gauge" && widget.goalId !== null
+          ? [widget.goalId]
+          : [],
+      ),
+    ),
+  );
+  const goalNames = new Map(
+    [...goals.values()].map((goal) => [goal.id, goal.name]),
+  );
   const tokens = await resolveThemeTokens(tx, workspaceId, dashboard);
   let logoAspect: number | null = null;
   if (dashboard.showHeader && dashboard.logoImageId) {
@@ -120,6 +138,7 @@ export async function loadReadabilityInputs(
     timeZone,
     sourcesLabel: sourcesLabel(locale),
     sourceCount,
+    goalNames,
     locale,
     now: new Date(),
     labelOf(widget) {
@@ -181,6 +200,17 @@ export function dashboardFormatWarnings(
           ...base,
           label: widget.title ?? inputs.sourcesLabel,
           rows: options?.connectionIds?.length ?? inputs.sourceCount,
+        };
+      }
+      if (type === "gauge") {
+        const goalName =
+          widget.goalId === null
+            ? undefined
+            : inputs.goalNames.get(widget.goalId);
+        return {
+          ...base,
+          label: widget.title ?? goalName ?? null,
+          goalMissing: goalName === undefined,
         };
       }
       if (type === "text") {

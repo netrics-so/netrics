@@ -134,6 +134,7 @@ import {
   updateGoalRequestSchema,
   type CreateGoalRequest,
   type DeleteGoalResponse,
+  type Goal,
   type GoalListResponse,
   type GoalResponse,
   type UpdateGoalRequest,
@@ -961,6 +962,37 @@ export function listGoals(
   return serverGet(
     goalListResponseSchema,
     cookieHeader,
+    `/v1/workspaces/${workspaceId}/goals`,
+  );
+}
+
+/**
+ * One goal with its current progress, from the browser (a goal widget in
+ * the Studio and signed-in views, ADR 0019 section 5); null when it was
+ * deleted.
+ */
+export async function fetchGoal(
+  workspaceId: string,
+  goalId: string,
+): Promise<Goal | null> {
+  try {
+    const { goal } = await browserSend(
+      goalResponseSchema,
+      "GET",
+      `/v1/workspaces/${workspaceId}/goals/${goalId}`,
+    );
+    return goal;
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.status === 404) return null;
+    throw cause;
+  }
+}
+
+/** The workspace's goals with their progress, from the browser. */
+export function fetchGoals(workspaceId: string): Promise<GoalListResponse> {
+  return browserSend(
+    goalListResponseSchema,
+    "GET",
     `/v1/workspaces/${workspaceId}/goals`,
   );
 }

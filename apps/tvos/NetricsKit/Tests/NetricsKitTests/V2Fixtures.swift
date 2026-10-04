@@ -76,7 +76,7 @@ let defaultSlides = """
                              {"broken": true}],
                     "others": {"label": "Others", "value": 77, "groups": 12}, "status": "ok",
                     "updatedAt": "2026-10-04T08:00:00.000Z"}},
-          {"id": "w-gauge", "type": "gauge", "x": 4, "y": 4, "w": 2, "h": 2, "label": "A newer widget",
+          {"id": "w-gauge", "type": "heatmap", "x": 4, "y": 4, "w": 2, "h": 2, "label": "A newer widget",
            "options": {"needle": true}, "data": {"value": 3}},
           {"id": "w-broken", "type": "metric", "x": 6, "y": 4, "w": 2, "h": 2, "label": "Broken",
            "data": "not an object"},

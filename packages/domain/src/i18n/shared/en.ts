@@ -19,6 +19,8 @@ export const sharedEn = {
   others: "Others",
   /** A status board's default label (ADR 0019 section 7). */
   sources: "Sources",
+  /** A goal widget without a title whose goal was deleted (ADR 0019 §5). */
+  goal: "Goal",
   /** A breakdown group without a value. */
   none: "(none)",
   periods: {

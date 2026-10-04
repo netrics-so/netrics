@@ -1,7 +1,12 @@
 "use client";
 
+import { useRef } from "react";
+
 import {
+  GAUGE_SPACING,
   countdownLabel,
+  estimateTextWidth,
+  fitTextSize,
   labelParts,
   othersLabel,
   parseTextWidget,
@@ -32,6 +37,11 @@ import {
   useLiveTable,
   type TableReadingProps,
 } from "@/components/studio/table-widget";
+import {
+  GaugeRing,
+  useLiveGauge,
+  type GaugeReadingProps,
+} from "@/components/studio/gauge-widget";
 import {
   useLiveCompare,
   type CompareReadingProps,
@@ -68,6 +78,7 @@ import {
 } from "@/lib/studio-status";
 import { countdownTargetAt, countdownView } from "@/lib/studio-countdown";
 import { tableRowTexts, tableSubtitle } from "@/lib/studio-table";
+import { gaugeTexts } from "@/lib/studio-gauge";
 import {
   compareChangeText,
   compareFooterCandidates,
@@ -775,6 +786,121 @@ function LiveScrollStatus({
   return <ScrollStatusCard {...useLiveStatus(widget, env)} {...size} />;
 }
 
+/** The ring's diameter in a scroll card: the card's width, at most this. */
+const SCROLL_RING_MAX = 240;
+
+/**
+ * The goal card (ADR 0019 section 5): label, target line, the ring with
+ * the percent or the value inside, the progress line and the footer, in
+ * one column.
+ */
+export function ScrollGaugeCard(props: GaugeReadingProps & ScrollCardSize) {
+  const locale = useLocale();
+  const t = useT("screen.widget");
+  const now = useNow();
+  const valueRef = useRef<HTMLSpanElement>(null);
+  const units = cardUnits(props.width, props.rootPx);
+  const [footer] = useFooterCandidates(props.updatedAt, props.source);
+  const texts = props.reading
+    ? gaugeTexts(props.reading, props.options, now, props.timeZone, locale)
+    : null;
+  const diameter = Math.max(
+    GAUGE_SPACING.ringMin,
+    Math.min(units, SCROLL_RING_MAX),
+  );
+  const stroke = Math.max(
+    GAUGE_SPACING.strokeMin,
+    diameter * GAUGE_SPACING.strokeShare,
+  );
+  const suffixSize = SCROLL_TYPE.change;
+  const room =
+    (diameter - 2 * stroke) * GAUGE_SPACING.valueWidthShare -
+    (texts?.suffix
+      ? estimateTextWidth(texts.suffix, suffixSize, "semibold") +
+        suffixSize * GAUGE_SPACING.suffixGap
+      : 0);
+  const fits = (text: string) =>
+    fitTextSize(text.replace(/\d/g, "0"), room, {
+      min: SCROLL_TYPE.small,
+      max: SCROLL_TYPE.valueMax,
+      weight: "semibold",
+    });
+  const full = texts ? fits(texts.value.full) : null;
+  const shown = texts
+    ? full !== null && full >= SCROLL_TYPE.valueMin
+      ? texts.value.full
+      : texts.value.compact
+    : props.loading
+      ? "…"
+      : "—";
+  const valueSize = fits(shown) ?? SCROLL_TYPE.small;
+  if (props.deleted) {
+    return (
+      <article className="sw scroll-card scroll-card--gauge sw--empty">
+        <ScrollLabel label={props.label} />
+        <p className="sw-muted" style={{ fontSize: u(SCROLL_TYPE.title) }}>
+          {t("goalDeleted")}
+        </p>
+      </article>
+    );
+  }
+  const reached = texts?.reached === true && props.status !== "stale";
+  return (
+    <article
+      className={`sw scroll-card scroll-card--gauge${reached ? " sw-gauge--reached" : ""}${props.status === "stale" ? " sw--stale" : ""}`}
+      aria-busy={props.loading ?? false}
+    >
+      <ScrollLabel label={props.label} />
+      {texts ? (
+        <p className="sw-muted" style={{ fontSize: u(SCROLL_TYPE.small) }}>
+          {texts.target}
+        </p>
+      ) : null}
+      <GaugeRing
+        diameter={diameter}
+        stroke={stroke}
+        fill={texts?.fill ?? 0}
+        value={shown}
+        valueRef={valueRef}
+        valueSize={valueSize}
+        suffix={texts?.suffix ?? null}
+        suffixSize={suffixSize}
+        placeholder={texts === null}
+      />
+      <p
+        className={
+          reached
+            ? "sw-gauge-progress sw-gauge-progress--reached"
+            : "sw-gauge-progress"
+        }
+        style={{ fontSize: u(SCROLL_TYPE.change) }}
+      >
+        {texts?.progress ||
+          (props.reading === null && !props.loading ? t("noDataShort") : "")}
+      </p>
+      {props.notice ? (
+        <WidgetNotice size={SCROLL_TYPE.small} stale={props.status === "stale"}>
+          {props.notice}
+        </WidgetNotice>
+      ) : footer ? (
+        <WidgetFooter size={SCROLL_TYPE.small}>{footer}</WidgetFooter>
+      ) : null}
+    </article>
+  );
+}
+
+function LiveScrollGauge({
+  widget,
+  env,
+  size,
+}: {
+  widget: Extract<StudioWidget, { type: "gauge" }>;
+  env: StudioEnv;
+  size: ScrollCardSize;
+}) {
+  return <ScrollGaugeCard {...useLiveGauge(widget, env)} {...size} />;
+}
+
 function LiveScrollTable({
   widget,
   env,
@@ -971,6 +1097,8 @@ export function LiveScrollWidget({
       return <LiveScrollStatus widget={widget} env={env} size={size} />;
     case "compare":
       return <LiveScrollCompare widget={widget} env={env} size={size} />;
+    case "gauge":
+      return <LiveScrollGauge widget={widget} env={env} size={size} />;
     case "clock":
       return <LiveScrollClock widget={widget} env={env} size={size} />;
     case "countdown":

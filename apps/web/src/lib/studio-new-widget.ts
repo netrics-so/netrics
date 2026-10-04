@@ -45,6 +45,8 @@ export function newWidget(
     locale: Locale;
     /** Now, for a new countdown's target (a week ahead). */
     now?: Date;
+    /** The workspace's goals, by name: a new goal widget shows the first. */
+    goals?: ReadonlyArray<{ id: string; name: string }>;
   },
 ): { widget: NewWidget } | { reason: string } {
   const t = webTranslator(input.locale, "studio.newWidget");
@@ -162,6 +164,22 @@ export function newWidget(
             allResourcesName: null,
           },
           options: { format: "percent", ratioLabel: null, showChange: true },
+        },
+      };
+    }
+    case "gauge": {
+      // The Studio requires a goal for a new gauge (ADR 0019 section 5).
+      const goal = input.goals?.[0];
+      if (!goal) {
+        return { reason: t("noGoals") };
+      }
+      return {
+        widget: {
+          type,
+          title: null,
+          goalId: goal.id,
+          goalName: goal.name,
+          options: { showTimeLeft: true },
         },
       };
     }

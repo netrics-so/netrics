@@ -22,6 +22,7 @@ import {
 import type { NewWidget, WidgetPatch } from "./studio-document";
 import { pickableMetrics } from "./format-metric";
 import { webTranslator } from "./i18n/catalogs";
+import { gaugeLabel } from "./studio-gauge";
 import { newWidget } from "./studio-new-widget";
 import { needsCurrency, type CurrencyChoice } from "./tile-currency";
 import type { DataWidget } from "./studio-widgets";
@@ -385,6 +386,8 @@ export function convertWidget(
     metrics: readonly WorkspaceMetric[];
     imageIds: readonly string[];
     locale: Locale;
+    /** The workspace's goals: a goal widget shows the first. */
+    goals?: ReadonlyArray<{ id: string; name: string }>;
   },
 ): { widget: WidgetFields } | { reason: string } {
   const made = newWidget(to, context);
@@ -514,6 +517,26 @@ export function labelPreview(
   locale: Locale,
   fontScale = 1,
 ): LabelPreview | null {
+  if (widget.type === "gauge") {
+    // The title, else the goal's name (ADR 0019 section 2).
+    const defaultLabel = gaugeLabel(
+      { title: null, goalName: widget.goalName },
+      locale,
+    );
+    const label = gaugeLabel(widget, locale);
+    const fit = labelFit(label, widget, { fontScale });
+    return {
+      label,
+      defaultLabel,
+      fit,
+      warning: fit.fits
+        ? null
+        : webTranslator(locale, "studio.readability")("labelWarning", {
+            lines: Math.max(fit.titleLines, fit.resourceLines),
+            max: STUDIO_LABEL_MAX_LINES,
+          }),
+    };
+  }
   if (widget.type === "countdown") {
     // Its title, else "Countdown" (ADR 0019 section 8).
     const label = countdownLabel(widget.title, locale);

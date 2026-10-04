@@ -230,7 +230,8 @@ export interface DraftReadabilityContext {
   now?: Date;
   /**
    * A data widget's label as screens show it ("Downloads · Wurfel"); a
-   * status board's title or "Sources".
+   * status board's title or "Sources"; a goal widget's title or its
+   * goal's name.
    */
   labelOf(widget: DashboardWidget): string | null;
   /** The workspace's connections: what a board of every source lists. */
@@ -258,6 +259,14 @@ function readabilityWidget(
       ...base!,
       label: context.labelOf(widget),
       rows: widget.options.connectionIds?.length ?? context.sourceCount ?? 0,
+    };
+  }
+  if (widget.type === "gauge") {
+    // A goal widget whose goal was deleted (ADR 0019 section 5).
+    return {
+      ...base!,
+      label: context.labelOf(widget),
+      goalMissing: widget.goalId === null,
     };
   }
   if (widget.type === "text") {

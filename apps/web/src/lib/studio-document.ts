@@ -17,7 +17,6 @@ import {
   STUDIO_MIN_WIDGET_SIZE,
   isBuiltinThemeKey,
   dataWidgetCost,
-  isDataWidgetType,
   isInsideFormatGrid,
   meetsMinimumSize,
   placementsOverlap,
@@ -338,6 +337,8 @@ export const DEFAULT_WIDGET_SIZE: Readonly<
   compare: { w: 4, h: 3 },
   // Its minimum (ADR 0019 section 8).
   countdown: { w: 3, h: 2 },
+  // Its minimum (ADR 0019 section 5): the ring with the target line.
+  gauge: { w: 3, h: 3 },
 };
 
 /**
@@ -613,6 +614,10 @@ function widgetInput(widget: DashboardWidget): DashboardWidgetInput {
     }
     case "text":
       return { ...widget, title: widget.title?.trim() || null };
+    case "gauge": {
+      const { goalName: _goalName, ...input } = widget;
+      return { ...input, title: input.title?.trim() || null };
+    }
     default:
       return { ...widget, title: widget.title?.trim() || null };
   }
@@ -1401,7 +1406,7 @@ export function widgetLimitBlocker(
     return t("limits.widgetsPerSlide", { max: STUDIO_LIMITS.widgetsPerSlide });
   }
   if (
-    isDataWidgetType(type) &&
+    dataWidgetCost(type) > 0 &&
     dataWidgetCount(document) + dataWidgetCost(type) > STUDIO_LIMITS.dataWidgets
   ) {
     return t("limits.dataWidgets", { max: STUDIO_LIMITS.dataWidgets });

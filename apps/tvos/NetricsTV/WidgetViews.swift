@@ -61,6 +61,13 @@ struct WidgetView: View {
                     now: context.date)
             }
             .surface(env, state: SurfaceState(data.status))
+        case .gauge(let options, let data):
+            TimelineView(.everyMinute) { context in
+                GaugeWidgetView(
+                    label: widget.label ?? "", placement: placement, options: options, data: data, env: env,
+                    now: context.date)
+            }
+            .surface(env, state: GaugeWidgetView.surfaceState(data))
         case .image(_, let options):
             ImageWidgetView(stored: image, options: options, label: widget.label, env: env)
         case .text(let text, let options):
@@ -1172,6 +1179,264 @@ struct CompareWidgetView: View {
                 caption
             }
         }
+    }
+}
+
+// MARK: Goal (gauge)
+
+/**
+ * The goal widget (ADR 0019 section 5; web: `GaugeWidgetView`): the label,
+ * the target line ("Goal 15,000"), a full ring from 12 o'clock (track
+ * `border`, fill `chartLine`, round caps) with the value inside, the
+ * progress line ("2,520 to go · 9 days left") and the footer, as
+ * `StudioLayout.gaugeLayout` places them; the ring sits right of the text
+ * from a 1.6:1 content box. In progress the value is the percent rounded
+ * down; once reached it is the value itself, ring and value in `up` on a
+ * surface tinted towards `up` ("✓ Reached · 122 % · 2 days early").
+ * Stale data never shows the reached colours. A deleted goal shows "Goal
+ * deleted". On slide enter the arc draws and the value counts up; the
+ * round caps appear when the draw is done.
+ */
+struct GaugeWidgetView: View {
+    let label: String
+    let placement: ScreenPlacement
+    let options: GaugeWidgetOptions
+    let data: GaugeWidgetData
+    let env: WidgetEnv
+    var now = Date()
+
+    @Environment(\.enterProgress) private var progressValue
+
+    /** The surface: reached (fresh data only), else the data status's; a deleted goal is empty. */
+    static func surfaceState(_ data: GaugeWidgetData) -> SurfaceState {
+        if data.goal == nil { return .empty }
+        if data.status != .stale && DataSurface(data.status) == nil && Goals.reached(data.progress) {
+            return .reached
+        }
+        return SurfaceState(data.status)
+    }
+
+    /** The text inside the ring, full and compact, and its suffix ("%" while in progress). */
+    static func ringTexts(
+        reached: Bool, value: Double?, percent: Int?, unit: String, approx: String, language: ScreenLanguage
+    ) -> (String, String, String?) {
+        if reached, let value {
+            return (
+                approx + MetricFormat.value(value, unit: unit, language: language),
+                approx + MetricFormat.compactValue(value, unit: unit, language: language), nil
+            )
+        }
+        if let percent { return ("\(percent)", "\(percent)", "%") }
+        return ("—", "—", nil)
+    }
+
+    /** "122 %": the percent with a no-break space. */
+    static func percentText(_ percent: Int) -> String { "\(percent)\u{00A0}%" }
+
+    var body: some View {
+        let language = env.language
+        let unit = data.unit ?? "count"
+        let approx = data.conversion != nil ? "≈ " : ""
+        let stale = data.status == .stale
+        let reachedGoal = Goals.reached(data.progress)
+        let reachedColors = reachedGoal && !stale
+        let percent = Goals.percent(data.progress)
+        let box = StudioRender.contentBox(placement.cells, showHeader: env.showHeader, unitBox: placement.unitBox)
+        let sizes = StudioLayout.typeScale(
+            .gauge, placement: placement.cells, fontScale: env.fontScale, showHeader: env.showHeader)
+        let small = sizes[.any] ?? StudioLayout.Minimum.any
+
+        // Inside the ring: the percent's digits (and "%"), or the value once reached.
+        let (full, compact, suffix) = Self.ringTexts(
+            reached: reachedGoal, value: data.value, percent: percent, unit: unit, approx: approx, language: language)
+        let timeText = data.periodEnd.flatMap {
+            Goals.timeText(
+                period: data.period?.rawValue ?? "", periodEnd: $0, reachedAt: data.reachedAt,
+                progress: data.progress, now: now, timeZone: env.timeZone)
+        }
+        let time = options.showTimeLeft ? timeText.map { Goals.words($0, language: language) } : nil
+        let progressLine: String = {
+            guard let value = data.value, let target = data.target else {
+                return KitStrings.text(data.unit == nil ? .couldNotLoad : .noDataYet, language)
+            }
+            if reachedGoal {
+                return ([KitStrings.text(.goalReached, language), Self.percentText(percent ?? 100)] + (time.map { [$0] } ?? []))
+                    .joined(separator: " · ")
+            }
+            let toGo = KitStrings.text(
+                .goalToGo, language, approx + MetricFormat.value(Swift.max(0, target - value), unit: unit, language: language))
+            return ([toGo] + (time.map { [$0] } ?? [])).joined(separator: " · ")
+        }()
+        let layout = StudioLayout.gaugeLayout(
+            label: label, width: box.width, height: box.height, fontScale: env.fontScale,
+            value: StudioLayout.TableValueText(full: full, compact: compact), suffix: suffix, progress: progressLine)
+        let labelLayout = StudioRender.labelLayout(label, width: layout.textWidth, sizes: sizes)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: language)
+        let footer =
+            notice != nil || !layout.showFooter
+            ? nil
+            : WidgetFooter.line(
+                WidgetFooter.candidates(updatedAt: data.updatedAt, source: nil, now: now, language: language),
+                type: .gauge, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
+                unitBox: placement.unitBox)
+        let shown = layout.compact ? compact : full
+
+        if data.goal == nil {
+            GoalDeletedView(label: labelLayout, small: small, env: env)
+        } else if let surface = DataSurface(data.status) {
+            DataStateView(
+                surface: surface, type: .gauge, label: labelLayout, small: small, updatedAt: data.updatedAt,
+                placement: placement, env: env, now: now)
+        } else {
+            let accent = reachedColors ? env.colors.up : env.colors.text
+            let ring = GoalRing(
+                fraction: Swift.min(Swift.max(data.progress ?? 0, 0), 1),
+                diameter: env.pt(layout.ringDiameter), stroke: env.pt(layout.ringStroke),
+                fill: stale ? env.colors.muted : (reachedColors ? env.colors.up : env.colors.chartLine),
+                track: env.colors.border
+            )
+            .overlay {
+                HStack(alignment: .firstTextBaseline, spacing: env.pt(layout.sizes.suffix * StudioLayout.GaugeSpacing.suffixGap)) {
+                    CountingValue(
+                        final: shown, target: suffix != nil ? percent.map(Double.init) : data.value,
+                        format: suffix != nil
+                            ? { "\(Int($0.rounded(.down)))" }
+                            : countFormat(
+                                shown: shown, full: full, compact: compact, value: data.value, unit: data.unit,
+                                approximate: data.conversion != nil, language: language)
+                    )
+                    .font(env.font(layout.sizes.value, .semibold).monospacedDigit())
+                    if let suffix {
+                        Text(suffix).font(env.font(layout.sizes.suffix, .semibold))
+                    }
+                }
+                .foregroundStyle(stale ? env.colors.muted : accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+            }
+            let text = VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    LabelLine(fitted: labelLayout.title, env: env)
+                    if let resource = labelLayout.resource {
+                        LabelLine(fitted: resource, env: env)
+                    }
+                }
+                if layout.showTarget, let target = data.target {
+                    Text(KitStrings.text(.goalTarget, language, approx + MetricFormat.value(target, unit: unit, language: language)))
+                        .font(env.font(layout.sizes.target, .semibold))
+                        .foregroundStyle(env.colors.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .padding(.top, env.pt(StudioLayout.GaugeSpacing.stack))
+                }
+            }
+            let progress = Group {
+                if let notice, footer == nil, !layout.showFooter {
+                    NoticeLine(text: notice, size: small, env: env, stale: stale)
+                } else {
+                    Text(progressLine)
+                        .font(env.font(layout.sizes.progress, reachedColors ? .medium : .regular))
+                        .foregroundStyle(reachedColors ? env.colors.up : env.colors.muted)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            let bottom = Group {
+                if let notice, layout.showFooter {
+                    NoticeLine(text: notice, size: small, env: env, stale: stale)
+                } else if let footer {
+                    FooterLine(text: footer, size: small, env: env)
+                }
+            }
+            if layout.orientation == .side {
+                HStack(alignment: .center, spacing: env.pt(StudioLayout.GaugeSpacing.side)) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        text
+                        Spacer(minLength: env.pt(StudioLayout.GaugeSpacing.stack))
+                        progress
+                        bottom.padding(.top, env.pt(StudioLayout.GaugeSpacing.stack))
+                    }
+                    .frame(width: env.pt(layout.textWidth), alignment: .leading)
+                    ring
+                }
+                .accessibilityElement(children: .combine)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    text
+                    Spacer(minLength: env.pt(StudioLayout.GaugeSpacing.stack))
+                    ring.frame(maxWidth: .infinity)
+                    Spacer(minLength: env.pt(StudioLayout.GaugeSpacing.stack))
+                    progress
+                    if layout.showFooter {
+                        bottom.padding(.top, env.pt(StudioLayout.GaugeSpacing.stack))
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+    }
+}
+
+/**
+ * A full ring from 12 o'clock: the track, and the fill drawn to `fraction`
+ * while the slide enters (butt ends while it draws, round caps once done).
+ */
+struct GoalRing: View {
+    let fraction: Double
+    let diameter: CGFloat
+    let stroke: CGFloat
+    let fill: Color
+    let track: Color
+
+    @Environment(\.enterProgress) private var progress
+
+    var body: some View {
+        let inset = stroke / 2
+        ZStack {
+            Circle()
+                .inset(by: inset)
+                .stroke(track, lineWidth: stroke)
+            Circle()
+                .inset(by: inset)
+                .trim(from: 0, to: fraction * progress)
+                .stroke(fill, style: StrokeStyle(lineWidth: stroke, lineCap: .butt))
+                .rotationEffect(.degrees(-90))
+            if fraction > 0 {
+                Circle()
+                    .inset(by: inset)
+                    .trim(from: 0, to: fraction)
+                    .stroke(fill, style: StrokeStyle(lineWidth: stroke, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .modifier(AppearAtEnd(progress: progress))
+            }
+        }
+        .frame(width: diameter, height: diameter)
+        .accessibilityHidden(true)
+    }
+}
+
+/** A goal widget whose goal was deleted: its label and "Goal deleted" (muted, dashed border). */
+struct GoalDeletedView: View {
+    let label: StudioRender.LabelLayout
+    let small: Double
+    let env: WidgetEnv
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            WidgetLabelView(layout: label, env: env)
+            Spacer(minLength: 0)
+            Text(KitStrings.text(.goalDeleted, env.language))
+                .font(env.font(DataSurface.reconnectSize(small: small), .semibold))
+                .foregroundStyle(env.colors.muted)
+                .lineLimit(2)
+            Text(KitStrings.text(.goalDeletedHint, env.language))
+                .font(env.font(small))
+                .foregroundStyle(env.colors.muted)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, env.pt(6))
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

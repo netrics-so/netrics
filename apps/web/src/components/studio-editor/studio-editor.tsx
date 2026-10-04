@@ -13,7 +13,9 @@ import {
 
 import type {
   Dashboard,
+  DashboardWidget,
   Device,
+  Goal,
   ImageContentType,
   WorkspaceImage,
   WorkspaceMetric,
@@ -46,6 +48,7 @@ import {
   toReplaceRequest,
 } from "@/lib/studio-document";
 import { dataWidgetLabel } from "@/components/studio/metric-widget";
+import { gaugeLabel } from "@/lib/studio-gauge";
 import type { SlideLayouts } from "@/lib/screen-view";
 import { rebaseBlockers } from "@/lib/studio-layouts";
 import {
@@ -131,6 +134,8 @@ export function StudioEditor({
   devices: initialDevices,
   dashboardNames,
   currency,
+  goals: initialGoals = [],
+  canCreateGoals = false,
 }: {
   workspaceId: string;
   dashboard: Dashboard;
@@ -146,6 +151,10 @@ export function StudioEditor({
   dashboardNames: Record<string, string>;
   /** Display currency and convertible currencies for amounts (#191). */
   currency?: StudioCurrency;
+  /** The workspace's goals with their progress (goal widgets, #339). */
+  goals?: Goal[];
+  /** Whether the inspector's "New goal…" may create one. */
+  canCreateGoals?: boolean;
 }) {
   const locale = useLocale();
   const t = useT("studio.editor");
@@ -170,6 +179,16 @@ export function StudioEditor({
   );
   const stagePanelId = useId();
   const [images, setImages] = useState(initialImages);
+  const [goals, setGoals] = useState(initialGoals);
+  const onGoalCreated = useCallback(
+    (goal: Goal) =>
+      setGoals((list) =>
+        [...list.filter((entry) => entry.id !== goal.id), goal].sort((a, b) =>
+          a.name.localeCompare(b.name, locale),
+        ),
+      ),
+    [locale],
+  );
   const [devices, setDevices] = useState(initialDevices);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -313,15 +332,17 @@ export function StudioEditor({
           : null,
       timeZone,
       locale,
-      labelOf: (entry: DataWidget | { type: string; title?: string | null }) =>
-        isDataWidgetType(entry.type)
-          ? dataWidgetLabel(
-              entry as DataWidget,
-              metricsById.get(metricKeyOf(entry as DataWidget)),
-            )
-          : entry.type === "status"
-            ? (entry.title ?? sourcesLabel(locale))
-            : null,
+      labelOf: (entry: DashboardWidget) =>
+        entry.type === "gauge"
+          ? gaugeLabel(entry, locale)
+          : isDataWidgetType(entry.type)
+            ? dataWidgetLabel(
+                entry as DataWidget,
+                metricsById.get(metricKeyOf(entry as DataWidget)),
+              )
+            : entry.type === "status"
+              ? (entry.title ?? sourcesLabel(locale))
+              : null,
       sourceCount: Object.keys(connections).length,
     };
     return new Map(
@@ -750,6 +771,7 @@ export function StudioEditor({
               slide={slide}
               metrics={metrics}
               imageIds={images.map((image) => image.id)}
+              goals={goals}
               dispatch={dispatch}
               showHeader={draft.settings.showHeader}
               primaryFormat={primaryFormat}
@@ -932,6 +954,9 @@ export function StudioEditor({
               dispatch={dispatch}
               onUploadImage={onUploadImage}
               onDeleteImage={onDeleteImage}
+              goals={goals}
+              canCreateGoals={canCreateGoals}
+              onGoalCreated={onGoalCreated}
             />
           ) : (
             <>
