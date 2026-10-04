@@ -40,6 +40,45 @@ private func at(_ seconds: TimeInterval) -> Date { T0.addingTimeInterval(seconds
         #expect(rotation.nextChange() == at(1020))
     }
 
+    @Test func aShorterDurationOfTheSlideOnScreenAppliesAtOnce() {
+        var rotation = SlideRotation(slides: slides(("a", 20), ("b", 10)), autoAdvance: true, now: T0)
+        // 2 s in, "a" becomes 5 s long: due at 5 s, not 20 s.
+        rotation.update(slides: slides(("a", 5), ("b", 10)), autoAdvance: true, now: at(2))
+        #expect(rotation.currentID == "a")
+        #expect(rotation.nextChange() == at(5))
+        rotation.advance(to: at(5))
+        #expect(rotation.currentID == "b")
+        #expect(rotation.nextChange() == at(15))
+    }
+
+    @Test func aShorterDurationAlreadyOverMovesOnNowWithoutSkipping() {
+        var rotation = SlideRotation(slides: slides(("a", 20), ("b", 10)), autoAdvance: true, now: T0)
+        // 15 s in, "a" becomes 5 s long: due now; "b" then gets its 10 s.
+        rotation.update(slides: slides(("a", 5), ("b", 10)), autoAdvance: true, now: at(15))
+        #expect(rotation.nextChange() == at(15))
+        let changed = rotation.advance(to: at(15))
+        #expect(changed)
+        #expect(rotation.currentID == "b")
+        #expect(rotation.nextChange() == at(25))
+    }
+
+    @Test func aShorterDurationWhilePausedAppliesOnResume() {
+        var rotation = SlideRotation(slides: slides(("a", 20), ("b", 10)), autoAdvance: true, now: T0)
+        rotation.togglePause(now: at(15))
+        rotation.update(slides: slides(("a", 5), ("b", 10)), autoAdvance: true, now: at(30))
+        #expect(rotation.nextChange() == nil)
+        rotation.togglePause(now: at(40))
+        #expect(rotation.nextChange() == at(40))
+        rotation.advance(to: at(40))
+        #expect(rotation.currentID == "b")
+    }
+
+    @Test func aLongerDurationKeepsTheSlideLonger() {
+        var rotation = SlideRotation(slides: slides(("a", 10), ("b", 10)), autoAdvance: true, now: T0)
+        rotation.update(slides: slides(("a", 30), ("b", 10)), autoAdvance: true, now: at(6))
+        #expect(rotation.nextChange() == at(30))
+    }
+
     @Test func oneSlideOrNoAutoAdvanceNeverChanges() {
         var one = SlideRotation(slides: slides(("a", 5)), autoAdvance: true, now: T0)
         #expect(one.nextChange() == nil)
@@ -174,11 +213,11 @@ private func at(_ seconds: TimeInterval) -> Date { T0.addingTimeInterval(seconds
     @Test func metricLayoutDropsExtrasByImportance() {
         let small = StudioRender.metricLayout(
             label: "Downloads · Wurfel", value: ("1,284", "1.3K"), periodText: "Last 7 days · Total",
-            change: ("▲ +28% vs previous 7 days", "▲ +28%"), notice: nil, note: nil,
+            change: ("▲ +28% vs previous 7 days", "▲ +28%", "vs previous 7 days"), notice: nil, note: nil,
             placement: StudioPlacement(x: 0, y: 0, w: 3, h: 2), showHeader: true, fontScale: 1, showSparkline: true)
         let large = StudioRender.metricLayout(
             label: "Downloads · Wurfel", value: ("1,284", "1.3K"), periodText: "Last 7 days · Total",
-            change: ("▲ +28% vs previous 7 days", "▲ +28%"), notice: nil, note: nil,
+            change: ("▲ +28% vs previous 7 days", "▲ +28%", "vs previous 7 days"), notice: nil, note: nil,
             placement: StudioPlacement(x: 0, y: 0, w: 6, h: 5), showHeader: true, fontScale: 1, showSparkline: true)
         #expect(small.value.size >= StudioLayout.Minimum.value)
         #expect(large.value.size > small.value.size)
@@ -186,6 +225,37 @@ private func at(_ seconds: TimeInterval) -> Date { T0.addingTimeInterval(seconds
         #expect(large.changeText == "▲ +28% vs previous 7 days")
         #expect(large.showPeriod)
         #expect(small.sparkline == 0)
+    }
+
+    @Test func metricLayoutKeepsTheComparisonOnItsOwnLineWhenTheChangeWouldWrap() {
+        // The Apple TV case (#245): a 3 × 4 metric widget.
+        func layout(w: Int, h: Int, fontScale: Double) -> StudioRender.MetricLayout {
+            StudioRender.metricLayout(
+                label: "Downloads · All apps", value: ("718", "718"), periodText: "Last 30 days · Total",
+                change: ("▼ −28% vs previous 30 days", "▼ −28%", "vs previous 30 days"), notice: nil, note: nil,
+                placement: StudioPlacement(x: 0, y: 0, w: w, h: h), showHeader: true, fontScale: fontScale,
+                showSparkline: true)
+        }
+        for fontScale in [1, 1.15, 1.3] {
+            let narrow = layout(w: 3, h: 4, fontScale: fontScale)
+            #expect(narrow.changeText == "▼ −28%")
+            #expect(narrow.comparisonText == "vs previous 30 days")
+            #expect(narrow.comparison >= StudioLayout.Minimum.any)
+            #expect(narrow.showPeriod)
+        }
+        let wide = layout(w: 4, h: 4, fontScale: 1)
+        #expect(wide.changeText == "▼ −28% vs previous 30 days")
+        #expect(wide.comparisonText == nil)
+        let short = layout(w: 3, h: 2, fontScale: 1)
+        #expect(short.changeText == "▼ −28%")
+        #expect(short.comparisonText == nil)
+        let none = StudioRender.metricLayout(
+            label: "Downloads · All apps", value: ("718", "718"), periodText: "Last 30 days · Total",
+            change: ("No data to compare vs the same period of the previous year", "No comparison", nil), notice: nil,
+            note: nil, placement: StudioPlacement(x: 0, y: 0, w: 3, h: 4), showHeader: true, fontScale: 1,
+            showSparkline: true)
+        #expect(none.changeText == "No comparison")
+        #expect(none.comparisonText == nil)
     }
 
     @Test func barsFoldIntoOthersRatherThanShrinkingBelowTheMinimum() {

@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import type { DeviceDashboardV2Response } from "@netrics/contracts";
 import type { ThemeTokens } from "@netrics/domain";
@@ -31,6 +37,12 @@ export interface PlayerSlide<W extends CanvasWidget> extends CanvasSlide<W> {
   durationSec: number;
 }
 
+/** Steps a playing rotation from outside (the Studio's Play controls). */
+export interface SlidePlayerControls {
+  /** Moves `by` slides, wrapping round; the new slide's time starts now. */
+  step(by: number): void;
+}
+
 export interface SlidePlayerProps<W extends CanvasWidget> {
   /** The slides to rotate through, in order (enabled slides only). */
   slides: readonly PlayerSlide<W>[];
@@ -48,6 +60,14 @@ export interface SlidePlayerProps<W extends CanvasWidget> {
   /** Shown when there is no slide. */
   empty?: ReactNode;
   className?: string;
+  /** The slide to start on when it is there (Play from a slide). */
+  startSlideId?: string | null;
+  /** True holds the slide on screen; false resumes with its time left. */
+  paused?: boolean;
+  /** Filled with the player's controls while it is mounted. */
+  controlsRef?: RefObject<SlidePlayerControls | null>;
+  /** The slide on screen changed (or was first shown). */
+  onSlideChange?: (slideId: string | null) => void;
 }
 
 /**
@@ -56,8 +76,8 @@ export interface SlidePlayerProps<W extends CanvasWidget> {
  * state lives here; new `slides` (a refreshed payload) keep the slide on
  * screen when its id still exists. Every slide stays mounted, stacked, so
  * widgets keep their data and the fade is a cross-fade; hidden slides are
- * inert. Used by the kiosk (payload schema 2) and the signed-in TV mode;
- * the Studio's Play preview can use it too.
+ * inert. Used by the kiosk (payload schema 2), the signed-in TV mode and
+ * the Studio's Play preview, so all three rotate alike.
  */
 export function SlidePlayer<W extends CanvasWidget>({
   slides,
@@ -70,20 +90,39 @@ export function SlidePlayer<W extends CanvasWidget>({
   renderWidget,
   empty,
   className,
+  startSlideId = null,
+  paused = false,
+  controlsRef,
+  onSlideChange,
 }: SlidePlayerProps<W>) {
   const [currentId, setCurrentId] = useState<string | null>(() =>
-    keptSlideId(slides, null, autoAdvance),
+    keptSlideId(slides, startSlideId, autoAdvance),
   );
   const rotation = useRef<SlideRotation | null>(null);
+  // The first slide's id: where the rotation starts (read once).
+  const start = useRef(startSlideId);
 
   useEffect(() => {
-    const created = createSlideRotation({ onChange: setCurrentId });
+    const created = createSlideRotation({
+      onChange: setCurrentId,
+      startId: start.current,
+    });
     rotation.current = created;
     return () => {
       created.stop();
       rotation.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!controlsRef) return;
+    controlsRef.current = {
+      step: (by) => rotation.current?.step(by),
+    };
+    return () => {
+      controlsRef.current = null;
+    };
+  }, [controlsRef]);
 
   // Rotation only needs ids and durations: a payload with new numbers but
   // the same slides does not restart the slide on screen.
@@ -98,8 +137,20 @@ export function SlidePlayer<W extends CanvasWidget>({
     );
   }, [timing, autoAdvance]);
 
+  useEffect(() => {
+    rotation.current?.setPaused(paused);
+  }, [paused, timing, autoAdvance]);
+
   // Until the rotation has caught up with new slides, show what it will.
   const shownId = keptSlideId(slides, currentId, autoAdvance);
+  const reported = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (reported.current !== shownId) {
+      reported.current = shownId;
+      onSlideChange?.(shownId);
+    }
+  });
+
   const fade = transition === "fade";
 
   return (

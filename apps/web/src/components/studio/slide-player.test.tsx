@@ -140,6 +140,7 @@ function render(
   slides: DeviceSlide[],
   transition: "fade" | "none" = "fade",
   autoAdvance = true,
+  startSlideId: string | null = null,
 ) {
   return renderToStaticMarkup(
     <SlidePlayer
@@ -152,6 +153,7 @@ function render(
       images={images}
       renderWidget={(widget) => <DeviceWidgetView widget={widget} env={env} />}
       empty={<p>Nothing to show</p>}
+      startSlideId={startSlideId}
     />,
   );
 }
@@ -182,6 +184,20 @@ describe("SlidePlayer", () => {
     expect(html).toContain("Sales");
     expect(html).toContain("Countries");
     expect(html).toContain('src="blob:kiosk/1"');
+  });
+
+  it("starts on the given slide (Play from a slide), else the first", () => {
+    const slides = [slide(1, "A", []), slide(2, "B", []), slide(3, "C", [])];
+    const tags = slideTags(render(slides, "fade", true, ID(102)));
+    expect(tags[1]).toContain("slide-player-slide active");
+    expect(tags[0]).not.toContain("active");
+    // A slide that is not there, or no auto-advance: the first.
+    expect(slideTags(render(slides, "fade", true, ID(999)))[0]).toContain(
+      "active",
+    );
+    expect(slideTags(render(slides, "fade", false, ID(102)))[0]).toContain(
+      "active",
+    );
   });
 
   it("cross-fades with fade and cuts with none", () => {

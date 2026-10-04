@@ -484,7 +484,14 @@ describe("slide canvas", () => {
     }
     expect(html).toContain('src="/logo.png"');
     expect(html).toContain('class="studio-background" src="/bg.jpg"');
-    expect(html).toContain('class="studio-background-dim" style="opacity:0.4"');
+    // The background covers the whole 16:9 slide, centred, whatever its
+    // aspect ratio (#245).
+    expect(html).toMatch(
+      /class="studio-background"[^>]*style="[^"]*top:0;right:0;bottom:0;left:0;[^"]*width:100%;height:100%;[^"]*object-fit:cover;object-position:center"/,
+    );
+    expect(html).toContain(
+      'class="studio-background-dim" style="position:absolute;top:0;right:0;bottom:0;left:0;opacity:0.4"',
+    );
     expect(text(html)).toContain("Wurfel");
     expect(text(html)).toContain("Sales");
     expect(text(html)).toContain("Offline");

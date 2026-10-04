@@ -125,13 +125,15 @@ struct MetricWidgetView: View {
         let compact = data.unit == nil ? "—" : approx + MetricFormat.compactValue(data.value, unit: unit)
         let change = MetricFormat.change(delta: data.change.delta, ratio: data.change.ratio, unit: unit)
         let comparison = MetricFormat.comparisonLabel(data.period)
-        let changeLine: (full: String, short: String)? =
+        let changeLine: (full: String, short: String, comparison: String?)? =
             !options.showChange || data.unit == nil
             ? nil
-            : change.map { ("\($0.direction.arrow) \($0.text) \(comparison)", "\($0.direction.arrow) \($0.text)") }
+            : change.map {
+                ("\($0.direction.arrow) \($0.text) \(comparison)", "\($0.direction.arrow) \($0.text)", comparison)
+            }
                 ?? (data.value == nil
-                    ? ("No data for this period yet", "No data yet")
-                    : ("No data to compare \(comparison)", "No comparison"))
+                    ? ("No data for this period yet", "No data yet", nil)
+                    : ("No data to compare \(comparison)", "No comparison", nil))
         let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit)
         let note = ConversionFormat.note(data.conversion)
         let layout = StudioRender.metricLayout(
@@ -158,6 +160,13 @@ struct MetricWidgetView: View {
                 Text(changeText)
                     .font(env.font(layout.change))
                     .foregroundStyle(change == nil ? env.colors.muted : env.colors.tone(tone))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            if let comparisonText = layout.comparisonText {
+                Text(comparisonText)
+                    .font(env.font(layout.comparison))
+                    .foregroundStyle(env.colors.muted)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }

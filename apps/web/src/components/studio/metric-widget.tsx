@@ -73,12 +73,18 @@ export function MetricWidgetView(props: MetricWidgetViewProps) {
         ? {
             full: `${ARROWS[change.direction]} ${change.text} ${comparison}`,
             short: `${ARROWS[change.direction]} ${change.text}`,
+            comparison,
           }
         : reading.value === null
-          ? { full: "No data for this period yet", short: "No data yet" }
+          ? {
+              full: "No data for this period yet",
+              short: "No data yet",
+              comparison: null,
+            }
           : {
               full: `No data to compare ${comparison}`,
               short: "No comparison",
+              comparison: null,
             };
   const periodText = `${PERIOD_LABELS[period]} · ${
     metric
@@ -136,6 +142,14 @@ export function MetricWidgetView(props: MetricWidgetViewProps) {
           ) : (
             layout.changeText
           )}
+        </p>
+      ) : null}
+      {layout.comparisonText ? (
+        <p
+          className="sw-muted sw-comparison-line"
+          style={{ fontSize: u(layout.sizes.comparison) }}
+        >
+          {layout.comparisonText}
         </p>
       ) : null}
       {layout.sparkline > 0 && reading ? (

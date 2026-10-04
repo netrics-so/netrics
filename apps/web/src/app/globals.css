@@ -1447,18 +1447,14 @@ a.health-badge:hover {
   line-height: 1.15;
 }
 
+/* The slide background: its cover sizing is inline (BACKGROUND_COVER in
+   slide-canvas.tsx), so it fills the canvas whatever the image's shape. */
 .studio-background {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  pointer-events: none;
 }
 
 /* The theme background over the image keeps text readable. */
 .studio-background-dim {
-  position: absolute;
-  inset: 0;
   background: var(--t-background);
 }
 
@@ -1598,6 +1594,13 @@ a.health-badge:hover {
 
 .sw-comparison {
   color: var(--t-muted);
+}
+
+/* The comparison under a short change line: measured to fit one line. */
+.sw-comparison-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sw-notice {

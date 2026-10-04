@@ -4,7 +4,8 @@ import Foundation
  * Which slide a screen shows (ADR 0015, section 7): rotation is local.
  * Each slide stays for its `durationSec`, then the next one follows, after
  * the last the first. A new payload keeps the current slide when its id is
- * still there (and its time on screen), else it starts at the first. With
+ * still there (and its time on screen, against its new duration: a shorter
+ * one applies at once), else it starts at the first. With
  * `autoAdvance` off only the first slide shows. The remote moves to the
  * next or previous slide, which starts that slide's time afresh; pausing
  * holds the current slide until it is resumed.
@@ -139,6 +140,15 @@ public struct SlideRotation: Sendable, Equatable {
             index = kept
             if !wasRotating {
                 shownSince = now
+            } else {
+                // The slide keeps its time against its new duration: a
+                // shorter one whose time is already over makes the slide
+                // due now (the next one follows; none is skipped).
+                let reference = pausedAt ?? now
+                let latest = reference.addingTimeInterval(-TimeInterval(next[kept].durationSec))
+                if shownSince < latest {
+                    shownSince = latest
+                }
             }
         } else {
             index = 0

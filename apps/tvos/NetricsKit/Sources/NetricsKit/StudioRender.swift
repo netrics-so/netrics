@@ -118,8 +118,16 @@ public enum StudioRender {
         public var value: FittedValue
         /** The change line as shown; nil when off or without room. */
         public var changeText: String?
+        /**
+         * The comparison ("vs previous 30 days") on its own line under a
+         * short change line, when it fits one line at a readable size and
+         * there is room; else nil.
+         */
+        public var comparisonText: String?
         public var small: Double
         public var change: Double
+        /** The comparison line's size in units. */
+        public var comparison: Double
         /** Height for the sparkline in units; 0 hides it. */
         public var sparkline: Double
         /** The conversion note (#191) under the numbers. */
@@ -129,11 +137,16 @@ public enum StudioRender {
     /**
      * What a metric widget shows at its size: label, value and a notice
      * always; then by importance while there is room the change line, the
-     * period line, the sparkline and the conversion note.
+     * period line, the comparison, the sparkline and the conversion note.
+     *
+     * The comparison stays whenever it fits at a readable size: on the
+     * change line when the whole line fits one line at the change size,
+     * else on a line of its own under the change at the change size or,
+     * narrower, the smallest readable size (as the web's metricWidgetLayout).
      */
     public static func metricLayout(
         label: String, value: (full: String, compact: String), periodText: String,
-        change: (full: String, short: String)?, notice: String?, note: String?, placement: StudioPlacement,
+        change: (full: String, short: String, comparison: String?)?, notice: String?, note: String?, placement: StudioPlacement,
         showHeader: Bool, fontScale: Double, showSparkline: Bool
     ) -> MetricLayout {
         let box = contentBox(placement, showHeader: showHeader)
@@ -150,9 +163,10 @@ public enum StudioRender {
         var used = labelLayout.height + stackGap + height(notice, small) + valueMin * valueLineHeight
         func fits(_ extra: Double) -> Bool { used + extra <= box.height }
 
-        let changeText = change.map {
-            linesOf($0.full, width: box.width, size: changeSize) <= 1 ? $0.full : $0.short
-        }
+        // One line: when the whole change would wrap, the comparison moves
+        // to a line of its own below.
+        let oneLine = change.map { linesOf($0.full, width: box.width, size: changeSize) <= 1 } ?? false
+        let changeText = change.map { oneLine ? $0.full : $0.short }
         let changeHeight = changeText == nil ? 0 : changeSize * lineHeight
         let showChange = changeText != nil && fits(changeHeight)
         if showChange { used += changeHeight }
@@ -160,6 +174,18 @@ public enum StudioRender {
         let period = height(periodText, small)
         let showPeriod = fits(period)
         if showPeriod { used += period }
+
+        let comparison = showChange && !oneLine ? change?.comparison : nil
+        let comparisonSize = comparison.flatMap { text in
+            [changeSize, small].first {
+                StudioLayout.wrappedLineCount(text, maxWidth: box.width, fontSize: $0) <= 1
+            }
+        }
+        var showComparison = false
+        if let comparisonSize, fits(comparisonSize * lineHeight) {
+            showComparison = true
+            used += comparisonSize * lineHeight
+        }
 
         let noteHeight = height(note, small)
         let sparkMin = stackGap + minSparklineHeight
@@ -184,7 +210,8 @@ public enum StudioRender {
         used += (fitted.size - valueMin) * valueLineHeight
         return MetricLayout(
             label: labelLayout, showPeriod: showPeriod, value: fitted, changeText: showChange ? changeText : nil,
-            small: small, change: changeSize,
+            comparisonText: showComparison ? comparison : nil, small: small, change: changeSize,
+            comparison: comparisonSize ?? changeSize,
             sparkline: spark ? minSparklineHeight + Swift.max(0, box.height - used) : 0, showNote: showNote)
     }
 

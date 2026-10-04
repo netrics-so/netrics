@@ -167,7 +167,11 @@ describe("metricWidgetLayout", () => {
     label: "Downloads · Wurfel",
     value: { full: "12,480", compact: "12.5K" },
     periodText: "Last 7 days · Total",
-    change: { full: "▲ +8.2% vs previous 7 days", short: "▲ +8.2%" },
+    change: {
+      full: "▲ +8.2% vs previous 7 days",
+      short: "▲ +8.2%",
+      comparison: "vs previous 7 days",
+    },
     noticeText: null,
     sourceText: "App Store Connect",
     showHeader: true,
@@ -244,6 +248,7 @@ describe("metricWidgetLayout", () => {
     const change = {
       full: "▲ +1,234.5% vs the same period of the previous year",
       short: "▲ +1,234.5%",
+      comparison: "vs the same period of the previous year",
     };
     const narrow = metricWidgetLayout({
       ...base,
@@ -257,6 +262,67 @@ describe("metricWidgetLayout", () => {
       placement: { x: 0, y: 0, w: 8, h: 2 },
     });
     expect(wide.changeText).toBe(change.full);
+  });
+
+  it("keeps the comparison on its own line when the change line would wrap", () => {
+    // The Apple TV case (#245): a 3 × 4 metric widget whose change line
+    // with its comparison takes two lines at the change size.
+    const input = {
+      ...base,
+      label: "Downloads · All apps",
+      value: { full: "718", compact: "718" },
+      periodText: "Last 30 days · Total",
+      change: {
+        full: "▼ −28% vs previous 30 days",
+        short: "▼ −28%",
+        comparison: "vs previous 30 days",
+      },
+      placement: { x: 0, y: 0, w: 3, h: 4 },
+    };
+    for (const fontScale of [1, 1.15, 1.3]) {
+      const layout = metricWidgetLayout({ ...input, fontScale });
+      expect(layout.changeText).toBe("▼ −28%");
+      expect(layout.comparisonText).toBe("vs previous 30 days");
+      expect(layout.sizes.comparison).toBeGreaterThanOrEqual(
+        STUDIO_TEXT_MINIMUMS.any,
+      );
+      expect(layout.showPeriod).toBe(true);
+    }
+    // Wide enough: one line, no second one.
+    const wide = metricWidgetLayout({
+      ...input,
+      placement: { x: 0, y: 0, w: 4, h: 4 },
+    });
+    expect(wide.changeText).toBe("▼ −28% vs previous 30 days");
+    expect(wide.comparisonText).toBeNull();
+  });
+
+  it("drops the comparison line before the period line on a short widget", () => {
+    const layout = metricWidgetLayout({
+      ...base,
+      change: {
+        full: "▼ −28% vs previous 30 days",
+        short: "▼ −28%",
+        comparison: "vs previous 30 days",
+      },
+      placement: { x: 0, y: 0, w: 3, h: 2 },
+    });
+    expect(layout.changeText).toBe("▼ −28%");
+    expect(layout.comparisonText).toBeNull();
+  });
+
+  it("never splits a change without a comparison", () => {
+    const layout = metricWidgetLayout({
+      ...base,
+      change: {
+        full: "No data to compare vs the same period of the previous year",
+        short: "No comparison",
+        comparison: null,
+      },
+      placement: { x: 0, y: 0, w: 3, h: 4 },
+    });
+    expect(layout.changeText).toBe("No comparison");
+    expect(layout.comparisonText).toBeNull();
   });
 
   it("leaves the sparkline out when it is switched off", () => {
