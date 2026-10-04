@@ -64,6 +64,7 @@ export function deviceMetricReading(
             approximate: data.conversion !== null,
           },
     notice: deviceTileNotice(data.status, data.updatedAt, locale),
+    updatedAt: data.updatedAt,
     source: null,
     options: widget.options,
   };
@@ -101,6 +102,7 @@ export function deviceLineReading(
             approximate: data.conversion !== null,
           },
     notice: deviceTileNotice(data.status, data.updatedAt, locale),
+    updatedAt: data.updatedAt,
     options: widget.options,
   };
 }
@@ -128,6 +130,7 @@ export function deviceBarReading(
             approximate: data.conversion !== null,
           },
     notice: deviceTileNotice(data.status, data.updatedAt, locale),
+    updatedAt: data.updatedAt,
   };
 }
 

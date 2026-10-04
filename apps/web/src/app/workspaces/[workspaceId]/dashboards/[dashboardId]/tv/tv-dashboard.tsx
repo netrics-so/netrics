@@ -7,6 +7,7 @@ import type { Dashboard, WorkspaceMetric } from "@netrics/contracts";
 
 import { LiveWidget, useOffline } from "@/components/studio/slide-canvas";
 import { SlidePlayer } from "@/components/studio/slide-player";
+import { useWidgetRefreshCycle } from "@/components/studio/use-widget-data";
 import { useIdle } from "@/components/tv-frame";
 import { useT } from "@/lib/i18n/client";
 import { documentRotation } from "@/lib/slide-rotation";
@@ -52,6 +53,7 @@ export function TvDashboard({
   const offline = useOffline();
   const t = useT("screen.tv");
   const { settings } = dashboard;
+  const refresh = useWidgetRefreshCycle();
   useWakeLock(true);
 
   const env: StudioEnv = useMemo(
@@ -100,6 +102,7 @@ export function TvDashboard({
           logoImageId: logoImageId(settings),
           timeZone,
           offline,
+          refresh,
         }}
         images={env.images}
         renderWidget={(widget) => <LiveWidget widget={widget} env={env} />}

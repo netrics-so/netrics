@@ -16,6 +16,7 @@ import { widgetBoxStyle } from "@/lib/studio-render";
 import {
   KioskScreen,
   kioskLocale,
+  kioskRefreshCycle,
   kioskShown,
   payloadRotation,
 } from "./kiosk-view";
@@ -352,5 +353,31 @@ describe("kiosk on payload schema 3 (#277, #281)", () => {
   it("keeps schema 2 upright in screen view", () => {
     expect(kioskShown(slides("en"))).toEqual({ rotation: 0, mode: "screen" });
     expect(kioskShown(null)).toEqual({ rotation: 0, mode: "screen" });
+  });
+});
+
+describe("kiosk refresh countdown (ADR 0018, section 5)", () => {
+  it("counts from the API's last answer by the payload's cadence", () => {
+    expect(
+      kioskRefreshCycle(
+        { updatedAt: 1_000, offline: false },
+        { refreshAfterSec: 30 },
+      ),
+    ).toEqual({ since: 1_000, everyMs: 30_000 });
+  });
+
+  it("has none before the first answer or while offline", () => {
+    expect(
+      kioskRefreshCycle(
+        { updatedAt: null, offline: false },
+        { refreshAfterSec: 30 },
+      ),
+    ).toBeNull();
+    expect(
+      kioskRefreshCycle(
+        { updatedAt: 1_000, offline: true },
+        { refreshAfterSec: 30 },
+      ),
+    ).toBeNull();
   });
 });

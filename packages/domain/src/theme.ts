@@ -55,8 +55,8 @@ export interface BuiltinTheme {
 
 export const BUILTIN_THEMES: Readonly<Record<BuiltinThemeKey, BuiltinTheme>> = {
   // Today's TV palette, value for value: apps/web globals.css (.tv,
-  // .tile, .sparkline) and the tvOS `Theme` enum. chartFill is new (bars,
-  // area under lines) and takes the web's primary button blue.
+  // .tile, .sparkline) and the tvOS `Theme` enum. Charts (lines, bars, the
+  // area under lines) take the accent blue (ADR 0018, section 5).
   netrics_dark: {
     key: "netrics_dark",
     name: "netrics Dark",
@@ -71,8 +71,8 @@ export const BUILTIN_THEMES: Readonly<Record<BuiltinThemeKey, BuiltinTheme>> = {
       up: "#9fd6a8",
       down: "#f0a3a3",
       warning: "#e3b341",
-      chartLine: "#5c6470",
-      chartFill: "#2f5fd0",
+      chartLine: "#7aa2f7",
+      chartFill: "#7aa2f7",
       fontScale: 1,
     },
   },

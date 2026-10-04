@@ -10,10 +10,12 @@ import {
 } from "react";
 
 import type { DeviceDashboardV2Response } from "@netrics/contracts";
-import type {
-  LayoutPlacement,
-  ScreenFormat,
-  ThemeTokens,
+import {
+  STUDIO_SPACING,
+  STUDIO_TEXT_MINIMUMS,
+  type LayoutPlacement,
+  type ScreenFormat,
+  type ThemeTokens,
 } from "@netrics/domain";
 
 import {
@@ -30,7 +32,8 @@ import {
   type SlideRotation,
 } from "@/lib/slide-rotation";
 import { useT } from "@/lib/i18n/client";
-import { themeStyle } from "@/lib/studio-theme";
+import { u } from "@/lib/studio-render";
+import { themeStyle, themeSurface } from "@/lib/studio-theme";
 import type { StudioImages } from "@/lib/studio-widgets";
 import { useElementSize } from "@/lib/use-screen";
 
@@ -89,6 +92,82 @@ export function playerEntries<W extends CanvasWidget, S extends PlayerSlide<W>>(
       durationSec: slide.durationSec,
     }));
   });
+}
+
+/** The slide footer's text and bar in units, in the canvas's padding. */
+const FOOTER_TEXT = STUDIO_TEXT_MINIMUMS.any;
+const FOOTER_BAR = 4.5;
+const FOOTER_GAP = 3;
+
+/** "Sales 2/2" for a page of a slide on several pages; null without name. */
+function entryName<W extends CanvasWidget, S extends PlayerSlide<W>>(
+  entry: PlayerEntry<W, S>,
+): string | null {
+  const name = entry.slide.name?.trim() || null;
+  const page = pageLabel(entry.page, entry.pages);
+  return name && page ? `${name} ${page}` : name;
+}
+
+/**
+ * The slide footer (ADR 0018 section 5): "2 / 3 · Sales · next: Team"
+ * over a thin bar that fills over the slide's duration (a CSS animation,
+ * paused with the rotation; none with reduced motion). It sits in the
+ * canvas's bottom padding (32 units, the grid unchanged): 24 units of
+ * text, the bar under it.
+ */
+export function SlideFooter({
+  position,
+  count,
+  name,
+  next,
+  durationSec,
+  paused,
+}: {
+  position: number;
+  count: number;
+  name: string | null;
+  next: string | null;
+  durationSec: number;
+  paused: boolean;
+}) {
+  const t = useT("screen.player");
+  const text = [
+    t("position", { number: position, count }),
+    name,
+    next ? t("next", { name: next }) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div
+      className="studio-slide-footer"
+      style={{
+        height: u(STUDIO_SPACING.padding),
+        padding: `0 ${u(STUDIO_SPACING.padding)}`,
+        gap: u(FOOTER_GAP),
+      }}
+    >
+      <p
+        className="studio-slide-footer-text"
+        style={{ fontSize: u(FOOTER_TEXT) }}
+      >
+        {text}
+      </p>
+      <span
+        className="studio-slide-footer-bar"
+        style={{ height: u(FOOTER_BAR) }}
+        aria-hidden="true"
+      >
+        <span
+          className="studio-slide-footer-fill"
+          style={{
+            animationDuration: `${durationSec}s`,
+            animationPlayState: paused ? "paused" : "running",
+          }}
+        />
+      </span>
+    </div>
+  );
 }
 
 /** Steps a playing rotation from outside (the Studio's Play controls). */
@@ -233,6 +312,8 @@ export function SlidePlayer<W extends CanvasWidget>({
   });
 
   const fade = transition === "fade";
+  // The slide footer shows while the rotation moves on by itself.
+  const showFooter = autoAdvance && entries.length > 1;
 
   return (
     <div
@@ -241,13 +322,15 @@ export function SlidePlayer<W extends CanvasWidget>({
         .filter(Boolean)
         .join(" ")}
       style={themeStyle(tokens)}
+      data-surface={themeSurface(tokens)}
       aria-roledescription={t("slideShow")}
       data-format={format}
     >
       {entries.length === 0
         ? empty && <div className="slide-player-empty">{empty}</div>
-        : entries.map((entry) => {
+        : entries.map((entry, index) => {
             const active = entry.id === shownId;
+            const next = entries[(index + 1) % entries.length]!;
             return (
               <div
                 key={entry.id}
@@ -275,6 +358,18 @@ export function SlidePlayer<W extends CanvasWidget>({
                   placements={entry.placements}
                   screen={screen}
                   fill
+                  footer={
+                    active && showFooter ? (
+                      <SlideFooter
+                        position={index + 1}
+                        count={entries.length}
+                        name={entryName(entry)}
+                        next={entryName(next)}
+                        durationSec={entry.durationSec}
+                        paused={paused}
+                      />
+                    ) : null
+                  }
                 />
               </div>
             );

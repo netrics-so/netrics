@@ -230,6 +230,158 @@ describe("bar widget", () => {
   });
 });
 
+describe("freshness footer and figures (ADR 0018 section 5, #309)", () => {
+  const minutesAgo = (minutes: number) =>
+    new Date(Date.now() - minutes * 60_000).toISOString();
+  const metric = {
+    label: "Proceeds · Paperstand",
+    period: "last_7_days" as const,
+    aggregation: "sum" as const,
+    metric: { kind: "counter", granularity: "day", better: "higher" } as const,
+    reading: {
+      value: 1248,
+      unit: "count",
+      delta: 120,
+      ratio: 0.106,
+      series,
+      timeZone: "UTC",
+    },
+    notice: null,
+    source: "App Store Connect",
+    updatedAt: minutesAgo(5),
+    placement: { x: 0, y: 0, w: 6, h: 4 },
+    showHeader: true,
+    fontScale: 1,
+    options: { showSparkline: true, showChange: true },
+  };
+  const footers = (html: string) =>
+    [
+      ...html.matchAll(
+        /<p class="sw-muted sw-source sw-footer"[^>]*>([^<]*)</g,
+      ),
+    ].map((match) => match[1]);
+
+  it("says when the numbers were updated and from where, at 24 units", () => {
+    const html = renderI18n(<MetricWidgetView {...metric} />);
+    expect(footers(html)).toEqual(["updated 5 min. ago · App Store Connect"]);
+    expect(html).toContain(
+      `<p class="sw-muted sw-source sw-footer" style="font-size:${u(24)}"`,
+    );
+    expect(Math.min(...fontSizes(html))).toBeGreaterThanOrEqual(
+      STUDIO_TEXT_MINIMUMS.any,
+    );
+  });
+
+  it("words the footer in German with Intl", () => {
+    const html = renderI18n(<MetricWidgetView {...metric} />, "de");
+    expect(footers(html)).toEqual([
+      "aktualisiert vor 5 Min. · App Store Connect",
+    ]);
+  });
+
+  it("shortens the footer to one line in a narrow widget", () => {
+    const html = renderI18n(
+      <MetricWidgetView
+        {...metric}
+        placement={{ x: 0, y: 0, w: 3, h: 4 }}
+        source="App Store Connect for Wurfel and Paperstand"
+      />,
+    );
+    expect(footers(html)).toEqual(["updated 5 min. ago"]);
+  });
+
+  it("shows the stale notice in the footer's place, in the warning colour", () => {
+    const html = renderI18n(
+      <MetricWidgetView {...metric} notice="Last sync 3 hours ago" />,
+    );
+    expect(footers(html)).toEqual([]);
+    expect(html).toContain('class="sw-notice"');
+    expect(text(html)).toContain("Last sync 3 hours ago");
+  });
+
+  it("draws the sparkline between the label and the value", () => {
+    const html = renderI18n(<MetricWidgetView {...metric} />);
+    const spark = html.indexOf('class="sw-spark"');
+    expect(spark).toBeGreaterThan(html.indexOf('class="sw-resource"'));
+    expect(spark).toBeLessThan(html.indexOf('class="sw-value"'));
+  });
+
+  it("gives line and bar widgets the footer while the chart keeps its room", () => {
+    const line = renderI18n(
+      <LineWidgetView
+        label="Clicks · example.com"
+        period="last_7_days"
+        reading={{
+          value: 122,
+          unit: "count",
+          series,
+          previous: series,
+          timeZone: "UTC",
+        }}
+        notice={null}
+        source="Search Console"
+        updatedAt={minutesAgo(2)}
+        placement={{ x: 0, y: 0, w: 6, h: 5 }}
+        showHeader
+        fontScale={1}
+        options={{ showPrevious: true, showAxis: true }}
+      />,
+    );
+    expect(footers(line)).toEqual(["updated 2 min. ago · Search Console"]);
+    // The area fades from the chart fill (a gradient per widget).
+    expect(line).toMatch(/<linearGradient id="sw-area-[\w-]+"/);
+    expect(line).toContain('class="sw-line-area-from"');
+    expect(line).toMatch(
+      /class="sw-line-area" d="[^"]+" style="fill:url\(#sw-area-/,
+    );
+
+    const bar = (placement: { x: number; y: number; w: number; h: number }) =>
+      renderI18n(
+        <BarWidgetView
+          label="Downloads by app"
+          reading={{
+            unit: "count",
+            groups: [{ label: "Wurfel", value: 812 }],
+            others: null,
+          }}
+          notice={null}
+          source="App Store Connect"
+          updatedAt={minutesAgo(1)}
+          placement={placement}
+          showHeader
+          fontScale={1}
+        />,
+      );
+    expect(footers(bar({ x: 0, y: 0, w: 4, h: 5 }))).toEqual([
+      "updated 1 min. ago · App Store Connect",
+    ]);
+    // A chart that would get too small (a long label at the minimum
+    // size) keeps its room: no footer.
+    const crowded = renderI18n(
+      <LineWidgetView
+        label="Proceeds in every currency · Paperstand – Magazine reader for iPad"
+        period="last_7_days"
+        reading={{
+          value: 1234567,
+          unit: "EUR_minor",
+          series,
+          previous: null,
+          timeZone: "UTC",
+        }}
+        notice={null}
+        source="App Store Connect"
+        updatedAt={minutesAgo(2)}
+        placement={{ x: 0, y: 0, w: 4, h: 3 }}
+        showHeader
+        fontScale={1}
+        options={{ showPrevious: false, showAxis: true }}
+      />,
+    );
+    expect(crowded).toContain("<svg");
+    expect(footers(crowded)).toEqual([]);
+  });
+});
+
 describe("image widget", () => {
   it("keeps the aspect ratio with contain or cover", () => {
     const image = { id: ID(5), url: "/img.png", width: 512, height: 256 };

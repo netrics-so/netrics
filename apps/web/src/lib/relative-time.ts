@@ -38,19 +38,23 @@ export function relativeTime(
 /**
  * "5 minutes ago", "vor 5 Minuten", "in 2 hours" with Intl in the given
  * language (ADR 0016 section 8); "now" within 45 seconds. Null without a
- * time.
+ * time (or one that does not parse). `style: "short"` reads "5 min. ago".
  */
 export function relativeTimeIn(
   iso: string | null,
   locale: string,
   now: number = Date.now(),
+  style: Intl.RelativeTimeFormatStyle = "long",
 ): string | null {
-  if (!iso) {
+  if (!iso || Number.isNaN(Date.parse(iso))) {
     return null;
   }
   const deltaSeconds = Math.round((Date.parse(iso) - now) / 1000);
   const absolute = Math.abs(deltaSeconds);
-  const format = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const format = new Intl.RelativeTimeFormat(locale, {
+    numeric: "auto",
+    style,
+  });
   if (absolute < 45) {
     return format.format(0, "second");
   }

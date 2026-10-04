@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { BUILTIN_THEMES } from "@netrics/domain";
 
-import { resolveDashboardTheme, themeStyle } from "./studio-theme";
+import {
+  resolveDashboardTheme,
+  themeStyle,
+  themeSurface,
+} from "./studio-theme";
 
 const builtin = (key: string | null) => ({
   themeBuiltin: key,
@@ -60,8 +64,25 @@ describe("themeStyle", () => {
       string
     >;
     expect(style["--t-background"]).toBe("#07090c");
-    expect(style["--t-chart-fill"]).toBe("#2f5fd0");
+    expect(style["--t-chart-fill"]).toBe("#7aa2f7");
     expect(style["--t-font-scale"]).toBe("1");
     expect(Object.keys(style)).toHaveLength(13);
+  });
+});
+
+describe("themeSurface (ADR 0018, section 5)", () => {
+  it("layers dark themes with hairline borders and keeps the others flat", () => {
+    expect(themeSurface(BUILTIN_THEMES.netrics_dark.tokens)).toBe("layered");
+    expect(themeSurface(BUILTIN_THEMES.midnight.tokens)).toBe("layered");
+    expect(themeSurface(BUILTIN_THEMES.light.tokens)).toBe("flat");
+    expect(themeSurface(BUILTIN_THEMES.paper.tokens)).toBe("flat");
+    expect(themeSurface(BUILTIN_THEMES.high_contrast.tokens)).toBe("flat");
+  });
+
+  it("decides a custom theme by its tokens", () => {
+    const dark = BUILTIN_THEMES.netrics_dark.tokens;
+    expect(themeSurface({ ...dark, border: "#ffffff" })).toBe("flat");
+    expect(themeSurface({ ...dark, background: "#fafafa" })).toBe("flat");
+    expect(themeSurface({ ...dark, surface: "#202020" })).toBe("layered");
   });
 });

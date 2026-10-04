@@ -11,7 +11,9 @@ import {
 
 import type { DashboardSlide } from "@netrics/contracts";
 import {
+  STUDIO_HEADER_METRICS,
   STUDIO_TEXT_MINIMUMS,
+  estimateTextWidth,
   headerFit,
   type LayoutPlacement,
   type ScreenFormat,
@@ -28,10 +30,11 @@ import {
   type ScreenSize,
   type SlideLayouts,
 } from "@/lib/screen-view";
+import { refreshCountdown, type RefreshCycle } from "@/lib/refresh-countdown";
 import { clockText } from "@/lib/studio-clock";
 import { u, type ScreenPlacement } from "@/lib/studio-render";
 import { useElementSize } from "@/lib/use-screen";
-import { themeStyle } from "@/lib/studio-theme";
+import { themeStyle, themeSurface } from "@/lib/studio-theme";
 import {
   slideBackground,
   type StudioEnv,
@@ -50,6 +53,12 @@ import { WidgetNotice } from "./widget-parts";
 /** Header text sizes in units: the name, and the slide name and clock. */
 const HEADER_NAME = 36;
 const HEADER_META = 30;
+/** The refresh countdown: its text, and its progress bar (ADR 0018 §5). */
+const COUNTDOWN_TEXT = STUDIO_TEXT_MINIMUMS.any;
+const COUNTDOWN_BAR = { width: 210, height: 4.5 };
+const COUNTDOWN_GAP = 12;
+/** Between the items on the header's right (countdown, offline, clock). */
+const HEADER_META_GAP = 24;
 
 /**
  * Keeps one widget's failure inside its box: the rest of the slide stays
@@ -143,6 +152,11 @@ export interface SlideHeaderInfo {
   timeZone: string;
   /** Shown when the screen has lost its connection. */
   offline?: boolean;
+  /**
+   * The data's refresh cadence: the header counts down to the next
+   * refresh where there is room (TV mode, kiosk, Play; not the Studio).
+   */
+  refresh?: RefreshCycle | null;
 }
 
 /** True while the browser reports no network (the header's marker). */
@@ -172,6 +186,80 @@ function HeaderClock({ timeZone }: { timeZone: string }) {
 }
 
 /**
+ * "next refresh in 42 s" over a thin bar that fills towards the refresh,
+ * ticking every second (the bar moves linearly between ticks, and jumps
+ * back without a transition when a new cycle starts).
+ */
+function RefreshCountdownView({ cycle }: { cycle: RefreshCycle }) {
+  const t = useT("screen.player");
+  const { since, everyMs } = cycle;
+  const [tick, setTick] = useState(() => ({ now: since, reset: false }));
+  useEffect(() => {
+    const at = (now: number) => refreshCountdown(now, { since, everyMs });
+    const update = () =>
+      setTick((previous) => {
+        const now = Date.now();
+        return { now, reset: at(now).fraction < at(previous.now).fraction };
+      });
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [since, everyMs]);
+  const { seconds, fraction } = refreshCountdown(tick.now, cycle);
+  return (
+    <span
+      className="studio-refresh"
+      style={{ fontSize: u(COUNTDOWN_TEXT), gap: u(COUNTDOWN_GAP) }}
+    >
+      <span suppressHydrationWarning>{t("nextRefresh", { seconds })}</span>
+      <span
+        className="studio-refresh-bar"
+        style={{
+          width: u(COUNTDOWN_BAR.width),
+          height: u(COUNTDOWN_BAR.height),
+        }}
+        aria-hidden="true"
+      >
+        <span
+          className={
+            tick.reset
+              ? "studio-refresh-fill studio-refresh-fill--reset"
+              : "studio-refresh-fill"
+          }
+          style={{ width: `${(fraction * 100).toFixed(2)}%` }}
+        />
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Whether the countdown fits beside the names the header shows, by the
+ * same conservative estimates as `headerFit`: it is left out before the
+ * dashboard or slide name would be cut, and in narrow formats.
+ */
+function countdownFits(
+  fit: ReturnType<typeof headerFit>,
+  shown: { name: string; slideName: string | null; pageLabel: string | null },
+  sample: string,
+): boolean {
+  if (fit.maxNameLines > 1) return false;
+  const m = STUDIO_HEADER_METRICS;
+  const used =
+    estimateTextWidth(shown.name.trim(), m.name, "semibold") +
+    (shown.slideName
+      ? m.gap + estimateTextWidth(shown.slideName.trim(), m.meta)
+      : 0) +
+    (shown.pageLabel ? m.gap + estimateTextWidth(shown.pageLabel, m.meta) : 0);
+  const countdown =
+    HEADER_META_GAP +
+    estimateTextWidth(sample, COUNTDOWN_TEXT) +
+    COUNTDOWN_GAP +
+    COUNTDOWN_BAR.width;
+  return fit.width - used >= countdown;
+}
+
+/**
  * The header band: logo, dashboard name, slide name (and page), clock. The
  * format's header rule (`headerFit`, ADR 0017 section 6) decides: in narrow
  * formats (3:4, 9:16) the dashboard name wraps to two lines before it is
@@ -191,6 +279,7 @@ function SlideHeader({
 }) {
   const logo = header.logoImageId ? images.get(header.logoImageId) : null;
   const t = useT("screen.widget");
+  const tPlayer = useT("screen.player");
   const fit = headerFit({
     name: header.name,
     slideName: header.slideName,
@@ -198,6 +287,16 @@ function SlideHeader({
     logoAspect: logo && logo.height > 0 ? logo.width / logo.height : null,
   });
   const wrap = fit.maxNameLines > 1;
+  const slideName =
+    header.slideName && fit.showSlideName ? header.slideName : null;
+  const showCountdown =
+    header.refresh != null &&
+    !header.offline &&
+    countdownFits(
+      fit,
+      { name: header.name, slideName, pageLabel: header.pageLabel ?? null },
+      tPlayer("nextRefresh", { seconds: 88 }),
+    );
   return (
     <header
       className="studio-header"
@@ -228,13 +327,13 @@ function SlideHeader({
       >
         {header.name}
       </span>
-      {header.slideName && fit.showSlideName ? (
+      {slideName ? (
         <span
           className="studio-header-slide"
           style={{ fontSize: u(HEADER_META) }}
-          title={header.slideName}
+          title={slideName}
         >
-          {header.slideName}
+          {slideName}
         </span>
       ) : null}
       {header.pageLabel ? (
@@ -247,8 +346,11 @@ function SlideHeader({
       ) : null}
       <span
         className="studio-header-meta"
-        style={{ fontSize: u(HEADER_META), gap: u(24) }}
+        style={{ fontSize: u(HEADER_META), gap: u(HEADER_META_GAP) }}
       >
+        {showCountdown && header.refresh ? (
+          <RefreshCountdownView cycle={header.refresh} />
+        ) : null}
         {header.offline ? (
           <span className="studio-offline">
             <span aria-hidden="true">⚠</span> {t("offline")}
@@ -336,6 +438,7 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
   placements,
   screen: assumedScreen = null,
   fill = false,
+  footer = null,
 }: {
   slide: CanvasSlide<W>;
   tokens: ThemeTokens;
@@ -357,6 +460,8 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
   screen?: ScreenSize | null;
   /** Fill the container instead of a 16:9 box of its width. */
   fill?: boolean;
+  /** Drawn in the canvas's bottom padding (the player's slide footer). */
+  footer?: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const measured = useElementSize(ref);
@@ -386,6 +491,7 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
       ref={ref}
       className={classes}
       data-format={format}
+      data-surface={themeSurface(tokens)}
       style={{
         ...themeStyle(tokens),
         ...(geometry.unit === null
@@ -447,6 +553,7 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
           </div>
         );
       })}
+      {footer}
     </div>
   );
 }

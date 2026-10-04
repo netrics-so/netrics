@@ -4,8 +4,10 @@ import type { DashboardSettings } from "@netrics/contracts";
 import {
   BUILTIN_THEMES,
   DEFAULT_THEME_KEY,
+  contrastRatio,
   isBuiltinThemeKey,
   isHexColor,
+  relativeLuminance,
   type BuiltinThemeKey,
   type ThemeTokens,
 } from "@netrics/domain";
@@ -65,4 +67,36 @@ export function themeStyle(tokens: ThemeTokens): CSSProperties {
     "--t-chart-fill": tokens.chartFill,
     "--t-font-scale": String(tokens.fontScale),
   } as CSSProperties;
+}
+
+/**
+ * How widget surfaces are drawn with a theme (ADR 0018, section 5), set on
+ * the canvas as `data-surface`. "layered": a dark theme with hairline
+ * borders gets depth (a gradient, an inner highlight, a soft shadow and a
+ * glow of the accent on the canvas), all derived from its tokens with
+ * `color-mix`. "flat": a light theme (paper, light) or one with strong
+ * borders (high contrast) keeps plain surfaces and borders, which read
+ * better there. Custom themes fall into one or the other by their tokens.
+ */
+export type ThemeSurface = "layered" | "flat";
+
+/** A light background from this relative luminance on. */
+const LIGHT_BACKGROUND = 0.4;
+/** Borders this strong against the surface are meant to be seen as such. */
+const STRONG_BORDER = 3;
+
+export function themeSurface(
+  tokens: Pick<ThemeTokens, "background" | "surface" | "border">,
+): ThemeSurface {
+  try {
+    if (relativeLuminance(tokens.background) >= LIGHT_BACKGROUND) {
+      return "flat";
+    }
+    return contrastRatio(tokens.border, tokens.surface) >= STRONG_BORDER
+      ? "flat"
+      : "layered";
+  } catch {
+    // Not #rrggbb (never from a validated theme): the plain surface.
+    return "flat";
+  }
 }

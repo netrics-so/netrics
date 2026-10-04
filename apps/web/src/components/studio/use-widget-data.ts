@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   MetricBreakdownResponse,
@@ -8,11 +8,22 @@ import type {
 } from "@netrics/contracts";
 
 import { apiErrorMessage, queryMetric, queryMetricBreakdown } from "@/lib/api";
+import type { RefreshCycle } from "@/lib/refresh-countdown";
 import type { DataWidget } from "@/lib/studio-widgets";
 import { useLocale } from "@/lib/i18n/client";
 
 /** How often a widget refreshes its numbers while the page is visible. */
 export const WIDGET_REFRESH_MS = 60_000;
+
+/**
+ * The refresh cadence of live widgets on a playing screen (TV mode, Play):
+ * every widget polls each `WIDGET_REFRESH_MS` from when it mounted, which
+ * is when the player started, so the header counts down from then.
+ */
+export function useWidgetRefreshCycle(): RefreshCycle {
+  const [since] = useState(() => Date.now());
+  return useMemo(() => ({ since, everyMs: WIDGET_REFRESH_MS }), [since]);
+}
 
 export interface WidgetData<T> {
   data: T | null;

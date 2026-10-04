@@ -15,7 +15,7 @@ import type { LayoutWidget, ThemeTokens } from "@netrics/domain";
 import { WidgetBoundary, useOffline } from "@/components/studio/slide-canvas";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { scrollItemWidth, scrollSections } from "@/lib/scroll-view";
-import { themeStyle } from "@/lib/studio-theme";
+import { themeStyle, themeSurface } from "@/lib/studio-theme";
 import {
   slideBackground,
   slideTitle,
@@ -108,6 +108,7 @@ export function ScrollView<W extends LayoutWidget>({
     <div
       ref={ref}
       className="scroll-view"
+      data-surface={themeSurface(tokens)}
       style={themeStyle(tokens) as CSSProperties}
       data-columns={sections[0]?.layout.columns ?? 1}
     >

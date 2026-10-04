@@ -5,7 +5,12 @@ import { othersLabel, type StudioPlacement } from "@netrics/domain";
 import { displayUnit, formatValue } from "@/lib/format-metric";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { barLayout, type BarEntry } from "@/lib/studio-chart";
-import { LINE_HEIGHT, chartWidgetLayout, u } from "@/lib/studio-render";
+import {
+  LINE_HEIGHT,
+  chartWidgetLayoutWithFooter,
+  footerLine,
+  u,
+} from "@/lib/studio-render";
 import {
   metricKeyOf,
   type DataWidget,
@@ -15,7 +20,12 @@ import { connectionNotice } from "@/lib/tile-status";
 
 import { dataNotice, dataWidgetLabel } from "./metric-widget";
 import { useBreakdownData } from "./use-widget-data";
-import { WidgetLabel, WidgetNotice } from "./widget-parts";
+import {
+  WidgetFooter,
+  WidgetLabel,
+  WidgetNotice,
+  useFooterCandidates,
+} from "./widget-parts";
 
 export interface BarReading {
   unit: string;
@@ -28,6 +38,10 @@ export interface BarWidgetViewProps {
   label: string;
   reading: BarReading | null;
   notice: string | null;
+  /** The connection's name, for the footer; null: none to show. */
+  source?: string | null;
+  /** The data's last successful sync, for the footer; null: unknown. */
+  updatedAt?: string | null;
   placement: StudioPlacement;
   showHeader: boolean;
   fontScale: number;
@@ -44,15 +58,24 @@ export function BarWidgetView(props: BarWidgetViewProps) {
   const { reading } = props;
   const locale = useLocale();
   const t = useT("screen.widget");
-  const layout = chartWidgetLayout({
-    type: "bar",
-    label: props.label,
-    value: null,
-    noticeText: props.notice,
-    placement: props.placement,
-    showHeader: props.showHeader,
-    fontScale: props.fontScale,
-  });
+  const candidates = useFooterCandidates(props.updatedAt, props.source);
+  const { layout, footer } = chartWidgetLayoutWithFooter(
+    {
+      type: "bar",
+      label: props.label,
+      value: null,
+      noticeText: props.notice,
+      placement: props.placement,
+      showHeader: props.showHeader,
+      fontScale: props.fontScale,
+    },
+    footerLine(candidates, {
+      type: "bar",
+      placement: props.placement,
+      showHeader: props.showHeader,
+      fontScale: props.fontScale,
+    }),
+  );
   const approx = reading?.approximate ? "≈ " : "";
   const bars = reading
     ? barLayout({
@@ -124,6 +147,8 @@ export function BarWidgetView(props: BarWidgetViewProps) {
       </div>
       {props.notice ? (
         <WidgetNotice size={layout.sizes.small}>{props.notice}</WidgetNotice>
+      ) : footer ? (
+        <WidgetFooter size={layout.sizes.small}>{footer}</WidgetFooter>
       ) : null}
     </article>
   );
@@ -174,6 +199,9 @@ export function useLiveBar(
       ),
       locale,
     ),
+    source: env.connections[widget.connectionId]?.name ?? null,
+    updatedAt:
+      env.connections[widget.connectionId]?.state.lastSuccessAt ?? null,
     loading,
   };
 }
