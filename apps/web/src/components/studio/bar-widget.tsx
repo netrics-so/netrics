@@ -129,6 +129,55 @@ export function BarWidgetView(props: BarWidgetViewProps) {
   );
 }
 
+/** A bar widget's props apart from its placement on a slide. */
+export type BarReadingProps = Omit<
+  BarWidgetViewProps,
+  "placement" | "showHeader" | "fontScale"
+>;
+
+/** A bar widget's live groups, for the slide and the scroll view. */
+export function useLiveBar(
+  widget: Extract<DataWidget, { type: "bar" }>,
+  env: StudioEnv,
+): BarReadingProps {
+  const { data, error, loading } = useBreakdownData(env.workspaceId, widget);
+  const locale = useLocale();
+  const metric = env.metrics.get(metricKeyOf(widget));
+  const unit = displayUnit(
+    data?.metric.unit ?? metric?.unit ?? "",
+    data?.currency ?? widget.dimensions.currency,
+  );
+  return {
+    label: dataWidgetLabel(widget, metric),
+    reading: data
+      ? {
+          unit,
+          groups: data.groups.map((group) => ({
+            label: group.label,
+            value: group.value,
+          })),
+          // The remainder in the viewer's language (the API names it in
+          // English for signed-in views).
+          others: data.others
+            ? { label: othersLabel(locale), value: data.others.value }
+            : null,
+          approximate: data.conversion !== null,
+        }
+      : null,
+    notice: dataNotice(
+      error,
+      data !== null,
+      connectionNotice(
+        env.connections[widget.connectionId],
+        Date.now(),
+        locale,
+      ),
+      locale,
+    ),
+    loading,
+  };
+}
+
 /** A bar widget that queries its own groups (signed-in pages). */
 export function LiveBarWidget({
   widget,
@@ -137,47 +186,12 @@ export function LiveBarWidget({
   widget: Extract<DataWidget, { type: "bar" }>;
   env: StudioEnv;
 }) {
-  const { data, error, loading } = useBreakdownData(env.workspaceId, widget);
-  const locale = useLocale();
-  const metric = env.metrics.get(metricKeyOf(widget));
-  const unit = displayUnit(
-    data?.metric.unit ?? metric?.unit ?? "",
-    data?.currency ?? widget.dimensions.currency,
-  );
   return (
     <BarWidgetView
-      label={dataWidgetLabel(widget, metric)}
-      reading={
-        data
-          ? {
-              unit,
-              groups: data.groups.map((group) => ({
-                label: group.label,
-                value: group.value,
-              })),
-              // The remainder in the viewer's language (the API names it
-              // in English for signed-in views).
-              others: data.others
-                ? { label: othersLabel(locale), value: data.others.value }
-                : null,
-              approximate: data.conversion !== null,
-            }
-          : null
-      }
-      notice={dataNotice(
-        error,
-        data !== null,
-        connectionNotice(
-          env.connections[widget.connectionId],
-          Date.now(),
-          locale,
-        ),
-        locale,
-      )}
+      {...useLiveBar(widget, env)}
       placement={widget}
       showHeader={env.showHeader}
       fontScale={env.fontScale}
-      loading={loading}
     />
   );
 }

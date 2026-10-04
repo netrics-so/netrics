@@ -354,6 +354,12 @@ export const studioDe: Catalog<typeof studioEn> = {
     slideEmpty: "Diese Folie hat noch keine Widgets.",
     tvPageTitle: "TV-Modus · netrics",
     source: "Quelle",
+    displayMode: "Ansicht",
+    screenView: "Bildschirm-Ansicht",
+    scrollView: "Scroll-Ansicht",
+    live: "Live",
+    offline: "Offline",
+    scrollSlides: "Folien von {name}",
   },
   themePreview: {
     label: "Vorschau einer Folie in diesem Design",

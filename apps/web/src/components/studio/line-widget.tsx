@@ -183,6 +183,52 @@ export function LineWidgetView(props: LineWidgetViewProps) {
   );
 }
 
+/** A line widget's props apart from its placement on a slide. */
+export type LineReadingProps = Omit<
+  LineWidgetViewProps,
+  "placement" | "showHeader" | "fontScale"
+>;
+
+/** A line widget's live numbers, for the slide and the scroll view. */
+export function useLiveLine(
+  widget: Extract<DataWidget, { type: "line" }>,
+  env: StudioEnv,
+): LineReadingProps {
+  const { data, error, loading } = useMetricData(env.workspaceId, widget);
+  const locale = useLocale();
+  const metric = env.metrics.get(metricKeyOf(widget));
+  const unit = displayUnit(
+    data?.metric.unit ?? metric?.unit ?? "",
+    data?.currency ?? widget.dimensions.currency,
+  );
+  return {
+    label: dataWidgetLabel(widget, metric),
+    period: widget.period,
+    reading: data
+      ? {
+          value: data.value,
+          unit,
+          series: data.series,
+          previous: data.previousSeries,
+          timeZone: data.timeZone,
+          approximate: data.conversion !== null,
+        }
+      : null,
+    notice: dataNotice(
+      error,
+      data !== null,
+      connectionNotice(
+        env.connections[widget.connectionId],
+        Date.now(),
+        locale,
+      ),
+      locale,
+    ),
+    options: widget.options,
+    loading,
+  };
+}
+
 /** A line widget that queries its own numbers (signed-in pages). */
 export function LiveLineWidget({
   widget,
@@ -191,44 +237,12 @@ export function LiveLineWidget({
   widget: Extract<DataWidget, { type: "line" }>;
   env: StudioEnv;
 }) {
-  const { data, error, loading } = useMetricData(env.workspaceId, widget);
-  const locale = useLocale();
-  const metric = env.metrics.get(metricKeyOf(widget));
-  const unit = displayUnit(
-    data?.metric.unit ?? metric?.unit ?? "",
-    data?.currency ?? widget.dimensions.currency,
-  );
   return (
     <LineWidgetView
-      label={dataWidgetLabel(widget, metric)}
-      period={widget.period}
-      reading={
-        data
-          ? {
-              value: data.value,
-              unit,
-              series: data.series,
-              previous: data.previousSeries,
-              timeZone: data.timeZone,
-              approximate: data.conversion !== null,
-            }
-          : null
-      }
-      notice={dataNotice(
-        error,
-        data !== null,
-        connectionNotice(
-          env.connections[widget.connectionId],
-          Date.now(),
-          locale,
-        ),
-        locale,
-      )}
+      {...useLiveLine(widget, env)}
       placement={widget}
       showHeader={env.showHeader}
       fontScale={env.fontScale}
-      options={widget.options}
-      loading={loading}
     />
   );
 }
