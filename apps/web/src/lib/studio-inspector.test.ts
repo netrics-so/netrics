@@ -486,8 +486,11 @@ function dashboard(widgets: DashboardWidget[]): Dashboard {
         enabled: true,
         background: null,
         widgets,
+        layouts: [],
+        formatWarnings: [],
       },
     ],
+    primaryFormat: "16x9",
     tiles: [],
   };
 }

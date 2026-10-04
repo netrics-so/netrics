@@ -257,12 +257,18 @@ describe("dashboards", () => {
       );
     const data = `, connection_id, metric_key, aggregation, period`;
     const binding = `, '${connectionA}', 'visits', 'sum', 'today'`;
+    // The largest grid of any format (16 × 14, ADR 0017); the service
+    // checks the primary format's own grid.
     await expectDbError(
-      insert("", `'clock', 11, 0, 2, 1`),
+      insert("", `'clock', 15, 0, 2, 1`),
       /dashboard_widgets_grid_valid/,
     );
     await expectDbError(
-      insert("", `'clock', 0, 7, 2, 2`),
+      insert("", `'clock', 0, 13, 2, 2`),
+      /dashboard_widgets_grid_valid/,
+    );
+    await expectDbError(
+      insert("", `'clock', -1, 0, 2, 1`),
       /dashboard_widgets_grid_valid/,
     );
     await expectDbError(
@@ -451,5 +457,305 @@ describe("dashboards", () => {
     await admin`delete from connections where id = ${extra!.id}`;
     const after = await inA((tx) => findDashboard(tx, workspaceA, created.id));
     expect(widgetsOf(after).map((w) => w.connectionId)).toEqual([connectionA]);
+  });
+});
+
+describe("custom layouts (ADR 0017)", () => {
+  const clock = (overrides: Partial<WidgetInput> = {}): WidgetInput => ({
+    ...metric(connectionA),
+    type: "clock",
+    connectionId: null,
+    metricKey: null,
+    aggregation: null,
+    period: null,
+    w: 2,
+    h: 1,
+    ...overrides,
+  });
+  const place = (
+    widget: number,
+    overrides: Partial<{
+      page: number;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      hidden: boolean;
+      autoPlaced: boolean;
+    }> = {},
+  ) => ({
+    widget,
+    page: 0,
+    x: 0,
+    y: widget,
+    w: 2,
+    h: 1,
+    hidden: false,
+    autoPlaced: false,
+    ...overrides,
+  });
+
+  async function withLayouts() {
+    return inA((tx) =>
+      insertDashboard(tx, workspaceA, {
+        name: "Formats",
+        projectId: null,
+        slides: [
+          slide([clock(), clock({ x: 2 })], {
+            layouts: [
+              {
+                format: "9x16",
+                pages: 2,
+                placements: [place(0), place(1, { page: 1, autoPlaced: true })],
+              },
+              {
+                format: "4x3",
+                pages: 1,
+                placements: [place(0), place(1, { hidden: true })],
+              },
+            ],
+          }),
+          slide([clock()]),
+        ],
+      }),
+    );
+  }
+
+  it("stores a primary format and custom layouts per slide and format", async () => {
+    const plain = await inA((tx) =>
+      insertDashboard(tx, workspaceA, {
+        name: "Plain",
+        projectId: null,
+        slides: [slide([clock()])],
+      }),
+    );
+    expect(plain.primaryFormat).toBe("16x9");
+    expect(plain.slides[0]!.layouts).toEqual([]);
+
+    const created = await withLayouts();
+    const [first, second] = created.slides;
+    const [a, b] = first!.widgets;
+    // Formats in their fixed order, placements in widget order.
+    expect(first!.layouts).toEqual([
+      {
+        format: "4x3",
+        pages: 1,
+        placements: [
+          { widgetId: a!.id, ...place(0), widget: undefined },
+          { widgetId: b!.id, ...place(1, { hidden: true }), widget: undefined },
+        ].map(({ widget: _, ...rest }) => rest),
+      },
+      {
+        format: "9x16",
+        pages: 2,
+        placements: [
+          { widgetId: a!.id, ...place(0) },
+          { widgetId: b!.id, ...place(1, { page: 1, autoPlaced: true }) },
+        ].map(({ widget: _, ...rest }) => rest),
+      },
+    ]);
+    expect(second!.layouts).toEqual([]);
+    expect(
+      await inA((tx) => findDashboard(tx, workspaceA, created.id)),
+    ).toEqual(created);
+
+    const moved = await inA((tx) =>
+      insertDashboard(tx, workspaceA, {
+        name: "Portrait",
+        projectId: null,
+        primaryFormat: "9x16",
+        slides: [slide([clock({ y: 12, h: 2 })])],
+      }),
+    );
+    expect(moved.primaryFormat).toBe("9x16");
+    expect(moved.slides[0]!.widgets[0]).toMatchObject({ y: 12, h: 2 });
+  });
+
+  it("keeps layouts to their workspace (RLS and composite keys)", async () => {
+    const created = await withLayouts();
+    const slideId = created.slides[0]!.id;
+    const widgetId = created.slides[0]!.widgets[0]!.id;
+    const hidden = await inB(async (tx) => ({
+      slides: await tx.select().from(schema.dashboardSlideLayouts),
+      widgets: await tx.select().from(schema.dashboardWidgetLayouts),
+    }));
+    expect(hidden).toEqual({ slides: [], widgets: [] });
+    // Under RLS, workspace B cannot write a layout row of workspace A, nor
+    // hang its own on A's slide.
+    await expectDbError(
+      inB((tx) =>
+        tx.insert(schema.dashboardSlideLayouts).values({
+          slideId,
+          format: "21x9",
+          workspaceId: workspaceA,
+          dashboardId: created.id,
+          pages: 1,
+        }),
+      ),
+      /row-level security/,
+    );
+    await expectDbError(
+      inB((tx) =>
+        tx.insert(schema.dashboardSlideLayouts).values({
+          slideId,
+          format: "21x9",
+          workspaceId: workspaceB,
+          dashboardId: created.id,
+          pages: 1,
+        }),
+      ),
+      /dashboard_slide_layouts_slide_fk/,
+    );
+    // Even the owner cannot move a placement into another workspace or onto
+    // a widget of another slide.
+    await expectDbError(
+      admin`insert into dashboard_widget_layouts (widget_id, format, slide_id,
+              workspace_id, page, x, y, w, h)
+            values (${widgetId}, '21x9', ${slideId}, ${workspaceB},
+              0, 0, 0, 2, 1)`,
+      /dashboard_widget_layouts_(widget|layout)_fk/,
+    );
+    await admin`insert into dashboard_slide_layouts (slide_id, format,
+                  workspace_id, dashboard_id, pages)
+                values (${created.slides[1]!.id}, '3x4', ${workspaceA},
+                  ${created.id}, 1)`;
+    await expectDbError(
+      admin`insert into dashboard_widget_layouts (widget_id, format, slide_id,
+              workspace_id, page, x, y, w, h)
+            values (${widgetId}, '3x4', ${created.slides[1]!.id},
+              ${workspaceA}, 0, 0, 0, 2, 1)`,
+      /dashboard_widget_layouts_widget_fk/,
+    );
+    // B's update and delete see nothing.
+    const touched = await inB(async (tx) => ({
+      updated: await tx
+        .update(schema.dashboardWidgetLayouts)
+        .set({ autoPlaced: false })
+        .returning(),
+      deleted: await tx.delete(schema.dashboardSlideLayouts).returning(),
+    }));
+    expect(touched).toEqual({ updated: [], deleted: [] });
+    expect(
+      (await inA((tx) => findDashboard(tx, workspaceA, created.id)))!.slides[0]!
+        .layouts,
+    ).toHaveLength(2);
+  });
+
+  it("checks formats, pages and the largest grid", async () => {
+    const created = await withLayouts();
+    const slideId = created.slides[1]!.id;
+    const widgetId = created.slides[1]!.widgets[0]!.id;
+    const layout = (format: string, pages: number) =>
+      admin`insert into dashboard_slide_layouts (slide_id, format,
+              workspace_id, dashboard_id, pages)
+            values (${slideId}, ${format}, ${workspaceA}, ${created.id},
+              ${pages})`;
+    await expectDbError(
+      layout("16x10", 1),
+      /dashboard_slide_layouts_format_valid/,
+    );
+    await expectDbError(
+      layout("21x9", 9),
+      /dashboard_slide_layouts_pages_valid/,
+    );
+    await expectDbError(
+      layout("21x9", 0),
+      /dashboard_slide_layouts_pages_valid/,
+    );
+    await layout("21x9", 8);
+    const placement = (page: number, x: number, y: number, w: number) =>
+      admin`insert into dashboard_widget_layouts (widget_id, format, slide_id,
+              workspace_id, page, x, y, w, h)
+            values (${widgetId}, '21x9', ${slideId}, ${workspaceA}, ${page},
+              ${x}, ${y}, ${w}, 1)`;
+    await expectDbError(
+      placement(8, 0, 0, 2),
+      /dashboard_widget_layouts_page_valid/,
+    );
+    await expectDbError(
+      placement(0, 15, 0, 2),
+      /dashboard_widget_layouts_grid_valid/,
+    );
+    await expectDbError(
+      placement(0, 0, 14, 2),
+      /dashboard_widget_layouts_grid_valid/,
+    );
+    await placement(7, 14, 13, 2);
+  });
+
+  it("drops placements with their widget, and layouts with their slide", async () => {
+    const created = await withLayouts();
+    const [first, second] = created.slides;
+    await admin`delete from dashboard_widgets where id = ${first!.widgets[1]!.id}`;
+    const after = await inA((tx) => findDashboard(tx, workspaceA, created.id));
+    expect(
+      after!.slides[0]!.layouts.map((layout) => [
+        layout.format,
+        layout.placements.map((placement) => placement.widgetId),
+      ]),
+    ).toEqual([
+      ["4x3", [first!.widgets[0]!.id]],
+      ["9x16", [first!.widgets[0]!.id]],
+    ]);
+    await admin`delete from dashboard_slides where id = ${first!.id}`;
+    const [counts] = await admin`
+      select (select count(*)::int from dashboard_slide_layouts
+                where dashboard_id = ${created.id}) as slides,
+             (select count(*)::int from dashboard_widget_layouts
+                where slide_id = ${first!.id}) as widgets`;
+    expect({ ...counts }).toEqual({ slides: 0, widgets: 0 });
+    expect(second).toBeDefined();
+  });
+
+  it("replaces layouts with the slides, keeping widget ids", async () => {
+    const created = await withLayouts();
+    const [first] = created.slides;
+    const replaced = await inA((tx) =>
+      replaceDashboard(tx, workspaceA, created.id, created.version, {
+        name: created.name,
+        projectId: null,
+        slides: [
+          slide(
+            [
+              clock({ id: first!.widgets[1]!.id, x: 4 }),
+              // A new widget, placed by its index.
+              clock({ x: 8 }),
+            ],
+            {
+              id: first!.id,
+              layouts: [
+                {
+                  format: "3x4",
+                  pages: 1,
+                  placements: [place(0), place(1, { autoPlaced: true })],
+                },
+              ],
+            },
+          ),
+        ],
+      }),
+    );
+    expect(replaced.status).toBe("ok");
+    if (replaced.status !== "ok") return;
+    const [only] = replaced.dashboard.slides;
+    expect(only!.id).toBe(first!.id);
+    const ids = only!.widgets.map((widget) => widget.id);
+    expect(ids).toContain(first!.widgets[1]!.id);
+    expect(only!.layouts).toEqual([
+      {
+        format: "3x4",
+        pages: 1,
+        placements: only!.widgets.map((widget) => ({
+          widgetId: widget.id,
+          page: 0,
+          x: 0,
+          y: widget.id === first!.widgets[1]!.id ? 0 : 1,
+          w: 2,
+          h: 1,
+          hidden: false,
+          autoPlaced: widget.id !== first!.widgets[1]!.id,
+        })),
+      },
+    ]);
   });
 });

@@ -14,6 +14,7 @@ import {
   type DashboardWidgetInputParsed,
   type DuplicateDashboardRequest,
   type ReplaceDashboardRequest,
+  type ScreenFormatKey,
 } from "@netrics/contracts";
 import {
   connectionHasResource,
@@ -57,11 +58,13 @@ import {
   type Aggregation,
   type Locale,
   type MetricKind,
+  type ScreenFormat,
   type SlideTransition,
   type WidgetType,
 } from "@netrics/domain";
 
 import { resolveThemeTokens } from "../themes/service.js";
+import { copyLayouts, rebaseSlides, resolveSlideLayouts } from "./layouts.js";
 import {
   findAllResourcesNames,
   tileAllResourcesName,
@@ -244,6 +247,7 @@ export async function presentDashboard(
     createdAt: dashboard.createdAt.toISOString(),
     updatedAt: dashboard.updatedAt.toISOString(),
     settings: settingsOf(dashboard),
+    primaryFormat: dashboard.primaryFormat as ScreenFormatKey,
     slides: dashboard.slides.map((slide) => ({
       id: slide.id,
       position: slide.position,
@@ -255,6 +259,22 @@ export async function presentDashboard(
           ? null
           : { imageId: slide.backgroundImageId, dim: slide.backgroundDim },
       widgets: slide.widgets.map(present),
+      layouts: slide.layouts.map((layout) => ({
+        format: layout.format as ScreenFormatKey,
+        pages: layout.pages,
+        placements: layout.placements.map((placement) => ({
+          widgetId: placement.widgetId,
+          page: placement.page,
+          x: placement.x,
+          y: placement.y,
+          w: placement.w,
+          h: placement.h,
+          hidden: placement.hidden,
+          autoPlaced: placement.autoPlaced,
+        })),
+      })),
+      // Filled by the readability checks per format (#280).
+      formatWarnings: [],
     })),
     tiles: metricWidgets(dashboard.slides, { enabledOnly: false })
       .filter(isDataRow)
@@ -418,11 +438,18 @@ async function validateWidget(
   });
 }
 
-/** Slides as sent, checked: limits, layout and every data widget's metric. */
+/**
+ * Slides as sent, checked: limits, layout in the primary format's grid,
+ * every data widget's metric, and the custom layouts (ADR 0017), completed
+ * against the widgets. `stored` is the saved dashboard on replace: a slide
+ * sent without `layouts` keeps its stored ones.
+ */
 async function validateSlides(
   tx: Transaction,
   workspaceId: string,
   slides: NonNullable<ReplaceDashboardRequest["slides"]>,
+  primary: ScreenFormat,
+  stored: Dashboard | null = null,
 ): Promise<Result<SlideInput[]>> {
   const dataWidgets = slides
     .flatMap((slide) => slide.widgets)
@@ -431,8 +458,11 @@ async function validateSlides(
     return fail(400, "too_many_data_widgets");
   }
   const valid: SlideInput[] = [];
+  const storedSlides = new Map(
+    (stored?.slides ?? []).map((slide) => [slide.id, slide]),
+  );
   for (const slide of slides) {
-    const problem = slideLayoutProblem(slide.widgets);
+    const problem = slideLayoutProblem(slide.widgets, primary);
     if (problem) {
       return fail(400, problem);
     }
@@ -444,6 +474,20 @@ async function validateSlides(
       }
       widgets.push(checked.value);
     }
+    // The first slide with a stored id keeps it, and its layouts.
+    const own = slide.id ? storedSlides.get(slide.id) : undefined;
+    if (slide.id) {
+      storedSlides.delete(slide.id);
+    }
+    const layouts = resolveSlideLayouts({
+      widgets,
+      requested: slide.layouts,
+      stored: own ?? null,
+      primary,
+    });
+    if (!layouts.ok) {
+      return layouts;
+    }
     valid.push({
       id: slide.id ?? null,
       name: slide.name ?? null,
@@ -452,6 +496,7 @@ async function validateSlides(
       backgroundImageId: slide.background?.imageId ?? null,
       backgroundDim: slide.background?.dim ?? 0,
       widgets,
+      layouts: layouts.value,
     });
   }
   return ok(valid);
@@ -774,8 +819,13 @@ export function createDashboardService(deps: { db: Database }) {
         if (!(await checkProject(tx, actor.workspaceId, body.projectId))) {
           return fail<DashboardView>(404, "project_not_found");
         }
+        const primary = (body.primaryFormat ?? "16x9") as ScreenFormat;
+        if (body.tiles && primary !== "16x9") {
+          // Tiles are laid out on the 16x9 grid (legacyLayout).
+          return fail<DashboardView>(400, "tiles_primary_format");
+        }
         const slides = body.slides
-          ? await validateSlides(tx, actor.workspaceId, body.slides)
+          ? await validateSlides(tx, actor.workspaceId, body.slides, primary)
           : body.tiles
             ? await tilesToSlides(tx, actor.workspaceId, body.tiles)
             : ok([EMPTY_SLIDE]);
@@ -810,6 +860,7 @@ export function createDashboardService(deps: { db: Database }) {
             ...rest,
             ...theme.value,
           },
+          primaryFormat: primary,
           slides: slides.value.length > 0 ? slides.value : [EMPTY_SLIDE],
         });
         await insertAuditEvent(tx, {
@@ -835,22 +886,23 @@ export function createDashboardService(deps: { db: Database }) {
         if (!(await checkProject(tx, actor.workspaceId, body.projectId))) {
           return fail<DashboardView>(404, "project_not_found");
         }
+        const current = await findDashboard(tx, actor.workspaceId, dashboardId);
+        if (!current) {
+          return fail<DashboardView>(404, NOT_FOUND);
+        }
+        const primary = current.primaryFormat as ScreenFormat;
         let slides: Result<SlideInput[]>;
         if (body.tiles) {
           // Legacy save: only over a tile dashboard, so a stale tab of the
           // tile editor cannot flatten a studio dashboard (ADR 0015).
-          const current = await findDashboard(
-            tx,
-            actor.workspaceId,
-            dashboardId,
-          );
-          if (!current) {
-            return fail<DashboardView>(404, NOT_FOUND);
-          }
           if (current.version !== body.version) {
             return fail<DashboardView>(409, "version_conflict");
           }
-          if (!isTileDashboard(current.slides)) {
+          if (
+            primary !== "16x9" ||
+            body.primaryFormat !== undefined ||
+            !isTileDashboard(current.slides)
+          ) {
             return fail<DashboardView>(409, "studio_dashboard");
           }
           slides = await tilesToSlides(
@@ -864,7 +916,14 @@ export function createDashboardService(deps: { db: Database }) {
             tx,
             actor.workspaceId,
             body.slides ?? [],
+            primary,
+            current,
           );
+          // A new primary format re-bases the slides (ADR 0017 section 4).
+          const target = body.primaryFormat as ScreenFormat | undefined;
+          if (slides.ok && target !== undefined && target !== primary) {
+            slides = rebaseSlides(slides.value, primary, target);
+          }
         }
         if (!slides.ok) {
           return slides;
@@ -872,14 +931,6 @@ export function createDashboardService(deps: { db: Database }) {
         const { rest, theme: themeRequest } = splitSettings(body.settings);
         let themeSettings: Partial<ThemeSettings> = {};
         if (Object.values(themeRequest).some((value) => value !== undefined)) {
-          const current = await findDashboard(
-            tx,
-            actor.workspaceId,
-            dashboardId,
-          );
-          if (!current) {
-            return fail<DashboardView>(404, NOT_FOUND);
-          }
           const theme = await chooseTheme(
             tx,
             actor.workspaceId,
@@ -912,6 +963,9 @@ export function createDashboardService(deps: { db: Database }) {
             ...(body.settings
               ? { settings: { ...rest, ...themeSettings } }
               : {}),
+            ...(body.primaryFormat
+              ? { primaryFormat: body.primaryFormat }
+              : {}),
             slides: slides.value.length > 0 ? slides.value : [EMPTY_SLIDE],
           },
         );
@@ -930,6 +984,14 @@ export function createDashboardService(deps: { db: Database }) {
             name: result.dashboard.name,
             version: result.dashboard.version,
             ...counts(result.dashboard),
+            ...(result.dashboard.primaryFormat !== primary
+              ? {
+                  primaryFormat: {
+                    from: primary,
+                    to: result.dashboard.primaryFormat,
+                  },
+                }
+              : {}),
           },
         });
         return ok(
@@ -958,6 +1020,7 @@ export function createDashboardService(deps: { db: Database }) {
           name,
           projectId: source.projectId,
           settings: settingsOf(source),
+          primaryFormat: source.primaryFormat,
           slides: source.slides.map((slide) => ({
             name: slide.name,
             durationSeconds: slide.durationSeconds,
@@ -981,6 +1044,7 @@ export function createDashboardService(deps: { db: Database }) {
               imageId: widget.imageId,
               options: widget.options as Record<string, unknown>,
             })),
+            layouts: copyLayouts(slide),
           })),
         });
         await insertAuditEvent(tx, {
