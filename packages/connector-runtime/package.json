@@ -23,7 +23,7 @@
   "dependencies": {
     "@netrics/connector-sdk": "workspace:*",
     "undici": "7.29.1",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@netrics/connectors": "workspace:*",
