@@ -77,6 +77,7 @@ import {
   connectionsResponseSchema,
   createConnectionRequestSchema,
   createConnectionsRequestSchema,
+  createSharedKeyConnectionsRequestSchema,
   createInvitationRequestSchema,
   createProjectRequestSchema,
   createWorkspaceRequestSchema,
@@ -93,6 +94,7 @@ import {
   memberResponseSchema,
   observationListResponseSchema,
   previewConnectionRequestSchema,
+  sharedKeyResourcesResponseSchema,
   signedKeyPairResponseSchema,
   projectListResponseSchema,
   projectResponseSchema,
@@ -109,6 +111,8 @@ import {
   type ConnectionDetailResponse,
   type ConnectionListResponse,
   type ConnectionPreviewResponse,
+  type CreateSharedKeyConnectionsRequest,
+  type SharedKeyResourcesResponse,
   type ConnectionResourcesResponse,
   type ConnectionResponse,
   type ConnectorListResponse,
@@ -758,6 +762,36 @@ export function listConnectionResources(
     connectionResourcesResponseSchema,
     "GET",
     `/v1/workspaces/${workspaceId}/connections/${connectionId}/resources`,
+  );
+}
+
+/**
+ * What the stored key of a connection reads (#395): e.g. the Apple Ads
+ * API user's ad accounts, and which of them this workspace has connected.
+ * The key stays on the server.
+ */
+export function listSharedKeyResources(
+  workspaceId: string,
+  connectionId: string,
+): Promise<SharedKeyResourcesResponse> {
+  return browserSend(
+    sharedKeyResourcesResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/shared-key/resources`,
+  );
+}
+
+/** New connections with the stored key of a connection (#395), all or none. */
+export function createSharedKeyConnections(
+  workspaceId: string,
+  connectionId: string,
+  input: CreateSharedKeyConnectionsRequest,
+): Promise<ConnectionsResponse> {
+  return browserSend(
+    connectionsResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/shared-key/connections`,
+    createSharedKeyConnectionsRequestSchema.parse(input),
   );
 }
 

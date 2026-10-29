@@ -556,24 +556,41 @@ export const MAX_CONNECTIONS_PER_REQUEST = 20;
  * before anything is stored; then all of them, and the consumed pending
  * key, commit in one transaction, or none does.
  */
+const connectionBatchEntriesSchema = z
+  .array(
+    z.object({
+      name: nameSchema,
+      config: connectionConfigSchema.default({}),
+      resources: z.array(z.string().min(1)).optional(),
+    }),
+  )
+  .min(1)
+  .max(MAX_CONNECTIONS_PER_REQUEST);
+
 export const createConnectionsRequestSchema = z.object({
   connectorId: z.string().min(1),
   credentials: connectionCredentialsSchema.optional(),
   pendingKeyId: pendingKeyIdSchema.optional(),
   projectId: z.uuid().optional(),
-  connections: z
-    .array(
-      z.object({
-        name: nameSchema,
-        config: connectionConfigSchema.default({}),
-        resources: z.array(z.string().min(1)).optional(),
-      }),
-    )
-    .min(1)
-    .max(MAX_CONNECTIONS_PER_REQUEST),
+  connections: connectionBatchEntriesSchema,
 });
 export type CreateConnectionsRequest = z.infer<
   typeof createConnectionsRequestSchema
+>;
+
+/**
+ * More connections with the stored key of an existing connection (#395):
+ * e.g. another ad account of the Apple Ads API user whose key a connection
+ * already holds. The key never leaves the server; the request names only
+ * the new connections, checked and stored all or none as in the batch.
+ * Without `projectId` they join the lending connection's project.
+ */
+export const createSharedKeyConnectionsRequestSchema = z.object({
+  projectId: z.uuid().optional(),
+  connections: connectionBatchEntriesSchema,
+});
+export type CreateSharedKeyConnectionsRequest = z.infer<
+  typeof createSharedKeyConnectionsRequestSchema
 >;
 
 export const previewConnectionRequestSchema = z.object({
@@ -606,6 +623,27 @@ export const connectionPreviewResponseSchema = z.object({
 });
 export type ConnectionPreviewResponse = z.infer<
   typeof connectionPreviewResponseSchema
+>;
+
+/**
+ * What the stored key of a connection can read when no account is chosen
+ * (#395): the connector's check and discovery as in a preview (for Apple
+ * Ads, the API user's ad accounts), and which of the listed resources this
+ * workspace has connected already, and as which connection.
+ */
+export const sharedKeyResourcesResponseSchema = z.object({
+  check: connectionCheckResultSchema,
+  resources: z.array(discoveredResourceSchema),
+  connected: z.array(
+    z.object({
+      resourceId: z.string().min(1),
+      connectionId: z.uuid(),
+      connectionName: z.string(),
+    }),
+  ),
+});
+export type SharedKeyResourcesResponse = z.infer<
+  typeof sharedKeyResourcesResponseSchema
 >;
 
 /**

@@ -606,6 +606,20 @@ export const workspaceEn = {
         "netrics deletes its copy of the private key. Afterwards, remove the public key under Account Settings → API in Apple Ads.",
       deleteHintShared:
         "netrics deletes this connection’s copy of the private key. The same key still serves {names}: keep the public key in Apple Ads until you delete the last connection that uses it.",
+      addAccountTitle: "More ad accounts with this key",
+      addAccountIntro:
+        "The API user of this connection may read more ad accounts. Each one you add becomes its own connection with this key, which stays on the server. Nothing changes in Apple Ads.",
+      addAccountButton: "Add another ad account",
+      addAccountLoading: "Asking Apple Ads…",
+      addAccountFound:
+        "{count, plural, one {This key reads # ad account.} other {This key reads # ad accounts.}}",
+      addAccountConnected: "Connected already as {name}",
+      addAccountNone:
+        "Every ad account this key can connect is connected already. To read another one, an Account Admin gives this API user a role in it.",
+      addAccountCreate:
+        "{count, plural, one {Add # connection} other {Add # connections}}",
+      addAccountAdded:
+        "{count, plural, one {Added # connection with this key:} other {Added # connections with this key:}}",
     },
     keyPanel: {
       provider: "provider",

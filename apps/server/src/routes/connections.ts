@@ -12,6 +12,7 @@ import {
   connectorListResponseSchema,
   createConnectionRequestSchema,
   createConnectionsRequestSchema,
+  createSharedKeyConnectionsRequestSchema,
   connectionsResponseSchema,
   deleteConnectionResponseSchema,
   enableAppStoreAnalyticsRequestSchema,
@@ -22,6 +23,7 @@ import {
   observationListQuerySchema,
   observationListResponseSchema,
   previewConnectionRequestSchema,
+  sharedKeyResourcesResponseSchema,
   signedKeyPairResponseSchema,
   updateConnectionRequestSchema,
 } from "@netrics/contracts";
@@ -357,6 +359,96 @@ export function registerConnectionRoutes(
           }
           reply.header("cache-control", "no-store");
           return connectionResourcesResponseSchema.parse(resources);
+        },
+      );
+
+      // #395: more connections with the stored key of this one, e.g.
+      // another ad account of the same Apple Ads API user. The list is a
+      // preview with the stored key (nothing is stored); the create is the
+      // batch path with that key. Only a connection of this workspace lends
+      // its key (404 otherwise), and the key never leaves the server.
+      scope.get(
+        "/workspaces/:workspaceId/connections/:connectionId/shared-key/resources",
+        {
+          schema: routeSchema({
+            summary:
+              "Accounts the stored key of a connection reads, and which are connected",
+            tags: ["connections"],
+            response: sharedKeyResourcesResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:create")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const resources = unwrap(
+            await connections.sharedKeyResources(
+              access,
+              params.data.connectionId,
+            ),
+            reply,
+          );
+          if (!resources) {
+            return;
+          }
+          reply.header("cache-control", "no-store");
+          return sharedKeyResourcesResponseSchema.parse(resources);
+        },
+      );
+
+      scope.post(
+        "/workspaces/:workspaceId/connections/:connectionId/shared-key/connections",
+        {
+          schema: routeSchema({
+            summary:
+              "Create connections with the stored key of a connection (all or none)",
+            tags: ["connections"],
+            body: createSharedKeyConnectionsRequestSchema,
+            response: connectionsResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:create")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const body = parseBody(
+            createSharedKeyConnectionsRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) {
+            return;
+          }
+          const created = unwrap(
+            await connections.createWithSharedKey(
+              access,
+              params.data.connectionId,
+              body,
+            ),
+            reply,
+          );
+          if (!created) {
+            return;
+          }
+          return connectionsResponseSchema.parse({ connections: created });
         },
       );
 

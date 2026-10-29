@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import type {
   ConnectionPreviewResponse,
@@ -15,7 +15,11 @@ import {
   createConnections,
   previewConnection,
 } from "@/lib/api";
-import { appleAdsAccounts, type AppleAdsAccount } from "@/lib/apple-ads";
+import {
+  appleAdsAccountConfig,
+  appleAdsAccounts,
+  type AppleAdsAccount,
+} from "@/lib/apple-ads";
 import {
   APPLE_ADS_DOCS_URL,
   APPLE_ADS_INVITE_HELP_URL,
@@ -163,12 +167,7 @@ export function AppleAdsSetup({
         ...keyPayload(strategy, values, keyPair?.pendingKeyId ?? null),
         connections: chosen.map((account) => ({
           name: t("connectionName", { account: account.name }).slice(0, 100),
-          config: {
-            adAccountId: account.id,
-            adAccountName: account.name,
-            ...(account.currency ? { currency: account.currency } : {}),
-            ...(account.timeZone ? { timeZone: account.timeZone } : {}),
-          },
+          config: appleAdsAccountConfig(account),
         })),
       });
       // The generated key moved into the connections.
@@ -327,20 +326,28 @@ export function AppleAdsSetup({
   );
 }
 
-function AdAccountOption({
+/**
+ * One ad account to tick, with why it cannot be when it cannot. Also used
+ * on the connection page (#395), where `connected` names the connection
+ * that already reads it.
+ */
+export function AdAccountOption({
   account,
   checked,
   disabled,
   onToggle,
+  connected = null,
 }: {
   account: AppleAdsAccount;
   checked: boolean;
   disabled: boolean;
   onToggle: () => void;
+  connected?: ReactNode;
 }) {
   const t = useT("connections.appleAds");
-  const reason =
-    account.unselectable === "maps"
+  const reason = connected
+    ? connected
+    : account.unselectable === "maps"
       ? t("notSelectableMaps")
       : account.unselectable === "role"
         ? t("notSelectableRole")
