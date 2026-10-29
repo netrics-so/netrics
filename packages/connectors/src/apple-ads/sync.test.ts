@@ -11,13 +11,19 @@ import { describe, expect, it } from "vitest";
 import {
   addDays,
   adAccountToday,
+  AD_GROUP_CAMPAIGNS_PER_PAGE,
+  APPLE_ADS_AD_GROUP_METRIC_KEYS,
   APPLE_ADS_BACKFILL_DAYS,
   APPLE_ADS_METRIC_KEYS,
   appleAdsDaysLabel,
   AppleAdsApiError,
+  AppleAdsReportError,
   chunkRange,
   createAppleAdsClient,
   createAppleAdsConnector,
+  decodeCursor,
+  DELETED_CAMPAIGN_NOTE,
+  encodeCursor,
   LOOKBACK_DAYS,
   MAX_REPORT_DAYS,
   OTHERS,
@@ -141,6 +147,7 @@ interface ReportBody {
     timeZone: string;
     granularity?: string;
   };
+  filters?: Array<{ field: string; operator: string; value: unknown }>;
   groupBy?: string[];
   pagination: { offset: number; pageSize: number };
   options?: unknown;
@@ -305,30 +312,62 @@ describe("time zone", () => {
   });
 });
 
+/** One page on the documented fixtures (fixtures/report-*.json). */
+async function documentedPage(
+  adGroupAnswer: (campaignId: string) => [number, unknown] = (campaignId) => [
+    200,
+    fixture(`report-adgroups-${campaignId}`),
+  ],
+) {
+  const totals = fixture("report-campaigns-4100000001");
+  const countries = fixture("report-countries-4100000001");
+  const adGroupCampaigns: string[] = [];
+  const fetch = async (url: string, init?: { body?: string }) => {
+    const body = JSON.parse(init?.body ?? "{}") as ReportBody;
+    const headers = { "ratelimit-remaining": "90" };
+    if (new URL(url).pathname === "/v1/reports/apps/adgroups/query") {
+      const campaignId = String(body.filters?.[0]?.value);
+      adGroupCampaigns.push(campaignId);
+      const [status, answer] = adGroupAnswer(campaignId);
+      return jsonResponse(status, answer, headers);
+    }
+    return jsonResponse(200, body.groupBy ? countries : totals, headers);
+  };
+  const api = createAppleAdsClient(fetch, TOKEN);
+  const notes: string[] = [];
+  const result = await syncCampaignPage(
+    api,
+    request({ mode: "incremental", from: "2026-10-26T00:00:00.000Z" }),
+    {
+      now: Date.parse("2026-11-15T12:00:00.000Z"),
+      adAccountId: US,
+      currency: "USD",
+      timeZone: "America/Los_Angeles",
+      note: (code) => notes.push(code),
+    },
+  );
+  return { result, notes, adGroupCampaigns };
+}
+
+const MAIN_KEYS = new Set<string>(Object.values(APPLE_ADS_METRIC_KEYS));
+const AD_GROUP_KEYS = new Set<string>(
+  Object.values(APPLE_ADS_AD_GROUP_METRIC_KEYS),
+);
+
+/** The main `apple_ads.*` observations (campaign × country or region). */
+function mainRows(observations: Observation[]): Observation[] {
+  return observations.filter((o) => MAIN_KEYS.has(o.metricKey));
+}
+
+/** The `*_by_ad_group` observations. */
+function adGroupRows(observations: Observation[]): Observation[] {
+  return observations.filter((o) => AD_GROUP_KEYS.has(o.metricKey));
+}
+
 describe("documented report shapes", () => {
   it("stores campaign × country rows whose sum is the campaign total, the gap as Others", async () => {
-    const totals = fixture("report-campaigns-4100000001");
-    const countries = fixture("report-countries-4100000001");
-    const fetch = async (_url: string, init?: { body?: string }) => {
-      const body = JSON.parse(init?.body ?? "{}") as ReportBody;
-      return jsonResponse(200, body.groupBy ? countries : totals, {
-        "ratelimit-remaining": "90",
-      });
-    };
-    const api = createAppleAdsClient(fetch, TOKEN);
-    const notes: string[] = [];
-    const result = await syncCampaignPage(
-      api,
-      request({ mode: "incremental", from: "2026-10-26T00:00:00.000Z" }),
-      {
-        now: Date.parse("2026-11-15T12:00:00.000Z"),
-        adAccountId: US,
-        currency: "USD",
-        timeZone: "America/Los_Angeles",
-        note: (code) => notes.push(code),
-      },
-    );
-    const observations = result.observations;
+    const { result } = await documentedPage();
+    const observations = mainRows(result.observations);
     const spend = APPLE_ADS_METRIC_KEYS.spend;
     // Brand on the 27th: US 15.00 + CA 5.00 + Others 0.25 = 20.25.
     const day27 = { campaign: "5100000001" };
@@ -494,8 +533,10 @@ describe("country breakdown", () => {
 
 describe("pagination, replay and revisions", () => {
   it("pages to totalCount", async () => {
+    // Rows of zeros: paged like any, but no ad-group fan-out (that is
+    // tested under "ad groups"), which would take 101 pages here.
     const campaigns = Array.from({ length: REPORT_PAGE_SIZE + 5 }, (_, i) =>
-      campaign(String(5200000000 + i), { "2026-10-20": { US: d("1.00") } }),
+      campaign(String(5200000000 + i), { "2026-10-20": { US: {} } }),
     );
     const api = fake({ [US]: { currency: "USD", campaigns } });
     const { observations } = await syncAll(
@@ -696,5 +737,413 @@ describe("rate limits", () => {
     expect(firstRange.end < "2026-10-01").toBe(true);
     const all = [...first.observations, ...rest.observations];
     expect(sum(all, APPLE_ADS_METRIC_KEYS.spend)).toBe(1400);
+  });
+});
+
+// ─── Ad groups (#376) ───────────────────────────────────────────────────────
+
+/** The campaign IDs of the ad-group requests, in order. */
+function adGroupCampaignsAsked(api: FakeAppleAds): string[] {
+  return api.requests
+    .filter((r) => r.url.pathname === "/v1/reports/apps/adgroups/query")
+    .map((r) => String((r.body as ReportBody).filters?.[0]?.value));
+}
+
+const PAIRS = [
+  ["spend", APPLE_ADS_METRIC_KEYS.spend, APPLE_ADS_AD_GROUP_METRIC_KEYS.spend],
+  [
+    "impressions",
+    APPLE_ADS_METRIC_KEYS.impressions,
+    APPLE_ADS_AD_GROUP_METRIC_KEYS.impressions,
+  ],
+  ["taps", APPLE_ADS_METRIC_KEYS.taps, APPLE_ADS_AD_GROUP_METRIC_KEYS.taps],
+  [
+    "installs",
+    APPLE_ADS_METRIC_KEYS.installs,
+    APPLE_ADS_AD_GROUP_METRIC_KEYS.installs,
+  ],
+  [
+    "newDownloads",
+    APPLE_ADS_METRIC_KEYS.newDownloads,
+    APPLE_ADS_AD_GROUP_METRIC_KEYS.newDownloads,
+  ],
+  [
+    "redownloads",
+    APPLE_ADS_METRIC_KEYS.redownloads,
+    APPLE_ADS_AD_GROUP_METRIC_KEYS.redownloads,
+  ],
+] as const;
+
+/**
+ * Ad-group sums equal campaign sums: per campaign, day and attribution,
+ * for every quantity.
+ */
+function expectAdGroupsMatchCampaigns(observations: Observation[]): void {
+  const groups = new Set(
+    observations.map(
+      (o) =>
+        `${o.dimensions.campaign}|${o.sourceTimestamp}|${o.dimensions.attribution ?? ""}`,
+    ),
+  );
+  for (const group of groups) {
+    const [campaignId, stamp, attribution] = group.split("|");
+    const of = observations.filter(
+      (o) =>
+        o.dimensions.campaign === campaignId &&
+        o.sourceTimestamp === stamp &&
+        (o.dimensions.attribution ?? "") === attribution,
+    );
+    for (const [field, main, byAdGroup] of PAIRS) {
+      expect(sum(of, byAdGroup), `${field} of ${group}`).toBe(sum(of, main));
+    }
+  }
+}
+
+describe("ad groups", () => {
+  it("ad-group totals equal campaign totals on the documented fixtures", async () => {
+    const { result, adGroupCampaigns } = await documentedPage();
+    const all = result.observations;
+    expect(adGroupCampaigns).toEqual(["5100000001", "5100000002"]);
+    expectAdGroupsMatchCampaigns(all);
+    const byAdGroup = adGroupRows(all);
+    expect(byAdGroup.length).toBeGreaterThan(0);
+    // Ad-group rows are campaign × ad group: no country, never the main
+    // keys; nothing is left for "Others" when the ad groups add up.
+    for (const o of byAdGroup) {
+      expect(o.dimensions.country).toBeUndefined();
+      expect(o.dimensions.ad_group).toMatch(/^\d+$/);
+      expect(o.dimensions.resource).toBe(APP);
+    }
+    for (const o of mainRows(all)) {
+      expect(o.dimensions.ad_group).toBeUndefined();
+    }
+    const spend = APPLE_ADS_AD_GROUP_METRIC_KEYS.spend;
+    expect(sum(byAdGroup, spend, { ad_group: "6100000001" })).toBe(4525);
+    // A deleted ad group, and the deleted campaign's, keep their history.
+    expect(sum(byAdGroup, spend, { ad_group: "6100000002" })).toBe(1550);
+    expect(sum(byAdGroup, spend, { campaign: "5100000002" })).toBe(500);
+    expect(
+      sum(byAdGroup, APPLE_ADS_AD_GROUP_METRIC_KEYS.installs, {
+        ad_group: "6100000001",
+        attribution: "view",
+      }),
+    ).toBe(7);
+    expect(
+      new Set(
+        byAdGroup
+          .filter((o) => o.metricKey === spend)
+          .map((o) => o.dimensions.currency),
+      ),
+    ).toEqual(new Set(["USD"]));
+  });
+
+  it("asks per campaign with the campaignId filter, on the campaign report's days", async () => {
+    const report: FakeReport = {
+      currency: "USD",
+      campaigns: [campaign("5100000001", { "2026-10-27": { US: d("2.00") } })],
+    };
+    const api = fake({ [US]: report });
+    await syncAll(
+      api,
+      request({ mode: "incremental", from: "2026-10-20T00:00:00.000Z" }),
+    );
+    const [campaignBody, , adGroupBody] = api.requests
+      .filter((r) => r.url.pathname.startsWith("/v1/reports/"))
+      .map((r) => r.body as ReportBody);
+    expect(adGroupBody).toEqual({
+      timeRange: campaignBody!.timeRange,
+      filters: [
+        { field: "campaignId", operator: "EQUALS", value: "5100000001" },
+      ],
+      pagination: { offset: 0, pageSize: REPORT_PAGE_SIZE },
+    });
+    expect(adGroupBody!.timeRange.timeZone).toBe("ORTZ");
+    expect(
+      api.requests
+        .filter((r) => r.url.pathname === "/v1/reports/apps/adgroups/query")
+        .every((r) => r.context === `adAccountId=${US}`),
+    ).toBe(true);
+  });
+
+  it("fans out over several sync pages, at most N campaigns each, skipping campaigns without numbers", async () => {
+    const ids = [
+      "999",
+      ...Array.from({ length: 24 }, (_, i) => String(5200000000 + i)),
+    ];
+    const report: FakeReport = {
+      currency: "USD",
+      campaigns: [
+        ...ids.map((id, i) =>
+          campaign(
+            id,
+            {
+              "2026-10-21": { US: d("1.00"), DE: d("0.50") },
+              "2026-10-27": { US: d(`${i + 1}.00`) },
+            },
+            { adGroups: { DE: `${id}02` } },
+          ),
+        ),
+        // Numbers only before the window: no ad-group request.
+        campaign("5300000001", { "2026-10-05": { US: d("4.00") } }),
+        // A row of zeros: no ad-group request either.
+        campaign("5300000002", { "2026-10-22": { US: {} } }),
+      ],
+    };
+    const api = fake({ [US]: report });
+    const { pages, observations } = await syncAll(
+      api,
+      request({ mode: "incremental", from: "2026-10-20T00:00:00.000Z" }),
+    );
+    // 25 campaigns with numbers: pages of 10, 10 and 5.
+    expect(AD_GROUP_CAMPAIGNS_PER_PAGE).toBe(10);
+    expect(pages).toHaveLength(3);
+    expect(pages.map((p) => p.nextCursor)).toEqual([
+      `apple-ads:1:2026-10-20:2026-10-29:2026-10-29:${ids[9]}`,
+      `apple-ads:1:2026-10-20:2026-10-29:2026-10-29:${ids[19]}`,
+      "2026-10-27T00:00:00.000Z",
+    ]);
+    // Each campaign once, by ID as a number ("999" first).
+    expect(adGroupCampaignsAsked(api)).toEqual(ids);
+    // Later pages read the totals again, not the country breakdown.
+    expect(
+      reportBodies(api).map((body) => (body.groupBy ? "country" : "total")),
+    ).toEqual(["total", "country", "total", "total"]);
+    // Main rows come from the first page only, so nothing twice.
+    expect(mainRows(pages[1]!.observations)).toEqual([]);
+    expect(new Set(observations.map(observationKey)).size).toBe(
+      observations.length,
+    );
+    expectAdGroupsMatchCampaigns(observations);
+    const spend = APPLE_ADS_AD_GROUP_METRIC_KEYS.spend;
+    expect(sum(observations, spend, { ad_group: "99902" })).toBe(50);
+    expect(sum(observations, spend, { ad_group: "99901" })).toBe(200);
+    // The skipped campaigns have no numbers in the window at either level.
+    expect(sum(adGroupRows(observations), spend)).toBe(
+      sum(mainRows(observations), APPLE_ADS_METRIC_KEYS.spend),
+    );
+    expect(sum(observations, spend, { campaign: "5300000001" })).toBe(0);
+  });
+
+  it("keeps the backfill's ranges for ad groups, newest first, the cursor per campaign within a range", async () => {
+    const report: FakeReport = {
+      currency: "USD",
+      campaigns: [
+        ...Array.from({ length: 12 }, (_, i) =>
+          campaign(String(5200000000 + i), {
+            "2026-10-27": { US: d("1.00") },
+          }),
+        ),
+        campaign("5100000001", { "2026-06-15": { US: d("5.00") } }),
+      ],
+    };
+    const api = fake({ [US]: report });
+    const { pages, observations } = await syncAll(api, request());
+    const ranges = (path: string) =>
+      api.requests
+        .filter((r) => r.url.pathname === path)
+        .map((r) => (r.body as ReportBody).timeRange)
+        .map(({ start, end }) => `${start}..${end}`);
+    const campaignRanges = [
+      ...new Set(ranges("/v1/reports/apps/campaigns/query")),
+    ];
+    // Every ad-group request is on one of the campaign report's ranges.
+    for (const range of ranges("/v1/reports/apps/adgroups/query")) {
+      expect(campaignRanges).toContain(range);
+    }
+    expect(ranges("/v1/reports/apps/adgroups/query")).toEqual([
+      ...Array.from({ length: 12 }, () => campaignRanges[0]),
+      campaignRanges[1],
+    ]);
+    // The newest range takes two pages (10 + 2), then one per range.
+    expect(pages).toHaveLength(campaignRanges.length + 1);
+    expect(decodeCursor(pages[0]!.nextCursor)?.after).toBe("5200000009");
+    expect(decodeCursor(pages[1]!.nextCursor)?.after).toBeUndefined();
+    expectAdGroupsMatchCampaigns(observations);
+    expect(
+      sum(adGroupRows(observations), APPLE_ADS_AD_GROUP_METRIC_KEYS.spend),
+    ).toBe(1700);
+  });
+
+  it("goes on after a campaign removed between pages", async () => {
+    const report: FakeReport = {
+      currency: "USD",
+      campaigns: Array.from({ length: 13 }, (_, i) =>
+        campaign(String(5200000000 + i), { "2026-10-27": { US: d("1.00") } }),
+      ),
+    };
+    const api = fake({ [US]: report });
+    const window = request({
+      mode: "incremental",
+      from: "2026-10-27T00:00:00.000Z",
+    });
+    const first = await connector().sync(context(), window, api.runtime);
+    expect(decodeCursor(first.nextCursor)?.after).toBe("5200000009");
+    // The cursor's campaign, and the next one, are removed in Apple Ads.
+    report.campaigns = report.campaigns.filter(
+      (c) => c.id !== "5200000009" && c.id !== "5200000010",
+    );
+    const rest = await syncAll(api, { ...window, cursor: first.nextCursor! });
+    expect(rest.pages).toHaveLength(1);
+    expect(adGroupCampaignsAsked(api).slice(10)).toEqual([
+      "5200000011",
+      "5200000012",
+    ]);
+    expect(
+      new Set(adGroupRows(rest.observations).map((o) => o.dimensions.campaign)),
+    ).toEqual(new Set(["5200000011", "5200000012"]));
+  });
+
+  it("keeps a deleted campaign Apple answers 404 for under the ad group Others", async () => {
+    const { result, notes } = await documentedPage((campaignId) =>
+      campaignId === "5100000002"
+        ? [404, fixture("error-not-found")]
+        : [200, fixture(`report-adgroups-${campaignId}`)],
+    );
+    const all = result.observations;
+    expectAdGroupsMatchCampaigns(all);
+    const spend = APPLE_ADS_AD_GROUP_METRIC_KEYS.spend;
+    expect(sum(all, spend, { campaign: "5100000002", ad_group: OTHERS })).toBe(
+      500,
+    );
+    // The live campaign's ad groups add up: no Others there.
+    expect(
+      all.some(
+        (o) =>
+          o.dimensions.campaign === "5100000001" &&
+          o.dimensions.ad_group === OTHERS,
+      ),
+    ).toBe(false);
+    expect(notes).toContain(DELETED_CAMPAIGN_NOTE);
+  });
+
+  it("fails the page on a 404 for a campaign that is not deleted", async () => {
+    const failure = await documentedPage((campaignId) =>
+      campaignId === "5100000001"
+        ? [404, fixture("error-not-found")]
+        : [200, fixture(`report-adgroups-${campaignId}`)],
+    ).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AppleAdsApiError);
+    expect((failure as AppleAdsApiError).status).toBe(404);
+  });
+
+  it("refuses an ad-group row of another campaign", async () => {
+    const failure = await documentedPage(() => [
+      200,
+      fixture("report-adgroups-5100000002"),
+    ]).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AppleAdsReportError);
+  });
+
+  it("resumes the fan-out from its campaign after a 429", async () => {
+    const report: FakeReport = {
+      currency: "USD",
+      campaigns: Array.from({ length: 15 }, (_, i) =>
+        campaign(String(5200000000 + i), { "2026-10-27": { US: d("1.00") } }),
+      ),
+    };
+    const window = request({
+      mode: "incremental",
+      from: "2026-10-27T00:00:00.000Z",
+    });
+    const first = await connector().sync(
+      context(),
+      window,
+      fake({ [US]: report }).runtime,
+    );
+    // The next page's totals pass meets a 429 too long to wait for.
+    const limited = fake({ [US]: report }, [
+      {
+        status: 429,
+        fixture: "error-rate-limit",
+        headers: { "retry-after": "120" },
+      },
+    ]);
+    const failure = await connector()
+      .sync(
+        context(),
+        { ...window, cursor: first.nextCursor! },
+        limited.runtime,
+      )
+      .catch((error: unknown) => error);
+    expect((failure as AppleAdsApiError).isRetryable).toBe(true);
+    // The retry asks only for the campaigns after the cursor's.
+    const retry = fake({ [US]: report });
+    const rest = await syncAll(retry, { ...window, cursor: first.nextCursor! });
+    expect(adGroupCampaignsAsked(retry)).toEqual(
+      Array.from({ length: 5 }, (_, i) => String(5200000010 + i)),
+    );
+    expectAdGroupsMatchCampaigns([...first.observations, ...rest.observations]);
+  });
+
+  it("writes zeros for an ad group's settled days without data, never in the lookback", async () => {
+    const report: FakeReport = {
+      currency: "USD",
+      campaigns: [
+        campaign("5100000001", {
+          "2026-10-21": { US: d("1.00") },
+          "2026-10-29": { US: d("2.00") },
+        }),
+      ],
+    };
+    const api = fake({ [US]: report });
+    const { observations } = await syncAll(
+      api,
+      request({ mode: "incremental", from: "2026-10-21T00:00:00.000Z" }),
+    );
+    const spendDays = adGroupRows(observations)
+      .filter((o) => o.metricKey === APPLE_ADS_AD_GROUP_METRIC_KEYS.spend)
+      .map((o) => [o.sourceTimestamp.slice(0, 10), o.value]);
+    expect(spendDays).toEqual([
+      ["2026-10-21", 100],
+      ["2026-10-22", 0],
+      ["2026-10-23", 0],
+      ["2026-10-24", 0],
+      ["2026-10-25", 0],
+      ["2026-10-26", 0],
+      // 27 and 28 are in the lookback: left out.
+      ["2026-10-29", 200],
+    ]);
+  });
+
+  it("reads ad groups only for the selected apps' campaigns", async () => {
+    const api = fake({
+      [US]: {
+        currency: "USD",
+        campaigns: [
+          campaign("5100000001", { "2026-10-27": { US: d("2.00") } }),
+          campaign(
+            "5100000002",
+            { "2026-10-27": { US: d("3.00") } },
+            { app: "1000000002" },
+          ),
+        ],
+      },
+    });
+    await syncAll(
+      api,
+      request({
+        mode: "incremental",
+        from: "2026-10-27T00:00:00.000Z",
+        resources: ["1000000002"],
+      }),
+    );
+    expect(adGroupCampaignsAsked(api)).toEqual(["5100000002"]);
+  });
+
+  it("round-trips the per-campaign cursor and refuses a malformed one", () => {
+    const position = {
+      floor: "2026-10-01",
+      newest: "2026-10-29",
+      next: "2026-10-29",
+      after: "5100000001",
+    };
+    expect(decodeCursor(encodeCursor(position))).toEqual(position);
+    for (const cursor of [
+      "apple-ads:1:2026-10-01:2026-10-29:2026-10-29:x",
+      "apple-ads:1:2026-10-01:2026-10-29:2026-10-29:01",
+      "apple-ads:1:2026-10-01:2026-10-29:2026-10-29:1:2",
+    ]) {
+      expect(decodeCursor(cursor)).toBeUndefined();
+    }
   });
 });

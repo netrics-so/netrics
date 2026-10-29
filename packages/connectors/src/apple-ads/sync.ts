@@ -4,8 +4,8 @@ import type {
   SyncResult,
 } from "@netrics/connector-sdk";
 
-import type { AppleAdsClient } from "./api.js";
-import { OTHERS, TOP_COUNTRIES } from "./metrics.js";
+import { AppleAdsApiError, type AppleAdsClient } from "./api.js";
+import { APPLE_ADS_DIMENSIONS, OTHERS, TOP_COUNTRIES } from "./metrics.js";
 import {
   addDayValues,
   AppleAdsReportError,
@@ -22,6 +22,7 @@ import {
   countryOf,
   daySpan,
   MAX_REPORT_DAYS,
+  readAdGroupReport,
   readCampaignReport,
   rowDays,
   type DayRange,
@@ -44,6 +45,21 @@ import {
 // is one such request range; the cursor names the next one, so a 429 in the
 // middle of a backfill resumes there. Every sync re-reads the last
 // LOOKBACK_DAYS days: attribution settles late.
+//
+// Ad groups (#376). The ad-group report needs a `campaignId`, so it fans
+// out per campaign over the same ranges, days and lookback. Its rows go to
+// the `*_by_ad_group` keys (never the main ones), one series per campaign
+// and ad group, no country breakdown. Campaigns without any numbers in the
+// days a page writes (by the totals pass) are skipped. A page reads the
+// ad groups of at most AD_GROUP_CAMPAIGNS_PER_PAGE campaigns, by campaign
+// ID ascending; while campaigns of a range remain, the cursor keeps the
+// range and the last campaign done (`after`), and the next page reads the
+// range's totals again (one request) and goes on after that campaign. A
+// campaign removed in between is simply not in the totals any more, and
+// IDs compare as numbers, so the cursor never depends on it. What a
+// campaign's ad groups leave out of its total (Apple answers 404 for a
+// deleted campaign, TO BE CONFIRMED by #370) is the ad group "Others", so
+// ad-group sums equal campaign sums.
 
 /** Days a backfill reads: 12 months, capped by Apple's retention (#370). */
 export const APPLE_ADS_BACKFILL_DAYS = 365;
@@ -54,7 +70,18 @@ export const APPLE_ADS_BACKFILL_DAYS = 365;
  */
 export const LOOKBACK_DAYS = 3;
 
+/**
+ * Campaigns whose ad-group reports one sync page reads (#376). A page has
+ * 60 seconds and a run at most 100 pages: 10 campaigns plus the totals is
+ * about a dozen requests a page, and a 12-month backfill of five ranges
+ * covers about 190 campaigns with numbers per range in one run.
+ */
+export const AD_GROUP_CAMPAIGNS_PER_PAGE = 10;
+
 const CURSOR_PREFIX = "apple-ads:1";
+
+/** Note code: a deleted campaign had no ad-group report (404). */
+export const DELETED_CAMPAIGN_NOTE = "apple_ads.deleted_campaign_ad_groups";
 
 export interface CampaignSyncOptions {
   now: number;
@@ -123,18 +150,24 @@ export function adAccountToday(nowMs: number, timeZone: string): string {
 /**
  * Where a sync is: the oldest day it emits (`floor`), the newest day it
  * read first (`newest`, where the next sync's lookback starts from), and
- * the newest day of the next range to read (`next`).
+ * the newest day of the next range to read (`next`). In the middle of a
+ * range's ad-group fan-out (#376), `after` is the last campaign whose ad
+ * groups were read: the next page continues that range after it.
  */
 export interface SyncPosition {
   floor: string;
   newest: string;
   next: string;
+  after?: string;
 }
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+const CAMPAIGN_ID_PATTERN = /^(0|[1-9]\d{0,18})$/;
+
 export function encodeCursor(position: SyncPosition): string {
-  return `${CURSOR_PREFIX}:${position.floor}:${position.newest}:${position.next}`;
+  const base = `${CURSOR_PREFIX}:${position.floor}:${position.newest}:${position.next}`;
+  return position.after === undefined ? base : `${base}:${position.after}`;
 }
 
 /** The position in a cursor of this connector, or undefined. */
@@ -142,18 +175,24 @@ export function decodeCursor(
   cursor: string | undefined,
 ): SyncPosition | undefined {
   if (!cursor?.startsWith(`${CURSOR_PREFIX}:`)) return undefined;
-  const [floor, newest, next] = cursor
-    .slice(CURSOR_PREFIX.length + 1)
-    .split(":");
+  const parts = cursor.slice(CURSOR_PREFIX.length + 1).split(":");
+  const [floor, newest, next, after] = parts;
   if (
+    parts.length <= 4 &&
     [floor, newest, next].every(
       (day) =>
         day !== undefined &&
         DAY_PATTERN.test(day) &&
         utcDay(Date.parse(`${day}T00:00:00.000Z`)) === day,
-    )
+    ) &&
+    (after === undefined || CAMPAIGN_ID_PATTERN.test(after))
   ) {
-    return { floor: floor!, newest: newest!, next: next! };
+    return {
+      floor: floor!,
+      newest: newest!,
+      next: next!,
+      ...(after === undefined ? {} : { after }),
+    };
   }
   return undefined;
 }
@@ -181,6 +220,8 @@ export function chunkRange(position: SyncPosition, oldest: string): DayRange {
 interface CampaignDays {
   app: string;
   campaign: string;
+  /** Apple marks the campaign deleted (`metadata.deleted`). */
+  deleted: boolean;
   /** Totals of the campaign per day (the pass without groupBy). */
   totals: Map<string, DayValues>;
   /** Per day, per country or region (the countryOrRegion pass). */
@@ -211,11 +252,13 @@ function campaignOf(
     entry = {
       app: appId,
       campaign: campaignId,
+      deleted: false,
       totals: new Map(),
       countries: new Map(),
     };
     campaigns.set(campaignId, entry);
   }
+  if (row.metadata.deleted === true) entry.deleted = true;
   return entry;
 }
 
@@ -354,12 +397,167 @@ function monthObservations(
   return observations;
 }
 
+// ─── Ad groups ──────────────────────────────────────────────────────────────
+
+/** Ad group ID → day → its numbers, of one campaign in one range. */
+type AdGroupDays = Map<string, Map<string, DayValues>>;
+
+/** Campaign IDs ascending as numbers ("9" before "10"). */
+function byCampaignId(a: string, b: string): number {
+  const x = BigInt(a);
+  const y = BigInt(b);
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+/** Whether a campaign has any numbers on a day the page writes. */
+function hasNumbers(entry: CampaignDays, emit: DayRange): boolean {
+  for (const [day, values] of entry.totals) {
+    if (inRange(day, emit) && !isZeroDayValues(values)) return true;
+  }
+  return false;
+}
+
+/**
+ * One campaign's ad-group report for the range: its ad groups' days. A
+ * deleted campaign Apple answers 404 for has none (its total becomes the
+ * ad group "Others"); any other error is the page's.
+ */
+async function adGroupDays(
+  api: AppleAdsClient,
+  entry: CampaignDays,
+  range: DayRange,
+  options: CampaignSyncOptions,
+): Promise<AdGroupDays> {
+  let rows: ReportRow[];
+  try {
+    rows = await readAdGroupReport(api, {
+      adAccountId: options.adAccountId,
+      range,
+      campaignId: entry.campaign,
+    });
+  } catch (error) {
+    // TO BE CONFIRMED by #370: what Apple answers for a deleted campaign.
+    if (
+      entry.deleted &&
+      error instanceof AppleAdsApiError &&
+      error.status === 404
+    ) {
+      options.note(
+        DELETED_CAMPAIGN_NOTE,
+        "Apple Ads has no ad groups for a deleted campaign; its numbers are kept under the ad group Others.",
+      );
+      return new Map();
+    }
+    throw error;
+  }
+  const parseOptions = {
+    accountCurrency: options.currency,
+    note: options.note,
+  };
+  const adGroups: AdGroupDays = new Map();
+  for (const row of rows) {
+    const adGroup = appleAdsDimensions({
+      app: entry.app,
+      campaign: entry.campaign,
+      adGroup: row.metadata.id,
+    } as AppleAdsRowIdentity)[APPLE_ADS_DIMENSIONS.adGroup]!;
+    let days = adGroups.get(adGroup);
+    if (!days) {
+      days = new Map();
+      adGroups.set(adGroup, days);
+    }
+    for (const raw of rowDays(row, range)) {
+      const { date, values } = parseDayMetrics(raw, parseOptions);
+      if (!inRange(date, range)) continue;
+      days.set(date, values);
+    }
+  }
+  return adGroups;
+}
+
+/**
+ * The `*_by_ad_group` observations of one campaign in one month, for the
+ * days in `emit`: each ad group's numbers, and under "Others" what the ad
+ * groups leave out of the campaign's total, so the ad-group sum of every
+ * day is the campaign's total (and the country sum's).
+ *
+ * As for countries: a settled day without data is an explicit zero for
+ * every ad group with data in the month (and "Others" when it has any), so
+ * a day Apple revised away does not keep an earlier value; recent days
+ * without data are left out.
+ */
+function adGroupMonthObservations(
+  entry: CampaignDays,
+  adGroups: AdGroupDays,
+  month: string,
+  emit: DayRange,
+  settledBefore: string,
+  currency: string,
+): Observation[] {
+  const inMonth = (day: string) => monthStart(day) === month;
+  const days = new Set([...entry.totals.keys()].filter(inMonth));
+  const named: string[] = [];
+  for (const [adGroup, byDay] of adGroups) {
+    const monthDays = [...byDay.keys()].filter(inMonth);
+    if (monthDays.length === 0) continue;
+    named.push(adGroup);
+    for (const day of monthDays) days.add(day);
+  }
+  if (days.size === 0) return [];
+  named.sort(byCampaignId);
+
+  const sumOn = (day: string) => {
+    let sum = zeroDayValues();
+    for (const byDay of adGroups.values()) {
+      const values = byDay.get(day);
+      if (values) sum = addDayValues(sum, values);
+    }
+    return sum;
+  };
+  const gapOn = (day: string) =>
+    addDayValues(entry.totals.get(day) ?? sumOn(day), sumOn(day), -1);
+  const hasOthers = [...days].some((day) => !isZeroDayValues(gapOn(day)));
+
+  const observations: Observation[] = [];
+  const push = (adGroup: string, day: string, values: DayValues) =>
+    observations.push(
+      ...valueObservations(
+        { app: entry.app, campaign: entry.campaign, adGroup },
+        day,
+        values,
+        currency,
+      ),
+    );
+  const first = maxDay(emit.start, month);
+  const last = minDay(emit.end, monthEnd(month));
+  for (let day = first; day <= last; day = addDays(day, 1)) {
+    const settled = day < settledBefore;
+    if (!days.has(day)) {
+      if (settled) {
+        for (const adGroup of named) push(adGroup, day, zeroDayValues());
+        if (hasOthers) push(OTHERS, day, zeroDayValues());
+      }
+      continue;
+    }
+    for (const adGroup of named) {
+      const values = adGroups.get(adGroup)!.get(day);
+      if (values) push(adGroup, day, values);
+      else if (settled) push(adGroup, day, zeroDayValues());
+    }
+    if (hasOthers) push(OTHERS, day, gapOn(day));
+  }
+  return observations;
+}
+
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 /**
- * One page of the campaign sync: one range of whole months (at most 90
- * days), its campaign totals and country breakdown, as observations for
- * the days of the requested window in it.
+ * One page of the sync: one range of whole months (at most 90 days). The
+ * range's first page reads the campaign totals and the country breakdown
+ * (the main metrics) and the ad groups of its first
+ * AD_GROUP_CAMPAIGNS_PER_PAGE campaigns with numbers; further pages of the
+ * range read the totals again and the ad groups of the next campaigns.
+ * Observations are for the days of the requested window in the range.
  */
 export async function syncCampaignPage(
   api: AppleAdsClient,
@@ -401,19 +599,21 @@ export async function syncCampaignPage(
     start: maxDay(range.start, position.floor),
     end: range.end,
   };
+  // The range's first page; later pages only go on with its ad groups.
+  const firstPage = position.after === undefined;
 
-  const [totalRows, countryRows] = [
-    await readCampaignReport(api, {
-      adAccountId: options.adAccountId,
-      range,
-      byCountry: false,
-    }),
-    await readCampaignReport(api, {
-      adAccountId: options.adAccountId,
-      range,
-      byCountry: true,
-    }),
-  ];
+  const totalRows = await readCampaignReport(api, {
+    adAccountId: options.adAccountId,
+    range,
+    byCountry: false,
+  });
+  const countryRows = firstPage
+    ? await readCampaignReport(api, {
+        adAccountId: options.adAccountId,
+        range,
+        byCountry: true,
+      })
+    : [];
 
   const parseOptions = {
     accountCurrency: options.currency,
@@ -453,11 +653,39 @@ export async function syncCampaignPage(
     months.push(month);
     month = addDays(monthEnd(month), 1);
   }
-  for (const campaign of [...campaigns.keys()].sort()) {
+  const campaignIds = [...campaigns.keys()].sort(byCampaignId);
+  if (firstPage) {
+    for (const campaign of campaignIds) {
+      for (const month of months) {
+        observations.push(
+          ...monthObservations(
+            campaigns.get(campaign)!,
+            month,
+            emit,
+            settledBefore,
+            options.currency,
+          ),
+        );
+      }
+    }
+  }
+
+  // The ad-group fan-out: the next campaigns with numbers in the range.
+  const pending = campaignIds.filter(
+    (campaign) =>
+      (position.after === undefined ||
+        byCampaignId(campaign, position.after) > 0) &&
+      hasNumbers(campaigns.get(campaign)!, emit),
+  );
+  const batch = pending.slice(0, AD_GROUP_CAMPAIGNS_PER_PAGE);
+  for (const campaign of batch) {
+    const entry = campaigns.get(campaign)!;
+    const adGroups = await adGroupDays(api, entry, range, options);
     for (const month of months) {
       observations.push(
-        ...monthObservations(
-          campaigns.get(campaign)!,
+        ...adGroupMonthObservations(
+          entry,
+          adGroups,
           month,
           emit,
           settledBefore,
@@ -466,13 +694,21 @@ export async function syncCampaignPage(
       );
     }
   }
+  if (pending.length > batch.length) {
+    return {
+      observations,
+      nextCursor: encodeCursor({ ...position, after: batch.at(-1)! }),
+      done: false,
+    };
+  }
 
   if (range.start <= position.floor || range.start <= oldest) {
     return { observations, nextCursor: resume, done: true };
   }
+  const { after: _after, ...rest } = position;
   return {
     observations,
-    nextCursor: encodeCursor({ ...position, next: addDays(range.start, -1) }),
+    nextCursor: encodeCursor({ ...rest, next: addDays(range.start, -1) }),
     done: false,
   };
 }

@@ -137,6 +137,9 @@ they can sit side by side in one workspace.
   changes).
 - A day with no campaign activity counts as zero only once it is older than
   those 3 days.
+- Ad groups are read per campaign over the same days, only for campaigns
+  with numbers in them, 10 campaigns per sync step: an account with many
+  campaigns takes a few more steps.
 
 ## Time zone and currency
 
@@ -167,22 +170,39 @@ another ad account, add a connection.
 
 ## Metrics
 
-All `delta` values per day, summed:
+All `delta` values per day, summed. The main metrics are by campaign and
+country or region:
 
-| Metric                    | Unit             | Dimensions                                         |
-| ------------------------- | ---------------- | -------------------------------------------------- |
-| `apple_ads.spend`         | `currency_minor` | resource, campaign, ad_group, country, currency    |
-| `apple_ads.impressions`   | `impressions`    | resource, campaign, ad_group, country              |
-| `apple_ads.taps`          | `taps`           | resource, campaign, ad_group, country              |
-| `apple_ads.installs`      | `installs`       | resource, campaign, ad_group, country, attribution |
-| `apple_ads.new_downloads` | `downloads`      | resource, campaign, ad_group, country, attribution |
-| `apple_ads.redownloads`   | `downloads`      | resource, campaign, ad_group, country, attribution |
+| Metric                    | Unit             | Dimensions                               |
+| ------------------------- | ---------------- | ---------------------------------------- |
+| `apple_ads.spend`         | `currency_minor` | resource, campaign, country, currency    |
+| `apple_ads.impressions`   | `impressions`    | resource, campaign, country              |
+| `apple_ads.taps`          | `taps`           | resource, campaign, country              |
+| `apple_ads.installs`      | `installs`       | resource, campaign, country, attribution |
+| `apple_ads.new_downloads` | `downloads`      | resource, campaign, country, attribution |
+| `apple_ads.redownloads`   | `downloads`      | resource, campaign, country, attribution |
+
+The same quantities by ad group have keys of their own, as App Store
+Connect's `downloads_by_territory` beside `downloads`, so an unfiltered
+sum of either set is the ad account's total and spend is never counted
+twice. There is no country breakdown by ad group.
+
+| Metric                                | Unit             | Dimensions                                |
+| ------------------------------------- | ---------------- | ----------------------------------------- |
+| `apple_ads.spend_by_ad_group`         | `currency_minor` | resource, campaign, ad_group, currency    |
+| `apple_ads.impressions_by_ad_group`   | `impressions`    | resource, campaign, ad_group              |
+| `apple_ads.taps_by_ad_group`          | `taps`           | resource, campaign, ad_group              |
+| `apple_ads.installs_by_ad_group`      | `installs`       | resource, campaign, ad_group, attribution |
+| `apple_ads.new_downloads_by_ad_group` | `downloads`      | resource, campaign, ad_group, attribution |
+| `apple_ads.redownloads_by_ad_group`   | `downloads`      | resource, campaign, ad_group, attribution |
 
 - `resource` is the promoted app's Apple ID, as in the App Store Connect
   connector, so ad installs and App Store downloads of one app sit on one
   dashboard.
-- `campaign` and `ad_group` are Apple's IDs; names are labels. Ad-group
-  rows follow with #376.
+- `campaign` and `ad_group` are Apple's IDs; names are labels. What a
+  campaign's ad groups leave out of its total (a deleted campaign Apple no
+  longer reports ad groups for) is the ad group "Others", so ad-group sums
+  equal campaign sums.
 - `country` is the country or region (ISO 3166-1 alpha-2): the 10 with the
   most spend per campaign and calendar month, plus "Others", so an
   unfiltered sum is the ad account's total.

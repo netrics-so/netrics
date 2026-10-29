@@ -4,6 +4,7 @@ import { z } from "zod";
 import { isCurrencyCode } from "../currency.js";
 import { DecimalAmountError, parseDecimalAmount } from "../decimal-amount.js";
 import {
+  APPLE_ADS_AD_GROUP_METRIC_KEYS,
   APPLE_ADS_DIMENSIONS,
   APPLE_ADS_METRIC_KEYS,
   OTHERS,
@@ -12,7 +13,7 @@ import {
 
 // Identity of Apple Ads observations (ADR 0008, ADR 0020 sections 6 to 8)
 // and the conversion of one day of Apple's `AppsMetrics` into them. Pure:
-// the report requests, paging and lookback are #374 and #376.
+// the report requests, paging and lookback are sync.ts (#374, #376).
 //
 // Identity is (connection, metric, dimensions, day). The connection is one
 // ad account (ADR 0020 section 5), so the account is not a dimension. The
@@ -57,7 +58,10 @@ export interface AppleAdsRowIdentity {
   app: AppleId;
   /** The campaign's `id`. */
   campaign: AppleId;
-  /** The ad group's `id`, for ad-group report rows (#376). */
+  /**
+   * The ad group's `id`, for ad-group report rows (#376), or OTHERS for
+   * what a campaign's ad groups leave out of its total.
+   */
   adGroup?: AppleId;
   /**
    * `countryOrRegion` of a `groupBy: ["countryOrRegion"]` row (ISO 3166-1
@@ -82,11 +86,12 @@ function appleId(value: AppleId, what: string): string {
  * country breakdown at ad-group level in v1, #376), so `adGroup` and
  * `country` are never both set.
  *
- * Grain warning for #374 and #376: queries add up every series whose
- * dimensions contain the filter. Observations of one metric at two levels
- * (campaign rows beside the same campaign's country or ad-group rows)
- * would count the same spend twice in an unfiltered total, so a sync
- * stores each metric at one level per connection.
+ * Grain: queries add up every series whose dimensions contain the
+ * filter. Observations of one metric at two levels (country rows beside
+ * the same campaign's ad-group rows) would count the same spend twice in
+ * an unfiltered total, so each level has its own metric keys: country
+ * rows the main `apple_ads.*` keys, ad-group rows the `*_by_ad_group`
+ * keys (valueObservations picks them from the identity).
  */
 export function appleAdsDimensions(
   identity: AppleAdsRowIdentity,
@@ -101,10 +106,10 @@ export function appleAdsDimensions(
     );
   }
   if (identity.adGroup !== undefined) {
-    dimensions[APPLE_ADS_DIMENSIONS.adGroup] = appleId(
-      identity.adGroup,
-      "ad group ID",
-    );
+    dimensions[APPLE_ADS_DIMENSIONS.adGroup] =
+      identity.adGroup === OTHERS
+        ? OTHERS
+        : appleId(identity.adGroup, "ad group ID");
   }
   if (identity.country !== undefined) {
     dimensions[APPLE_ADS_DIMENSIONS.country] = countryValue(identity.country);
@@ -308,7 +313,8 @@ export function parseDayMetrics(
 /**
  * The observations of one day of one row: spend in minor units with its
  * currency, impressions, taps, and installs, new downloads and
- * redownloads once per attribution (`tap`, `view`).
+ * redownloads once per attribution (`tap`, `view`). An ad-group row's go
+ * to the `*_by_ad_group` keys, never to the main ones.
  */
 export function valueObservations(
   identity: AppleAdsRowIdentity,
@@ -318,6 +324,10 @@ export function valueObservations(
 ): Observation[] {
   const sourceTimestamp = reportDayTimestamp(date);
   const dimensions = appleAdsDimensions(identity);
+  const keys =
+    identity.adGroup === undefined
+      ? APPLE_ADS_METRIC_KEYS
+      : APPLE_ADS_AD_GROUP_METRIC_KEYS;
   const observations: Observation[] = [];
   const push = (
     metricKey: string,
@@ -332,18 +342,18 @@ export function valueObservations(
       dimensions: { ...dimensions, ...extra },
     });
 
-  push(APPLE_ADS_METRIC_KEYS.spend, values.spend, {
+  push(keys.spend, values.spend, {
     [APPLE_ADS_DIMENSIONS.currency]: currency,
   });
-  push(APPLE_ADS_METRIC_KEYS.impressions, values.impressions);
-  push(APPLE_ADS_METRIC_KEYS.taps, values.taps);
+  push(keys.impressions, values.impressions);
+  push(keys.taps, values.taps);
   for (const [key, field] of ATTRIBUTED) {
     const byAttribution: Record<Attribution, number> = {
       tap: values[`tap${field}`],
       view: values[`view${field}`],
     };
     for (const attribution of ["tap", "view"] as const) {
-      push(APPLE_ADS_METRIC_KEYS[key], byAttribution[attribution], {
+      push(keys[key], byAttribution[attribution], {
         [APPLE_ADS_DIMENSIONS.attribution]: attribution,
       });
     }

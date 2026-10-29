@@ -28,7 +28,17 @@ import { AppleAdsReportError } from "./observations.js";
 //   https://developer.apple.com/documentation/apple-ads-platform-api/appsreportingcampaign
 //   https://developer.apple.com/documentation/apple-ads-platform-api/appsmetrics
 
+//
+// Ad-group reports (#376): `POST /v1/reports/apps/adgroups/query`, the same
+// body with the required `campaignId` filter
+// (`{field: "campaignId", operator: "EQUALS", value}`), one row per ad
+// group with `metadata.id` and `metadata.campaignId`, the same paging and
+// day limits:
+//   https://developer.apple.com/documentation/apple-ads-platform-api/get-app-ad-group-reports
+//   https://developer.apple.com/documentation/apple-ads-platform-api/appsreportingadgroup
+
 export const CAMPAIGN_REPORT_PATH = "/v1/reports/apps/campaigns/query";
+export const AD_GROUP_REPORT_PATH = "/v1/reports/apps/adgroups/query";
 /** Days a `DAILY` report request may span (Apple's limit). */
 export const MAX_REPORT_DAYS = 90;
 /** Rows per report page (Apple allows up to 5000). */
@@ -54,6 +64,8 @@ const reportRowSchema = z
         id: appleIdValue,
         name: z.string().nullable().optional(),
         promotedObjectId: appleIdValue.nullable().optional(),
+        // Ad-group rows: the campaign the ad group belongs to.
+        campaignId: appleIdValue.nullable().optional(),
         deleted: z.boolean().nullable().optional(),
         countryOrRegion: z.string().nullable().optional(),
       })
@@ -95,6 +107,11 @@ export interface ReportQuery {
   range: DayRange;
   /** The country pass: `groupBy: ["countryOrRegion"]`. */
   byCountry: boolean;
+  /**
+   * The ad-group report's required `campaignId` filter (#376); campaign
+   * reports have none.
+   */
+  campaignId?: string;
 }
 
 /** Days from start to end, both included. */
@@ -128,6 +145,17 @@ export function reportRequestBody(
       // One day has no granular breakdown: Apple answers in totalMetrics.
       ...(span > 1 ? { granularity: "DAILY" } : {}),
     },
+    ...(query.campaignId !== undefined
+      ? {
+          filters: [
+            {
+              field: "campaignId",
+              operator: "EQUALS",
+              value: query.campaignId,
+            },
+          ],
+        }
+      : {}),
     ...(query.byCountry ? { groupBy: [COUNTRY_GROUP_BY] } : {}),
     // No `sorting`: Apple's default order is by ID, ascending, a stable
     // sequence for offsets.
@@ -136,30 +164,32 @@ export function reportRequestBody(
 }
 
 /**
- * Reads every page of one campaign report. A 429 or 5xx surfaces from the
- * client (after its own short retries) as a retryable error: the sync page
- * fails and the job resumes at its last checkpoint.
+ * Reads every page of one report. A 429 or 5xx surfaces from the client
+ * (after its own short retries) as a retryable error: the sync page fails
+ * and the job resumes at its last checkpoint.
  */
-export async function readCampaignReport(
+async function readReport(
   api: AppleAdsClient,
+  path: string,
   query: ReportQuery,
+  what: string,
 ): Promise<ReportRow[]> {
   const rows: ReportRow[] = [];
   for (let page = 0; ; page += 1) {
     if (page >= MAX_REPORT_PAGES) {
       throw new AppleAdsReportError(
-        `Apple Ads report has more than ${MAX_REPORT_PAGES * REPORT_PAGE_SIZE} rows`,
+        `Apple Ads ${what} has more than ${MAX_REPORT_PAGES * REPORT_PAGE_SIZE} rows`,
       );
     }
     const parsed = reportResponseSchema.safeParse(
-      await api.json(CAMPAIGN_REPORT_PATH, {
+      await api.json(path, {
         adAccountId: query.adAccountId,
         body: reportRequestBody(query, rows.length),
       }),
     );
     if (!parsed.success) {
       throw new AppleAdsReportError(
-        "Apple Ads answered the campaign report in an unexpected shape",
+        `Apple Ads answered the ${what} in an unexpected shape`,
       );
     }
     const pageRows = parsed.data.result?.rows ?? [];
@@ -169,6 +199,44 @@ export async function readCampaignReport(
       return rows;
     }
   }
+}
+
+/** Every page of one campaign report (the totals or the country pass). */
+export function readCampaignReport(
+  api: AppleAdsClient,
+  query: Omit<ReportQuery, "campaignId">,
+): Promise<ReportRow[]> {
+  return readReport(api, CAMPAIGN_REPORT_PATH, query, "campaign report");
+}
+
+/**
+ * Every page of one campaign's ad-group report: one row per ad group, no
+ * country breakdown (v1). A row of another campaign is refused.
+ */
+export async function readAdGroupReport(
+  api: AppleAdsClient,
+  query: { adAccountId: string; range: DayRange; campaignId: string },
+): Promise<ReportRow[]> {
+  const rows = await readReport(
+    api,
+    AD_GROUP_REPORT_PATH,
+    { ...query, byCountry: false },
+    "ad-group report",
+  );
+  for (const row of rows) {
+    const campaign = row.metadata.campaignId;
+    // TO BE CONFIRMED by #370: every ad-group row names its campaignId.
+    if (
+      campaign !== null &&
+      campaign !== undefined &&
+      String(campaign).replace(/^0+(?=\d)/, "") !== query.campaignId
+    ) {
+      throw new AppleAdsReportError(
+        "Apple Ads answered the ad-group report with another campaign's ad group",
+      );
+    }
+  }
+  return rows;
 }
 
 /**

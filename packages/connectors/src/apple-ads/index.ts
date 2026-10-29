@@ -18,11 +18,19 @@ import {
   MAX_APPS,
 } from "./access.js";
 import { APPLE_ADS_HOST, createAppleAdsClient } from "./api.js";
-import { APPLE_ADS_METRIC_KEYS, APPLE_ADS_METRICS } from "./metrics.js";
+import {
+  APPLE_ADS_AD_GROUP_METRIC_KEYS,
+  APPLE_ADS_AD_GROUP_METRICS,
+  APPLE_ADS_METRIC_KEYS,
+  APPLE_ADS_METRICS,
+  OTHERS,
+} from "./metrics.js";
 import { noteOnce } from "./observations.js";
 import { APPLE_ADS_BACKFILL_DAYS, syncCampaignPage } from "./sync.js";
 
 export {
+  APPLE_ADS_AD_GROUP_METRIC_KEYS,
+  APPLE_ADS_AD_GROUP_METRICS,
   APPLE_ADS_DIMENSIONS,
   APPLE_ADS_METRIC_KEYS,
   APPLE_ADS_METRICS,
@@ -95,10 +103,12 @@ export {
   type RateLimit,
 } from "./api.js";
 export {
+  AD_GROUP_REPORT_PATH,
   CAMPAIGN_REPORT_PATH,
   COUNTRY_GROUP_BY,
   MAX_REPORT_DAYS,
   MAX_REPORT_PAGES,
+  readAdGroupReport,
   readCampaignReport,
   REPORT_PAGE_SIZE,
   reportRequestBody,
@@ -106,11 +116,13 @@ export {
   type ReportQuery,
 } from "./reports.js";
 export {
+  AD_GROUP_CAMPAIGNS_PER_PAGE,
   adAccountToday,
   addDays,
   APPLE_ADS_BACKFILL_DAYS,
   chunkRange,
   decodeCursor,
+  DELETED_CAMPAIGN_NOTE,
   encodeCursor,
   LOOKBACK_DAYS,
   syncCampaignPage,
@@ -137,6 +149,9 @@ export function appleAdsDaysLabel(
     ? `Tage in ${zone}, wie in Apple Ads`
     : `Days in ${zone}, as in Apple Ads`;
 }
+
+/** German of the ad-group metrics' note on "Others" (metrics.ts). */
+const AD_GROUP_NOTE_DE = `Was keine Anzeigengruppe im Gesamtwert einer Kampagne abdeckt, steht unter „${OTHERS}“.`;
 
 /**
  * German texts of the manifest (ADR 0016): "du" where the text addresses
@@ -172,32 +187,56 @@ const appleAdsDe: ManifestTranslation = {
     [APPLE_ADS_METRIC_KEYS.spend]: {
       name: "Werbeausgaben",
       description:
-        "Was Apple Ads pro Tag, Kampagne, Anzeigengruppe und Land oder Region berechnet hat, in der Währung des Werbekontos, ohne Umrechnung. Die Tage folgen der Zeitzone des Werbekontos, wie in Apple Ads.",
+        "Was Apple Ads pro Tag, Kampagne und Land oder Region berechnet hat, in der Währung des Werbekontos, ohne Umrechnung. Die Tage folgen der Zeitzone des Werbekontos, wie in Apple Ads.",
     },
     [APPLE_ADS_METRIC_KEYS.impressions]: {
       name: "Anzeigenimpressionen",
       description:
-        "Wie oft deine Anzeigen gezeigt wurden, pro Tag, Kampagne, Anzeigengruppe und Land oder Region.",
+        "Wie oft deine Anzeigen gezeigt wurden, pro Tag, Kampagne und Land oder Region.",
     },
     [APPLE_ADS_METRIC_KEYS.taps]: {
       name: "Anzeigentaps",
       description:
-        "Taps auf deine Anzeigen pro Tag, Kampagne, Anzeigengruppe und Land oder Region.",
+        "Taps auf deine Anzeigen pro Tag, Kampagne und Land oder Region.",
     },
     [APPLE_ADS_METRIC_KEYS.installs]: {
       name: "Installationen über Anzeigen",
       description:
-        "Installationen (Erstdownloads und erneute Downloads), die deinen Anzeigen zugeordnet sind, pro Tag, Kampagne, Anzeigengruppe und Land oder Region: nach einem Tap oder nachdem eine Anzeige gesehen wurde (View-Through). Die Summe umfasst beides.",
+        "Installationen (Erstdownloads und erneute Downloads), die deinen Anzeigen zugeordnet sind, pro Tag, Kampagne und Land oder Region: nach einem Tap oder nachdem eine Anzeige gesehen wurde (View-Through). Die Summe umfasst beides.",
     },
     [APPLE_ADS_METRIC_KEYS.newDownloads]: {
       name: "Erstdownloads über Anzeigen",
       description:
-        "Erstdownloads, die deinen Anzeigen zugeordnet sind, pro Tag, Kampagne, Anzeigengruppe und Land oder Region, nach einem Tap oder einer Ansicht.",
+        "Erstdownloads, die deinen Anzeigen zugeordnet sind, pro Tag, Kampagne und Land oder Region, nach einem Tap oder einer Ansicht.",
     },
     [APPLE_ADS_METRIC_KEYS.redownloads]: {
       name: "Erneute Downloads über Anzeigen",
       description:
-        "Downloads durch Personen, die die App schon einmal hatten, deinen Anzeigen zugeordnet, pro Tag, Kampagne, Anzeigengruppe und Land oder Region, nach einem Tap oder einer Ansicht.",
+        "Downloads durch Personen, die die App schon einmal hatten, deinen Anzeigen zugeordnet, pro Tag, Kampagne und Land oder Region, nach einem Tap oder einer Ansicht.",
+    },
+    [APPLE_ADS_AD_GROUP_METRIC_KEYS.spend]: {
+      name: "Werbeausgaben nach Anzeigengruppe",
+      description: `Was Apple Ads pro Tag, Kampagne und Anzeigengruppe berechnet hat, in der Währung des Werbekontos, ohne Umrechnung. Die Tage folgen der Zeitzone des Werbekontos, wie in Apple Ads. ${AD_GROUP_NOTE_DE}`,
+    },
+    [APPLE_ADS_AD_GROUP_METRIC_KEYS.impressions]: {
+      name: "Anzeigenimpressionen nach Anzeigengruppe",
+      description: `Wie oft deine Anzeigen gezeigt wurden, pro Tag, Kampagne und Anzeigengruppe. ${AD_GROUP_NOTE_DE}`,
+    },
+    [APPLE_ADS_AD_GROUP_METRIC_KEYS.taps]: {
+      name: "Anzeigentaps nach Anzeigengruppe",
+      description: `Taps auf deine Anzeigen pro Tag, Kampagne und Anzeigengruppe. ${AD_GROUP_NOTE_DE}`,
+    },
+    [APPLE_ADS_AD_GROUP_METRIC_KEYS.installs]: {
+      name: "Installationen über Anzeigen nach Anzeigengruppe",
+      description: `Installationen (Erstdownloads und erneute Downloads), die deinen Anzeigen zugeordnet sind, pro Tag, Kampagne und Anzeigengruppe: nach einem Tap oder nachdem eine Anzeige gesehen wurde (View-Through). Die Summe umfasst beides. ${AD_GROUP_NOTE_DE}`,
+    },
+    [APPLE_ADS_AD_GROUP_METRIC_KEYS.newDownloads]: {
+      name: "Erstdownloads über Anzeigen nach Anzeigengruppe",
+      description: `Erstdownloads, die deinen Anzeigen zugeordnet sind, pro Tag, Kampagne und Anzeigengruppe, nach einem Tap oder einer Ansicht. ${AD_GROUP_NOTE_DE}`,
+    },
+    [APPLE_ADS_AD_GROUP_METRIC_KEYS.redownloads]: {
+      name: "Erneute Downloads über Anzeigen nach Anzeigengruppe",
+      description: `Downloads durch Personen, die die App schon einmal hatten, deinen Anzeigen zugeordnet, pro Tag, Kampagne und Anzeigengruppe, nach einem Tap oder einer Ansicht. ${AD_GROUP_NOTE_DE}`,
     },
   },
   dimensions: {
@@ -257,7 +296,9 @@ export const appleAdsManifest: ConnectorManifest = {
     // chosen and lists the API user's ad accounts (ADR 0020 section 5).
     additionalProperties: false,
   },
-  metrics: APPLE_ADS_METRICS,
+  // The main metrics (campaign × country or region), then the same
+  // quantities by ad group in keys of their own (#376).
+  metrics: [...APPLE_ADS_METRICS, ...APPLE_ADS_AD_GROUP_METRICS],
   // Apple publishes daily numbers in the ad account's day; attribution
   // settles over a few days (ADR 0020 section 8).
   minRefreshIntervalSeconds: 6 * 60 * 60,
@@ -327,7 +368,9 @@ function accessTokenOf(context: ConnectionContext): string | undefined {
  * `campaign` dimension), so dashboards can name them.
  *
  * A sync reads the campaign report (#374, see sync.ts): daily campaign ×
- * country or region rows in the ad account's currency and days.
+ * country or region rows in the ad account's currency and days; and per
+ * campaign the ad-group report (#376): campaign × ad group rows in the
+ * `*_by_ad_group` keys.
  */
 export function createAppleAdsConnector(
   options: AppleAdsConnectorOptions = {},
