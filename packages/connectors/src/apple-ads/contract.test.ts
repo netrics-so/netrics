@@ -493,20 +493,30 @@ describe("sync", () => {
     ).rejects.toThrow(CHOOSE_AD_ACCOUNT_MESSAGE);
   });
 
-  it("reads no reports yet (#374)", async () => {
+  it("reads the campaign report only in the configured ad account's context (#374)", async () => {
     const api = fake();
-    expect(
-      await connector().sync(
-        context(),
-        {
-          mode: "incremental",
-          from: "2026-10-01T00:00:00.000Z",
-          to: "2026-10-02T00:00:00.000Z",
-        },
-        api.runtime,
-      ),
-    ).toEqual({ observations: [], done: true });
-    expect(api.requests).toHaveLength(0);
+    // A fixed clock: the window is the day before.
+    const result = await createAppleAdsConnector({
+      sleep: noSleep,
+      now: () => Date.parse("2026-10-02T12:00:00.000Z"),
+    }).sync(
+      context(),
+      {
+        mode: "incremental",
+        from: "2026-10-01T00:00:00.000Z",
+        to: "2026-10-02T00:00:00.000Z",
+      },
+      api.runtime,
+    );
+    expect(result.done).toBe(true);
+    const reports = api.requests.filter(
+      (r) => r.url.pathname === "/v1/reports/apps/campaigns/query",
+    );
+    expect(reports.length).toBeGreaterThan(0);
+    for (const request of api.requests) {
+      expect(request.context).toBe(`adAccountId=${US}`);
+      expect(request.token).toBe(TOKEN);
+    }
   });
 });
 

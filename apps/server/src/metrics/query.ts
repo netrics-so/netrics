@@ -13,6 +13,7 @@ import type {
 import {
   findConnectionMetric,
   findConnectionResourceNoun,
+  findDimensionValueNames,
   findResourceNames,
   findWorkspace,
   listMetricResources,
@@ -565,6 +566,17 @@ export async function queryMetricBreakdown(
           })),
         )
       : new Map<string, string>();
+  // Other dimensions whose values discover named (#374: Apple Ads
+  // campaigns, kind "campaign" for the "campaign" dimension).
+  const valueNames =
+    request.groupBy === RESOURCE_DIMENSION
+      ? new Map<string, string>()
+      : await findDimensionValueNames(tx, {
+          workspaceId,
+          connectionId: metric.connectionId,
+          dimension: request.groupBy,
+          values: breakdown.groups.map((group) => group.key),
+        });
   // A column head: "Site" rather than "Resource" (the connector's noun).
   const noun =
     request.groupBy === RESOURCE_DIMENSION
@@ -594,7 +606,8 @@ export async function queryMetricBreakdown(
         label: dimensionValueLabel(
           request.groupBy,
           group.key,
-          resourceNames.get(resourceNameKey(metric.connectionId, group.key)),
+          resourceNames.get(resourceNameKey(metric.connectionId, group.key)) ??
+            valueNames.get(group.key),
           options.locale,
         ),
         value: group.value,

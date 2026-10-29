@@ -174,6 +174,62 @@ export interface DayObservationsOptions {
   note: (code: string, message: string) => void;
 }
 
+/**
+ * The stored quantities of one day of one row: spend in minor units of
+ * the ad account's currency, and the counts, installs, new downloads and
+ * redownloads split by attribution. Totals are the sum over attribution
+ * and are not stored.
+ */
+export interface DayValues {
+  spend: number;
+  impressions: number;
+  taps: number;
+  tapInstalls: number;
+  viewInstalls: number;
+  tapNewDownloads: number;
+  viewNewDownloads: number;
+  tapRedownloads: number;
+  viewRedownloads: number;
+}
+
+/** The fields of DayValues, in a fixed order. */
+export const DAY_VALUE_FIELDS = [
+  "spend",
+  "impressions",
+  "taps",
+  "tapInstalls",
+  "viewInstalls",
+  "tapNewDownloads",
+  "viewNewDownloads",
+  "tapRedownloads",
+  "viewRedownloads",
+] as const satisfies readonly (keyof DayValues)[];
+
+export function zeroDayValues(): DayValues {
+  return {
+    spend: 0,
+    impressions: 0,
+    taps: 0,
+    tapInstalls: 0,
+    viewInstalls: 0,
+    tapNewDownloads: 0,
+    viewNewDownloads: 0,
+    tapRedownloads: 0,
+    viewRedownloads: 0,
+  };
+}
+
+/** a + sign × b, field by field. */
+export function addDayValues(a: DayValues, b: DayValues, sign = 1): DayValues {
+  const sum = zeroDayValues();
+  for (const field of DAY_VALUE_FIELDS) sum[field] = a[field] + sign * b[field];
+  return sum;
+}
+
+export function isZeroDayValues(values: DayValues): boolean {
+  return DAY_VALUE_FIELDS.every((field) => values[field] === 0);
+}
+
 const ATTRIBUTED = [
   ["installs", "Installs"],
   ["newDownloads", "NewDownloads"],
@@ -181,24 +237,22 @@ const ATTRIBUTED = [
 ] as const;
 
 /**
- * One day of one row as observations: spend in minor units with its
- * currency, impressions, taps, and installs, new downloads and redownloads
- * once per attribution (`tap`, `view`). The totals are not stored; they
- * are the sum over `attribution`, and a row whose total is not that sum
- * is refused.
+ * Parses one day of Apple's `AppsMetrics`: its reporting day and its
+ * DayValues. The spend must be in the ad account's currency (it is parsed
+ * exactly into minor units, never through a float), and each total must be
+ * tap plus view.
  */
-export function dayObservations(
-  identity: AppleAdsRowIdentity,
+export function parseDayMetrics(
   raw: unknown,
   options: DayObservationsOptions,
-): Observation[] {
+): { date: string; values: DayValues } {
   const parsed = appsDayMetricsSchema.safeParse(raw);
   if (!parsed.success) {
     throw new AppleAdsReportError("Apple Ads report has malformed metrics");
   }
   const metrics = parsed.data;
-  const sourceTimestamp = reportDayTimestamp(metrics.date);
-  const dimensions = appleAdsDimensions(identity);
+  // Validates the day before anything else.
+  reportDayTimestamp(metrics.date);
 
   const currency = metrics.localSpend.currency;
   if (!isCurrencyCode(currency) || currency !== options.accountCurrency) {
@@ -224,7 +278,46 @@ export function dayObservations(
     }
     throw error;
   }
+  for (const [, field] of ATTRIBUTED) {
+    // TO BE CONFIRMED (#370): Apple documents the total as tap plus view.
+    if (
+      metrics[`tap${field}`] + metrics[`view${field}`] !==
+      metrics[`total${field}`]
+    ) {
+      throw new AppleAdsReportError(
+        `Apple Ads total ${field} is not tap plus view`,
+      );
+    }
+  }
+  return {
+    date: metrics.date,
+    values: {
+      spend,
+      impressions: metrics.impressions,
+      taps: metrics.taps,
+      tapInstalls: metrics.tapInstalls,
+      viewInstalls: metrics.viewInstalls,
+      tapNewDownloads: metrics.tapNewDownloads,
+      viewNewDownloads: metrics.viewNewDownloads,
+      tapRedownloads: metrics.tapRedownloads,
+      viewRedownloads: metrics.viewRedownloads,
+    },
+  };
+}
 
+/**
+ * The observations of one day of one row: spend in minor units with its
+ * currency, impressions, taps, and installs, new downloads and
+ * redownloads once per attribution (`tap`, `view`).
+ */
+export function valueObservations(
+  identity: AppleAdsRowIdentity,
+  date: string,
+  values: DayValues,
+  currency: string,
+): Observation[] {
+  const sourceTimestamp = reportDayTimestamp(date);
+  const dimensions = appleAdsDimensions(identity);
   const observations: Observation[] = [];
   const push = (
     metricKey: string,
@@ -234,26 +327,21 @@ export function dayObservations(
     observations.push({
       metricKey,
       sourceTimestamp,
-      value,
+      // No negative zero in storage.
+      value: value || 0,
       dimensions: { ...dimensions, ...extra },
     });
 
-  push(APPLE_ADS_METRIC_KEYS.spend, spend, {
+  push(APPLE_ADS_METRIC_KEYS.spend, values.spend, {
     [APPLE_ADS_DIMENSIONS.currency]: currency,
   });
-  push(APPLE_ADS_METRIC_KEYS.impressions, metrics.impressions);
-  push(APPLE_ADS_METRIC_KEYS.taps, metrics.taps);
+  push(APPLE_ADS_METRIC_KEYS.impressions, values.impressions);
+  push(APPLE_ADS_METRIC_KEYS.taps, values.taps);
   for (const [key, field] of ATTRIBUTED) {
     const byAttribution: Record<Attribution, number> = {
-      tap: metrics[`tap${field}`],
-      view: metrics[`view${field}`],
+      tap: values[`tap${field}`],
+      view: values[`view${field}`],
     };
-    // TO BE CONFIRMED (#370): Apple documents the total as tap plus view.
-    if (byAttribution.tap + byAttribution.view !== metrics[`total${field}`]) {
-      throw new AppleAdsReportError(
-        `Apple Ads total ${field} is not tap plus view`,
-      );
-    }
     for (const attribution of ["tap", "view"] as const) {
       push(APPLE_ADS_METRIC_KEYS[key], byAttribution[attribution], {
         [APPLE_ADS_DIMENSIONS.attribution]: attribution,
@@ -261,6 +349,21 @@ export function dayObservations(
     }
   }
   return observations;
+}
+
+/**
+ * One day of one row as observations (parseDayMetrics, then
+ * valueObservations). A row whose total is not tap plus view is refused.
+ */
+export function dayObservations(
+  identity: AppleAdsRowIdentity,
+  raw: unknown,
+  options: DayObservationsOptions,
+): Observation[] {
+  const { date, values } = parseDayMetrics(raw, options);
+  // The identity is checked before the values are used.
+  appleAdsDimensions(identity);
+  return valueObservations(identity, date, values, options.accountCurrency);
 }
 
 /**

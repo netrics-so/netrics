@@ -103,6 +103,20 @@ built and tested on fixtures. #372 needs #370 to confirm the field that
 names the promoted app; #374 needs it for retention; #375's copy is checked
 against the real Apple Ads UI at the exit gate.
 
+**Availability.** The `apple-ads` connector is registered in development
+and tests only (`PREVIEW_CONNECTORS` in `apps/server/src/connectors.ts`,
+roadmap rule 6). The sync produces data since #374, but the generic connect
+form cannot choose an ad account or store its currency and time zone, so
+the hold ends with the guided setup of #375, after #370 confirms the
+fixtures.
+
+**Report windows (#374).** Each sync page reads whole calendar months in
+one request of at most 90 days, newest first, because the top 10 countries
+are ranked per campaign and month. The main metrics hold only campaign ×
+country or region rows; countries outside the top 10 and anything the
+breakdown leaves out of a campaign's total are "Others", so an unfiltered
+sum is the ad account's total.
+
 ## Security invariants
 
 - The private key and the client secret never leave the host. The

@@ -14,7 +14,7 @@ import {
  * neither lists nor connects nor syncs them, and its catalog has no rows
  * for them.
  *
- * Apple Ads (milestone 10): the connector can read ad accounts, but the
+ * Apple Ads (milestone 10): the sync produces data since #374, but the
  * generic connect form cannot set it up. Its preview lists ad accounts as
  * if they were resources to select, and nothing stores the chosen
  * account's ID, currency and time zone. The guided setup is #375; Apple's

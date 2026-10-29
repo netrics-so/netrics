@@ -51,6 +51,8 @@ import { createTestDatabase } from "./test-db.js";
 // call of a connection carries only its own ad account as X-AP-Context.
 
 const ENCRYPTION_KEY = randomBytes(32).toString("base64");
+/** Sync windows run on a pinned clock, never the real one. */
+const NOW = Date.parse("2026-10-29T12:00:00.000Z");
 const KEYRING = createCredentialKeyring(ENCRYPTION_KEY);
 
 const US: FakeAdAccount = {
@@ -109,7 +111,7 @@ function towardsFake(connector: Connector): Connector {
 function registry(): ConnectorRegistry {
   const registry = new ConnectorRegistry();
   registry.register(createDemoConnector());
-  registry.register(towardsFake(createAppleAdsConnector()));
+  registry.register(towardsFake(createAppleAdsConnector({ now: () => NOW })));
   return registry;
 }
 
@@ -208,6 +210,7 @@ async function runSync(id: string) {
     registry: registry(),
     credentialKeyring: KEYRING,
     signedKeys,
+    now: () => new Date(NOW),
   });
   return handlers["connection.sync"]!({
     job: {
