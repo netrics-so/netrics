@@ -21,7 +21,7 @@ import {
   type StudioAction,
   type StudioState,
 } from "./studio-document";
-import { customLayoutOf } from "./studio-layouts";
+import { customLayoutOf, rebaseBlockers } from "./studio-layouts";
 
 // Custom layouts per format in the Studio's reducer (ADR 0017 section 4,
 // #284): customise and reset, moves and pages in a format, hiding, review
@@ -496,5 +496,80 @@ describe("a refused change of the primary format", () => {
     expect(
       apiErrorMessage(new ApiError(400, "layout_widgets_overlap"), "en"),
     ).toBe("Two widgets overlap in a custom layout.");
+  });
+});
+
+describe("moving the overflow to new slides (#298)", () => {
+  // Sixteen 3 × 2 texts fill 16:9; portrait needs pages.
+  const full = Array.from(
+    { length: 16 },
+    (_, i) =>
+      ({
+        type: "text",
+        id: ID(200 + i),
+        x: (i % 4) * 3,
+        y: Math.floor(i / 4) * 2,
+        w: 3,
+        h: 2,
+        title: null,
+        text: `Text ${i}`,
+        options: {},
+      }) as unknown as DashboardWidget,
+  );
+  const start = () =>
+    initialStudioState(
+      dashboard({
+        slides: [
+          {
+            ...dashboard().slides[0]!,
+            durationSeconds: 30,
+            widgets: full,
+          },
+        ],
+      }),
+      "en",
+    );
+  const move: StudioAction = { type: "moveOverflowToSlides", format: portrait };
+
+  it("splits the slide so the format can become the primary, as one undo step", () => {
+    const before = start();
+    expect(rebaseBlockers(before.draft.slides, "16x9", portrait).length).toBe(
+      1,
+    );
+    const after = run(before, move);
+    const slides = after.draft.slides;
+    expect(slides.length).toBeGreaterThan(1);
+    expect(rebaseBlockers(slides, "16x9", portrait)).toEqual([]);
+    expect(slides[0]!.id).toBe(ID(2));
+    expect(slides.slice(1).map((slide) => slide.name)).toEqual(
+      slides.slice(1).map((_, i) => `Sales (${i + 2})`),
+    );
+    expect(slides.every((slide) => slide.durationSeconds === 30)).toBe(true);
+    // Every widget is kept once, with its id and primary placement.
+    const moved = slides.flatMap((slide) => slide.widgets);
+    expect(moved.map((w) => w.id).sort()).toEqual(full.map((w) => w.id).sort());
+    for (const widget of moved) {
+      const was = full.find((w) => w.id === widget.id)!;
+      expect([widget.x, widget.y]).toEqual([was.x, was.y]);
+    }
+    expect(documentProblems(after.draft, "en")).toEqual([]);
+    expect(after.announcement?.text).toMatch(/new slides?\./);
+    expect(run(after, { type: "undo" }).draft).toEqual(before.draft);
+    // The Save request is valid and carries the split.
+    expect(
+      replaceDashboardRequestSchema.safeParse(
+        toReplaceRequest(after, { primaryFormat: portrait }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("does nothing when every slide fits", () => {
+    const state = initialStudioState(
+      dashboard({
+        slides: [{ ...dashboard().slides[0]!, widgets: full.slice(0, 2) }],
+      }),
+      "en",
+    );
+    expect(run(state, move)).toBe(state);
   });
 });

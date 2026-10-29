@@ -40,6 +40,7 @@ import { widgetInputProblem } from "./studio-inspector";
 import {
   addPage,
   autoAsCustom,
+  splitOverflow,
   confirmPlacements,
   copyLayouts,
   customLayoutOf,
@@ -198,6 +199,11 @@ export type StudioAction =
       hidden: boolean;
       page?: number;
     }
+  /**
+   * "Move the overflow to new slides" (#298): every slide that continues
+   * on more pages in `format` is split into one slide per page.
+   */
+  | { type: "moveOverflowToSlides"; format: ScreenFormat }
   /** "Looks good": one widget's review flag, or every flag of the slide. */
   | {
       type: "confirmPlacement";
@@ -785,6 +791,85 @@ function emptySlide(id: string): StudioSlide {
   };
 }
 
+/**
+ * Splits every slide that continues on more pages in `format` (#298): the
+ * later pages become new slides right after it, with its name (numbered),
+ * duration, background and visibility. Widgets keep their ids and primary
+ * placements; the slide's custom layouts in other formats drop the widgets
+ * that moved, and the new slides start automatic there. One undo step.
+ */
+function moveOverflowToSlides(
+  state: StudioState,
+  format: ScreenFormat,
+  newId: () => string,
+): StudioState {
+  const { draft, locale } = state;
+  const t = messages(locale);
+  const primary = primaryOf(draft);
+  const slides: StudioSlide[] = [];
+  let added = 0;
+  for (const slide of draft.slides) {
+    const parts = splitOverflow(slide, primary, format);
+    if (!parts) {
+      slides.push(slide);
+      continue;
+    }
+    added += parts.length - 1;
+    parts.forEach((part, index) => {
+      const ids = new Set(part.widgetIds);
+      const widgets = slide.widgets.filter((widget) => ids.has(widget.id));
+      const others =
+        index === 0
+          ? (slide.layouts ?? [])
+              .filter((layout) => layout.format !== format)
+              .map((layout) => ({
+                ...layout,
+                placements: layout.placements.filter((placement) =>
+                  ids.has(placement.widgetId),
+                ),
+              }))
+          : [];
+      const layouts = part.layout
+        ? withLayout(others, format, part.layout)
+        : others;
+      slides.push(
+        index === 0
+          ? { ...slide, widgets, layouts }
+          : {
+              ...slide,
+              id: newId(),
+              name: slide.name
+                ? continuedName(slide.name, index + 1, locale)
+                : null,
+              widgets,
+              layouts,
+            },
+      );
+    });
+  }
+  if (added === 0) return state;
+  if (slides.length > STUDIO_LIMITS.slides) {
+    return announce(state, t("limits.slides", { max: STUDIO_LIMITS.slides }));
+  }
+  const next: StudioDocument = { ...draft, slides };
+  return announce(
+    { ...edit(state, next), ...keepSelection(state, next) },
+    t("announce.overflowMoved", { added }),
+  );
+}
+
+/** "Sales (2)": a split slide's name, cut to the slide name limit. */
+function continuedName(name: string, part: number, locale: Locale): string {
+  const t = messages(locale);
+  const suffix = t("continued", { name: "", part });
+  return t("continued", {
+    name: name
+      .trim()
+      .slice(0, Math.max(0, STUDIO_LIMITS.slideNameLength - suffix.length)),
+    part,
+  });
+}
+
 /** Selection that still exists in `draft`, else the nearest slide. */
 function keepSelection(
   state: StudioState,
@@ -1087,6 +1172,8 @@ export function createStudioReducer(newId: () => string) {
       case "setWidgetHidden":
       case "confirmPlacement":
         return editLayout(state, action);
+      case "moveOverflowToSlides":
+        return moveOverflowToSlides(state, action.format, newId);
       case "updateWidgetOptions": {
         const slide = draft.slides.find((s) =>
           s.widgets.some((widget) => widget.id === action.widgetId),
