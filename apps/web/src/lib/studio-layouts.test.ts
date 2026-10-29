@@ -20,6 +20,7 @@ import {
   removePage,
   reviewPlacements,
   setHidden,
+  splitOverflow,
   toSlideLayout,
   withLayout,
   withoutWidget,
@@ -365,3 +366,65 @@ describe("changing the primary format", () => {
     ).toEqual([{ slideId: ID(52), reason: "hidden" }]);
   });
 });
+
+describe("moving the overflow to new slides (#298)", () => {
+  // Sixteen 3 × 2 cards fill 16:9; portrait needs pages.
+  const full: ScreenWidget[] = Array.from({ length: 16 }, (_, i) => ({
+    id: ID(200 + i),
+    type: "text",
+    x: (i % 4) * 3,
+    y: Math.floor(i / 4) * 2,
+    w: 3,
+    h: 2,
+  }));
+
+  it("leaves a slide that fits alone", () => {
+    expect(splitOverflow({ widgets: OVERVIEW }, "16x9", "16x9")).toBeNull();
+    expect(
+      splitOverflow({ widgets: full.slice(0, 2) }, "16x9", "9x16"),
+    ).toBeNull();
+  });
+
+  it("splits an automatic layout into one part per page, each fitting", () => {
+    const pages = reflowPages(full);
+    const parts = splitOverflow({ widgets: full }, "16x9", "9x16")!;
+    expect(parts.length).toBe(pages);
+    expect(pages).toBeGreaterThan(1);
+    expect(parts.flatMap((part) => part.widgetIds).sort()).toEqual(
+      full.map((widget) => widget.id).sort(),
+    );
+    for (const part of parts) {
+      const widgets = full.filter((w) => part.widgetIds.includes(w.id));
+      expect(rebaseBlockers([{ id: ID(1), widgets }], "16x9", "9x16")).toEqual(
+        [],
+      );
+    }
+  });
+
+  it("keeps a custom arrangement page by page, hidden widgets on the first", () => {
+    const custom = autoAsCustom({ widgets: full }, "16x9", "9x16");
+    expect(custom.pages).toBeGreaterThan(1);
+    const hidden = setHidden(custom, ID(200), "text", "9x16", true);
+    if (!hidden.ok) throw new Error("not hidden");
+    const slide: LayoutSlide = {
+      widgets: full,
+      layouts: [toSlideLayout("9x16", hidden.layout)],
+    };
+    const parts = splitOverflow(slide, "16x9", "9x16")!;
+    expect(parts.length).toBe(custom.pages);
+    expect(parts[0]!.widgetIds).toContain(ID(200));
+    for (const [index, part] of parts.entries()) {
+      expect(part.layout!.pages).toBe(1);
+      expect(part.layout!.placements.every((p) => p.page === 0)).toBe(true);
+      const onPage = pagePlacements(hidden.layout, index).map((p) => p.id);
+      expect(pagePlacements(part.layout!, 0).map((p) => p.id)).toEqual(onPage);
+    }
+    expect(hiddenPlacements(parts[0]!.layout!).map((p) => p.id)).toEqual([
+      ID(200),
+    ]);
+  });
+});
+
+function reflowPages(widgets: ScreenWidget[]) {
+  return autoAsCustom({ widgets }, "16x9", "9x16").pages;
+}

@@ -42,7 +42,8 @@ import { useTargetName } from "./format-switcher";
 /**
  * "Make 9:16 the primary format" (ADR 0017 section 4): asks first, and
  * says why not while a slide continues on more pages or hides widgets in
- * that format (the server refuses those too).
+ * that format (the server refuses those too). Overflow can be moved to new
+ * slides from there (#298); hidden widgets the user decides on.
  */
 export function MakePrimaryButton({
   format,
@@ -51,6 +52,7 @@ export function MakePrimaryButton({
   blockers,
   disabled,
   onMake,
+  onMoveOverflow,
 }: {
   format: ScreenFormat;
   primaryFormat: ScreenFormat;
@@ -58,6 +60,8 @@ export function MakePrimaryButton({
   blockers: ReadonlyArray<{ slideId: string; reason: RebaseBlocker }>;
   disabled: boolean;
   onMake: () => void;
+  /** Splits the slides that continue on more pages (#298). */
+  onMoveOverflow?: () => void;
 }) {
   const t = useT("studio.formats");
   const locale = useLocale();
@@ -104,6 +108,19 @@ export function MakePrimaryButton({
               );
             })}
           </ul>
+          {onMoveOverflow &&
+          blockers.some((blocker) => blocker.reason === "overflow") ? (
+            <>
+              <p className="help">{t("moveOverflowHelp", { ratio })}</p>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={onMoveOverflow}
+              >
+                {t("moveOverflow")}
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
     </>

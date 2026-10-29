@@ -496,6 +496,70 @@ export function rebaseBlockers(
   );
 }
 
+/** One slide of a split: its widgets and its layout in the format. */
+export interface OverflowPart {
+  /** The widgets on the part, in the slide's order. */
+  widgetIds: string[];
+  /** Its custom layout in the format (one page); null: auto fits. */
+  layout: CustomLayout | null;
+}
+
+/**
+ * "Move the overflow to new slides" (#298): a slide that continues on more
+ * pages in `format` split into one slide per page, so the format can
+ * become the primary. The first part is the slide itself (with its hidden
+ * widgets); every later page becomes a new slide with that page's widgets.
+ * A part whose own automatic layout fits one page stays automatic; else
+ * (and when the format is arranged by hand) it keeps the page's
+ * arrangement as a one-page custom layout. Null when the slide fits.
+ */
+export function splitOverflow(
+  slide: LayoutSlide,
+  primaryFormat: ScreenFormat,
+  format: ScreenFormat,
+): OverflowPart[] | null {
+  if (format === primaryFormat) return null;
+  const custom = customLayoutOf(slide, primaryFormat, format);
+  const widgets = layoutWidgets(slide.widgets);
+  const pages: CustomPlacement[][] = custom
+    ? Array.from({ length: custom.pages }, (_, page) =>
+        pagePlacements(custom, page),
+      )
+    : reflowSlide(widgets, primaryFormat, format).map((page) =>
+        page.map((placement) => ({
+          ...placement,
+          page: 0,
+          hidden: false,
+          autoPlaced: false,
+        })),
+      );
+  if (pages.length <= 1) return null;
+  const hidden = custom ? hiddenPlacements(custom) : [];
+  return pages
+    .map((page, index) => (index === 0 ? [...page, ...hidden] : page))
+    .filter((page, index) => index === 0 || page.length > 0)
+    .map((page) => {
+      const ids = new Set(page.map((placement) => placement.id));
+      const placements = page.map((placement) => ({
+        ...placement,
+        page: 0,
+      }));
+      const fits =
+        !custom &&
+        reflowSlide(
+          widgets.filter((widget) => ids.has(widget.id)),
+          primaryFormat,
+          format,
+        ).length <= 1;
+      return {
+        widgetIds: slide.widgets
+          .filter((widget) => ids.has(widget.id))
+          .map((widget) => widget.id),
+        layout: fits ? null : { pages: 1, placements },
+      };
+    });
+}
+
 /** True when two placements of a page overlap (for tests and checks). */
 export function pageHasOverlap(custom: CustomLayout, page: number): boolean {
   const shown = pagePlacements(custom, page);

@@ -560,6 +560,12 @@ export function StudioEditor({
         blockers={blockers}
         disabled={saving}
         onMake={() => void save(formatView.target as ScreenFormat)}
+        onMoveOverflow={() =>
+          dispatch({
+            type: "moveOverflowToSlides",
+            format: formatView.target as ScreenFormat,
+          })
+        }
       />
     );
   const statuses = targetStatuses({

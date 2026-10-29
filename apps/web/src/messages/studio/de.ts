@@ -505,6 +505,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         "Damit {ratio} das primäre Format werden kann, muss dort jede Folie auf eine Seite passen und jedes Widget angezeigt werden.",
       blockedOverflow: "{slide} geht auf mehr als einer Seite weiter.",
       blockedHidden: "{slide} blendet Widgets aus.",
+      moveOverflow: "Überlauf auf neue Folien verschieben",
+      moveOverflowHelp:
+        "Jede Seite nach der ersten wird eine neue Folie direkt nach ihrer Folie, mit den Widgets, die diese Seite in {ratio} zeigt. Das lässt sich rückgängig machen.",
       primaryChanged: "{ratio} ist jetzt das primäre Format.",
     },
     document: {
@@ -539,9 +542,12 @@ export const studioDe: Catalog<typeof studioEn> = {
       namedWidget:
         "{title} ({type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}})",
       copyOf: "{name} (Kopie)",
+      continued: "{name} ({part})",
       slide: "Folie {number}",
       quoted: "„{name}“",
       announce: {
+        overflowMoved:
+          "{added, plural, one {Überlauf auf # neue Folie verschoben.} other {Überlauf auf # neue Folien verschoben.}}",
         slideAdded: "Folie {number} hinzugefügt.",
         slideDuplicated: "{slide} als Folie {number} dupliziert.",
         deleted: "{name} gelöscht.",

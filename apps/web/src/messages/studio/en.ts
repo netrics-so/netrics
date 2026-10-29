@@ -497,6 +497,9 @@ export const studioEn = {
         "To make {ratio} the primary format, every slide must fit on one page there with every widget shown.",
       blockedOverflow: "{slide} continues on more than one page.",
       blockedHidden: "{slide} hides widgets.",
+      moveOverflow: "Move the overflow to new slides",
+      moveOverflowHelp:
+        "Every page after the first becomes a new slide right after its slide, with the widgets that page shows in {ratio}. You can undo this.",
       primaryChanged: "{ratio} is now the primary format.",
     },
     document: {
@@ -531,9 +534,12 @@ export const studioEn = {
       namedWidget:
         "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} gauge {goal} other {widget}})",
       copyOf: "{name} (copy)",
+      continued: "{name} ({part})",
       slide: "Slide {number}",
       quoted: "“{name}”",
       announce: {
+        overflowMoved:
+          "{added, plural, one {Moved the overflow to # new slide.} other {Moved the overflow to # new slides.}}",
         slideAdded: "Slide {number} added.",
         slideDuplicated: "{slide} duplicated as slide {number}.",
         deleted: "{name} deleted.",
