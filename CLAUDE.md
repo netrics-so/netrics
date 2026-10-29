@@ -44,8 +44,8 @@ Tests need a PostgreSQL server they can create databases on:
 5. Check behaviour where it runs: a real browser for UI flows, built images
    for deploy changes.
 6. Squash-merge after CI is green (`check`, `docker`, `migrations`,
-   `selfhost`). A merge to `main` publishes images and deploys the hosted
-   service; confirm the new commit on `/health/live`.
+   `selfhost`, `web-build-env`). A merge to `main` publishes images and
+   deploys the hosted service; confirm the new commit on `/health/live`.
 
 ## Invariants that must hold
 
@@ -59,8 +59,11 @@ Tests need a PostgreSQL server they can create databases on:
 - One source, same commit: nothing environment-specific at build time.
   Self-hosters run the signed images. The hosted service runs the same server
   image and builds the web frontend on Vercel from the same commit and
-  lockfile, with configuration read at request time (ADR 0013; a CI build
-  guard checks the web build).
+  lockfile, with configuration read at request time (ADR 0013). The CI job
+  `web-build-env` (`pnpm web:build-check`) builds the web app with and
+  without sample `NETRICS_*` values and fails if the output differs; no
+  `NEXT_PUBLIC_*` other than `NEXT_PUBLIC_APP_VERSION` and
+  `NEXT_PUBLIC_GIT_SHA` exists (`web-build-env.test.ts`).
 - Packages depend inward only (`PACKAGE_LAYERS` in `eslint.config.mjs`, enforced
   by lint): `domain` imports nothing, and apps compose the concrete connectors.
 - Pin dependencies exactly, and avoid releases younger than a few days.
