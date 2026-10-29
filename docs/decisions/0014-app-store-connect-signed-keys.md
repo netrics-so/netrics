@@ -95,6 +95,9 @@ sync call, the host signs a fresh JWT and hands the connector
 becomes 0.2.2, and `^0.2.0` connectors keep loading. Apple Ads (milestone 10) adds a provider that signs a client-secret JWT and exchanges it for an
 access token; no new strategy is needed.
 
+See [ADR 0020](./0020-apple-ads-platform-api-token-exchange.md) for the
+exchange, its cached token and the generated key pair.
+
 **Fields.** The form has three fields:
 
 - **Issuer ID**: a UUID.
