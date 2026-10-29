@@ -354,10 +354,13 @@ struct SlideHeaderView: View {
                     radius: env.pt(5), x: 0, y: env.pt(6))
             }
             // Names wrap (narrow formats) or shrink rather than lose their end.
+            // Two lines sit at line height 1, as the web's `line-height: 1`,
+            // so they fit the band without shrinking (#298).
             Text(name)
                 .font(env.font(StudioHeaderMetrics.name, .semibold))
                 .foregroundStyle(colors.text)
                 .lineLimit(fit.maxNameLines)
+                .modifier(HeaderNameLineHeight(size: env.pt(StudioHeaderMetrics.name), wraps: fit.maxNameLines > 1))
                 .minimumScaleFactor(0.6)
                 .layoutPriority(2)
             if let slideName {
@@ -400,5 +403,27 @@ struct SlideHeaderView: View {
         }
         .padding(.horizontal, env.pt(StudioHeaderMetrics.padding))
         .frame(maxHeight: .infinity)
+    }
+}
+
+/**
+ * The header's dashboard name in narrow formats: line height equal to the
+ * font size (the web's `line-height: 1` on `.studio-header-name--wrap`), so
+ * two lines take 72 units instead of the system's taller lines. tvOS 26 sets
+ * it exactly; earlier releases tighten the line spacing by the font's extra
+ * leading as far as SwiftUI allows.
+ */
+struct HeaderNameLineHeight: ViewModifier {
+    let size: CGFloat
+    let wraps: Bool
+
+    func body(content: Content) -> some View {
+        if !wraps {
+            content
+        } else if #available(tvOS 26.0, *) {
+            content.lineHeight(.exact(points: size))
+        } else {
+            content.lineSpacing(size - UIFont.systemFont(ofSize: size, weight: .semibold).lineHeight)
+        }
     }
 }
