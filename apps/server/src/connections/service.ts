@@ -100,9 +100,11 @@ import {
 import type { SignedKeyProviderDefinition } from "../signed-keys/providers/index.js";
 import {
   createSignedKeyProviders,
+  SignedKeyExchangeError,
   type SignedKey,
   type SignedKeyProviders,
 } from "../signed-keys/registry.js";
+import { createSignedKeyTokenStore } from "../signed-keys/token-store.js";
 import { latestReview, storedReviewsKey } from "../reviews/latest.js";
 import {
   presentConnection,
@@ -273,7 +275,14 @@ async function checkSignedKey(
 /** Maps a failed signed-key connector call to a 400 the web app can show. */
 function signedKeyCallFailure<T>(error: unknown): Result<T> {
   // SignedKeyRejectedError carries the provider's fixed text; connector
-  // errors are redacted of the token at the runtime boundary.
+  // errors are redacted of the token at the runtime boundary. A failed
+  // token exchange (ADR 0020) names no status or code to the user.
+  if (error instanceof SignedKeyExchangeError) {
+    return fail(
+      400,
+      "The provider's sign-in service could not be reached. Try again in a few minutes.",
+    );
+  }
   return fail(
     400,
     error instanceof SignedKeyRejectedError
@@ -380,6 +389,17 @@ function acceptsCredentials(manifest: ConnectorManifest): boolean {
 export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db, registry, credentialKeyring, oauthProviders } = deps;
   const signedKeys = deps.signedKeys ?? createSignedKeyProviders();
+  // Cached exchanged tokens of stored signed keys (ADR 0020 §2); candidate
+  // keys (create, preview, rotation) are never cached.
+  const signedKeyTokens = createSignedKeyTokenStore({ db, credentialKeyring });
+  const signedKeyCache = (
+    key: SignedKey,
+    workspaceId: string,
+    connectionId: string,
+  ) =>
+    key.exchanges
+      ? { cache: signedKeyTokens.forConnection({ workspaceId, connectionId }) }
+      : {};
   const oauthTokens =
     deps.oauthTokens ??
     createOAuthTokenService({
@@ -787,6 +807,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     try {
       const resources = await callWithSignedKey({
         key: key.value,
+        ...signedKeyCache(key.value, actor.workspaceId, connectionId),
         call: (tokenCredentials, options) =>
           executeDiscover(
             registered.connector,
@@ -1279,6 +1300,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return ok(
           await callWithSignedKey({
             key: key.value,
+            ...signedKeyCache(key.value, actor.workspaceId, connectionId),
             call: (tokenCredentials, options) =>
               call(
                 connector,

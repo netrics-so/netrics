@@ -9,6 +9,7 @@ export type {
   SignedKeyProbeContext,
   SignedKeyProbeResult,
   SignedKeyProviderDefinition,
+  SignedKeyTokenExchange,
 } from "./types.js";
 export { appStoreConnectProvider } from "./app-store-connect.js";
 

@@ -310,6 +310,13 @@ export type {
   OAuthTokenUpdate,
   OAuthAuthorizationRow,
 } from "./oauth.js";
+export {
+  deleteSignedKeyToken,
+  findSignedKeyToken,
+  lockSignedKeyToken,
+  storeSignedKeyToken,
+} from "./signed-key-tokens.js";
+export type { ConnectionSignedKeyTokenRow } from "./signed-key-tokens.js";
 export type {
   ConnectionChanges,
   ConnectionOAuthAccount,

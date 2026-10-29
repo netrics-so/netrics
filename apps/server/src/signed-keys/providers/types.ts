@@ -2,6 +2,7 @@ import type {
   ConnectorFetchInit,
   ConnectorResponse,
 } from "@netrics/connector-sdk";
+import type { z } from "zod";
 
 /**
  * A signed-key provider definition (ADR 0014): trusted host code that knows
@@ -21,7 +22,11 @@ export interface SignedKeyProviderDefinition {
    * key, which the host parses and checks before anything else.
    */
   readonly fields: readonly SignedKeyField[];
-  /** The JWT `kid` header and claims besides `iat` and `exp`. */
+  /**
+   * The JWT `kid` header and claims besides `iat` and `exp`. With
+   * `exchange`, this JWT is the client secret of the token exchange and is
+   * never handed to a connector.
+   */
   token(credentials: SignedKeyFieldValues): {
     kid: string;
     claims: Readonly<Record<string, string>>;
@@ -35,9 +40,16 @@ export interface SignedKeyProviderDefinition {
     readonly expiresInSeconds: number;
   };
   /**
-   * Hosts the validation probes may reach: the egress allowlist of
-   * host-side probe calls. Connector calls use the connector's own
-   * outboundDomains.
+   * Optional token exchange (ADR 0020 §2, Apple Ads): the signed JWT is the
+   * `client_secret` of an OAuth 2 client-credentials grant, and connectors
+   * receive the access token it is exchanged for. Without it (App Store
+   * Connect) the signed JWT itself is the access token, signed per call.
+   */
+  readonly exchange?: SignedKeyTokenExchange;
+  /**
+   * Hosts the validation probes (and the token exchange) may reach: the
+   * egress allowlist of host-side calls. Connector calls use the
+   * connector's own outboundDomains.
    */
   readonly serverDomains: readonly string[];
   /**
@@ -77,6 +89,31 @@ export interface SignedKeyProviderDefinition {
    * the key reads.
    */
   readonly additionalKeys?: readonly SignedKeyAdditionalKey[];
+}
+
+/**
+ * How a signed-key provider exchanges its signed client secret for an
+ * access token (OAuth 2 client credentials, RFC 6749 §4.4). The host signs
+ * a fresh client secret per exchange (`lifetime`), posts the form to
+ * `tokenEndpoint` (its host must be in `serverDomains`) and caches the
+ * token per connection (ADR 0020 §2).
+ */
+export interface SignedKeyTokenExchange {
+  /** HTTPS token endpoint ("https://appleid.apple.com/auth/oauth2/token"). */
+  readonly tokenEndpoint: string;
+  /**
+   * The form body besides `client_secret` (which the host adds): e.g.
+   * `grant_type=client_credentials`, the client ID from the fields, and
+   * the scope.
+   */
+  form(fields: SignedKeyFieldValues): Readonly<Record<string, string>>;
+  /** The 200 response: an access token and its lifetime in seconds. */
+  readonly response: z.ZodType<{ access_token: string; expires_in: number }>;
+  /**
+   * What the user reads when the token endpoint answers `invalid_client`
+   * (key removed at the provider, or the IDs do not match the key).
+   */
+  readonly invalidClient: string;
 }
 
 /**
@@ -132,7 +169,10 @@ export interface SignedKeyProbeContext {
   readonly config: Readonly<Record<string, unknown>>;
   /** The non-secret credential fields (issuer ID, key ID). */
   readonly fields: SignedKeyFieldValues;
-  /** A freshly signed token for the candidate key, per call. */
+  /**
+   * A freshly signed token for the candidate key, per call; with a token
+   * exchange, the access token exchanged for this probe run (never cached).
+   */
   accessToken(): string;
   /**
    * HTTPS to the provider's serverDomains only (public addresses, no

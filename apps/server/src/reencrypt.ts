@@ -5,8 +5,10 @@ import { schema, type Database } from "@netrics/database";
 import {
   decryptCredentials,
   decryptOAuthAccessToken,
+  decryptSignedKeyAccessToken,
   encryptCredentials,
   encryptOAuthAccessToken,
+  encryptSignedKeyAccessToken,
   type CredentialKeyring,
 } from "./credentials.js";
 
@@ -38,8 +40,8 @@ interface StoredEnvelope {
 
 /**
  * Re-encrypts every stored envelope that is not on the keyring's current
- * key (#67): connection credentials and cached OAuth access tokens (ADR
- * 0012). Runs with the owner connection (reads across workspaces).
+ * key (#67): connection credentials, cached OAuth access tokens (ADR
+ * 0012) and cached signed-key access tokens (ADR 0020). Runs with the owner connection (reads across workspaces).
  * Idempotent and safe to interrupt: each row is updated only if it still
  * holds the envelope that was read, so a concurrent change is never
  * overwritten. Reports counts, never values. (PKCE verifiers of OAuth
@@ -65,6 +67,14 @@ export async function reencryptCredentials(
     })
     .from(schema.connectionOAuth)
     .where(isNotNull(schema.connectionOAuth.accessTokenEncrypted));
+  const signedKeyTokens = await ownerDb
+    .select({
+      id: schema.connectionSignedKeyTokens.connectionId,
+      workspaceId: schema.connectionSignedKeyTokens.workspaceId,
+      stored: schema.connectionSignedKeyTokens.accessTokenEncrypted,
+    })
+    .from(schema.connectionSignedKeyTokens)
+    .where(isNotNull(schema.connectionSignedKeyTokens.accessTokenEncrypted));
 
   const envelopes: StoredEnvelope[] = [
     ...credentials.map((row): StoredEnvelope => {
@@ -111,6 +121,33 @@ export async function reencryptCredentials(
                 ),
               )
               .returning({ id: schema.connectionOAuth.connectionId })
+          ).length === 1,
+      };
+    }),
+    ...signedKeyTokens.map((row): StoredEnvelope => {
+      const binding = { workspaceId: row.workspaceId, connectionId: row.id };
+      const stored = row.stored!;
+      return {
+        stored,
+        open: (ring) =>
+          decryptSignedKeyAccessToken(stored.toString("utf8"), ring, binding),
+        seal: (plaintext, ring) =>
+          encryptSignedKeyAccessToken(plaintext, ring, binding),
+        replace: async (envelope) =>
+          (
+            await ownerDb
+              .update(schema.connectionSignedKeyTokens)
+              .set({ accessTokenEncrypted: envelope })
+              .where(
+                and(
+                  eq(schema.connectionSignedKeyTokens.connectionId, row.id),
+                  eq(
+                    schema.connectionSignedKeyTokens.accessTokenEncrypted,
+                    stored,
+                  ),
+                ),
+              )
+              .returning({ id: schema.connectionSignedKeyTokens.connectionId })
           ).length === 1,
       };
     }),

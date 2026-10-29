@@ -53,9 +53,14 @@ import {
 } from "../signed-keys/connector-auth.js";
 import {
   createSignedKeyProviders,
+  SignedKeyExchangeError,
   type SignedKey,
   type SignedKeyProviders,
 } from "../signed-keys/registry.js";
+import {
+  createSignedKeyTokenStore,
+  type SignedKeyTokenStore,
+} from "../signed-keys/token-store.js";
 
 /** First-ever incremental sync with no cursor and no last success. */
 const INITIAL_INCREMENTAL_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -83,6 +88,11 @@ export interface SyncEngineDeps {
   oauthTokens?: OAuthTokenService;
   /** Default: the signed-key providers of this server (ADR 0014). */
   signedKeys?: SignedKeyProviders;
+  /**
+   * Default: the cached exchanged tokens of signed-key connections over the
+   * job's database (ADR 0020 §2).
+   */
+  signedKeyTokens?: SignedKeyTokenStore;
   /** Tests only: options for every connector call (e.g. local egress). */
   executeOptions?: ExecuteOptions;
   /** The workspace image quota icons count against (#226). */
@@ -483,6 +493,18 @@ async function runSync(
     credentials,
   };
   const binding = { workspaceId, connectionId };
+  // Providers with a token exchange cache the exchanged token per
+  // connection; others sign per call and never touch the store.
+  const signedKeyCache = signedKey?.exchanges
+    ? (
+        deps.signedKeyTokens ??
+        createSignedKeyTokenStore({
+          db: appDb,
+          credentialKeyring: deps.credentialKeyring,
+          logger: log,
+        })
+      ).forConnection(binding)
+    : undefined;
 
   /**
    * Runs one connector call with this connection's credentials: stored
@@ -497,6 +519,7 @@ async function runSync(
     signedKey
       ? callWithSignedKey({
           key: signedKey,
+          ...(signedKeyCache ? { cache: signedKeyCache } : {}),
           ...(deps.executeOptions ? { options: deps.executeOptions } : {}),
           call: (tokenCredentials, options) =>
             call({ ...context, credentials: { ...tokenCredentials } }, options),
@@ -527,6 +550,16 @@ async function runSync(
       // scheduler skips the connection until new credentials arrive.
       await recordFailure("auth", error);
       return new TerminalJobError(error.message);
+    }
+    if (error instanceof SignedKeyExchangeError) {
+      // rejected never gets here (callWithSignedKey makes it a refused
+      // key); the message names status and error code only.
+      if (error.kind === "configuration") {
+        await recordFailure("contract", error);
+        return new NonRetryableJobError(safeMessage(error));
+      }
+      await recordFailure("transient", error);
+      return error;
     }
     if (error instanceof NeedsReauthorizationError) {
       await recordFailure("auth", error, error.reason);
