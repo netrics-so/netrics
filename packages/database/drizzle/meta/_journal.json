@@ -351,6 +351,13 @@
       "when": 1793289527290,
       "tag": "0049_signed_key_pending_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793304686972,
+      "tag": "0050_connection_resources_kind_key",
+      "breakpoints": true
     }
   ]
 }

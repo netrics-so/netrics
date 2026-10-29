@@ -83,14 +83,23 @@ const BRAND = "5100000001";
 /** A deleted campaign: in the report, no longer in discovery. */
 const OLD = "5100000009";
 const DE_BRAND = "5200000001";
+/**
+ * Ad groups of BRAND (#394). Their IDs collide on purpose: one is the
+ * campaign's own ID, one the app's. Each must keep its own name.
+ */
+const AG_EXACT = BRAND;
+const AG_BROAD = APP;
+const AG_MATCH = `${BRAND}01`;
 
 function entry(
   campaignId: string,
   date: string,
   country: string,
   spend: string,
+  adGroupId?: string | null,
 ): FakeReportEntry {
   return {
+    ...(adGroupId !== undefined ? { adGroupId } : {}),
     campaignId,
     appId: APP,
     date,
@@ -112,10 +121,16 @@ const US: FakeAdAccount = {
   productFeatures: ["APPSTORE_APP_MANUAL"],
   campaigns: [{ id: BRAND, name: "Wurfel – Brand", appId: APP }],
   report: [
-    entry(BRAND, "2026-10-27", "US", "20.00"),
-    entry(BRAND, "2026-10-27", "CA", "5.00"),
-    entry(BRAND, "2026-06-15", "US", "7.50"),
-    entry(OLD, "2026-01-10", "DE", "3.00"),
+    entry(BRAND, "2026-10-27", "US", "20.00", AG_EXACT),
+    entry(BRAND, "2026-10-27", "CA", "5.00", AG_BROAD),
+    entry(BRAND, "2026-06-15", "US", "7.50", AG_MATCH),
+    // A deleted campaign's ad groups are gone: its numbers are "Others".
+    entry(OLD, "2026-01-10", "DE", "3.00", null),
+  ],
+  adGroups: [
+    { id: AG_EXACT, campaignId: BRAND, name: "Brand – Exact" },
+    { id: AG_BROAD, campaignId: BRAND, name: "Brand – Broad" },
+    { id: AG_MATCH, campaignId: BRAND, name: "Brand – Search Match" },
   ],
 };
 const EU: FakeAdAccount = {
@@ -563,5 +578,112 @@ describe("Apple Ads campaign report sync", () => {
       findDimensionValueNames(tx, { ...query, workspaceId: other }),
     );
     expect(otherPredicate.size).toBe(0);
+  });
+});
+
+describe("Apple Ads ad-group names (#394)", () => {
+  async function byAdGroup(locale?: "en" | "de") {
+    const breakdown = await withWorkspace(db, { workspaceId }, (tx) =>
+      queryMetricBreakdown(
+        tx,
+        workspaceId,
+        metricBreakdownRequestSchema.parse({
+          connectionId: connections[US.id]!,
+          metricKey: APPLE_ADS_AD_GROUP_METRIC_KEYS.spend,
+          period: "last_12_months",
+          groupBy: "ad_group",
+          dimensions: { currency: "USD" },
+        }),
+        new Date(clockMs),
+        locale ? { locale } : {},
+      ),
+    );
+    if (!breakdown.ok) throw new Error(breakdown.error);
+    return breakdown.value;
+  }
+
+  it("labels a table by ad group with the ad-group names; Others stays Others, localized", async () => {
+    const table = await byAdGroup();
+    expect(
+      table.groups.map(({ key, label, value }) => [key, label, value]),
+    ).toEqual([
+      [AG_EXACT, "Brand – Exact", 2100],
+      [AG_MATCH, "Brand – Search Match", 750],
+      [AG_BROAD, "Brand – Broad", 500],
+    ]);
+    expect(table.groupByName).toBe("Ad group");
+    // The deleted campaign's numbers, which no ad group covers.
+    expect(table.others).toEqual({ label: "Others", value: 300, groups: 1 });
+    const german = await byAdGroup("de");
+    expect(german.groupByName).toBe("Anzeigengruppe");
+    expect(german.groups[0]!.label).toBe("Brand – Exact");
+    expect(german.others?.label).toBe("Andere");
+  });
+
+  it("keeps an app, a campaign and an ad group with one ID apart", async () => {
+    const connectionId = connections[US.id]!;
+    const names = await withWorkspace(db, { workspaceId }, async (tx) => ({
+      campaign: Object.fromEntries(
+        await findDimensionValueNames(tx, {
+          workspaceId,
+          connectionId,
+          dimension: "campaign",
+          values: [BRAND, APP],
+        }),
+      ),
+      adGroup: Object.fromEntries(
+        await findDimensionValueNames(tx, {
+          workspaceId,
+          connectionId,
+          dimension: "ad_group",
+          values: [BRAND, APP],
+        }),
+      ),
+      appIsResource: await connectionHasResource(
+        tx,
+        workspaceId,
+        connectionId,
+        APP,
+      ),
+    }));
+    expect(names).toEqual({
+      campaign: { [BRAND]: "Wurfel – Brand" },
+      adGroup: { [AG_EXACT]: "Brand – Exact", [AG_BROAD]: "Brand – Broad" },
+      appIsResource: true,
+    });
+    const resources = await withWorkspace(db, { workspaceId }, (tx) =>
+      listResourcesOfMetric(tx, workspaceId, {
+        connectionId,
+        metricKey: APPLE_ADS_AD_GROUP_METRIC_KEYS.spend,
+      }),
+    );
+    if (!resources.ok) throw new Error(resources.error);
+    expect(resources.value.resources).toEqual([
+      expect.objectContaining({ id: APP, name: `App ${APP}` }),
+    ]);
+  });
+
+  it("follows a rename at the next discovery; a removed ad group keeps its last name", async () => {
+    const adGroups = US.adGroups!;
+    const before = adGroups.map((adGroup) => ({ ...adGroup }));
+    onTestFinished(() => {
+      US.adGroups = before;
+      clockMs = START;
+    });
+    adGroups[0]!.name = "Brand – Exact Match";
+    adGroups[2]!.deleted = true;
+    // Names refresh at most daily: two days after the backfill.
+    clockMs = START + 49 * 60 * 60 * 1000;
+    apple.calls.length = 0;
+    await run("connection.sync", connections[US.id]!);
+    expect(
+      apple.calls.filter((call) => call.path === "/v1/adgroups/query"),
+    ).toHaveLength(1);
+    const table = await byAdGroup();
+    expect(table.groups.map(({ key, label }) => [key, label])).toEqual([
+      [AG_EXACT, "Brand – Exact Match"],
+      [AG_MATCH, "Brand – Search Match"],
+      [AG_BROAD, "Brand – Broad"],
+    ]);
   });
 });

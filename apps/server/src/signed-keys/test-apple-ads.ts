@@ -29,6 +29,19 @@ export interface FakeAdAccount {
    * here need not be in `campaigns` (a deleted one keeps its history).
    */
   report?: FakeReportEntry[];
+  /**
+   * The ad groups `POST /v1/adgroups/query` lists (#394), paged as Apple
+   * pages them; deleted ones only with a `deleted` filter. Mutable (a
+   * rename, a removal).
+   */
+  adGroups?: FakeAdGroup[];
+}
+
+export interface FakeAdGroup {
+  id: string;
+  campaignId: string;
+  name: string;
+  deleted?: boolean;
 }
 
 export interface FakeReportEntry {
@@ -42,8 +55,11 @@ export interface FakeReportEntry {
   taps: number;
   tapInstalls: number;
   viewInstalls: number;
-  /** The ad group of the entry (#376); default `${campaignId}01`. */
-  adGroupId?: string;
+  /**
+   * The ad group of the entry (#376); default `${campaignId}01`. Null:
+   * the ad-group report leaves the entry out (its campaign's "Others").
+   */
+  adGroupId?: string | null;
 }
 
 export interface FakeApiUserKey {
@@ -160,6 +176,7 @@ function adGroupReport(account: FakeAdAccount, body: ReportQueryBody) {
   const entries = (account.report ?? []).filter(
     (entry) =>
       entry.campaignId === campaignId &&
+      entry.adGroupId !== null &&
       entry.date >= start &&
       entry.date <= end,
   );
@@ -429,6 +446,29 @@ export function createFakeAppleAdsServer(
             offset: 0,
             pageSize: 1000,
           },
+        });
+      }
+      if (url.pathname === "/v1/adgroups/query") {
+        const body = JSON.parse(init.body ?? "{}") as {
+          pagination?: { offset?: number; pageSize?: number };
+        };
+        const offset = body.pagination?.offset ?? 0;
+        const pageSize = body.pagination?.pageSize ?? 20;
+        const listed = (account.adGroups ?? [])
+          .filter((adGroup) => adGroup.deleted !== true)
+          .sort((a, b) => Number(a.id) - Number(b.id));
+        return reply(200, {
+          result: listed.slice(offset, offset + pageSize).map((adGroup) => ({
+            id: Number(adGroup.id),
+            name: adGroup.name,
+            adAccountId: Number(account.id),
+            campaignId: Number(adGroup.campaignId),
+            pricingModel: "CPT",
+            status: "ENABLED",
+            systemStatus: "RUNNING",
+            deleted: false,
+          })),
+          pagination: { totalCount: listed.length, offset, pageSize },
         });
       }
       if (url.pathname === "/v1/reports/apps/campaigns/query") {

@@ -1,4 +1,7 @@
-import type { ConnectionContext } from "@netrics/connector-sdk";
+import type {
+  ConnectionContext,
+  ConnectorFetchInit,
+} from "@netrics/connector-sdk";
 import {
   assertManifestCompatible,
   checkResultSchema,
@@ -12,6 +15,7 @@ import {
   AppleAdsApiError,
   AppleAdsRateBudgetError,
   CHOOSE_AD_ACCOUNT_MESSAGE,
+  MAX_AD_GROUP_PAGES,
   NO_AD_ACCOUNTS_MESSAGE,
   NO_APP_STORE_ACCOUNT_MESSAGE,
   RESOURCE_KINDS,
@@ -393,8 +397,21 @@ describe("discover", () => {
         { id: "5100000001", name: "Wurfel – Brand", kind: "campaign" },
         { id: "5100000002", name: "Wurfel – Discovery", kind: "campaign" },
         { id: "5100000003", name: "Dicey – Category", kind: "campaign" },
+        { id: "6100000001", name: "Brand – Exact", kind: "ad_group" },
+        {
+          id: "6100000003",
+          name: "Discovery – Search Match",
+          kind: "ad_group",
+        },
+        { id: "6100000004", name: "Dicey – Category Exact", kind: "ad_group" },
       ],
     );
+    expect(resources[6]!.metadata).toEqual({
+      adAccountId: US,
+      campaignId: "5100000002",
+      status: "PAUSED",
+      displayStatus: "PAUSED",
+    });
     expect(resources[3]!.metadata).toEqual({
       adAccountId: US,
       appId: "1000000001",
@@ -418,6 +435,130 @@ describe("discover", () => {
       ],
       pagination: { offset: 0, pageSize: 1000, fetchTotalCount: true },
     });
+  });
+
+  it("names every ad group of the account in one query, without a campaign fan-out (#394)", async () => {
+    const api = fake();
+    await connector().discover(context(), api.runtime);
+    const queries = api.requests.filter(
+      (r) => r.url.pathname === "/v1/adgroups/query",
+    );
+    expect(queries).toHaveLength(1);
+    expect(queries[0]!.method).toBe("POST");
+    expect(queries[0]!.context).toBe(`adAccountId=${US}`);
+    // No filter: every non-deleted ad group of every campaign.
+    expect(queries[0]!.body).toEqual({
+      sorting: [{ field: "id", order: "ASC" }],
+      pagination: { offset: 0, pageSize: 1000, fetchTotalCount: true },
+    });
+    // The ad-group kind is the dimension it names.
+    expect(RESOURCE_KINDS.adGroup).toBe("ad_group");
+    expect(RESOURCE_KINDS.campaign).toBe("campaign");
+    for (const metric of appleAdsManifest.metrics) {
+      if (metric.key.endsWith("_by_ad_group")) {
+        expect(metric.dimensions).toContain(RESOURCE_KINDS.adGroup);
+      }
+    }
+  });
+
+  it("pages through ad groups to totalCount, and stops at the bound", async () => {
+    const api = fake();
+    const original = api.fetch;
+    const offsets: number[] = [];
+    const page =
+      (total: number) => async (url: string, init?: ConnectorFetchInit) => {
+        if (!url.endsWith("/v1/adgroups/query")) return original(url, init);
+        const body = JSON.parse(init!.body!) as {
+          pagination: { offset: number; pageSize: number };
+        };
+        const { offset, pageSize } = body.pagination;
+        offsets.push(offset);
+        const count = Math.max(0, Math.min(pageSize, total - offset));
+        return jsonResponse(200, {
+          result: Array.from({ length: count }, (_, i) => ({
+            id: 7000000000 + offset + i,
+            name: `Ad group ${offset + i}`,
+            adAccountId: Number(US),
+            campaignId: 5100000001,
+            deleted: false,
+          })),
+          pagination: { totalCount: total, offset, pageSize },
+        });
+      };
+    const two = await connector().discover(context(), {
+      signal: api.runtime.signal,
+      fetch: page(1500),
+    });
+    expect(offsets).toEqual([0, 1000]);
+    expect(two.filter((r) => r.kind === "ad_group")).toHaveLength(1500);
+
+    offsets.length = 0;
+    const capped = await connector().discover(context(), {
+      signal: api.runtime.signal,
+      fetch: page(1_000_000),
+    });
+    expect(offsets).toHaveLength(MAX_AD_GROUP_PAGES);
+    expect(capped.filter((r) => r.kind === "ad_group")).toHaveLength(
+      MAX_AD_GROUP_PAGES * 1000,
+    );
+  });
+
+  it("leaves out deleted and unnamed ad groups, and refuses another account's", async () => {
+    const api = fake();
+    const original = api.fetch;
+    const answer = (rows: unknown[]) => ({
+      signal: api.runtime.signal,
+      fetch: async (url: string, init?: ConnectorFetchInit) =>
+        url.endsWith("/v1/adgroups/query")
+          ? jsonResponse(200, {
+              result: rows,
+              pagination: {
+                totalCount: rows.length,
+                offset: 0,
+                pageSize: 1000,
+              },
+            })
+          : original(url, init),
+    });
+    const resources = await connector().discover(
+      context(),
+      answer([
+        { id: 6100000001, name: " Brand – Exact ", campaignId: 5100000001 },
+        { id: 6100000002, name: "Gone", campaignId: 5100000001, deleted: true },
+        { id: 6100000005, name: "  ", campaignId: 5100000001 },
+        { id: "6100000006", name: null },
+      ]),
+    );
+    expect(
+      resources
+        .filter((r) => r.kind === "ad_group")
+        .map(({ id, name }) => [id, name]),
+    ).toEqual([["6100000001", "Brand – Exact"]]);
+    await expect(
+      connector().discover(
+        context(),
+        answer([{ id: 6100000001, name: "Theirs", adAccountId: 4100000002 }]),
+      ),
+    ).rejects.toThrow("another ad account's ad group");
+  });
+
+  it("keeps apps and campaigns when Apple refuses the ad-group query (404), and fails on 429", async () => {
+    const api = fake();
+    const original = api.fetch;
+    const failing = (status: number) => ({
+      signal: api.runtime.signal,
+      fetch: async (url: string, init?: ConnectorFetchInit) =>
+        url.endsWith("/v1/adgroups/query")
+          ? jsonResponse(status, { error: { code: "X", message: "no" } })
+          : original(url, init),
+    });
+    const resources = await connector().discover(context(), failing(404));
+    expect(resources.filter((r) => r.kind === "campaign")).toHaveLength(3);
+    expect(resources.filter((r) => r.kind === "ad_group")).toHaveLength(0);
+    const error = await createAppleAdsConnector()
+      .discover(context(), failing(429))
+      .catch((e: unknown) => e);
+    expect((error as AppleAdsApiError).status).toBe(429);
   });
 
   it("keeps campaigns whose app Apple does not name", async () => {

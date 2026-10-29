@@ -31,6 +31,13 @@ import {
 //   deleted campaigns only when filtered for) and Campaign:
 //   https://developer.apple.com/documentation/apple-ads-platform-api/post-campaigns-query
 //   https://developer.apple.com/documentation/apple-ads-platform-api/campaign
+// - Query Ad Groups (POST /v1/adgroups/query: "An empty request body
+//   returns all non-deleted ad groups across all campaigns in the ad
+//   account"; filterable by `campaignId` EQUALS, `id` EQUALS/IN, `deleted`;
+//   sortable by `id`, the default) and QueryPagination (`pageSize` at most
+//   1000, `fetchTotalCount`):
+//   https://developer.apple.com/documentation/apple-ads-platform-api/post-adgroups-query
+//   https://developer.apple.com/documentation/apple-ads-platform-api/querypagination
 // - Search Apps (GET /v1/apps/{adamId}: appName):
 //   https://developer.apple.com/documentation/apple-ads-platform-api/search-apps-endpoints
 
@@ -83,6 +90,10 @@ export const CAMPAIGNS_PAGE_SIZE = 1000;
 export const MAX_CAMPAIGN_PAGES = 20;
 /** App names looked up per discovery. */
 export const MAX_APPS = 50;
+/** Ad groups per query page (Apple's cap for /v1/adgroups/query). */
+export const AD_GROUPS_PAGE_SIZE = 1000;
+/** Ad-group pages per discovery (20,000 ad groups). */
+export const MAX_AD_GROUP_PAGES = 20;
 
 /**
  * An Apple ID (int64): a digit string, or a JSON number Apple sends (the
@@ -504,4 +515,127 @@ export async function appName(
     }
     throw error;
   }
+}
+
+const adGroupPageSchema = z.object({
+  result: z
+    .array(
+      z
+        .object({
+          id: appleIdSchema,
+          name: z.string().nullable().optional(),
+          adAccountId: appleIdSchema.nullable().optional(),
+          campaignId: appleIdSchema.nullable().optional(),
+          status: z.string().nullable().optional(),
+          displayStatus: z.string().nullable().optional(),
+          deleted: z.boolean().nullable().optional(),
+        })
+        .loose(),
+    )
+    .nullable()
+    .optional(),
+  pagination: z
+    .object({
+      totalCount: z.number().int().nonnegative().nullable().optional(),
+    })
+    .loose()
+    .nullable()
+    .optional(),
+});
+
+export interface AppleAdsAdGroup {
+  id: string;
+  name: string;
+  /** The campaign the ad group belongs to, when Apple names it. */
+  campaignId: string | undefined;
+  /** "ENABLED" or "PAUSED": the advertiser's intent. */
+  status: string | undefined;
+  /** Apple's rolled-up delivery state ("RUNNING", …). */
+  displayStatus: string | undefined;
+}
+
+/**
+ * The ad groups of one ad account (#394), for the names of the `ad_group`
+ * dimension: one account-wide `POST /v1/adgroups/query` (no filter: every
+ * non-deleted ad group of every campaign, so of every campaign the sync
+ * fans out to), by ID ascending, all pages up to MAX_AD_GROUP_PAGES. A
+ * page costs one request whatever the number of campaigns, so a large
+ * account needs no per-campaign fan-out; past the bound the remaining ad
+ * groups keep their IDs. Deleted ad groups are left out; their stored
+ * names stay (resources missing from a discovery keep their last name).
+ *
+ * Ad groups are labels only: when Apple refuses the query (400, 404) the
+ * discovery goes on without them, keeping its apps and campaigns. TO BE
+ * CONFIRMED by #370: the endpoint answers in the ad account's context, and
+ * IDs arrive as JSON numbers as in Apple's example.
+ */
+export async function listAdGroups(
+  client: AppleAdsClient,
+  adAccountId: string,
+): Promise<AppleAdsAdGroup[]> {
+  const adGroups = new Map<string, AppleAdsAdGroup>();
+  for (let page = 0; page < MAX_AD_GROUP_PAGES; page += 1) {
+    const offset = page * AD_GROUPS_PAGE_SIZE;
+    let answer: unknown;
+    try {
+      answer = await client.json("/v1/adgroups/query", {
+        adAccountId,
+        body: {
+          sorting: [{ field: "id", order: "ASC" }],
+          pagination: {
+            offset,
+            pageSize: AD_GROUPS_PAGE_SIZE,
+            fetchTotalCount: true,
+          },
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof AppleAdsApiError &&
+        (error.status === 400 || error.status === 404)
+      ) {
+        break;
+      }
+      throw error;
+    }
+    const parsed = adGroupPageSchema.safeParse(answer);
+    if (!parsed.success) {
+      throw new Error(
+        "Apple Ads answered /v1/adgroups/query in an unexpected shape",
+      );
+    }
+    const rows = parsed.data.result ?? [];
+    for (const row of rows) {
+      if (
+        row.adAccountId !== undefined &&
+        row.adAccountId !== null &&
+        row.adAccountId !== adAccountId
+      ) {
+        // An ad group of another account must never be named here.
+        throw new Error(
+          "Apple Ads answered with another ad account's ad group",
+        );
+      }
+      const name = row.name?.trim();
+      // Without a name the dashboard shows the ID, as before discovery.
+      if (row.deleted === true || !name) continue;
+      adGroups.set(row.id, {
+        id: row.id,
+        name,
+        campaignId: row.campaignId ?? undefined,
+        status: row.status ?? undefined,
+        displayStatus: row.displayStatus ?? undefined,
+      });
+    }
+    const total = parsed.data.pagination?.totalCount ?? undefined;
+    const read = offset + rows.length;
+    if (
+      rows.length === 0 ||
+      rows.length < AD_GROUPS_PAGE_SIZE ||
+      (total !== undefined && read >= total)
+    ) {
+      break;
+    }
+  }
+  return [...adGroups.values()];
 }

@@ -90,6 +90,7 @@ Apple for a third-party OAuth app in parallel (#379).
 | #375 | Connect wizard, key replacement and reconnect states, connector docs  | #371, #373   | 3    | –     |
 | #376 | Ad-group report sync (keywords top 20 as stretch)                     | #374         | 4    | –     |
 | #377 | Apple Ads in templates and the cross-source Overview                  | #374         | 4    | –     |
+| #394 | Ad-group names on dashboards                                          | #376         | 4    | –     |
 | #378 | Exit gate, hosted and self-hosted                                     | #369 to #377 | 5    | yes   |
 | #379 | Owner: apply to Apple for a third-party OAuth app                     | –            | –    | yes   |
 

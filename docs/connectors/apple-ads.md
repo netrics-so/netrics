@@ -199,7 +199,12 @@ twice. There is no country breakdown by ad group.
 - `resource` is the promoted app's Apple ID, as in the App Store Connect
   connector, so ad installs and App Store downloads of one app sit on one
   dashboard.
-- `campaign` and `ad_group` are Apple's IDs; names are labels. What a
+- `campaign` and `ad_group` are Apple's IDs; names are labels. netrics
+  reads the names of the apps, campaigns and ad groups at most once a day
+  after a sync (ad groups in one account-wide query of up to 20 pages of
+  1,000), so a renamed campaign or ad group shows its new name from then
+  on, and a removed one keeps its last known name. One ID can be an app, a
+  campaign and an ad group at once; each keeps its own name. What a
   campaign's ad groups leave out of its total (a deleted campaign Apple no
   longer reports ad groups for) is the ad group "Others", so ad-group sums
   equal campaign sums.
