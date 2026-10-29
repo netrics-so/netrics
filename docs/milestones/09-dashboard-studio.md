@@ -34,8 +34,8 @@ Design: [ADR 0015](../decisions/0015-dashboard-studio.md).
 
 ## Out of scope
 
-- Table, gauge, status/health and multi-series compare widgets (milestone 11
-  and later issues)
+- Table, gauge, status/health and multi-series compare widgets (they
+  followed in milestone 09.3, ADR 0019)
 - Per-slide themes, drafts and publishing, autosave
 - SVG images, animated images, video
 - Server-rendered snapshots (ADR 0007 stays)
