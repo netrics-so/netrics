@@ -15,7 +15,7 @@ import postgres from "postgres";
 import { afterAll } from "vitest";
 
 import { migrationsFolder, runMigrations } from "./index.js";
-import { DEV_ROLE_PASSWORDS } from "./roles.js";
+import { DEV_ROLE_PASSWORDS, provisionRolePasswords } from "./roles.js";
 
 // Test-only helper, also exported as @netrics/database/testing (kept out of
 // the production image by package.json "files"). Hooks must be registered at
@@ -27,6 +27,60 @@ afterAll(async () => {
     await drop();
   }
 });
+
+function testServerUrl(): string {
+  return (
+    process.env.NETRICS_TEST_ADMIN_URL ??
+    "postgres://netrics:netrics@localhost:5433/postgres"
+  );
+}
+
+/**
+ * Advisory lock key that serialises role changes across test processes.
+ * Advisory locks are scoped to one database, so every holder takes it on the
+ * server URL's database (NETRICS_TEST_ADMIN_URL), never on a test database.
+ */
+const ROLE_CATALOG_LOCK = 351_000_001;
+
+/**
+ * Runs `work` on a single server connection that holds the role catalog lock.
+ * Roles are cluster-global: every test database used to run
+ * `ALTER ROLE netrics_app ... PASSWORD` on the same pg_authid row at once,
+ * and PostgreSQL rejects concurrent updates of one catalog row with
+ * "tuple concurrently updated" (XX000) instead of waiting (issue #351).
+ * The lock is session-level; ending the connection releases it on any path.
+ */
+export async function withRoleCatalogLock<T>(
+  work: (sql: postgres.Sql) => Promise<T>,
+  serverUrl: string = testServerUrl(),
+): Promise<T> {
+  // max: 1 keeps the lock and `work` on the same backend session.
+  const server = postgres(serverUrl, {
+    max: 1,
+    connect_timeout: 5,
+    onnotice: () => undefined,
+  });
+  try {
+    await server`select pg_advisory_lock(${ROLE_CATALOG_LOCK})`;
+    try {
+      return await work(server);
+    } finally {
+      await server`select pg_advisory_unlock(${ROLE_CATALOG_LOCK})`;
+    }
+  } finally {
+    await server.end({ timeout: 5 }).catch(() => undefined);
+  }
+}
+
+/**
+ * Gives the application roles LOGIN and the development passwords, one test
+ * process at a time. The roles must exist (migration 0001 creates them).
+ */
+export async function provisionTestRoles(): Promise<void> {
+  await withRoleCatalogLock(async (sql) => {
+    await provisionRolePasswords(sql, DEV_ROLE_PASSWORDS);
+  });
+}
 
 export interface TestDatabase {
   /** Name of the per-test-file database (netrics_test_<random>). */
@@ -87,9 +141,7 @@ async function migrateUpTo(adminUrl: string, lastTag: string): Promise<void> {
 export async function createTestDatabase(
   options: TestDatabaseOptions = {},
 ): Promise<TestDatabase> {
-  const serverUrl =
-    process.env.NETRICS_TEST_ADMIN_URL ??
-    "postgres://netrics:netrics@localhost:5433/postgres";
+  const serverUrl = testServerUrl();
 
   const name = `netrics_test_${randomBytes(6).toString("hex")}`;
   const server = postgres(serverUrl, { max: 1, connect_timeout: 5 });
@@ -118,8 +170,12 @@ export async function createTestDatabase(
   app.password = "netrics_app";
   const appUrl = app.toString();
 
-  const migrateAll = () =>
-    runMigrations(adminUrl, { rolePasswords: DEV_ROLE_PASSWORDS });
+  // Migrations touch only this database; the role passwords are set
+  // separately under the cluster-wide lock (see withRoleCatalogLock).
+  const migrateAll = async () => {
+    await runMigrations(adminUrl);
+    await provisionTestRoles();
+  };
   if (options.upTo === undefined) {
     await migrateAll();
   } else {

@@ -15,7 +15,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { migrationsFolder, runMigrations } from "./index.js";
-import { DEV_ROLE_PASSWORDS } from "./roles.js";
+import { provisionTestRoles } from "./test-db.js";
 
 // Migration 0034 (#216) on data in the previous shape: every existing
 // dashboard shows netrics Dark (today's palette) without an accent, its
@@ -109,7 +109,8 @@ describe("migration 0034 on existing dashboards", () => {
         values (${dashboardIds[1]!}, ${a}, ${connection!.id as string},
           'c.downloads', 'sum', 'last_7_days', 0)`;
 
-      await runMigrations(adminUrl, { rolePasswords: DEV_ROLE_PASSWORDS });
+      await runMigrations(adminUrl);
+      await provisionTestRoles();
 
       const rows = await owner`
         select name, version, theme_builtin, theme_id, accent_color
