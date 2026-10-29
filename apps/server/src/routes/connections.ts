@@ -11,6 +11,8 @@ import {
   connectionResponseSchema,
   connectorListResponseSchema,
   createConnectionRequestSchema,
+  createConnectionsRequestSchema,
+  connectionsResponseSchema,
   deleteConnectionResponseSchema,
   enableAppStoreAnalyticsRequestSchema,
   enableAppStoreAnalyticsResponseSchema,
@@ -134,6 +136,47 @@ export function registerConnectionRoutes(
             return;
           }
           return connectionResponseSchema.parse({ connection });
+        },
+      );
+
+      // ADR 0020 §5 (#375): several connections with one credential, e.g.
+      // one generated Apple Ads key for several ad accounts. All are checked
+      // first, then stored in one transaction with the pending key.
+      scope.post(
+        "/workspaces/:workspaceId/connections/batch",
+        {
+          schema: routeSchema({
+            summary: "Create several connections with one credential",
+            tags: ["connections"],
+            body: createConnectionsRequestSchema,
+            response: connectionsResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:create")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const body = parseBody(
+            createConnectionsRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) {
+            return;
+          }
+          const created = unwrap(
+            await connections.createMany(access, body),
+            reply,
+          );
+          if (!created) {
+            return;
+          }
+          return connectionsResponseSchema.parse({ connections: created });
         },
       );
 

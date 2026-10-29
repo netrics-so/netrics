@@ -9,7 +9,8 @@ import {
   triggerConnectionSync,
 } from "@/lib/api";
 import { disconnectQuery, providerName } from "@/lib/oauth-connection";
-import { keyRemovedQuery } from "@/lib/signed-key";
+import { listNames } from "@/lib/apple-ads";
+import { APPLE_ADS_PROVIDER, keyRemovedQuery } from "@/lib/signed-key";
 import { useLocale, useT } from "@/lib/i18n/client";
 
 interface ConnectionActionsProps {
@@ -24,6 +25,8 @@ interface ConnectionActionsProps {
     providerName: string;
     revokeUrl: string | null;
     keyId: string | null;
+    /** Other connections storing the same key (#375). */
+    sharedWith?: readonly string[];
   } | null;
   canSync: boolean;
   canUpdate: boolean;
@@ -42,6 +45,11 @@ export function ConnectionActions({
 }: ConnectionActionsProps) {
   const locale = useLocale();
   const t = useT("connections.actions");
+  const ads = useT("connections.appleAds");
+  const shared = signedKey?.sharedWith ?? [];
+  // A public key the user pasted in Apple Ads: remove it there, unless
+  // another connection still uses the same key (#375).
+  const publicKey = signedKey?.provider === APPLE_ADS_PROVIDER;
   const common = useT("common");
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -75,7 +83,7 @@ export function ConnectionActions({
         result.revocation
           ? `/workspaces/${workspaceId}/sources?${disconnectQuery(result.revocation)}`
           : signedKey
-            ? `/workspaces/${workspaceId}/sources?${keyRemovedQuery(signedKey.provider)}`
+            ? `/workspaces/${workspaceId}/sources?${keyRemovedQuery(signedKey.provider, shared.length > 0)}`
             : `/workspaces/${workspaceId}/sources`,
       );
     } catch (cause) {
@@ -132,7 +140,13 @@ export function ConnectionActions({
           {name ? (
             <p className="muted">{t("removesAccess", { name })}</p>
           ) : null}
-          {signedKey ? (
+          {signedKey && publicKey ? (
+            <p className="muted">
+              {shared.length > 0
+                ? ads("deleteHintShared", { names: listNames(shared, locale) })
+                : ads("deleteHint")}
+            </p>
+          ) : signedKey ? (
             <p className="muted">
               {signedKey.keyId
                 ? t("deletesKeyCopyId", {

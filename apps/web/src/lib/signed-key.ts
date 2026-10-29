@@ -24,6 +24,24 @@ export const APP_STORE_CONNECT_PROVIDER = "app-store-connect";
 export const APP_STORE_CONNECT_DOCS_URL =
   "https://github.com/netrics-so/netrics/blob/main/docs/connectors/app-store-connect.md";
 
+/** The Apple Ads connector and its signed-key provider (ADR 0020). */
+export const APPLE_ADS_CONNECTOR_ID = "apple-ads";
+export const APPLE_ADS_PROVIDER = "apple-ads";
+
+/** Where this repository documents the Apple Ads connector. */
+export const APPLE_ADS_DOCS_URL =
+  "https://github.com/netrics-so/netrics/blob/main/docs/connectors/apple-ads.md";
+
+/**
+ * Apple Ads, where Account Settings → User Management and → API are in the
+ * account menu. Apple documents no deep links into its UI; TO BE CONFIRMED
+ * at the exit gate (#378).
+ */
+export const APPLE_ADS_URL = "https://ads.apple.com/";
+/** Apple's help on inviting users, with the API roles. */
+export const APPLE_ADS_INVITE_HELP_URL =
+  "https://ads.apple.com/help/advanced/0011-invite-users-to-your-account/";
+
 export type SignedKeyStrategy = ConnectorAuthStrategy & {
   strategy: "signed-key";
   provider: string;
@@ -58,6 +76,9 @@ export function localizeSignedKeyStrategy(
   strategy: SignedKeyStrategy,
   locale: Locale,
 ): SignedKeyStrategy {
+  if (locale !== "en" && strategy.provider === APPLE_ADS_PROVIDER) {
+    return localizeAppleAds(strategy, locale);
+  }
   if (locale === "en" || strategy.provider !== APP_STORE_CONNECT_PROVIDER) {
     return strategy;
   }
@@ -104,6 +125,47 @@ export function localizeSignedKeyStrategy(
   };
 }
 
+const APPLE_ADS_FIELDS = ["clientId", "teamId", "keyId", "privateKey"] as const;
+
+/** The Apple Ads key form in German (see localizeSignedKeyStrategy). */
+function localizeAppleAds(
+  strategy: SignedKeyStrategy,
+  locale: Locale,
+): SignedKeyStrategy {
+  const t = webTranslator(locale, "connections.signedKey.appleAds");
+  const fields = strategy.fields.map((field) => {
+    const key = APPLE_ADS_FIELDS.find((entry) => entry === field.key);
+    return key
+      ? {
+          ...field,
+          label: t(`labels.${key}`),
+          description: t(`descriptions.${key}`),
+        }
+      : field;
+  });
+  const setup = strategy.setup;
+  const steps = [t("steps.1"), t("steps.2"), t("steps.3"), t("steps.4")];
+  return {
+    ...strategy,
+    fields,
+    ...(setup && setup.steps.length === steps.length
+      ? {
+          setup: {
+            ...setup,
+            steps,
+            links: setup.links?.map((link) =>
+              link.step === 0
+                ? { ...link, label: t("links.invite") }
+                : link.step === 1
+                  ? { ...link, label: t("links.open") }
+                  : link,
+            ),
+          },
+        }
+      : {}),
+  };
+}
+
 /** A field's label in the user's language (see localizeSignedKeyStrategy). */
 export function localizedFieldLabel(
   strategy: SignedKeyStrategy,
@@ -142,19 +204,95 @@ export function normalizeKeyValue(
   return key === "privateKey" ? value : value.trim();
 }
 
+/** Apple Ads client ID and team ID: `SEARCHADS.` and an ID (lenient). */
+const SEARCHADS_ID = /^SEARCHADS\.[0-9a-z]+(?:-[0-9a-z]+){2,}$/i;
+/** An Apple Ads key ID: a UUID-like ID. */
+const APPLE_ADS_KEY_ID = /^[0-9a-z]+(?:-[0-9a-z]+){2,}$/i;
+const SEARCHADS_PREFIX = "SEARCHADS.";
+
+/**
+ * An Apple Ads field's hint (#375). While typing (`partial`), only what
+ * can no longer become valid is flagged; once the field is left, the full
+ * format. Same rules as the server's provider definition.
+ */
+function appleAdsHint(
+  key: string,
+  value: string,
+  partial: boolean,
+  t: (
+    key:
+      | "appleAdsClientId"
+      | "appleAdsTeamId"
+      | "appleAdsKeyId"
+      | "appleAdsKeyIdSearchAds",
+  ) => string,
+): string | null {
+  const upper = value.toUpperCase();
+  if (key === "clientId" || key === "teamId") {
+    const prefixOk =
+      upper.startsWith(SEARCHADS_PREFIX) || SEARCHADS_PREFIX.startsWith(upper);
+    const restOk = /^[0-9a-z-]*$/i.test(
+      value.slice(Math.min(value.length, SEARCHADS_PREFIX.length)),
+    );
+    if (partial ? prefixOk && restOk : SEARCHADS_ID.test(value)) {
+      return null;
+    }
+    return t(key === "clientId" ? "appleAdsClientId" : "appleAdsTeamId");
+  }
+  if (key === "keyId") {
+    if (upper.startsWith("SEARCHADS")) {
+      return t("appleAdsKeyIdSearchAds");
+    }
+    if (partial ? /^[0-9a-z-]*$/i.test(value) : APPLE_ADS_KEY_ID.test(value)) {
+      return null;
+    }
+    return t("appleAdsKeyId");
+  }
+  return null;
+}
+
+/**
+ * The clientId, teamId and keyId in text pasted from Apple Ads' credentials
+ * block ("clientId SEARCHADS.…", one per line, or as JSON). Null unless
+ * at least two of them are found, so one ID pasted into its field stays as
+ * it is. TO BE CONFIRMED at #378: the block's exact layout.
+ */
+export function appleAdsCredentialsBlock(
+  text: string,
+): Partial<Record<"clientId" | "teamId" | "keyId", string>> | null {
+  const found: Partial<Record<"clientId" | "teamId" | "keyId", string>> = {};
+  for (const key of ["clientId", "teamId", "keyId"] as const) {
+    const match = new RegExp(
+      `["']?${key}["']?\\s*[:=]?\\s*["']?([0-9A-Za-z.-]{6,80})`,
+    ).exec(text);
+    if (match) {
+      found[key] = match[1]!;
+    }
+  }
+  return Object.keys(found).length >= 2 ? found : null;
+}
+
 /**
  * A format hint for a text field, or null when it looks right (or is still
- * empty). Same rules as the server's provider definition.
+ * empty). Same rules as the server's provider definition. `partial`: the
+ * user is still typing (Apple Ads checks as you type).
  */
 export function keyFieldHint(
   provider: string,
   key: string,
   value: string,
   locale: Locale,
+  options: { partial?: boolean } = {},
 ): string | null {
   const t = webTranslator(locale, "connections.signedKey.hints");
   const trimmed = value.trim();
-  if (trimmed === "" || provider !== APP_STORE_CONNECT_PROVIDER) {
+  if (trimmed === "") {
+    return null;
+  }
+  if (provider === APPLE_ADS_PROVIDER) {
+    return appleAdsHint(key, trimmed, options.partial ?? false, t);
+  }
+  if (provider !== APP_STORE_CONNECT_PROVIDER) {
     return null;
   }
   if (key === "issuerId" && !UUID.test(trimmed)) {
@@ -329,8 +467,11 @@ export function latestReportingDay(
 }
 
 /** The query the workspace page reads after a signed-key connection is deleted. */
-export function keyRemovedQuery(provider: string): string {
-  return new URLSearchParams({ keyRemoved: provider }).toString();
+export function keyRemovedQuery(provider: string, shared = false): string {
+  return new URLSearchParams({
+    keyRemoved: provider,
+    ...(shared ? { keyShared: "1" } : {}),
+  }).toString();
 }
 
 /** The provider of a deleted signed-key connection, from the query. */

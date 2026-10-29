@@ -87,13 +87,14 @@ describe("manifest", () => {
     ]);
   });
 
-  it("keeps the ad account, its currency and time zone in the config, none required", () => {
+  it("keeps the ad account, its name, currency and time zone in the config, none required", () => {
     const schema = appleAdsManifest.configSchema as {
       properties: Record<string, unknown>;
       required?: string[];
     };
     expect(Object.keys(schema.properties).sort()).toEqual([
       "adAccountId",
+      "adAccountName",
       "currency",
       "timeZone",
     ]);

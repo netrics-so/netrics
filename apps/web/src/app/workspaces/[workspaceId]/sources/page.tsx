@@ -15,7 +15,7 @@ import { getLocale, getT } from "@/lib/i18n/server";
 import { parseDisconnected, parseOAuthOutcome } from "@/lib/oauth-connection";
 import { relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
-import { parseKeyRemoved } from "@/lib/signed-key";
+import { APPLE_ADS_PROVIDER, parseKeyRemoved } from "@/lib/signed-key";
 import { connectorStandings } from "@/lib/sources";
 import { nextSyncLabel } from "@/lib/sync-schedule";
 
@@ -93,19 +93,32 @@ export default async function SourcesPage({
       <DisconnectResult revocation={disconnected} />
       {removedKey ? (
         <div className="notice page-alert" role="status">
-          <p>
-            {removedKey.providerName
-              ? t("keyRemoved", { name: removedKey.providerName })
-              : t("keyRemovedUnnamed")}{" "}
-            {removedKey.setup?.url ? (
-              <a href={removedKey.setup.url} target="_blank" rel="noreferrer">
-                {removedKey.providerName
-                  ? t("revokeIn", { name: removedKey.providerName })
-                  : t("revokeAtProvider")}{" "}
-                ↗
-              </a>
-            ) : null}
-          </p>
+          {removedKey.provider === APPLE_ADS_PROVIDER ? (
+            <p>
+              {query.keyShared === "1"
+                ? t("keyRemovedShared")
+                : t("keyRemovedAppleAds")}{" "}
+              {removedKey.setup?.url && query.keyShared !== "1" ? (
+                <a href={removedKey.setup.url} target="_blank" rel="noreferrer">
+                  {removedKey.providerName} ↗
+                </a>
+              ) : null}
+            </p>
+          ) : (
+            <p>
+              {removedKey.providerName
+                ? t("keyRemoved", { name: removedKey.providerName })
+                : t("keyRemovedUnnamed")}{" "}
+              {removedKey.setup?.url ? (
+                <a href={removedKey.setup.url} target="_blank" rel="noreferrer">
+                  {removedKey.providerName
+                    ? t("revokeIn", { name: removedKey.providerName })
+                    : t("revokeAtProvider")}{" "}
+                  ↗
+                </a>
+              ) : null}
+            </p>
+          )}
         </div>
       ) : null}
 

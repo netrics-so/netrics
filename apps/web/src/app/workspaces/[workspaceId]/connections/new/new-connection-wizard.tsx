@@ -9,6 +9,7 @@ import type {
   SignedKeyPairResponse,
 } from "@netrics/contracts";
 
+import { AppleAdsSetup } from "./apple-ads-setup";
 import { ConfigFields } from "../config-fields";
 import { ConnectOAuthButton } from "../connect-oauth-button";
 import { SignedKeyFields } from "../signed-key-fields";
@@ -33,6 +34,7 @@ import type { ConnectorStanding } from "@/lib/sources";
 import {
   APP_STORE_CONNECT_DOCS_URL,
   APP_STORE_CONNECT_PROVIDER,
+  APPLE_ADS_PROVIDER,
   emptyKeyValues,
   fieldOfMessage,
   keyPayload,
@@ -104,6 +106,8 @@ export function NewConnectionWizard({
   const keyStrategy = signedKeyStrategyOf(connector ?? undefined);
   const wantsToken = tokenStrategy !== undefined && keyStrategy === null;
   const appStore = keyStrategy?.provider === APP_STORE_CONNECT_PROVIDER;
+  // Apple Ads has its own guided setup (#375).
+  const appleAds = keyStrategy?.provider === APPLE_ADS_PROVIDER;
   // OAuth-only connectors connect at the provider; the callback creates the
   // connection and setup continues on the return (ADR 0012).
   const oauthProvider =
@@ -289,7 +293,16 @@ export function NewConnectionWizard({
         </div>
       ) : null}
 
-      {connector && connector.available && !oauthProvider ? (
+      {connector && connector.available && appleAds && keyStrategy ? (
+        <AppleAdsSetup
+          key={connector.id}
+          workspaceId={workspaceId}
+          connector={connector}
+          strategy={keyStrategy}
+        />
+      ) : null}
+
+      {connector && connector.available && !oauthProvider && !appleAds ? (
         <div className="card">
           <h2>
             {keyStrategy

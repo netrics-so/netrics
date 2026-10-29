@@ -5,6 +5,8 @@ import { useId, useState, type ChangeEvent, type ReactNode } from "react";
 import type { SignedKeyPairResponse } from "@netrics/contracts";
 
 import {
+  APPLE_ADS_PROVIDER,
+  appleAdsCredentialsBlock,
   keyFieldHint,
   keyIdFromFileName,
   localizeSignedKeyStrategy,
@@ -69,9 +71,29 @@ export function SignedKeyFields({
 }: SignedKeyFieldsProps) {
   const locale = useLocale();
   const t = useT("connections.signedKey");
+  const appleAds = useT("connections.appleAds");
   const strategy = localizeSignedKeyStrategy(serverStrategy, locale);
   const setup = guide ?? strategy.setup;
   const name = strategy.providerName ?? t("theProvider");
+  const [blockFilled, setBlockFilled] = useState(false);
+  /**
+   * Apple Ads shows clientId, teamId and keyId as one block (#375): pasted
+   * into any of the three fields, it fills all of them.
+   */
+  const onPasteText =
+    strategy.provider === APPLE_ADS_PROVIDER
+      ? (text: string): boolean => {
+          const block = appleAdsCredentialsBlock(text);
+          if (!block) {
+            return false;
+          }
+          for (const [key, value] of Object.entries(block)) {
+            onChange(key, value);
+          }
+          setBlockFilled(true);
+          return true;
+        }
+      : undefined;
   return (
     <>
       {setup ? (
@@ -153,10 +175,19 @@ export function SignedKeyFields({
             value={values[field.key] ?? ""}
             error={errors[field.key]}
             disabled={disabled}
-            onChange={(value) => onChange(field.key, value)}
+            onChange={(value) => {
+              setBlockFilled(false);
+              onChange(field.key, value);
+            }}
+            {...(onPasteText ? { onPasteText } : {})}
           />
         ),
       )}
+      {blockFilled ? (
+        <p className="help" role="status">
+          ✓ {appleAds("blockFilled")}
+        </p>
+      ) : null}
     </>
   );
 }
@@ -169,6 +200,7 @@ function KeyTextField({
   error,
   disabled,
   onChange,
+  onPasteText,
 }: {
   idPrefix: string;
   provider: string;
@@ -177,13 +209,18 @@ function KeyTextField({
   error: string | undefined;
   disabled: boolean | undefined;
   onChange: (value: string) => void;
+  /** Handles pasted text itself (true), e.g. a block of several IDs. */
+  onPasteText?: (text: string) => boolean;
 }) {
   const locale = useLocale();
   const id = `${idPrefix}key-${field.key}`;
   const [touched, setTouched] = useState(false);
-  const hint = touched
-    ? keyFieldHint(provider, field.key, value, locale)
-    : null;
+  // Apple Ads is checked as you type: only what can no longer become valid
+  // until the field is left, then the full format.
+  const hint =
+    touched || provider === APPLE_ADS_PROVIDER
+      ? keyFieldHint(provider, field.key, value, locale, { partial: !touched })
+      : null;
   const problem = error ?? hint;
   return (
     <div className="field">
@@ -199,6 +236,11 @@ function KeyTextField({
         aria-invalid={problem ? true : undefined}
         aria-describedby={`${id}-help`}
         onBlur={() => setTouched(true)}
+        onPaste={(event) => {
+          if (onPasteText?.(event.clipboardData.getData("text"))) {
+            event.preventDefault();
+          }
+        }}
         onChange={(event) => onChange(event.target.value)}
       />
       <p className="help" id={`${id}-help`}>

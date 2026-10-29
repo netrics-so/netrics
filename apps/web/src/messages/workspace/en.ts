@@ -25,6 +25,10 @@ export const workspaceEn = {
       "Connection deleted, together with netrics’ copy of its {name} key. The key itself stays valid until you revoke it.",
     keyRemovedUnnamed:
       "Connection deleted, together with netrics’ copy of its provider key. The key itself stays valid until you revoke it.",
+    keyRemovedAppleAds:
+      "Connection deleted, together with netrics’ copy of its private key. Now remove the public key under Account Settings → API in Apple Ads, unless another connection uses the same key.",
+    keyRemovedShared:
+      "Connection deleted. Other connections still use its key, so keep the public key in Apple Ads until the last of them is deleted.",
     revokeIn: "Revoke it in {name}",
     revokeAtProvider: "Revoke it at the provider",
     yourRole: "Your role:",
@@ -399,6 +403,34 @@ export const workspaceEn = {
           payments: "Open Payments and Financial Reports",
         },
       },
+      appleAds: {
+        labels: {
+          clientId: "Client ID",
+          teamId: "Team ID",
+          keyId: "Key ID",
+          privateKey: "Private key",
+        },
+        descriptions: {
+          clientId:
+            "The clientId shown under Account Settings → API in Apple Ads after you saved the public key.",
+          teamId:
+            "The teamId shown under Account Settings → API in Apple Ads after you saved the public key.",
+          keyId:
+            "The keyId shown under Account Settings → API in Apple Ads after you saved the public key.",
+          privateKey:
+            "The EC P-256 private key whose public key you saved under Account Settings → API (PEM).",
+        },
+        steps: {
+          "1": "An Account Admin invites an API user under Account Settings → User Management in Apple Ads, with the API Account Read Only role (or Limited Access: API Read Only for some campaign groups). The API user accepts the invitation and signs in to Apple Ads.",
+          "2": "As the API user, open Account Settings → API, paste the public key and save.",
+          "3": "Copy the clientId, teamId and keyId Apple Ads shows above the public key.",
+          "4": "Enter the values below. netrics checks the key with Apple before it stores anything.",
+        },
+        links: {
+          invite: "How to invite an API user",
+          open: "Open Apple Ads",
+        },
+      },
       hints: {
         issuerId:
           "The issuer ID is a UUID with dashes, like 57246542-96fe-1a63-e053-0824d011072a. It is shown above the list of team keys.",
@@ -414,6 +446,14 @@ export const workspaceEn = {
           "This is a public key. Choose the AuthKey_<Key ID>.p8 file, which holds the private key.",
         notPem:
           "This does not look like a .p8 private key: it should start with -----BEGIN PRIVATE KEY-----.",
+        appleAdsClientId:
+          "The client ID starts with SEARCHADS. followed by an ID, like SEARCHADS.27478e71-3bb0-4588-998c-182e2b405577. Apple Ads shows it as clientId above the public key.",
+        appleAdsTeamId:
+          "The team ID starts with SEARCHADS. followed by an ID, like SEARCHADS.27478e71-3bb0-4588-998c-182e2b405577. Apple Ads shows it as teamId above the public key.",
+        appleAdsKeyId:
+          "The key ID is an ID with dashes, like a273d0d3-4d9e-458c-a173-0db8619ca7d7. Apple Ads shows it as keyId above the public key.",
+        appleAdsKeyIdSearchAds:
+          "This looks like a client ID or team ID. The key ID has no SEARCHADS. prefix, like a273d0d3-4d9e-458c-a173-0db8619ca7d7.",
       },
     },
     finishSetup: {
@@ -501,6 +541,71 @@ export const workspaceEn = {
       connectorMissing:
         "Connector {connector} is not in the deployed bundle; config editing is unavailable.",
       saveChanges: "Save changes",
+    },
+    appleAds: {
+      title: "2. Connect Apple Ads",
+      intro:
+        "netrics reads Apple Ads as an API user of your own Apple Ads account, with a key pair netrics generates for you. It takes a few minutes, and nothing is stored until Apple has accepted the key.",
+      step1Title: "Use an API user",
+      step1Body:
+        "An Account Admin invites a user under Account Settings → User Management with the role API Account Read Only, or Limited Access: API Read Only to share only some campaign groups. That user accepts the invitation and signs in to Apple Ads. An existing API user works too.",
+      openUserManagement: "Open Apple Ads (Account Settings → User Management)",
+      inviteHelp: "How to invite users",
+      step2Title: "Paste the public key in Apple Ads",
+      step2Body:
+        "Signed in as the API user, open Account Settings → API. Paste this public key under Public key, then save.",
+      openApi: "Open Apple Ads (Account Settings → API)",
+      oneKeyNote:
+        "If this API user already has a public key that another netrics connection uses, replacing it in Apple Ads stops that connection. Choose all the ad accounts you need below, in one go.",
+      step3Title: "Enter the IDs Apple Ads shows",
+      step3Body:
+        "Apple Ads shows clientId, teamId and keyId above the public key. Copy them here; pasting the whole block fills in all three.",
+      blockFilled:
+        "Filled in the client ID, team ID and key ID from the pasted text.",
+      step4Title: "Choose the ad accounts",
+      checkKey: "Check key and find ad accounts",
+      checking: "Checking with Apple…",
+      generateFirst: "Generate the key pair first, or paste your private key.",
+      fieldRequired: "{field} is required.",
+      checkFailed: "Apple Ads did not accept the key.",
+      found:
+        "{count, plural, one {The key reads # ad account.} other {The key reads # ad accounts.}} Each one you choose becomes its own connection, with its own currency and time zone.",
+      addAnother: "To add another ad account with the same key, tick it too.",
+      accountMeta: "{currency} · days in {timeZone}",
+      accountId: "ID {id}",
+      notSelectableMaps: "Apple Maps ads are not supported yet.",
+      notSelectableRole: "The API user has no API role in this ad account.",
+      notSelectableOther: "This ad account runs no App Store campaigns.",
+      noneSelectable:
+        "None of these ad accounts can be connected. Ask an Account Admin to give the API user the API Account Read Only role in an App Store ad account.",
+      selectAccount: "Choose at least one ad account.",
+      create:
+        "{count, plural, one {Create connection} other {Create # connections}}",
+      creating: "Creating…",
+      connectionName: "Apple Ads · {account}",
+      moreAboutConnector: "More about the connector",
+      accountTitle: "Apple Ads ad account",
+      adAccount: "Ad account",
+      currency: "Currency",
+      timeZone: "Time zone",
+      unknown: "Not known yet",
+      daysLabel: "Days in {timeZone}, as in Apple Ads.",
+      currencyNote:
+        "Spend stays in {currency}; nothing is converted when it is stored.",
+      timing:
+        "Apple Ads reports a day in the ad account’s time zone. netrics reads the last 12 months first, then every 6 hours, and reads the last 3 days again each time because installs are attributed late.",
+      sharedWith:
+        "The same key also reads {names}. Replacing it here replaces it there too, after the new key is checked for each of them.",
+      setUpNewKey: "Set up a new key",
+      setUpNewKeyDetail:
+        "Generate a new key pair, paste the public key in Apple Ads and enter the new IDs. The data collected so far is kept.",
+      replacedShared: "The new key replaced the old one in {names} too.",
+      removeOldKey:
+        "If Apple Ads still lists the old public key under Account Settings → API, remove it there: netrics cannot do that for you.",
+      deleteHint:
+        "netrics deletes its copy of the private key. Afterwards, remove the public key under Account Settings → API in Apple Ads.",
+      deleteHintShared:
+        "netrics deletes this connection’s copy of the private key. The same key still serves {names}: keep the public key in Apple Ads until you delete the last connection that uses it.",
     },
     keyPanel: {
       provider: "provider",

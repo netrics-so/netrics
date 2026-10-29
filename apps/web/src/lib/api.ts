@@ -74,7 +74,9 @@ import {
   connectionResourcesResponseSchema,
   connectionResponseSchema,
   connectorListResponseSchema,
+  connectionsResponseSchema,
   createConnectionRequestSchema,
+  createConnectionsRequestSchema,
   createInvitationRequestSchema,
   createProjectRequestSchema,
   createWorkspaceRequestSchema,
@@ -110,7 +112,9 @@ import {
   type ConnectionResourcesResponse,
   type ConnectionResponse,
   type ConnectorListResponse,
+  type ConnectionsResponse,
   type CreateConnectionRequest,
+  type CreateConnectionsRequest,
   type DeleteConnectionResponse,
   type EnqueueSyncResponse,
   type HealthLiveResponse,
@@ -681,6 +685,22 @@ export function createConnection(
     "POST",
     `/v1/workspaces/${workspaceId}/connections`,
     createConnectionRequestSchema.parse(input),
+  );
+}
+
+/**
+ * Several connections with one credential, all or none (#375): one Apple
+ * Ads key for several ad accounts.
+ */
+export function createConnections(
+  workspaceId: string,
+  input: CreateConnectionsRequest,
+): Promise<ConnectionsResponse> {
+  return browserSend(
+    connectionsResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/batch`,
+    createConnectionsRequestSchema.parse(input),
   );
 }
 

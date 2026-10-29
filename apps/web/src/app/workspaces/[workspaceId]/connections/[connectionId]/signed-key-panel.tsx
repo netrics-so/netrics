@@ -10,7 +10,9 @@ import type {
 
 import { SignedKeyFields } from "../signed-key-fields";
 import { apiErrorMessage, updateConnection } from "@/lib/api";
+import { listNames } from "@/lib/apple-ads";
 import {
+  APPLE_ADS_PROVIDER,
   emptyKeyValues,
   fieldOfMessage,
   keyPayload,
@@ -51,19 +53,29 @@ export function SignedKeyPanel({
 }: SignedKeyPanelProps) {
   const locale = useLocale();
   const t = useT("connections.keyPanel");
+  const ads = useT("connections.appleAds");
   const common = useT("common");
   const router = useRouter();
   const name = strategy.providerName ?? t("provider");
+  // Apple Ads (#375): a public key pasted in Apple Ads, perhaps serving
+  // several connections.
+  const appleAds = strategy.provider === APPLE_ADS_PROVIDER;
+  const shared = (signedKey?.sharedWith ?? []).map((other) => other.name);
   const [open, setOpen] = useState(authFailed && canUpdate);
   // A new key is usually from the same team: keep its issuer ID. The key
-  // ID comes with the new file (AuthKey_<Key ID>.p8).
+  // ID comes with the new file (AuthKey_<Key ID>.p8). Apple Ads shows all
+  // three IDs anew with a new public key, so nothing is kept.
+  const keep = (fields: ConnectionSignedKeyView["fields"]) =>
+    appleAds
+      ? {}
+      : Object.fromEntries(
+          fields
+            .filter((field) => field.key !== "keyId")
+            .map((field) => [field.key, field.value]),
+        );
   const initialValues = () => ({
     ...emptyKeyValues(strategy),
-    ...Object.fromEntries(
-      (signedKey?.fields ?? [])
-        .filter((field) => field.key !== "keyId")
-        .map((field) => [field.key, field.value]),
-    ),
+    ...keep(signedKey?.fields ?? []),
   });
   const [values, setValues] = useState(initialValues);
   const [keyPair, setKeyPair] = useState<SignedKeyPairResponse | null>(null);
@@ -75,6 +87,8 @@ export function SignedKeyPanel({
   const [replaced, setReplaced] = useState<{
     oldKeyId: string | null;
     newKeyId: string | null;
+    /** Other connections whose key was replaced with it. */
+    shared: string[];
   } | null>(null);
   const keyIdOf = (view: ConnectionSignedKeyView | null) =>
     view?.fields.find((field) => field.key === "keyId")?.value ?? null;
@@ -118,15 +132,14 @@ export function SignedKeyPanel({
       setReplaced({
         oldKeyId: keyIdOf(signedKey),
         newKeyId: keyIdOf(connection.signedKey),
+        shared: (connection.signedKey?.sharedWith ?? []).map(
+          (other) => other.name,
+        ),
       });
       // The private key leaves the browser's memory with the form.
       setValues({
         ...initialValues(),
-        ...Object.fromEntries(
-          (connection.signedKey?.fields ?? [])
-            .filter((field) => field.key !== "keyId")
-            .map((field) => [field.key, field.value]),
-        ),
+        ...keep(connection.signedKey?.fields ?? []),
       });
       setOpen(false);
       router.refresh();
@@ -154,12 +167,20 @@ export function SignedKeyPanel({
       </div>
       {signedKey?.fields.map((field) => (
         <div className="row" key={field.key}>
-          <span className="label">{field.label}</span>
+          <span className="label">
+            {localizedFieldLabel(strategy, field, locale)}
+          </span>
           <span className="value">
             <code>{field.value}</code>
           </span>
         </div>
       ))}
+
+      {shared.length > 0 ? (
+        <p className="muted">
+          {ads("sharedWith", { names: listNames(shared, locale) })}
+        </p>
+      ) : null}
 
       {replaced ? (
         <div className="notice" role="status">
@@ -168,10 +189,19 @@ export function SignedKeyPanel({
               ? t("replacedKey", { keyId: replaced.newKeyId })
               : t("replaced")}
           </p>
+          {replaced.shared.length > 0 ? (
+            <p>
+              {ads("replacedShared", {
+                names: listNames(replaced.shared, locale),
+              })}
+            </p>
+          ) : null}
           <p>
-            {replaced.oldKeyId
-              ? t("revokeOldKey", { keyId: replaced.oldKeyId, name })
-              : t("revokeOld", { name })}{" "}
+            {appleAds
+              ? ads("removeOldKey")
+              : replaced.oldKeyId
+                ? t("revokeOldKey", { keyId: replaced.oldKeyId, name })
+                : t("revokeOld", { name })}{" "}
             {revokeUrl ? (
               <a href={revokeUrl} target="_blank" rel="noreferrer">
                 {t("openKeys", { name })} ↗
@@ -185,7 +215,13 @@ export function SignedKeyPanel({
         <p className="muted">{t("askToReplace")}</p>
       ) : open ? (
         <form className="stack" onSubmit={onSubmit}>
-          <h3>{authFailed ? t("uploadNew", { name }) : t("replace")}</h3>
+          <h3>
+            {authFailed
+              ? appleAds
+                ? ads("setUpNewKey")
+                : t("uploadNew", { name })
+              : t("replace")}
+          </h3>
           <p className="muted">{t("checksFirst", { name })}</p>
           <SignedKeyFields
             strategy={strategy}
@@ -231,7 +267,11 @@ export function SignedKeyPanel({
               setOpen(true);
             }}
           >
-            {authFailed ? t("uploadNew", { name }) : t("replace")}
+            {authFailed
+              ? appleAds
+                ? ads("setUpNewKey")
+                : t("uploadNew", { name })
+              : t("replace")}
           </button>
         </div>
       )}
