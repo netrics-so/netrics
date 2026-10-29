@@ -12,6 +12,7 @@ import { ConnectionActions } from "./connection-actions";
 import { EditConnectionForm } from "./edit-connection-form";
 import { AppStoreAnalyticsPanel } from "./app-store-analytics-panel";
 import { AppStoreReviewsPanel } from "./app-store-reviews-panel";
+import { AddAdAccountPanel } from "./add-ad-account-panel";
 import { SignedKeyPanel } from "./signed-key-panel";
 import {
   getConnection,
@@ -331,6 +332,17 @@ export default async function ConnectionDetailPage({
             </a>
           </p>
         </div>
+      ) : null}
+
+      {adAccount &&
+      keyStrategy &&
+      connection.hasCredentials &&
+      !connection.setupPending &&
+      can(role, "connections:create") ? (
+        <AddAdAccountPanel
+          workspaceId={workspaceId}
+          connectionId={connection.id}
+        />
       ) : null}
 
       {appStore && keyStrategy && !connection.setupPending ? (

@@ -10,6 +10,7 @@ import type {
   ConnectorAuthStrategy,
   CreateConnectionRequest,
   CreateConnectionsRequest,
+  CreateSharedKeyConnectionsRequest,
   DeleteConnectionResponse,
   EnableAppStoreAnalyticsRequest,
   EnableAppStoreAnalyticsResponse,
@@ -17,6 +18,7 @@ import type {
   LatestReviewResponse,
   ObservationListQuery,
   PreviewConnectionRequest,
+  SharedKeyResourcesResponse,
   UpdateConnectionRequest,
 } from "@netrics/contracts";
 import { validateConnectionConfig } from "@netrics/contracts";
@@ -407,6 +409,69 @@ function acceptsCredentials(manifest: ConnectorManifest): boolean {
   return manifest.authStrategies.some(
     (strategy) => strategy.strategy !== "oauth2",
   );
+}
+
+/**
+ * Connectors whose key may serve several connections, one account each
+ * (#395): the resource kind their discovery lists the key's accounts as,
+ * with no account configured, and the config key naming a connection's
+ * account. Apple Ads: one API user's key reads several ad accounts.
+ */
+interface KeySharing {
+  resourceKind: string;
+  configKey: string;
+}
+
+const KEY_SHARING: Readonly<Record<string, KeySharing>> = {
+  "apple-ads": { resourceKind: "ad_account", configKey: "adAccountId" },
+};
+
+const SHARED_KEY_UNSUPPORTED = "shared_key_unsupported";
+
+/** The stored key of an existing connection, lent to new ones (#395). */
+interface LentKey {
+  connectionId: string;
+  /** The decrypted envelope; never logged, returned or enqueued. */
+  credentials: Record<string, unknown>;
+  sharing: KeySharing;
+  /** The ciphertext the checks ran with, compared again when storing. */
+  envelope: Buffer;
+}
+
+/** The account a connection's config names, as discovery's resource id. */
+function configAccount(
+  config: Readonly<Record<string, unknown>>,
+  sharing: KeySharing,
+): string | undefined {
+  const value = config[sharing.configKey];
+  if (typeof value === "number" && Number.isSafeInteger(value)) {
+    return String(value);
+  }
+  return typeof value === "string" && value.trim() !== ""
+    ? value.trim()
+    : undefined;
+}
+
+/** Account → connection, for the workspace's connections of a connector. */
+function connectedAccounts(
+  rows: readonly ConnectionWithState[],
+  connectorId: string,
+  sharing: KeySharing,
+): Map<string, { id: string; name: string }> {
+  const connected = new Map<string, { id: string; name: string }>();
+  for (const { row } of rows) {
+    if (row.connectorId !== connectorId) {
+      continue;
+    }
+    const account = configAccount(
+      row.config as Record<string, unknown>,
+      sharing,
+    );
+    if (account && !connected.has(account)) {
+      connected.set(account, { id: row.id, name: row.name });
+    }
+  }
+  return connected;
 }
 
 export function createConnectionService(deps: ConnectionServiceDeps) {
@@ -1141,6 +1206,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
   async function createConnections(
     actor: Actor,
     body: CreateConnectionsRequest,
+    lent?: LentKey,
   ): Promise<Result<ConnectionDetail[]>> {
     const registered = registry.get(body.connectorId);
     if (!registered) {
@@ -1178,12 +1244,19 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       entries.push({ id: randomUUID(), name: entry.name, config });
     }
 
-    const resolved = await withPendingKey(
-      actor,
-      registered.manifest,
-      body.credentials,
-      body.pendingKeyId,
-    );
+    // A lent key (#395) is the stored key of another connection, never a
+    // credential from the request.
+    const resolved: Result<{
+      credentials: Record<string, unknown> | undefined;
+      pending: { provider: string; id: string } | null;
+    }> = lent
+      ? ok({ credentials: lent.credentials, pending: null })
+      : await withPendingKey(
+          actor,
+          registered.manifest,
+          body.credentials,
+          body.pendingKeyId,
+        );
     if (!resolved.ok) {
       return resolved;
     }
@@ -1212,6 +1285,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       if (!consumed.ok) {
         return consumed;
       }
+      if (lent) {
+        const still = await stillLends(tx, actor, lent, entries);
+        if (!still.ok) {
+          return still;
+        }
+      }
       if (body.projectId) {
         const project = await findProject(
           tx,
@@ -1222,7 +1301,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           return fail(404, "project_not_found");
         }
       }
-      const details: ConnectionDetail[] = [];
+      const rows: ConnectionWithState[] = [];
       for (const [index, entry] of entries.entries()) {
         const credentials = stored[index] ?? null;
         const connectionId = entry.id;
@@ -1257,19 +1336,43 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           metadata: {
             name: entry.name,
             connectorId: body.connectorId,
-            ...(entries.length > 1 ? { sharedCredential: true } : {}),
+            ...(entries.length > 1 || lent ? { sharedCredential: true } : {}),
+            ...(lent ? { keySharedFrom: lent.connectionId } : {}),
           },
         });
+        rows.push(created);
+      }
+      if (lent) {
+        // The lending connection's audit trail names who got its key.
+        await insertAuditEvent(tx, {
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.callerId,
+          action: "connection.key_shared",
+          target: lent.connectionId,
+          metadata: {
+            connectorId: body.connectorId,
+            connectionIds: rows.map((created) => created.row.id),
+          },
+        });
+      }
+      // Every connection of the request stores the same key, and a lent
+      // key also that of the connections already holding it.
+      const details: ConnectionDetail[] = [];
+      for (const created of rows) {
         details.push(
           presentConnectionDetail(
             registry,
             created,
-            signedKeyView(actor.workspaceId, created.row),
+            lent
+              ? await withSharedKey(tx, actor.workspaceId, created.row)
+              : signedKeyView(actor.workspaceId, created.row),
             actor.locale,
           ),
         );
       }
-      // Every connection of the request stores the same key.
+      if (lent) {
+        return ok(details);
+      }
       return ok(
         details.map((detail) =>
           detail.signedKey
@@ -1286,6 +1389,107 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         ),
       );
     });
+  }
+
+  /**
+   * An existing connection of this workspace that can lend its stored
+   * signed key to new connections (#395): found with the workspace
+   * predicate (404 otherwise, as everywhere), of a connector that lists
+   * accounts to share a key with, and holding a signed key. The decrypted
+   * key stays in this process.
+   */
+  async function lendingConnection(
+    actor: Actor,
+    connectionId: string,
+  ): Promise<
+    Result<{
+      existing: ConnectionWithState;
+      registered: NonNullable<ReturnType<ConnectorRegistry["get"]>>;
+      sharing: KeySharing;
+      lent: LentKey;
+      key: SignedKey;
+    }>
+  > {
+    const existing = await inWorkspace(actor, (tx) =>
+      findConnection(tx, actor.workspaceId, connectionId),
+    );
+    if (!existing) {
+      return fail(404, NOT_FOUND);
+    }
+    const registered = registry.get(existing.row.connectorId);
+    const sharing = KEY_SHARING[existing.row.connectorId];
+    if (!registered || !sharing || existing.oauth) {
+      return fail(400, SHARED_KEY_UNSUPPORTED);
+    }
+    const envelope = openEnvelope(actor.workspaceId, existing.row);
+    if (!envelope.ok) {
+      return envelope;
+    }
+    const key = storedSignedKey(registered.manifest, envelope.value);
+    if (!key || !existing.row.credentialsEncrypted) {
+      return fail(400, SHARED_KEY_UNSUPPORTED);
+    }
+    if (!key.ok) {
+      return key;
+    }
+    return ok({
+      existing,
+      registered,
+      sharing,
+      key: key.value,
+      lent: {
+        connectionId,
+        credentials: envelope.value,
+        sharing,
+        envelope: existing.row.credentialsEncrypted,
+      },
+    });
+  }
+
+  /**
+   * In the storing transaction: the lending connection still exists with
+   * the same key (not deleted or rotated since the checks), and none of
+   * the new connections reads an account this workspace connected already.
+   */
+  async function stillLends(
+    tx: Transaction,
+    actor: Actor,
+    lent: LentKey,
+    entries: ReadonlyArray<{ name: string; config: Record<string, unknown> }>,
+  ): Promise<Result<true>> {
+    const current = await findConnection(
+      tx,
+      actor.workspaceId,
+      lent.connectionId,
+    );
+    if (!current) {
+      return fail(404, NOT_FOUND);
+    }
+    if (
+      !current.row.credentialsEncrypted ||
+      !current.row.credentialsEncrypted.equals(lent.envelope)
+    ) {
+      return fail(
+        400,
+        "The key of this connection changed meanwhile. Reload and try again.",
+      );
+    }
+    const connected = connectedAccounts(
+      await listConnectionRows(tx, actor.workspaceId),
+      current.row.connectorId,
+      lent.sharing,
+    );
+    for (const entry of entries) {
+      const account = configAccount(entry.config, lent.sharing);
+      const already = account ? connected.get(account) : undefined;
+      if (already) {
+        return fail(
+          400,
+          `${entry.name}: this account is connected already, as “${already.name}”.`,
+        );
+      }
+    }
+    return ok(true);
   }
 
   /**
@@ -1401,6 +1605,108 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       body: CreateConnectionsRequest,
     ): Promise<Result<ConnectionDetail[]>> {
       return createConnections(actor, body);
+    },
+
+    /**
+     * What the stored key of a connection reads with no account chosen
+     * (#395): for Apple Ads the API user's ad accounts, as the wizard's
+     * preview lists them, and which of them this workspace has connected.
+     * The check and discovery get a token from the stored key; the key
+     * itself never leaves the server.
+     */
+    async sharedKeyResources(
+      actor: Actor,
+      connectionId: string,
+    ): Promise<Result<SharedKeyResourcesResponse>> {
+      const lending = await lendingConnection(actor, connectionId);
+      if (!lending.ok) {
+        return lending;
+      }
+      const { registered, sharing, key } = lending.value;
+      const context = { connectionId, config: {} };
+      const cache = signedKeyCache(key, actor.workspaceId, connectionId);
+      try {
+        const check = await callWithSignedKey({
+          key,
+          ...cache,
+          call: (tokenCredentials, options) =>
+            executeCheck(
+              registered.connector,
+              { ...context, credentials: { ...tokenCredentials } },
+              options,
+            ),
+          rejected: (result) => !result.ok,
+        });
+        if (!check.ok) {
+          return ok({ check, resources: [], connected: [] });
+        }
+        const resources = await callWithSignedKey({
+          key,
+          ...cache,
+          call: (tokenCredentials, options) =>
+            executeDiscover(
+              registered.connector,
+              { ...context, credentials: { ...tokenCredentials } },
+              options,
+            ),
+        });
+        const connected = connectedAccounts(
+          await inWorkspace(actor, (tx) =>
+            listConnectionRows(tx, actor.workspaceId),
+          ),
+          registered.manifest.id,
+          sharing,
+        );
+        return ok({
+          check,
+          resources,
+          connected: resources.flatMap((resource) => {
+            const connection =
+              resource.kind === sharing.resourceKind
+                ? connected.get(resource.id)
+                : undefined;
+            return connection
+              ? [
+                  {
+                    resourceId: resource.id,
+                    connectionId: connection.id,
+                    connectionName: connection.name,
+                  },
+                ]
+              : [];
+          }),
+        });
+      } catch (error) {
+        return signedKeyCallFailure(error);
+      }
+    },
+
+    /**
+     * New connections with the stored key of an existing one (#395), for
+     * accounts its key reads that are not connected yet: the batch path
+     * with the lent key, checked first and stored all or none. They join
+     * the lending connection's project unless the request names one.
+     */
+    async createWithSharedKey(
+      actor: Actor,
+      connectionId: string,
+      body: CreateSharedKeyConnectionsRequest,
+    ): Promise<Result<ConnectionDetail[]>> {
+      const lending = await lendingConnection(actor, connectionId);
+      if (!lending.ok) {
+        return lending;
+      }
+      const { existing, lent } = lending.value;
+      const projectId = body.projectId ?? existing.row.projectId;
+      return createConnections(
+        actor,
+        {
+          connectorId: existing.row.connectorId,
+          ...(projectId ? { projectId } : {}),
+          connections: body.connections,
+        },
+        lent,
+      );
     },
 
     /**

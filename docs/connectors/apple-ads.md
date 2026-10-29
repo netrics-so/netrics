@@ -99,10 +99,21 @@ connections use it. **Replace key** on any of them replaces it in all of
 them, after the new key has been checked with each one's ad account; if it
 fails for one, nothing changes.
 
-Connect all the ad accounts of one API user in one go. A second run of the
-wizard generates a new key pair, and if you paste its public key for the
-same API user, the earlier key may stop working (_to be confirmed_ at #378:
-whether Apple Ads keeps more than one public key per API user).
+To add an ad account later, for example after an Account Admin gave the
+API user a role in another one, use **Add another ad account** on the page
+of a connection with that API user's key. netrics asks Apple with the
+stored key which ad accounts it reads and marks those the workspace has
+connected already; the ones you tick become connections with the same
+stored key, in one request, all or none. The key stays on the server, the
+new connections then share it as above, and the audit log records that
+the key was shared and from which connection. Only a connection of the
+same workspace lends its key
+(`GET` and `POST /v1/workspaces/{workspaceId}/connections/{connectionId}/shared-key/…`).
+
+Do not run the wizard again for an API user that already has a
+connection: it generates a new key pair, and if you paste its public key
+for the same API user, the earlier key may stop working (_to be confirmed_
+at #378: whether Apple Ads keeps more than one public key per API user).
 
 Ad accounts of different API users have separate keys and connections;
 they can sit side by side in one workspace.
@@ -166,7 +177,7 @@ they can sit side by side in one workspace.
 | Time zone       | Its time zone (IANA), which the reporting days follow.   |
 
 These come from Apple during the setup and cannot be edited; to read
-another ad account, add a connection.
+another ad account, add a connection (**Add another ad account**).
 
 ## Metrics
 

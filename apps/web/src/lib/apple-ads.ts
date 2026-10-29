@@ -56,6 +56,21 @@ export function appleAdsAccounts(
     });
 }
 
+/**
+ * The config of a connection for a discovered ad account: its ID, and its
+ * name, currency and time zone as labels.
+ */
+export function appleAdsAccountConfig(
+  account: AppleAdsAccount,
+): Record<string, string> {
+  return {
+    adAccountId: account.id,
+    adAccountName: account.name,
+    ...(account.currency ? { currency: account.currency } : {}),
+    ...(account.timeZone ? { timeZone: account.timeZone } : {}),
+  };
+}
+
 export interface AppleAdsConnectionAccount {
   id: string | null;
   name: string | null;

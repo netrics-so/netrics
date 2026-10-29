@@ -525,6 +525,20 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "netrics löscht seine Kopie des privaten Schlüssels. Entfern danach den öffentlichen Schlüssel unter Account Settings → API in Apple Ads.",
       deleteHintShared:
         "netrics löscht die Kopie des privaten Schlüssels dieser Verbindung. Derselbe Schlüssel dient noch {names}: Lass den öffentlichen Schlüssel in Apple Ads, bis du die letzte Verbindung löschst, die ihn nutzt.",
+      addAccountTitle: "Weitere Werbekonten mit diesem Schlüssel",
+      addAccountIntro:
+        "Der API-Benutzer dieser Verbindung darf vielleicht weitere Werbekonten lesen. Jedes, das du hinzufügst, wird eine eigene Verbindung mit diesem Schlüssel, der auf dem Server bleibt. In Apple Ads ändert sich nichts.",
+      addAccountButton: "Weiteres Werbekonto hinzufügen",
+      addAccountLoading: "Wird bei Apple Ads abgefragt…",
+      addAccountFound:
+        "{count, plural, one {Dieser Schlüssel liest # Werbekonto.} other {Dieser Schlüssel liest # Werbekonten.}}",
+      addAccountConnected: "Schon verbunden als {name}",
+      addAccountNone:
+        "Jedes Werbekonto, das dieser Schlüssel verbinden kann, ist schon verbunden. Für ein weiteres gibt ein Account Admin diesem API-Benutzer dort eine Rolle.",
+      addAccountCreate:
+        "{count, plural, one {# Verbindung hinzufügen} other {# Verbindungen hinzufügen}}",
+      addAccountAdded:
+        "{count, plural, one {# Verbindung mit diesem Schlüssel hinzugefügt:} other {# Verbindungen mit diesem Schlüssel hinzugefügt:}}",
     },
     keyPanel: {
       provider: "Anbieter",
