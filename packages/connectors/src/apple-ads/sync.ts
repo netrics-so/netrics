@@ -5,7 +5,12 @@ import type {
 } from "@netrics/connector-sdk";
 
 import { AppleAdsApiError, type AppleAdsClient } from "./api.js";
-import { APPLE_ADS_DIMENSIONS, OTHERS, TOP_COUNTRIES } from "./metrics.js";
+import {
+  APPLE_ADS_DIMENSIONS,
+  OTHERS,
+  TOP_COUNTRIES,
+  TOP_KEYWORDS,
+} from "./metrics.js";
 import {
   addDayValues,
   AppleAdsReportError,
@@ -24,6 +29,7 @@ import {
   MAX_REPORT_DAYS,
   readAdGroupReport,
   readCampaignReport,
+  readKeywordReport,
   rowDays,
   type DayRange,
   type ReportRow,
@@ -60,6 +66,26 @@ import {
 // campaign's ad groups leave out of its total (Apple answers 404 for a
 // deleted campaign, TO BE CONFIRMED by #370) is the ad group "Others", so
 // ad-group sums equal campaign sums.
+//
+// Keywords (#396). The keyword report needs a `campaignId` too, so each
+// campaign of the ad-group batch also gets its keyword report, on the same
+// page and range: the batch, the skipped campaigns and the cursor are the
+// ad groups' (`after` is the last campaign whose ad groups and keywords
+// were read), so the cursor grammar is unchanged and a cursor of #376
+// decodes as before. Rows go to the `*_by_keyword` keys, one series per
+// campaign and keyword, as daily values like every other key, so widgets
+// over any period and the compare widget work on them unchanged. The 20
+// keywords with the most spend in the campaign's calendar month (ad
+// account days) keep their names, ranked as the countries are; the rest of
+// the month, and whatever no keyword accounts for (Search Match, a deleted
+// campaign), is the keyword "Others" (the campaign's total minus the named
+// keywords), so keyword sums equal campaign sums every day. Because Others
+// comes from the total, one page of the keywords with the most spend in
+// the range is enough (KEYWORD_REPORT_ROWS).
+//
+// Time budget. A page has 60 seconds; with two reports per campaign it
+// stops starting campaigns once FAN_OUT_BUDGET_MS have passed and leaves
+// the rest of the batch to the next page (the cursor is the same).
 
 /** Days a backfill reads: 12 months, capped by Apple's retention (#370). */
 export const APPLE_ADS_BACKFILL_DAYS = 365;
@@ -71,17 +97,32 @@ export const APPLE_ADS_BACKFILL_DAYS = 365;
 export const LOOKBACK_DAYS = 3;
 
 /**
- * Campaigns whose ad-group reports one sync page reads (#376). A page has
- * 60 seconds and a run at most 100 pages: 10 campaigns plus the totals is
- * about a dozen requests a page, and a 12-month backfill of five ranges
- * covers about 190 campaigns with numbers per range in one run.
+ * Campaigns whose ad-group and keyword reports (#376, #396) one sync page
+ * reads. A page has 60 seconds and a run at most 100 pages: 10 campaigns,
+ * two reports each, plus the totals is about 22 requests a page (fewer
+ * when FAN_OUT_BUDGET_MS runs out), and a 12-month backfill of five
+ * ranges covers about 190 campaigns with numbers per range in one run.
  */
 export const AD_GROUP_CAMPAIGNS_PER_PAGE = 10;
+
+/**
+ * Milliseconds of a page after which no further campaign's ad-group and
+ * keyword reports are started (#396). The page itself has 60 seconds; the
+ * rest is for the campaign in flight.
+ */
+export const FAN_OUT_BUDGET_MS = 30_000;
 
 const CURSOR_PREFIX = "apple-ads:1";
 
 /** Note code: a deleted campaign had no ad-group report (404). */
 export const DELETED_CAMPAIGN_NOTE = "apple_ads.deleted_campaign_ad_groups";
+
+/**
+ * Note code: Apple had no keyword report for a campaign (a deleted one, or
+ * one without keywords that Apple refuses the report for); its numbers are
+ * kept under the keyword "Others".
+ */
+export const NO_KEYWORD_REPORT_NOTE = "apple_ads.no_keyword_report";
 
 export interface CampaignSyncOptions {
   now: number;
@@ -91,6 +132,8 @@ export interface CampaignSyncOptions {
   /** The ad account's time zone (IANA): its days are Apple's ORTZ days. */
   timeZone: string;
   note: (code: string, message: string) => void;
+  /** Milliseconds now, for the page's time budget; default Date.now. */
+  clock?: () => number;
 }
 
 // ─── Days ───────────────────────────────────────────────────────────────────
@@ -151,8 +194,9 @@ export function adAccountToday(nowMs: number, timeZone: string): string {
  * Where a sync is: the oldest day it emits (`floor`), the newest day it
  * read first (`newest`, where the next sync's lookback starts from), and
  * the newest day of the next range to read (`next`). In the middle of a
- * range's ad-group fan-out (#376), `after` is the last campaign whose ad
- * groups were read: the next page continues that range after it.
+ * range's fan-out (#376), `after` is the last campaign whose ad groups
+ * (and, since #396, keywords) were read: the next page continues that
+ * range after it.
  */
 export interface SyncPosition {
   floor: string;
@@ -268,11 +312,8 @@ function inRange(day: string, range: DayRange): boolean {
 
 // ─── Ranking ────────────────────────────────────────────────────────────────
 
-/** The `limit` largest countries by spend, then impressions, then code. */
-function topCountries(
-  totals: Map<string, DayValues>,
-  limit: number,
-): Set<string> {
+/** The `limit` largest values by spend, then impressions, then name. */
+function topValues(totals: Map<string, DayValues>, limit: number): Set<string> {
   return new Set(
     [...totals.entries()]
       .sort(
@@ -282,7 +323,7 @@ function topCountries(
           a[0].localeCompare(b[0]),
       )
       .slice(0, limit)
-      .map(([country]) => country),
+      .map(([value]) => value),
   );
 }
 
@@ -292,104 +333,117 @@ function sumOf(values: Iterable<DayValues>): DayValues {
   return sum;
 }
 
+/** A breakdown of a campaign's days ranked per month: countries, keywords. */
+interface RankedBreakdown {
+  /** Day → value (a country, a keyword) → that day's numbers. */
+  byDay: Map<string, Map<string, DayValues>>;
+  /** Values kept by name per month. */
+  limit: number;
+  /** The order of values in the output. */
+  order: (a: string, b: string) => number;
+  /** The identity of a value's observations (OTHERS included). */
+  identity: (value: string) => AppleAdsRowIdentity;
+}
+
+function byText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /**
- * The observations of one campaign in one month, for the days in `emit`.
+ * The observations of one campaign's breakdown in one month, for the days
+ * in `emit`: the countries (#374) or the keywords (#396).
  *
- * The 10 countries with the most spend in the month keep their names; the
- * rest, and whatever the breakdown leaves out of the campaign's total, are
- * "Others". The month is ranked over every day read (the whole month), so
- * a day gets the same values whichever window asks for it.
+ * The `limit` values with the most spend in the month keep their names;
+ * the rest, and whatever the breakdown leaves out of the campaign's total,
+ * are "Others". The month is ranked over every day read (the whole month),
+ * so a day gets the same values whichever window asks for it.
  *
- * While a month runs, its ranking can change between syncs. A country that
- * dropped out of the top 10 gets an explicit 0 on the days where it has
- * data (they moved to "Others"), so a value stored under an earlier ranking
- * is overwritten instead of counted twice. Only countries that led some
- * earlier part of the month (a ranking an earlier sync could have used)
- * get these zeros, as App Store Connect's territories do.
+ * While a month runs, its ranking can change between syncs. A value that
+ * dropped out of the top gets an explicit 0 on the days where it has data
+ * (they moved to "Others"), so a value stored under an earlier ranking is
+ * overwritten instead of counted twice. Only values that led some earlier
+ * part of the month (a ranking an earlier sync could have used) get these
+ * zeros, as App Store Connect's territories do.
  *
  * A day without data is zero only once it is older than the lookback: then
  * the named series of the month get explicit zeros, so a day Apple revised
  * away does not keep an earlier value. Recent days without data are left
  * out, as Apple may still be filling them.
  */
-function monthObservations(
-  entry: CampaignDays,
+function rankedMonthObservations(
+  totals: Map<string, DayValues>,
+  breakdown: RankedBreakdown,
   month: string,
   emit: DayRange,
   settledBefore: string,
   currency: string,
 ): Observation[] {
+  const { byDay, limit, order, identity } = breakdown;
   const inMonth = (day: string) => monthStart(day) === month;
   const days = [
     ...new Set([
-      ...[...entry.totals.keys()].filter(inMonth),
-      ...[...entry.countries.keys()].filter(inMonth),
+      ...[...totals.keys()].filter(inMonth),
+      ...[...byDay.keys()].filter(inMonth),
     ]),
   ].sort();
   if (days.length === 0) return [];
 
   const totalOf = (day: string) =>
-    entry.totals.get(day) ??
-    sumOf((entry.countries.get(day) ?? new Map()).values());
+    totals.get(day) ?? sumOf((byDay.get(day) ?? new Map()).values());
 
   const monthTotals = new Map<string, DayValues>();
   const earlierLeaders = new Set<string>();
   let top = new Set<string>();
   let hasGap = false;
   for (const day of days) {
-    const byCountry = entry.countries.get(day) ?? new Map<string, DayValues>();
-    for (const [country, values] of byCountry) {
+    const values = byDay.get(day) ?? new Map<string, DayValues>();
+    for (const [value, numbers] of values) {
       monthTotals.set(
-        country,
-        addDayValues(monthTotals.get(country) ?? zeroDayValues(), values),
+        value,
+        addDayValues(monthTotals.get(value) ?? zeroDayValues(), numbers),
       );
     }
-    const gap = addDayValues(totalOf(day), sumOf(byCountry.values()), -1);
+    const gap = addDayValues(totalOf(day), sumOf(values.values()), -1);
     if (!isZeroDayValues(gap)) hasGap = true;
-    top = topCountries(monthTotals, TOP_COUNTRIES);
-    for (const country of top) earlierLeaders.add(country);
+    top = topValues(monthTotals, limit);
+    for (const value of top) earlierLeaders.add(value);
   }
-  const hasOthers = hasGap || monthTotals.size > TOP_COUNTRIES;
-  const named = [...top].sort();
+  const hasOthers = hasGap || monthTotals.size > limit;
+  const named = [...top].sort(order);
 
   const observations: Observation[] = [];
-  const push = (country: string, day: string, values: DayValues) =>
+  const push = (value: string, day: string, numbers: DayValues) =>
     observations.push(
-      ...valueObservations(
-        { app: entry.app, campaign: entry.campaign, country },
-        day,
-        values,
-        currency,
-      ),
+      ...valueObservations(identity(value), day, numbers, currency),
     );
 
   const first = maxDay(emit.start, month);
   const last = minDay(emit.end, monthEnd(month));
   for (let day = first; day <= last; day = addDays(day, 1)) {
     const settled = day < settledBefore;
-    const byCountry = entry.countries.get(day);
-    const hasData = entry.totals.has(day) || byCountry !== undefined;
+    const values = byDay.get(day);
+    const hasData = totals.has(day) || values !== undefined;
     if (!hasData) {
       if (settled) {
-        for (const country of named) push(country, day, zeroDayValues());
+        for (const value of named) push(value, day, zeroDayValues());
         if (hasOthers) push(OTHERS, day, zeroDayValues());
       }
       continue;
     }
-    const countries = byCountry ?? new Map<string, DayValues>();
-    let others = addDayValues(totalOf(day), sumOf(countries.values()), -1);
-    for (const country of [...countries.keys()].sort()) {
-      const values = countries.get(country)!;
-      if (top.has(country)) {
-        push(country, day, values);
+    const present = values ?? new Map<string, DayValues>();
+    let others = addDayValues(totalOf(day), sumOf(present.values()), -1);
+    for (const value of [...present.keys()].sort(order)) {
+      const numbers = present.get(value)!;
+      if (top.has(value)) {
+        push(value, day, numbers);
       } else {
-        others = addDayValues(others, values);
-        if (earlierLeaders.has(country)) push(country, day, zeroDayValues());
+        others = addDayValues(others, numbers);
+        if (earlierLeaders.has(value)) push(value, day, zeroDayValues());
       }
     }
     if (settled) {
-      for (const country of named) {
-        if (!countries.has(country)) push(country, day, zeroDayValues());
+      for (const value of named) {
+        if (!present.has(value)) push(value, day, zeroDayValues());
       }
     }
     if (hasOthers) push(OTHERS, day, others);
@@ -397,12 +451,39 @@ function monthObservations(
   return observations;
 }
 
+/** The main observations of one campaign in one month: by country (#374). */
+function monthObservations(
+  entry: CampaignDays,
+  month: string,
+  emit: DayRange,
+  settledBefore: string,
+  currency: string,
+): Observation[] {
+  return rankedMonthObservations(
+    entry.totals,
+    {
+      byDay: entry.countries,
+      limit: TOP_COUNTRIES,
+      order: byText,
+      identity: (country) => ({
+        app: entry.app,
+        campaign: entry.campaign,
+        country,
+      }),
+    },
+    month,
+    emit,
+    settledBefore,
+    currency,
+  );
+}
+
 // ─── Ad groups ──────────────────────────────────────────────────────────────
 
 /** Ad group ID → day → its numbers, of one campaign in one range. */
 type AdGroupDays = Map<string, Map<string, DayValues>>;
 
-/** Campaign IDs ascending as numbers ("9" before "10"). */
+/** Apple IDs (campaigns, keywords) ascending as numbers ("9" before "10"). */
 function byCampaignId(a: string, b: string): number {
   const x = BigInt(a);
   const y = BigInt(b);
@@ -549,14 +630,112 @@ function adGroupMonthObservations(
   return observations;
 }
 
+// ─── Keywords ───────────────────────────────────────────────────────────────
+
+/** Day → keyword ID → its numbers, of one campaign in one range. */
+type KeywordDays = Map<string, Map<string, DayValues>>;
+
+/**
+ * One campaign's keyword report for the range (#396): its top keywords'
+ * days. A campaign Apple has no keyword report for (404 for a deleted one,
+ * 400 or 404 for one without keywords: TO BE CONFIRMED by #370) has none,
+ * so its total is the keyword "Others"; any other error is the page's.
+ */
+async function keywordDays(
+  api: AppleAdsClient,
+  entry: CampaignDays,
+  range: DayRange,
+  options: CampaignSyncOptions,
+): Promise<KeywordDays> {
+  let rows: ReportRow[];
+  try {
+    rows = await readKeywordReport(api, {
+      adAccountId: options.adAccountId,
+      range,
+      campaignId: entry.campaign,
+    });
+  } catch (error) {
+    if (
+      error instanceof AppleAdsApiError &&
+      (error.status === 404 || error.status === 400)
+    ) {
+      options.note(
+        NO_KEYWORD_REPORT_NOTE,
+        `Apple Ads has no keyword report for a campaign (${error.status}); its numbers are kept under the keyword Others.`,
+      );
+      return new Map();
+    }
+    throw error;
+  }
+  const parseOptions = {
+    accountCurrency: options.currency,
+    note: options.note,
+  };
+  const byDay: KeywordDays = new Map();
+  for (const row of rows) {
+    const keyword = appleAdsDimensions({
+      app: entry.app,
+      campaign: entry.campaign,
+      keyword: row.metadata.id,
+    } as AppleAdsRowIdentity)[APPLE_ADS_DIMENSIONS.keyword]!;
+    for (const raw of rowDays(row, range)) {
+      const { date, values } = parseDayMetrics(raw, parseOptions);
+      if (!inRange(date, range)) continue;
+      let day = byDay.get(date);
+      if (!day) {
+        day = new Map();
+        byDay.set(date, day);
+      }
+      day.set(keyword, values);
+    }
+  }
+  return byDay;
+}
+
+/**
+ * The `*_by_keyword` observations of one campaign in one month, for the
+ * days in `emit`: the TOP_KEYWORDS keywords with the most spend in the
+ * month by ID, and under "Others" the rest of the campaign's total, ranked
+ * and zeroed as the countries are (rankedMonthObservations), so the
+ * keyword sum of every day is the campaign's total.
+ */
+function keywordMonthObservations(
+  entry: CampaignDays,
+  keywords: KeywordDays,
+  month: string,
+  emit: DayRange,
+  settledBefore: string,
+  currency: string,
+): Observation[] {
+  return rankedMonthObservations(
+    entry.totals,
+    {
+      byDay: keywords,
+      limit: TOP_KEYWORDS,
+      // Keyword IDs, as numbers (Apple IDs, like campaign IDs).
+      order: byCampaignId,
+      identity: (keyword) => ({
+        app: entry.app,
+        campaign: entry.campaign,
+        keyword,
+      }),
+    },
+    month,
+    emit,
+    settledBefore,
+    currency,
+  );
+}
+
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 /**
  * One page of the sync: one range of whole months (at most 90 days). The
  * range's first page reads the campaign totals and the country breakdown
- * (the main metrics) and the ad groups of its first
+ * (the main metrics) and the ad groups and keywords of its first
  * AD_GROUP_CAMPAIGNS_PER_PAGE campaigns with numbers; further pages of the
- * range read the totals again and the ad groups of the next campaigns.
+ * range read the totals again and the ad groups and keywords of the next
+ * campaigns.
  * Observations are for the days of the requested window in the range.
  */
 export async function syncCampaignPage(
@@ -564,6 +743,8 @@ export async function syncCampaignPage(
   request: SyncRequest,
   options: CampaignSyncOptions,
 ): Promise<SyncResult> {
+  const clock = options.clock ?? Date.now;
+  const started = clock();
   const today = adAccountToday(options.now, options.timeZone);
   const oldest = addDays(today, -(APPLE_ADS_BACKFILL_DAYS - 1));
   // Days stored as zero when Apple has nothing for them.
@@ -670,17 +851,21 @@ export async function syncCampaignPage(
     }
   }
 
-  // The ad-group fan-out: the next campaigns with numbers in the range.
+  // The fan-out: the ad groups and keywords of the next campaigns with
+  // numbers in the range, while the page's time budget lasts.
   const pending = campaignIds.filter(
     (campaign) =>
       (position.after === undefined ||
         byCampaignId(campaign, position.after) > 0) &&
       hasNumbers(campaigns.get(campaign)!, emit),
   );
-  const batch = pending.slice(0, AD_GROUP_CAMPAIGNS_PER_PAGE);
-  for (const campaign of batch) {
+  const batch: string[] = [];
+  for (const campaign of pending.slice(0, AD_GROUP_CAMPAIGNS_PER_PAGE)) {
+    // At least one campaign per page, so the sync always moves on.
+    if (batch.length > 0 && clock() - started >= FAN_OUT_BUDGET_MS) break;
     const entry = campaigns.get(campaign)!;
     const adGroups = await adGroupDays(api, entry, range, options);
+    const keywords = await keywordDays(api, entry, range, options);
     for (const month of months) {
       observations.push(
         ...adGroupMonthObservations(
@@ -691,8 +876,17 @@ export async function syncCampaignPage(
           settledBefore,
           options.currency,
         ),
+        ...keywordMonthObservations(
+          entry,
+          keywords,
+          month,
+          emit,
+          settledBefore,
+          options.currency,
+        ),
       );
     }
+    batch.push(campaign);
   }
   if (pending.length > batch.length) {
     return {

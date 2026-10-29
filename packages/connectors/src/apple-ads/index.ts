@@ -16,6 +16,7 @@ import {
   getAdAccount,
   listAdGroups,
   listCampaigns,
+  listKeywords,
   MAX_APPS,
 } from "./access.js";
 import { APPLE_ADS_HOST, createAppleAdsClient } from "./api.js";
@@ -23,9 +24,12 @@ import {
   APPLE_ADS_AD_GROUP_METRIC_KEYS,
   APPLE_ADS_AD_GROUP_METRICS,
   APPLE_ADS_DIMENSIONS,
+  APPLE_ADS_KEYWORD_METRIC_KEYS,
+  APPLE_ADS_KEYWORD_METRICS,
   APPLE_ADS_METRIC_KEYS,
   APPLE_ADS_METRICS,
   OTHERS,
+  TOP_KEYWORDS,
 } from "./metrics.js";
 import { noteOnce } from "./observations.js";
 import { APPLE_ADS_BACKFILL_DAYS, syncCampaignPage } from "./sync.js";
@@ -34,11 +38,14 @@ export {
   APPLE_ADS_AD_GROUP_METRIC_KEYS,
   APPLE_ADS_AD_GROUP_METRICS,
   APPLE_ADS_DIMENSIONS,
+  APPLE_ADS_KEYWORD_METRIC_KEYS,
+  APPLE_ADS_KEYWORD_METRICS,
   APPLE_ADS_METRIC_KEYS,
   APPLE_ADS_METRICS,
   ATTRIBUTIONS,
   OTHERS,
   TOP_COUNTRIES,
+  TOP_KEYWORDS,
   type Attribution,
 } from "./metrics.js";
 export {
@@ -64,6 +71,7 @@ export {
 export {
   AD_ACCOUNT_FORMAT_MESSAGE,
   AD_GROUPS_PAGE_SIZE,
+  AD_GROUPS_PER_KEYWORD_QUERY,
   adAccountIdOf,
   API_ROLES,
   APP_STORE_FEATURE,
@@ -75,11 +83,15 @@ export {
   discoverAdAccounts,
   getAdAccount,
   isRateLimited,
+  KEYWORD_DISCOVERY_BUDGET_MS,
+  KEYWORDS_PAGE_SIZE,
   listAcls,
   listAdGroups,
   listCampaigns,
+  listKeywords,
   lostAccessMessage,
   MAX_AD_GROUP_PAGES,
+  MAX_KEYWORD_PAGES,
   NO_AD_ACCOUNTS_MESSAGE,
   NO_APP_STORE_ACCOUNT_MESSAGE,
   RATE_LIMITED_MESSAGE,
@@ -90,6 +102,7 @@ export {
   type AdAccountDetails,
   type AppleAdsAdGroup,
   type AppleAdsCampaign,
+  type AppleAdsKeyword,
   type DiscoveredAdAccount,
 } from "./access.js";
 export {
@@ -112,10 +125,13 @@ export {
   AD_GROUP_REPORT_PATH,
   CAMPAIGN_REPORT_PATH,
   COUNTRY_GROUP_BY,
+  KEYWORD_REPORT_PATH,
+  KEYWORD_REPORT_ROWS,
   MAX_REPORT_DAYS,
   MAX_REPORT_PAGES,
   readAdGroupReport,
   readCampaignReport,
+  readKeywordReport,
   REPORT_PAGE_SIZE,
   reportRequestBody,
   type DayRange,
@@ -130,7 +146,9 @@ export {
   decodeCursor,
   DELETED_CAMPAIGN_NOTE,
   encodeCursor,
+  FAN_OUT_BUDGET_MS,
   LOOKBACK_DAYS,
+  NO_KEYWORD_REPORT_NOTE,
   syncCampaignPage,
   type CampaignSyncOptions,
   type SyncPosition,
@@ -159,6 +177,9 @@ export function appleAdsDaysLabel(
 /** German of the ad-group metrics' note on "Others" (metrics.ts). */
 const AD_GROUP_NOTE_DE = `Was keine Anzeigengruppe im Gesamtwert einer Kampagne abdeckt, steht unter „${OTHERS}“.`;
 
+/** German of the keyword metrics' note on "Others" (metrics.ts, #396). */
+const KEYWORD_NOTE_DE = `Die ${TOP_KEYWORDS} Keywords mit den höchsten Ausgaben pro Kampagne und Monat behalten ihren Namen; der Rest der Kampagne, Search Match eingeschlossen, steht unter „${OTHERS}“.`;
+
 /**
  * German texts of the manifest (ADR 0016): "du" where the text addresses
  * the reader; product names and stored values stay as they are.
@@ -166,7 +187,7 @@ const AD_GROUP_NOTE_DE = `Was keine Anzeigengruppe im Gesamtwert einer Kampagne 
 const appleAdsDe: ManifestTranslation = {
   name: "Apple Ads",
   description:
-    "Ausgaben, Impressionen, Taps und Installationen deiner App-Store-Kampagnen aus Apple Ads, pro Kampagne, Anzeigengruppe und Land oder Region, in der Währung und Zeitzone des Werbekontos.",
+    "Ausgaben, Impressionen, Taps und Installationen deiner App-Store-Kampagnen aus Apple Ads, pro Kampagne, Anzeigengruppe, Keyword und Land oder Region, in der Währung und Zeitzone des Werbekontos.",
   resourceNoun: { singular: "App", plural: "Apps" },
   config: {
     adAccountId: {
@@ -244,11 +265,36 @@ const appleAdsDe: ManifestTranslation = {
       name: "Erneute Downloads über Anzeigen nach Anzeigengruppe",
       description: `Downloads durch Personen, die die App schon einmal hatten, deinen Anzeigen zugeordnet, pro Tag, Kampagne und Anzeigengruppe, nach einem Tap oder einer Ansicht. ${AD_GROUP_NOTE_DE}`,
     },
+    [APPLE_ADS_KEYWORD_METRIC_KEYS.spend]: {
+      name: "Werbeausgaben nach Keyword",
+      description: `Was Apple Ads pro Tag, Kampagne und Keyword berechnet hat, in der Währung des Werbekontos, ohne Umrechnung. Die Tage folgen der Zeitzone des Werbekontos, wie in Apple Ads. ${KEYWORD_NOTE_DE}`,
+    },
+    [APPLE_ADS_KEYWORD_METRIC_KEYS.impressions]: {
+      name: "Anzeigenimpressionen nach Keyword",
+      description: `Wie oft deine Anzeigen gezeigt wurden, pro Tag, Kampagne und Keyword. ${KEYWORD_NOTE_DE}`,
+    },
+    [APPLE_ADS_KEYWORD_METRIC_KEYS.taps]: {
+      name: "Anzeigentaps nach Keyword",
+      description: `Taps auf deine Anzeigen pro Tag, Kampagne und Keyword. ${KEYWORD_NOTE_DE}`,
+    },
+    [APPLE_ADS_KEYWORD_METRIC_KEYS.installs]: {
+      name: "Installationen über Anzeigen nach Keyword",
+      description: `Installationen (Erstdownloads und erneute Downloads), die deinen Anzeigen zugeordnet sind, pro Tag, Kampagne und Keyword: nach einem Tap oder nachdem eine Anzeige gesehen wurde (View-Through). Die Summe umfasst beides. ${KEYWORD_NOTE_DE}`,
+    },
+    [APPLE_ADS_KEYWORD_METRIC_KEYS.newDownloads]: {
+      name: "Erstdownloads über Anzeigen nach Keyword",
+      description: `Erstdownloads, die deinen Anzeigen zugeordnet sind, pro Tag, Kampagne und Keyword, nach einem Tap oder einer Ansicht. ${KEYWORD_NOTE_DE}`,
+    },
+    [APPLE_ADS_KEYWORD_METRIC_KEYS.redownloads]: {
+      name: "Erneute Downloads über Anzeigen nach Keyword",
+      description: `Downloads durch Personen, die die App schon einmal hatten, deinen Anzeigen zugeordnet, pro Tag, Kampagne und Keyword, nach einem Tap oder einer Ansicht. ${KEYWORD_NOTE_DE}`,
+    },
   },
   dimensions: {
     resource: "App",
     campaign: "Kampagne",
     ad_group: "Anzeigengruppe",
+    keyword: "Keyword",
     country: "Land oder Region",
     attribution: "Zuordnung",
     currency: "Währung",
@@ -268,7 +314,7 @@ export const appleAdsManifest: ConnectorManifest = {
   brandColor: "#0d84ff",
   name: "Apple Ads",
   description:
-    "Spend, impressions, taps and installs of your App Store campaigns from Apple Ads, per campaign, ad group and country or region, in the ad account's currency and time zone.",
+    "Spend, impressions, taps and installs of your App Store campaigns from Apple Ads, per campaign, ad group, keyword and country or region, in the ad account's currency and time zone.",
   url: "https://ads.apple.com/",
   authStrategies: [{ strategy: "signed-key", provider: "apple-ads" }],
   configSchema: {
@@ -303,8 +349,13 @@ export const appleAdsManifest: ConnectorManifest = {
     additionalProperties: false,
   },
   // The main metrics (campaign × country or region), then the same
-  // quantities by ad group in keys of their own (#376).
-  metrics: [...APPLE_ADS_METRICS, ...APPLE_ADS_AD_GROUP_METRICS],
+  // quantities by ad group (#376) and by keyword (#396) in keys of their
+  // own.
+  metrics: [
+    ...APPLE_ADS_METRICS,
+    ...APPLE_ADS_AD_GROUP_METRICS,
+    ...APPLE_ADS_KEYWORD_METRICS,
+  ],
   // Apple publishes daily numbers in the ad account's day; attribution
   // settles over a few days (ADR 0020 section 8).
   minRefreshIntervalSeconds: 6 * 60 * 60,
@@ -327,6 +378,8 @@ export const RESOURCE_KINDS = {
   campaign: APPLE_ADS_DIMENSIONS.campaign,
   /** An ad group: the `ad_group` dimension, named for dashboards (#394). */
   adGroup: APPLE_ADS_DIMENSIONS.adGroup,
+  /** A keyword: the `keyword` dimension, named by its text (#396). */
+  keyword: APPLE_ADS_DIMENSIONS.keyword,
 } as const;
 
 export const CHOOSE_AD_ACCOUNT_MESSAGE =
@@ -337,6 +390,11 @@ export interface AppleAdsConnectorOptions {
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   /** The clock of the sync windows; replaced in tests. */
   now?: () => number;
+  /**
+   * Milliseconds now, for the time budgets of a sync page and of keyword
+   * discovery (#396); default Date.now. Replaced in tests.
+   */
+  clock?: () => number;
   /** Where notes (rounded amounts) go; default: nowhere. */
   log?: (message: string) => void;
 }
@@ -373,14 +431,16 @@ function accessTokenOf(context: ConnectionContext): string | undefined {
  * it lists the API user's ad accounts, App Store accounts selectable and
  * Apple Maps accounts shown but not. With one, it lists that account's
  * promoted apps (the `resource` dimension), its campaigns (the
- * `campaign` dimension) and its ad groups (the `ad_group` dimension, #394),
- * so dashboards can name them. Their IDs can be equal; the host keeps
+ * `campaign` dimension), its ad groups (the `ad_group` dimension, #394)
+ * and their keywords (the `keyword` dimension, #396), so dashboards can
+ * name them. Their IDs can be equal; the host keeps
  * names apart by kind, and each kind is the dimension it names.
  *
  * A sync reads the campaign report (#374, see sync.ts): daily campaign ×
  * country or region rows in the ad account's currency and days; and per
  * campaign the ad-group report (#376): campaign × ad group rows in the
- * `*_by_ad_group` keys.
+ * `*_by_ad_group` keys; and per campaign the keyword report (#396): the
+ * top 20 keywords per month and "Others" in the `*_by_keyword` keys.
  */
 export function createAppleAdsConnector(
   options: AppleAdsConnectorOptions = {},
@@ -456,6 +516,12 @@ export function createAppleAdsConnector(
         }
       }
       const adGroups = await listAdGroups(api, adAccountId);
+      const keywords = await listKeywords(
+        api,
+        adAccountId,
+        adGroups.map((adGroup) => adGroup.id),
+        options.clock ? { clock: options.clock } : {},
+      );
       return [
         ...apps,
         ...campaigns.map((campaign) => ({
@@ -482,6 +548,18 @@ export function createAppleAdsConnector(
             ...(adGroup.displayStatus
               ? { displayStatus: adGroup.displayStatus }
               : {}),
+          },
+        })),
+        ...keywords.map((keyword) => ({
+          id: keyword.id,
+          name: keyword.name,
+          kind: RESOURCE_KINDS.keyword,
+          metadata: {
+            adAccountId,
+            ...(keyword.campaignId ? { campaignId: keyword.campaignId } : {}),
+            ...(keyword.adGroupId ? { adGroupId: keyword.adGroupId } : {}),
+            ...(keyword.matchType ? { matchType: keyword.matchType } : {}),
+            ...(keyword.status ? { status: keyword.status } : {}),
           },
         })),
       ];
@@ -514,6 +592,7 @@ export function createAppleAdsConnector(
         currency,
         timeZone,
         note: noteOnce(options.log ?? (() => undefined)),
+        ...(options.clock ? { clock: options.clock } : {}),
       });
     },
   };

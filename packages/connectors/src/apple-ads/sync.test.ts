@@ -24,7 +24,12 @@ import {
   decodeCursor,
   DELETED_CAMPAIGN_NOTE,
   encodeCursor,
+  APPLE_ADS_KEYWORD_METRIC_KEYS,
+  FAN_OUT_BUDGET_MS,
+  KEYWORD_REPORT_ROWS,
   LOOKBACK_DAYS,
+  NO_KEYWORD_REPORT_NOTE,
+  TOP_KEYWORDS,
   MAX_REPORT_DAYS,
   OTHERS,
   REPORT_PAGE_SIZE,
@@ -54,8 +59,12 @@ const TODAY = "2026-10-29";
 
 const noSleep = async () => {};
 
-function connector(now = NOW) {
-  return createAppleAdsConnector({ sleep: noSleep, now: () => now });
+function connector(now = NOW, clock?: () => number) {
+  return createAppleAdsConnector({
+    sleep: noSleep,
+    now: () => now,
+    ...(clock ? { clock } : {}),
+  });
 }
 
 function context(
@@ -149,6 +158,7 @@ interface ReportBody {
   };
   filters?: Array<{ field: string; operator: string; value: unknown }>;
   groupBy?: string[];
+  sorting?: Array<{ field: string; order: string }>;
   pagination: { offset: number; pageSize: number };
   options?: unknown;
 }
@@ -318,13 +328,23 @@ async function documentedPage(
     200,
     fixture(`report-adgroups-${campaignId}`),
   ],
+  keywordAnswer: (campaignId: string) => [number, unknown] = (campaignId) => [
+    200,
+    fixture(`report-keywords-${campaignId}`),
+  ],
 ) {
   const totals = fixture("report-campaigns-4100000001");
   const countries = fixture("report-countries-4100000001");
   const adGroupCampaigns: string[] = [];
+  const keywordBodies: ReportBody[] = [];
   const fetch = async (url: string, init?: { body?: string }) => {
     const body = JSON.parse(init?.body ?? "{}") as ReportBody;
     const headers = { "ratelimit-remaining": "90" };
+    if (new URL(url).pathname === "/v1/reports/apps/keywords/query") {
+      keywordBodies.push(body);
+      const [status, answer] = keywordAnswer(String(body.filters?.[0]?.value));
+      return jsonResponse(status, answer, headers);
+    }
     if (new URL(url).pathname === "/v1/reports/apps/adgroups/query") {
       const campaignId = String(body.filters?.[0]?.value);
       adGroupCampaigns.push(campaignId);
@@ -346,7 +366,7 @@ async function documentedPage(
       note: (code) => notes.push(code),
     },
   );
-  return { result, notes, adGroupCampaigns };
+  return { result, notes, adGroupCampaigns, keywordBodies };
 }
 
 const MAIN_KEYS = new Set<string>(Object.values(APPLE_ADS_METRIC_KEYS));
@@ -1145,5 +1165,430 @@ describe("ad groups", () => {
     ]) {
       expect(decodeCursor(cursor)).toBeUndefined();
     }
+  });
+});
+
+// ─── Keywords (#396) ────────────────────────────────────────────────────────
+
+const KEYWORD_KEYS = new Set<string>(
+  Object.values(APPLE_ADS_KEYWORD_METRIC_KEYS),
+);
+
+/** The `*_by_keyword` observations. */
+function keywordRows(observations: Observation[]): Observation[] {
+  return observations.filter((o) => KEYWORD_KEYS.has(o.metricKey));
+}
+
+/** The campaign IDs of the keyword requests, in order. */
+function keywordCampaignsAsked(api: FakeAppleAds): string[] {
+  return api.requests
+    .filter((r) => r.url.pathname === "/v1/reports/apps/keywords/query")
+    .map((r) => String((r.body as ReportBody).filters?.[0]?.value));
+}
+
+/**
+ * Keyword sums equal campaign sums: per campaign, day and attribution, for
+ * every quantity.
+ */
+function expectKeywordsMatchCampaigns(observations: Observation[]): void {
+  const groups = new Set(
+    observations.map(
+      (o) =>
+        `${o.dimensions.campaign}|${o.sourceTimestamp}|${o.dimensions.attribution ?? ""}`,
+    ),
+  );
+  for (const group of groups) {
+    const [campaignId, stamp, attribution] = group.split("|");
+    const of = observations.filter(
+      (o) =>
+        o.dimensions.campaign === campaignId &&
+        o.sourceTimestamp === stamp &&
+        (o.dimensions.attribution ?? "") === attribution,
+    );
+    for (const [field, main] of PAIRS) {
+      const byKeyword =
+        APPLE_ADS_KEYWORD_METRIC_KEYS[
+          field as keyof typeof APPLE_ADS_KEYWORD_METRIC_KEYS
+        ];
+      expect(sum(of, byKeyword), `${field} of ${group}`).toBe(sum(of, main));
+    }
+  }
+}
+
+/** `count` two-letter country codes ("AA", "AB", …), one per keyword. */
+function codes(count: number): string[] {
+  return Array.from(
+    { length: count },
+    (_, i) =>
+      String.fromCharCode(65 + Math.floor(i / 26)) +
+      String.fromCharCode(65 + (i % 26)),
+  );
+}
+
+/** Keyword `${base + i}` for the i-th code. */
+function keywordsOf(list: string[], base = 8100000000): Record<string, string> {
+  return Object.fromEntries(list.map((code, i) => [code, String(base + i)]));
+}
+
+describe("keywords", () => {
+  it("keyword totals equal campaign totals on the documented fixtures, the rest as Others", async () => {
+    const { result, keywordBodies } = await documentedPage();
+    const all = result.observations;
+    expectKeywordsMatchCampaigns(all);
+    const byKeyword = keywordRows(all);
+    // Keyword rows are campaign × keyword: never a country or an ad group.
+    for (const o of byKeyword) {
+      expect(o.dimensions.country).toBeUndefined();
+      expect(o.dimensions.ad_group).toBeUndefined();
+      expect(o.dimensions.resource).toBe(APP);
+    }
+    for (const o of [...mainRows(all), ...adGroupRows(all)]) {
+      expect(o.dimensions.keyword).toBeUndefined();
+    }
+    const spend = APPLE_ADS_KEYWORD_METRIC_KEYS.spend;
+    expect(sum(byKeyword, spend, { keyword: "7100000001" })).toBe(3700);
+    // Deleted keywords keep their history and names.
+    expect(sum(byKeyword, spend, { keyword: "7100000002" })).toBe(825);
+    expect(sum(byKeyword, spend, { keyword: "7100000003" })).toBe(800);
+    // Search Match (no keyword row) is Others: 2.50 + 5.00.
+    expect(
+      sum(byKeyword, spend, { campaign: "5100000001", keyword: OTHERS }),
+    ).toBe(750);
+    // The deleted Search Match campaign has no keyword rows at all.
+    expect(sum(byKeyword, spend, { campaign: "5100000002" })).toBe(500);
+    expect(
+      new Set(
+        byKeyword
+          .filter((o) => o.dimensions.campaign === "5100000002")
+          .map((o) => o.dimensions.keyword),
+      ),
+    ).toEqual(new Set([OTHERS]));
+    expect(
+      sum(byKeyword, APPLE_ADS_KEYWORD_METRIC_KEYS.installs, {
+        keyword: "7100000001",
+        attribution: "view",
+      }),
+    ).toBe(5);
+    // One page of the keywords with the most spend, per campaign.
+    expect(keywordBodies.map((body) => body.filters)).toEqual([
+      [{ field: "campaignId", operator: "EQUALS", value: "5100000001" }],
+      [{ field: "campaignId", operator: "EQUALS", value: "5100000002" }],
+    ]);
+    expect(keywordBodies[0]).toMatchObject({
+      sorting: [{ field: "localSpend", order: "DESC" }],
+      pagination: { offset: 0, pageSize: KEYWORD_REPORT_ROWS },
+    });
+    expect(keywordBodies[0]!.groupBy).toBeUndefined();
+  });
+
+  it("keeps the 20 keywords with the most spend per campaign and month, the rest as Others", async () => {
+    const list = codes(25);
+    const days: FakeReportCampaign["days"] = {};
+    for (const date of ["2026-10-01", "2026-10-02"]) {
+      // Keyword i spends 25 - i dollars a day.
+      days[date] = Object.fromEntries(
+        list.map((code, i) => [code, d(`${25 - i}.00`)]),
+      );
+    }
+    // September: the five smallest of October lead.
+    days["2026-09-15"] = Object.fromEntries(
+      list.map((code, i) => [code, d(i >= 20 ? "50.00" : "1.00")]),
+    );
+    const api = fake({
+      [US]: {
+        currency: "USD",
+        campaigns: [
+          campaign("5100000001", days, { keywords: keywordsOf(list) }),
+        ],
+      },
+    });
+    const { observations } = await syncAll(
+      api,
+      request({ mode: "incremental", from: "2026-09-01T00:00:00.000Z" }),
+    );
+    const rows = keywordRows(observations);
+    const spend = APPLE_ADS_KEYWORD_METRIC_KEYS.spend;
+    const named = (month: string) =>
+      new Set(
+        rows
+          .filter(
+            (o) =>
+              o.metricKey === spend &&
+              o.sourceTimestamp.startsWith(month) &&
+              o.value !== 0,
+          )
+          .map((o) => o.dimensions.keyword),
+      );
+    const ids = Object.values(keywordsOf(list));
+    expect(TOP_KEYWORDS).toBe(20);
+    expect(named("2026-10")).toEqual(new Set([...ids.slice(0, 20), OTHERS]));
+    // Others in October: keywords 21 to 25, 5 + 4 + 3 + 2 + 1 a day.
+    const october = rows.filter((o) => o.sourceTimestamp.startsWith("2026-10"));
+    expect(sum(october, spend, { keyword: OTHERS })).toBe(2 * 1500);
+    // September ranks on its own: the five big ones and 15 of the rest.
+    const september = named("2026-09");
+    for (const id of ids.slice(20)) expect(september).toContain(id);
+    expect(september.size).toBe(21);
+    expectKeywordsMatchCampaigns(observations);
+    expect(sum(rows, spend)).toBe(
+      sum(mainRows(observations), APPLE_ADS_METRIC_KEYS.spend),
+    );
+  });
+
+  it("writes 0 for a keyword that left the top 20, so a replay never counts it twice", async () => {
+    const list = codes(21);
+    // On the 1st only keyword 0 spends; from the 2nd the other 20 outspend it.
+    const days: FakeReportCampaign["days"] = {
+      "2026-09-01": { [list[0]!]: d("5.00") },
+      "2026-09-02": Object.fromEntries(
+        list.slice(1).map((code) => [code, d("10.00")]),
+      ),
+    };
+    const api = fake({
+      [US]: {
+        currency: "USD",
+        campaigns: [
+          campaign("5100000001", days, { keywords: keywordsOf(list) }),
+        ],
+      },
+    });
+    const { observations } = await syncAll(
+      api,
+      request({ mode: "incremental", from: "2026-09-01T00:00:00.000Z" }),
+    );
+    const spend = APPLE_ADS_KEYWORD_METRIC_KEYS.spend;
+    const sept1 = keywordRows(observations).filter(
+      (o) =>
+        o.sourceTimestamp === "2026-09-01T00:00:00.000Z" &&
+        o.metricKey === spend,
+    );
+    // Keyword 0 led the month up to the 1st: now an explicit 0, and its
+    // 5.00 is in Others.
+    expect(
+      sept1.find((o) => o.dimensions.keyword === "8100000000")?.value,
+    ).toBe(0);
+    expect(sum(sept1, spend, { keyword: OTHERS })).toBe(500);
+    expectKeywordsMatchCampaigns(observations);
+  });
+
+  it("keeps a removed keyword under its ID with its history", async () => {
+    const report: FakeReport = {
+      currency: "USD",
+      campaigns: [
+        campaign(
+          "5100000001",
+          {
+            "2026-10-20": { US: d("4.00"), DE: d("1.00") },
+            "2026-10-27": { DE: d("2.00") },
+          },
+          { keywords: { US: "8100000001", DE: "8100000002" } },
+        ),
+      ],
+    };
+    const api = fake({ [US]: report });
+    const window = request({
+      mode: "incremental",
+      from: "2026-10-20T00:00:00.000Z",
+    });
+    const before = await syncAll(api, window);
+    // The keyword is removed in Apple Ads; the report still has its rows.
+    report.campaigns[0]!.deletedKeywords = ["8100000001"];
+    const after = await syncAll(api, window);
+    const spend = APPLE_ADS_KEYWORD_METRIC_KEYS.spend;
+    for (const run of [before, after]) {
+      expect(
+        sum(keywordRows(run.observations), spend, { keyword: "8100000001" }),
+      ).toBe(400);
+      expectKeywordsMatchCampaigns(run.observations);
+    }
+    // The same series, so the replay overwrites instead of adding.
+    expect(keywordRows(after.observations).map(observationKey).sort()).toEqual(
+      keywordRows(before.observations).map(observationKey).sort(),
+    );
+  });
+
+  it("reads keywords with the ad groups over several sync pages, each campaign once", async () => {
+    const ids = Array.from({ length: 25 }, (_, i) => String(5200000000 + i));
+    const report: FakeReport = {
+      currency: "USD",
+      campaigns: [
+        ...ids.map((id, i) =>
+          campaign(
+            id,
+            {
+              "2026-10-21": { US: d("1.00"), DE: d("0.50") },
+              "2026-10-27": { US: d(`${i + 1}.00`) },
+            },
+            { keywords: { US: `${id}1` } },
+          ),
+        ),
+        // No numbers in the window: neither report is asked for.
+        campaign("5300000001", { "2026-10-05": { US: d("4.00") } }),
+      ],
+    };
+    const api = fake({ [US]: report });
+    const { pages, observations } = await syncAll(
+      api,
+      request({ mode: "incremental", from: "2026-10-20T00:00:00.000Z" }),
+    );
+    expect(pages).toHaveLength(3);
+    expect(keywordCampaignsAsked(api)).toEqual(ids);
+    expect(adGroupCampaignsAsked(api)).toEqual(ids);
+    expect(new Set(observations.map(observationKey)).size).toBe(
+      observations.length,
+    );
+    expectKeywordsMatchCampaigns(observations);
+    const spend = APPLE_ADS_KEYWORD_METRIC_KEYS.spend;
+    // DE has no keyword (Search Match): Others.
+    expect(sum(observations, spend, { keyword: OTHERS })).toBe(25 * 50);
+    expect(sum(observations, spend, { keyword: `${ids[0]}1` })).toBe(200);
+  });
+
+  it("goes on from a cursor of the ad-group sync (#376), keywords included", async () => {
+    const report: FakeReport = {
+      currency: "USD",
+      campaigns: Array.from({ length: 13 }, (_, i) =>
+        campaign(
+          String(5200000000 + i),
+          { "2026-10-27": { US: d("1.00") } },
+          { keywords: { US: `${5200000000 + i}1` } },
+        ),
+      ),
+    };
+    // Written by #376 before keywords existed: the range after 5200000009.
+    const old = "apple-ads:1:2026-10-27:2026-10-29:2026-10-29:5200000009";
+    expect(decodeCursor(old)).toEqual({
+      floor: "2026-10-27",
+      newest: "2026-10-29",
+      next: "2026-10-29",
+      after: "5200000009",
+    });
+    const api = fake({ [US]: report });
+    const { pages, observations } = await syncAll(
+      api,
+      request({
+        mode: "incremental",
+        from: "2026-10-27T00:00:00.000Z",
+        cursor: old,
+      }),
+    );
+    expect(pages).toHaveLength(1);
+    expect(keywordCampaignsAsked(api)).toEqual([
+      "5200000010",
+      "5200000011",
+      "5200000012",
+    ]);
+    // A later page of a range has no main rows; each campaign's keywords
+    // add up to its 1.00 total.
+    for (const campaignId of keywordCampaignsAsked(api)) {
+      expect(
+        sum(observations, APPLE_ADS_KEYWORD_METRIC_KEYS.spend, {
+          campaign: campaignId,
+        }),
+      ).toBe(100);
+    }
+    expect(
+      sum(keywordRows(observations), APPLE_ADS_KEYWORD_METRIC_KEYS.spend),
+    ).toBe(300);
+  });
+
+  it("keeps a campaign without a keyword report (404, 400) under Others and goes on", async () => {
+    const report: FakeReport = {
+      currency: "USD",
+      campaigns: [
+        campaign(
+          "5100000001",
+          { "2026-10-27": { US: d("2.00") } },
+          { keywords: "not-found" },
+        ),
+        campaign(
+          "5100000002",
+          { "2026-10-27": { US: d("3.00") } },
+          { keywords: "refused" },
+        ),
+        campaign(
+          "5100000003",
+          { "2026-10-27": { US: d("4.00") } },
+          { keywords: { US: "8100000003" } },
+        ),
+      ],
+    };
+    const notes: string[] = [];
+    const api = fake({ [US]: report });
+    const result = await createAppleAdsConnector({
+      sleep: noSleep,
+      now: () => NOW,
+      log: (line) => notes.push(line),
+    }).sync(
+      context(),
+      request({ mode: "incremental", from: "2026-10-27T00:00:00.000Z" }),
+      api.runtime,
+    );
+    const spend = APPLE_ADS_KEYWORD_METRIC_KEYS.spend;
+    const rows = keywordRows(result.observations);
+    expect(sum(rows, spend, { campaign: "5100000001", keyword: OTHERS })).toBe(
+      200,
+    );
+    expect(sum(rows, spend, { campaign: "5100000002", keyword: OTHERS })).toBe(
+      300,
+    );
+    expect(sum(rows, spend, { keyword: "8100000003" })).toBe(400);
+    expect(notes.some((line) => line.startsWith(NO_KEYWORD_REPORT_NOTE))).toBe(
+      true,
+    );
+    expectKeywordsMatchCampaigns(result.observations);
+  });
+
+  it("stops starting campaigns once the page's time budget is spent, and goes on next page", async () => {
+    const report: FakeReport = {
+      currency: "USD",
+      campaigns: Array.from({ length: 6 }, (_, i) =>
+        campaign(
+          String(5200000000 + i),
+          { "2026-10-27": { US: d("1.00") } },
+          { keywords: { US: `${5200000000 + i}1` } },
+        ),
+      ),
+    };
+    const api = fake({ [US]: report });
+    let now = 0;
+    const original = api.runtime.fetch;
+    // Every keyword report takes a third of the budget.
+    const slow: FakeAppleAds = {
+      ...api,
+      runtime: {
+        ...api.runtime,
+        fetch: async (url, init) => {
+          if (url.endsWith("/v1/reports/apps/keywords/query")) {
+            now += FAN_OUT_BUDGET_MS / 3;
+          }
+          return original(url, init);
+        },
+      },
+    };
+    const window = request({
+      mode: "incremental",
+      from: "2026-10-27T00:00:00.000Z",
+    });
+    const pages: SyncResult[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 10; page += 1) {
+      const result = await connector(NOW, () => now).sync(
+        context(),
+        { ...window, ...(cursor ? { cursor } : {}) },
+        slow.runtime,
+      );
+      pages.push(result);
+      if (result.done) break;
+      cursor = result.nextCursor;
+      now = 0;
+    }
+    // Three campaigns a page instead of six.
+    expect(pages).toHaveLength(2);
+    expect(decodeCursor(pages[0]!.nextCursor)?.after).toBe("5200000002");
+    expect(keywordCampaignsAsked(api)).toEqual(
+      Array.from({ length: 6 }, (_, i) => String(5200000000 + i)),
+    );
+    expectKeywordsMatchCampaigns(pages.flatMap((p) => p.observations));
   });
 });

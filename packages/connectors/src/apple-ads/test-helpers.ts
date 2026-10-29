@@ -68,6 +68,15 @@ export interface FakeReportCampaign {
    * `${id}01`. "not-found": Apple answers 404 for the campaign.
    */
   adGroups?: Record<string, string> | "not-found";
+  /**
+   * The keyword report (#396): country → the keyword its numbers belong
+   * to. Countries not named, and the hidden rows, belong to no keyword
+   * (Search Match: the keyword "Others"). "not-found" or "refused": Apple
+   * answers 404 or 400 for the campaign.
+   */
+  keywords?: Record<string, string> | "not-found" | "refused";
+  /** Keywords the report marks `deleted` (removed in Apple Ads). */
+  deletedKeywords?: string[];
 }
 
 /** The ad group of a campaign's numbers that FakeReportCampaign.adGroups does not place. */
@@ -137,6 +146,7 @@ interface ReportBody {
   };
   filters?: Array<{ field: string; operator: string; value: unknown }>;
   groupBy?: string[];
+  sorting?: Array<{ field: string; order: string }>;
   pagination: { offset: number; pageSize: number };
 }
 
@@ -234,6 +244,99 @@ export function fakeAdGroupReport(
     body: {
       result:
         rows.length > 0 ? { rows: rows.slice(offset, offset + pageSize) } : {},
+      pagination: { totalCount: rows.length, offset, pageSize },
+    },
+  };
+}
+
+/**
+ * Answers `POST /v1/reports/apps/keywords/query` from a FakeReport like
+ * Apple documents it (#396): the `campaignId` filter is required, one row
+ * per keyword (metadata with `id`, `text`, `matchType`, `campaignId`,
+ * `adGroupId`, `deleted`), `granularMetrics` per day with data, `sorting`
+ * by `localSpend` honoured (the range's total), offset paging with
+ * `totalCount`. An unknown campaign, or `keywords: "not-found"`, is a 404;
+ * `keywords: "refused"` a 400.
+ */
+export function fakeKeywordReport(
+  report: FakeReport,
+  adAccountId: string,
+  body: ReportBody,
+): { status: number; body: unknown } {
+  const filter = body.filters?.find((entry) => entry.field === "campaignId");
+  if (
+    invalidTimeRange(body) ||
+    body.groupBy !== undefined ||
+    body.filters?.length !== 1 ||
+    filter?.operator !== "EQUALS" ||
+    typeof filter.value !== "string"
+  ) {
+    return INVALID_REQUEST;
+  }
+  const campaign = report.campaigns.find((entry) => entry.id === filter.value);
+  if (!campaign || campaign.keywords === "not-found") {
+    return { status: 404, body: fixture("error-not-found") };
+  }
+  if (campaign.keywords === "refused") return INVALID_REQUEST;
+  const { start, end, granularity } = body.timeRange;
+  const placed = campaign.keywords ?? {};
+  // Keyword → date → that day's numbers.
+  const byKeyword = new Map<string, Map<string, FakeDay[]>>();
+  for (const [date, countries] of Object.entries(campaign.days)) {
+    if (date < start || date > end) continue;
+    for (const [country, day] of Object.entries(countries)) {
+      const keyword = placed[country];
+      if (keyword === undefined) continue;
+      const days = byKeyword.get(keyword) ?? new Map<string, FakeDay[]>();
+      days.set(date, [...(days.get(date) ?? []), day]);
+      byKeyword.set(keyword, days);
+    }
+  }
+  const deleted = new Set(campaign.deletedKeywords ?? []);
+  const rows = [...byKeyword.keys()].map((keyword) => {
+    const days = byKeyword.get(keyword)!;
+    const granular = [...days.keys()]
+      .sort()
+      .map((date) => appsMetrics(date, days.get(date)!, report.currency));
+    const all = [...days.values()].flat();
+    const { date: _date, ...total } = appsMetrics(start, all, report.currency);
+    return {
+      spend: cents(String((total.localSpend as { amount: string }).amount)),
+      row: {
+        metadata: {
+          id: Number(keyword),
+          text: `keyword ${keyword}`,
+          matchType: "EXACT",
+          adAccountId: Number(adAccountId),
+          campaignId: Number(campaign.id),
+          adGroupId: Number(defaultAdGroup(campaign)),
+          status: "ACTIVE",
+          deleted: deleted.has(keyword),
+        },
+        totalMetrics: total,
+        ...(granularity ? { granularMetrics: granular } : {}),
+      },
+      keyword,
+    };
+  });
+  const bySpend = body.sorting?.some(
+    (entry) => entry.field === "localSpend" && entry.order === "DESC",
+  );
+  rows.sort((a, b) =>
+    bySpend && a.spend !== b.spend
+      ? a.spend > b.spend
+        ? -1
+        : 1
+      : Number(a.keyword) - Number(b.keyword),
+  );
+  const { offset, pageSize } = body.pagination;
+  return {
+    status: 200,
+    body: {
+      result:
+        rows.length > 0
+          ? { rows: rows.slice(offset, offset + pageSize).map((r) => r.row) }
+          : {},
       pagination: { totalCount: rows.length, offset, pageSize },
     },
   };
@@ -482,6 +585,40 @@ export function createFakeAppleAds(options: FakeAppleAdsOptions): FakeAppleAds {
               pagination: { totalCount: 0, offset: 0, pageSize: 0 },
             },
       );
+    }
+    if (url.pathname === "/v1/keywords/query" && init.method === "POST") {
+      const body = JSON.parse(init.body ?? "{}") as {
+        filters?: Array<{ field: string; operator: string; value: unknown }>;
+        pagination?: { offset?: number; pageSize?: number };
+      };
+      const filter = body.filters?.find((entry) => entry.field === "adGroupId");
+      if (filter?.operator !== "IN" || !Array.isArray(filter.value)) {
+        return reply(400, INVALID_REQUEST.body);
+      }
+      const adGroups = new Set(filter.value.map(String));
+      const name = `keywords-${adAccountId}`;
+      const listed = (
+        hasFixture(name)
+          ? (fixture(name) as { result: Array<{ adGroupId: number }> }).result
+          : []
+      ).filter((keyword) => adGroups.has(String(keyword.adGroupId)));
+      const offset = body.pagination?.offset ?? 0;
+      const pageSize = body.pagination?.pageSize ?? 20;
+      return reply(200, {
+        result: listed.slice(offset, offset + pageSize),
+        pagination: { totalCount: listed.length, offset, pageSize },
+      });
+    }
+    if (
+      url.pathname === "/v1/reports/apps/keywords/query" &&
+      init.method === "POST"
+    ) {
+      const answer = fakeKeywordReport(
+        options.reports?.[adAccountId] ?? { currency: "USD", campaigns: [] },
+        adAccountId,
+        JSON.parse(init.body ?? "{}") as ReportBody,
+      );
+      return reply(answer.status, answer.body);
     }
     if (
       url.pathname === "/v1/reports/apps/campaigns/query" &&

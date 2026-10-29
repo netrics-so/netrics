@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AMOUNT_ROUNDED_NOTE,
   APPLE_ADS_AD_GROUP_METRIC_KEYS,
+  APPLE_ADS_KEYWORD_METRIC_KEYS,
   APPLE_ADS_METRIC_KEYS,
   AppleAdsReportError,
   appleAdsDimensions,
@@ -67,9 +68,10 @@ describe("Apple Ads manifest", () => {
     );
   });
 
-  it("has the six ADR 0020 metrics by country, then the same six by ad group in keys of their own", () => {
+  it("has the six ADR 0020 metrics by country, then the same six by ad group and by keyword in keys of their own", () => {
     const main = ["resource", "campaign", "country"];
     const byAdGroup = ["resource", "campaign", "ad_group"];
+    const byKeyword = ["resource", "campaign", "keyword"];
     expect(
       appleAdsManifest.metrics.map((metric) => [
         metric.key,
@@ -105,12 +107,39 @@ describe("Apple Ads manifest", () => {
         "downloads",
         [...byAdGroup, "attribution"],
       ],
+      [
+        "apple_ads.spend_by_keyword",
+        CURRENCY_MINOR_UNIT,
+        [...byKeyword, "currency"],
+      ],
+      ["apple_ads.impressions_by_keyword", "impressions", byKeyword],
+      ["apple_ads.taps_by_keyword", "taps", byKeyword],
+      [
+        "apple_ads.installs_by_keyword",
+        "installs",
+        [...byKeyword, "attribution"],
+      ],
+      [
+        "apple_ads.new_downloads_by_keyword",
+        "downloads",
+        [...byKeyword, "attribution"],
+      ],
+      [
+        "apple_ads.redownloads_by_keyword",
+        "downloads",
+        [...byKeyword, "attribution"],
+      ],
     ]);
     // Each ad-group key mirrors its main key's unit and attribution.
     for (const [field, key] of Object.entries(APPLE_ADS_AD_GROUP_METRIC_KEYS)) {
       const mainKey =
         APPLE_ADS_METRIC_KEYS[field as keyof typeof APPLE_ADS_METRIC_KEYS];
       expect(key).toBe(`${mainKey}_by_ad_group`);
+    }
+    for (const [field, key] of Object.entries(APPLE_ADS_KEYWORD_METRIC_KEYS)) {
+      const mainKey =
+        APPLE_ADS_METRIC_KEYS[field as keyof typeof APPLE_ADS_METRIC_KEYS];
+      expect(key).toBe(`${mainKey}_by_keyword`);
     }
     for (const metric of appleAdsManifest.metrics) {
       expect(metric.kind, metric.key).toBe("delta");

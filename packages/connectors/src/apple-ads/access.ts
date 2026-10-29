@@ -38,6 +38,11 @@ import {
 //   1000, `fetchTotalCount`):
 //   https://developer.apple.com/documentation/apple-ads-platform-api/post-adgroups-query
 //   https://developer.apple.com/documentation/apple-ads-platform-api/querypagination
+// - Query Keywords (POST /v1/keywords/query: "Either `adGroupId` or
+//   `campaignId` is required"; `adGroupId IN` "accepts up to 1000 values"
+//   and spans campaigns; sortable by `id`, the default) and Keyword (`id`,
+//   `adGroupId`, `campaignId`, `text`, `matchType`, `status`, `deleted`):
+//   https://developer.apple.com/documentation/apple-ads-platform-api/post-keywords-query
 // - Search Apps (GET /v1/apps/{adamId}: appName):
 //   https://developer.apple.com/documentation/apple-ads-platform-api/search-apps-endpoints
 
@@ -94,6 +99,18 @@ export const MAX_APPS = 50;
 export const AD_GROUPS_PAGE_SIZE = 1000;
 /** Ad-group pages per discovery (20,000 ad groups). */
 export const MAX_AD_GROUP_PAGES = 20;
+/** Keywords per query page (#396; QueryPagination's cap). */
+export const KEYWORDS_PAGE_SIZE = 1000;
+/** Ad-group IDs per keyword query (Apple's cap for `adGroupId IN`). */
+export const AD_GROUPS_PER_KEYWORD_QUERY = 1000;
+/** Keyword query requests per discovery (10,000 keywords). */
+export const MAX_KEYWORD_PAGES = 10;
+/**
+ * Milliseconds of keyword queries per discovery. Discovery has 15 seconds
+ * in all; keyword names are the least needed, so they stop early rather
+ * than let the apps, campaigns and ad groups time out with them.
+ */
+export const KEYWORD_DISCOVERY_BUDGET_MS = 5_000;
 
 /**
  * An Apple ID (int64): a digit string, or a JSON number Apple sends (the
@@ -638,4 +655,162 @@ export async function listAdGroups(
     }
   }
   return [...adGroups.values()];
+}
+
+const keywordPageSchema = z.object({
+  result: z
+    .array(
+      z
+        .object({
+          id: appleIdSchema,
+          text: z.string().nullable().optional(),
+          adAccountId: appleIdSchema.nullable().optional(),
+          campaignId: appleIdSchema.nullable().optional(),
+          adGroupId: appleIdSchema.nullable().optional(),
+          matchType: z.string().nullable().optional(),
+          status: z.string().nullable().optional(),
+          deleted: z.boolean().nullable().optional(),
+        })
+        .loose(),
+    )
+    .nullable()
+    .optional(),
+  pagination: z
+    .object({
+      totalCount: z.number().int().nonnegative().nullable().optional(),
+    })
+    .loose()
+    .nullable()
+    .optional(),
+});
+
+export interface AppleAdsKeyword {
+  id: string;
+  /** The keyword's text, as the advertiser entered it. */
+  name: string;
+  campaignId: string | undefined;
+  adGroupId: string | undefined;
+  /** Apple's match type ("EXACT", "BROAD"). */
+  matchType: string | undefined;
+  /** Apple's status of the keyword. */
+  status: string | undefined;
+}
+
+export interface KeywordListOptions {
+  /** Milliseconds now, for KEYWORD_DISCOVERY_BUDGET_MS; default Date.now. */
+  clock?: () => number;
+}
+
+/**
+ * The keywords of an ad account's ad groups (#396), for the names of the
+ * `keyword` dimension: `POST /v1/keywords/query` with `adGroupId IN` the
+ * ad groups discovery found (Apple requires an ad-group or campaign
+ * filter, and IN spans campaigns), AD_GROUPS_PER_KEYWORD_QUERY IDs per
+ * query, by ID ascending, at most MAX_KEYWORD_PAGES requests within
+ * KEYWORD_DISCOVERY_BUDGET_MS. Past either bound the remaining keywords
+ * keep their IDs, or the names stored by an earlier discovery. Deleted and
+ * textless keywords are left out; their stored names stay.
+ *
+ * Keyword names are labels only: when Apple refuses the query (400, 404)
+ * discovery goes on without them. TO BE CONFIRMED by #370: the endpoint
+ * answers in the ad account's context, takes the IDs as JSON numbers as in
+ * Apple's example, and pages like /v1/adgroups/query.
+ */
+export async function listKeywords(
+  client: AppleAdsClient,
+  adAccountId: string,
+  adGroupIds: readonly string[],
+  options: KeywordListOptions = {},
+): Promise<AppleAdsKeyword[]> {
+  const clock = options.clock ?? Date.now;
+  const started = clock();
+  const keywords = new Map<string, AppleAdsKeyword>();
+  let requests = 0;
+  const ids = [...new Set(adGroupIds)].sort((a, b) =>
+    BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0,
+  );
+  chunks: for (
+    let first = 0;
+    first < ids.length;
+    first += AD_GROUPS_PER_KEYWORD_QUERY
+  ) {
+    const chunk = ids.slice(first, first + AD_GROUPS_PER_KEYWORD_QUERY);
+    for (let offset = 0; ; offset += KEYWORDS_PAGE_SIZE) {
+      if (
+        requests >= MAX_KEYWORD_PAGES ||
+        clock() - started >= KEYWORD_DISCOVERY_BUDGET_MS
+      ) {
+        break chunks;
+      }
+      requests += 1;
+      let answer: unknown;
+      try {
+        answer = await client.json("/v1/keywords/query", {
+          adAccountId,
+          body: {
+            filters: [
+              {
+                field: "adGroupId",
+                operator: "IN",
+                value: chunk.map((id) => Number(id)),
+              },
+            ],
+            sorting: [{ field: "id", order: "ASC" }],
+            pagination: {
+              offset,
+              pageSize: KEYWORDS_PAGE_SIZE,
+              fetchTotalCount: true,
+            },
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof AppleAdsApiError &&
+          (error.status === 400 || error.status === 404)
+        ) {
+          break chunks;
+        }
+        throw error;
+      }
+      const parsed = keywordPageSchema.safeParse(answer);
+      if (!parsed.success) {
+        throw new Error(
+          "Apple Ads answered /v1/keywords/query in an unexpected shape",
+        );
+      }
+      const rows = parsed.data.result ?? [];
+      for (const row of rows) {
+        if (
+          row.adAccountId !== undefined &&
+          row.adAccountId !== null &&
+          row.adAccountId !== adAccountId
+        ) {
+          // A keyword of another account must never be named here.
+          throw new Error(
+            "Apple Ads answered with another ad account's keyword",
+          );
+        }
+        const name = row.text?.trim();
+        if (row.deleted === true || !name) continue;
+        keywords.set(row.id, {
+          id: row.id,
+          name,
+          campaignId: row.campaignId ?? undefined,
+          adGroupId: row.adGroupId ?? undefined,
+          matchType: row.matchType ?? undefined,
+          status: row.status ?? undefined,
+        });
+      }
+      const total = parsed.data.pagination?.totalCount ?? undefined;
+      const read = offset + rows.length;
+      if (
+        rows.length === 0 ||
+        rows.length < KEYWORDS_PAGE_SIZE ||
+        (total !== undefined && read >= total)
+      ) {
+        break;
+      }
+    }
+  }
+  return [...keywords.values()];
 }

@@ -480,6 +480,17 @@ export function createFakeAppleAdsServer(
           ),
         );
       }
+      if (
+        url.pathname === "/v1/reports/apps/keywords/query" ||
+        url.pathname === "/v1/keywords/query"
+      ) {
+        // Keywords (#396): none here, so a campaign's keyword series is
+        // only "Others"; the connector's own fake covers the keyword rows.
+        return reply(200, {
+          result: url.pathname === "/v1/keywords/query" ? [] : {},
+          pagination: { totalCount: 0, offset: 0, pageSize: 1000 },
+        });
+      }
       if (url.pathname === "/v1/reports/apps/adgroups/query") {
         return reply(
           200,

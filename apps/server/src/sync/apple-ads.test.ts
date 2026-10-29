@@ -21,6 +21,7 @@ import { ConnectorRegistry } from "@netrics/connector-runtime";
 import type { Connector, ConnectorRuntime } from "@netrics/connector-sdk";
 import {
   APPLE_ADS_AD_GROUP_METRIC_KEYS,
+  APPLE_ADS_KEYWORD_METRIC_KEYS,
   APPLE_ADS_METRIC_KEYS,
   createAppleAdsConnector,
   createDemoConnector,
@@ -420,11 +421,20 @@ describe("Apple Ads campaign report sync", () => {
       total(rows, APPLE_ADS_METRIC_KEYS.installs, { attribution: "view" }),
     ).toBe(8);
     const main = new Set<string>(Object.values(APPLE_ADS_METRIC_KEYS));
+    const keywords = new Set<string>(
+      Object.values(APPLE_ADS_KEYWORD_METRIC_KEYS),
+    );
     for (const row of rows) {
       expect(row.dimensions.campaign).toBeDefined();
       if (main.has(row.key)) {
         expect(row.dimensions.country).toBeDefined();
         expect(row.dimensions.ad_group).toBeUndefined();
+      } else if (keywords.has(row.key)) {
+        // The keyword rows (#396), in their own keys: this fake has no
+        // keywords, so every campaign is the keyword "Others".
+        expect(row.dimensions.keyword).toBe("Others");
+        expect(row.dimensions.ad_group).toBeUndefined();
+        expect(row.dimensions.country).toBeUndefined();
       } else {
         // The ad-group rows (#376), in their own keys.
         expect(row.key).toMatch(/_by_ad_group$/);
@@ -433,7 +443,8 @@ describe("Apple Ads campaign report sync", () => {
       }
       if (
         row.key === APPLE_ADS_METRIC_KEYS.spend ||
-        row.key === APPLE_ADS_AD_GROUP_METRIC_KEYS.spend
+        row.key === APPLE_ADS_AD_GROUP_METRIC_KEYS.spend ||
+        row.key === APPLE_ADS_KEYWORD_METRIC_KEYS.spend
       ) {
         expect(row.dimensions.currency).toBe("USD");
       }
@@ -443,6 +454,8 @@ describe("Apple Ads campaign report sync", () => {
     expect(
       total(rows, APPLE_ADS_AD_GROUP_METRIC_KEYS.spend, { campaign: OLD }),
     ).toBe(300);
+    // By keyword too (#396).
+    expect(total(rows, APPLE_ADS_KEYWORD_METRIC_KEYS.spend)).toBe(3550);
     const [state] = await admin<Array<{ cursor: string; auth_state: string }>>`
       select cursor, auth_state from connection_state
       where connection_id = ${connections[US.id]!}
