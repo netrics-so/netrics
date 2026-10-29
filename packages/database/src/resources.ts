@@ -19,6 +19,24 @@ const RESOURCE_DIMENSION = "resource";
 /** Most resources one listing returns. */
 const MAX_RESOURCES = 500;
 
+/**
+ * Discover may also name the values of other dimensions (#374): an Apple
+ * Ads campaign is a `connection_resources` row of kind `campaign`, the
+ * label of the `campaign` dimension. A row whose kind is a dimension of
+ * one of its connector's metrics (other than `resource`) labels that
+ * dimension and is not a resource: it is no tile's resource choice and
+ * names no `resource` value. `r` is the connection_resources row, the
+ * connector id an SQL expression.
+ */
+function labelsResourceDimension(connectorId: ReturnType<typeof sql>) {
+  return sql`not exists (
+    select 1 from metric_definitions m
+    where m.connector_id = ${connectorId}
+      and r.kind <> ${RESOURCE_DIMENSION}
+      and m.dimensions ? r.kind
+  )`;
+}
+
 export interface DiscoveredResourceName {
   id: string;
   name: string;
@@ -125,6 +143,7 @@ export async function listMetricResources(
       join connection c on c.id = r.connection_id
       where r.workspace_id = ${query.workspaceId}
         and r.connection_id = ${query.connectionId}
+        and ${labelsResourceDimension(sql`c.connector_id`)}
         and (
           jsonb_typeof(c.selection) is distinct from 'array'
           or jsonb_array_length(c.selection) = 0
@@ -133,10 +152,12 @@ export async function listMetricResources(
     )
     select ids.id, r.name
     from (select id from seen union select id from named) ids
+    cross join connection c
     left join connection_resources r
       on r.workspace_id = ${query.workspaceId}
       and r.connection_id = ${query.connectionId}
       and r.resource_id = ids.id
+      and ${labelsResourceDimension(sql`c.connector_id`)}
     order by r.name nulls last, ids.id
     limit ${MAX_RESOURCES}`);
   return rows.map((row) => ({
@@ -157,10 +178,13 @@ export async function connectionHasResource(
 ): Promise<boolean> {
   const rows = await tx.execute(sql`
     select exists (
-      select 1 from connection_resources
-      where workspace_id = ${workspaceId}
-        and connection_id = ${connectionId}
-        and resource_id = ${resourceId}
+      select 1 from connection_resources r
+      join connections c
+        on c.workspace_id = ${workspaceId} and c.id = r.connection_id
+      where r.workspace_id = ${workspaceId}
+        and r.connection_id = ${connectionId}
+        and r.resource_id = ${resourceId}
+        and ${labelsResourceDimension(sql`c.connector_id`)}
     ) or exists (
       select 1 from connections
       where workspace_id = ${workspaceId}
@@ -190,27 +214,64 @@ export async function findResourceNames(
   }
   const connectionIds = [...new Set(resources.map((r) => r.connectionId))];
   const resourceIds = [...new Set(resources.map((r) => r.resourceId))];
-  const table = schema.connectionResources;
-  const rows = await tx
-    .select({
-      connectionId: table.connectionId,
-      resourceId: table.resourceId,
-      name: table.name,
-    })
-    .from(table)
-    .where(
-      and(
-        eq(table.workspaceId, workspaceId),
-        inArray(table.connectionId, connectionIds),
-        inArray(table.resourceId, resourceIds),
-      ),
-    );
+  const rows = await tx.execute(sql`
+    select r.connection_id, r.resource_id, r.name
+    from connection_resources r
+    join connections c
+      on c.workspace_id = ${workspaceId} and c.id = r.connection_id
+    where r.workspace_id = ${workspaceId}
+      and r.connection_id in (${sql.join(
+        connectionIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+      and r.resource_id in (${sql.join(
+        resourceIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+      and ${labelsResourceDimension(sql`c.connector_id`)}`);
   return new Map(
     rows.map((row) => [
-      resourceNameKey(row.connectionId, row.resourceId),
-      row.name,
+      resourceNameKey(row.connection_id as string, row.resource_id as string),
+      row.name as string,
     ]),
   );
+}
+
+/**
+ * Names of values of a dimension other than `resource` that discover
+ * reported as resources of that kind (#374: an Apple Ads campaign's name
+ * for the `campaign` dimension), by value. Values without a name are
+ * missing from the map.
+ */
+export async function findDimensionValueNames(
+  tx: Transaction,
+  query: {
+    workspaceId: string;
+    connectionId: string;
+    dimension: string;
+    values: readonly string[];
+  },
+): Promise<Map<string, string>> {
+  if (query.values.length === 0 || query.dimension === RESOURCE_DIMENSION) {
+    return new Map();
+  }
+  const rows = await tx
+    .select({
+      resourceId: schema.connectionResources.resourceId,
+      name: schema.connectionResources.name,
+    })
+    .from(schema.connectionResources)
+    .where(
+      and(
+        eq(schema.connectionResources.workspaceId, query.workspaceId),
+        eq(schema.connectionResources.connectionId, query.connectionId),
+        eq(schema.connectionResources.kind, query.dimension),
+        inArray(schema.connectionResources.resourceId, [
+          ...new Set(query.values),
+        ]),
+      ),
+    );
+  return new Map(rows.map((row) => [row.resourceId, row.name]));
 }
 
 /**
@@ -347,6 +408,7 @@ export async function listNamedResources(
         connectionIds.map((id) => sql`${id}`),
         sql`, `,
       )})
+      and ${labelsResourceDimension(sql`c.connector_id`)}
       and (
         jsonb_typeof(c.config -> 'resourceSelection') is distinct from 'array'
         or jsonb_array_length(c.config -> 'resourceSelection') = 0

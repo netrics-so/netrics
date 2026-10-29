@@ -1,0 +1,125 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/get-app-campaign-reports, groupBy countryOrRegion; https://developer.apple.com/documentation/apple-ads-platform-api/appsreportingcampaign), checked 2026-10-29; IDs, names and numbers are synthetic. TO BE CONFIRMED by #370 captures: where a grouped row names its country or region. AppsReportingCampaign has countryOrRegion in metadata (the US and CA rows); the campaigns report example puts it in each granularMetrics entry (the GB row). Both are read. The breakdown here leaves 0.25 USD and 100 impressions of 2026-10-27 out of the campaign total, as hidden rows would: they go to Others.",
+  "result": {
+    "rows": [
+      {
+        "metadata": {
+          "id": 5100000001,
+          "name": "Wurfel – Brand",
+          "adAccountId": 4100000001,
+          "promotedObjectType": "APPSTORE_APP",
+          "promotedObjectId": "1000000001",
+          "status": "ENABLED",
+          "deleted": false,
+          "countryOrRegion": "US"
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "localSpend": { "amount": "30.00", "currency": "USD" },
+            "impressions": 3000,
+            "taps": 150,
+            "tapInstalls": 40,
+            "viewInstalls": 5,
+            "totalInstalls": 45,
+            "tapNewDownloads": 36,
+            "viewNewDownloads": 4,
+            "totalNewDownloads": 40,
+            "tapRedownloads": 4,
+            "viewRedownloads": 1,
+            "totalRedownloads": 5
+          },
+          {
+            "date": "2026-10-27",
+            "localSpend": { "amount": "15.00", "currency": "USD" },
+            "impressions": 1500,
+            "taps": 80,
+            "tapInstalls": 16,
+            "viewInstalls": 3,
+            "totalInstalls": 19,
+            "tapNewDownloads": 13,
+            "viewNewDownloads": 2,
+            "totalNewDownloads": 15,
+            "tapRedownloads": 3,
+            "viewRedownloads": 1,
+            "totalRedownloads": 4
+          }
+        ]
+      },
+      {
+        "metadata": {
+          "id": 5100000001,
+          "name": "Wurfel – Brand",
+          "adAccountId": 4100000001,
+          "promotedObjectType": "APPSTORE_APP",
+          "promotedObjectId": "1000000001",
+          "status": "ENABLED",
+          "deleted": false,
+          "countryOrRegion": "CA"
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "localSpend": { "amount": "10.50", "currency": "USD" },
+            "impressions": 1000,
+            "taps": 50,
+            "tapInstalls": 10,
+            "viewInstalls": 1,
+            "totalInstalls": 11,
+            "tapNewDownloads": 8,
+            "viewNewDownloads": 1,
+            "totalNewDownloads": 9,
+            "tapRedownloads": 2,
+            "viewRedownloads": 0,
+            "totalRedownloads": 2
+          },
+          {
+            "date": "2026-10-27",
+            "localSpend": { "amount": "5.00", "currency": "USD" },
+            "impressions": 400,
+            "taps": 20,
+            "tapInstalls": 4,
+            "viewInstalls": 1,
+            "totalInstalls": 5,
+            "tapNewDownloads": 3,
+            "viewNewDownloads": 1,
+            "totalNewDownloads": 4,
+            "tapRedownloads": 1,
+            "viewRedownloads": 0,
+            "totalRedownloads": 1
+          }
+        ]
+      },
+      {
+        "metadata": {
+          "id": 5100000002,
+          "name": "Wurfel – Discovery",
+          "adAccountId": 4100000001,
+          "promotedObjectType": "APPSTORE_APP",
+          "promotedObjectId": "1000000001",
+          "status": "PAUSED",
+          "deleted": true
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "countryOrRegion": "GB",
+            "localSpend": { "amount": "5.00", "currency": "USD" },
+            "impressions": 500,
+            "taps": 20,
+            "tapInstalls": 3,
+            "viewInstalls": 0,
+            "totalInstalls": 3,
+            "tapNewDownloads": 3,
+            "viewNewDownloads": 0,
+            "totalNewDownloads": 3,
+            "tapRedownloads": 0,
+            "viewRedownloads": 0,
+            "totalRedownloads": 0
+          }
+        ]
+      }
+    ]
+  },
+  "pagination": { "totalCount": 3, "offset": 0, "pageSize": 1000 }
+}

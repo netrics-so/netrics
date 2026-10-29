@@ -13,11 +13,14 @@ import {
   appName,
   checkAccess,
   discoverAdAccounts,
+  getAdAccount,
   listCampaigns,
   MAX_APPS,
 } from "./access.js";
 import { APPLE_ADS_HOST, createAppleAdsClient } from "./api.js";
 import { APPLE_ADS_METRIC_KEYS, APPLE_ADS_METRICS } from "./metrics.js";
+import { noteOnce } from "./observations.js";
+import { APPLE_ADS_BACKFILL_DAYS, syncCampaignPage } from "./sync.js";
 
 export {
   APPLE_ADS_DIMENSIONS,
@@ -30,8 +33,14 @@ export {
 } from "./metrics.js";
 export {
   AMOUNT_ROUNDED_NOTE,
+  addDayValues,
   AppleAdsReportError,
   appleAdsDimensions,
+  DAY_VALUE_FIELDS,
+  parseDayMetrics,
+  valueObservations,
+  zeroDayValues,
+  type DayValues,
   appsDayMetricsSchema,
   countryValue,
   dayObservations,
@@ -86,13 +95,48 @@ export {
   type RateLimit,
 } from "./api.js";
 export {
+  CAMPAIGN_REPORT_PATH,
+  COUNTRY_GROUP_BY,
+  MAX_REPORT_DAYS,
+  MAX_REPORT_PAGES,
+  readCampaignReport,
+  REPORT_PAGE_SIZE,
+  reportRequestBody,
+  type DayRange,
+  type ReportQuery,
+} from "./reports.js";
+export {
+  adAccountToday,
+  addDays,
+  APPLE_ADS_BACKFILL_DAYS,
+  chunkRange,
+  decodeCursor,
+  encodeCursor,
+  LOOKBACK_DAYS,
+  syncCampaignPage,
+  type CampaignSyncOptions,
+  type SyncPosition,
+} from "./sync.js";
+export {
   DecimalAmountError,
   parseDecimalAmount,
   type MinorUnitAmount,
 } from "../decimal-amount.js";
 
-/** Days a backfill reads: 12 months, capped by Apple's retention (#370). */
-export const APPLE_ADS_BACKFILL_DAYS = 365;
+/**
+ * The label of an Apple Ads connection's days (ADR 0020 section 8): its
+ * reporting days are the ad account's days, as in the Apple Ads UI, not the
+ * workspace's. English and German (ADR 0016).
+ */
+export function appleAdsDaysLabel(
+  timeZone: string,
+  locale: string = "en",
+): string {
+  const zone = timeZone.trim() || "UTC";
+  return locale === "de"
+    ? `Tage in ${zone}, wie in Apple Ads`
+    : `Days in ${zone}, as in Apple Ads`;
+}
 
 /**
  * German texts of the manifest (ADR 0016): "du" where the text addresses
@@ -231,6 +275,20 @@ export const CHOOSE_AD_ACCOUNT_MESSAGE =
 export interface AppleAdsConnectorOptions {
   /** Waits between retries; replaced in tests. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  /** The clock of the sync windows; replaced in tests. */
+  now?: () => number;
+  /** Where notes (rounded amounts) go; default: nowhere. */
+  log?: (message: string) => void;
+}
+
+function configText(
+  config: Readonly<Record<string, unknown>>,
+  key: string,
+): string | undefined {
+  const value = config[key];
+  return typeof value === "string" && value.trim() !== ""
+    ? value.trim()
+    : undefined;
 }
 
 function accessTokenOf(context: ConnectionContext): string | undefined {
@@ -257,7 +315,8 @@ function accessTokenOf(context: ConnectionContext): string | undefined {
  * promoted apps (the `resource` dimension) and its campaigns (the
  * `campaign` dimension), so dashboards can name them.
  *
- * The report sync is #374; until then a sync reads nothing.
+ * A sync reads the campaign report (#374, see sync.ts): daily campaign ×
+ * country or region rows in the ad account's currency and days.
  */
 export function createAppleAdsConnector(
   options: AppleAdsConnectorOptions = {},
@@ -350,13 +409,34 @@ export function createAppleAdsConnector(
       ];
     },
 
-    async sync(context): Promise<SyncResult> {
-      if (adAccountIdOf(context.config) === undefined) {
+    async sync(context, request, runtime): Promise<SyncResult> {
+      const adAccountId = adAccountIdOf(context.config);
+      if (adAccountId === undefined) {
         throw new Error(CHOOSE_AD_ACCOUNT_MESSAGE);
       }
-      // The campaign report sync is #374; the check before this page has
-      // confirmed the key, the role and the ad account.
-      return { observations: [], done: true };
+      // The check before this page has confirmed the key, the role and the
+      // ad account. Currency and time zone come from the connection; a
+      // connection made before they were stored asks Apple.
+      const api = client(context, runtime);
+      let currency = configText(context.config, "currency");
+      let timeZone = configText(context.config, "timeZone");
+      if (currency === undefined || timeZone === undefined) {
+        const details = await getAdAccount(api, adAccountId);
+        currency ??= details.currency;
+        timeZone ??= details.timeZone;
+      }
+      if (currency === undefined || timeZone === undefined) {
+        throw new Error(
+          "Apple Ads did not name the ad account's currency and time zone",
+        );
+      }
+      return syncCampaignPage(api, request, {
+        now: (options.now ?? Date.now)(),
+        adAccountId,
+        currency,
+        timeZone,
+        note: noteOnce(options.log ?? (() => undefined)),
+      });
     },
   };
 }

@@ -273,6 +273,7 @@ export {
 export {
   connectionHasResource,
   connectionResourcesDiscoveredAt,
+  findDimensionValueNames,
   findResourceNames,
   listMetricResources,
   findConnectionResourceNoun,
