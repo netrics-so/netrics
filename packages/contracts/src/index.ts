@@ -546,6 +546,36 @@ export type CreateConnectionRequest = z.infer<
   typeof createConnectionRequestSchema
 >;
 
+/** At most this many connections are created by one request. */
+export const MAX_CONNECTIONS_PER_REQUEST = 20;
+
+/**
+ * Several connections of one connector with one credential (ADR 0020 §5,
+ * #375): e.g. one Apple Ads key for several ad accounts, one connection
+ * each. Every connection is checked with the credential and its own config
+ * before anything is stored; then all of them, and the consumed pending
+ * key, commit in one transaction, or none does.
+ */
+export const createConnectionsRequestSchema = z.object({
+  connectorId: z.string().min(1),
+  credentials: connectionCredentialsSchema.optional(),
+  pendingKeyId: pendingKeyIdSchema.optional(),
+  projectId: z.uuid().optional(),
+  connections: z
+    .array(
+      z.object({
+        name: nameSchema,
+        config: connectionConfigSchema.default({}),
+        resources: z.array(z.string().min(1)).optional(),
+      }),
+    )
+    .min(1)
+    .max(MAX_CONNECTIONS_PER_REQUEST),
+});
+export type CreateConnectionsRequest = z.infer<
+  typeof createConnectionsRequestSchema
+>;
+
 export const previewConnectionRequestSchema = z.object({
   connectorId: z.string().min(1),
   config: connectionConfigSchema.default({}),
@@ -873,6 +903,14 @@ export const connectionSignedKeyViewSchema = z.object({
       value: z.string(),
     }),
   ),
+  /**
+   * Other connections of this workspace that store the same key (the same
+   * non-secret fields, e.g. one Apple Ads key for several ad accounts,
+   * #375). Replacing the key replaces it in all of them; the key must stay
+   * at the provider while one of them uses it. Only on single-connection
+   * responses.
+   */
+  sharedWith: z.array(z.object({ id: z.uuid(), name: z.string() })).optional(),
 });
 export type ConnectionSignedKeyView = z.infer<
   typeof connectionSignedKeyViewSchema
@@ -903,6 +941,11 @@ export const connectionResponseSchema = z.object({
   connection: connectionDetailSchema,
 });
 export type ConnectionResponse = z.infer<typeof connectionResponseSchema>;
+
+export const connectionsResponseSchema = z.object({
+  connections: z.array(connectionDetailSchema),
+});
+export type ConnectionsResponse = z.infer<typeof connectionsResponseSchema>;
 
 export const syncRunSchema = z.object({
   id: z.uuid(),

@@ -105,10 +105,11 @@ against the real Apple Ads UI at the exit gate.
 
 **Availability.** The `apple-ads` connector is registered in development
 and tests only (`PREVIEW_CONNECTORS` in `apps/server/src/connectors.ts`,
-roadmap rule 6). The sync produces data since #374, but the generic connect
-form cannot choose an ad account or store its currency and time zone, so
-the hold ends with the guided setup of #375, after #370 confirms the
-fixtures.
+roadmap rule 6). The sync produces data since #374, and the guided setup of
+#375 creates one connection per chosen ad account and stores its ID, name,
+currency and time zone; the hold ends once #370 confirms the fixtures and
+the exit gate (#378) passes. Connector docs:
+[docs/connectors/apple-ads.md](../connectors/apple-ads.md).
 
 **Report windows (#374).** Each sync page reads whole calendar months in
 one request of at most 90 days, newest first, because the top 10 countries

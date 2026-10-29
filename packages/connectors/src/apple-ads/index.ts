@@ -152,6 +152,11 @@ const appleAdsDe: ManifestTranslation = {
       title: "Werbekonto",
       description: "Die ID des Apple-Ads-Werbekontos dieser Verbindung.",
     },
+    adAccountName: {
+      title: "Name des Werbekontos",
+      description:
+        "Der Name des Werbekontos in Apple Ads, als du es verbunden hast.",
+    },
     currency: {
       title: "Währung",
       description:
@@ -228,6 +233,12 @@ export const appleAdsManifest: ConnectorManifest = {
         type: "string",
         title: "Ad account",
         description: "The ID of the Apple Ads ad account of this connection.",
+      },
+      adAccountName: {
+        type: "string",
+        title: "Ad account name",
+        description:
+          "The ad account's name in Apple Ads when it was connected (a label only).",
       },
       currency: {
         type: "string",

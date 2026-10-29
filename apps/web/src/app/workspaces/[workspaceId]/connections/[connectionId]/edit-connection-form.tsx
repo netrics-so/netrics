@@ -16,7 +16,7 @@ import {
   initialConfigValues,
   parseConfigSchema,
 } from "@/lib/config-schema";
-import { signedKeyStrategyOf } from "@/lib/signed-key";
+import { APPLE_ADS_CONNECTOR_ID, signedKeyStrategyOf } from "@/lib/signed-key";
 import { useLocale, useT } from "@/lib/i18n/client";
 
 interface EditConnectionFormProps {
@@ -34,9 +34,15 @@ export function EditConnectionForm({
   const t = useT("connections.edit");
   const common = useT("common");
   const router = useRouter();
+  // An Apple Ads connection's config is its ad account as Apple named it
+  // (#375): shown on the page, chosen in the setup, never typed here.
+  const fixedConfig = connection.connectorId === APPLE_ADS_CONNECTOR_ID;
   const fields = useMemo(
-    () => (connector ? parseConfigSchema(connector.configSchema) : []),
-    [connector],
+    () =>
+      connector && !fixedConfig
+        ? parseConfigSchema(connector.configSchema)
+        : [],
+    [connector, fixedConfig],
   );
   const [name, setName] = useState(connection.name);
   const [configValues, setConfigValues] = useState<Record<string, string>>(() =>
@@ -67,7 +73,9 @@ export function EditConnectionForm({
     try {
       await updateConnection(workspaceId, connection.id, {
         ...(name.trim() !== connection.name ? { name: name.trim() } : {}),
-        config: coerceConfigValues(fields, configValues),
+        ...(fixedConfig
+          ? {}
+          : { config: coerceConfigValues(fields, configValues) }),
         ...(token !== "" ? { credentials: { token } } : {}),
       });
       setToken("");
@@ -105,7 +113,7 @@ export function EditConnectionForm({
           onChange={setToken}
         />
       ) : null}
-      {connector ? (
+      {fixedConfig ? null : connector ? (
         <ConfigFields
           fields={fields}
           values={configValues}

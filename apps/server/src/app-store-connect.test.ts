@@ -474,6 +474,7 @@ describe("App Store Connect connections", () => {
         { key: "issuerId", label: "Issuer ID", value: TEAM_A.issuerId },
         { key: "keyId", label: "Key ID", value: TEAM_A.keyId },
       ],
+      sharedWith: [],
     });
     expect(response.body).not.toContain("privateKey");
     expect(response.body).not.toContain("PRIVATE KEY");

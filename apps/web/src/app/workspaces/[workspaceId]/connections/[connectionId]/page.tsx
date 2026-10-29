@@ -31,9 +31,12 @@ import { observationBreakdown } from "@/lib/format-metric";
 import { formatReportingDay } from "@/lib/app-store-analytics";
 import { intervalLabel, relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
+import { appleAdsConnectionAccount } from "@/lib/apple-ads";
 import {
   APP_STORE_CONNECT_CONNECTOR_ID,
   APP_STORE_CONNECT_DOCS_URL,
+  APPLE_ADS_CONNECTOR_ID,
+  APPLE_ADS_DOCS_URL,
   latestReportingDay,
   signedKeyStrategyOf,
 } from "@/lib/signed-key";
@@ -59,6 +62,7 @@ export default async function ConnectionDetailPage({
   const { cookieHeader } = await requireSession();
   const locale = await getLocale();
   const t = await getT("connections.detail");
+  const ads = await getT("connections.appleAds");
   const health = await getT("health");
 
   const [{ workspaces }, workspaceResult, detail] = await Promise.all([
@@ -107,6 +111,12 @@ export default async function ConnectionDetailPage({
   const keyName = keyStrategy?.providerName ?? connection.connectorName;
   const appStore = connection.connectorId === APP_STORE_CONNECT_CONNECTOR_ID;
   const latestDay = appStore ? latestReportingDay(observations) : null;
+  // Apple Ads (#375): one ad account per connection, with its currency and
+  // time zone in the config.
+  const appleAds = connection.connectorId === APPLE_ADS_CONNECTOR_ID;
+  const adAccount = appleAds
+    ? appleAdsConnectionAccount(connection.config)
+    : null;
   const numbers = new Intl.NumberFormat(locale, { maximumFractionDigits: 6 });
 
   return (
@@ -155,12 +165,19 @@ export default async function ConnectionDetailPage({
           <p>
             {keyStrategy ? (
               canUpdate ? (
-                <>
-                  <a href="#replace-key">
-                    {t("uploadNewKey", { name: keyName })}
-                  </a>{" "}
-                  {t("uploadNewKeyDetail")}
-                </>
+                appleAds ? (
+                  <>
+                    <a href="#replace-key">{ads("setUpNewKey")}</a>{" "}
+                    {ads("setUpNewKeyDetail")}
+                  </>
+                ) : (
+                  <>
+                    <a href="#replace-key">
+                      {t("uploadNewKey", { name: keyName })}
+                    </a>{" "}
+                    {t("uploadNewKeyDetail")}
+                  </>
+                )
               ) : (
                 t("askUploadKey", { name: keyName })
               )
@@ -248,6 +265,9 @@ export default async function ConnectionDetailPage({
                     connection.signedKey?.fields.find(
                       (field) => field.key === "keyId",
                     )?.value ?? null,
+                  sharedWith: (connection.signedKey?.sharedWith ?? []).map(
+                    (other) => other.name,
+                  ),
                 }
               : null
           }
@@ -267,6 +287,50 @@ export default async function ConnectionDetailPage({
           authFailed={authFailed}
           canUpdate={canUpdate}
         />
+      ) : null}
+
+      {adAccount ? (
+        <div className="card">
+          <h2>{ads("accountTitle")}</h2>
+          <div className="row">
+            <span className="label">{ads("adAccount")}</span>
+            <span className="value">
+              {adAccount.name ?? ads("unknown")}
+              {adAccount.id ? (
+                <>
+                  {" "}
+                  <code>{adAccount.id}</code>
+                </>
+              ) : null}
+            </span>
+          </div>
+          <div className="row">
+            <span className="label">{ads("currency")}</span>
+            <span className="value">
+              {adAccount.currency ?? ads("unknown")}
+            </span>
+          </div>
+          <div className="row">
+            <span className="label">{ads("timeZone")}</span>
+            <span className="value">
+              {adAccount.timeZone ?? ads("unknown")}
+            </span>
+          </div>
+          {adAccount.timeZone ? (
+            <p className="muted">
+              {ads("daysLabel", { timeZone: adAccount.timeZone })}{" "}
+              {adAccount.currency
+                ? ads("currencyNote", { currency: adAccount.currency })
+                : null}
+            </p>
+          ) : null}
+          <p className="muted">
+            {ads("timing")}{" "}
+            <a href={APPLE_ADS_DOCS_URL} target="_blank" rel="noreferrer">
+              {ads("moreAboutConnector")}
+            </a>
+          </p>
+        </div>
       ) : null}
 
       {appStore && keyStrategy && !connection.setupPending ? (

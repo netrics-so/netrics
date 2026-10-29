@@ -357,3 +357,20 @@ a.catalogue-cta--fix:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* The guided Apple Ads setup (#375): numbered steps inside the card. */
+.apple-ads-setup .setup-step {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.apple-ads-setup .setup-step h3 {
+  font-size: var(--size-14);
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.apple-ads-setup .setup-step > p {
+  margin: 0 0 8px;
+}

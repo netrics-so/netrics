@@ -153,10 +153,13 @@ export const appleAdsProvider: SignedKeyProviderDefinition = {
     invalidClient: INVALID_CLIENT_MESSAGE,
   },
   serverDomains: [APPLE_ID_HOST, APPLE_ADS_HOST],
+  // Apple asks the API user for a public key: netrics generates the pair
+  // (ADR 0020 §3, #371); pasting an existing private key stays possible.
+  generatedKeyPair: true,
   setup: {
     steps: [
-      "Sign in to Apple Ads as an Account Admin. Under Account Settings → User Management, invite an API user with the API Account Read Only role (or Limited Access: API Read Only for some campaign groups), or choose an existing one.",
-      "Sign in as that API user, open Account Settings → API and paste the public key. Save.",
+      "An Account Admin invites an API user under Account Settings → User Management in Apple Ads, with the API Account Read Only role (or Limited Access: API Read Only for some campaign groups). The API user accepts the invitation and signs in to Apple Ads.",
+      "As the API user, open Account Settings → API, paste the public key and save.",
       "Copy the clientId, teamId and keyId Apple Ads shows above the public key.",
       "Enter the values below. netrics checks the key with Apple before it stores anything.",
     ],
@@ -169,8 +172,8 @@ export const appleAdsProvider: SignedKeyProviderDefinition = {
       },
       {
         step: 1,
-        label: "Apple's guide to API keys",
-        url: APPLE_ADS_OAUTH_GUIDE_URL,
+        label: "Open Apple Ads",
+        url: APPLE_ADS_SIGN_IN_URL,
       },
     ],
   },

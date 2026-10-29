@@ -14,11 +14,12 @@ import {
  * neither lists nor connects nor syncs them, and its catalog has no rows
  * for them.
  *
- * Apple Ads (milestone 10): the sync produces data since #374, but the
- * generic connect form cannot set it up. Its preview lists ad accounts as
- * if they were resources to select, and nothing stores the chosen
- * account's ID, currency and time zone. The guided setup is #375; Apple's
- * real answers are confirmed by #370.
+ * Apple Ads (milestone 10): the sync produces data since #374, and the
+ * guided setup of #375 generates the key, lists the ad accounts and stores
+ * the chosen accounts' ID, name, currency and time zone in each
+ * connection's config. It stays a preview until Apple's real answers are
+ * confirmed (#370) and the exit gate (#378) passes: production lists no
+ * Apple Ads connector, so its wizard and connection page are unreachable.
  */
 export const PREVIEW_CONNECTORS: ReadonlySet<string> = new Set(["apple-ads"]);
 

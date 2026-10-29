@@ -9,6 +9,7 @@ import type {
   SignedKeyPairResponse,
   ConnectorAuthStrategy,
   CreateConnectionRequest,
+  CreateConnectionsRequest,
   DeleteConnectionResponse,
   EnableAppStoreAnalyticsRequest,
   EnableAppStoreAnalyticsResponse,
@@ -297,6 +298,16 @@ function signedKeyCallFailure<T>(error: unknown): Result<T> {
       ? error.message
       : safeMessage(error),
   );
+}
+
+/** Which key a signed-key view names: provider and non-secret fields. */
+function signedKeyIdentity(view: ConnectionSignedKeyView): string {
+  return canonicalJson({
+    provider: view.provider,
+    fields: Object.fromEntries(
+      view.fields.map((field) => [field.key, field.value]),
+    ),
+  });
 }
 
 function encrypt(
@@ -1118,6 +1129,215 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     });
   }
 
+  /**
+   * Creates connections of one connector with one credential (one, or
+   * several for e.g. several Apple Ads ad accounts of one key, #375). Each
+   * connection is checked with the credential and its own config BEFORE
+   * anything is persisted: bad credentials are a 400 with the connector's
+   * actionable message and leave no rows behind. Then every connection, its
+   * state and initial backfill job, and the consumed pending key commit in
+   * one transaction.
+   */
+  async function createConnections(
+    actor: Actor,
+    body: CreateConnectionsRequest,
+  ): Promise<Result<ConnectionDetail[]>> {
+    const registered = registry.get(body.connectorId);
+    if (!registered) {
+      return fail(400, "invalid_request");
+    }
+    const usable = checkCredentialConnector(registered.manifest);
+    if (!usable.ok) {
+      return usable;
+    }
+    const entries: Array<{
+      id: string;
+      name: string;
+      config: Record<string, unknown>;
+    }> = [];
+    const seen = new Set<string>();
+    for (const entry of body.connections) {
+      const validated = validateConfig(registered.manifest, entry.config);
+      if (!validated.ok) {
+        return validated;
+      }
+      const config = { ...validated.value };
+      if (entry.resources && entry.resources.length > 0) {
+        config.resourceSelection = entry.resources;
+      }
+      // Two connections of one request reading the same thing would only
+      // count it twice.
+      const identity = canonicalJson(config);
+      if (seen.has(identity)) {
+        return fail(
+          400,
+          "Each connection of one request needs its own configuration.",
+        );
+      }
+      seen.add(identity);
+      entries.push({ id: randomUUID(), name: entry.name, config });
+    }
+
+    const resolved = await withPendingKey(
+      actor,
+      registered.manifest,
+      body.credentials,
+      body.pendingKeyId,
+    );
+    if (!resolved.ok) {
+      return resolved;
+    }
+    const { pending } = resolved.value;
+
+    const stored: Array<Record<string, unknown> | null> = [];
+    for (const entry of entries) {
+      const check = await checkCandidate(
+        registered.manifest,
+        entry.id,
+        entry.config,
+        resolved.value.credentials ?? {},
+      );
+      if (!check.ok) {
+        return entries.length > 1
+          ? fail(400, `${entry.name}: ${check.error}`)
+          : check;
+      }
+      stored.push(resolved.value.credentials ? check.value : null);
+    }
+
+    return inWorkspace(actor, async (tx) => {
+      // A generated key moves into these connections: its pending row goes
+      // in this commit, before anything is written.
+      const consumed = await consumePending(tx, actor, pending);
+      if (!consumed.ok) {
+        return consumed;
+      }
+      if (body.projectId) {
+        const project = await findProject(
+          tx,
+          actor.workspaceId,
+          body.projectId,
+        );
+        if (!project) {
+          return fail(404, "project_not_found");
+        }
+      }
+      const details: ConnectionDetail[] = [];
+      for (const [index, entry] of entries.entries()) {
+        const credentials = stored[index] ?? null;
+        const connectionId = entry.id;
+        const created = await insertConnection(tx, {
+          id: connectionId,
+          workspaceId: actor.workspaceId,
+          connectorId: body.connectorId,
+          name: entry.name,
+          config: entry.config,
+          credentialsEncrypted: credentials
+            ? encrypt(credentialKeyring, credentials, {
+                workspaceId: actor.workspaceId,
+                connectionId,
+              })
+            : null,
+          projectId: body.projectId ?? null,
+          pollIntervalSeconds: registered.manifest.minRefreshIntervalSeconds,
+        });
+        // Transactional enqueue invariant: the connection, its state, and
+        // the initial backfill job commit atomically.
+        await enqueueJob(tx, {
+          kind: "connection.backfill",
+          workspaceId: actor.workspaceId,
+          connectionId,
+          idempotencyKey: `backfill:${connectionId}`,
+        });
+        await insertAuditEvent(tx, {
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.callerId,
+          action: "connection.created",
+          target: connectionId,
+          metadata: {
+            name: entry.name,
+            connectorId: body.connectorId,
+            ...(entries.length > 1 ? { sharedCredential: true } : {}),
+          },
+        });
+        details.push(
+          presentConnectionDetail(
+            registry,
+            created,
+            signedKeyView(actor.workspaceId, created.row),
+            actor.locale,
+          ),
+        );
+      }
+      // Every connection of the request stores the same key.
+      return ok(
+        details.map((detail) =>
+          detail.signedKey
+            ? {
+                ...detail,
+                signedKey: {
+                  ...detail.signedKey,
+                  sharedWith: details
+                    .filter((other) => other.id !== detail.id)
+                    .map((other) => ({ id: other.id, name: other.name })),
+                },
+              }
+            : detail,
+        ),
+      );
+    });
+  }
+
+  /**
+   * The other connections of the workspace that store the same signed key
+   * as `row` (the same provider and non-secret fields, ADR 0014): one Apple
+   * Ads key may serve several ad accounts (#375). Only non-secret fields
+   * are compared; envelopes that cannot be opened are skipped.
+   */
+  async function sharedKeyConnections(
+    tx: Transaction,
+    workspaceId: string,
+    row: ConnectionWithState["row"],
+    view: ConnectionSignedKeyView | null,
+  ): Promise<ConnectionWithState[]> {
+    if (!view || view.fields.length === 0) {
+      return [];
+    }
+    const identity = signedKeyIdentity(view);
+    const rows = await listConnectionRows(tx, workspaceId);
+    return rows.filter((other) => {
+      if (
+        other.row.id === row.id ||
+        other.row.connectorId !== row.connectorId ||
+        other.oauth
+      ) {
+        return false;
+      }
+      const otherView = signedKeyView(workspaceId, other.row);
+      return otherView !== null && signedKeyIdentity(otherView) === identity;
+    });
+  }
+
+  /** A signed-key view with the connections sharing its key. */
+  async function withSharedKey(
+    tx: Transaction,
+    workspaceId: string,
+    row: ConnectionWithState["row"],
+  ): Promise<ConnectionSignedKeyView | null> {
+    const view = signedKeyView(workspaceId, row);
+    if (!view) {
+      return null;
+    }
+    const shared = await sharedKeyConnections(tx, workspaceId, row, view);
+    return {
+      ...view,
+      sharedWith: shared.map((other) => ({
+        id: other.row.id,
+        name: other.row.name,
+      })),
+    };
+  }
+
   return {
     /** The installation's catalog, from the deployed bundle. */
     /** The catalog, its texts in `locale` (#257). */
@@ -1150,104 +1370,37 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       actor: Actor,
       body: CreateConnectionRequest,
     ): Promise<Result<ConnectionDetail>> {
-      const registered = registry.get(body.connectorId);
-      if (!registered) {
-        return fail(400, "invalid_request");
-      }
-      const usable = checkCredentialConnector(registered.manifest);
-      if (!usable.ok) {
-        return usable;
-      }
-      const validated = validateConfig(registered.manifest, body.config);
-      if (!validated.ok) {
-        return validated;
-      }
-      const config = { ...validated.value };
-      if (body.resources && body.resources.length > 0) {
-        config.resourceSelection = body.resources;
-      }
-
-      const resolved = await withPendingKey(
-        actor,
-        registered.manifest,
-        body.credentials,
-        body.pendingKeyId,
-      );
-      if (!resolved.ok) {
-        return resolved;
-      }
-      const { pending } = resolved.value;
-
-      // Check BEFORE anything is persisted: bad credentials are a 400 with
-      // the connector's actionable message and leave no rows behind.
-      const connectionId = randomUUID();
-      const check = await checkCandidate(
-        registered.manifest,
-        connectionId,
-        config,
-        resolved.value.credentials ?? {},
-      );
-      if (!check.ok) {
-        return check;
-      }
-      const credentials = resolved.value.credentials ? check.value : null;
-
-      return inWorkspace(actor, async (tx) => {
-        // A generated key moves into this connection: its pending row goes
-        // in this commit, before anything is written.
-        const consumed = await consumePending(tx, actor, pending);
-        if (!consumed.ok) {
-          return consumed;
-        }
-        if (body.projectId) {
-          const project = await findProject(
-            tx,
-            actor.workspaceId,
-            body.projectId,
-          );
-          if (!project) {
-            return fail(404, "project_not_found");
-          }
-        }
-        const created = await insertConnection(tx, {
-          id: connectionId,
-          workspaceId: actor.workspaceId,
-          connectorId: body.connectorId,
-          name: body.name,
-          config,
-          credentialsEncrypted: credentials
-            ? encrypt(credentialKeyring, credentials, {
-                workspaceId: actor.workspaceId,
-                connectionId,
-              })
-            : null,
-          projectId: body.projectId ?? null,
-          pollIntervalSeconds: registered.manifest.minRefreshIntervalSeconds,
-        });
-        // Transactional enqueue invariant: the connection, its state, and the
-        // initial backfill job commit atomically.
-        await enqueueJob(tx, {
-          kind: "connection.backfill",
-          workspaceId: actor.workspaceId,
-          connectionId,
-          idempotencyKey: `backfill:${connectionId}`,
-        });
-        await insertAuditEvent(tx, {
-          workspaceId: actor.workspaceId,
-          actorUserId: actor.callerId,
-          action: "connection.created",
-          target: connectionId,
-          metadata: { name: body.name, connectorId: body.connectorId },
-        });
-        return ok(
-          presentConnectionDetail(
-            registry,
-            created,
-            signedKeyView(actor.workspaceId, created.row),
-            actor.locale,
-          ),
-        );
+      const created = await createConnections(actor, {
+        connectorId: body.connectorId,
+        ...(body.credentials !== undefined
+          ? { credentials: body.credentials }
+          : {}),
+        ...(body.pendingKeyId !== undefined
+          ? { pendingKeyId: body.pendingKeyId }
+          : {}),
+        ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
+        connections: [
+          {
+            name: body.name,
+            config: body.config,
+            ...(body.resources !== undefined
+              ? { resources: body.resources }
+              : {}),
+          },
+        ],
       });
+      return created.ok ? ok(created.value[0]!) : created;
+    },
+
+    /**
+     * Several connections with one credential (ADR 0020 §5, #375): one
+     * Apple Ads key for several ad accounts. All or none are stored.
+     */
+    createMany(
+      actor: Actor,
+      body: CreateConnectionsRequest,
+    ): Promise<Result<ConnectionDetail[]>> {
+      return createConnections(actor, body);
     },
 
     /**
@@ -1505,7 +1658,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           connectionId,
           20,
         );
-        return { ...loaded, syncRuns };
+        const signedKey = await withSharedKey(
+          tx,
+          actor.workspaceId,
+          loaded.row,
+        );
+        return { ...loaded, syncRuns, signedKey };
       });
       if (!found) {
         return fail(404, NOT_FOUND);
@@ -1514,7 +1672,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         connection: presentConnectionDetail(
           registry,
           found,
-          signedKeyView(actor.workspaceId, found.row),
+          found.signedKey,
           actor.locale,
         ),
         syncRuns: found.syncRuns.map(presentSyncRun),
@@ -1602,6 +1760,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       // Config or credential changes are re-checked against the connector
       // before they persist (same rule as creation).
       let storedCredentials: Record<string, unknown> | undefined;
+      /** Connections sharing the replaced key, with their new envelope. */
+      const siblingKeys: Array<{
+        connectionId: string;
+        stored: Record<string, unknown>;
+      }> = [];
       // An optional additional key (#190, the App Store reviews key) is
       // added, replaced or removed on its own: the main key and the
       // connection's auth state stay as they are.
@@ -1680,6 +1843,44 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             check.value,
           );
           storedCredentials = carried;
+          // The same key in other connections of the workspace (one Apple
+          // Ads key for several ad accounts, #375) is replaced with it:
+          // the old key is removed at the provider afterwards, which would
+          // stop them. Each is checked with the new key and its own config
+          // first; one refusal changes nothing.
+          const siblings = await inWorkspace(actor, (tx) =>
+            sharedKeyConnections(
+              tx,
+              actor.workspaceId,
+              existing.row,
+              signedKeyView(actor.workspaceId, existing.row),
+            ),
+          );
+          for (const sibling of siblings) {
+            const siblingCheck = await checkCandidate(
+              registered.manifest,
+              sibling.row.id,
+              sibling.row.config as Record<string, unknown>,
+              body.credentials,
+              { probeAdditional: true },
+            );
+            if (!siblingCheck.ok) {
+              return fail(
+                400,
+                `The new key does not work for “${sibling.row.name}”, which uses the same key: ${siblingCheck.error}`,
+              );
+            }
+            siblingKeys.push({
+              connectionId: sibling.row.id,
+              stored: carryAdditionalKeys(
+                registered.manifest,
+                sibling,
+                actor.workspaceId,
+                body.credentials,
+                siblingCheck.value,
+              ),
+            });
+          }
         }
       }
 
@@ -1809,6 +2010,54 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             target: connectionId,
             metadata: { connectorId: row.connectorId, ...reviewsDeletedNote },
           });
+          for (const sibling of siblingKeys) {
+            const updated = await updateConnectionRow(
+              tx,
+              actor.workspaceId,
+              sibling.connectionId,
+              {
+                credentialsEncrypted: encrypt(
+                  credentialKeyring,
+                  sibling.stored,
+                  {
+                    workspaceId: actor.workspaceId,
+                    connectionId: sibling.connectionId,
+                  },
+                ),
+              },
+            );
+            if (!updated) {
+              // Deleted meanwhile: nothing to replace.
+              continue;
+            }
+            // As for the connection itself: a key of another team drops
+            // the reviews key, and with it the stored review text.
+            if (
+              hasReviewsKey(registered.manifest) &&
+              sibling.stored[REVIEWS_KEY_ID] == null
+            ) {
+              await deleteConnectionAppReviews(
+                tx,
+                actor.workspaceId,
+                sibling.connectionId,
+              );
+            }
+            await resetConnectionAuth(
+              tx,
+              actor.workspaceId,
+              sibling.connectionId,
+            );
+            await insertAuditEvent(tx, {
+              workspaceId: actor.workspaceId,
+              actorUserId: actor.callerId,
+              action: "connection.credentials_updated",
+              target: sibling.connectionId,
+              metadata: {
+                connectorId: row.connectorId,
+                sharedKeyOf: connectionId,
+              },
+            });
+          }
         }
         if (
           body.name !== undefined ||
@@ -1839,7 +2088,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               state,
               oauth: existing.oauth,
             },
-            signedKeyView(actor.workspaceId, row),
+            await withSharedKey(tx, actor.workspaceId, row),
             actor.locale,
           ),
         );
