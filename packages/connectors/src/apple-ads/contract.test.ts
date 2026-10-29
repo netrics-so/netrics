@@ -15,7 +15,9 @@ import {
   AppleAdsApiError,
   AppleAdsRateBudgetError,
   CHOOSE_AD_ACCOUNT_MESSAGE,
+  KEYWORD_DISCOVERY_BUDGET_MS,
   MAX_AD_GROUP_PAGES,
+  MAX_KEYWORD_PAGES,
   NO_AD_ACCOUNTS_MESSAGE,
   NO_APP_STORE_ACCOUNT_MESSAGE,
   RESOURCE_KINDS,
@@ -404,8 +406,18 @@ describe("discover", () => {
           kind: "ad_group",
         },
         { id: "6100000004", name: "Dicey – Category Exact", kind: "ad_group" },
+        // The deleted keyword 7100000002 is left out (#396).
+        { id: "7100000001", name: "wurfel", kind: "keyword" },
+        { id: "7100000004", name: "board game dice", kind: "keyword" },
       ],
     );
+    expect(resources[8]!.metadata).toEqual({
+      adAccountId: US,
+      campaignId: "5100000001",
+      adGroupId: "6100000001",
+      matchType: "EXACT",
+      status: "ACTIVE",
+    });
     expect(resources[6]!.metadata).toEqual({
       adAccountId: US,
       campaignId: "5100000002",
@@ -459,6 +471,152 @@ describe("discover", () => {
         expect(metric.dimensions).toContain(RESOURCE_KINDS.adGroup);
       }
     }
+  });
+
+  it("names the keywords of the discovered ad groups with adGroupId IN, by ID (#396)", async () => {
+    const api = fake();
+    await connector().discover(context(), api.runtime);
+    const queries = api.requests.filter(
+      (r) => r.url.pathname === "/v1/keywords/query",
+    );
+    expect(queries).toHaveLength(1);
+    expect(queries[0]!.method).toBe("POST");
+    expect(queries[0]!.context).toBe(`adAccountId=${US}`);
+    expect(queries[0]!.body).toEqual({
+      filters: [
+        {
+          field: "adGroupId",
+          operator: "IN",
+          value: [6100000001, 6100000003, 6100000004],
+        },
+      ],
+      sorting: [{ field: "id", order: "ASC" }],
+      pagination: { offset: 0, pageSize: 1000, fetchTotalCount: true },
+    });
+    // The keyword kind is the dimension it names.
+    expect(RESOURCE_KINDS.keyword).toBe("keyword");
+    for (const metric of appleAdsManifest.metrics) {
+      if (metric.key.endsWith("_by_keyword")) {
+        expect(metric.dimensions).toContain(RESOURCE_KINDS.keyword);
+      }
+    }
+  });
+
+  it("bounds keyword names by requests and by time, keeping the rest of discovery", async () => {
+    const api = fake();
+    const original = api.fetch;
+    const bodies: Array<{
+      filters: Array<{ value: number[] }>;
+      pagination: { offset: number };
+    }> = [];
+    // 2,500 ad groups, each with 1,000 keywords: far past the bound.
+    const fetch = async (url: string, init?: ConnectorFetchInit) => {
+      if (url.endsWith("/v1/adgroups/query")) {
+        const { offset } = (
+          JSON.parse(init!.body!) as { pagination: { offset: number } }
+        ).pagination;
+        const count = Math.max(0, Math.min(1000, 2500 - offset));
+        return jsonResponse(200, {
+          result: Array.from({ length: count }, (_, i) => ({
+            id: 6200000000 + offset + i,
+            name: `Ad group ${offset + i}`,
+            campaignId: 5100000001,
+          })),
+          pagination: { totalCount: 2500, offset, pageSize: 1000 },
+        });
+      }
+      if (url.endsWith("/v1/keywords/query")) {
+        const body = JSON.parse(init!.body!) as (typeof bodies)[number];
+        bodies.push(body);
+        const { offset } = body.pagination;
+        return jsonResponse(200, {
+          result: Array.from({ length: 1000 }, (_, i) => ({
+            id: 7200000000 + bodies.length * 1000 + i,
+            text: `keyword ${offset + i}`,
+            adGroupId: body.filters[0]!.value[0],
+          })),
+          pagination: { totalCount: 1_000_000, offset, pageSize: 1000 },
+        });
+      }
+      return original(url, init);
+    };
+    const capped = await connector().discover(context(), {
+      signal: api.runtime.signal,
+      fetch,
+    });
+    expect(bodies).toHaveLength(MAX_KEYWORD_PAGES);
+    // At most 1,000 ad-group IDs per query.
+    expect(bodies[0]!.filters[0]!.value).toHaveLength(1000);
+    expect(capped.filter((r) => r.kind === "keyword")).toHaveLength(
+      MAX_KEYWORD_PAGES * 1000,
+    );
+    expect(capped.filter((r) => r.kind === "ad_group")).toHaveLength(2500);
+
+    // A slow Apple: the time budget ends the keyword queries first.
+    bodies.length = 0;
+    let now = 0;
+    const slow = await createAppleAdsConnector({
+      clock: () => now,
+    }).discover(context(), {
+      signal: api.runtime.signal,
+      fetch: async (url, init) => {
+        if (url.endsWith("/v1/keywords/query")) {
+          now += KEYWORD_DISCOVERY_BUDGET_MS / 2;
+        }
+        return fetch(url, init);
+      },
+    });
+    expect(bodies).toHaveLength(2);
+    expect(slow.filter((r) => r.kind === "campaign")).toHaveLength(3);
+  });
+
+  it("leaves out deleted and textless keywords, refuses another account's, and goes on when Apple refuses the query", async () => {
+    const api = fake();
+    const original = api.fetch;
+    const answer = (status: number, rows: unknown[]) => ({
+      signal: api.runtime.signal,
+      fetch: async (url: string, init?: ConnectorFetchInit) =>
+        url.endsWith("/v1/keywords/query")
+          ? jsonResponse(
+              status,
+              status === 200
+                ? {
+                    result: rows,
+                    pagination: { totalCount: rows.length, offset: 0 },
+                  }
+                : { error: { code: "X", message: "no" } },
+            )
+          : original(url, init),
+    });
+    const resources = await connector().discover(
+      context(),
+      answer(200, [
+        { id: 7100000001, text: " wurfel ", adGroupId: 6100000001 },
+        { id: 7100000002, text: "gone", deleted: true },
+        { id: "7100000005", text: "  " },
+        { id: 7100000006, text: null },
+      ]),
+    );
+    expect(
+      resources
+        .filter((r) => r.kind === "keyword")
+        .map(({ id, name }) => [id, name]),
+    ).toEqual([["7100000001", "wurfel"]]);
+    await expect(
+      connector().discover(
+        context(),
+        answer(200, [{ id: 7100000001, text: "x", adAccountId: 4100000002 }]),
+      ),
+    ).rejects.toThrow("another ad account's keyword");
+    for (const status of [400, 404]) {
+      const kept = await connector().discover(context(), answer(status, []));
+      expect(kept.filter((r) => r.kind === "keyword")).toHaveLength(0);
+      expect(kept.filter((r) => r.kind === "ad_group")).toHaveLength(3);
+    }
+    const error = await createAppleAdsConnector()
+      .discover(context(), answer(429, []))
+      .catch((e: unknown) => e);
+    expect((error as AppleAdsApiError).status).toBe(429);
   });
 
   it("pages through ad groups to totalCount, and stops at the bound", async () => {

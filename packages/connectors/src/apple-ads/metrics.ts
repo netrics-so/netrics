@@ -43,6 +43,22 @@ export const APPLE_ADS_AD_GROUP_METRIC_KEYS = {
   redownloads: `${PREFIX}.redownloads_by_ad_group`,
 } as const satisfies Record<keyof typeof APPLE_ADS_METRIC_KEYS, string>;
 
+/**
+ * The same quantities per keyword (#396), in keys of their own: campaign ×
+ * keyword rows, the 20 keywords with the most spend per campaign and
+ * calendar month by name and the rest of the campaign under "Others", so
+ * an unfiltered sum of these keys is the ad account's total too and never
+ * mixes with the main or ad-group keys.
+ */
+export const APPLE_ADS_KEYWORD_METRIC_KEYS = {
+  spend: `${PREFIX}.spend_by_keyword`,
+  impressions: `${PREFIX}.impressions_by_keyword`,
+  taps: `${PREFIX}.taps_by_keyword`,
+  installs: `${PREFIX}.installs_by_keyword`,
+  newDownloads: `${PREFIX}.new_downloads_by_keyword`,
+  redownloads: `${PREFIX}.redownloads_by_keyword`,
+} as const satisfies Record<keyof typeof APPLE_ADS_METRIC_KEYS, string>;
+
 /** Dimension names of the Apple Ads metrics. */
 export const APPLE_ADS_DIMENSIONS = {
   /** The promoted app's Apple ID (Adam ID), as App Store Connect's `resource`. */
@@ -51,6 +67,8 @@ export const APPLE_ADS_DIMENSIONS = {
   campaign: "campaign",
   /** The ad group's Apple ID; its name is a label, not identity. */
   adGroup: "ad_group",
+  /** The keyword's Apple ID (#396); its text is a label, not identity. */
+  keyword: "keyword",
   /** `countryOrRegion`, ISO 3166-1 alpha-2, or OTHERS. */
   country: "country",
   /** How an install was attributed: ATTRIBUTIONS. */
@@ -69,15 +87,21 @@ export type Attribution = (typeof ATTRIBUTIONS)[number];
 
 /** Countries per campaign and month kept by name; the rest are OTHERS. */
 export const TOP_COUNTRIES = 10;
-/** The `country` value of the countries outside the top TOP_COUNTRIES. */
+/** Keywords per campaign and month kept by name (#396); the rest are OTHERS. */
+export const TOP_KEYWORDS = 20;
+/**
+ * The `country`, `ad_group` or `keyword` value of what the named values
+ * leave out of a campaign's total.
+ */
 export const OTHERS = "Others";
 
 const SUMMED = ["sum", "avg", "min", "max"] as const;
 
-const { resource, campaign, adGroup, country, attribution, currency } =
+const { resource, campaign, adGroup, keyword, country, attribution, currency } =
   APPLE_ADS_DIMENSIONS;
 const BASE_DIMENSIONS = [resource, campaign, country];
 const AD_GROUP_DIMENSIONS = [resource, campaign, adGroup];
+const KEYWORD_DIMENSIONS = [resource, campaign, keyword];
 
 export const APPLE_ADS_METRICS: MetricDefinition[] = [
   {
@@ -213,6 +237,77 @@ export const APPLE_ADS_AD_GROUP_METRICS: MetricDefinition[] = [
     unit: "downloads",
     granularity: "day",
     dimensions: [...AD_GROUP_DIMENSIONS, attribution],
+    aggregations: [...SUMMED],
+  },
+];
+
+/**
+ * The `keyword` value "Others" (#396): the keywords outside a campaign's
+ * top TOP_KEYWORDS of the month, and what no keyword accounts for (Search
+ * Match, a deleted campaign), so the keyword sum stays the campaign's
+ * total.
+ */
+const KEYWORD_NOTE = `The ${TOP_KEYWORDS} keywords with the most spend per campaign and month keep their names; the rest of the campaign, Search Match included, is "${OTHERS}".`;
+
+export const APPLE_ADS_KEYWORD_METRICS: MetricDefinition[] = [
+  {
+    key: APPLE_ADS_KEYWORD_METRIC_KEYS.spend,
+    name: "Ad spend by keyword",
+    description: `What Apple Ads charged per day, campaign and keyword, in the ad account's currency, without conversion. Days follow the ad account's time zone, as in Apple Ads. ${KEYWORD_NOTE}`,
+    kind: "delta",
+    unit: CURRENCY_MINOR_UNIT,
+    granularity: "day",
+    dimensions: [...KEYWORD_DIMENSIONS, currency],
+    aggregations: [...SUMMED],
+  },
+  {
+    key: APPLE_ADS_KEYWORD_METRIC_KEYS.impressions,
+    name: "Ad impressions by keyword",
+    description: `How often your ads were shown per day, campaign and keyword. ${KEYWORD_NOTE}`,
+    kind: "delta",
+    unit: "impressions",
+    granularity: "day",
+    dimensions: [...KEYWORD_DIMENSIONS],
+    aggregations: [...SUMMED],
+  },
+  {
+    key: APPLE_ADS_KEYWORD_METRIC_KEYS.taps,
+    name: "Ad taps by keyword",
+    description: `Taps on your ads per day, campaign and keyword. ${KEYWORD_NOTE}`,
+    kind: "delta",
+    unit: "taps",
+    granularity: "day",
+    dimensions: [...KEYWORD_DIMENSIONS],
+    aggregations: [...SUMMED],
+  },
+  {
+    key: APPLE_ADS_KEYWORD_METRIC_KEYS.installs,
+    name: "Ad installs by keyword",
+    description: `Installs (new downloads and redownloads) attributed to your ads per day, campaign and keyword: after a tap or after an ad was seen (view-through). The total is both. ${KEYWORD_NOTE}`,
+    kind: "delta",
+    unit: "installs",
+    granularity: "day",
+    dimensions: [...KEYWORD_DIMENSIONS, attribution],
+    aggregations: [...SUMMED],
+  },
+  {
+    key: APPLE_ADS_KEYWORD_METRIC_KEYS.newDownloads,
+    name: "Ad new downloads by keyword",
+    description: `First-time downloads attributed to your ads per day, campaign and keyword, after a tap or a view. ${KEYWORD_NOTE}`,
+    kind: "delta",
+    unit: "downloads",
+    granularity: "day",
+    dimensions: [...KEYWORD_DIMENSIONS, attribution],
+    aggregations: [...SUMMED],
+  },
+  {
+    key: APPLE_ADS_KEYWORD_METRIC_KEYS.redownloads,
+    name: "Ad redownloads by keyword",
+    description: `Downloads by people who had the app before, attributed to your ads per day, campaign and keyword, after a tap or a view. ${KEYWORD_NOTE}`,
+    kind: "delta",
+    unit: "downloads",
+    granularity: "day",
+    dimensions: [...KEYWORD_DIMENSIONS, attribution],
     aggregations: [...SUMMED],
   },
 ];

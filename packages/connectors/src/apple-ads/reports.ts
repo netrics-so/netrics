@@ -37,8 +37,18 @@ import { AppleAdsReportError } from "./observations.js";
 //   https://developer.apple.com/documentation/apple-ads-platform-api/get-app-ad-group-reports
 //   https://developer.apple.com/documentation/apple-ads-platform-api/appsreportingadgroup
 
+//
+// Keyword reports (#396): `POST /v1/reports/apps/keywords/query`, the same
+// body with the required `campaignId` filter, one row per keyword with
+// `metadata.id`, `text`, `matchType`, `campaignId`, `adGroupId` and
+// `deleted` (ReportingKeyword), the same day limits. `sorting` by
+// `localSpend` descending is AppsReportingRequest's own example:
+//   https://developer.apple.com/documentation/apple-ads-platform-api/get-app-keyword-reports
+//   https://developer.apple.com/documentation/apple-ads-platform-api/reportingkeyword
+
 export const CAMPAIGN_REPORT_PATH = "/v1/reports/apps/campaigns/query";
 export const AD_GROUP_REPORT_PATH = "/v1/reports/apps/adgroups/query";
+export const KEYWORD_REPORT_PATH = "/v1/reports/apps/keywords/query";
 /** Days a `DAILY` report request may span (Apple's limit). */
 export const MAX_REPORT_DAYS = 90;
 /** Rows per report page (Apple allows up to 5000). */
@@ -48,6 +58,15 @@ export const REPORT_PAGE_SIZE = 1000;
  * A larger answer is refused rather than read without bound.
  */
 export const MAX_REPORT_PAGES = 50;
+/**
+ * Keyword rows one campaign's keyword report reads (#396): one page of the
+ * keywords with the most spend in the range, by Apple's `localSpend`
+ * sorting. Only the top TOP_KEYWORDS of each month are stored by name and
+ * the rest of the campaign is "Others" (its total minus the named ones),
+ * so the long tail is never needed: a campaign costs one request whatever
+ * its number of keywords.
+ */
+export const KEYWORD_REPORT_ROWS = 1000;
 /** The breakdown of the country pass. */
 export const COUNTRY_GROUP_BY = "countryOrRegion";
 
@@ -64,8 +83,10 @@ const reportRowSchema = z
         id: appleIdValue,
         name: z.string().nullable().optional(),
         promotedObjectId: appleIdValue.nullable().optional(),
-        // Ad-group rows: the campaign the ad group belongs to.
+        // Ad-group and keyword rows: the campaign they belong to.
         campaignId: appleIdValue.nullable().optional(),
+        // Keyword rows (#396): the keyword's text, a label.
+        text: z.string().nullable().optional(),
         deleted: z.boolean().nullable().optional(),
         countryOrRegion: z.string().nullable().optional(),
       })
@@ -112,6 +133,11 @@ export interface ReportQuery {
    * reports have none.
    */
   campaignId?: string;
+  /**
+   * The keyword report (#396): `sorting` by `localSpend` descending and
+   * pages of this many rows.
+   */
+  bySpend?: number;
 }
 
 /** Days from start to end, both included. */
@@ -157,9 +183,12 @@ export function reportRequestBody(
         }
       : {}),
     ...(query.byCountry ? { groupBy: [COUNTRY_GROUP_BY] } : {}),
-    // No `sorting`: Apple's default order is by ID, ascending, a stable
-    // sequence for offsets.
-    pagination: { offset, pageSize: REPORT_PAGE_SIZE },
+    // Otherwise no `sorting`: Apple's default order is by ID, ascending, a
+    // stable sequence for offsets.
+    ...(query.bySpend !== undefined
+      ? { sorting: [{ field: "localSpend", order: "DESC" }] }
+      : {}),
+    pagination: { offset, pageSize: query.bySpend ?? REPORT_PAGE_SIZE },
   };
 }
 
@@ -173,9 +202,12 @@ async function readReport(
   path: string,
   query: ReportQuery,
   what: string,
+  /** Stop after this many pages instead of refusing more. */
+  pageLimit?: number,
 ): Promise<ReportRow[]> {
   const rows: ReportRow[] = [];
   for (let page = 0; ; page += 1) {
+    if (pageLimit !== undefined && page >= pageLimit) return rows;
     if (page >= MAX_REPORT_PAGES) {
       throw new AppleAdsReportError(
         `Apple Ads ${what} has more than ${MAX_REPORT_PAGES * REPORT_PAGE_SIZE} rows`,
@@ -197,6 +229,27 @@ async function readReport(
     const total = parsed.data.pagination?.totalCount ?? rows.length;
     if (pageRows.length === 0 || rows.length >= total) {
       return rows;
+    }
+  }
+}
+
+/** Refuses a row whose `campaignId` names another campaign. */
+function refuseOtherCampaigns(
+  rows: ReportRow[],
+  campaignId: string,
+  what: string,
+  item: string,
+): void {
+  for (const row of rows) {
+    const campaign = row.metadata.campaignId;
+    if (
+      campaign !== null &&
+      campaign !== undefined &&
+      String(campaign).replace(/^0+(?=\d)/, "") !== campaignId
+    ) {
+      throw new AppleAdsReportError(
+        `Apple Ads answered the ${what} with another campaign's ${item}`,
+      );
     }
   }
 }
@@ -223,19 +276,29 @@ export async function readAdGroupReport(
     { ...query, byCountry: false },
     "ad-group report",
   );
-  for (const row of rows) {
-    const campaign = row.metadata.campaignId;
-    // TO BE CONFIRMED by #370: every ad-group row names its campaignId.
-    if (
-      campaign !== null &&
-      campaign !== undefined &&
-      String(campaign).replace(/^0+(?=\d)/, "") !== query.campaignId
-    ) {
-      throw new AppleAdsReportError(
-        "Apple Ads answered the ad-group report with another campaign's ad group",
-      );
-    }
-  }
+  // TO BE CONFIRMED by #370: every ad-group row names its campaignId.
+  refuseOtherCampaigns(rows, query.campaignId, "ad-group report", "ad group");
+  return rows;
+}
+
+/**
+ * One campaign's keyword report (#396): the KEYWORD_REPORT_ROWS keywords
+ * with the most spend in the range, one row each, no country breakdown. A
+ * row of another campaign is refused.
+ */
+export async function readKeywordReport(
+  api: AppleAdsClient,
+  query: { adAccountId: string; range: DayRange; campaignId: string },
+): Promise<ReportRow[]> {
+  const rows = await readReport(
+    api,
+    KEYWORD_REPORT_PATH,
+    { ...query, byCountry: false, bySpend: KEYWORD_REPORT_ROWS },
+    "keyword report",
+    1,
+  );
+  // TO BE CONFIRMED by #370: every keyword row names its campaignId.
+  refuseOtherCampaigns(rows, query.campaignId, "keyword report", "keyword");
   return rows;
 }
 

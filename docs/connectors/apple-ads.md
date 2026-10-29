@@ -8,8 +8,9 @@ It uses the Apple Ads Platform API 1.0 (`api.ads.apple.com/v1`), not the
 Campaign Management API v5, which Apple sunsets on 2027-01-26.
 
 > Status: preview (milestone 10). The key exchange (#369), the generated key
-> pair (#371), ad-account discovery (#373), the campaign report sync (#374)
-> and the guided setup (#375) are in place, tested against documented
+> pair (#371), ad-account discovery (#373), the campaign report sync (#374),
+> the guided setup (#375), ad groups (#376, #394) and keywords (#396) are in
+> place, tested against documented
 > response shapes. Apple Ads is available in development only until the
 > owner's captured responses (#370) and the exit gate (#378) confirm them.
 > Wording marked _to be confirmed_ below is checked against the real Apple
@@ -137,9 +138,11 @@ they can sit side by side in one workspace.
   changes).
 - A day with no campaign activity counts as zero only once it is older than
   those 3 days.
-- Ad groups are read per campaign over the same days, only for campaigns
-  with numbers in them, 10 campaigns per sync step: an account with many
-  campaigns takes a few more steps.
+- Ad groups and keywords are read per campaign over the same days, only
+  for campaigns with numbers in them, 10 campaigns per sync step (fewer
+  when Apple answers slowly, so a step stays within its time limit): an
+  account with many campaigns takes a few more steps. Per campaign and
+  step netrics reads one page of the 1,000 keywords with the most spend.
 
 ## Time zone and currency
 
@@ -196,6 +199,19 @@ twice. There is no country breakdown by ad group.
 | `apple_ads.new_downloads_by_ad_group` | `downloads`      | resource, campaign, ad_group, attribution |
 | `apple_ads.redownloads_by_ad_group`   | `downloads`      | resource, campaign, ad_group, attribution |
 
+The same quantities by keyword (#396), again in keys of their own: the 20
+keywords with the most spend per campaign and calendar month (in the ad
+account's days) by name, the rest of the campaign under "Others".
+
+| Metric                               | Unit             | Dimensions                               |
+| ------------------------------------ | ---------------- | ---------------------------------------- |
+| `apple_ads.spend_by_keyword`         | `currency_minor` | resource, campaign, keyword, currency    |
+| `apple_ads.impressions_by_keyword`   | `impressions`    | resource, campaign, keyword              |
+| `apple_ads.taps_by_keyword`          | `taps`           | resource, campaign, keyword              |
+| `apple_ads.installs_by_keyword`      | `installs`       | resource, campaign, keyword, attribution |
+| `apple_ads.new_downloads_by_keyword` | `downloads`      | resource, campaign, keyword, attribution |
+| `apple_ads.redownloads_by_keyword`   | `downloads`      | resource, campaign, keyword, attribution |
+
 - `resource` is the promoted app's Apple ID, as in the App Store Connect
   connector, so ad installs and App Store downloads of one app sit on one
   dashboard.
@@ -208,6 +224,18 @@ twice. There is no country breakdown by ad group.
   campaign's ad groups leave out of its total (a deleted campaign Apple no
   longer reports ad groups for) is the ad group "Others", so ad-group sums
   equal campaign sums.
+- `keyword` is Apple's keyword ID; the name is the keyword's text, read
+  with the ad groups' names for the ad groups discovery found (at most
+  10,000 keywords, and only for a few seconds). One text can be several
+  keywords (one per ad group and match type), each its own series. Values
+  are daily like every other key, so any period and the compare widget
+  work; the top 20 are ranked over the whole calendar month, so a day has
+  the same keywords whichever sync wrote it, and a keyword that drops out
+  of a running month's top 20 is set to 0 there (its numbers move to
+  "Others"), so nothing is counted twice. "Others" holds the other
+  keywords, Search Match and anything without a keyword report (a deleted
+  campaign), so keyword sums equal campaign sums every day. A removed
+  keyword keeps its history.
 - `country` is the country or region (ISO 3166-1 alpha-2): the 10 with the
   most spend per campaign and calendar month, plus "Others", so an
   unfiltered sum is the ad account's total.

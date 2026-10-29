@@ -1,0 +1,268 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/get-app-keyword-reports and https://developer.apple.com/documentation/apple-ads-platform-api/reportingkeyword), checked 2026-10-29; IDs, texts and numbers are synthetic. The answer to the campaignId filter of campaign 5100000001 in report-campaigns-4100000001.json, sorted by localSpend descending: three keywords, two of them deleted, that leave 2.50 USD on 2026-10-26 and 5.00 USD on 2026-10-27 (Search Match of the broad ad group) to the keyword Others. TO BE CONFIRMED by #370 captures: every AppsMetrics count is present on each granularMetrics entry (Apple's example shows only some), metadata.campaignId and text are on every row, a deleted keyword still has its rows, sorting by localSpend orders by the range's total, and Search Match spend is in no keyword row.",
+  "result": {
+    "rows": [
+      {
+        "metadata": {
+          "id": 7100000001,
+          "text": "wurfel",
+          "matchType": "EXACT",
+          "adAccountId": 4100000001,
+          "campaignId": 5100000001,
+          "adGroupId": 6100000001,
+          "status": "ACTIVE",
+          "deleted": false,
+          "adGroup": {
+            "id": 6100000001
+          }
+        },
+        "totalMetrics": {
+          "localSpend": {
+            "amount": "37.00",
+            "currency": "USD"
+          },
+          "impressions": 3700,
+          "taps": 185,
+          "ttr": 0.05,
+          "tapInstalls": 46,
+          "viewInstalls": 5,
+          "totalInstalls": 51,
+          "tapNewDownloads": 40,
+          "viewNewDownloads": 3,
+          "totalNewDownloads": 43,
+          "tapRedownloads": 6,
+          "viewRedownloads": 2,
+          "totalRedownloads": 8,
+          "avgCPT": {
+            "amount": "0.20",
+            "currency": "USD"
+          }
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "localSpend": {
+              "amount": "25.00",
+              "currency": "USD"
+            },
+            "impressions": 2500,
+            "taps": 125,
+            "ttr": 0.05,
+            "tapInstalls": 34,
+            "viewInstalls": 3,
+            "totalInstalls": 37,
+            "tapNewDownloads": 30,
+            "viewNewDownloads": 2,
+            "totalNewDownloads": 32,
+            "tapRedownloads": 4,
+            "viewRedownloads": 1,
+            "totalRedownloads": 5,
+            "avgCPT": {
+              "amount": "0.20",
+              "currency": "USD"
+            }
+          },
+          {
+            "date": "2026-10-27",
+            "localSpend": {
+              "amount": "12.00",
+              "currency": "USD"
+            },
+            "impressions": 1200,
+            "taps": 60,
+            "ttr": 0.05,
+            "tapInstalls": 12,
+            "viewInstalls": 2,
+            "totalInstalls": 14,
+            "tapNewDownloads": 10,
+            "viewNewDownloads": 1,
+            "totalNewDownloads": 11,
+            "tapRedownloads": 2,
+            "viewRedownloads": 1,
+            "totalRedownloads": 3,
+            "avgCPT": {
+              "amount": "0.20",
+              "currency": "USD"
+            }
+          }
+        ]
+      },
+      {
+        "metadata": {
+          "id": 7100000002,
+          "text": "dice game",
+          "matchType": "EXACT",
+          "adAccountId": 4100000001,
+          "campaignId": 5100000001,
+          "adGroupId": 6100000001,
+          "status": "PAUSED",
+          "deleted": true,
+          "adGroup": {
+            "id": 6100000001
+          }
+        },
+        "totalMetrics": {
+          "localSpend": {
+            "amount": "8.25",
+            "currency": "USD"
+          },
+          "impressions": 800,
+          "taps": 40,
+          "ttr": 0.05,
+          "tapInstalls": 9,
+          "viewInstalls": 2,
+          "totalInstalls": 11,
+          "tapNewDownloads": 7,
+          "viewNewDownloads": 2,
+          "totalNewDownloads": 9,
+          "tapRedownloads": 2,
+          "viewRedownloads": 0,
+          "totalRedownloads": 2,
+          "avgCPT": {
+            "amount": "0.21",
+            "currency": "USD"
+          }
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "localSpend": {
+              "amount": "5.00",
+              "currency": "USD"
+            },
+            "impressions": 500,
+            "taps": 25,
+            "ttr": 0.05,
+            "tapInstalls": 6,
+            "viewInstalls": 1,
+            "totalInstalls": 7,
+            "tapNewDownloads": 5,
+            "viewNewDownloads": 1,
+            "totalNewDownloads": 6,
+            "tapRedownloads": 1,
+            "viewRedownloads": 0,
+            "totalRedownloads": 1,
+            "avgCPT": {
+              "amount": "0.20",
+              "currency": "USD"
+            }
+          },
+          {
+            "date": "2026-10-27",
+            "localSpend": {
+              "amount": "3.25",
+              "currency": "USD"
+            },
+            "impressions": 300,
+            "taps": 15,
+            "ttr": 0.05,
+            "tapInstalls": 3,
+            "viewInstalls": 1,
+            "totalInstalls": 4,
+            "tapNewDownloads": 2,
+            "viewNewDownloads": 1,
+            "totalNewDownloads": 3,
+            "tapRedownloads": 1,
+            "viewRedownloads": 0,
+            "totalRedownloads": 1,
+            "avgCPT": {
+              "amount": "0.22",
+              "currency": "USD"
+            }
+          }
+        ]
+      },
+      {
+        "metadata": {
+          "id": 7100000003,
+          "text": "wurfel dice",
+          "matchType": "BROAD",
+          "adAccountId": 4100000001,
+          "campaignId": 5100000001,
+          "adGroupId": 6100000002,
+          "status": "PAUSED",
+          "deleted": true,
+          "adGroup": {
+            "id": 6100000002
+          }
+        },
+        "totalMetrics": {
+          "localSpend": {
+            "amount": "8.00",
+            "currency": "USD"
+          },
+          "impressions": 800,
+          "taps": 40,
+          "ttr": 0.05,
+          "tapInstalls": 8,
+          "viewInstalls": 1,
+          "totalInstalls": 9,
+          "tapNewDownloads": 7,
+          "viewNewDownloads": 1,
+          "totalNewDownloads": 8,
+          "tapRedownloads": 1,
+          "viewRedownloads": 0,
+          "totalRedownloads": 1,
+          "avgCPT": {
+            "amount": "0.20",
+            "currency": "USD"
+          }
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "localSpend": {
+              "amount": "8.00",
+              "currency": "USD"
+            },
+            "impressions": 800,
+            "taps": 40,
+            "ttr": 0.05,
+            "tapInstalls": 8,
+            "viewInstalls": 1,
+            "totalInstalls": 9,
+            "tapNewDownloads": 7,
+            "viewNewDownloads": 1,
+            "totalNewDownloads": 8,
+            "tapRedownloads": 1,
+            "viewRedownloads": 0,
+            "totalRedownloads": 1,
+            "avgCPT": {
+              "amount": "0.20",
+              "currency": "USD"
+            }
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "grandTotal": {
+        "localSpend": {
+          "amount": "53.25",
+          "currency": "USD"
+        },
+        "impressions": 5300,
+        "taps": 265,
+        "ttr": 0.05,
+        "tapInstalls": 63,
+        "viewInstalls": 8,
+        "totalInstalls": 71,
+        "tapNewDownloads": 54,
+        "viewNewDownloads": 6,
+        "totalNewDownloads": 60,
+        "tapRedownloads": 9,
+        "viewRedownloads": 2,
+        "totalRedownloads": 11,
+        "avgCPT": {
+          "amount": "0.20",
+          "currency": "USD"
+        }
+      }
+    }
+  },
+  "pagination": {
+    "totalCount": 3,
+    "offset": 0,
+    "pageSize": 1000
+  }
+}

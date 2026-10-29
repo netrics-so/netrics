@@ -6,6 +6,7 @@ import { DecimalAmountError, parseDecimalAmount } from "../decimal-amount.js";
 import {
   APPLE_ADS_AD_GROUP_METRIC_KEYS,
   APPLE_ADS_DIMENSIONS,
+  APPLE_ADS_KEYWORD_METRIC_KEYS,
   APPLE_ADS_METRIC_KEYS,
   OTHERS,
   type Attribution,
@@ -64,6 +65,12 @@ export interface AppleAdsRowIdentity {
    */
   adGroup?: AppleId;
   /**
+   * The keyword's `id`, for keyword report rows (#396), or OTHERS for the
+   * keywords outside a campaign's top TOP_KEYWORDS of the month and what
+   * no keyword accounts for.
+   */
+  keyword?: AppleId;
+  /**
    * `countryOrRegion` of a `groupBy: ["countryOrRegion"]` row (ISO 3166-1
    * alpha-2), or OTHERS for the countries outside a campaign's top
    * TOP_COUNTRIES of the month.
@@ -82,9 +89,9 @@ function appleId(value: AppleId, what: string): string {
 
 /**
  * The dimensions of a row's observations. A row is at one level: a
- * campaign, a campaign in one country or region, or an ad group (no
- * country breakdown at ad-group level in v1, #376), so `adGroup` and
- * `country` are never both set.
+ * campaign, a campaign in one country or region, an ad group (no country
+ * breakdown at ad-group level in v1, #376) or a keyword (#396), so at most
+ * one of `adGroup`, `keyword` and `country` is set.
  *
  * Grain: queries add up every series whose dimensions contain the
  * filter. Observations of one metric at two levels (country rows beside
@@ -100,9 +107,10 @@ export function appleAdsDimensions(
     [APPLE_ADS_DIMENSIONS.resource]: appleId(identity.app, "app ID"),
     [APPLE_ADS_DIMENSIONS.campaign]: appleId(identity.campaign, "campaign ID"),
   };
-  if (identity.adGroup !== undefined && identity.country !== undefined) {
+  const levels = [identity.adGroup, identity.keyword, identity.country];
+  if (levels.filter((level) => level !== undefined).length > 1) {
     throw new AppleAdsReportError(
-      "Apple Ads rows are by ad group or by country or region, not both",
+      "Apple Ads rows are by ad group, by keyword or by country or region, not several",
     );
   }
   if (identity.adGroup !== undefined) {
@@ -110,6 +118,12 @@ export function appleAdsDimensions(
       identity.adGroup === OTHERS
         ? OTHERS
         : appleId(identity.adGroup, "ad group ID");
+  }
+  if (identity.keyword !== undefined) {
+    dimensions[APPLE_ADS_DIMENSIONS.keyword] =
+      identity.keyword === OTHERS
+        ? OTHERS
+        : appleId(identity.keyword, "keyword ID");
   }
   if (identity.country !== undefined) {
     dimensions[APPLE_ADS_DIMENSIONS.country] = countryValue(identity.country);
@@ -314,7 +328,8 @@ export function parseDayMetrics(
  * The observations of one day of one row: spend in minor units with its
  * currency, impressions, taps, and installs, new downloads and
  * redownloads once per attribution (`tap`, `view`). An ad-group row's go
- * to the `*_by_ad_group` keys, never to the main ones.
+ * to the `*_by_ad_group` keys and a keyword row's to the `*_by_keyword`
+ * keys, never to the main ones.
  */
 export function valueObservations(
   identity: AppleAdsRowIdentity,
@@ -325,9 +340,11 @@ export function valueObservations(
   const sourceTimestamp = reportDayTimestamp(date);
   const dimensions = appleAdsDimensions(identity);
   const keys =
-    identity.adGroup === undefined
-      ? APPLE_ADS_METRIC_KEYS
-      : APPLE_ADS_AD_GROUP_METRIC_KEYS;
+    identity.adGroup !== undefined
+      ? APPLE_ADS_AD_GROUP_METRIC_KEYS
+      : identity.keyword !== undefined
+        ? APPLE_ADS_KEYWORD_METRIC_KEYS
+        : APPLE_ADS_METRIC_KEYS;
   const observations: Observation[] = [];
   const push = (
     metricKey: string,
