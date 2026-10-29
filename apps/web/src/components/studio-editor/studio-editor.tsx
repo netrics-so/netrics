@@ -50,7 +50,7 @@ import {
 import { dataWidgetLabel } from "@/components/studio/metric-widget";
 import { gaugeLabel } from "@/lib/studio-gauge";
 import type { SlideLayouts } from "@/lib/screen-view";
-import { rebaseBlockers } from "@/lib/studio-layouts";
+import { customLayoutOf, rebaseBlockers } from "@/lib/studio-layouts";
 import {
   deviceOf,
   draftFormatWarnings,
@@ -101,7 +101,11 @@ import { SlideRail } from "./slide-rail";
 import { SlideSettings } from "./slide-settings";
 import { CanvasHead, LiveIndicator, StatusLine } from "./studio-status";
 import { useLeaveGuard } from "./use-leave-guard";
-import { reviewConnectionIds, type StudioCurrency } from "./widget-panel";
+import {
+  reviewConnectionIds,
+  type FormatPlacement,
+  type StudioCurrency,
+} from "./widget-panel";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { builtinThemeName } from "@/lib/theme-name";
 
@@ -282,6 +286,25 @@ export function StudioEditor({
     formatView.target !== "scroll"
       ? formatView.target
       : null;
+  // The inspector's position line follows the format being edited (#298).
+  const formatPlacement = useMemo((): FormatPlacement | undefined => {
+    if (!customFormat || !slide || !widget) return undefined;
+    const custom = customLayoutOf(slide, primaryFormat, customFormat);
+    const placement = custom?.placements.find(
+      (entry) => entry.id === widget.id,
+    );
+    if (!custom || !placement) return undefined;
+    return {
+      x: placement.x,
+      y: placement.y,
+      w: placement.w,
+      h: placement.h,
+      page: placement.page,
+      pages: custom.pages,
+      hidden: placement.hidden,
+      ratio: formatRatio(customFormat),
+    };
+  }, [customFormat, slide, widget, primaryFormat]);
   // Copy, paste and duplicate add widgets: in the primary format only.
   const widgetClipboard = useWidgetClipboard(
     widget,
@@ -955,6 +978,7 @@ export function StudioEditor({
               timeZone={timeZone}
               fontScale={theme.tokens.fontScale}
               showHeader={draft.settings.showHeader}
+              placement={formatPlacement}
               unreadable={unreadable.byWidget.get(widget.id)}
               currency={currency}
               connections={connections}

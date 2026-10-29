@@ -292,6 +292,48 @@ describe("widget panel", () => {
     );
   });
 
+  it("heads the panel with the place in the custom format being edited (#298)", () => {
+    const widget = {
+      type: "metric",
+      id: ID(11),
+      ...place,
+      ...binding,
+      options: { showSparkline: true, showChange: false },
+    } as DashboardWidget;
+    const inFormat = {
+      x: 2,
+      y: 5,
+      w: 6,
+      h: 4,
+      page: 0,
+      pages: 1,
+      hidden: false,
+      ratio: "9:16",
+    };
+    expect(render(widget, { placement: inFormat })).toContain(
+      '<span class="inspector-head-meta">9:16: col 3, row 6 · 6×4</span>',
+    );
+    expect(
+      render(widget, { placement: { ...inFormat, page: 1, pages: 2 } }),
+    ).toContain("9:16: page 2 of 2, col 3, row 6 · 6×4");
+    expect(
+      render(widget, { placement: { ...inFormat, hidden: true } }),
+    ).toContain("Hidden in 9:16");
+    const de = renderI18n(
+      <WidgetPanel
+        widget={widget}
+        workspaceId={ID(3)}
+        metrics={[downloads]}
+        images={[]}
+        problems={[]}
+        dispatch={noop}
+        placement={{ ...inFormat, page: 1, pages: 3 }}
+      />,
+      "de",
+    );
+    expect(de).toContain("9:16: Seite 2 von 3, Sp. 3, Z. 6 · 6×4");
+  });
+
   it("shows filters as removable chips with + add", () => {
     const html = render({
       type: "metric",
