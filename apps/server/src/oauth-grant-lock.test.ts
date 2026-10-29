@@ -44,7 +44,9 @@ import { createTestDatabase } from "./test-db.js";
 // provider account. Disconnects hold it across the revocation HTTP call;
 // callbacks hold it from the liveness check of a fresh grant through its
 // store and any revocation of a refused or released grant; account changes
-// lock both accounts in a fixed order. Concurrency cases run 5 rounds.
+// lock both accounts in a fixed order. Concurrency cases run 5 rounds, and
+// force the interleaving they assert outcomes for (a delay or barrier at the
+// provider), not rely on two concurrent requests overlapping by chance.
 
 const ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const KEYRING = createCredentialKeyring(ENCRYPTION_KEY);
@@ -276,6 +278,7 @@ afterAll(async () => {
 beforeEach(() => {
   provider.tokenDelayMs = 0;
   provider.revokeDelayMs = 0;
+  provider.codeExchangeBarrier = 0;
   provider.nextRevokeFailures.length = 0;
   provider.nextTokenErrors.length = 0;
 });
@@ -436,43 +439,101 @@ describe("account change on reauthorization", () => {
     }
   });
 
-  it("two connections swapping accounts concurrently do not deadlock, and no stored grant is dead (5 rounds)", async () => {
-    for (let round = 0; round < 5; round += 1) {
-      const a = nextSub("swap-a");
-      const b = nextSub("swap-b");
-      const first = await seeded(workspaceA, a);
-      const second = await seeded(workspaceA, b);
-      const queries = [
-        provider.consent(
-          await startUrl(workspaceA, {
-            connectionId: first,
-            allowAccountChange: true,
-          }),
-          { account: account(b) },
-        ),
-        provider.consent(
-          await startUrl(workspaceA, {
-            connectionId: second,
-            allowAccountChange: true,
-          }),
-          { account: account(a) },
-        ),
-      ];
-      provider.tokenDelayMs = 20;
-      const results = await Promise.race([
-        Promise.all(queries.map((query) => callback(query))),
-        sleep(15_000).then(() => {
-          throw new Error("deadlock: callbacks did not finish");
+  /** Connections `first` (on a) and `second` (on b), each reauthorizing to the other's account. */
+  async function swapping() {
+    const a = nextSub("swap-a");
+    const b = nextSub("swap-b");
+    const first = await seeded(workspaceA, a);
+    const second = await seeded(workspaceA, b);
+    const queries = [
+      provider.consent(
+        await startUrl(workspaceA, {
+          connectionId: first,
+          allowAccountChange: true,
         }),
-      ]);
+        { account: account(b) },
+      ),
+      provider.consent(
+        await startUrl(workspaceA, {
+          connectionId: second,
+          allowAccountChange: true,
+        }),
+        { account: account(a) },
+      ),
+    ] as const;
+    return { a, b, first, second, queries };
+  }
+
+  function withinDeadline<T>(work: Promise<T>): Promise<T> {
+    return Promise.race([
+      work,
+      sleep(15_000).then(() => {
+        throw new Error("deadlock: callbacks did not finish");
+      }),
+    ]);
+  }
+
+  it("two connections swapping accounts with both codes exchanged first do not deadlock: one reauthorizes, the other refuses its revoked grant (5 rounds)", async () => {
+    for (let round = 0; round < 5; round += 1) {
+      const { a, b, first, second, queries } = await swapping();
+      // Both codes are exchanged before either callback takes its locks, so
+      // both new grants exist when the first callback releases its previous
+      // account (the other's new one) and revokes it.
+      provider.codeExchangeBarrier = 2;
+      provider.tokenDelayMs = 20;
+      const results = await withinDeadline(
+        Promise.all(queries.map((query) => callback(query))),
+      );
       provider.tokenDelayMs = 0;
-      // Serialized: the first releases its last grant of one account (and
-      // revokes it); the second then finds its new grant of that account
-      // revoked and refuses it. Nothing dead is stored.
       expect(results.map((result) => result.outcome).sort()).toEqual([
         "failed",
         "reauthorized",
       ]);
+      // The winner moved to the loser's account; the loser kept it. The
+      // released account has no grant left, at the provider or stored.
+      const winner = results[0]!.outcome === "reauthorized" ? 0 : 1;
+      const [moved, released] = winner === 0 ? [b, a] : [a, b];
+      expect([await linkedSub(first), await linkedSub(second)]).toEqual([
+        moved,
+        moved,
+      ]);
+      expect(await holders(released)).toHaveLength(0);
+      expect(provider.isRevoked(released)).toBe(true);
+      expect(await storedGrantsLive(a)).toBe(true);
+      expect(await storedGrantsLive(b)).toBe(true);
+    }
+  });
+
+  it("two connections swapping accounts store no dead grant, however the callbacks interleave (5 rounds)", async () => {
+    // Round 0 overlaps fully; later rounds start the second callback later,
+    // the last only after the first has finished. A second callback that
+    // exchanges its code after the first revoked gets a new, live grant of
+    // that account, so both reauthorize; one that exchanged before refuses.
+    for (let round = 0; round < 5; round += 1) {
+      const { a, b, first, second, queries } = await swapping();
+      provider.tokenDelayMs = 20;
+      const firstDone = callback(queries[0]);
+      const secondDone =
+        round === 4
+          ? firstDone.then(() => callback(queries[1]))
+          : sleep(round * 25).then(() => callback(queries[1]));
+      const results = await withinDeadline(
+        Promise.all([firstDone, secondDone]),
+      );
+      provider.tokenDelayMs = 0;
+      const outcomes = results.map((result) => result.outcome);
+      expect([
+        ["failed", "reauthorized"],
+        ["reauthorized", "reauthorized"],
+      ]).toContainEqual([...outcomes].sort());
+      if (round === 4) {
+        expect(outcomes).toEqual(["reauthorized", "reauthorized"]);
+      }
+      if (outcomes.every((outcome) => outcome === "reauthorized")) {
+        expect(await linkedSub(first)).toBe(b);
+        expect(await linkedSub(second)).toBe(a);
+      }
+      // Whatever the outcomes: every stored grant works.
       expect(await storedGrantsLive(a)).toBe(true);
       expect(await storedGrantsLive(b)).toBe(true);
     }

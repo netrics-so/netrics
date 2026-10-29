@@ -157,6 +157,13 @@ export class FixtureOAuthProvider {
    * is counted at once, the account's tokens die when it answers.
    */
   revokeDelayMs = 0;
+  /**
+   * Hold the next authorization_code exchanges until this many have
+   * arrived, then answer them together (0: off). Forces concurrent
+   * callbacks to overlap: every code is exchanged before any callback
+   * continues.
+   */
+  codeExchangeBarrier = 0;
   /** The next /token answers are these OAuth errors (FIFO). */
   readonly nextTokenErrors: Array<{ status: number; error: string }> = [];
   /** The next /revoke answers fail with this status (FIFO). */
@@ -165,6 +172,7 @@ export class FixtureOAuthProvider {
   rejectNextApiCalls = 0;
 
   readonly #codes = new Map<string, PendingCode>();
+  readonly #heldExchanges: Array<() => void> = [];
   readonly #grants = new Map<string, Grant>(); // by sub
   readonly #refreshTokens = new Map<string, IssuedToken>();
   readonly #accessTokens = new Map<
@@ -305,6 +313,9 @@ export class FixtureOAuthProvider {
     } else if (grantType === "refresh_token") {
       this.calls.refresh_token += 1;
     }
+    if (grantType === "authorization_code" && this.codeExchangeBarrier > 0) {
+      await this.#awaitExchangeBarrier();
+    }
     if (this.tokenDelayMs > 0) {
       await sleep(this.tokenDelayMs);
     }
@@ -331,6 +342,18 @@ export class FixtureOAuthProvider {
       return this.#refresh(form);
     }
     return { status: 400, body: { error: "unsupported_grant_type" } };
+  }
+
+  #awaitExchangeBarrier(): Promise<void> {
+    return new Promise((resolve) => {
+      this.#heldExchanges.push(resolve);
+      if (this.#heldExchanges.length >= this.codeExchangeBarrier) {
+        this.codeExchangeBarrier = 0;
+        for (const release of this.#heldExchanges.splice(0)) {
+          release();
+        }
+      }
+    });
   }
 
   #live(issued: IssuedToken): boolean {
