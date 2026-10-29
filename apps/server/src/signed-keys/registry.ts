@@ -1,4 +1,4 @@
-import type { KeyObject } from "node:crypto";
+import { createHash, createPublicKey, type KeyObject } from "node:crypto";
 
 import {
   createEgressFetch,
@@ -27,6 +27,9 @@ import {
 // The host's signed-key providers (ADR 0014): credential validation before
 // persistence, per-call token signing, and the probe hook. The private key
 // stays in this module's objects; connectors receive `{ accessToken }`.
+// Providers with a token exchange (ADR 0020 §2) sign a short-lived client
+// secret per exchange instead and hand connectors the exchanged token,
+// cached per connection by the token store (token-store.ts).
 
 /** One HTTP call of a validation probe. */
 export type SignedKeyHttp = (
@@ -57,6 +60,74 @@ export const signedKeyProviderHttp: SignedKeyHttpFactory =
     })(url, init ?? {});
 
 /**
+ * A token exchange that did not yield a token. `rejected`: the provider
+ * refused the client (`invalid_client`: key removed, or the IDs do not
+ * match the key), the connection is auth_failed and the message is the
+ * provider's fixed text. `transient`: network, timeout, 429 or 5xx; a
+ * retry may help. `configuration`: any other refusal (our request is
+ * wrong). Messages carry the status and the OAuth error code only: never
+ * the client secret, a token or the response body.
+ */
+export class SignedKeyExchangeError extends Error {
+  readonly kind: "rejected" | "transient" | "configuration";
+
+  constructor(
+    kind: "rejected" | "transient" | "configuration",
+    message: string,
+  ) {
+    super(message);
+    this.name = "SignedKeyExchangeError";
+    this.kind = kind;
+  }
+}
+
+/** An access token from one exchange, with its lifetime. */
+export interface ExchangedAccessToken {
+  accessToken: string;
+  expiresInSeconds: number;
+}
+
+/**
+ * Where a connection's exchanged access token is cached (token-store.ts):
+ * reused while valid for long enough, otherwise exchanged once under a
+ * per-connection lock.
+ */
+export interface SignedKeyTokenCache {
+  /**
+   * A valid access token for the key. `cached` is false only when this
+   * call exchanged it.
+   */
+  get(key: SignedKey): Promise<{ accessToken: string; cached: boolean }>;
+  /** Drops a token the provider refused, if it is still the stored one. */
+  invalidate(rejectedAccessToken: string): Promise<void>;
+}
+
+/** The credentials of one connector call and where the main token came from. */
+export interface AcquiredSignedKeyTokens {
+  credentials: { accessToken: string } & Record<string, string>;
+  /** True when the access token came from the cache, not a fresh signature or exchange. */
+  cached: boolean;
+}
+
+/** The OAuth `error` code of a token response, or a placeholder. */
+function oauthErrorCode(body: unknown): string {
+  const code =
+    body && typeof body === "object" && "error" in body
+      ? (body as { error: unknown }).error
+      : undefined;
+  return typeof code === "string" && /^[a-z_]{1,64}$/.test(code)
+    ? code
+    : "unknown_error";
+}
+
+/** Codes that mean the key or its IDs are not (or no longer) accepted. */
+const REJECTED_CLIENT_CODES = new Set([
+  "invalid_client",
+  "unauthorized_client",
+  "invalid_grant",
+]);
+
+/**
  * Validated credentials of one provider. The key object and the PEM never
  * leave this class except through `stored()` (for the envelope) and signed
  * tokens. JSON serialization and inspection show no key material.
@@ -73,6 +144,9 @@ export class SignedKey {
   readonly #additional: ReadonlyMap<string, SignedKey>;
   /** For an additional key: its own field keys (stored under its id). */
   readonly #ownFields: readonly string[] | undefined;
+  /** Guarded HTTP to the provider's server domains, for the exchange. */
+  readonly #http: SignedKeyHttp | undefined;
+  #fingerprint: string | undefined;
 
   constructor(
     provider: SignedKeyProviderDefinition,
@@ -82,6 +156,7 @@ export class SignedKey {
     options: {
       additional?: ReadonlyMap<string, SignedKey>;
       ownFields?: readonly string[];
+      http?: SignedKeyHttp;
     } = {},
   ) {
     this.#provider = provider;
@@ -90,6 +165,27 @@ export class SignedKey {
     this.#now = now;
     this.#additional = options.additional ?? new Map();
     this.#ownFields = options.ownFields;
+    this.#http = options.http;
+  }
+
+  /** Whether connectors get an exchanged token rather than the signed JWT. */
+  get exchanges(): boolean {
+    return this.#provider.exchange !== undefined;
+  }
+
+  /**
+   * A non-secret digest of the key pair's public key and the public fields
+   * (client ID, key ID). A cached token is used only with the key it was
+   * exchanged for.
+   */
+  get fingerprint(): string {
+    this.#fingerprint ??= createHash("sha256")
+      .update(
+        createPublicKey(this.#key).export({ format: "der", type: "spki" }),
+      )
+      .update(JSON.stringify(this.publicFields))
+      .digest("base64url");
+    return this.#fingerprint;
   }
 
   get provider(): SignedKeyProviderDefinition {
@@ -131,6 +227,7 @@ export class SignedKey {
     }
     return new SignedKey(this.#provider, this.#values, this.#key, this.#now, {
       additional,
+      ...(this.#http ? { http: this.#http } : {}),
     });
   }
 
@@ -151,7 +248,11 @@ export class SignedKey {
     return stored;
   }
 
-  /** A freshly signed token: never cached, never stored, never enqueued. */
+  /**
+   * A freshly signed token: never cached, never stored, never enqueued.
+   * With a token exchange this is the client secret, which only the
+   * exchange sends.
+   */
   mintToken(): string {
     const nowSeconds = Math.floor(this.#now() / 1000);
     const { kid, claims } = this.#provider.token(this.#values);
@@ -168,8 +269,21 @@ export class SignedKey {
    * key as `accessToken`, and one per additional key in its token field.
    */
   mintTokens(): { accessToken: string } & Record<string, string> {
+    if (this.exchanges) {
+      // The signed JWT is a client secret here; it never reaches a
+      // connector. Callers use acquireTokens().
+      throw new Error(
+        `${this.#provider.id} exchanges its signed key for a token; use acquireTokens()`,
+      );
+    }
+    return this.#withAdditionalTokens(this.mintToken());
+  }
+
+  #withAdditionalTokens(
+    accessToken: string,
+  ): { accessToken: string } & Record<string, string> {
     const tokens: { accessToken: string } & Record<string, string> = {
-      accessToken: this.mintToken(),
+      accessToken,
     };
     for (const definition of this.#provider.additionalKeys ?? []) {
       const key = this.#additional.get(definition.id);
@@ -178,6 +292,105 @@ export class SignedKey {
       }
     }
     return tokens;
+  }
+
+  /**
+   * The credentials of one connector call. Without a token exchange: a
+   * freshly signed token, as mintTokens(). With one: the connection's
+   * cached token from `cache` (exchanged when missing or about to expire),
+   * or, without a cache (candidate keys in probes and previews), a token
+   * from a fresh exchange that is not stored anywhere.
+   */
+  async acquireTokens(
+    cache?: SignedKeyTokenCache,
+  ): Promise<AcquiredSignedKeyTokens> {
+    if (!this.exchanges) {
+      return { credentials: this.mintTokens(), cached: false };
+    }
+    if (cache) {
+      const token = await cache.get(this);
+      return {
+        credentials: this.#withAdditionalTokens(token.accessToken),
+        cached: token.cached,
+      };
+    }
+    const exchanged = await this.exchangeAccessToken();
+    return {
+      credentials: this.#withAdditionalTokens(exchanged.accessToken),
+      cached: false,
+    };
+  }
+
+  /**
+   * One token exchange (ADR 0020 §2): a client secret signed for this
+   * request only (the provider's lifetime, e.g. iat now − 60 s, exp now +
+   * 10 min) is posted with the provider's form to its token endpoint. The
+   * secret is never stored. Throws SignedKeyExchangeError; its message
+   * names the status and OAuth error code only.
+   */
+  async exchangeAccessToken(): Promise<ExchangedAccessToken> {
+    const exchange = this.#provider.exchange;
+    if (!exchange || !this.#http) {
+      throw new SignedKeyExchangeError(
+        "configuration",
+        `${this.#provider.id} has no token exchange`,
+      );
+    }
+    const body = new URLSearchParams({
+      ...exchange.form(this.#values),
+      client_secret: this.mintToken(),
+    }).toString();
+    let response: ConnectorResponse;
+    try {
+      response = await this.#http(exchange.tokenEndpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          accept: "application/json",
+        },
+        body,
+      });
+    } catch (error) {
+      // Network failures, timeouts and egress denials: keep only the name.
+      const name = error instanceof Error ? error.name : "Error";
+      throw new SignedKeyExchangeError(
+        "transient",
+        `${this.#provider.name} token exchange failed: ${name}`,
+      );
+    }
+    let parsedBody: unknown;
+    try {
+      parsedBody = response.json();
+    } catch {
+      parsedBody = undefined;
+    }
+    if (response.status === 200) {
+      const parsed = exchange.response.safeParse(parsedBody);
+      if (!parsed.success || !parsed.data.access_token) {
+        throw new SignedKeyExchangeError(
+          "transient",
+          `${this.#provider.name} token exchange failed: malformed token response`,
+        );
+      }
+      return {
+        accessToken: parsed.data.access_token,
+        expiresInSeconds: parsed.data.expires_in,
+      };
+    }
+    const code = oauthErrorCode(parsedBody);
+    if (response.status === 429 || response.status >= 500) {
+      throw new SignedKeyExchangeError(
+        "transient",
+        `${this.#provider.name} token exchange failed: provider answered ${response.status} (${code})`,
+      );
+    }
+    if (REJECTED_CLIENT_CODES.has(code)) {
+      throw new SignedKeyExchangeError("rejected", exchange.invalidClient);
+    }
+    throw new SignedKeyExchangeError(
+      "configuration",
+      `${this.#provider.name} token exchange failed: provider answered ${response.status} (${code})`,
+    );
   }
 
   toJSON(): string {
@@ -299,6 +512,7 @@ export class SignedKeyProviders {
       main.value.values,
       main.value.key,
       this.#now,
+      provider.exchange ? { http: this.#http(provider) } : {},
     );
     for (const definition of additionalKeys) {
       const raw = input[definition.id];
@@ -453,6 +667,23 @@ export class SignedKeyProviders {
       redactCredentialValues(redactCredentialValues(message, key.stored()), {
         tokens,
       }).slice(0, 500);
+    // With a token exchange the probes share one exchanged token, which is
+    // never cached: the key is a candidate until it is stored.
+    let exchanged: string | undefined;
+    if (key.exchanges && probes.length > 0) {
+      try {
+        exchanged = (await key.exchangeAccessToken()).accessToken;
+        tokens.push(exchanged);
+      } catch (error) {
+        return {
+          ok: false,
+          message:
+            error instanceof SignedKeyExchangeError && error.kind === "rejected"
+              ? error.message
+              : `${provider.name} could not be reached to check the key. Try again in a few minutes.`,
+        };
+      }
+    }
     for (const probe of probes) {
       let result;
       try {
@@ -460,6 +691,9 @@ export class SignedKeyProviders {
           config,
           fields: key.publicFields,
           accessToken: () => {
+            if (exchanged !== undefined) {
+              return exchanged;
+            }
             const token = key.mintToken();
             tokens.push(token);
             return token;

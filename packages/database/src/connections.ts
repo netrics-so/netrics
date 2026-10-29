@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, lte, max, sql } from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import * as schema from "./schema.js";
+import { deleteSignedKeyToken } from "./signed-key-tokens.js";
 
 // Connection persistence for the API (netrics_app, inside withWorkspace).
 // Every query names the workspace explicitly in addition to the RLS context
@@ -182,7 +183,11 @@ export interface ConnectionChanges {
   projectId?: string | null;
 }
 
-/** Applies the given changes; returns null when the connection is gone. */
+/**
+ * Applies the given changes; returns null when the connection is gone.
+ * New credentials (a replaced key) drop the connection's cached
+ * signed-key access token in the same transaction (ADR 0020 §2).
+ */
 export async function updateConnection(
   tx: Transaction,
   workspaceId: string,
@@ -194,6 +199,9 @@ export async function updateConnection(
     .set({ ...changes, updatedAt: new Date() })
     .where(connectionScope(workspaceId, connectionId))
     .returning();
+  if (row && changes.credentialsEncrypted !== undefined) {
+    await deleteSignedKeyToken(tx, workspaceId, connectionId);
+  }
   return row ?? null;
 }
 

@@ -97,10 +97,16 @@ export function createCredentialKeyring(
  * - oauth-access-token: connection_oauth.access_token_encrypted, bound to
  *   the connection;
  * - oauth-code-verifier: oauth_authorizations.code_verifier_encrypted, bound
- *   to the authorization row (its id in place of the connection id).
+ *   to the authorization row (its id in place of the connection id);
+ * - signed-key-access-token:
+ *   connection_signed_key_tokens.access_token_encrypted, bound to the
+ *   connection (ADR 0020: the exchanged token of a signed-key provider).
  */
 export type EnvelopePurpose =
-  "credentials" | "oauth-access-token" | "oauth-code-verifier";
+  | "credentials"
+  | "oauth-access-token"
+  | "oauth-code-verifier"
+  | "signed-key-access-token";
 
 /** The row an OAuth authorization's PKCE verifier is sealed to. */
 export interface AuthorizationBinding {
@@ -182,6 +188,40 @@ export function decryptOAuthAccessToken(
     keyring,
     associatedData(
       "oauth-access-token",
+      binding.workspaceId,
+      binding.connectionId,
+    ),
+  );
+}
+
+/** Seals a signed-key connection's exchanged access token (ADR 0020). */
+export function encryptSignedKeyAccessToken(
+  plaintext: string,
+  keyring: CredentialKeyring,
+  binding: CredentialBinding,
+): string {
+  return sealEnvelope(
+    plaintext,
+    keyring,
+    associatedData(
+      "signed-key-access-token",
+      binding.workspaceId,
+      binding.connectionId,
+    ),
+  );
+}
+
+/** Opens an envelope produced by encryptSignedKeyAccessToken (same binding). */
+export function decryptSignedKeyAccessToken(
+  envelope: string,
+  keyring: CredentialKeyring,
+  binding: CredentialBinding,
+): string {
+  return openEnvelope(
+    envelope,
+    keyring,
+    associatedData(
+      "signed-key-access-token",
       binding.workspaceId,
       binding.connectionId,
     ),

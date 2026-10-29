@@ -1491,6 +1491,46 @@ export const connectionOAuth = pgTable(
   ],
 );
 
+// The cached access token of a signed-key connection whose provider
+// exchanges a signed client secret for it (ADR 0020 §2, #369: Apple Ads),
+// 1:1 with the connection. The key stays in connections.credentials_encrypted;
+// this row holds only the token in its own envelope (its associated data
+// names it a signed-key access token), so a refresh never rewrites the key
+// envelope. The row also serves as the lock that serializes the exchange
+// per connection. Deleted with the connection and whenever its credentials
+// change. Workspace table under RLS.
+export const connectionSignedKeyTokens = pgTable(
+  "connection_signed_key_tokens",
+  {
+    connectionId: uuid("connection_id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    accessTokenEncrypted: bytea("access_token_encrypted"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", {
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "connection_signed_key_tokens_connection_fk",
+      columns: [table.connectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("cascade"),
+    check(
+      "connection_signed_key_tokens_expiry",
+      sql`(${table.accessTokenEncrypted} is null) = (${table.accessTokenExpiresAt} is null)`,
+    ),
+    index("connection_signed_key_tokens_workspace_idx").on(table.workspaceId),
+  ],
+);
+
 // Goals (ADR 0019 section 4, #335): a named target for one metric in a
 // period to date, shared by gauge widgets and later alert rules. The metric
 // binding is a widget's; a goal goes with its connection (cascade), like a
