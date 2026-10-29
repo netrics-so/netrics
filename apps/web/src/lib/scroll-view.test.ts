@@ -92,9 +92,12 @@ describe("scroll view sizes", () => {
     expect(scrollItemWidth({ columns: 1, contentWidth: 336 }, 1)).toBe(312);
   });
 
-  it("draws charts 16:9 of their width, at least 200 px", () => {
-    expect(scrollChartHeight(1024)).toBe(576);
+  it("draws charts 16:9 of their width, between 200 and 360 px", () => {
+    expect(scrollChartHeight(560)).toBe(315);
     expect(scrollChartHeight(280)).toBe(200);
+    // A full-width chart on a desktop page stays scannable (#298).
+    expect(scrollChartHeight(640)).toBe(360);
+    expect(scrollChartHeight(1048)).toBe(360);
   });
 
   it("wraps a long label in full on a 360 px phone instead of cutting it", () => {

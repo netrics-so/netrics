@@ -361,7 +361,7 @@ describe("scroll view cards", () => {
         }}
         notice={null}
         options={{ showPrevious: false, showAxis: false }}
-        width={1048}
+        width={500}
         rootPx={16}
       />,
     );
@@ -370,6 +370,32 @@ describe("scroll view cards", () => {
     const ratio = Number(match![1]) / Number(match![2]);
     expect(ratio).toBeCloseTo(16 / 9, 1);
     expect(html).toContain('role="img"');
+  });
+
+  it("caps a full-width line chart on desktop at 360 px (#298)", () => {
+    const html = renderI18n(
+      <ScrollLineCard
+        label="Downloads"
+        period="last_7_days"
+        reading={{
+          value: 10,
+          unit: "count",
+          series: [1, 2, 3].map((value) => ({ value })),
+          previous: null,
+          timeZone: "UTC",
+        }}
+        notice={null}
+        options={{ showPrevious: false, showAxis: false }}
+        width={1048}
+        rootPx={16}
+      />,
+    );
+    const match = html.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/);
+    expect(match).not.toBeNull();
+    const ratio = Number(match![1]) / Number(match![2]);
+    // About 1000 px wide but 360 px high (32 units per 16 px rem).
+    expect(ratio).toBeGreaterThan(2.5);
+    expect((Number(match![2]) * 16) / 32).toBeCloseTo(360, 0);
   });
 
   it("shows every bar group with its full label, and Others in German", () => {

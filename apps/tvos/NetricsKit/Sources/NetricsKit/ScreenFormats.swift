@@ -303,7 +303,10 @@ public enum ScreenKind: String, Sendable, Equatable, CaseIterable, Codable {
 public enum ScrollItemHeight: String, Sendable, Equatable, Codable {
     /** Fits its content (metrics, text, clocks). */
     case content
-    /** 16:9 of its width, at least `ScreenLayout.scrollChartMinHeight`. */
+    /**
+     * 16:9 of its width, at least `ScreenLayout.scrollChartMinHeight` and at
+     * most `ScreenLayout.scrollChartMaxHeight`.
+     */
     case chart
     /** Keeps the image's aspect, at most half the viewport height. */
     case image
@@ -336,6 +339,7 @@ public enum ScreenLayout {
     /** Scroll view content is at most this wide (points), centred. */
     public static let scrollMaxContentWidth = 1200.0
     public static let scrollChartMinHeight = 200.0
+    public static let scrollChartMaxHeight = 360.0
 
     /** round(v) = floor(v + 0.5), as the TypeScript rounds. */
     static func roundHalfUp(_ value: Double) -> Int {

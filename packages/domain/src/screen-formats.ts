@@ -745,12 +745,16 @@ export const SCROLL_MAX_CONTENT_WIDTH = 1200;
 export type ScrollItemHeight =
   /** Fits its content (metrics, text, clocks). */
   | "content"
-  /** 16:9 of its width, at least `SCROLL_CHART_MIN_HEIGHT`. */
+  /**
+   * 16:9 of its width, at least `SCROLL_CHART_MIN_HEIGHT` and at most
+   * `SCROLL_CHART_MAX_HEIGHT` (a wide desktop page stays scannable, #298).
+   */
   | "chart"
   /** Keeps the image's aspect, at most half the viewport height. */
   | "image";
 
 export const SCROLL_CHART_MIN_HEIGHT = 200;
+export const SCROLL_CHART_MAX_HEIGHT = 360;
 
 export interface ScrollItem {
   id: string;

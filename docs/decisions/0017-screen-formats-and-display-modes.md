@@ -285,7 +285,7 @@ future apps share it; vectors like section 3):
   in reading order without reordering ("dense" packing would break the
   order), so a full-width item after a half-filled row leaves the gap.
 - Heights by type: metric cards fit their content; charts are 16:9 of their
-  width, at least 200 px; images keep their aspect, at most 50 % of the
+  width, at least 200 px and at most 360 px (#298); images keep their aspect, at most 50 % of the
   viewport height; text fits its content.
 - **Everything is shown.** Clock widgets are compact cards (one column)
   ticking locally in the workspace time zone, as on screens. A slide's

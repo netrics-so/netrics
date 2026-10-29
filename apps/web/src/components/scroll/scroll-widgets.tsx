@@ -102,7 +102,8 @@ import {
 // Widget cards of the scroll view (ADR 0017, section 5). They read the same
 // numbers as the slide renderers (useLive*, metricTexts) and size text in
 // the scroll view's rem-based unit: labels wrap in full and are never cut,
-// values shrink and then go compact, charts are 16:9 of their width.
+// values shrink and then go compact, charts are 16:9 of their width
+// (200–360 px).
 
 /** How wide a card is, to fit values and draw charts. */
 export interface ScrollCardSize {
@@ -214,7 +215,10 @@ export function ScrollMetricCard(props: MetricReadingProps & ScrollCardSize) {
   );
 }
 
-/** The line card: label, value and the chart, 16:9 of the card's width. */
+/**
+ * The line card: label, value and the chart, 16:9 of the card's width
+ * within 200–360 px (`scrollChartHeight`).
+ */
 export function ScrollLineCard(props: LineReadingProps & ScrollCardSize) {
   const { reading } = props;
   const locale = useLocale();

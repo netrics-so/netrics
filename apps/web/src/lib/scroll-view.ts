@@ -1,5 +1,6 @@
 import {
   fitTextSize,
+  SCROLL_CHART_MAX_HEIGHT,
   SCROLL_CHART_MIN_HEIGHT,
   labelParts,
   scrollLayout,
@@ -125,9 +126,16 @@ export function scrollLabelLines(
   };
 }
 
-/** A chart's height in CSS px: 16:9 of its width, at least 200 px. */
+/**
+ * A chart's height in CSS px: 16:9 of its width, at least 200 px and at
+ * most 360 px, so a full-width chart on a desktop page (about 1050 px
+ * wide) does not fill the screen (#298).
+ */
 export function scrollChartHeight(width: number): number {
-  return Math.max(SCROLL_CHART_MIN_HEIGHT, Math.round((width * 9) / 16));
+  return Math.min(
+    SCROLL_CHART_MAX_HEIGHT,
+    Math.max(SCROLL_CHART_MIN_HEIGHT, Math.round((width * 9) / 16)),
+  );
 }
 
 /**
