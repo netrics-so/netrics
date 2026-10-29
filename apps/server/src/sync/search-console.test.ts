@@ -69,6 +69,15 @@ const SITE = "sc-domain:example.com";
 const API_HOST = "searchconsole.googleapis.com";
 const DAY = { clicks: 12, impressions: 340, ctr: 12 / 340, position: 4.5 };
 
+// Sync windows run on a pinned clock (#362). A first incremental sync reads
+// yesterday and today (UTC), and the connector pages by week-aligned chunks
+// that end on Mondays, so the number of Search Analytics requests depends on
+// the weekday: on a Wednesday both days are one page, on a Monday two.
+const WEDNESDAY = Date.parse("2026-10-07T12:00:00.000Z");
+const MONDAY = Date.parse("2026-10-05T12:00:00.000Z");
+let clockMs = WEDNESDAY;
+const clock = () => clockMs;
+
 let provider: TestOAuthProvider;
 
 // ─── Fake Search Console API ────────────────────────────────────────────────
@@ -83,6 +92,8 @@ interface ApiCall {
 let api: Server;
 let apiPort: number;
 const apiCalls: ApiCall[] = [];
+/** The days each answered sync page asked for, "start..end". */
+const syncPages: string[] = [];
 /** The next answers to these kinds of calls are 401 (count). */
 const rejectNext = { sites: 0, syncQuery: 0 };
 
@@ -167,6 +178,7 @@ async function answerApi(request: IncomingMessage, response: ServerResponse) {
       send(401, unauthenticated);
       return;
     }
+    if (syncPage) syncPages.push(`${input.startDate}..${input.endDate}`);
     const rows = syncPage
       ? datesBetween(input.startDate, input.endDate).map((date) => ({
           keys: [date],
@@ -375,7 +387,9 @@ beforeAll(async () => {
   schedulerRaw = createRawSqlClient(schedulerUrlOf(testDb), { max: 2 });
 
   const registry = new ConnectorRegistry();
-  registry.register(towardsFakeApi(createSearchConsoleConnector()));
+  registry.register(
+    towardsFakeApi(createSearchConsoleConnector({ now: clock })),
+  );
   const owner = createDatabase(testDb.adminUrl, { max: 1 });
   await syncCatalog(owner, registry);
   await owner.$client.end({ timeout: 5 });
@@ -414,6 +428,7 @@ beforeAll(async () => {
     handlers: createJobHandlers({
       registry,
       credentialKeyring: KEYRING,
+      now: () => new Date(clock()),
       oauthTokens: createOAuthTokenService({
         db: appDb,
         credentialKeyring: KEYRING,
@@ -448,6 +463,7 @@ describe("Google Search Console in the sync engine", () => {
     const { connectionId } = await seed();
     received.length = 0;
     apiCalls.length = 0;
+    syncPages.length = 0;
     expect((await runJob(connectionId)).status).toBe("succeeded");
 
     // check (sites + property probe), one sync page and the first discover
@@ -456,6 +472,7 @@ describe("Google Search Console in the sync engine", () => {
       expect(Object.keys(credentials)).toEqual(["accessToken"]);
     }
     expect(apiCalls.map((call) => call.status)).toEqual([200, 200, 200, 200]);
+    expect(syncPages).toEqual(["2026-10-06..2026-10-07"]);
     expect(apiCalls.at(-1)).toMatchObject({
       method: "GET",
       path: "/webmasters/v3/sites",
@@ -479,6 +496,40 @@ describe("Google Search Console in the sync engine", () => {
       consecutiveFailures: 0,
     });
     expect((await stateOf(connectionId)).lastSuccessAt).not.toBeNull();
+  });
+
+  it("reads yesterday and today as two week-aligned pages on a Monday", async () => {
+    clockMs = MONDAY;
+    try {
+      const { connectionId } = await seed();
+      apiCalls.length = 0;
+      syncPages.length = 0;
+      expect((await runJob(connectionId)).status).toBe("succeeded");
+
+      // sites, property probe, Sunday (the week that ends on Monday),
+      // Monday (the next week), then the first discover
+      expect(apiCalls.map((call) => call.status)).toEqual([
+        200, 200, 200, 200, 200,
+      ]);
+      expect(syncPages).toEqual([
+        "2026-10-04..2026-10-04",
+        "2026-10-05..2026-10-05",
+      ]);
+      const days = (await clicksOf(connectionId))
+        .map((row) => row.sourceTimestamp.toISOString().slice(0, 10))
+        .sort();
+      expect(days).toEqual(["2026-10-04", "2026-10-05"]);
+      // Synced on Monday's clock, due before the Wednesday the other tests
+      // run on: keep the scheduler away from it again.
+      await withWorkspace(appDb, { workspaceId }, (tx) =>
+        tx
+          .update(schema.connectionState)
+          .set({ nextDueAt: new Date(Date.now() + 3600_000) })
+          .where(eq(schema.connectionState.connectionId, connectionId)),
+      );
+    } finally {
+      clockMs = WEDNESDAY;
+    }
   });
 
   it("stores a query and device breakdown beside the totals", async () => {
@@ -641,7 +692,7 @@ describe("Google Search Console in the sync engine", () => {
         .set({ nextDueAt: null })
         .where(eq(schema.connectionState.connectionId, connectionId)),
     );
-    const tick = await runSchedulerTick(schedulerDb, new Date());
+    const tick = await runSchedulerTick(schedulerDb, new Date(clock()));
     expect(tick.ran).toBe(true);
     const [queued] = await schedulerRaw<{ count: number }[]>`
       select count(*)::int as count from jobs
