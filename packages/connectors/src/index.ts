@@ -26,6 +26,11 @@ export {
   ROLE_MESSAGE,
   vendorNumberMessage,
 } from "./app-store-connect/index.js";
+export {
+  APPLE_ADS_METRIC_KEYS,
+  appleAdsManifest,
+  dayObservations as appleAdsDayObservations,
+} from "./apple-ads/index.js";
 export { createDemoConnector, demoManifest } from "./demo/index.js";
 export {
   createSearchConsoleConnector,

@@ -5,6 +5,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { appStoreConnectManifest } from "./app-store-connect/index.js";
+import { appleAdsManifest } from "./apple-ads/index.js";
 import { demoManifest } from "./demo/index.js";
 import { searchConsoleManifest } from "./google-search-console/index.js";
 import { vercelManifest } from "./vercel/index.js";
@@ -18,6 +19,7 @@ const FIRST_PARTY: ConnectorManifest[] = [
   vercelManifest,
   searchConsoleManifest,
   appStoreConnectManifest,
+  appleAdsManifest,
 ];
 
 const LOCALES = ["de"] as const;
