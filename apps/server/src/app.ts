@@ -159,7 +159,8 @@ export async function buildApp(
       }),
   );
 
-  const registry = deps.registry ?? createDefaultRegistry();
+  const registry =
+    deps.registry ?? createDefaultRegistry({ nodeEnv: config.nodeEnv });
   const credentialKeyring = createCredentialKeyring(
     config.appEncryptionKey,
     config.appEncryptionKeysPrevious,

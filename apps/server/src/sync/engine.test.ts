@@ -535,6 +535,7 @@ describe("catalog sync", () => {
     const connectors = await appDb.select().from(schema.connectors);
     expect(connectors.map((row) => row.id).sort()).toEqual([
       "app-store-connect",
+      "apple-ads",
       "broken",
       "demo",
       "endless",

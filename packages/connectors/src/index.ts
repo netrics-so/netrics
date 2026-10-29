@@ -27,9 +27,16 @@ export {
   vendorNumberMessage,
 } from "./app-store-connect/index.js";
 export {
+  APPLE_ADS_HOST,
   APPLE_ADS_METRIC_KEYS,
+  APPLE_ADS_RATE_LIMITED_MESSAGE,
+  AppleAdsApiError,
   appleAdsManifest,
+  checkAccess as checkAppleAdsAccess,
+  createAppleAdsClient,
+  createAppleAdsConnector,
   dayObservations as appleAdsDayObservations,
+  isRateLimited as isAppleAdsRateLimited,
 } from "./apple-ads/index.js";
 export { createDemoConnector, demoManifest } from "./demo/index.js";
 export {

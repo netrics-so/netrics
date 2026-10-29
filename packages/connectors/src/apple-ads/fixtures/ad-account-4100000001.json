@@ -1,0 +1,23 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/adaccount), checked 2026-10-29; IDs and names are synthetic. TO BE CONFIRMED by #370 captures.",
+  "result": {
+    "id": 4100000001,
+    "name": "Example Apps US",
+    "orgId": 4000000001,
+    "timezone": "America/Los_Angeles",
+    "currency": "USD",
+    "paymentModel": "PAYG",
+    "systemStatus": "ACTIVE",
+    "systemStatusReasons": [],
+    "productFeatures": ["APPSTORE_APP_MANUAL"],
+    "delegations": [
+      {
+        "resourceId": "80000001",
+        "resourceType": "CONTENT_PROVIDER",
+        "resourceName": "Example"
+      }
+    ],
+    "creationTime": "2025-01-10T08:00:00.000",
+    "modificationTime": "2025-01-10T08:00:00.000"
+  }
+}

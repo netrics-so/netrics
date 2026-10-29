@@ -292,7 +292,7 @@ export async function startWorker(config: Config): Promise<void> {
   const appDb = createDatabase(config.databaseUrl, {
     max: config.workerConcurrency + 2,
   });
-  const registry = createDefaultRegistry();
+  const registry = createDefaultRegistry({ nodeEnv: config.nodeEnv });
   const credentialKeyring = createCredentialKeyring(
     config.appEncryptionKey,
     config.appEncryptionKeysPrevious,

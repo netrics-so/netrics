@@ -1,0 +1,8 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/calling-apple-ads-platform-api), checked 2026-10-29; IDs and names are synthetic. TO BE CONFIRMED by #370: the 500 body.",
+  "error": {
+    "code": "INTERNAL_SERVER_ERROR",
+    "message": "An unexpected error occurred",
+    "details": []
+  }
+}

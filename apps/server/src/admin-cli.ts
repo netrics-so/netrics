@@ -163,10 +163,14 @@ try {
     if (!values.workspace || !values.connection) {
       fail("--workspace and --connection are required");
     }
-    const result = await requestOperatorBackfill(db, createDefaultRegistry(), {
-      workspaceId: values.workspace,
-      connectionId: values.connection,
-    });
+    const result = await requestOperatorBackfill(
+      db,
+      createDefaultRegistry({ nodeEnv: config.nodeEnv }),
+      {
+        workspaceId: values.workspace,
+        connectionId: values.connection,
+      },
+    );
     if (result.ok) {
       console.log(
         `queued backfill ${result.jobId} for ${result.connectorId} connection ${values.connection}`,
