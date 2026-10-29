@@ -28,8 +28,9 @@ does (see `docs/architecture.md`, "Application release").
    the same image runs against any API. Self-hosters run these images. The
    hosted service runs the server image and, per ADR 0013, builds the web
    frontend on Vercel from the same commit and lockfile with no
-   environment-specific build inputs (one source, same commit). Until that cut-over (#161) the
-   hosted web still runs the web image on Railway.
+   environment-specific build inputs (one source, same commit; checked by
+   the web build guard below). Until that cut-over (#161) the hosted web
+   still runs the web image on Railway.
 4. **Record digests.** The index digest of each image
    (`ghcr.io/netrics-so/server@sha256:…`) goes to the job summary and to the
    dispatch below. Runtimes resolve the platform they need from the index.
@@ -70,6 +71,42 @@ The dispatch is not automatically retried: if it fails, use "Re-run failed
 jobs" on the run. That re-sends the dispatch with the digests the run already
 published. A full re-run (or `workflow_dispatch`) rebuilds, and builds are
 not bit-for-bit reproducible, so it moves the `<sha>` tag to new digests.
+
+## Web build guard
+
+The `web-build-env` CI job (`pnpm web:build-check`, script
+`apps/web/scripts/build-env-check.ts`) makes "no environment-specific build
+inputs" checkable (#160). It builds `apps/web` twice from a clean `.next`:
+
+1. with only the build identity, `NEXT_PUBLIC_APP_VERSION` and
+   `NEXT_PUBLIC_GIT_SHA`;
+2. additionally with a sample value for every `NETRICS_*` name that appears
+   in the web app's source or `next.config.ts`, plus `WEB_ORIGIN`
+   (origin-style values for `*_URL`, `*_ORIGIN` and `*_HOST`).
+
+It compares the whole build output except the cache, traces and the
+`standalone` copy: client bundles in `.next/static`, prerendered pages and
+route handlers (`.html`, `.rsc`, segments), server chunks and manifests.
+Before comparing, the random build ID and the per-build draft-mode and
+server-action keys are normalised; everything else is deterministic. The
+job fails if any file differs, and names the variable when a sample value
+appears in the output. This catches a module-scope `process.env` read that
+ends up in a static page (directly or through a client component it
+renders), a value inlined through `next.config.ts`, and a page that turns
+static and renders configuration. A client component's own
+`process.env.NETRICS_*` read is not inlined by Next.js (it is `undefined` in
+the browser), so it is a bug but not a build input.
+
+`web-build-env.test.ts` complements it: no tracked file may mention a
+`NEXT_PUBLIC_*` variable other than the two identity values, because
+Next.js inlines every one it finds in code.
+
+The guard runs `next build`, which `vercel build` runs for Next.js projects
+before it converts the output. `vercel build` itself is not run here: it
+reads the linked project's settings (`.vercel/project.json`, normally
+fetched with `vercel pull` and a token), and this public repository holds no
+project identifiers or credentials. A stub project file would add the Vercel
+CLI as a dependency to test only that conversion step.
 
 ## Versioned releases
 

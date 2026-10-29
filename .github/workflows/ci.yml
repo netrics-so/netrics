@@ -49,6 +49,26 @@ jobs:
       # the tvOS app are generated from it). Fix with `pnpm openapi`.
       - run: pnpm openapi:check
 
+  # One source, same commit (ADR 0013): the web build must not depend on its
+  # environment. Builds apps/web twice from a clean .next, with only the
+  # build identity and with sample NETRICS_* configuration, and fails if the
+  # output differs (apps/web/scripts/build-env-check.ts, #160).
+  web-build-env:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm web:build-check
+
   # NetricsKit (tvOS protocol and layout logic) builds for macOS too, so its
   # tests run here, including the studio layout vectors shared with
   # packages/domain (#215). The app target itself needs the tvOS SDK of a
