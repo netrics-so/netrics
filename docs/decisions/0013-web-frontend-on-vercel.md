@@ -38,10 +38,13 @@ What the web app does today, and what a move has to keep:
 - **Health and versions.** `/healthz` returns `ok` with no dependencies (the
   platform probe and the release smoke check). The API reports version and
   commit on `/health/live`. The web version and commit are build-time
-  `NEXT_PUBLIC_APP_VERSION` and `NEXT_PUBLIC_GIT_SHA`, read only in server
-  components (`/status`, `/kiosk`). They identify the commit and are not
-  environment-specific. No `NEXT_PUBLIC_*` value reaches browser code (the
-  auth client is same-origin).
+  `NEXT_PUBLIC_APP_VERSION` and `NEXT_PUBLIC_GIT_SHA`. They identify the
+  commit and are not environment-specific, so they are the only
+  `NEXT_PUBLIC_*` values that reach browser code, on purpose: the kiosk shows
+  the version, and the deploy watcher compares the bundle's commit with
+  `/healthz` to reload after a release (#160). No URL, key or other
+  environment value is inlined into the bundle (the auth client is
+  same-origin).
 - **Security headers.** `next.config.ts` sets a strict CSP (`default-src
 'self'`, `connect-src 'self'`, `form-action 'self'`, `frame-ancestors
 'none'`) and related headers.

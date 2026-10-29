@@ -1,7 +1,8 @@
 # 0016 — Internationalisation
 
-Status: proposed (2026-10-04, owner and coordinator decisions; #162,
-milestone "i18n (English + German)")
+Status: accepted (2026-10-04, owner and coordinator decisions; #162,
+milestone "i18n (English + German)"; in use across web, kiosk and tvOS,
+marked accepted 2026-10-29, #397)
 
 ## Context
 
