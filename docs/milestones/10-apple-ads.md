@@ -2,61 +2,147 @@
 
 ## Outcome
 
-A workspace can connect one or more Apple Ads organizations and display campaign
-spend and performance alongside product and website metrics.
+A workspace can connect one or more Apple Ads ad accounts and display
+spend, installs and campaign performance beside App Store, Search Console
+and Vercel metrics, on dashboards and TVs.
+
+Design: [ADR 0020](../decisions/0020-apple-ads-platform-api-token-exchange.md)
+(Apple Ads: Platform API, token exchange and ad metrics). GitHub milestone
+"10 Apple Ads".
 
 ## Dependencies
 
-- Milestones 03–05 and 08
+- Milestone 08 (signed-key credentials, `currency_minor`, display currency)
+- Milestone 07 (`auth_failed` and the reconnect states)
+- Milestone 09.1 (every new string in English and German)
+
+**Order.** The roadmap rule "complete one milestone before opening the next"
+is relaxed for this milestone, as it was for 09.x: milestone 10 starts on
+2026-10-29 while the exit gates of 06 to 09.3 are still open (owner
+decision, ADR 0020). The first wave is fixtures-only and touches no area
+under an open gate.
 
 ## Architectural purpose
 
-This milestone proves OAuth client credentials with a signed client secret,
-organization context, reporting time zones, and currency-aware advertising
-metrics.
+This milestone adds a token exchange to the signed-key strategy (ADR 0014):
+the host signs a client-secret JWT, exchanges it for a one-hour access token
+at Apple, and reuses that token until it expires, refreshing it serialized
+per connection as in ADR 0012. The connector still sees only
+`credentials: { accessToken }`.
+
+It targets the Apple Ads Platform API 1.0 (`api.ads.apple.com/v1`).
+Campaign Management API v5 is deprecated and is sunset on 2027-01-26.
+
+Apple Ads has no open delegated access. Third-party OAuth apps need Apple's
+approval, and an account can authorize only one third-party provider at a
+time. The path in this milestone, hosted and self-hosted, is an API user in
+the customer's own Apple Ads account. netrics generates the key pair and
+shows the public key to paste, so the user needs no tools and never handles
+a private key. No instance configuration is needed. The owner applies to
+Apple for a third-party OAuth app in parallel (#379).
 
 ## In scope
 
-- Apple Ads marketplace metadata and setup guide
-- Public/private key credential setup
-- Signed client-secret generation and access-token exchange
-- Organization ACL discovery and selection
-- Campaign, ad-group, keyword, and search-term report metrics supported by the
-  initial product scope
-- Spend, impressions, taps, installs, conversion, and cost metrics
-- Currency and reporting time-zone preservation
-- Pagination, throttling, retry, and quota visibility
-- Historical report backfill
-- Fixtures for organization and report variants
+- Marketplace entry and a guided setup: invite or choose an API user with
+  the API Account Read Only role, paste the public key netrics generated,
+  enter the client ID, team ID and key ID
+- Pasting an existing private key as an alternative
+- Token exchange with a cached, encrypted access token in its own store and
+  serialized refresh
+- Ad-account discovery through `/v1/acls`; one ad account per connection;
+  App Store ad accounts only
+- Daily campaign and ad-group reports: spend, impressions, taps, installs,
+  new downloads and redownloads, with tap- and view-through attribution
+- Breakdown by country or region
+- Ad-account currency (`currency_minor`) and time zone kept and labelled
+- Backfill of 12 months (capped by what Apple keeps), incremental lookback,
+  pagination, rate-limit and Retry-After handling
+- Key replacement and actionable `auth_failed` states
+- Sanitized fixtures and offline contract tests
 
 ## Out of scope
 
-- Creating or modifying campaigns
-- Bid and budget automation
-- Recommendations and write APIs
-- Cross-currency conversion
+- Creating or changing campaigns, bids or budgets, and any write API
+- Recommendations, insights (impression share, search-term popularity) and
+  change history
+- Ad (creative) level reports
+- Search-term reports (a follow-up after milestone 11)
+- Apple Maps (business-brand) ad accounts
+- Hourly data and pre-order metrics
+- Ratios stored as metrics (TTR, CPT, CPM, CPI, install rate): they come
+  from the compare widget (ADR 0019) and derived metrics (milestone 11)
+- Converting currencies on ingest (the existing display currency, #191,
+  applies)
+- netrics as a registered third-party OAuth app (follow-up of #379, gated
+  on Apple's approval)
 
-## Implementation slices
+## Issues
 
-1. Extend the signed credential strategy for Apple Ads token exchange.
-2. Implement credential check and organization discovery.
-3. Define metric semantics, units, and reporting dimensions.
-4. Implement bounded report queries and pagination.
-5. Normalize time zones, currencies, attribution windows, and identifiers.
-6. Add rate-limit and provider-error behavior.
-7. Add wizard guidance and multi-organization support.
-8. Add end-to-end cross-source dashboard tests.
+| #    | Issue                                                                 | Depends on   | Wave | Owner |
+| ---- | --------------------------------------------------------------------- | ------------ | ---- | ----- |
+| #368 | Design: ADR 0020 and this plan                                        | –            | 0    | –     |
+| #369 | Signed-key providers with a token exchange (cached token)             | #368         | 1    | –     |
+| #370 | Owner: Apple Ads API user and captured sample responses               | –            | 1    | yes   |
+| #371 | Key pair generated by netrics, public key to copy                     | #368         | 1    | –     |
+| #372 | Apple Ads metric definitions, money parsing and identity              | #368         | 1    | –     |
+| #373 | Apple Ads provider and connector: check, ad-account discovery, errors | #369, #372   | 2    | –     |
+| #374 | Campaign report sync: daily, backfill, lookback, country breakdown    | #373         | 3    | –     |
+| #375 | Connect wizard, key replacement and reconnect states, connector docs  | #371, #373   | 3    | –     |
+| #376 | Ad-group report sync (keywords top 20 as stretch)                     | #374         | 4    | –     |
+| #377 | Apple Ads in templates and the cross-source Overview                  | #374         | 4    | –     |
+| #378 | Exit gate, hosted and self-hosted                                     | #369 to #377 | 5    | yes   |
+| #379 | Owner: apply to Apple for a third-party OAuth app                     | –            | –    | yes   |
+
+**Parallel work.** #369, #371 and #372 run in parallel. #370 is owner work
+and can start at once; its captures confirm the fixtures of #373, #374 and
+#376 before they merge. #374 and #375 run in parallel, then #376 and #377.
+#379 sits outside the exit gate.
+
+**Without a real account.** Everything except #370, #378 and #379 can be
+built and tested on fixtures. #372 needs #370 to confirm the field that
+names the promoted app; #374 needs it for retention; #375's copy is checked
+against the real Apple Ads UI at the exit gate.
+
+## Security invariants
+
+- The private key and the client secret never leave the host. The
+  connector receives only the access token. Generated private keys are
+  never shown, not even once.
+- Access tokens are stored only in the connection's encrypted token store,
+  never in job payloads, logs or responses.
+- Token exchange is serialized per connection. Two concurrent jobs cause
+  one exchange.
+- The ad-account context comes from the connection config and is checked
+  against `/v1/acls`. A token cannot read another connection's account.
+- Only `api.ads.apple.com` (connector) and `appleid.apple.com` (host token
+  exchange) are reachable.
 
 ## Verification
 
-- Concurrent jobs reuse or serialize short-lived token acquisition safely.
-- Organization context cannot be confused between connections.
-- Currency is always explicit and incompatible currencies are not summed.
-- Reporting time zones survive storage and dashboard aggregation.
-- Attribution-window differences remain visible in metric definitions.
+- Concurrent jobs reuse one access token, and an expired token is replaced
+  once.
+- A removed key, or an API role turned into a non-API role, becomes
+  `auth_failed` with a "set up a new key" action.
+- Spend in two currencies (two ad accounts) never sums without conversion.
+- Reporting days follow the ad account's time zone, and the label says so.
+- Tap- and view-through installs stay distinguishable, and the headline
+  number is the total.
+- Replaying a range does not duplicate observations, and revised days
+  update them.
 
 ## Exit gate
 
-Connect a real Apple Ads organization, backfill campaign performance, display
-spend and installs beside App Store and Vercel metrics, and demonstrate correct
-currency and time-zone labels.
+With a real Apple Ads account that has running campaigns, hosted and
+self-hosted (#378):
+
+1. Create an API Read Only user, paste the public key netrics generated,
+   connect, and select the ad account.
+2. Backfill a year of campaign and ad-group performance, or what Apple
+   keeps.
+3. Show spend and installs beside App Store downloads and Vercel visitors on
+   a dashboard and on a physical Apple TV, with the currency and time-zone
+   labels.
+4. Check one day's campaign totals against the Apple Ads UI.
+5. Replace the key. Syncs continue.
+6. Remove the key in Apple Ads. The connection shows an actionable state
+   and recovers after a new key.
