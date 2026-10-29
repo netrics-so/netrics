@@ -191,6 +191,19 @@ All `delta` values per day, summed:
 - Ratios (TTR, CPT, CPM, CPI, install rates) are not stored: daily ratios do
   not add up. The compare widget computes spend ÷ installs and spend ÷ taps.
 
+## Dashboards
+
+The Overview template (New dashboard → from a template) gives each Apple
+Ads connection a slide "Apple Ads": spend over 30 days in the ad account's
+currency (filtered to it, so never converted, and the title names it),
+installs (the total of tap and view), cost per install as a compare widget
+(spend ÷ installs), the top campaigns by spend, spend by country or region,
+installs after a tap or a view, and a note "Days in America/Los_Angeles, as
+in Apple Ads". With App Store Connect or Vercel connected too, the Overview
+starts with a slide "At a glance": App Store downloads, Apple Ads installs
+and Vercel visitors over 7 days side by side, with their 30-day trends.
+There is no Brand template for an ad account.
+
 ## Limits
 
 Apple publishes no fixed quota. Responses carry `RateLimit-Remaining`;

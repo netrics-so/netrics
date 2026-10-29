@@ -25,6 +25,14 @@ export const sharedEn = {
   goal: "Goal",
   /** A breakdown group without a value. */
   none: "(none)",
+  /**
+   * The values of an `attribution` dimension (Apple Ads installs, ADR 0020
+   * section 6): after a tap on the ad, or after it was seen.
+   */
+  attribution: {
+    tap: "Tap-through",
+    view: "View-through",
+  },
   periods: {
     today: "Today",
     last_7_days: "Last 7 days",

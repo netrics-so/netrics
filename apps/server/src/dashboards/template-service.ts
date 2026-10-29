@@ -24,6 +24,7 @@ import type { ResourceIconService } from "../images/resource-icons.js";
 import type { createDashboardService } from "./service.js";
 import {
   APP_STORE_CONNECT,
+  APPLE_ADS,
   TEMPLATE_CONNECTORS,
   brandSupported,
   buildBrandTemplate,
@@ -39,6 +40,27 @@ import {
  * contrast, audit) applies unchanged. Templates are generated server-side,
  * like the onboarding dashboard (#51), and are ordinary dashboards after.
  */
+
+/**
+ * An Apple Ads connection's currency and time zone, as the connect wizard
+ * stored them in its config (#375); null where missing.
+ */
+function adAccountOf(config: unknown): {
+  currency: string | null;
+  timeZone: string | null;
+} {
+  const record =
+    config !== null && typeof config === "object"
+      ? (config as Record<string, unknown>)
+      : {};
+  const text = (key: string) => {
+    const value = record[key];
+    return typeof value === "string" && value.trim() !== ""
+      ? value.trim()
+      : null;
+  };
+  return { currency: text("currency"), timeZone: text("timeZone") };
+}
 
 interface Actor {
   workspaceId: string;
@@ -93,6 +115,7 @@ export function createTemplateService(deps: TemplateServiceDeps) {
         ...(row.connectorId === APP_STORE_CONNECT
           ? { hasReviews: await deps.hasReviewsKey(actor, row.id) }
           : {}),
+        ...(row.connectorId === APPLE_ADS ? adAccountOf(row.config) : {}),
       })),
     );
   }

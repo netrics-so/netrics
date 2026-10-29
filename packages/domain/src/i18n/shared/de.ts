@@ -16,6 +16,10 @@ export const sharedDe: Catalog<SharedMessages> = {
   sources: "Quellen",
   goal: "Ziel",
   none: "(keine)",
+  attribution: {
+    tap: "Nach Tap",
+    view: "Nach Ansicht",
+  },
   periods: {
     today: "Heute",
     last_7_days: "Letzte 7 Tage",
