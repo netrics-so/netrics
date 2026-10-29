@@ -163,7 +163,14 @@ drops the alpha channel of opaque images and checks the sizes.
 - **Settings.** Press and hold the clickpad on the dashboard, or press
   Play/Pause where there is nothing to rotate (one slide, or a schema 1
   dashboard). The pairing screen has a Settings button. Unpair clears the
-  Keychain and the cache and shows a new netrics cloud code.
+  Keychain and the cache and shows a new netrics cloud code. Once paired,
+  settings turn with the content by the rotation setting; the pairing
+  screen and its settings stay upright (`ScreenView.settingsRotation`,
+  #298). The tvOS focus engine reads presses along the panel, so on a
+  turned screen only the focused button can take focus and the app moves
+  focus itself by the press in the content's frame (`FocusGrid`): up on the
+  remote is up as the viewer sees it. A turned screen asks to unpair in
+  place, since the system's confirmation dialog cannot turn.
 
 `DeviceClient` follows the browser kiosk (`apps/web/src/lib/kiosk-client.ts`)
 rule for rule, and its tests cover the same cases. Number formatting, tile
