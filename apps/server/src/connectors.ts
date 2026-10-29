@@ -1,6 +1,7 @@
 import { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
   createAppStoreConnectConnector,
+  createAppleAdsConnector,
   createDemoConnector,
   createSearchConsoleConnector,
   createVercelConnector,
@@ -8,7 +9,8 @@ import {
 
 /**
  * The connector bundle compiled into this server image: the demo connector,
- * Vercel Web Analytics, Google Search Console and App Store Connect. Reviewed connectors join
+ * Vercel Web Analytics, Google Search Console, App Store Connect and Apple
+ * Ads. Reviewed connectors join
  * here per the architecture's distribution workflow. The runtime only knows
  * the registry; which connectors ship is decided by the application (#39).
  * OAuth connectors are listed as unavailable until their provider is
@@ -21,5 +23,6 @@ export function createDefaultRegistry(): ConnectorRegistry {
   registry.register(createVercelConnector());
   registry.register(createSearchConsoleConnector());
   registry.register(createAppStoreConnectConnector());
+  registry.register(createAppleAdsConnector());
   return registry;
 }

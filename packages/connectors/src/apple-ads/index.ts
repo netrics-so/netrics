@@ -1,8 +1,22 @@
 import type {
+  CheckResult,
+  ConnectionContext,
+  Connector,
   ConnectorManifest,
   ManifestTranslation,
+  Resource,
+  SyncResult,
 } from "@netrics/connector-sdk";
 
+import {
+  adAccountIdOf,
+  appName,
+  checkAccess,
+  discoverAdAccounts,
+  listCampaigns,
+  MAX_APPS,
+} from "./access.js";
+import { APPLE_ADS_HOST, createAppleAdsClient } from "./api.js";
 import { APPLE_ADS_METRIC_KEYS, APPLE_ADS_METRICS } from "./metrics.js";
 
 export {
@@ -29,13 +43,54 @@ export {
   type DayObservationsOptions,
 } from "./observations.js";
 export {
+  AD_ACCOUNT_FORMAT_MESSAGE,
+  adAccountIdOf,
+  API_ROLES,
+  APP_STORE_FEATURE,
+  APPLE_MAPS_FEATURE,
+  APPLE_MAPS_MESSAGE,
+  appName,
+  CAMPAIGNS_PAGE_SIZE,
+  checkAccess,
+  discoverAdAccounts,
+  getAdAccount,
+  isRateLimited,
+  listAcls,
+  listCampaigns,
+  lostAccessMessage,
+  NO_AD_ACCOUNTS_MESSAGE,
+  NO_APP_STORE_ACCOUNT_MESSAGE,
+  RATE_LIMITED_MESSAGE,
+  RATE_LIMITED_MESSAGE as APPLE_ADS_RATE_LIMITED_MESSAGE,
+  ROLE_MESSAGE,
+  type AccessResult,
+  type AclEntry,
+  type AdAccountDetails,
+  type AppleAdsCampaign,
+  type DiscoveredAdAccount,
+} from "./access.js";
+export {
+  APPLE_ADS_API,
+  APPLE_ADS_HOST,
+  AppleAdsApiError,
+  AppleAdsRateBudgetError,
+  appleAdsErrorBody,
+  createAppleAdsClient,
+  MAX_RETRY_AFTER_SECONDS,
+  MIN_REMAINING_REQUESTS,
+  parseRateLimit,
+  retryAfterSeconds,
+  type AppleAdsClient,
+  type AppleAdsClientOptions,
+  type AppleAdsFetch,
+  type RateLimit,
+} from "./api.js";
+export {
   DecimalAmountError,
   parseDecimalAmount,
   type MinorUnitAmount,
 } from "../decimal-amount.js";
 
-/** The Apple Ads Platform API host (ADR 0020 section 9). */
-export const APPLE_ADS_HOST = "api.ads.apple.com";
 /** Days a backfill reads: 12 months, capped by Apple's retention (#370). */
 export const APPLE_ADS_BACKFILL_DAYS = 365;
 
@@ -52,6 +107,16 @@ const appleAdsDe: ManifestTranslation = {
     adAccountId: {
       title: "Werbekonto",
       description: "Die ID des Apple-Ads-Werbekontos dieser Verbindung.",
+    },
+    currency: {
+      title: "Währung",
+      description:
+        "Die Währung des Werbekontos, wie Apple Ads sie meldet. Ausgaben werden nicht umgerechnet.",
+    },
+    timeZone: {
+      title: "Zeitzone",
+      description:
+        "Die Zeitzone des Werbekontos. Die Tage folgen ihr, wie in Apple Ads.",
     },
   },
   metrics: {
@@ -98,9 +163,8 @@ const appleAdsDe: ManifestTranslation = {
 
 /**
  * The Apple Ads manifest (ADR 0020): metrics, units and dimensions, and
- * their English and German texts. The connector itself (check, ad-account
- * discovery, sync) is #373 and #374; the "apple-ads" signed-key provider
- * with its token exchange is host code (#369).
+ * their English and German texts. The "apple-ads" signed-key provider with
+ * its token exchange is host code (#369, #373).
  */
 export const appleAdsManifest: ConnectorManifest = {
   id: "apple-ads",
@@ -121,8 +185,21 @@ export const appleAdsManifest: ConnectorManifest = {
         title: "Ad account",
         description: "The ID of the Apple Ads ad account of this connection.",
       },
+      currency: {
+        type: "string",
+        title: "Currency",
+        description:
+          "The ad account's currency, as Apple Ads reports it. Spend is not converted.",
+      },
+      timeZone: {
+        type: "string",
+        title: "Time zone",
+        description:
+          "The ad account's time zone. Days follow it, as in Apple Ads.",
+      },
     },
-    required: ["adAccountId"],
+    // Not required: the wizard's preview runs before an ad account is
+    // chosen and lists the API user's ad accounts (ADR 0020 section 5).
     additionalProperties: false,
   },
   metrics: APPLE_ADS_METRICS,
@@ -137,3 +214,149 @@ export const appleAdsManifest: ConnectorManifest = {
   resourceNoun: { singular: "app", plural: "apps" },
   translations: { de: appleAdsDe },
 };
+
+/** Kinds of the resources discover lists. */
+export const RESOURCE_KINDS = {
+  /** An ad account of the API user (before one is chosen). */
+  adAccount: "ad_account",
+  /** A promoted app: the `resource` dimension, as App Store Connect's apps. */
+  app: "app",
+  /** A campaign: the `campaign` dimension, named for dashboards. */
+  campaign: "campaign",
+} as const;
+
+export const CHOOSE_AD_ACCOUNT_MESSAGE =
+  "Choose the Apple Ads ad account of this connection to finish setup.";
+
+export interface AppleAdsConnectorOptions {
+  /** Waits between retries; replaced in tests. */
+  sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+}
+
+function accessTokenOf(context: ConnectionContext): string | undefined {
+  const token = context.credentials.accessToken;
+  return typeof token === "string" && token.trim() !== ""
+    ? token.trim()
+    : undefined;
+}
+
+/**
+ * Apple Ads (ADR 0020). The host exchanges the connection's signed client
+ * secret for an access token at appleid.apple.com, caches it, and hands
+ * the connector `credentials: { accessToken }`; connector code never sees
+ * the key and only reaches api.ads.apple.com.
+ *
+ * One connection reads one ad account (config `adAccountId`, with its
+ * `currency` and `timeZone` as labels). Every call after discovery carries
+ * that account as `X-AP-Context`, and the check before every sync confirms
+ * the API user still has it in `/v1/acls`.
+ *
+ * Discovery has two modes. Without an ad account (the wizard's preview)
+ * it lists the API user's ad accounts, App Store accounts selectable and
+ * Apple Maps accounts shown but not. With one, it lists that account's
+ * promoted apps (the `resource` dimension) and its campaigns (the
+ * `campaign` dimension), so dashboards can name them.
+ *
+ * The report sync is #374; until then a sync reads nothing.
+ */
+export function createAppleAdsConnector(
+  options: AppleAdsConnectorOptions = {},
+): Connector {
+  function client(
+    context: ConnectionContext,
+    runtime: {
+      fetch: Parameters<typeof createAppleAdsClient>[0];
+      signal: AbortSignal;
+    },
+  ) {
+    const token = accessTokenOf(context);
+    if (!token) {
+      throw new Error("Apple Ads connection has no access token");
+    }
+    return createAppleAdsClient(runtime.fetch, token, {
+      signal: runtime.signal,
+      ...(options.sleep ? { sleep: options.sleep } : {}),
+    });
+  }
+
+  return {
+    manifest: appleAdsManifest,
+
+    async check(context, runtime): Promise<CheckResult> {
+      if (!accessTokenOf(context)) {
+        return {
+          ok: false,
+          message:
+            "This connection has no Apple Ads key. Set up an Apple Ads API key.",
+        };
+      }
+      return checkAccess(client(context, runtime), context.config);
+    },
+
+    async discover(context, runtime): Promise<Resource[]> {
+      const api = client(context, runtime);
+      const adAccountId = adAccountIdOf(context.config);
+      if (adAccountId === undefined) {
+        const accounts = await discoverAdAccounts(api);
+        return accounts.map(({ acl, details, selectable, reason }) => ({
+          id: acl.adAccountId,
+          name: details.name ?? acl.name,
+          kind: RESOURCE_KINDS.adAccount,
+          metadata: {
+            selectable,
+            ...(reason ? { reason } : {}),
+            ...(acl.orgId ? { orgId: acl.orgId } : {}),
+            roles: acl.roles,
+            ...(details.currency ? { currency: details.currency } : {}),
+            ...(details.timeZone ? { timeZone: details.timeZone } : {}),
+            ...(details.systemStatus
+              ? { systemStatus: details.systemStatus }
+              : {}),
+            ...(details.systemStatusReasons.length > 0
+              ? { systemStatusReasons: details.systemStatusReasons }
+              : {}),
+            productFeatures: details.productFeatures,
+          },
+        }));
+      }
+      const campaigns = await listCampaigns(api, adAccountId);
+      const appIds = [
+        ...new Set(campaigns.flatMap((c) => (c.appId ? [c.appId] : []))),
+      ]
+        .sort()
+        .slice(0, MAX_APPS);
+      const apps: Resource[] = [];
+      for (const appId of appIds) {
+        const name = await appName(api, adAccountId, appId);
+        if (name) {
+          apps.push({ id: appId, name, kind: RESOURCE_KINDS.app });
+        }
+      }
+      return [
+        ...apps,
+        ...campaigns.map((campaign) => ({
+          id: campaign.id,
+          name: campaign.name,
+          kind: RESOURCE_KINDS.campaign,
+          metadata: {
+            adAccountId,
+            ...(campaign.appId ? { appId: campaign.appId } : {}),
+            ...(campaign.status ? { status: campaign.status } : {}),
+            ...(campaign.displayStatus
+              ? { displayStatus: campaign.displayStatus }
+              : {}),
+          },
+        })),
+      ];
+    },
+
+    async sync(context): Promise<SyncResult> {
+      if (adAccountIdOf(context.config) === undefined) {
+        throw new Error(CHOOSE_AD_ACCOUNT_MESSAGE);
+      }
+      // The campaign report sync is #374; the check before this page has
+      // confirmed the key, the role and the ad account.
+      return { observations: [], done: true };
+    },
+  };
+}

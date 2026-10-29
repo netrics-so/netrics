@@ -1,0 +1,13 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/search-apps-endpoints), checked 2026-10-29; IDs and names are synthetic. TO BE CONFIRMED by #370 captures.",
+  "result": {
+    "id": "1000000002",
+    "appName": "Dicey",
+    "artistName": "Example Inc.",
+    "primaryLanguage": "en-US",
+    "primaryGenre": "Games",
+    "deviceClasses": ["IPHONE"],
+    "isPreorder": false,
+    "availableStorefronts": ["US"]
+  }
+}

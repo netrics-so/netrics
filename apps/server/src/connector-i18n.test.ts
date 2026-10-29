@@ -125,6 +125,7 @@ describe("connector catalog sync", () => {
       from connectors order by id`;
     expect(rows.map((row) => row.id)).toEqual([
       "app-store-connect",
+      "apple-ads",
       "demo",
       "google-search-console",
       "vercel",
