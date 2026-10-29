@@ -122,7 +122,7 @@ async function syncAll(
 ): Promise<{ pages: SyncResult[]; observations: Observation[] }> {
   const pages: SyncResult[] = [];
   let cursor = req.cursor;
-  for (let page = 0; page < 200; page += 1) {
+  for (let page = 0; page < 100; page += 1) {
     const result = syncResultSchema.parse(
       await connector(now).sync(
         ctx,
@@ -533,21 +533,20 @@ describe("country breakdown", () => {
 
 describe("pagination, replay and revisions", () => {
   it("pages to totalCount", async () => {
+    // Rows of zeros: paged like any, but no ad-group fan-out (that is
+    // tested under "ad groups"), which would take 101 pages here.
     const campaigns = Array.from({ length: REPORT_PAGE_SIZE + 5 }, (_, i) =>
-      campaign(String(5200000000 + i), { "2026-10-20": { US: d("1.00") } }),
+      campaign(String(5200000000 + i), { "2026-10-20": { US: {} } }),
     );
     const api = fake({ [US]: { currency: "USD", campaigns } });
     const { observations } = await syncAll(
       api,
       request({ mode: "incremental", from: "2026-10-20T00:00:00.000Z" }),
     );
-    // The first page's two passes; later pages fan out to ad groups.
-    const offsets = reportBodies(api)
-      .slice(0, 4)
-      .map((body) => [
-        body.groupBy ? "country" : "total",
-        body.pagination.offset,
-      ]);
+    const offsets = reportBodies(api).map((body) => [
+      body.groupBy ? "country" : "total",
+      body.pagination.offset,
+    ]);
     expect(offsets).toEqual([
       ["total", 0],
       ["total", REPORT_PAGE_SIZE],
