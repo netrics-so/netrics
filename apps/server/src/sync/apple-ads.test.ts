@@ -20,6 +20,7 @@ import {
 import { ConnectorRegistry } from "@netrics/connector-runtime";
 import type { Connector, ConnectorRuntime } from "@netrics/connector-sdk";
 import {
+  APPLE_ADS_AD_GROUP_METRIC_KEYS,
   APPLE_ADS_METRIC_KEYS,
   createAppleAdsConnector,
   createDemoConnector,
@@ -403,13 +404,30 @@ describe("Apple Ads campaign report sync", () => {
     expect(
       total(rows, APPLE_ADS_METRIC_KEYS.installs, { attribution: "view" }),
     ).toBe(8);
+    const main = new Set<string>(Object.values(APPLE_ADS_METRIC_KEYS));
     for (const row of rows) {
-      expect(row.dimensions.country).toBeDefined();
       expect(row.dimensions.campaign).toBeDefined();
-      if (row.key === APPLE_ADS_METRIC_KEYS.spend) {
+      if (main.has(row.key)) {
+        expect(row.dimensions.country).toBeDefined();
+        expect(row.dimensions.ad_group).toBeUndefined();
+      } else {
+        // The ad-group rows (#376), in their own keys.
+        expect(row.key).toMatch(/_by_ad_group$/);
+        expect(row.dimensions.ad_group).toBeDefined();
+        expect(row.dimensions.country).toBeUndefined();
+      }
+      if (
+        row.key === APPLE_ADS_METRIC_KEYS.spend ||
+        row.key === APPLE_ADS_AD_GROUP_METRIC_KEYS.spend
+      ) {
         expect(row.dimensions.currency).toBe("USD");
       }
     }
+    // By ad group, the same total, never added to the main keys.
+    expect(total(rows, APPLE_ADS_AD_GROUP_METRIC_KEYS.spend)).toBe(3550);
+    expect(
+      total(rows, APPLE_ADS_AD_GROUP_METRIC_KEYS.spend, { campaign: OLD }),
+    ).toBe(300);
     const [state] = await admin<Array<{ cursor: string; auth_state: string }>>`
       select cursor, auth_state from connection_state
       where connection_id = ${connections[US.id]!}

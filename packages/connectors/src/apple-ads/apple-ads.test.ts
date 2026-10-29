@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   AMOUNT_ROUNDED_NOTE,
+  APPLE_ADS_AD_GROUP_METRIC_KEYS,
   APPLE_ADS_METRIC_KEYS,
   AppleAdsReportError,
   appleAdsDimensions,
@@ -66,7 +67,9 @@ describe("Apple Ads manifest", () => {
     );
   });
 
-  it("has the six ADR 0020 metrics, all delta at day and summed", () => {
+  it("has the six ADR 0020 metrics by country, then the same six by ad group in keys of their own", () => {
+    const main = ["resource", "campaign", "country"];
+    const byAdGroup = ["resource", "campaign", "ad_group"];
     expect(
       appleAdsManifest.metrics.map((metric) => [
         metric.key,
@@ -74,37 +77,41 @@ describe("Apple Ads manifest", () => {
         metric.dimensions,
       ]),
     ).toEqual([
+      ["apple_ads.spend", CURRENCY_MINOR_UNIT, [...main, "currency"]],
+      ["apple_ads.impressions", "impressions", main],
+      ["apple_ads.taps", "taps", main],
+      ["apple_ads.installs", "installs", [...main, "attribution"]],
+      ["apple_ads.new_downloads", "downloads", [...main, "attribution"]],
+      ["apple_ads.redownloads", "downloads", [...main, "attribution"]],
       [
-        "apple_ads.spend",
+        "apple_ads.spend_by_ad_group",
         CURRENCY_MINOR_UNIT,
-        ["resource", "campaign", "ad_group", "country", "currency"],
+        [...byAdGroup, "currency"],
       ],
+      ["apple_ads.impressions_by_ad_group", "impressions", byAdGroup],
+      ["apple_ads.taps_by_ad_group", "taps", byAdGroup],
       [
-        "apple_ads.impressions",
-        "impressions",
-        ["resource", "campaign", "ad_group", "country"],
-      ],
-      [
-        "apple_ads.taps",
-        "taps",
-        ["resource", "campaign", "ad_group", "country"],
-      ],
-      [
-        "apple_ads.installs",
+        "apple_ads.installs_by_ad_group",
         "installs",
-        ["resource", "campaign", "ad_group", "country", "attribution"],
+        [...byAdGroup, "attribution"],
       ],
       [
-        "apple_ads.new_downloads",
+        "apple_ads.new_downloads_by_ad_group",
         "downloads",
-        ["resource", "campaign", "ad_group", "country", "attribution"],
+        [...byAdGroup, "attribution"],
       ],
       [
-        "apple_ads.redownloads",
+        "apple_ads.redownloads_by_ad_group",
         "downloads",
-        ["resource", "campaign", "ad_group", "country", "attribution"],
+        [...byAdGroup, "attribution"],
       ],
     ]);
+    // Each ad-group key mirrors its main key's unit and attribution.
+    for (const [field, key] of Object.entries(APPLE_ADS_AD_GROUP_METRIC_KEYS)) {
+      const mainKey =
+        APPLE_ADS_METRIC_KEYS[field as keyof typeof APPLE_ADS_METRIC_KEYS];
+      expect(key).toBe(`${mainKey}_by_ad_group`);
+    }
     for (const metric of appleAdsManifest.metrics) {
       expect(metric.kind, metric.key).toBe("delta");
       expect(metric.granularity, metric.key).toBe("day");

@@ -62,6 +62,17 @@ export interface FakeReportCampaign {
    * breakdown hides).
    */
   hidden?: Record<string, FakeDay>;
+  /**
+   * The ad-group report (#376): country → the ad group its numbers belong
+   * to. Countries not named, and the hidden rows, are the ad group
+   * `${id}01`. "not-found": Apple answers 404 for the campaign.
+   */
+  adGroups?: Record<string, string> | "not-found";
+}
+
+/** The ad group of a campaign's numbers that FakeReportCampaign.adGroups does not place. */
+export function defaultAdGroup(campaign: FakeReportCampaign): string {
+  return `${campaign.id}01`;
 }
 
 export interface FakeReport {
@@ -124,8 +135,108 @@ interface ReportBody {
     timeZone: string;
     granularity?: string;
   };
+  filters?: Array<{ field: string; operator: string; value: unknown }>;
   groupBy?: string[];
   pagination: { offset: number; pageSize: number };
+}
+
+const INVALID_REQUEST = {
+  status: 400,
+  body: {
+    error: {
+      code: "INVALID_REQUEST",
+      message: "invalid report request",
+      details: [],
+    },
+  },
+};
+
+function invalidTimeRange(body: ReportBody): boolean {
+  const { start, end, timeZone, granularity } = body.timeRange;
+  const span = (Date.parse(end) - Date.parse(start)) / 86_400_000 + 1;
+  return (
+    timeZone !== "ORTZ" ||
+    span < 1 ||
+    (granularity === "DAILY" && span > 90) ||
+    (granularity === undefined && span !== 1) ||
+    body.pagination.pageSize > 5000
+  );
+}
+
+/**
+ * Answers `POST /v1/reports/apps/adgroups/query` from a FakeReport like
+ * Apple documents it: the `campaignId` filter is required, one row per ad
+ * group (metadata with `id` and `campaignId`), `granularMetrics` per day
+ * with data, offset paging with `totalCount`. An unknown campaign, or one
+ * with `adGroups: "not-found"`, is a 404.
+ */
+export function fakeAdGroupReport(
+  report: FakeReport,
+  adAccountId: string,
+  body: ReportBody,
+): { status: number; body: unknown } {
+  const filter = body.filters?.find((entry) => entry.field === "campaignId");
+  if (
+    invalidTimeRange(body) ||
+    body.groupBy !== undefined ||
+    body.filters?.length !== 1 ||
+    filter?.operator !== "EQUALS" ||
+    typeof filter.value !== "string"
+  ) {
+    return INVALID_REQUEST;
+  }
+  const campaign = report.campaigns.find((entry) => entry.id === filter.value);
+  if (!campaign || campaign.adGroups === "not-found") {
+    return { status: 404, body: fixture("error-not-found") };
+  }
+  const { start, end, granularity } = body.timeRange;
+  const placed = campaign.adGroups ?? {};
+  const fallback = defaultAdGroup(campaign);
+  // Ad group → date → that day's numbers.
+  const byAdGroup = new Map<string, Map<string, FakeDay[]>>();
+  const add = (adGroup: string, date: string, day: FakeDay) => {
+    const days = byAdGroup.get(adGroup) ?? new Map<string, FakeDay[]>();
+    days.set(date, [...(days.get(date) ?? []), day]);
+    byAdGroup.set(adGroup, days);
+  };
+  for (const [date, countries] of Object.entries(campaign.days)) {
+    if (date < start || date > end) continue;
+    for (const [country, day] of Object.entries(countries)) {
+      add(placed[country] ?? fallback, date, day);
+    }
+  }
+  for (const [date, day] of Object.entries(campaign.hidden ?? {})) {
+    if (date >= start && date <= end) add(fallback, date, day);
+  }
+  const rows = [...byAdGroup.keys()].sort().map((adGroup) => {
+    const days = byAdGroup.get(adGroup)!;
+    const granular = [...days.keys()]
+      .sort()
+      .map((date) => appsMetrics(date, days.get(date)!, report.currency));
+    const { date: _date, ...total } = granular[0]!;
+    return {
+      metadata: {
+        id: Number(adGroup),
+        campaignId: Number(campaign.id),
+        adAccountId: Number(adAccountId),
+        name: `Ad group ${adGroup}`,
+        status: campaign.deleted ? "PAUSED" : "ENABLED",
+        deleted: campaign.deleted ?? false,
+        pricingModel: "CPT",
+      },
+      totalMetrics: total,
+      ...(granularity ? { granularMetrics: granular } : {}),
+    };
+  });
+  const { offset, pageSize } = body.pagination;
+  return {
+    status: 200,
+    body: {
+      result:
+        rows.length > 0 ? { rows: rows.slice(offset, offset + pageSize) } : {},
+      pagination: { totalCount: rows.length, offset, pageSize },
+    },
+  };
 }
 
 /**
@@ -139,25 +250,9 @@ export function fakeReport(
   adAccountId: string,
   body: ReportBody,
 ): { status: number; body: unknown } {
-  const { start, end, timeZone, granularity } = body.timeRange;
-  const span = (Date.parse(end) - Date.parse(start)) / 86_400_000 + 1;
-  if (
-    timeZone !== "ORTZ" ||
-    span < 1 ||
-    (granularity === "DAILY" && span > 90) ||
-    (granularity === undefined && span !== 1) ||
-    body.pagination.pageSize > 5000
-  ) {
-    return {
-      status: 400,
-      body: {
-        error: {
-          code: "INVALID_REQUEST",
-          message: "invalid report request",
-          details: [],
-        },
-      },
-    };
+  const { start, end, granularity } = body.timeRange;
+  if (invalidTimeRange(body) || body.filters !== undefined) {
+    return INVALID_REQUEST;
   }
   const byCountry = body.groupBy?.includes("countryOrRegion") ?? false;
   const rows: unknown[] = [];
@@ -381,6 +476,17 @@ export function createFakeAppleAds(options: FakeAppleAdsOptions): FakeAppleAds {
       init.method === "POST"
     ) {
       const answer = fakeReport(
+        options.reports?.[adAccountId] ?? { currency: "USD", campaigns: [] },
+        adAccountId,
+        JSON.parse(init.body ?? "{}") as ReportBody,
+      );
+      return reply(answer.status, answer.body);
+    }
+    if (
+      url.pathname === "/v1/reports/apps/adgroups/query" &&
+      init.method === "POST"
+    ) {
+      const answer = fakeAdGroupReport(
         options.reports?.[adAccountId] ?? { currency: "USD", campaigns: [] },
         adAccountId,
         JSON.parse(init.body ?? "{}") as ReportBody,

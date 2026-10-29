@@ -42,6 +42,8 @@ export interface FakeReportEntry {
   taps: number;
   tapInstalls: number;
   viewInstalls: number;
+  /** The ad group of the entry (#376); default `${campaignId}01`. */
+  adGroupId?: string;
 }
 
 export interface FakeApiUserKey {
@@ -141,8 +143,68 @@ function metricsOf(
 
 interface ReportQueryBody {
   timeRange: { start: string; end: string; granularity?: string };
+  filters?: Array<{ field: string; operator: string; value: unknown }>;
   groupBy?: string[];
   pagination: { offset: number; pageSize: number };
+}
+
+/**
+ * `POST /v1/reports/apps/adgroups/query` as Apple documents it (#376):
+ * the required campaignId filter, one row per ad group.
+ */
+function adGroupReport(account: FakeAdAccount, body: ReportQueryBody) {
+  const { start, end, granularity } = body.timeRange;
+  const campaignId = body.filters?.find(
+    (filter) => filter.field === "campaignId" && filter.operator === "EQUALS",
+  )?.value;
+  const entries = (account.report ?? []).filter(
+    (entry) =>
+      entry.campaignId === campaignId &&
+      entry.date >= start &&
+      entry.date <= end,
+  );
+  const groups = new Map<string, FakeReportEntry[]>();
+  for (const entry of entries) {
+    const key = entry.adGroupId ?? `${entry.campaignId}01`;
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
+  }
+  const rows = [...groups.keys()].sort().map((key) => {
+    const members = groups.get(key)!;
+    const dates = [...new Set(members.map((entry) => entry.date))].sort();
+    const { date: _date, ...total } = metricsOf(
+      start,
+      members,
+      account.currency,
+    );
+    return {
+      metadata: {
+        id: Number(key),
+        campaignId: Number(campaignId),
+        adAccountId: Number(account.id),
+        name: `Ad group ${key}`,
+        status: "ENABLED",
+        deleted: false,
+      },
+      totalMetrics: total,
+      ...(granularity
+        ? {
+            granularMetrics: dates.map((date) =>
+              metricsOf(
+                date,
+                members.filter((entry) => entry.date === date),
+                account.currency,
+              ),
+            ),
+          }
+        : {}),
+    };
+  });
+  const { offset, pageSize } = body.pagination;
+  return {
+    result:
+      rows.length > 0 ? { rows: rows.slice(offset, offset + pageSize) } : {},
+    pagination: { totalCount: rows.length, offset, pageSize },
+  };
 }
 
 /** `POST /v1/reports/apps/campaigns/query` as Apple documents it. */
@@ -373,6 +435,15 @@ export function createFakeAppleAdsServer(
         return reply(
           200,
           campaignReport(
+            account,
+            JSON.parse(init.body ?? "{}") as ReportQueryBody,
+          ),
+        );
+      }
+      if (url.pathname === "/v1/reports/apps/adgroups/query") {
+        return reply(
+          200,
+          adGroupReport(
             account,
             JSON.parse(init.body ?? "{}") as ReportQueryBody,
           ),

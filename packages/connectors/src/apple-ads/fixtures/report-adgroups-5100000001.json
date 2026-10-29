@@ -1,0 +1,166 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/get-app-ad-group-reports and https://developer.apple.com/documentation/apple-ads-platform-api/appsreportingadgroup), checked 2026-10-29; IDs, names and numbers are synthetic. The answer to the campaignId filter of campaign 5100000001 in report-campaigns-4100000001.json: its two ad groups add up to the campaign's days exactly. TO BE CONFIRMED by #370 captures: every AppsMetrics count is present on each granularMetrics entry (Apple's example shows only some), metadata.campaignId is on every row, a deleted ad group still has its rows, and the ad groups of a campaign add up to its campaign report row.",
+  "result": {
+    "rows": [
+      {
+        "metadata": {
+          "id": 6100000001,
+          "campaignId": 5100000001,
+          "adAccountId": 4100000001,
+          "name": "Brand – Exact",
+          "status": "ENABLED",
+          "deleted": false,
+          "displayStatus": "RUNNING",
+          "pricingModel": "CPT"
+        },
+        "totalMetrics": {
+          "localSpend": {
+            "amount": "45.25",
+            "currency": "USD"
+          },
+          "impressions": 4500,
+          "taps": 225,
+          "ttr": 0.05,
+          "tapInstalls": 55,
+          "viewInstalls": 7,
+          "totalInstalls": 62,
+          "tapNewDownloads": 47,
+          "viewNewDownloads": 5,
+          "totalNewDownloads": 52,
+          "tapRedownloads": 8,
+          "viewRedownloads": 2,
+          "totalRedownloads": 10
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "localSpend": {
+              "amount": "30.00",
+              "currency": "USD"
+            },
+            "impressions": 3000,
+            "taps": 150,
+            "ttr": 0.05,
+            "tapInstalls": 40,
+            "viewInstalls": 4,
+            "totalInstalls": 44,
+            "tapNewDownloads": 35,
+            "viewNewDownloads": 3,
+            "totalNewDownloads": 38,
+            "tapRedownloads": 5,
+            "viewRedownloads": 1,
+            "totalRedownloads": 6,
+            "cpt": {
+              "amount": "0.20",
+              "currency": "USD"
+            }
+          },
+          {
+            "date": "2026-10-27",
+            "localSpend": {
+              "amount": "15.25",
+              "currency": "USD"
+            },
+            "impressions": 1500,
+            "taps": 75,
+            "ttr": 0.05,
+            "tapInstalls": 15,
+            "viewInstalls": 3,
+            "totalInstalls": 18,
+            "tapNewDownloads": 12,
+            "viewNewDownloads": 2,
+            "totalNewDownloads": 14,
+            "tapRedownloads": 3,
+            "viewRedownloads": 1,
+            "totalRedownloads": 4
+          }
+        ]
+      },
+      {
+        "metadata": {
+          "id": 6100000002,
+          "campaignId": 5100000001,
+          "adAccountId": 4100000001,
+          "name": "Brand – Broad (removed)",
+          "status": "PAUSED",
+          "deleted": true,
+          "displayStatus": "DELETED",
+          "pricingModel": "CPT"
+        },
+        "totalMetrics": {
+          "localSpend": {
+            "amount": "15.50",
+            "currency": "USD"
+          },
+          "impressions": 1500,
+          "taps": 75,
+          "ttr": 0.05,
+          "tapInstalls": 15,
+          "viewInstalls": 3,
+          "totalInstalls": 18,
+          "tapNewDownloads": 13,
+          "viewNewDownloads": 3,
+          "totalNewDownloads": 16,
+          "tapRedownloads": 2,
+          "viewRedownloads": 0,
+          "totalRedownloads": 2
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "localSpend": {
+              "amount": "10.50",
+              "currency": "USD"
+            },
+            "impressions": 1000,
+            "taps": 50,
+            "ttr": 0.05,
+            "tapInstalls": 10,
+            "viewInstalls": 2,
+            "totalInstalls": 12,
+            "tapNewDownloads": 9,
+            "viewNewDownloads": 2,
+            "totalNewDownloads": 11,
+            "tapRedownloads": 1,
+            "viewRedownloads": 0,
+            "totalRedownloads": 1
+          },
+          {
+            "date": "2026-10-27",
+            "localSpend": {
+              "amount": "5.00",
+              "currency": "USD"
+            },
+            "impressions": 500,
+            "taps": 25,
+            "ttr": 0.05,
+            "tapInstalls": 5,
+            "viewInstalls": 1,
+            "totalInstalls": 6,
+            "tapNewDownloads": 4,
+            "viewNewDownloads": 1,
+            "totalNewDownloads": 5,
+            "tapRedownloads": 1,
+            "viewRedownloads": 0,
+            "totalRedownloads": 1
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "grandTotal": {
+        "localSpend": {
+          "amount": "60.75",
+          "currency": "USD"
+        },
+        "impressions": 6000,
+        "taps": 300
+      }
+    }
+  },
+  "pagination": {
+    "totalCount": 2,
+    "offset": 0,
+    "pageSize": 1000
+  }
+}

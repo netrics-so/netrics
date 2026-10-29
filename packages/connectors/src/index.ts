@@ -27,6 +27,7 @@ export {
   vendorNumberMessage,
 } from "./app-store-connect/index.js";
 export {
+  APPLE_ADS_AD_GROUP_METRIC_KEYS,
   APPLE_ADS_HOST,
   APPLE_ADS_METRIC_KEYS,
   APPLE_ADS_RATE_LIMITED_MESSAGE,
