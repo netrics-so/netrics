@@ -6,6 +6,7 @@ import type {
   ConnectionPreviewResponse,
   ConnectionResourcesResponse,
   ConnectionSignedKeyView,
+  SignedKeyPairResponse,
   ConnectorAuthStrategy,
   CreateConnectionRequest,
   DeleteConnectionResponse,
@@ -105,6 +106,11 @@ import {
   type SignedKeyProviders,
 } from "../signed-keys/registry.js";
 import { createSignedKeyTokenStore } from "../signed-keys/token-store.js";
+import {
+  createPendingKeyStore,
+  PENDING_KEY_UNUSABLE,
+  type PendingKeyStore,
+} from "../signed-keys/pending-keys.js";
 import { latestReview, storedReviewsKey } from "../reviews/latest.js";
 import {
   presentConnection,
@@ -129,6 +135,8 @@ export interface ConnectionServiceDeps {
   oauthTokens?: OAuthTokenService;
   /** Default: the signed-key providers of this server (ADR 0014). */
   signedKeys?: SignedKeyProviders;
+  /** Default: pending generated keys over db and keyring (ADR 0020 §3). */
+  pendingKeys?: PendingKeyStore;
 }
 
 /** Who acts on which workspace (see routes/access.ts). */
@@ -357,9 +365,13 @@ function presentAuthStrategy(
 /** The wizard's form for a signed-key provider: fields and setup copy. */
 function presentSignedKeyProvider(
   provider: SignedKeyProviderDefinition,
-): Pick<ConnectorAuthStrategy, "providerName" | "fields" | "setup"> {
+): Pick<
+  ConnectorAuthStrategy,
+  "providerName" | "generatedKeyPair" | "fields" | "setup"
+> {
   return {
     providerName: provider.name,
+    ...(provider.generatedKeyPair ? { generatedKeyPair: true } : {}),
     fields: provider.fields.map((field) => ({
       key: field.key,
       label: field.label,
@@ -392,6 +404,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
   // Cached exchanged tokens of stored signed keys (ADR 0020 §2); candidate
   // keys (create, preview, rotation) are never cached.
   const signedKeyTokens = createSignedKeyTokenStore({ db, credentialKeyring });
+  const pendingKeys =
+    deps.pendingKeys ?? createPendingKeyStore({ db, credentialKeyring });
   const signedKeyCache = (
     key: SignedKey,
     workspaceId: string,
@@ -447,6 +461,81 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       // OAuthTokenError and connector failures carry redacted messages.
       return oauthCallFailure(error);
     }
+  }
+
+  /**
+   * Credentials that name a key pair netrics generated (ADR 0020 §3,
+   * #371): the pending private key of the caller, in this workspace, of the
+   * connector's signed-key provider, is put in the private key field, so
+   * validation, probes and the connector check run as for a pasted key.
+   * The key is not consumed here: the storing transaction does that
+   * (`consumePending`). Without `pendingKeyId` the credentials are as sent.
+   */
+  async function withPendingKey(
+    actor: Actor,
+    manifest: ConnectorManifest,
+    credentials: Record<string, unknown> | undefined,
+    pendingKeyId: string | undefined,
+  ): Promise<
+    Result<{
+      credentials: Record<string, unknown> | undefined;
+      pending: { provider: string; id: string } | null;
+    }>
+  > {
+    if (pendingKeyId === undefined) {
+      return ok({ credentials, pending: null });
+    }
+    const strategy = manifest.authStrategies.find(
+      (entry) => entry.strategy === "signed-key",
+    );
+    const provider =
+      strategy?.strategy === "signed-key"
+        ? signedKeys.get(strategy.provider)
+        : undefined;
+    const field = provider?.fields.find((entry) => entry.privateKey);
+    if (!provider?.generatedKeyPair || !field) {
+      return fail(400, "This connector does not take a generated key pair.");
+    }
+    if (credentials && field.key in credentials) {
+      return fail(
+        400,
+        `Send either the generated key pair or a ${field.label}, not both.`,
+      );
+    }
+    const privateKey = await pendingKeys.privateKey(
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      provider.id,
+      pendingKeyId,
+    );
+    if (privateKey === null) {
+      return fail(400, PENDING_KEY_UNUSABLE);
+    }
+    return ok({
+      credentials: { ...(credentials ?? {}), [field.key]: privateKey },
+      pending: { provider: provider.id, id: pendingKeyId },
+    });
+  }
+
+  /**
+   * Deletes the pending key whose private key this transaction stores; a
+   * 400 (and nothing stored) when a concurrent request took it first or it
+   * expired meanwhile.
+   */
+  async function consumePending(
+    tx: Transaction,
+    actor: Actor,
+    pending: { provider: string; id: string } | null,
+  ): Promise<Result<true>> {
+    if (!pending) {
+      return ok(true);
+    }
+    const consumed = await pendingKeys.consume(
+      tx,
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      pending.provider,
+      pending.id,
+    );
+    return consumed ? ok(true) : fail(400, PENDING_KEY_UNUSABLE);
   }
 
   /**
@@ -1078,6 +1167,17 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         config.resourceSelection = body.resources;
       }
 
+      const resolved = await withPendingKey(
+        actor,
+        registered.manifest,
+        body.credentials,
+        body.pendingKeyId,
+      );
+      if (!resolved.ok) {
+        return resolved;
+      }
+      const { pending } = resolved.value;
+
       // Check BEFORE anything is persisted: bad credentials are a 400 with
       // the connector's actionable message and leave no rows behind.
       const connectionId = randomUUID();
@@ -1085,14 +1185,20 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         registered.manifest,
         connectionId,
         config,
-        body.credentials ?? {},
+        resolved.value.credentials ?? {},
       );
       if (!check.ok) {
         return check;
       }
-      const credentials = body.credentials ? check.value : null;
+      const credentials = resolved.value.credentials ? check.value : null;
 
       return inWorkspace(actor, async (tx) => {
+        // A generated key moves into this connection: its pending row goes
+        // in this commit, before anything is written.
+        const consumed = await consumePending(tx, actor, pending);
+        if (!consumed.ok) {
+          return consumed;
+        }
         if (body.projectId) {
           const project = await findProject(
             tx,
@@ -1144,8 +1250,41 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       });
     },
 
+    /**
+     * Generates a key pair for a signed-key provider with
+     * `generatedKeyPair` (ADR 0020 §3, #371): the private key stays here as
+     * the caller's pending key; the answer has the public key and the
+     * pending key's id, never the private key.
+     */
+    async generateKeyPair(
+      actor: Actor,
+      providerId: string,
+    ): Promise<Result<SignedKeyPairResponse>> {
+      const provider = signedKeys.get(providerId);
+      if (!provider) {
+        return fail(404, "signed_key_provider_not_found");
+      }
+      const generated = await pendingKeys.generate(
+        { workspaceId: actor.workspaceId, userId: actor.callerId },
+        provider,
+      );
+      if (!generated.ok) {
+        return fail(generated.status, generated.error);
+      }
+      await inWorkspace(actor, (tx) =>
+        insertAuditEvent(tx, {
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.callerId,
+          action: "signed_key.key_pair_generated",
+          target: generated.value.pendingKeyId,
+          metadata: { provider: provider.id },
+        }),
+      );
+      return ok(generated.value);
+    },
+
     /** Checks credentials and discovers resources; persists nothing. */
-    async preview(body: PreviewConnectionRequest) {
+    async preview(actor: Actor, body: PreviewConnectionRequest) {
       const registered = registry.get(body.connectorId);
       if (!registered) {
         return fail(400, "invalid_request");
@@ -1158,16 +1297,26 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       if (!validated.ok) {
         return validated;
       }
-      const provider = signedKeys.providerFor(
+      // A generated key pair is only read here; the preview stores nothing.
+      const resolved = await withPendingKey(
+        actor,
         registered.manifest,
         body.credentials,
+        body.pendingKeyId,
+      );
+      if (!resolved.ok) {
+        return resolved;
+      }
+      const provider = signedKeys.providerFor(
+        registered.manifest,
+        resolved.value.credentials,
       );
       if (provider) {
         return previewSignedKey(
           registered.connector,
           provider,
           validated.value,
-          body.credentials,
+          resolved.value.credentials,
         );
       }
       const context = {
@@ -1375,8 +1524,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     async update(
       actor: Actor,
       connectionId: string,
-      body: UpdateConnectionRequest,
+      request: UpdateConnectionRequest,
     ): Promise<Result<ConnectionDetail>> {
+      let body = request;
       const existing = await inWorkspace(actor, (tx) =>
         findConnection(tx, actor.workspaceId, connectionId),
       );
@@ -1389,9 +1539,26 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       }
       // An OAuth connection's credentials are its grant: they change only
       // through reauthorization (ADR 0012), never by pasting a token.
-      if (existing.oauth && body.credentials !== undefined) {
+      if (
+        existing.oauth &&
+        (body.credentials !== undefined || body.pendingKeyId !== undefined)
+      ) {
         return fail(400, "oauth_authorization_required");
       }
+      // Key replacement with a generated key pair (ADR 0020 §3): from here
+      // on it is a key upload like any other; the pending row goes in the
+      // storing commit.
+      const resolved = await withPendingKey(
+        actor,
+        registered.manifest,
+        body.credentials,
+        body.pendingKeyId,
+      );
+      if (!resolved.ok) {
+        return resolved;
+      }
+      const { pending } = resolved.value;
+      body = { ...body, credentials: resolved.value.credentials };
 
       const existingConfig = existing.row.config as Record<string, unknown>;
       let nextConfig: Record<string, unknown> | undefined;
@@ -1532,6 +1699,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       };
 
       return inWorkspace(actor, async (tx) => {
+        const consumed = await consumePending(tx, actor, pending);
+        if (!consumed.ok) {
+          return consumed;
+        }
         const row = await updateConnectionRow(
           tx,
           actor.workspaceId,

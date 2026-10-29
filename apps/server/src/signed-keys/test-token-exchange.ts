@@ -81,6 +81,7 @@ export const fixtureExchangeProvider: SignedKeyProviderDefinition = {
     },
   }),
   lifetime: { issuedBeforeSeconds: 60, expiresInSeconds: 600 },
+  generatedKeyPair: true,
   exchange: {
     tokenEndpoint: FIXTURE_TOKEN_ENDPOINT,
     form: (values) => ({

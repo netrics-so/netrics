@@ -100,13 +100,17 @@ export function createCredentialKeyring(
  *   to the authorization row (its id in place of the connection id);
  * - signed-key-access-token:
  *   connection_signed_key_tokens.access_token_encrypted, bound to the
- *   connection (ADR 0020: the exchanged token of a signed-key provider).
+ *   connection (ADR 0020: the exchanged token of a signed-key provider);
+ * - signed-key-pending-key: signed_key_pending_keys.private_key_encrypted,
+ *   bound to the pending key row (its id in place of the connection id;
+ *   ADR 0020 §3, a generated private key until it moves into a connection).
  */
 export type EnvelopePurpose =
   | "credentials"
   | "oauth-access-token"
   | "oauth-code-verifier"
-  | "signed-key-access-token";
+  | "signed-key-access-token"
+  | "signed-key-pending-key";
 
 /** The row an OAuth authorization's PKCE verifier is sealed to. */
 export interface AuthorizationBinding {
@@ -224,6 +228,46 @@ export function decryptSignedKeyAccessToken(
       "signed-key-access-token",
       binding.workspaceId,
       binding.connectionId,
+    ),
+  );
+}
+
+/** The row a pending generated private key is sealed to (#371). */
+export interface PendingKeyBinding {
+  workspaceId: string;
+  pendingKeyId: string;
+}
+
+/** Seals a generated private key to its pending key row (ADR 0020 §3). */
+export function encryptPendingSignedKey(
+  privateKeyPem: string,
+  keyring: CredentialKeyring,
+  binding: PendingKeyBinding,
+): string {
+  return sealEnvelope(
+    privateKeyPem,
+    keyring,
+    associatedData(
+      "signed-key-pending-key",
+      binding.workspaceId,
+      binding.pendingKeyId,
+    ),
+  );
+}
+
+/** Opens an envelope produced by encryptPendingSignedKey (same binding). */
+export function decryptPendingSignedKey(
+  envelope: string,
+  keyring: CredentialKeyring,
+  binding: PendingKeyBinding,
+): string {
+  return openEnvelope(
+    envelope,
+    keyring,
+    associatedData(
+      "signed-key-pending-key",
+      binding.workspaceId,
+      binding.pendingKeyId,
     ),
   );
 }

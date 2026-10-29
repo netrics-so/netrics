@@ -389,6 +389,13 @@ export const connectorAuthStrategySchema = z.object({
    * picker or pasted; a secret field is never shown again after upload.
    */
   providerName: z.string().min(1).optional(),
+  /**
+   * For "signed-key": netrics can generate the key pair (ADR 0020 §3). The
+   * wizard then offers "Generate a key pair" (POST
+   * .../signed-keys/{provider}/key-pairs), shows the public key to paste at
+   * the provider, and sends `pendingKeyId` instead of the private key field.
+   */
+  generatedKeyPair: z.boolean().optional(),
   fields: z
     .array(
       z.object({
@@ -517,11 +524,21 @@ const connectionConfigSchema = z.record(z.string(), z.unknown());
 // Input-only: credentials must never appear on any response schema.
 const connectionCredentialsSchema = z.record(z.string(), z.unknown());
 
+/**
+ * A key pair netrics generated (ADR 0020 §3, #371), named instead of the
+ * private key field of a signed-key provider with `generatedKeyPair`. The
+ * other fields (client ID, key ID) still come in `credentials`. Creating
+ * the connection, or replacing its key, moves the key into the connection
+ * and the pending key is gone; a preview only uses it.
+ */
+const pendingKeyIdSchema = z.uuid();
+
 export const createConnectionRequestSchema = z.object({
   connectorId: z.string().min(1),
   name: nameSchema,
   config: connectionConfigSchema.default({}),
   credentials: connectionCredentialsSchema.optional(),
+  pendingKeyId: pendingKeyIdSchema.optional(),
   projectId: z.uuid().optional(),
   resources: z.array(z.string().min(1)).optional(),
 });
@@ -533,6 +550,7 @@ export const previewConnectionRequestSchema = z.object({
   connectorId: z.string().min(1),
   config: connectionConfigSchema.default({}),
   credentials: connectionCredentialsSchema.optional(),
+  pendingKeyId: pendingKeyIdSchema.optional(),
 });
 export type PreviewConnectionRequest = z.infer<
   typeof previewConnectionRequestSchema
@@ -860,6 +878,20 @@ export type ConnectionSignedKeyView = z.infer<
   typeof connectionSignedKeyViewSchema
 >;
 
+/**
+ * A key pair netrics generated for a signed-key provider (ADR 0020 §3,
+ * #371): the public key to paste at the provider and the id of the pending
+ * private key, which is never part of any response. The pending key works
+ * for the user who generated it, in this workspace, until `expiresAt`.
+ */
+export const signedKeyPairResponseSchema = z.object({
+  pendingKeyId: z.uuid(),
+  /** PEM SubjectPublicKeyInfo ("-----BEGIN PUBLIC KEY-----"). */
+  publicKey: z.string().min(1),
+  expiresAt: z.iso.datetime(),
+});
+export type SignedKeyPairResponse = z.infer<typeof signedKeyPairResponseSchema>;
+
 export const connectionDetailSchema = connectionSchema.extend({
   config: connectionConfigSchema,
   /** The stored signed key's non-secret fields; null for other connections. */
@@ -901,6 +933,7 @@ export const updateConnectionRequestSchema = z.object({
   name: nameSchema.optional(),
   config: connectionConfigSchema.optional(),
   credentials: connectionCredentialsSchema.optional(),
+  pendingKeyId: pendingKeyIdSchema.optional(),
   projectId: z.uuid().nullable().optional(),
 });
 export type UpdateConnectionRequest = z.infer<

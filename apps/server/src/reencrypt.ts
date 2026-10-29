@@ -5,9 +5,11 @@ import { schema, type Database } from "@netrics/database";
 import {
   decryptCredentials,
   decryptOAuthAccessToken,
+  decryptPendingSignedKey,
   decryptSignedKeyAccessToken,
   encryptCredentials,
   encryptOAuthAccessToken,
+  encryptPendingSignedKey,
   encryptSignedKeyAccessToken,
   type CredentialKeyring,
 } from "./credentials.js";
@@ -41,7 +43,10 @@ interface StoredEnvelope {
 /**
  * Re-encrypts every stored envelope that is not on the keyring's current
  * key (#67): connection credentials, cached OAuth access tokens (ADR
- * 0012) and cached signed-key access tokens (ADR 0020). Runs with the owner connection (reads across workspaces).
+ * 0012), cached signed-key access tokens (ADR 0020 §2) and pending
+ * generated keys (ADR 0020 §3, which live up to 24 hours: a rotation may
+ * retire the old key sooner). Runs with the owner connection (reads across
+ * workspaces).
  * Idempotent and safe to interrupt: each row is updated only if it still
  * holds the envelope that was read, so a concurrent change is never
  * overwritten. Reports counts, never values. (PKCE verifiers of OAuth
@@ -75,6 +80,13 @@ export async function reencryptCredentials(
     })
     .from(schema.connectionSignedKeyTokens)
     .where(isNotNull(schema.connectionSignedKeyTokens.accessTokenEncrypted));
+  const pendingKeys = await ownerDb
+    .select({
+      id: schema.signedKeyPendingKeys.id,
+      workspaceId: schema.signedKeyPendingKeys.workspaceId,
+      stored: schema.signedKeyPendingKeys.privateKeyEncrypted,
+    })
+    .from(schema.signedKeyPendingKeys);
 
   const envelopes: StoredEnvelope[] = [
     ...credentials.map((row): StoredEnvelope => {
@@ -148,6 +160,30 @@ export async function reencryptCredentials(
                 ),
               )
               .returning({ id: schema.connectionSignedKeyTokens.connectionId })
+          ).length === 1,
+      };
+    }),
+    ...pendingKeys.map((row): StoredEnvelope => {
+      const binding = { workspaceId: row.workspaceId, pendingKeyId: row.id };
+      const stored = row.stored;
+      return {
+        stored,
+        open: (ring) =>
+          decryptPendingSignedKey(stored.toString("utf8"), ring, binding),
+        seal: (plaintext, ring) =>
+          encryptPendingSignedKey(plaintext, ring, binding),
+        replace: async (envelope) =>
+          (
+            await ownerDb
+              .update(schema.signedKeyPendingKeys)
+              .set({ privateKeyEncrypted: envelope })
+              .where(
+                and(
+                  eq(schema.signedKeyPendingKeys.id, row.id),
+                  eq(schema.signedKeyPendingKeys.privateKeyEncrypted, stored),
+                ),
+              )
+              .returning({ id: schema.signedKeyPendingKeys.id })
           ).length === 1,
       };
     }),

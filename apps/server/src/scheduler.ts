@@ -16,6 +16,7 @@ import {
   pruneAppReviews,
   pruneHistory,
   pruneOAuthAuthorizations,
+  prunePendingKeys,
   pruneSecurityRecords,
   SECURITY_RETENTION,
   setConnectionNextDue,
@@ -191,6 +192,15 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
         { oauthAuthorizationsDeleted },
         "pruned finished oauth authorizations",
       );
+    }
+    // Generated private keys never used for a connection, 24 hours after
+    // they were generated (ADR 0020 §3).
+    const pendingKeysDeleted = await prunePendingKeys(
+      schedulerDb,
+      (deps.retention ?? DEFAULT_RETENTION).batch,
+    );
+    if (pendingKeysDeleted > 0) {
+      logger.info({ pendingKeysDeleted }, "pruned expired pending signed keys");
     }
     // Audit events after 12 months; expired sessions, rate-limit counters and
     // pairings soon after (privacy policy; SECURITY_RETENTION).

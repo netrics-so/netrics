@@ -1,15 +1,16 @@
-import { generateKeyPairSync } from "node:crypto";
+import { createPublicKey, generateKeyPairSync } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
 import {
+  generateP256KeyPair,
   parseP256PrivateKey,
   SignedKeyFormatError,
   signEs256Jwt,
 } from "./keys.js";
 import { decodeJwt, p256KeyPair, pemBody } from "./test-keys.js";
 
-// ADR 0014: PEM PKCS#8 EC P-256 keys only, with messages that name what was
+// ADR 0014: PEM PKCS#8 (or SEC1, #371) EC P-256 keys only, with messages that name what was
 // pasted and never quote it; ES256 signatures in the JOSE r‖s form.
 
 function rejection(input: string): SignedKeyFormatError {
@@ -90,12 +91,49 @@ describe("parseP256PrivateKey", () => {
     expectNoKeyMaterial(error.message, pem);
   });
 
-  it("refuses a SEC1 EC key, a public key and a certificate by name", () => {
-    const { privateKey, publicKey } = generateKeyPairSync("ec", {
+  it("reads a SEC1 EC key (openssl ecparam) and returns it as PKCS#8", () => {
+    const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const sec1 = privateKey.export({ format: "pem", type: "sec1" }) as string;
+    const pkcs8 = privateKey.export({ format: "pem", type: "pkcs8" }) as string;
+    expect(parseP256PrivateKey(sec1).pem).toBe(pkcs8);
+    // With the EC PARAMETERS block openssl writes without -noout, and with
+    // the line breaks lost in a paste.
+    const params =
+      "-----BEGIN EC PARAMETERS-----\nBggqhkjOPQMBBw==\n-----END EC PARAMETERS-----\n";
+    expect(parseP256PrivateKey(params + sec1).pem).toBe(pkcs8);
+    expect(parseP256PrivateKey(sec1.replace(/\n/g, " ")).pem).toBe(pkcs8);
+  });
+
+  it("refuses a SEC1 key on another curve, and an encrypted one", () => {
+    const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-384" });
+    const sec1 = privateKey.export({ format: "pem", type: "sec1" }) as string;
+    expect(rejection(sec1).message).toMatch(/secp384r1/);
+    const encrypted = privateKey.export({
+      format: "pem",
+      type: "sec1",
+      cipher: "aes-256-cbc",
+      passphrase: "secret",
+    }) as string;
+    const error = rejection(encrypted);
+    expect(error.message).toMatch(/passphrase/);
+    expectNoKeyMaterial(error.message, encrypted);
+  });
+
+  it("generates a P-256 pair whose private key parses and matches the public key", () => {
+    const pair = generateP256KeyPair();
+    expect(pair.publicKeyPem).toMatch(/^-----BEGIN PUBLIC KEY-----\n/);
+    const parsed = parseP256PrivateKey(pair.privateKeyPem);
+    expect(parsed.pem).toBe(pair.privateKeyPem);
+    expect(
+      createPublicKey(parsed.key).export({ format: "pem", type: "spki" }),
+    ).toBe(pair.publicKeyPem);
+    expect(generateP256KeyPair().publicKeyPem).not.toBe(pair.publicKeyPem);
+  });
+
+  it("refuses a public key and a certificate by name", () => {
+    const { publicKey } = generateKeyPairSync("ec", {
       namedCurve: "P-256",
     });
-    const sec1 = privateKey.export({ format: "pem", type: "sec1" }) as string;
-    expect(rejection(sec1).message).toMatch(/SEC1/);
     const spki = publicKey.export({ format: "pem", type: "spki" }) as string;
     expect(rejection(spki).message).toMatch(/public key/);
     const certificate =

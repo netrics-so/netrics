@@ -40,6 +40,14 @@ export interface SignedKeyProviderDefinition {
     readonly expiresInSeconds: number;
   };
   /**
+   * Whether netrics can generate the key pair (ADR 0020 §3, #371): the
+   * provider asks the user for a public key (Apple Ads) rather than handing
+   * out a private key (App Store Connect). The host then generates an EC
+   * P-256 pair, keeps the private key as a pending key and shows the public
+   * key to paste; pasting an existing private key stays possible.
+   */
+  readonly generatedKeyPair?: true;
+  /**
    * Optional token exchange (ADR 0020 §2, Apple Ads): the signed JWT is the
    * `client_secret` of an OAuth 2 client-credentials grant, and connectors
    * receive the access token it is exchanged for. Without it (App Store

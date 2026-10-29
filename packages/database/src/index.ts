@@ -317,6 +317,17 @@ export {
   storeSignedKeyToken,
 } from "./signed-key-tokens.js";
 export type { ConnectionSignedKeyTokenRow } from "./signed-key-tokens.js";
+export {
+  consumePendingKey,
+  countActivePendingKeys,
+  findPendingKey,
+  insertPendingKey,
+  prunePendingKeys,
+} from "./signed-key-pending-keys.js";
+export type {
+  PendingKeyOwner,
+  SignedKeyPendingKeyRow,
+} from "./signed-key-pending-keys.js";
 export type {
   ConnectionChanges,
   ConnectionOAuthAccount,

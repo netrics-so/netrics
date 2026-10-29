@@ -91,6 +91,7 @@ import {
   memberResponseSchema,
   observationListResponseSchema,
   previewConnectionRequestSchema,
+  signedKeyPairResponseSchema,
   projectListResponseSchema,
   projectResponseSchema,
   renameWorkspaceRequestSchema,
@@ -122,6 +123,7 @@ import {
   type MeResponse,
   type ObservationListResponse,
   type PreviewConnectionRequest,
+  type SignedKeyPairResponse,
   type ProjectListResponse,
   type ProjectResponse,
   type SetupStatusResponse,
@@ -650,6 +652,23 @@ export function previewConnection(
     "POST",
     `/v1/workspaces/${workspaceId}/connections/preview`,
     previewConnectionRequestSchema.parse(input),
+  );
+}
+
+/**
+ * Generates a key pair for a signed-key provider with `generatedKeyPair`
+ * (ADR 0020 §3): the answer has the public key to paste at the provider and
+ * the pending key's id; the private key stays on the server.
+ */
+export function generateKeyPair(
+  workspaceId: string,
+  provider: string,
+): Promise<SignedKeyPairResponse> {
+  return browserSend(
+    signedKeyPairResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/signed-keys/${encodeURIComponent(provider)}/key-pairs`,
+    {},
   );
 }
 
