@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import type {
   ConnectionPreviewResponse,
   ConnectorCatalogEntry,
+  SignedKeyPairResponse,
 } from "@netrics/contracts";
 
 import { ConfigFields } from "../config-fields";
@@ -34,9 +35,9 @@ import {
   APP_STORE_CONNECT_PROVIDER,
   emptyKeyValues,
   fieldOfMessage,
-  keyCredentials,
+  keyPayload,
   localizedFieldLabel,
-  missingKeyField,
+  missingKeyFieldWith,
   signedKeyStrategyOf,
 } from "@/lib/signed-key";
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -78,6 +79,9 @@ export function NewConnectionWizard({
     const strategy = initial ? signedKeyStrategyOf(initial) : null;
     return strategy ? emptyKeyValues(strategy) : {};
   });
+  // A key pair netrics generated (ADR 0020 §3): its public key is shown,
+  // its private key stays on the server.
+  const [keyPair, setKeyPair] = useState<SignedKeyPairResponse | null>(null);
   const [fieldErrors, setFieldErrors] = useState<
     Record<string, string | undefined>
   >({});
@@ -121,6 +125,7 @@ export function NewConnectionWizard({
     setToken("");
     const strategy = signedKeyStrategyOf(entry);
     setKeyValues(strategy ? emptyKeyValues(strategy) : {});
+    setKeyPair(null);
     setFieldErrors({});
     setPreview(null);
     setSelectedResources(null);
@@ -148,11 +153,13 @@ export function NewConnectionWizard({
 
   function buildPayload() {
     const config = coerceConfigValues(fields, configValues);
-    const credentials = keyStrategy
-      ? keyCredentials(keyStrategy, keyValues)
-      : wantsToken && token !== ""
-        ? { token }
-        : undefined;
+    if (keyStrategy) {
+      return {
+        config,
+        ...keyPayload(keyStrategy, keyValues, keyPair?.pendingKeyId ?? null),
+      };
+    }
+    const credentials = wantsToken && token !== "" ? { token } : undefined;
     return { config, ...(credentials ? { credentials } : {}) };
   }
 
@@ -163,13 +170,15 @@ export function NewConnectionWizard({
     setError(null);
     setFieldErrors({});
     const missing = keyStrategy
-      ? missingKeyField(keyStrategy, keyValues)
+      ? missingKeyFieldWith(keyStrategy, keyValues, keyPair !== null)
       : null;
     if (missing) {
       setFieldErrors({
         [missing.key]:
           missing.input === "file"
-            ? t("chooseFile")
+            ? keyStrategy?.generatedKeyPair
+              ? t("generateOrPaste")
+              : t("chooseFile")
             : t("fieldRequired", {
                 field: localizedFieldLabel(keyStrategy!, missing, locale),
               }),
@@ -335,6 +344,15 @@ export function NewConnectionWizard({
                 errors={fieldErrors}
                 disabled={pending !== null}
                 guideOpen
+                keyPair={{
+                  workspaceId,
+                  value: keyPair,
+                  onChange: (value) => {
+                    setKeyPair(value);
+                    setFieldErrors({});
+                    invalidatePreview();
+                  },
+                }}
                 onChange={(key, value) => {
                   setKeyValues((current) => ({ ...current, [key]: value }));
                   setFieldErrors((current) => ({

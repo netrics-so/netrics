@@ -1531,6 +1531,39 @@ export const connectionSignedKeyTokens = pgTable(
   ],
 );
 
+// Pending generated keys (ADR 0020 §3, #371): the private key of a key
+// pair the host generated, for a signed-key provider whose user pastes a
+// public key at the provider (Apple Ads). Sealed in an AES-GCM envelope
+// bound to this row; bound to the workspace and the user who generated it.
+// Creating a connection or replacing its key with the row's id moves the key
+// into the connection's envelope and deletes the row. Rows expire after 24
+// hours; the scheduler deletes expired ones.
+export const signedKeyPendingKeys = pgTable(
+  "signed_key_pending_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    privateKeyEncrypted: bytea("private_key_encrypted").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("signed_key_pending_keys_workspace_user_idx").on(
+      table.workspaceId,
+      table.userId,
+    ),
+    index("signed_key_pending_keys_expires_idx").on(table.expiresAt),
+  ],
+);
+
 // Goals (ADR 0019 section 4, #335): a named target for one metric in a
 // period to date, shared by gauge widgets and later alert rules. The metric
 // binding is a widget's; a goal goes with its connection (cascade), like a

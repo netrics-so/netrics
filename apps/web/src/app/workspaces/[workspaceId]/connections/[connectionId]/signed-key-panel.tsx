@@ -3,16 +3,19 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import type { ConnectionSignedKeyView } from "@netrics/contracts";
+import type {
+  ConnectionSignedKeyView,
+  SignedKeyPairResponse,
+} from "@netrics/contracts";
 
 import { SignedKeyFields } from "../signed-key-fields";
 import { apiErrorMessage, updateConnection } from "@/lib/api";
 import {
   emptyKeyValues,
   fieldOfMessage,
-  keyCredentials,
+  keyPayload,
   localizedFieldLabel,
-  missingKeyField,
+  missingKeyFieldWith,
   type SignedKeyStrategy,
 } from "@/lib/signed-key";
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -63,6 +66,7 @@ export function SignedKeyPanel({
     ),
   });
   const [values, setValues] = useState(initialValues);
+  const [keyPair, setKeyPair] = useState<SignedKeyPairResponse | null>(null);
   const [fieldErrors, setFieldErrors] = useState<
     Record<string, string | undefined>
   >({});
@@ -79,6 +83,7 @@ export function SignedKeyPanel({
   function close() {
     setOpen(false);
     setValues(initialValues());
+    setKeyPair(null);
     setFieldErrors({});
     setError(null);
   }
@@ -87,12 +92,14 @@ export function SignedKeyPanel({
     event.preventDefault();
     setError(null);
     setFieldErrors({});
-    const missing = missingKeyField(strategy, values);
+    const missing = missingKeyFieldWith(strategy, values, keyPair !== null);
     if (missing) {
       setFieldErrors({
         [missing.key]:
           missing.input === "file"
-            ? t("chooseFile")
+            ? strategy.generatedKeyPair
+              ? t("generateOrPaste")
+              : t("chooseFile")
             : t("fieldRequired", {
                 field: localizedFieldLabel(strategy, missing, locale),
               }),
@@ -101,9 +108,13 @@ export function SignedKeyPanel({
     }
     setPending(true);
     try {
-      const { connection } = await updateConnection(workspaceId, connectionId, {
-        credentials: keyCredentials(strategy, values),
-      });
+      const { connection } = await updateConnection(
+        workspaceId,
+        connectionId,
+        keyPayload(strategy, values, keyPair?.pendingKeyId ?? null),
+      );
+      // A generated pending key moved into the connection.
+      setKeyPair(null);
       setReplaced({
         oldKeyId: keyIdOf(signedKey),
         newKeyId: keyIdOf(connection.signedKey),
@@ -182,6 +193,14 @@ export function SignedKeyPanel({
             errors={fieldErrors}
             disabled={pending}
             guideOpen={authFailed}
+            keyPair={{
+              workspaceId,
+              value: keyPair,
+              onChange: (value) => {
+                setKeyPair(value);
+                setFieldErrors({});
+              },
+            }}
             onChange={(key, value) => {
               setValues((current) => ({ ...current, [key]: value }));
               setFieldErrors((current) => ({ ...current, [key]: undefined }));

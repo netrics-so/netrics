@@ -358,6 +358,22 @@ export const workspaceEn = {
       pasteHelp:
         "Paste the whole content of the .p8 file, including the BEGIN and END lines.",
       fileInstead: "Choose the file instead",
+      keyPair: {
+        publicKey: "Public key",
+        intro:
+          "netrics generates the key pair for you. You paste the public key at {name}; the private key stays encrypted in netrics and is never shown.",
+        generate: "Generate key pair",
+        generating: "Generating…",
+        copy: "Copy public key",
+        copied: "Copied.",
+        copyFailed: "Could not copy. Select the key and copy it yourself.",
+        pasteAt:
+          "Paste this public key at {name}, then enter the IDs it shows.",
+        privateKeyStays:
+          "netrics keeps the private key. Finish the setup before {expires}; after that, generate a new pair.",
+        haveKey: "I already have a private key",
+        generateInstead: "Let netrics generate the key pair instead",
+      },
       appStoreConnect: {
         labels: {
           issuerId: "Issuer ID",
@@ -416,6 +432,7 @@ export const workspaceEn = {
     },
     wizard: {
       chooseFile: "Choose the .p8 file, or paste the key.",
+      generateOrPaste: "Generate a key pair, or paste your private key.",
       fieldRequired: "{field} is required.",
       checkFailed: "The connection check failed.",
       selectApp: "Select at least one of the discovered apps.",
@@ -491,6 +508,7 @@ export const workspaceEn = {
       privateKey: "Private key",
       stored: "Stored, encrypted (never shown)",
       chooseFile: "Choose the .p8 file, or paste the key.",
+      generateOrPaste: "Generate a key pair, or paste your private key.",
       fieldRequired: "{field} is required.",
       replaced:
         "Key replaced. Syncing continues with the new key; the data collected so far is kept.",

@@ -199,7 +199,11 @@ export function privateKeyHint(
   if (text.includes("-----BEGIN PUBLIC KEY-----")) {
     return t("publicKey");
   }
-  if (!text.includes("-----BEGIN PRIVATE KEY-----")) {
+  // PKCS#8 (.p8), or SEC1 as openssl ecparam writes it (ADR 0020 §3).
+  if (
+    !text.includes("-----BEGIN PRIVATE KEY-----") &&
+    !text.includes("-----BEGIN EC PRIVATE KEY-----")
+  ) {
     return t("notPem");
   }
   return null;
@@ -239,6 +243,53 @@ export function missingKeyField(
     strategy.fields.find((field) => (values[field.key] ?? "").trim() === "") ??
     null
   );
+}
+
+/** The provider's private key field. */
+export function privateKeyField(
+  strategy: SignedKeyStrategy,
+): SignedKeyField | undefined {
+  return strategy.fields.find((field) => field.input === "file");
+}
+
+/**
+ * The first required field that is still empty. With a generated key pair
+ * (ADR 0020 §3) the private key stays on the server and is not asked for.
+ */
+export function missingKeyFieldWith(
+  strategy: SignedKeyStrategy,
+  values: Record<string, string>,
+  generated: boolean,
+): SignedKeyField | null {
+  const privateKey = generated ? privateKeyField(strategy) : undefined;
+  return missingKeyField(
+    {
+      ...strategy,
+      fields: strategy.fields.filter((field) => field !== privateKey),
+    },
+    values,
+  );
+}
+
+/**
+ * What a key form sends: every field normalized, or, with a key pair
+ * netrics generated, the fields without the private key and the pending
+ * key's id.
+ */
+export function keyPayload(
+  strategy: SignedKeyStrategy,
+  values: Record<string, string>,
+  pendingKeyId: string | null,
+): { credentials: Record<string, string>; pendingKeyId?: string } {
+  const credentials = keyCredentials(strategy, values);
+  if (pendingKeyId === null) {
+    return { credentials };
+  }
+  const privateKey = privateKeyField(strategy);
+  if (privateKey) {
+    delete credentials[privateKey.key];
+  }
+  return { credentials, pendingKeyId };
 }
 
 /** The credentials to send: every field, normalized. */

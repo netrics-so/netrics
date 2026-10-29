@@ -380,6 +380,8 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     },
     wizard: {
       chooseFile: "Wähl die .p8-Datei aus oder füge den Schlüssel ein.",
+      generateOrPaste:
+        "Erzeug ein Schlüsselpaar oder füg deinen privaten Schlüssel ein.",
       fieldRequired: "{field} ist erforderlich.",
       checkFailed: "Die Prüfung der Verbindung ist fehlgeschlagen.",
       selectApp: "Wähl mindestens eine der gefundenen Apps aus.",
@@ -456,6 +458,8 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       privateKey: "Privater Schlüssel",
       stored: "Verschlüsselt gespeichert (wird nie angezeigt)",
       chooseFile: "Wähl die .p8-Datei aus oder füge den Schlüssel ein.",
+      generateOrPaste:
+        "Erzeug ein Schlüsselpaar oder füg deinen privaten Schlüssel ein.",
       fieldRequired: "{field} ist erforderlich.",
       replaced:
         "Schlüssel ersetzt. Die Synchronisierung läuft mit dem neuen Schlüssel weiter; die bisher gesammelten Daten bleiben erhalten.",
@@ -491,6 +495,24 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       pasteHelp:
         "Füge den gesamten Inhalt der .p8-Datei ein, einschließlich der Zeilen BEGIN und END.",
       fileInstead: "Stattdessen die Datei auswählen",
+      keyPair: {
+        publicKey: "Öffentlicher Schlüssel",
+        intro:
+          "netrics erzeugt das Schlüsselpaar für dich. Du fügst den öffentlichen Schlüssel bei {name} ein; der private Schlüssel bleibt verschlüsselt in netrics und wird nie angezeigt.",
+        generate: "Schlüsselpaar erzeugen",
+        generating: "Wird erzeugt…",
+        copy: "Öffentlichen Schlüssel kopieren",
+        copied: "Kopiert.",
+        copyFailed:
+          "Kopieren hat nicht geklappt. Markier den Schlüssel und kopier ihn selbst.",
+        pasteAt:
+          "Füg diesen öffentlichen Schlüssel bei {name} ein und gib dann die IDs ein, die dort angezeigt werden.",
+        privateKeyStays:
+          "netrics behält den privaten Schlüssel. Schließ die Einrichtung vor {expires} ab; danach erzeugst du ein neues Paar.",
+        haveKey: "Ich habe schon einen privaten Schlüssel",
+        generateInstead:
+          "Stattdessen das Schlüsselpaar von netrics erzeugen lassen",
+      },
       appStoreConnect: {
         labels: {
           issuerId: "Issuer ID",

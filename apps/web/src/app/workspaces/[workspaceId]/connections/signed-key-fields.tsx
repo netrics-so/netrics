@@ -1,6 +1,8 @@
 "use client";
 
-import { useId, useState, type ChangeEvent } from "react";
+import { useId, useState, type ChangeEvent, type ReactNode } from "react";
+
+import type { SignedKeyPairResponse } from "@netrics/contracts";
 
 import {
   keyFieldHint,
@@ -10,6 +12,7 @@ import {
   type SignedKeyField,
   type SignedKeyStrategy,
 } from "@/lib/signed-key";
+import { apiErrorMessage, generateKeyPair } from "@/lib/api";
 import { useLocale, useT } from "@/lib/i18n/client";
 
 const PEM_PLACEHOLDER =
@@ -35,6 +38,17 @@ interface SignedKeyFieldsProps {
   };
   /** Prefix of the field ids, when two key forms share a page. */
   idPrefix?: string;
+  /**
+   * For a provider with `generatedKeyPair` (ADR 0020 §3): the key pair
+   * netrics generated in this form, if any. The private key field then
+   * offers "Generate a key pair" (the default) beside pasting an existing
+   * private key.
+   */
+  keyPair?: {
+    workspaceId: string;
+    value: SignedKeyPairResponse | null;
+    onChange: (value: SignedKeyPairResponse | null) => void;
+  };
 }
 
 /**
@@ -51,6 +65,7 @@ export function SignedKeyFields({
   guideOpen,
   guide,
   idPrefix = "",
+  keyPair,
 }: SignedKeyFieldsProps) {
   const locale = useLocale();
   const t = useT("connections.signedKey");
@@ -85,7 +100,26 @@ export function SignedKeyFields({
         </details>
       ) : null}
       {strategy.fields.map((field) =>
-        field.input === "file" ? (
+        field.input === "file" && strategy.generatedKeyPair && keyPair ? (
+          <GeneratedKeyPairField
+            key={field.key}
+            providerName={name}
+            provider={strategy.provider}
+            keyPair={keyPair}
+            error={errors[field.key]}
+            disabled={disabled}
+            onPaste={() => onChange(field.key, "")}
+          >
+            <KeyFileField
+              field={field}
+              value={values[field.key] ?? ""}
+              error={errors[field.key]}
+              disabled={disabled}
+              onChange={(value) => onChange(field.key, value)}
+              onFileName={() => undefined}
+            />
+          </GeneratedKeyPairField>
+        ) : field.input === "file" ? (
           <KeyFileField
             key={field.key}
             field={field}
@@ -322,6 +356,165 @@ function KeyFileField({
           </p>
         </>
       )}
+      {problem ? (
+        <p className="field-error" role="alert">
+          {problem}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The private key of a provider that takes a public key (ADR 0020 §3):
+ * netrics generates the pair, shows the public key with a Copy button, and
+ * keeps the private key on the server (it is never shown, not even once).
+ * "I already have a private key" switches to the paste form instead.
+ */
+function GeneratedKeyPairField({
+  providerName,
+  provider,
+  keyPair,
+  error,
+  disabled,
+  onPaste,
+  children,
+}: {
+  providerName: string;
+  provider: string;
+  keyPair: NonNullable<SignedKeyFieldsProps["keyPair"]>;
+  error: string | undefined;
+  disabled: boolean | undefined;
+  /** Clears the pasted key when switching back to a generated pair. */
+  onPaste: () => void;
+  children: ReactNode;
+}) {
+  const locale = useLocale();
+  const t = useT("connections.signedKey.keyPair");
+  const id = useId();
+  const [mode, setMode] = useState<"generate" | "existing">("generate");
+  const [pending, setPending] = useState(false);
+  const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const pair = keyPair.value;
+
+  async function onGenerate() {
+    setPending(true);
+    setGenerateError(null);
+    setCopied(null);
+    try {
+      keyPair.onChange(await generateKeyPair(keyPair.workspaceId, provider));
+    } catch (cause) {
+      setGenerateError(apiErrorMessage(cause, locale));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function onCopy() {
+    if (!pair) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(pair.publicKey);
+      setCopied("copied");
+    } catch {
+      setCopied("failed");
+    }
+  }
+
+  if (mode === "existing") {
+    return (
+      <>
+        {children}
+        <p className="help">
+          <button
+            type="button"
+            className="link-button"
+            disabled={disabled}
+            onClick={() => {
+              onPaste();
+              setMode("generate");
+            }}
+          >
+            {t("generateInstead")}
+          </button>
+        </p>
+      </>
+    );
+  }
+
+  const problem = generateError ?? (pair ? null : (error ?? null));
+  return (
+    <div className="field key-pair">
+      <label htmlFor={pair ? id : undefined}>{t("publicKey")}</label>
+      {pair ? (
+        <>
+          <textarea
+            id={id}
+            className="key-paste key-public"
+            rows={5}
+            readOnly
+            value={pair.publicKey}
+            spellCheck={false}
+            aria-describedby={`${id}-help`}
+            onFocus={(event) => event.currentTarget.select()}
+          />
+          <div className="actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={disabled}
+              onClick={onCopy}
+            >
+              {t("copy")}
+            </button>
+            {copied ? (
+              <span className="muted" role="status">
+                {copied === "copied" ? t("copied") : t("copyFailed")}
+              </span>
+            ) : null}
+          </div>
+          <p className="help" id={`${id}-help`}>
+            {t("pasteAt", { name: providerName })}{" "}
+            {t("privateKeyStays", {
+              expires: new Date(pair.expiresAt).toLocaleString(locale, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              }),
+            })}
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="help">{t("intro", { name: providerName })}</p>
+          <div className="actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={disabled || pending}
+              onClick={onGenerate}
+            >
+              {pending ? t("generating") : t("generate")}
+            </button>
+          </div>
+        </>
+      )}
+      <p className="help">
+        <button
+          type="button"
+          className="link-button"
+          disabled={disabled || pending}
+          onClick={() => {
+            keyPair.onChange(null);
+            setCopied(null);
+            setGenerateError(null);
+            setMode("existing");
+          }}
+        >
+          {t("haveKey")}
+        </button>
+      </p>
       {problem ? (
         <p className="field-error" role="alert">
           {problem}
