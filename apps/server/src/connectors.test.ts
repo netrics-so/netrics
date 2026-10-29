@@ -9,9 +9,25 @@ import {
 import { validateConnectionConfig } from "@netrics/contracts";
 import { describe, expect, it } from "vitest";
 
-import { createDefaultRegistry } from "./connectors.js";
+import { createDefaultRegistry, PREVIEW_CONNECTORS } from "./connectors.js";
 
 describe("createDefaultRegistry", () => {
+  it("keeps Apple Ads out of production until its setup is finished (#374, #375)", () => {
+    expect(PREVIEW_CONNECTORS.has("apple-ads")).toBe(true);
+    const production = createDefaultRegistry({ nodeEnv: "production" });
+    expect(production.get("apple-ads")).toBeUndefined();
+    expect(production.list().map(({ manifest }) => manifest.id)).toEqual([
+      "demo",
+      "vercel",
+      "google-search-console",
+      "app-store-connect",
+    ]);
+    for (const nodeEnv of ["development", "test"] as const) {
+      expect(createDefaultRegistry({ nodeEnv }).get("apple-ads")).toBeDefined();
+    }
+    expect(createDefaultRegistry().get("apple-ads")).toBeDefined();
+  });
+
   it("ships the demo connector", () => {
     const registry = createDefaultRegistry();
     expect(registry.get("demo")?.manifest.id).toBe("demo");
