@@ -7,9 +7,11 @@ import type {
 import type { z } from "zod";
 import {
   DEFAULT_LOCALE,
+  STUDIO_FONT_SCALES,
   STUDIO_GRID,
   STUDIO_LIMITS,
   createTranslator,
+  slideFormatWarnings,
   type Catalog,
   type Locale,
 } from "@netrics/domain";
@@ -34,12 +36,25 @@ const TEMPLATE_CATALOGS: Readonly<Record<Locale, Catalog<TemplateMessages>>> = {
 export type TemplateDashboard = z.input<typeof createDashboardRequestSchema>;
 
 export const APP_STORE_CONNECT = "app-store-connect";
+export const APPLE_ADS = "apple-ads";
 export const SEARCH_CONSOLE = "google-search-console";
 export const VERCEL = "vercel";
 export const DEMO = "demo";
 
 /** Connectors the templates know metrics of, in the order they appear. */
 export const TEMPLATE_CONNECTORS = [
+  APP_STORE_CONNECT,
+  APPLE_ADS,
+  SEARCH_CONSOLE,
+  VERCEL,
+  DEMO,
+] as const;
+
+/**
+ * Connectors a Brand dashboard can be made for. Apple Ads is not one: its
+ * numbers are the ad account's, on the Overview's Apple Ads slide.
+ */
+const BRAND_CONNECTORS = [
   APP_STORE_CONNECT,
   SEARCH_CONSOLE,
   VERCEL,
@@ -52,6 +67,13 @@ export interface TemplateSource {
   connectorId: string;
   /** App Store Connect: the connection holds a reviews key (#190). */
   hasReviews?: boolean;
+  /**
+   * Apple Ads (#375): the ad account's currency and time zone, from the
+   * connection's config. Spend is shown in that currency, and the days
+   * are that zone's (ADR 0020 sections 7 and 8).
+   */
+  currency?: string | null;
+  timeZone?: string | null;
 }
 
 type DataType = "metric" | "line" | "bar";
@@ -85,6 +107,14 @@ const VERCEL_METRICS = {
 const DEMO_METRICS = {
   signups: "demo.signups",
   visitors: "demo.visitors",
+} as const;
+/**
+ * Apple Ads (ADR 0020 section 6): campaign × country rows, so an
+ * unfiltered sum is the ad account's total. Ad-group keys are not used.
+ */
+const ADS = {
+  spend: "apple_ads.spend",
+  installs: "apple_ads.installs",
 } as const;
 
 /** Metrics per slide row, and charts per slide, at most. */
@@ -291,6 +321,186 @@ function overviewTitle(
     : null;
 }
 
+/** An Apple Ads currency from the connection's config, else null. */
+function adsCurrency(source: TemplateSource): string | null {
+  const currency = source.currency?.trim().toUpperCase();
+  return currency && /^[A-Z]{3}$/.test(currency) ? currency : null;
+}
+
+/**
+ * One ad account's Apple Ads slide (#377): spend in the account's currency,
+ * installs (the total, tap plus view), cost per install as a compare widget
+ * (spend ÷ installs, ADR 0019 section 10: ratios are not stored), the top
+ * campaigns by spend, spend by country or region, installs by attribution,
+ * and the note that the days are the ad account's (ADR 0020 section 8).
+ *
+ *   spend (4 × 3)       installs (4 × 3)    cost per install (4 × 3)
+ *   top campaigns       spend by country    tap or view (4 × 4 each)
+ *   (4 × 5)             the time-zone note (8 × 1)
+ *
+ * Spend reads the account's own currency (a `currency` filter), so the
+ * title can name it and the value is exact, never converted. Every widget
+ * is titled: the spend's title names its currency, and the others match
+ * it; with several ad accounts each title names its connection.
+ */
+function appleAdsSlide(
+  source: TemplateSource,
+  text: ReturnType<typeof templateTexts>,
+  several: boolean,
+): DashboardSlideInput {
+  const { t, over } = text;
+  const currency = adsCurrency(source);
+  const named = (title: string) =>
+    several ? `${title} · ${source.connectionName}` : title;
+  const period = "last_30_days" as const;
+  const bound = {
+    connectionId: source.connectionId,
+    period,
+  };
+  const spend = {
+    ...bound,
+    metricKey: ADS.spend,
+    ...(currency ? { dimensions: { currency } } : {}),
+  };
+  const installs = { ...bound, metricKey: ADS.installs };
+  const spendTitle = over("adSpend", period);
+  const zone = source.timeZone?.trim();
+  const widgets: DashboardWidgetInput[] = [
+    {
+      type: "metric",
+      x: 0,
+      y: 0,
+      w: 4,
+      h: METRIC_ROWS,
+      ...spend,
+      title: named(currency ? `${spendTitle} · ${currency}` : spendTitle),
+    },
+    {
+      type: "metric",
+      x: 4,
+      y: 0,
+      w: 4,
+      h: METRIC_ROWS,
+      ...installs,
+      title: named(over("adInstalls", period)),
+    },
+    {
+      type: "compare",
+      x: 8,
+      y: 0,
+      w: 4,
+      h: METRIC_ROWS,
+      ...spend,
+      title: named(over("costPerInstall", period)),
+      denominator: {
+        connectionId: source.connectionId,
+        metricKey: ADS.installs,
+      },
+      options: {
+        format: "ratio",
+        ratioLabel: t("perInstall"),
+        showChange: true,
+      },
+    },
+    {
+      type: "table",
+      x: 0,
+      y: METRIC_ROWS,
+      w: 4,
+      h: STUDIO_GRID.rows - METRIC_ROWS,
+      ...spend,
+      title: named(t("topCampaigns")),
+      options: {
+        groupBy: "campaign",
+        limit: 5,
+        showChange: true,
+        showOthers: false,
+      },
+    },
+    {
+      type: "bar",
+      x: 4,
+      y: METRIC_ROWS,
+      w: 4,
+      h: STUDIO_GRID.rows - METRIC_ROWS - 1,
+      ...spend,
+      title: named(t("spendByCountry")),
+      options: { groupBy: "country", limit: 5 },
+    },
+    {
+      type: "bar",
+      x: 8,
+      y: METRIC_ROWS,
+      w: 4,
+      h: STUDIO_GRID.rows - METRIC_ROWS - 1,
+      ...installs,
+      title: named(t("installsByAttribution")),
+      options: { groupBy: "attribution", limit: 3 },
+    },
+  ];
+  const note = (words: string): DashboardWidgetInput => ({
+    type: "text",
+    x: 4,
+    y: STUDIO_GRID.rows - 1,
+    w: 8,
+    h: 1,
+    text: words,
+    options: { size: "body", align: "start" },
+  });
+  // The longest wording that fits in every format at the largest font
+  // scale: a long zone ("America/Indiana/Indianapolis") drops the "as in
+  // Apple Ads", and the zone alone is the last resort.
+  const candidates = zone
+    ? [
+        t("adsDays", { timeZone: zone }),
+        t("adsDaysShort", { timeZone: zone }),
+        zone,
+      ]
+    : [t("adsDaysUnknownZone")];
+  const chosen =
+    candidates.find((candidate) => noteFits(widgets, note(candidate))) ??
+    candidates.at(-1)!;
+  return {
+    name: t("slides.appleAds"),
+    widgets: [...widgets, note(chosen)],
+  };
+}
+
+/**
+ * Whether a text widget's text fits beside the slide's other widgets in
+ * every format (ADR 0017 section 6) at the largest font scale a theme may
+ * set.
+ */
+function noteFits(
+  widgets: readonly DashboardWidgetInput[],
+  note: DashboardWidgetInput,
+): boolean {
+  const all = [...widgets, note].map((widget, index) => ({
+    id: `w${index}`,
+    type: widget.type,
+    x: widget.x,
+    y: widget.y,
+    w: widget.w,
+    h: widget.h,
+    ...(widget.type === "text"
+      ? { text: widget.text, textSize: widget.options?.size ?? "body" }
+      : {}),
+  }));
+  const noteId = all.at(-1)!.id;
+  return !slideFormatWarnings(
+    { name: null, widgets: all, layouts: {} },
+    {
+      primaryFormat: "16x9",
+      fontScale: Math.max(...STUDIO_FONT_SCALES),
+      showHeader: true,
+      dashboardName: "",
+      logoAspect: null,
+    },
+  ).some(
+    (warning) => warning.code === "text_cut" && warning.widgetId === noteId,
+  );
+}
+
 export interface OverviewOptions {
   /** Default: "Overview" in the creator's language. */
   name?: string | undefined;
@@ -300,7 +510,10 @@ export interface OverviewOptions {
 
 /**
  * Overview: every connection the templates know, the store numbers on one
- * slide and the web numbers on another. Null when none is connected.
+ * slide, each Apple Ads ad account on one, and the web numbers on another;
+ * with Apple Ads beside App Store Connect or Vercel, a first slide sets
+ * downloads, ad installs and visitors side by side. Null when none is
+ * connected.
  */
 export function buildOverviewTemplate(
   sources: readonly TemplateSource[],
@@ -311,6 +524,82 @@ export function buildOverviewTemplate(
   const slides: DashboardSlideInput[] = [];
 
   const stores = byConnector(sources, APP_STORE_CONNECT);
+  const ads = byConnector(sources, APPLE_ADS);
+  const sites = byConnector(sources, VERCEL);
+  // The cross-source row (#377): App Store downloads, Apple Ads installs
+  // and Vercel visitors side by side, when Apple Ads sits beside one of
+  // the others (alone, the Apple Ads slide says it all).
+  if (ads.length > 0 && (stores.length > 0 || sites.length > 0)) {
+    const row = [
+      ...stores.map((source) =>
+        spec(
+          source,
+          "metric",
+          ASC.downloads,
+          "last_7_days",
+          overviewTitle(
+            text,
+            "downloads",
+            "last_7_days",
+            source,
+            stores.length > 1,
+          ),
+        ),
+      ),
+      ...ads.map((source) =>
+        spec(
+          source,
+          "metric",
+          ADS.installs,
+          "last_7_days",
+          overviewTitle(
+            text,
+            "adInstalls",
+            "last_7_days",
+            source,
+            ads.length > 1,
+          ),
+        ),
+      ),
+      ...sites.map((source) =>
+        spec(
+          source,
+          "metric",
+          VERCEL_METRICS.visitors,
+          "last_7_days",
+          overviewTitle(
+            text,
+            "visitors",
+            "last_7_days",
+            source,
+            sites.length > 1,
+          ),
+        ),
+      ),
+    ];
+    const trends = [
+      spec(
+        ads[0]!,
+        "line",
+        ADS.installs,
+        "last_30_days",
+        text.over("adInstalls", "last_30_days"),
+      ),
+      ...stores
+        .slice(0, 1)
+        .map((source) =>
+          spec(
+            source,
+            "line",
+            ASC.downloads,
+            "last_30_days",
+            text.over("downloads", "last_30_days"),
+          ),
+        ),
+    ];
+    slides.push(...slidesFor(t("slides.glance"), row, trends));
+  }
+
   if (stores.length > 0) {
     const several = stores.length > 1;
     const metrics = stores.flatMap((source) => [
@@ -363,8 +652,12 @@ export function buildOverviewTemplate(
     );
   }
 
+  // One slide per ad account: each has its own currency and time zone.
+  slides.push(
+    ...ads.map((source) => appleAdsSlide(source, text, ads.length > 1)),
+  );
+
   const searches = byConnector(sources, SEARCH_CONSOLE);
-  const sites = byConnector(sources, VERCEL);
   const demos = byConnector(sources, DEMO);
   const webMetrics = [
     ...searches.flatMap((source) => [
@@ -589,7 +882,7 @@ function brandSpecs(
 
 /** Whether a Brand dashboard can be made for this connector's resources. */
 export function brandSupported(connectorId: string): boolean {
-  return (TEMPLATE_CONNECTORS as readonly string[]).includes(connectorId);
+  return (BRAND_CONNECTORS as readonly string[]).includes(connectorId);
 }
 
 /**

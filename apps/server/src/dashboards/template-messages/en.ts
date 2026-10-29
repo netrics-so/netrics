@@ -18,6 +18,10 @@ export const templateEn = {
     today: "Today",
     /** Brand: the 90-day trends. */
     trend: "Trend",
+    /** One Apple Ads ad account's numbers (#377). */
+    appleAds: "Apple Ads",
+    /** Downloads, ad installs and visitors side by side (#377). */
+    glance: "At a glance",
   },
   /** Short metric words for titles; the connectors' names may be longer. */
   metrics: {
@@ -29,6 +33,9 @@ export const templateEn = {
     visitors: "Visitors",
     pageViews: "Page views",
     signups: "Signups",
+    adSpend: "Ad spend",
+    adInstalls: "Ad installs",
+    costPerInstall: "Cost per install",
   },
   /** "Downloads, 30 days". */
   withPeriod: "{metric}, {days} days",
@@ -38,6 +45,20 @@ export const templateEn = {
   topTerritories: "Top territories",
   /** A bar of one site's visitors per country. */
   topCountries: "Top countries",
+  /** Beside a compare widget's ratio: spend ÷ installs (ADR 0019 §10). */
+  perInstall: "per install",
+  /** A table of an ad account's campaigns, largest spend first. */
+  topCampaigns: "Top campaigns",
+  /** A bar of an ad account's spend per country or region. */
+  spendByCountry: "Spend by country",
+  /** A bar of ad installs after a tap and after a view. */
+  installsByAttribution: "Installs: tap or view",
+  /** The note on an Apple Ads slide (ADR 0020 section 8). */
+  adsDays: "Days in {timeZone}, as in Apple Ads.",
+  /** The same, shorter, for a long zone name. */
+  adsDaysShort: "Days in {timeZone}.",
+  /** The same, for an ad account whose zone is not known. */
+  adsDaysUnknownZone: "Days in the ad account's time zone.",
 } as const;
 
 export type TemplateMessages = typeof templateEn;

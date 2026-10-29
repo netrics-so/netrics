@@ -6,6 +6,7 @@ import {
 } from "@netrics/contracts";
 import {
   appStoreConnectManifest,
+  appleAdsManifest,
   demoManifest,
   searchConsoleManifest,
   vercelManifest,
@@ -30,6 +31,7 @@ import {
 import { templateDe } from "./template-messages/de.js";
 import { templateEn } from "./template-messages/en.js";
 import {
+  brandSupported,
   buildBrandTemplate,
   buildOverviewTemplate,
   splitWidths,
@@ -62,6 +64,17 @@ const demo: TemplateSource = {
   connectionName: "Demo data",
   connectorId: "demo",
 };
+const ads = (
+  name = "Example Apps US",
+  currency: string | null = "USD",
+  timeZone: string | null = "America/Los_Angeles",
+): TemplateSource => ({
+  connectionId: crypto.randomUUID(),
+  connectionName: name,
+  connectorId: "apple-ads",
+  currency,
+  timeZone,
+});
 const unknown: TemplateSource = {
   connectionId: crypto.randomUUID(),
   connectionName: "Elsewhere",
@@ -70,6 +83,7 @@ const unknown: TemplateSource = {
 
 const MANIFESTS = [
   appStoreConnectManifest,
+  appleAdsManifest,
   searchConsoleManifest,
   vercelManifest,
   demoManifest,
@@ -129,7 +143,9 @@ function expectValid(
       if (
         widget.type === "metric" ||
         widget.type === "line" ||
-        widget.type === "bar"
+        widget.type === "bar" ||
+        widget.type === "table" ||
+        widget.type === "compare"
       ) {
         // Charts have no period line: their title names the period.
         if (widget.type !== "metric") {
@@ -175,11 +191,14 @@ function expectNoFormatWarnings(
       label:
         widget.type === "metric" ||
         widget.type === "line" ||
-        widget.type === "bar"
+        widget.type === "bar" ||
+        widget.type === "table" ||
+        widget.type === "compare"
           ? (widget.title ?? autoLabel(widget, locale))
           : null,
       text: widget.type === "text" ? widget.text : null,
       textSize: widget.type === "text" ? widget.options.size : null,
+      rows: widget.type === "table" ? widget.options.limit : null,
     }));
     for (const fontScale of [1, 1.3]) {
       const warnings = slideFormatWarnings(
@@ -306,6 +325,235 @@ describe("Overview template", () => {
       "metric:demo.visitors",
       "line:demo.signups",
     ]);
+  });
+});
+
+/** The slide's widgets as "type key title", for readable expectations. */
+function slideWidgets(slide: NonNullable<TemplateDashboard["slides"]>[number]) {
+  return slide.widgets.map((widget) =>
+    [
+      widget.type,
+      "metricKey" in widget ? widget.metricKey : "",
+      "title" in widget ? (widget.title ?? "") : "",
+    ].join(" "),
+  );
+}
+
+describe("Apple Ads in the Overview (#377)", () => {
+  it("gives an ad account a slide: spend in its currency, installs, CPI, campaigns, countries, tap or view, and its days", () => {
+    const source = ads();
+    const template = expectValid(buildOverviewTemplate([source]));
+    expect(template.slides!.map((slide) => slide.name)).toEqual(["Apple Ads"]);
+    const slide = template.slides![0]!;
+    expect(slideWidgets(slide)).toEqual([
+      "metric apple_ads.spend Ad spend, 30 days · USD",
+      "metric apple_ads.installs Ad installs, 30 days",
+      "compare apple_ads.spend Cost per install, 30 days",
+      "table apple_ads.spend Top campaigns",
+      "bar apple_ads.spend Spend by country",
+      "bar apple_ads.installs Installs: tap or view",
+      "text  ",
+    ]);
+    const [spend, installs, cpi, table, countries, attribution, note] =
+      slide.widgets;
+    // Spend reads the ad account's own currency: exact, never converted.
+    for (const widget of [spend, cpi, table, countries]) {
+      expect(widget).toMatchObject({
+        connectionId: source.connectionId,
+        period: "last_30_days",
+        dimensions: { currency: "USD" },
+      });
+      expect(
+        "displayCurrency" in widget! && widget.displayCurrency,
+      ).toBeFalsy();
+    }
+    // The headline installs are the total: no attribution filter.
+    expect(installs).not.toHaveProperty("dimensions");
+    expect(cpi).toMatchObject({
+      denominator: {
+        connectionId: source.connectionId,
+        metricKey: "apple_ads.installs",
+      },
+      options: { format: "ratio", ratioLabel: "per install" },
+    });
+    expect(table).toMatchObject({
+      options: { groupBy: "campaign", limit: 5, showChange: true },
+    });
+    expect(countries).toMatchObject({ options: { groupBy: "country" } });
+    expect(attribution).toMatchObject({
+      options: { groupBy: "attribution" },
+    });
+    expect(attribution).not.toHaveProperty("dimensions");
+    expect(note).toMatchObject({
+      type: "text",
+      text: "Days in America/Los_Angeles, as in Apple Ads.",
+    });
+    // No ad-group widget (#376 defines those keys).
+    expect(JSON.stringify(template)).not.toContain("ad_group");
+  });
+
+  it("shortens the time-zone note for a long zone name, never cutting it", () => {
+    const zone = "America/Argentina/ComodRivadavia";
+    for (const locale of ["en", "de"] as const) {
+      const template = expectValid(
+        buildOverviewTemplate([ads("Ads", "USD", zone)], { locale }),
+        locale,
+      );
+      const note = template.slides![0]!.widgets.at(-1)!;
+      expect(note.type).toBe("text");
+      expect("text" in note && note.text).toContain(zone);
+    }
+  });
+
+  it("labels an ad account without a known currency or zone plainly", () => {
+    const template = expectValid(
+      buildOverviewTemplate([ads("Ads", null, null)]),
+    );
+    const slide = template.slides![0]!;
+    expect(slideWidgets(slide)[0]).toBe(
+      "metric apple_ads.spend Ad spend, 30 days",
+    );
+    expect(JSON.stringify(slide)).not.toContain('"currency"');
+    expect(slide.widgets.at(-1)).toMatchObject({
+      text: "Days in the ad account's time zone.",
+    });
+    // A malformed currency is not used as a filter.
+    const odd = expectValid(buildOverviewTemplate([ads("Ads", "dollars")]));
+    expect(JSON.stringify(odd)).not.toContain("dollars");
+  });
+
+  it("sets App Store downloads, Apple Ads installs and Vercel visitors side by side", () => {
+    const store = asc();
+    const account = ads();
+    const template = expectValid(
+      buildOverviewTemplate([vercel, account, gsc, store]),
+    );
+    expect(template.slides!.map((slide) => slide.name)).toEqual([
+      "At a glance",
+      "App Store",
+      "Apple Ads",
+      "Web",
+    ]);
+    const glance = template.slides![0]!;
+    expect(slideWidgets(glance)).toEqual([
+      "metric app_store_connect.downloads ",
+      "metric apple_ads.installs ",
+      "metric vercel.visitors ",
+      "line apple_ads.installs Ad installs, 30 days",
+      "line app_store_connect.downloads Downloads, 30 days",
+    ]);
+    // One row: the three metrics side by side, the trends below.
+    expect(
+      glance.widgets.slice(0, 3).map((widget) => [widget.y, widget.h]),
+    ).toEqual([
+      [0, 3],
+      [0, 3],
+      [0, 3],
+    ]);
+    expect(glance.widgets[1]).toMatchObject({
+      connectionId: account.connectionId,
+      period: "last_7_days",
+    });
+    // Apple Ads beside Vercel alone, or App Store Connect alone.
+    expect(
+      expectValid(buildOverviewTemplate([account, vercel])).slides![0]!.name,
+    ).toBe("At a glance");
+    expect(
+      slideWidgets(
+        expectValid(buildOverviewTemplate([account, store])).slides![0]!,
+      ),
+    ).toEqual([
+      "metric app_store_connect.downloads ",
+      "metric apple_ads.installs ",
+      "line apple_ads.installs Ad installs, 30 days",
+      "line app_store_connect.downloads Downloads, 30 days",
+    ]);
+  });
+
+  it("has no Apple Ads slide or row without an Apple Ads connection", () => {
+    for (const sources of [[asc(), vercel, gsc], [asc()], [vercel], [demo]]) {
+      const template = expectValid(buildOverviewTemplate(sources));
+      expect(JSON.stringify(template)).not.toContain("apple_ads");
+      expect(template.slides!.map((slide) => slide.name)).not.toContain(
+        "At a glance",
+      );
+    }
+    // Apple Ads beside Search Console only: no row, the slide says it all.
+    const template = expectValid(buildOverviewTemplate([ads(), gsc]));
+    expect(template.slides!.map((slide) => slide.name)).toEqual([
+      "Apple Ads",
+      "Web",
+    ]);
+  });
+
+  it("gives each of several ad accounts its own slide, titled with its connection", () => {
+    const us = ads("US", "USD", "America/Los_Angeles");
+    const eu = ads("EU", "EUR", "Europe/Berlin");
+    const template = expectValid(buildOverviewTemplate([eu, us, asc()]));
+    expect(template.slides!.map((slide) => slide.name)).toEqual([
+      "At a glance",
+      "App Store",
+      "Apple Ads",
+      "Apple Ads",
+    ]);
+    const [, , euSlide, usSlide] = template.slides!;
+    expect(slideWidgets(euSlide!)[0]).toBe(
+      "metric apple_ads.spend Ad spend, 30 days · EUR · EU",
+    );
+    expect(slideWidgets(usSlide!)[0]).toBe(
+      "metric apple_ads.spend Ad spend, 30 days · USD · US",
+    );
+    expect(euSlide!.widgets.at(-1)).toMatchObject({
+      text: "Days in Europe/Berlin, as in Apple Ads.",
+    });
+    // The row names each ad account's installs.
+    expect(slideWidgets(template.slides![0]!).slice(0, 3)).toEqual([
+      "metric app_store_connect.downloads ",
+      "metric apple_ads.installs Ad installs, 7 days · EU",
+      "metric apple_ads.installs Ad installs, 7 days · US",
+    ]);
+  });
+
+  it("makes no Brand dashboard of an ad account", () => {
+    expect(brandSupported("apple-ads")).toBe(false);
+    expect(
+      buildBrandTemplate({
+        source: ads(),
+        resourceId: "1000000001",
+        resourceName: "Wurfel",
+        logoImageId: null,
+        accentColor: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("words the slide in German", () => {
+    const template = expectValid(
+      buildOverviewTemplate([ads("Konto", "EUR", "Europe/Berlin"), asc()], {
+        locale: "de",
+      }),
+      "de",
+    );
+    expect(template.slides!.map((slide) => slide.name)).toEqual([
+      "Auf einen Blick",
+      "App Store",
+      "Apple Ads",
+    ]);
+    expect(slideWidgets(template.slides![2]!)).toEqual([
+      "metric apple_ads.spend Werbeausgaben, 30 Tage · EUR",
+      "metric apple_ads.installs Anzeigen-Installationen, 30 Tage",
+      "compare apple_ads.spend Kosten pro Installation, 30 Tage",
+      "table apple_ads.spend Top-Kampagnen",
+      "bar apple_ads.spend Ausgaben nach Land",
+      "bar apple_ads.installs Installationen: Tap oder Ansicht",
+      "text  ",
+    ]);
+    expect(template.slides![2]!.widgets[2]).toMatchObject({
+      options: { ratioLabel: "pro Installation" },
+    });
+    expect(template.slides![2]!.widgets.at(-1)).toMatchObject({
+      text: "Tage in Europe/Berlin, wie in Apple Ads.",
+    });
   });
 });
 
@@ -541,6 +789,17 @@ describe("templates in the creator's language (#268)", () => {
       [vercel],
       [demo],
       [asc("Team", true), gsc, vercel, demo],
+      [ads()],
+      [ads("Ads", null, null)],
+      [ads("Example Apps US"), ads("Example Apps EU", "EUR", "Europe/Berlin")],
+      [
+        asc("Team", true),
+        ads("Example Apps US", "USD", "America/Argentina/ComodRivadavia"),
+        gsc,
+        vercel,
+        demo,
+      ],
+      [asc("A"), asc("B"), ads("C"), ads("D"), vercel],
     ];
     for (const locale of SUPPORTED_LOCALES) {
       for (const sources of mixes) {

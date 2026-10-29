@@ -1034,4 +1034,18 @@ describe("dimensionValueLabel", () => {
     expect(dimensionValueLabel("device", "iPhone")).toBe("iPhone");
     expect(dimensionValueLabel("device", "")).toBe("(none)");
   });
+
+  it("words an install's attribution in the reader's language (ADR 0020)", () => {
+    expect(dimensionValueLabel("attribution", "tap")).toBe("Tap-through");
+    expect(dimensionValueLabel("attribution", "view")).toBe("View-through");
+    expect(dimensionValueLabel("attribution", "tap", null, "de")).toBe(
+      "Nach Tap",
+    );
+    expect(dimensionValueLabel("attribution", "view", null, "de")).toBe(
+      "Nach Ansicht",
+    );
+    // Only the attribution dimension's own values.
+    expect(dimensionValueLabel("attribution", "other")).toBe("other");
+    expect(dimensionValueLabel("device", "tap")).toBe("tap");
+  });
 });

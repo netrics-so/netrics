@@ -783,6 +783,20 @@ export function rankBreakdown(
 
 /** Dimensions whose values are ISO 3166-1 alpha-2 region codes. */
 const REGION_DIMENSIONS = new Set(["territory", "country"]);
+
+/**
+ * How an install was attributed (Apple Ads, ADR 0020 section 6): its
+ * values are worded in the reader's language ("Tap-through").
+ */
+const ATTRIBUTION_DIMENSION = "attribution";
+const ATTRIBUTION_VALUES = ["tap", "view"] as const;
+
+function isAttribution(
+  value: string,
+): value is (typeof ATTRIBUTION_VALUES)[number] {
+  return (ATTRIBUTION_VALUES as readonly string[]).includes(value);
+}
+
 const regionNames = new Map<Locale, Intl.DisplayNames | null>();
 
 function regionNamesIn(locale: Locale): Intl.DisplayNames | null {
@@ -802,7 +816,8 @@ function regionNamesIn(locale: Locale): Intl.DisplayNames | null {
 /**
  * A breakdown group's label: a resource's discovered name, a territory's or
  * country's name in the given language ("DE" → "Germany", "Deutschland"),
- * else the value itself.
+ * an install's attribution ("tap" → "Tap-through", "Nach Tap"), else the
+ * value itself.
  */
 export function dimensionValueLabel(
   dimension: string,
@@ -815,6 +830,9 @@ export function dimensionValueLabel(
   }
   if (value === "") {
     return sharedTranslator(locale)("none");
+  }
+  if (dimension === ATTRIBUTION_DIMENSION && isAttribution(value)) {
+    return sharedTranslator(locale)(`attribution.${value}`);
   }
   if (REGION_DIMENSIONS.has(dimension) && /^[A-Z]{2}$/.test(value)) {
     try {
