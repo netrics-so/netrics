@@ -195,6 +195,10 @@ export const studioDe: Catalog<typeof studioEn> = {
     widgetPanel: {
       allResources: "Alle {plural}",
       position: "Sp. {column}, Z. {row} · {w}×{h}",
+      positionInFormat: "{ratio}: Sp. {column}, Z. {row} · {w}×{h}",
+      positionInFormatPage:
+        "{ratio}: Seite {page} von {pages}, Sp. {column}, Z. {row} · {w}×{h}",
+      positionHidden: "In {ratio} ausgeblendet",
       title: "Titel",
       titleOptional: "Titel (optional)",
       shownAs: "Angezeigt als {label}",

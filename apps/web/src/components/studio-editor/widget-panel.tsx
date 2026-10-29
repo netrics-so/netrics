@@ -32,6 +32,7 @@ import {
 import { Spans } from "@/components/studio/text-widget";
 import { metricPickerLabel } from "@/lib/format-metric";
 import { goalMetrics } from "@/lib/goals";
+import type { WebTranslator } from "@/lib/i18n/catalogs";
 import { useLocale, useT } from "@/lib/i18n/client";
 import {
   widgetTypeName,
@@ -102,6 +103,52 @@ export interface StudioCurrency {
   convertible: string[];
 }
 
+/** A widget's placement in a custom format, for the inspector's head. */
+export interface FormatPlacement {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  page: number;
+  pages: number;
+  hidden: boolean;
+  /** The format's ratio, e.g. "9:16". */
+  ratio: string;
+}
+
+/** The inspector's position line: in the edited format, else the primary. */
+export function positionLine(
+  widget: Pick<DashboardWidget, "x" | "y" | "w" | "h">,
+  placement: FormatPlacement | undefined,
+  t: WebTranslator<"studio.widgetPanel">,
+): string {
+  if (!placement) {
+    return t("position", {
+      column: widget.x + 1,
+      row: widget.y + 1,
+      w: widget.w,
+      h: widget.h,
+    });
+  }
+  if (placement.hidden) {
+    return t("positionHidden", { ratio: placement.ratio });
+  }
+  const values = {
+    ratio: placement.ratio,
+    column: placement.x + 1,
+    row: placement.y + 1,
+    w: placement.w,
+    h: placement.h,
+  };
+  return placement.pages > 1
+    ? t("positionInFormatPage", {
+        ...values,
+        page: placement.page + 1,
+        pages: placement.pages,
+      })
+    : t("positionInFormat", values);
+}
+
 export interface WidgetPanelProps {
   widget: DashboardWidget;
   workspaceId: string;
@@ -117,6 +164,11 @@ export interface WidgetPanelProps {
   currency?: StudioCurrency;
   /** Whether the dashboard shows its header (the fit check's grid). */
   showHeader?: boolean;
+  /**
+   * Where the widget sits in the format being edited when that is not the
+   * primary (#298); missing: its primary placement.
+   */
+  placement?: FormatPlacement;
   /** The canvas's readability warning for this widget, if any (#241). */
   unreadable?: UnreadableLabel;
   /**
@@ -171,12 +223,7 @@ export function WidgetPanel(props: WidgetPanelProps) {
       <div className="inspector-head">
         <h2 id="inspector-widget">{widgetTypeName(widget.type, locale)}</h2>
         <span className="inspector-head-meta">
-          {t("position", {
-            column: widget.x + 1,
-            row: widget.y + 1,
-            w: widget.w,
-            h: widget.h,
-          })}
+          {positionLine(widget, props.placement, t)}
         </span>
       </div>
       <Problems problems={problems} />

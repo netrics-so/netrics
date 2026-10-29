@@ -192,6 +192,10 @@ export const studioEn = {
     widgetPanel: {
       allResources: "All {plural}",
       position: "col {column}, row {row} · {w}×{h}",
+      positionInFormat: "{ratio}: col {column}, row {row} · {w}×{h}",
+      positionInFormatPage:
+        "{ratio}: page {page} of {pages}, col {column}, row {row} · {w}×{h}",
+      positionHidden: "Hidden in {ratio}",
       title: "Title",
       titleOptional: "Title (optional)",
       shownAs: "Shown as {label}",
