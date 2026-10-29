@@ -46,7 +46,8 @@ export interface DiscoveredResourceName {
 /**
  * Records the names discover reported. Known resources get the new name;
  * resources missing from this discovery keep their last name, since their
- * observations stay.
+ * observations stay. A row is keyed by its kind too (#394): an app, a
+ * campaign and an ad group with one provider ID keep their own names.
  */
 export async function upsertConnectionResources(
   tx: Transaction,
@@ -57,9 +58,12 @@ export async function upsertConnectionResources(
     now: Date;
   },
 ): Promise<void> {
-  // One row per id: a statement may not update the same key twice.
+  // One row per kind and id: a statement may not update the same key twice.
   const unique = new Map(
-    input.resources.map((resource) => [resource.id, resource]),
+    input.resources.map((resource) => [
+      `${resource.kind}\u0000${resource.id}`,
+      resource,
+    ]),
   );
   if (unique.size === 0) {
     return;
@@ -80,10 +84,10 @@ export async function upsertConnectionResources(
       target: [
         schema.connectionResources.connectionId,
         schema.connectionResources.resourceId,
+        schema.connectionResources.kind,
       ],
       set: {
         name: sql`excluded.name`,
-        kind: sql`excluded.kind`,
         discoveredAt: sql`excluded.discovered_at`,
       },
     });
@@ -240,8 +244,10 @@ export async function findResourceNames(
 /**
  * Names of values of a dimension other than `resource` that discover
  * reported as resources of that kind (#374: an Apple Ads campaign's name
- * for the `campaign` dimension), by value. Values without a name are
- * missing from the map.
+ * for the `campaign` dimension, #394: an ad group's for `ad_group`), by
+ * value. Only rows of that kind count, so an app or a campaign with the
+ * same ID never names an ad group. Values without a name are missing from
+ * the map.
  */
 export async function findDimensionValueNames(
   tx: Transaction,

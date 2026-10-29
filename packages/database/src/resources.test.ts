@@ -8,6 +8,7 @@ import {
   connectionHasResource,
   connectionResourcesDiscoveredAt,
   findConnectionResourceNoun,
+  findDimensionValueNames,
   findResourceNames,
   listMetricResources,
   resourceNameKey,
@@ -268,5 +269,88 @@ describe("connection resources", () => {
     } finally {
       await admin`update connectors set manifest = manifest - 'resourceNoun' where id = 'demo'`;
     }
+  });
+
+  it("keeps an app, a campaign and an ad group with one ID apart (#394)", async () => {
+    // A connector whose metrics label campaigns and ad groups by name.
+    await admin`insert into connectors (id, version, manifest)
+                values ('ads', '1.0.0', '{"id":"ads"}'::jsonb)`;
+    await admin`
+      insert into metric_definitions (connector_id, key, name, description,
+        kind, unit, granularity, dimensions, aggregations)
+      values ('ads', 'spend_by_ad_group', 'Spend', 'Spend', 'delta', 'count',
+              'day', '["resource", "campaign", "ad_group"]', '["sum"]')`;
+    const [row] = await admin`
+      insert into connections (workspace_id, connector_id, name)
+      values (${workspaceA}, 'ads', 'Ads') returning id`;
+    const ads = row!.id as string;
+    const discover = (
+      resources: { id: string; name: string; kind: string }[],
+      day: string,
+    ) =>
+      inA((tx) =>
+        upsertConnectionResources(tx, {
+          workspaceId: workspaceA,
+          connectionId: ads,
+          resources,
+          now: new Date(`${day}T00:00:00Z`),
+        }),
+      );
+    const valueNames = (dimension: string) =>
+      inA(async (tx) =>
+        Object.fromEntries(
+          await findDimensionValueNames(tx, {
+            workspaceId: workspaceA,
+            connectionId: ads,
+            dimension,
+            values: ["42", "43"],
+          }),
+        ),
+      );
+    await discover(
+      [
+        { id: "42", name: "The app", kind: "app" },
+        { id: "42", name: "The campaign", kind: "campaign" },
+        { id: "42", name: "The ad group", kind: "ad_group" },
+        { id: "43", name: "Second ad group", kind: "ad_group" },
+      ],
+      "2026-09-01",
+    );
+    expect(await valueNames("campaign")).toEqual({ "42": "The campaign" });
+    expect(await valueNames("ad_group")).toEqual({
+      "42": "The ad group",
+      "43": "Second ad group",
+    });
+    // The `resource` dimension never takes another kind's name.
+    expect(await valueNames("resource")).toEqual({});
+    const resourceNames = await inA((tx) =>
+      findResourceNames(tx, workspaceA, [
+        { connectionId: ads, resourceId: "42" },
+        { connectionId: ads, resourceId: "43" },
+      ]),
+    );
+    expect(Object.fromEntries(resourceNames)).toEqual({
+      [resourceNameKey(ads, "42")]: "The app",
+    });
+
+    // A rename touches only its kind; a missing ad group keeps its name.
+    await discover(
+      [{ id: "42", name: "Renamed ad group", kind: "ad_group" }],
+      "2026-09-02",
+    );
+    expect(await valueNames("ad_group")).toEqual({
+      "42": "Renamed ad group",
+      "43": "Second ad group",
+    });
+    expect(await valueNames("campaign")).toEqual({ "42": "The campaign" });
+    expect(
+      Object.fromEntries(
+        await inA((tx) =>
+          findResourceNames(tx, workspaceA, [
+            { connectionId: ads, resourceId: "42" },
+          ]),
+        ),
+      ),
+    ).toEqual({ [resourceNameKey(ads, "42")]: "The app" });
   });
 });

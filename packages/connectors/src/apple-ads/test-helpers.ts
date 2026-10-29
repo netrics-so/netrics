@@ -471,6 +471,18 @@ export function createFakeAppleAds(options: FakeAppleAdsOptions): FakeAppleAds {
             },
       );
     }
+    if (url.pathname === "/v1/adgroups/query" && init.method === "POST") {
+      const name = `adgroups-${adAccountId}`;
+      return reply(
+        200,
+        hasFixture(name)
+          ? fixture(name)
+          : {
+              result: [],
+              pagination: { totalCount: 0, offset: 0, pageSize: 0 },
+            },
+      );
+    }
     if (
       url.pathname === "/v1/reports/apps/campaigns/query" &&
       init.method === "POST"

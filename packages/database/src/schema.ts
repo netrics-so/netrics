@@ -442,6 +442,11 @@ export const connectionState = pgTable(
 // dimension, from the connector's discover. Refreshed by the sync engine at
 // most daily; a resource that disappears keeps its last name, since its
 // history stays. Only names are kept, never credentials or metadata.
+//
+// A row may also name the value of another dimension (#374, #394: an Apple
+// Ads campaign or ad group, kind = the dimension). Provider IDs of different
+// kinds can be equal (an app, a campaign and an ad group with one ID), so
+// the kind is part of the key: each keeps its own name.
 export const connectionResources = pgTable(
   "connection_resources",
   {
@@ -455,7 +460,9 @@ export const connectionResources = pgTable(
       .defaultNow(),
   },
   (table) => [
-    primaryKey({ columns: [table.connectionId, table.resourceId] }),
+    primaryKey({
+      columns: [table.connectionId, table.resourceId, table.kind],
+    }),
     foreignKey({
       name: "connection_resources_connection_fk",
       columns: [table.connectionId, table.workspaceId],

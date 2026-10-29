@@ -14,6 +14,7 @@ import {
   checkAccess,
   discoverAdAccounts,
   getAdAccount,
+  listAdGroups,
   listCampaigns,
   MAX_APPS,
 } from "./access.js";
@@ -21,6 +22,7 @@ import { APPLE_ADS_HOST, createAppleAdsClient } from "./api.js";
 import {
   APPLE_ADS_AD_GROUP_METRIC_KEYS,
   APPLE_ADS_AD_GROUP_METRICS,
+  APPLE_ADS_DIMENSIONS,
   APPLE_ADS_METRIC_KEYS,
   APPLE_ADS_METRICS,
   OTHERS,
@@ -61,6 +63,7 @@ export {
 } from "./observations.js";
 export {
   AD_ACCOUNT_FORMAT_MESSAGE,
+  AD_GROUPS_PAGE_SIZE,
   adAccountIdOf,
   API_ROLES,
   APP_STORE_FEATURE,
@@ -73,8 +76,10 @@ export {
   getAdAccount,
   isRateLimited,
   listAcls,
+  listAdGroups,
   listCampaigns,
   lostAccessMessage,
+  MAX_AD_GROUP_PAGES,
   NO_AD_ACCOUNTS_MESSAGE,
   NO_APP_STORE_ACCOUNT_MESSAGE,
   RATE_LIMITED_MESSAGE,
@@ -83,6 +88,7 @@ export {
   type AccessResult,
   type AclEntry,
   type AdAccountDetails,
+  type AppleAdsAdGroup,
   type AppleAdsCampaign,
   type DiscoveredAdAccount,
 } from "./access.js";
@@ -318,7 +324,9 @@ export const RESOURCE_KINDS = {
   /** A promoted app: the `resource` dimension, as App Store Connect's apps. */
   app: "app",
   /** A campaign: the `campaign` dimension, named for dashboards. */
-  campaign: "campaign",
+  campaign: APPLE_ADS_DIMENSIONS.campaign,
+  /** An ad group: the `ad_group` dimension, named for dashboards (#394). */
+  adGroup: APPLE_ADS_DIMENSIONS.adGroup,
 } as const;
 
 export const CHOOSE_AD_ACCOUNT_MESSAGE =
@@ -364,8 +372,10 @@ function accessTokenOf(context: ConnectionContext): string | undefined {
  * Discovery has two modes. Without an ad account (the wizard's preview)
  * it lists the API user's ad accounts, App Store accounts selectable and
  * Apple Maps accounts shown but not. With one, it lists that account's
- * promoted apps (the `resource` dimension) and its campaigns (the
- * `campaign` dimension), so dashboards can name them.
+ * promoted apps (the `resource` dimension), its campaigns (the
+ * `campaign` dimension) and its ad groups (the `ad_group` dimension, #394),
+ * so dashboards can name them. Their IDs can be equal; the host keeps
+ * names apart by kind, and each kind is the dimension it names.
  *
  * A sync reads the campaign report (#374, see sync.ts): daily campaign ×
  * country or region rows in the ad account's currency and days; and per
@@ -445,6 +455,7 @@ export function createAppleAdsConnector(
           apps.push({ id: appId, name, kind: RESOURCE_KINDS.app });
         }
       }
+      const adGroups = await listAdGroups(api, adAccountId);
       return [
         ...apps,
         ...campaigns.map((campaign) => ({
@@ -457,6 +468,19 @@ export function createAppleAdsConnector(
             ...(campaign.status ? { status: campaign.status } : {}),
             ...(campaign.displayStatus
               ? { displayStatus: campaign.displayStatus }
+              : {}),
+          },
+        })),
+        ...adGroups.map((adGroup) => ({
+          id: adGroup.id,
+          name: adGroup.name,
+          kind: RESOURCE_KINDS.adGroup,
+          metadata: {
+            adAccountId,
+            ...(adGroup.campaignId ? { campaignId: adGroup.campaignId } : {}),
+            ...(adGroup.status ? { status: adGroup.status } : {}),
+            ...(adGroup.displayStatus
+              ? { displayStatus: adGroup.displayStatus }
               : {}),
           },
         })),
