@@ -20,6 +20,10 @@
       "types": "./dist/app-store-connect/index.d.ts",
       "default": "./dist/app-store-connect/index.js"
     },
+    "./apple-ads": {
+      "types": "./dist/apple-ads/index.d.ts",
+      "default": "./dist/apple-ads/index.js"
+    },
     "./demo": {
       "types": "./dist/demo/index.d.ts",
       "default": "./dist/demo/index.js"
