@@ -66,11 +66,12 @@ with no instance configuration.
 
 - App management or any write operation, except creating analytics report
   requests during the explicit enablement step
-- Ratings and reviews in the first scope: they come later from an optional
-  second key with the Customer Support role (#190, optional stretch; ADR 0014)
+- Ratings and reviews in the first scope: they come from an optional second
+  key with the Customer Support role (#190, a stretch outside the exit gate,
+  done; ADR 0014)
 - Subscription and financial reports, and financial reconciliation
 - Currency conversion (an opt-in display currency with ECB reference rates
-  is a follow-up, #191)
+  followed separately in #191, done)
 - Analytics backfill through one-time snapshots, and sessions and crash
   reports
 - In-app purchase server notifications and provisioning APIs
@@ -94,7 +95,7 @@ Tracked in the GitHub milestone "08 App Store Connect":
    (#175). Depends on #170 and #171.
 8. Exit gate, hosted and self-hosted (#176). Depends on #172–#175.
 9. Optional stretch, not part of the exit gate: ratings and reviews with a
-   second key (#190). Depends on #171.
+   second key (#190, done). Depends on #171.
 
 ```text
 #177 ─ #170 ─ #171 ─┬─ #172 ─ #174 ─┐

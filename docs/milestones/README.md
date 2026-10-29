@@ -106,37 +106,40 @@ team could parallelize independent connectors after milestone 07.
 
 ## Current status
 
+State on 2026-10-29.
+
 - Done: 00, 01, 02, 03, 03.1 (security hardening), 03.2 (sync and data
   layer), 03.3 (portable images and self-hosting; release `v0.1.0`), 04
   (tile dashboards, TV layout, demo onboarding), 05 (Vercel Web Analytics
   connector)
-- In progress: 06 (Apple TV). Server side, browser kiosk, the tvOS app and
-  the device heartbeat in the TV list are done; the hosted service pairs TVs
-  through netrics.tv. Open: signing, a physical Apple TV and the exit gate
-  (#58), blocked by the Apple TV development connection (#129).
-- Planned: 07 (Google Search Console). OAuth platform decided in
-  [ADR 0012](../decisions/0012-oauth-authorization-code-platform.md); issues
-  #131–#138.
-- Planned: 08 (App Store Connect). Signed-key credentials and report
-  sources proposed in
-  [ADR 0014](../decisions/0014-app-store-connect-signed-keys.md); issues
-  #170–#177.
-- Planned: 09 (Dashboard Studio). Slides, widgets, themes and images
-  decided in [ADR 0015](../decisions/0015-dashboard-studio.md); issues
-  #213–#227. Milestones after it moved up by one (Apple Ads is now 10).
-- Planned: 09.1 (internationalisation, English + German). Decided in
-  [ADR 0016](../decisions/0016-internationalisation.md); umbrella #162,
-  issues #250–#257. Cross-cutting, runs alongside the next milestones.
-- Planned: 09.2 (screen formats and display modes: any aspect ratio,
-  portrait TVs, auto and custom layouts per format, scroll view on phones,
-  screen view on standby screens, Studio previews). Decided by the owner and
-  recorded in [ADR 0017](../decisions/0017-screen-formats-and-display-modes.md);
-  issues #273–#285. Builds on 09; no renumbering of later milestones.
-- Planned: 09.3 (Signal design: light admin with a full-sitemap sidebar,
-  polished TV widgets with freshness and enter motion). Decided by the owner
-  and recorded in [ADR 0018](../decisions/0018-signal-design.md); issues
-  #300–#314. Builds on 09 and 09.2.
-- Later: the web frontend on Vercel (#123).
+- Built and deployed, exit gate open: 06 to 09.3. All build work is merged
+  and runs on the hosted service. What remains is run or reviewed by the
+  owner:
+  - 06 (Apple TV): the hosted run on a physical Apple TV passed; the
+    self-hosted run remains (#58).
+  - 07 (Google Search Console,
+    [ADR 0012](../decisions/0012-oauth-authorization-code-platform.md)): the
+    hosted run passed; the self-hosted run (#137) and publishing the hosted
+    Google OAuth app (#138) remain.
+  - 08 (App Store Connect,
+    [ADR 0014](../decisions/0014-app-store-connect-signed-keys.md)): the
+    hosted run passed; the self-hosted run remains (#176).
+  - 09 (Dashboard Studio, [ADR 0015](../decisions/0015-dashboard-studio.md)):
+    the owner's check on the TVs and the self-hosted run remain (#227).
+  - 09.1 (internationalisation, English + German,
+    [ADR 0016](../decisions/0016-internationalisation.md)): the umbrella
+    check (#162) and the owner's German wording review (#299) remain.
+  - 09.2 (screen formats and display modes,
+    [ADR 0017](../decisions/0017-screen-formats-and-display-modes.md)): the
+    exit gate (#285) and small Studio follow-ups (#298) remain.
+  - 09.3 (Signal design, [ADR 0018](../decisions/0018-signal-design.md),
+    with the widget types of
+    [ADR 0019](../decisions/0019-signal-widget-types.md)): the exit gate
+    remains (#314).
+- In progress: the hosted web frontend moves to Vercel
+  ([ADR 0013](../decisions/0013-web-frontend-on-vercel.md)). The web build
+  guard (#160) and the cut-over (#161) remain.
+- Next: 10 (Apple Ads).
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
 
