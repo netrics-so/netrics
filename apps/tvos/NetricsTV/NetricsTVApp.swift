@@ -130,7 +130,10 @@ struct DeviceView: View {
             }
         }
         .fullScreenCover(isPresented: $showSettings) {
-            SettingsView(close: { showSettings = false })
+            // Turns with the content once paired; upright while pairing (#298).
+            SettingsView(
+                rotation: ScreenView.settingsRotation(state),
+                close: { showSettings = false })
         }
         .task {
             if DebugLaunch.openSettings {
