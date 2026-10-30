@@ -6,7 +6,8 @@ import SwiftUI
  * netrics TV on iPhone and iPad (ADR 0021, #410): the app shell. Pairing,
  * the iPad and iPhone layouts, touch and the lifecycle follow in #411 to
  * #415; until then the app shows a notice, and Debug builds render a payload
- * file with NetricsUI's scroll view (`-NetricsDebugPayload`, as on tvOS).
+ * file (`-NetricsDebugPayload`, as on tvOS): on iPad in screen view sized to
+ * the window (#412), on iPhone with NetricsUI's scroll view.
  */
 @main
 struct NetricsTVTouchApp: App {
@@ -82,7 +83,12 @@ struct TouchRootView: View {
         ZStack {
             Theme.background.ignoresSafeArea()
             if let payload = model.state.dashboardV2, payload.dashboard != nil {
-                ScrollDashboardView(state: model.state, payload: payload, images: model.images)
+                if UIDevice.current.userInterfaceIdiom == .pad {
+                    // iPad: screen view sized to the window, or scroll view by the device setting (#412).
+                    PadDashboardView(state: model.state, payload: payload, images: model.images)
+                } else {
+                    ScrollDashboardView(state: model.state, payload: payload, images: model.images)
+                }
             } else if case .blocked(let message) = model.state.phase {
                 notice(text: message)
             } else {
