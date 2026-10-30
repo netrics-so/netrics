@@ -29,7 +29,7 @@ Today every user-facing string is English and hard-coded:
   manifest's `resourceNoun`) and the bar widget's "Others". Period and
   comparison labels are built by each client (`format-metric.ts`,
   `Formatting.swift`).
-- `apps/tvos`: SwiftUI `Text("…")` literals, no String Catalog yet.
+- `apps/netrics-tv`: SwiftUI `Text("…")` literals, no String Catalog yet.
 - Connector manifests (`@netrics/connector-sdk`): `name`, `description`,
   metric `name`/`description` and `resourceNoun` in English only. The
   manifest is stored as `jsonb` in the catalog.

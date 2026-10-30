@@ -6,7 +6,7 @@ netrics server by code and shows one workspace dashboard full screen.
 ## Layout
 
 - `NetricsKit/` is a Swift package with all protocol and formatting logic
-  and no UI. It builds for tvOS 18 and macOS 15, so its tests run on a Mac.
+  and no UI. It builds for tvOS 26 and macOS 26, so its tests run on a Mac.
 - `NetricsTV/` is the SwiftUI app. It only renders what NetricsKit reports.
 - `NetricsTV.xcodeproj` builds the app. Its sources are a synchronized
   folder, so adding a file to `NetricsTV/` needs no project change.
@@ -20,10 +20,14 @@ CoreImage and URLSession.
 
 ## Build and test
 
-```sh
-cd apps/tvos/NetricsKit && swift test
+Needs Xcode 27 (Swift 6.4 toolchain, the 27 SDKs); the app targets tvOS 26
+and later, in the Swift 6 language mode. CI's `netrics-tv` job runs both
+commands below on GitHub's `xcode-27` runner image.
 
-xcodebuild -project apps/tvos/NetricsTV.xcodeproj -scheme NetricsTV \
+```sh
+cd apps/netrics-tv/NetricsKit && swift test
+
+xcodebuild -project apps/netrics-tv/NetricsTV.xcodeproj -scheme NetricsTV \
   -destination 'generic/platform=tvOS Simulator' -configuration Debug \
   build CODE_SIGNING_ALLOWED=NO
 ```
@@ -62,10 +66,10 @@ empty and includes `Config/Signing.local.xcconfig` if it exists. That file
 is git-ignored. To sign for a device:
 
 ```sh
-cp apps/tvos/Config/Signing.local.xcconfig.example \
-  apps/tvos/Config/Signing.local.xcconfig
+cp apps/netrics-tv/Config/Signing.local.xcconfig.example \
+  apps/netrics-tv/Config/Signing.local.xcconfig
 # set DEVELOPMENT_TEAM to your team ID
-xcodebuild -project apps/tvos/NetricsTV.xcodeproj -scheme NetricsTV \
+xcodebuild -project apps/netrics-tv/NetricsTV.xcodeproj -scheme NetricsTV \
   -destination 'generic/platform=tvOS' -allowProvisioningUpdates build
 ```
 
@@ -84,7 +88,7 @@ The icon is two layers for the tvOS parallax effect: an opaque back layer
 on transparency. The Top Shelf images carry the wordmark. The artwork is a
 draft until netrics has a logo.
 
-Edit the SVGs in `Design/icon/`, then run `apps/tvos/Design/icon/render.sh`.
+Edit the SVGs in `Design/icon/`, then run `apps/netrics-tv/Design/icon/render.sh`.
 It needs Google Chrome (headless, also for the system font of the wordmark)
 and ImageMagick, renders every slot of the asset catalog at its exact size,
 drops the alpha channel of opaque images and checks the sizes.

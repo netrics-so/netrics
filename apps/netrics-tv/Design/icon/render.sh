@@ -4,7 +4,7 @@
 # and the system font of the wordmark) and ImageMagick (`magick`, to drop the
 # alpha channel of opaque images and tag them sRGB). Run from anywhere:
 #
-#   apps/tvos/Design/icon/render.sh
+#   apps/netrics-tv/Design/icon/render.sh
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)

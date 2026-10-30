@@ -7,10 +7,10 @@ drizzle/
 pnpm-lock.yaml
 *.tsbuildinfo
 packages/contracts/openapi.json
-# Xcode-managed files (apps/tvos)
+# Xcode-managed files (apps/netrics-tv)
 .build/
 .swiftpm/
-apps/tvos/NetricsTV.xcodeproj/
-apps/tvos/NetricsTV/Assets.xcassets/
+apps/netrics-tv/NetricsTV.xcodeproj/
+apps/netrics-tv/NetricsTV/Assets.xcassets/
 # Generated test vectors (pnpm vectors:studio)
 packages/domain/test-vectors/

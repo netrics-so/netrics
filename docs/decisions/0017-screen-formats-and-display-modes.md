@@ -6,7 +6,7 @@ Status: accepted (2026-10-04, owner decision; milestone 09.2, #273–#285)
 
 ADR 0015 made every slide a 16:9 canvas with a 12 × 8 grid. Every client
 derives pixel positions from `studioLayout` (`packages/domain`, ported to
-Swift in `apps/tvos/NetricsKit`, shared JSON vectors), with
+Swift in `apps/netrics-tv/NetricsKit`, shared JSON vectors), with
 `u = canvas height / 1080` as the text unit. Today:
 
 - The web player (`/tv`, Play, the kiosk) and tvOS letterbox the largest

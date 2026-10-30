@@ -7,7 +7,7 @@
  * The format table, `formatFor`, `sizeClassFor`, `screenFrame` and
  * `placementRect` live in studio-layout.ts with the rest of the geometry.
  *
- * Written once here and ported to Swift (apps/tvos/NetricsKit). Both test
+ * Written once here and ported to Swift (apps/netrics-tv/NetricsKit). Both test
  * suites run the same vectors (packages/domain/test-vectors/
  * screen-formats.json, `pnpm vectors:formats`), which are normative: keep
  * every function pure, integer-only where it places cells, and its steps in

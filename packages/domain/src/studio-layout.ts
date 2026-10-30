@@ -4,7 +4,7 @@
  * a label fits, the automatic layout for migrated tiles, the text widget's
  * markdown-lite and the compact number form.
  *
- * Written once here and ported to Swift (apps/tvos/NetricsKit,
+ * Written once here and ported to Swift (apps/netrics-tv/NetricsKit,
  * StudioLayout.swift). Both test suites run the same vectors
  * (packages/domain/test-vectors/studio-layout.json), so keep every function
  * pure and its arithmetic in the same order on both sides.
