@@ -26,7 +26,12 @@ App Store app, "netrics TV", with the bundle identifier `tv.netrics`
   "Share link" and "Copy code" (#411), the settings sheet, and the
   dashboard (`TouchDashboardView`): on iPad in screen view sized to the
   window (`PadDashboardView`, #412), on iPhone scroll view in portrait and
-  screen view in landscape (`PhoneDashboardView`, #413). It reports the
+  screen view in landscape (`PhoneDashboardView`, #413). Touch in screen
+  view is `TouchSlideshowView` (#414): swipes, a widget's detail sheet
+  (`WidgetDetailSheet`, worded by NetricsKit's `WidgetDetail` from the
+  payload), and chrome that a tap shows and `TouchChrome` hides again;
+  scroll view (`TouchScrollView`) opens the same sheet from a card and
+  keeps the settings button in the corner. It reports the
   platform `ios` or `ipados` when it pairs. Its
   iOS-only strings (the local network prompt) are in
   `NetricsTVTouch/InfoPlist.xcstrings`.
@@ -196,7 +201,7 @@ One codebase, three kinds of device. What differs, and where:
 | View                | Screen view only; the web shows the mode fixed        | Screen view by default; `display_mode = scroll` gives the scroll view                      | Portrait: scroll view; landscape: screen view (`21x9`); `display_mode = screen` keeps screen view in portrait (`9x16`) |
 | Format and rotation | 16:9 screen, turned by the device's rotation setting  | From the window's size (4:3, 3:4, any window); rotation setting ignored                    | Follows the phone; rotation setting ignored                                                                            |
 | Screen stays on     | While paired (`isIdleTimerDisabled`)                  | Screen view in the foreground only (`TouchScreen.keepsScreenOn`)                           | In screen view in the foreground (landscape, or the screen setting); scroll view follows Auto-Lock                     |
-| Input               | Siri Remote: left/right, Play/Pause, press and hold   | Settings button; swipe and tap: #414                                                       | Settings button                                                                                                        |
+| Input               | Siri Remote: left/right, Play/Pause, press and hold   | Swipe, tap a widget for details, tap elsewhere for pause and settings (#414)               | Same as iPad in screen view; scroll view: tap a card, settings button                                                  |
 | Pairing extras      | Code, URL, QR code                                    | Also "Open approval page", "Share link", "Copy code"                                       | Same as iPad                                                                                                           |
 | Demo                | Back (Menu) or the press-and-hold menu leaves         | "Leave demo" button                                                                        | "Leave demo" button                                                                                                    |
 | Lifecycle           | Scene phase passed to the session (`deviceLifecycle`) | Same: no polling in the background, refresh on return                                      | Same                                                                                                                   |
@@ -405,8 +410,6 @@ one could leave these rules.
 
 ## Not done yet
 
-- Touch interaction (#414): swipe between slides, tap a widget for details,
-  chrome that shows on a tap and hides again.
 - The iPad guide followed once on a real iPad, and the other device checks
   of milestone 10.1's exit gate (#420).
 

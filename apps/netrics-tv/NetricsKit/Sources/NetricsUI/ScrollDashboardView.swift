@@ -16,7 +16,8 @@ import SwiftUI
  * scroll-widgets.tsx), each as high as its content: charts 16:9 of their
  * width (200 to 360 points high), images in their aspect (at most half the
  * viewport high), labels and lists in full. Pull to refresh calls
- * `refresh` when the app gives one.
+ * `refresh` when the app gives one; a tap on a card calls `interaction`
+ * (the detail sheet on iPhone and iPad, #414).
  */
 public struct ScrollDashboardView: View {
     let state: DeviceState
@@ -24,15 +25,18 @@ public struct ScrollDashboardView: View {
     let images: FileImageCache
     /** Pull to refresh: asks the app for the dashboard now; without it the view does not offer the gesture. */
     let refresh: (@MainActor () async -> Void)?
+    /** Touch (#414): a tap on a card opens the widget's detail sheet; nil offers none. */
+    let interaction: WidgetInteraction?
 
     public init(
         state: DeviceState, payload: DeviceDashboardV2, images: FileImageCache,
-        refresh: (@MainActor () async -> Void)? = nil
+        refresh: (@MainActor () async -> Void)? = nil, interaction: WidgetInteraction? = nil
     ) {
         self.state = state
         self.payload = payload
         self.images = images
         self.refresh = refresh
+        self.interaction = interaction
     }
 
     @Environment(\.displayScale) private var displayScale
@@ -191,7 +195,9 @@ public struct ScrollDashboardView: View {
     {
         ScrollCardView(
             widget: widget, width: ScrollGeometry.itemWidth(layout, span: item.span), rem: Double(rem),
-            viewportHeight: viewportHeight, env: env, image: imageForWidget(widget))
+            viewportHeight: viewportHeight, env: env, image: imageForWidget(widget)
+        )
+        .touch(widget, interaction, language: payload.language)
     }
 
     private func imageForWidget(_ widget: DeviceWidget) -> StoredImage? {

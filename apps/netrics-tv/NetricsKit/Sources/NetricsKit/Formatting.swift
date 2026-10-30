@@ -64,6 +64,29 @@ public enum MetricFormat {
     }
 
     /**
+     * The value without compact notation, for a widget's detail sheet
+     * (#414), where there is room: €123,456.78, 1,284,309, 42.3%; "—"
+     * without a value. Rounded as `value`.
+     */
+    public static func exactValue(_ value: Double?, unit: String, language: ScreenLanguage = .en) -> String {
+        guard let value else { return "—" }
+        let locale = language.numberLocale
+        if let code = currency(of: unit) {
+            let exponent = exponent(of: code)
+            let major = value / pow(10, Double(exponent))
+            let digits = major.rounded() == major ? 0 : exponent
+            let style = FloatingPointFormatStyle<Double>.Currency(code: code, locale: locale).rounded(rule: rounding)
+            return major.formatted(style.precision(.fractionLength(digits)))
+        }
+        let number = FloatingPointFormatStyle<Double>(locale: locale).rounded(rule: rounding)
+        if unit == "percent" {
+            return value.formatted(number.precision(.fractionLength(0...1))) + "%"
+        }
+        let maxDigits = abs(value) >= 100 ? 0 : 2
+        return value.formatted(number.precision(.fractionLength(0...maxDigits)))
+    }
+
+    /**
      * Compact suffixes per language, as localeCompactNumber in
      * packages/domain/src/compact-format.ts writes them: Intl's en-US
      * compact notation in English, the web's own German suffixes (German

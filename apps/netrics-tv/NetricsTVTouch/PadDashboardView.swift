@@ -12,12 +12,14 @@ import UIKit
  * ignored: an iPad knows its orientation. The device setting
  * `display_mode = scroll` gives NetricsUI's scroll view instead, for an iPad
  * used in the hand. The screen stays on in screen view while the app is in
- * the foreground; scroll view follows Auto-Lock.
+ * the foreground; scroll view follows Auto-Lock. Touch (swipe, widget
+ * details, chrome) is `TouchSlideshowView`'s (#414).
  */
 struct PadDashboardView: View {
     let state: DeviceState
     let payload: DeviceDashboardV2
     let images: FileImageCache
+    let actions: TouchActions
 
     @State private var rotation: SlideRotation?
     @State private var window = CGSize.zero
@@ -27,11 +29,13 @@ struct PadDashboardView: View {
         Group {
             switch mode {
             case .screen:
-                SlideshowPlayer(state: state, payload: payload, images: images, rotation: $rotation)
-                    .statusBarHidden()
-                    .persistentSystemOverlays(.hidden)
+                TouchSlideshowView(
+                    state: state, payload: payload, images: images, rotation: $rotation, actions: actions
+                )
+                .statusBarHidden()
+                .persistentSystemOverlays(.hidden)
             case .scroll:
-                ScrollDashboardView(state: state, payload: payload, images: images)
+                TouchScrollView(state: state, payload: payload, images: images, refresh: nil, actions: actions)
             }
         }
         .keepsScreenOn(in: mode)

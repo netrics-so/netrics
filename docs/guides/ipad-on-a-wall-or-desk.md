@@ -50,6 +50,22 @@ An iPad has no orientation setting there: it knows which way it is
 turned and lays out the dashboard for landscape (4:3) or portrait (3:4) by
 itself.
 
+In screen view the dashboard has no buttons on it. By hand:
+
+- **Swipe** left or right to go to the next or previous slide; it then
+  shows for its full time again. Swipes that start at the edge of the
+  screen stay with iPadOS (Control Centre, the Dock, Slide Over).
+- **Tap a widget** for its details: value, period, change, previous
+  period, source and when it was last updated. They come from the
+  dashboard on the iPad, so they work offline too.
+- **Tap anywhere else** to show the controls for a few seconds: pause or
+  resume the slides, and the settings button (**Leave demo** in the demo).
+- With **VoiceOver**, each widget has the actions "Next slide", "Previous
+  slide" and "Pause rotation", and the controls stay on screen.
+
+Scroll view keeps the settings button in the corner, and tapping a card
+shows the same details.
+
 To try netrics TV first without an account, tap **Try a demo** on the
 pairing screen. The demo shows a sample dashboard, sends nothing and stores
 nothing; **Leave demo** returns to the pairing screen with a new code.
@@ -96,8 +112,9 @@ Guided Access needs no management and is set up on the iPad itself
    button (or the Home button).
 5. Tap **Session Settings** and choose:
    - **Touch** off for a wall: nothing on the screen reacts, so no one can
-     open settings or unpair. On a desk where people should change slides
-     by hand, leave it on.
+     open settings or unpair. On a desk where people should swipe between
+     slides or tap a widget for its details, leave it on; settings are
+     then a tap away too.
    - **Motion** off, so the iPad stays in the orientation it is mounted in.
    - **Top Button** and **Volume Buttons** off.
    - **Time Limit** off.

@@ -120,6 +120,23 @@
         }
       }
     },
+    "Change": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Veränderung"
+          }
+        }
+      }
+    },
     "Checking the server…": {
       "extractionState": "manual",
       "localizations": {
@@ -290,6 +307,23 @@
         }
       }
     },
+    "Exchange rates": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exchange rates"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wechselkurse"
+          }
+        }
+      }
+    },
     "Go to %@ and enter the code.": {
       "extractionState": "manual",
       "localizations": {
@@ -303,6 +337,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Öffne %@ und gib den Code ein."
+          }
+        }
+      }
+    },
+    "Goal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Goal"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ziel"
           }
         }
       }
@@ -440,6 +491,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Zugriff auf das lokale Netzwerk"
+          }
+        }
+      }
+    },
+    "Next slide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next slide"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nächste Folie"
           }
         }
       }
@@ -631,6 +699,23 @@
         }
       }
     },
+    "Pause rotation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause rotation"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folienwechsel anhalten"
+          }
+        }
+      }
+    },
     "Paused": {
       "extractionState": "manual",
       "localizations": {
@@ -644,6 +729,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pausiert"
+          }
+        }
+      }
+    },
+    "Period": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Period"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeitraum"
           }
         }
       }
@@ -678,6 +780,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "Drücke „Zurück“ auf der Fernbedienung, um die Demo zu beenden."
+          }
+        }
+      }
+    },
+    "Previous period": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous period"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorheriger Zeitraum"
+          }
+        }
+      }
+    },
+    "Previous slide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous slide"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorherige Folie"
+          }
+        }
+      }
+    },
+    "Progress": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Progress"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fortschritt"
+          }
+        }
+      }
+    },
+    "Resume rotation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume rotation"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folienwechsel fortsetzen"
           }
         }
       }
@@ -784,6 +954,23 @@
         }
       }
     },
+    "Shows the details.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shows the details."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeigt die Details."
+          }
+        }
+      }
+    },
     "Slide %@": {
       "extractionState": "manual",
       "localizations": {
@@ -814,6 +1001,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Folien von %@"
+          }
+        }
+      }
+    },
+    "Source": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quelle"
           }
         }
       }
@@ -1143,6 +1347,23 @@
         }
       }
     },
+    "Updated": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updated"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktualisiert"
+          }
+        }
+      }
+    },
     "Use netrics cloud": {
       "extractionState": "manual",
       "localizations": {
@@ -1190,6 +1411,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Eigenen Server verwenden"
+          }
+        }
+      }
+    },
+    "Value": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Value"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wert"
           }
         }
       }

@@ -6,8 +6,10 @@ import UIKit
 /**
  * A paired iPhone or iPad: the dashboard and the way to settings. On iPad
  * the screen view sized to the window (#412); on iPhone scroll view in
- * portrait and screen view in landscape (#413). The demo (#416) shows the
- * same views with "Leave demo" instead of settings.
+ * portrait and screen view in landscape (#413). Screen view shows its
+ * settings button in the chrome a tap brings up (#414); scroll view and
+ * the notices keep it in the corner. The demo (#416) shows the same views
+ * with "Leave demo" instead of settings.
  */
 struct TouchDashboardView: View {
     @Environment(\.screenLanguage) private var language
@@ -18,46 +20,30 @@ struct TouchDashboardView: View {
     /** Set in the demo: the button leaves it instead of opening settings. */
     var leaveDemo: (() -> Void)? = nil
 
-    var body: some View {
-        content
-            .overlay(alignment: .bottomTrailing) {
-                if let leaveDemo {
-                    Button(action: leaveDemo) {
-                        Label(L10n.tr("Leave demo", language), systemImage: "xmark")
-                            .font(.body.weight(.semibold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.glass)
-                    .padding()
-                } else {
-                    Button(action: openSettings) {
-                        Image(systemName: "gearshape")
-                            .font(.title3)
-                            .padding(6)
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-                    .accessibilityLabel(L10n.tr("Settings", language))
-                    .padding()
-                }
-            }
-    }
+    private var actions: TouchActions { TouchActions(openSettings: openSettings, leaveDemo: leaveDemo) }
 
-    @ViewBuilder
-    private var content: some View {
+    var body: some View {
         if let payload = state.dashboardV2, payload.dashboard != nil {
             if UIDevice.current.userInterfaceIdiom == .pad {
                 // iPad: screen view sized to the window, or scroll view by the device setting (#412).
-                PadDashboardView(state: state, payload: payload, images: images)
+                PadDashboardView(state: state, payload: payload, images: images, actions: actions)
             } else {
                 // iPhone: scroll view in portrait, screen view in landscape (#413).
                 // The demo is bundled and offline: no pull to refresh there (#416).
                 PhoneDashboardView(
                     state: state, payload: payload, images: images,
-                    refresh: leaveDemo == nil ? { await model.refresh() } : nil)
+                    refresh: leaveDemo == nil ? { await model.refresh() } : nil, actions: actions)
             }
-        } else if let dashboard = state.dashboard, dashboard.dashboard != nil {
+        } else {
+            other.overlay(alignment: .bottomTrailing) {
+                TouchSettingsButton(actions: actions, language: language).padding()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var other: some View {
+        if let dashboard = state.dashboard, dashboard.dashboard != nil {
             // Schema 1 (an older server): the tile grid.
             DashboardView(state: state, dashboard: dashboard)
         } else if state.payload != nil {
@@ -68,6 +54,36 @@ struct TouchDashboardView: View {
             TouchNotice(
                 title: "netrics",
                 text: L10n.tr(state.offline ? "Connecting to netrics…" : "Loading…", language))
+        }
+    }
+}
+
+/**
+ * Scroll view on iPhone and iPad: NetricsUI's `ScrollDashboardView`, a tap
+ * on a card for its detail sheet (#414), and the settings button (or
+ * "Leave demo") always in the corner, since scroll view has no chrome.
+ */
+struct TouchScrollView: View {
+    let state: DeviceState
+    let payload: DeviceDashboardV2
+    let images: FileImageCache
+    let refresh: (@MainActor () async -> Void)?
+    let actions: TouchActions
+
+    @State private var detail: WidgetDetailSelection?
+
+    var body: some View {
+        ScrollDashboardView(
+            state: state, payload: payload, images: images, refresh: refresh,
+            interaction: WidgetInteraction(openWidget: { detail = WidgetDetailSelection(widget: $0) })
+        )
+        .overlay(alignment: .bottomTrailing) {
+            TouchSettingsButton(actions: actions, language: payload.language).padding()
+        }
+        .sheet(item: $detail) { selection in
+            WidgetDetailSheet(
+                widget: payload.slides.lazy.flatMap(\.widgets).first { $0.id == selection.id } ?? selection.widget,
+                language: payload.language)
         }
     }
 }
