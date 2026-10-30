@@ -96,6 +96,7 @@ function render(locale: Locale) {
           dashboardId: null,
           rotation: 90,
           displayMode: "scroll",
+          platform: "web",
         }}
         appleTv={false}
         dashboards={[{ id: "x", name: "Sales" }]}
@@ -108,6 +109,7 @@ function render(locale: Locale) {
           dashboardId: null,
           rotation: 0,
           displayMode: "screen",
+          platform: null,
         }}
         appleTv
         dashboards={[{ id: "x", name: "Sales" }]}

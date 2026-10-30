@@ -18,6 +18,7 @@ import {
   summarizeHeartbeat,
   summarizeScreen,
 } from "@/lib/device-heartbeat";
+import { isHandheld } from "@/lib/device-platform";
 import { getLocale, getT } from "@/lib/i18n/server";
 import { relativeTime } from "@/lib/relative-time";
 import {
@@ -124,7 +125,12 @@ export default async function ScreensPage({ params }: ScreensPageProps) {
         dashboard,
         themeId ? (customThemes.get(themeId) ?? null) : null,
       ),
-      appleTv: isAppleTv(device.heartbeat),
+      // The platform says so since #406; older TVs only by their version.
+      appleTv: device.platform === "tvos" || isAppleTv(device.heartbeat),
+      platform: device.platform
+        ? deviceT(`platforms.${device.platform}`)
+        : null,
+      handheld: isHandheld(device.platform),
       heartbeat: summarizeHeartbeat(device.heartbeat, locale),
       screenLine: parts.length > 0 ? parts.join(" · ") : null,
       paired: pairedFormat.format(new Date(device.createdAt)),

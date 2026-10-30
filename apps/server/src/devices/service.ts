@@ -9,11 +9,15 @@ import type {
   DeviceDashboardV2Response,
   DeviceDashboardV3Response,
   DeviceHeartbeatRequest,
+  DevicePlatform,
   DeviceSelfResponse,
+  DisplayMode,
+  LookupPairingResponse,
   PollPairingResponse,
   UpdateDeviceRequest,
 } from "@netrics/contracts";
 import {
+  devicePlatformSchema,
   deviceRotationSchema,
   deviceScreenSchema,
   displayModeSchema,
@@ -141,6 +145,23 @@ export function deviceSettings(
   };
 }
 
+/**
+ * The display mode a new device starts with (ADR 0021): scroll view for an
+ * iPhone, screen view for everything else, including devices that report
+ * no platform. Only a default; the device setting changes it later.
+ */
+export function defaultDisplayMode(
+  platform: DevicePlatform | null,
+): DisplayMode {
+  return platform === "ios" ? "scroll" : "screen";
+}
+
+/** A stored platform; null for none (and, defensively, an unknown one). */
+function storedPlatform(value: string | null): DevicePlatform | null {
+  const platform = devicePlatformSchema.safeParse(value);
+  return platform.success ? platform.data : null;
+}
+
 export function presentDevice(row: DeviceRow): Device {
   const screen =
     row.screen === null ? null : deviceScreenSchema.safeParse(row.screen);
@@ -150,6 +171,7 @@ export function presentDevice(row: DeviceRow): Device {
     dashboardId: row.dashboardId,
     ...deviceSettings(row),
     screen: screen?.success ? screen.data : null,
+    platform: storedPlatform(row.platform),
     createdAt: row.createdAt.toISOString(),
     lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
     revokedAt: row.revokedAt?.toISOString() ?? null,
@@ -209,9 +231,13 @@ export function createDeviceService(deps: DeviceServiceDeps) {
   });
 
   return {
-    /** A new pairing for an unauthenticated device, rate-limited per IP. */
+    /**
+     * A new pairing for an unauthenticated device, rate-limited per IP.
+     * The platform it reports (#406) is kept for the approval.
+     */
     async createPairing(
       clientIp: string,
+      platform: DevicePlatform | null = null,
     ): Promise<Result<CreatePairingResponse>> {
       const at = now();
       const clientKey = hashToken(`pairing:${clientIp}`);
@@ -236,6 +262,7 @@ export function createDeviceService(deps: DeviceServiceDeps) {
             pollSecretHash: hashToken(pollSecret),
             clientKey,
             expiresAt: new Date(at.getTime() + PAIRING_TTL_MS),
+            platform,
           });
           return ok({
             pairingId: pairing.id,
@@ -253,8 +280,40 @@ export function createDeviceService(deps: DeviceServiceDeps) {
     },
 
     /**
+     * A pending code's platform, so the approve form can suggest a name
+     * (#406). Limited and counted like approvals: unknown, expired and used
+     * codes answer 404 and count as failures, so the lookup is no cheaper a
+     * way to guess codes than approving.
+     */
+    async lookup(
+      userId: string,
+      code: string,
+    ): Promise<Result<LookupPairingResponse["pairing"]>> {
+      const at = now();
+      const failures = await countPairingFailures(
+        db,
+        userId,
+        new Date(at.getTime() - APPROVAL_FAILURE_LIMIT.windowMs),
+      );
+      if (failures >= APPROVAL_FAILURE_LIMIT.max) {
+        return fail(429, "too_many_attempts");
+      }
+      const pairing = await findPendingPairing(
+        db,
+        hashToken(normalizePairingCode(code)),
+        at,
+      );
+      if (!pairing) {
+        await recordPairingFailure(db, userId);
+        return fail(404, "pairing_not_found");
+      }
+      return ok({ platform: storedPlatform(pairing.platform) });
+    },
+
+    /**
      * Approves a code for a new device in the caller's workspace. Unknown,
      * expired and already used codes all answer 404 and count as failures.
+     * The device takes the pairing's platform and the display mode for it.
      */
     async approve(
       actor: { workspaceId: string; userId: string },
@@ -288,11 +347,14 @@ export function createDeviceService(deps: DeviceServiceDeps) {
           ) {
             return fail(404, "dashboard_not_found");
           }
+          const platform = storedPlatform(pairing.platform);
           const device = await insertDevice(tx, {
             workspaceId: actor.workspaceId,
             name: body.name,
             dashboardId: body.dashboardId,
             approvedByUserId: actor.userId,
+            platform,
+            displayMode: defaultDisplayMode(platform),
           });
           const approved = await approvePairing(tx, {
             pairingId: pairing.id,
@@ -309,7 +371,11 @@ export function createDeviceService(deps: DeviceServiceDeps) {
             actorUserId: actor.userId,
             action: "device.approved",
             target: device.id,
-            metadata: { name: device.name, dashboardId: device.dashboardId },
+            metadata: {
+              name: device.name,
+              dashboardId: device.dashboardId,
+              platform: device.platform,
+            },
           });
           return ok(device);
         },
@@ -608,7 +674,8 @@ export function createDeviceService(deps: DeviceServiceDeps) {
 
     /**
      * Stores the device's heartbeat. The error text is kept short. A
-     * heartbeat without `screen` (older apps) keeps the last reported one.
+     * heartbeat without `screen` (older apps) keeps the last reported one;
+     * `platform` fills in a device without one and never replaces it.
      */
     async heartbeat(
       principal: { workspaceId: string; deviceId: string },
@@ -626,6 +693,7 @@ export function createDeviceService(deps: DeviceServiceDeps) {
             lastError,
             // Parsed and bounded by the contract; unknown keys are gone.
             ...(body.screen ? { screen: body.screen } : {}),
+            ...(body.platform ? { platform: body.platform } : {}),
           }),
       );
       return stored ? ok(null) : fail(401, "unauthorized");

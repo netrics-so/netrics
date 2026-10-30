@@ -28,6 +28,13 @@ export interface ScreenItem {
   dashboardName: string | null;
   preview: ScreenPreview;
   appleTv: boolean;
+  /** "iPhone", "Apple TV"; null when the device reported no platform. */
+  platform: string | null;
+  /**
+   * An iPad or iPhone (#406): not expected to be on all the time, so when
+   * it is not online it reads "last opened" instead of offline.
+   */
+  handheld: boolean;
   heartbeat: HeartbeatSummary | null;
   /** "3840 × 2160 · 16:9 · Screen view · Portrait", or null before one. */
   screenLine: string | null;
@@ -36,6 +43,29 @@ export interface ScreenItem {
 }
 
 export type ScreensViewMode = "cards" | "table";
+
+type ScreenState = "online" | "offline" | "away" | "revoked";
+
+/** "5 minutes ago", or "Opened 5 minutes ago" for an iPad or iPhone. */
+function seenText(
+  screen: ScreenItem,
+  t: ReturnType<typeof useT<"screens">>,
+): string {
+  return screen.handheld && screen.device.lastSeenAt !== null
+    ? t("openedAgo", { time: screen.lastSeen })
+    : screen.lastSeen;
+}
+
+/** Revoked, online, or not online: offline, or away for a handheld. */
+function screenState(screen: ScreenItem): ScreenState {
+  if (screen.revoked !== null) {
+    return "revoked";
+  }
+  if (screen.online) {
+    return "online";
+  }
+  return screen.handheld ? "away" : "offline";
+}
 
 interface ScreensViewProps {
   workspaceId: string;
@@ -195,8 +225,7 @@ export function ScreensView({
 /** The 8 px status dot with its state for screen readers. */
 function StatusDot({ screen }: { screen: ScreenItem }) {
   const t = useT("screens");
-  const state =
-    screen.revoked !== null ? "revoked" : screen.online ? "online" : "offline";
+  const state = screenState(screen);
   return (
     <>
       <span className={`status-dot status-dot--${state}`} aria-hidden="true" />
@@ -278,12 +307,12 @@ function ScreenCard({
     >
       <ScreenThumbnail
         preview={screen.preview}
-        offline={!isRevoked && !screen.online}
+        offline={screenState(screen) === "offline"}
       />
       <span className="screen-card-row">
         <StatusDot screen={screen} />
         <span className="screen-card-name">{screen.device.name}</span>
-        <span className="screen-card-seen">{screen.lastSeen}</span>
+        <span className="screen-card-seen">{seenText(screen, t)}</span>
       </span>
       <span className="screen-card-row">
         <span
@@ -293,6 +322,9 @@ function ScreenCard({
         >
           {screen.dashboardName ?? t("noDashboard")}
         </span>
+        {screen.platform ? (
+          <span className="screen-card-seen">{screen.platform}</span>
+        ) : null}
         {isRevoked ? (
           <span className="role-badge screen-card-badge">{t("revoked")}</span>
         ) : null}
@@ -320,6 +352,7 @@ function ScreensTable({
           <tr>
             <th scope="col">{t("columns.name")}</th>
             <th scope="col">{t("columns.status")}</th>
+            <th scope="col">{t("columns.platform")}</th>
             <th scope="col">{t("columns.dashboard")}</th>
             <th scope="col">{t("columns.lastSeen")}</th>
             <th scope="col">{t("columns.app")}</th>
@@ -329,12 +362,7 @@ function ScreensTable({
         <tbody>
           {screens.map((screen) => {
             const selected = screen.device.id === selectedId;
-            const state =
-              screen.revoked !== null
-                ? "revoked"
-                : screen.online
-                  ? "online"
-                  : "offline";
+            const state = screenState(screen);
             return (
               <tr
                 key={screen.device.id}
@@ -361,8 +389,9 @@ function ScreensTable({
                   </button>
                 </td>
                 <td className="nowrap">{t(state)}</td>
+                <td className="nowrap">{screen.platform ?? "—"}</td>
                 <td>{screen.dashboardName ?? t("noDashboard")}</td>
-                <td className="nowrap">{screen.lastSeen}</td>
+                <td className="nowrap">{seenText(screen, t)}</td>
                 <td className="nowrap">{screen.heartbeat?.version ?? "—"}</td>
                 <td>{screen.screenLine ?? "—"}</td>
               </tr>
@@ -396,8 +425,7 @@ function ScreenPanel({
 }: ScreenPanelProps) {
   const t = useT("screens");
   const { device, heartbeat } = screen;
-  const state =
-    screen.revoked !== null ? "revoked" : screen.online ? "online" : "offline";
+  const state = screenState(screen);
   return (
     <aside
       ref={ref}
@@ -446,8 +474,10 @@ function ScreenPanel({
       <section className="screen-panel-section">
         <h3>{t("health")}</h3>
         <dl className="screen-facts">
-          <dt>{t("lastSeen")}</dt>
+          <dt>{screen.handheld ? t("lastOpened") : t("lastSeen")}</dt>
           <dd>{screen.lastSeen}</dd>
+          <dt>{t("platform")}</dt>
+          <dd>{screen.platform ?? t("platformNotReported")}</dd>
           <dt>{t("dashboard")}</dt>
           <dd>{screen.dashboardName ?? t("noDashboard")}</dd>
           <dt>{t("app")}</dt>

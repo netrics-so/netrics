@@ -358,6 +358,13 @@
       "when": 1793304686972,
       "tag": "0050_connection_resources_kind_key",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1793341627444,
+      "tag": "0051_device_platform",
+      "breakpoints": true
     }
   ]
 }

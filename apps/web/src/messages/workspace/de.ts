@@ -169,6 +169,12 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       scroll: "Scroll-Ansicht",
     },
     appleTvMode: "Apple TV nutzt immer die Bildschirm-Ansicht.",
+    platforms: {
+      tvos: "Apple TV",
+      ipados: "iPad",
+      ios: "iPhone",
+      web: "Browser",
+    },
   },
   deviceApproval: {
     pageTitle: "TV verbinden · netrics",
@@ -185,6 +191,12 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     noDashboard: "Noch keins",
     name: "Name des TVs",
     nameExample: "Zum Beispiel „Empfang Büro“.",
+    names: {
+      tvos: "Apple TV",
+      ipados: "iPad",
+      ios: "iPhone",
+      web: "Browser",
+    },
     connecting: "Wird verbunden…",
     connect: "TV verbinden",
   },

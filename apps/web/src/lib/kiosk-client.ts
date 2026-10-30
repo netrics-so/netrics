@@ -5,6 +5,7 @@ import type {
   DeviceDashboardV2Response,
   DeviceDashboardV3Response,
   DeviceImage,
+  DevicePlatform,
   DeviceScreen,
   PollPairingResponse,
 } from "@netrics/contracts";
@@ -216,6 +217,9 @@ export function kioskScreen(
     mode: shown.mode ?? "screen",
   };
 }
+
+/** What a browser kiosk reports as its platform (#406). */
+export const KIOSK_PLATFORM = "web" satisfies DevicePlatform;
 
 /** The heartbeat's appVersion field accepts at most this many characters. */
 const MAX_APP_VERSION_LENGTH = 50;
@@ -539,8 +543,10 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
   async function startPairing(): Promise<void> {
     const at = epoch;
     try {
+      // The platform (#406); servers before it ignore the body.
       const response = await request("/v1/device/pairings", {
         method: "POST",
+        body: { platform: KIOSK_PLATFORM },
       });
       if (!response.ok) {
         throw new HttpError(response.status);
@@ -1021,6 +1027,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
           ),
           lastError: state.lastError,
           ...screenReport(),
+          platform: KIOSK_PLATFORM,
         },
       });
     } catch {

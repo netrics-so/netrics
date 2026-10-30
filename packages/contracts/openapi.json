@@ -117,10 +117,32 @@
     },
     "/v1/device/pairings": {
       "post": {
-        "summary": "Start pairing a device (shows a code on screen)",
+        "summary": "Start pairing a device (shows a code on screen); the optional body reports the device's platform",
         "tags": [
           "devices"
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "platform": {
+                    "description": "The device's platform; optional, and an unknown value is ignored",
+                    "type": "string",
+                    "enum": [
+                      "tvos",
+                      "ipados",
+                      "ios",
+                      "web"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Default Response",
@@ -171,6 +193,27 @@
                     "approveUrl"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
                 }
               }
             }
@@ -29483,6 +29526,16 @@
                       "scale",
                       "mode"
                     ]
+                  },
+                  "platform": {
+                    "description": "The device's platform; optional, and an unknown value is ignored",
+                    "type": "string",
+                    "enum": [
+                      "tvos",
+                      "ipados",
+                      "ios",
+                      "web"
+                    ]
                   }
                 },
                 "required": [
@@ -29708,6 +29761,22 @@
                               }
                             ]
                           },
+                          "platform": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tvos",
+                                  "ipados",
+                                  "ios",
+                                  "web"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "createdAt": {
                             "type": "string",
                             "format": "date-time",
@@ -29783,6 +29852,7 @@
                           "rotation",
                           "displayMode",
                           "screen",
+                          "platform",
                           "createdAt",
                           "lastSeenAt",
                           "revokedAt",
@@ -29859,6 +29929,166 @@
                   ],
                   "additionalProperties": false,
                   "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/device-pairings/lookup": {
+      "post": {
+        "summary": "Look up a pending pairing code before approving it (the platform its device reported)",
+        "tags": [
+          "devices"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 20
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pairing": {
+                      "type": "object",
+                      "properties": {
+                        "platform": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "tvos",
+                                "ipados",
+                                "ios",
+                                "web"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "platform"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "pairing"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Too many requests; try again later"
                 }
               }
             }
@@ -30025,6 +30255,22 @@
                             }
                           ]
                         },
+                        "platform": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "tvos",
+                                "ipados",
+                                "ios",
+                                "web"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "createdAt": {
                           "type": "string",
                           "format": "date-time",
@@ -30100,6 +30346,7 @@
                         "rotation",
                         "displayMode",
                         "screen",
+                        "platform",
                         "createdAt",
                         "lastSeenAt",
                         "revokedAt",
@@ -30397,6 +30644,22 @@
                             }
                           ]
                         },
+                        "platform": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "tvos",
+                                "ipados",
+                                "ios",
+                                "web"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "createdAt": {
                           "type": "string",
                           "format": "date-time",
@@ -30472,6 +30735,7 @@
                         "rotation",
                         "displayMode",
                         "screen",
+                        "platform",
                         "createdAt",
                         "lastSeenAt",
                         "revokedAt",
@@ -30703,6 +30967,22 @@
                             }
                           ]
                         },
+                        "platform": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "tvos",
+                                "ipados",
+                                "ios",
+                                "web"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "createdAt": {
                           "type": "string",
                           "format": "date-time",
@@ -30778,6 +31058,7 @@
                         "rotation",
                         "displayMode",
                         "screen",
+                        "platform",
                         "createdAt",
                         "lastSeenAt",
                         "revokedAt",

@@ -119,6 +119,8 @@ public actor DeviceClient {
     private let now: @Sendable () -> Date
     /** Measures the screen for the heartbeat (#276); nil sends none. */
     private let screen: (@Sendable () async -> DeviceScreenReport?)?
+    /** Reported at pairing and in every heartbeat (#406). */
+    private let platform: DevicePlatform
 
     public private(set) var state = DeviceState()
     public nonisolated let updates: AsyncStream<DeviceState>
@@ -147,7 +149,8 @@ public actor DeviceClient {
         images: any ImageCache = InMemoryImageCache(),
         appVersion: String,
         now: @escaping @Sendable () -> Date = { Date() },
-        screen: (@Sendable () async -> DeviceScreenReport?)? = nil
+        screen: (@Sendable () async -> DeviceScreenReport?)? = nil,
+        platform: DevicePlatform = .tvos
     ) {
         self.server = server
         self.transport = transport
@@ -157,6 +160,7 @@ public actor DeviceClient {
         self.appVersion = appVersion
         self.now = now
         self.screen = screen
+        self.platform = platform
         (updates, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(16))
     }
 
@@ -385,7 +389,8 @@ public actor DeviceClient {
     private func startPairing() async -> Duration? {
         let at = epoch
         do {
-            let response = try await send("POST", "/v1/device/pairings")
+            let response = try await send(
+                "POST", "/v1/device/pairings", body: CreatePairingRequest(platform: platform))
             guard response.isSuccess else { throw HTTPStatusError(status: response.status) }
             let pairing = try decode(CreatePairingResponse.self, response, "pairing")
             guard at == epoch else { return superseded() }
@@ -737,7 +742,8 @@ public actor DeviceClient {
             appVersion: Self.reportedAppVersion(appVersion),
             uptimeSeconds: uptime,
             lastError: state.lastError,
-            screen: measured
+            screen: measured,
+            platform: platform
         )
         let authorization = ["authorization": "Bearer \(credentials.accessToken)"]
         _ = try? await send("POST", "/v1/device/heartbeat", body: body, headers: authorization)

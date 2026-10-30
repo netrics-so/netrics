@@ -12,6 +12,9 @@ type Executor = Db | Transaction;
 
 export type DeviceRow = typeof schema.devices.$inferSelect;
 
+/** A platform the checks on devices and device_pairings accept (#406). */
+export type DevicePlatformColumn = "tvos" | "ipados" | "ios" | "web";
+
 // ─── Pairings ───────────────────────────────────────────────────────────────
 
 export async function countRecentPairings(
@@ -38,6 +41,8 @@ export async function insertPairing(
     pollSecretHash: string;
     clientKey: string;
     expiresAt: Date;
+    /** As the device reported it (#406); null when it sent none. */
+    platform: DevicePlatformColumn | null;
   },
 ): Promise<{ id: string; expiresAt: Date }> {
   const [row] = await db.insert(schema.devicePairings).values(input).returning({
@@ -47,14 +52,20 @@ export async function insertPairing(
   return row!;
 }
 
-/** A pairing waiting for approval, by code; null when unknown or expired. */
+/**
+ * A pairing waiting for approval, by code, with the platform its device
+ * reported; null when unknown or expired.
+ */
 export async function findPendingPairing(
   db: Executor,
   codeHash: string,
   now: Date,
-): Promise<{ id: string } | null> {
+): Promise<{ id: string; platform: string | null } | null> {
   const [row] = await db
-    .select({ id: schema.devicePairings.id })
+    .select({
+      id: schema.devicePairings.id,
+      platform: schema.devicePairings.platform,
+    })
     .from(schema.devicePairings)
     .where(
       and(
@@ -190,6 +201,10 @@ export async function insertDevice(
     name: string;
     dashboardId: string | null;
     approvedByUserId: string;
+    /** From the pairing (#406); null when the device reported none. */
+    platform: DevicePlatformColumn | null;
+    /** The default for the platform (#406); the column default otherwise. */
+    displayMode?: string;
   },
 ): Promise<DeviceRow> {
   const [row] = await tx.insert(schema.devices).values(input).returning();
@@ -406,8 +421,9 @@ export async function updateDevice(
 
 /**
  * Stores a device's heartbeat and records the contact. `screen` replaces the
- * stored screen when given and keeps it when absent. False when the device
- * does not exist or is revoked.
+ * stored screen when given and keeps it when absent. `platform` only fills
+ * in a device without one (#406): a reported platform never replaces a
+ * stored one. False when the device does not exist or is revoked.
  */
 export async function recordDeviceHeartbeat(
   tx: Transaction,
@@ -418,12 +434,19 @@ export async function recordDeviceHeartbeat(
     uptimeSeconds: number;
     lastError: string | null;
     screen?: schema.DeviceScreenColumn;
+    platform?: DevicePlatformColumn;
   },
 ): Promise<boolean> {
+  const { platform, ...reported } = heartbeat;
   const rows = await tx
     .update(schema.devices)
     .set({
-      ...heartbeat,
+      ...reported,
+      ...(platform
+        ? {
+            platform: sql`coalesce(${schema.devices.platform}, ${platform})`,
+          }
+        : {}),
       lastHeartbeatAt: sql`now()`,
       lastSeenAt: sql`now()`,
     })
