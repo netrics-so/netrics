@@ -152,6 +152,12 @@ export interface KioskClientOptions {
 export interface KioskClient {
   start(): void;
   stop(): void;
+  /**
+   * Unpairs this screen: revokes the device on the server (ADR 0021), then
+   * forgets its credentials and dashboard and shows a new code. Offline, or
+   * on an older server (404), only the local state goes.
+   */
+  unpair(): Promise<void>;
   getState(): KioskState;
 }
 
@@ -700,6 +706,30 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
     return "ok";
   }
 
+  /**
+   * `POST /v1/device/me/revoke` with the access token, refreshed first when
+   * due and once after a 401. Best effort: 204 (revoked), 401 (revoked
+   * already), 404 (an older server) and every failure end the same way.
+   */
+  async function revokeOnServer(): Promise<void> {
+    const send = () =>
+      request("/v1/device/me/revoke", {
+        method: "POST",
+        headers: { authorization: `Bearer ${credentials?.accessToken ?? ""}` },
+      });
+    try {
+      if (needsRefresh() && (await refresh()) === "revoked") {
+        return;
+      }
+      const response = await send();
+      if (response.status === 401 && (await refresh()) === "ok") {
+        await send();
+      }
+    } catch {
+      // Offline: unpair locally only.
+    }
+  }
+
   function needsRefresh(): boolean {
     return (
       credentials !== null &&
@@ -1035,6 +1065,34 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
       epoch += 1;
       stopTimers();
       releaseImages();
+    },
+    async unpair() {
+      // The loops stop first; nothing else acts while the device is revoked.
+      epoch += 1;
+      stopTimers();
+      if (credentials) {
+        await revokeOnServer();
+      }
+      if (running) {
+        enterPairing();
+      } else {
+        epoch += 1;
+        credentials = null;
+        etag = null;
+        remove(CREDENTIALS_KEY);
+        remove(DASHBOARD_KEY);
+        releaseImages();
+        void imageCache?.prune(new Set()).catch(() => undefined);
+        update({
+          phase: "starting",
+          pairing: null,
+          dashboard: null,
+          images: new Map(),
+          updatedAt: null,
+          offline: false,
+          lastError: null,
+        });
+      }
     },
     getState() {
       return state;

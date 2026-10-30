@@ -29547,6 +29547,45 @@
         }
       }
     },
+    "/v1/device/me/revoke": {
+      "post": {
+        "summary": "Revoke the calling device and all its credentials (unpair)",
+        "tags": [
+          "devices"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspaceId}/devices": {
       "get": {
         "summary": "List paired devices",

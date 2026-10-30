@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { eq } from "drizzle-orm";
 import type { FastifyInstance, InjectOptions } from "fastify";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -25,6 +26,9 @@ import {
 import {
   createDatabase,
   createRawSqlClient,
+  revokeDevice,
+  schema,
+  withWorkspace,
   type Database,
   type Sql,
 } from "@netrics/database";
@@ -740,6 +744,118 @@ describe("device credentials", () => {
     );
     expectError(await me(accessToken), 401, "unauthorized");
     expect((await refresh(refreshToken)).response.statusCode).toBe(401);
+  });
+
+  describe("self-revoke on unpair (#407)", () => {
+    function selfRevoke(token: string | null, cookie?: string) {
+      return call("POST", "/v1/device/me/revoke", {
+        ...(cookie ? { cookie } : {}),
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+      });
+    }
+
+    it("revokes the calling device and all its tokens, audited with the device as actor", async () => {
+      const { device, accessToken, refreshToken } = await pair("Unpair TV");
+      // A second pair of the same device (a refresh) goes with it.
+      const rotated = (await refresh(refreshToken)).credentials!;
+
+      const response = await selfRevoke(accessToken);
+      expect(response.statusCode).toBe(204);
+      expect(response.body).toBe("");
+
+      // The web list shows it revoked.
+      const list = await call("GET", `/v1/workspaces/${workspaceId}/devices`, {
+        cookie: owner,
+      });
+      const listed = deviceListResponseSchema
+        .parse(list.json())
+        .devices.find((d) => d.id === device.id);
+      expect(listed?.revokedAt).not.toBeNull();
+
+      // Every token is gone: the next request with any of them gets 401.
+      for (const token of [accessToken, rotated.accessToken]) {
+        expectError(await me(token), 401, "unauthorized");
+      }
+      for (const token of [refreshToken, rotated.refreshToken]) {
+        expect(await resolves(token)).toBe(false);
+      }
+      expect((await refresh(rotated.refreshToken)).response.statusCode).toBe(
+        401,
+      );
+
+      const events = await admin`
+        select action, actor_user_id, metadata from audit_events
+        where target = ${device.id} order by created_at`;
+      expect(events.map((row) => row.action)).toEqual([
+        "device.approved",
+        "device.revoked",
+      ]);
+      expect(events[1]).toMatchObject({
+        actor_user_id: null,
+        metadata: { name: "Unpair TV", by: "device", reason: "unpaired" },
+      });
+    });
+
+    it("answers a repeat with 401 and audits once", async () => {
+      const { device, accessToken } = await pair();
+      expect((await selfRevoke(accessToken)).statusCode).toBe(204);
+      expectError(await selfRevoke(accessToken), 401, "unauthorized");
+      const events = await admin`
+        select action from audit_events
+        where target = ${device.id} and action = 'device.revoked'`;
+      expect(events).toHaveLength(1);
+    });
+
+    it("accepts only a device access token", async () => {
+      const { device, refreshToken } = await pair();
+      expectError(await selfRevoke(refreshToken), 401, "unauthorized");
+      expectError(await selfRevoke(null, owner), 401, "unauthorized");
+      expectError(await selfRevoke(null), 401, "unauthorized");
+      expect(await deviceRevoked(device.id)).toBe(false);
+    });
+
+    it("never reaches another workspace's device", async () => {
+      // A device in the stranger's workspace.
+      const foreign = await newWorkspace(stranger);
+      const pairing = await startPairing();
+      const approved = await approve(
+        stranger,
+        { code: pairing.code, name: "Their TV", dashboardId: null },
+        foreign,
+      );
+      const theirs = deviceResponseSchema.parse(approved.json()).device;
+      const polled = pollPairingResponseSchema.parse(
+        (await poll(pairing)).json(),
+      );
+      if (polled.status !== "approved") throw new Error("not approved");
+
+      // The service with this workspace and their device id: the explicit
+      // workspace predicate finds nothing.
+      const service = createDeviceService({
+        db,
+        pairingUrl: "http://localhost:3000/devices/approve",
+      });
+      expect(
+        await service.selfRevoke({ workspaceId, deviceId: theirs.id }),
+      ).toEqual({ ok: false, status: 401, error: "unauthorized" });
+      expect(
+        await withWorkspace(db, { workspaceId }, (tx) =>
+          revokeDevice(tx, workspaceId, theirs.id),
+        ),
+      ).toBe(false);
+      // RLS on its own: without the predicate, this workspace's context
+      // still cannot touch their row.
+      const touched = await withWorkspace(db, { workspaceId }, (tx) =>
+        tx
+          .update(schema.devices)
+          .set({ revokedAt: new Date() })
+          .where(eq(schema.devices.id, theirs.id))
+          .returning({ id: schema.devices.id }),
+      );
+      expect(touched).toEqual([]);
+      expect(await deviceRevoked(theirs.id)).toBe(false);
+      expect((await me(polled.credentials.accessToken)).statusCode).toBe(200);
+    });
   });
 
   it("renames and reassigns a device", async () => {

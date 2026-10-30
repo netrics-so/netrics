@@ -197,9 +197,21 @@ public actor DeviceClient {
         epoch += 1
     }
 
-    /** Forgets the server and the device on this TV (settings → Unpair). */
-    public func unpair() {
+    /**
+     * Settings → Unpair: ends the device on the server (ADR 0021), then
+     * forgets the server and the device on this TV. The local unpair always
+     * happens: when the server is unreachable, or older and answers 404, the
+     * device stays in the web list until someone revokes it there.
+     */
+    public func unpair() async {
+        var blocked = false
+        if case .blocked = state.phase { blocked = true }
         running = false
+        epoch += 1
+        // A blocked client sends nothing: the certificate changed.
+        if !blocked, credentials != nil {
+            await revokeOnServer()
+        }
         epoch += 1
         credentials = nil
         etag = nil
@@ -210,6 +222,30 @@ public actor DeviceClient {
         var next = DeviceState()
         next.phase = .unpaired
         publish(next)
+    }
+
+    /**
+     * `POST /v1/device/me/revoke` with the access token, refreshed first when
+     * due and once after a 401. Best effort: 204 (revoked), 401 (revoked
+     * already), 404 (an older server) and every failure end the same way.
+     */
+    private func revokeOnServer() async {
+        do {
+            if needsRefresh(), try await refresh() == .revoked {
+                return
+            }
+            let response = try await sendRevoke()
+            if response.status == 401, try await refresh() == .ok {
+                _ = try await sendRevoke()
+            }
+        } catch {
+            // Offline or a changed certificate: unpair locally only.
+        }
+    }
+
+    private func sendRevoke() async throws -> HTTPResponse {
+        let authorization = ["authorization": "Bearer \(credentials?.accessToken ?? "")"]
+        return try await send("POST", "/v1/device/me/revoke", headers: authorization)
     }
 
     /**

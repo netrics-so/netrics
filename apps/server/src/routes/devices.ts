@@ -297,6 +297,27 @@ export function registerDeviceRoutes(
         },
       );
 
+      // Settings → Unpair on the device (ADR 0021). Older servers answer
+      // 404 here; the apps then unpair locally only.
+      scope.post(
+        "/me/revoke",
+        {
+          schema: routeSchema({
+            summary:
+              "Revoke the calling device and all its credentials (unpair)",
+            tags: ["devices"],
+            device: true,
+          }),
+        },
+        async (request, reply) => {
+          const result = await devices.selfRevoke(request.device!);
+          if (!result.ok) {
+            return sendError(reply, result.status, result.error);
+          }
+          return reply.code(204).send();
+        },
+      );
+
       done();
     },
     { prefix: "/v1/device" },

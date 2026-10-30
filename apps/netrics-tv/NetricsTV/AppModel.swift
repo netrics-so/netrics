@@ -185,7 +185,7 @@ final class AppModel {
         client = nil
     }
 
-    /** Settings → Unpair: clears Keychain and cache, then pairs with netrics cloud again. */
+    /** Settings → Unpair: revokes the device on the server, clears Keychain and cache, then pairs with netrics cloud again. */
     func unpair() async {
         if let client {
             await client.unpair()
