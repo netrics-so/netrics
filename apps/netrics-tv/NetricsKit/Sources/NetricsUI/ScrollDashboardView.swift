@@ -29,6 +29,7 @@ public struct ScrollDashboardView: View {
 
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.demoMode) private var demo
     /** 1 rem: 16 points at the default text size, scaled by Dynamic Type. */
     @ScaledMetric(relativeTo: .body) private var rem = ScrollGeometry.rem
 
@@ -81,24 +82,32 @@ public struct ScrollDashboardView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
-                HStack(spacing: CGFloat(0.4 * rem)) {
-                    Circle()
-                        .fill(state.offline ? colors.warning : colors.up)
-                        .frame(width: CGFloat(0.5 * rem), height: CGFloat(0.5 * rem))
-                        .accessibilityHidden(true)
-                    // "Offline — last update 14:05", as the TV's header.
-                    Text(
-                        state.offline
-                            ? TVTime.offlineMarker(
-                                updatedAt: state.updatedAt, timeZone: payload.timeZone, language: language)
-                            : L10n.tr("Live", language)
-                    )
-                        .font(.system(size: CGFloat(0.875 * rem)))
-                        .foregroundStyle(state.offline ? colors.warning : colors.muted)
+                if demo {
+                    DemoBadge(text: L10n.tr("Demo", language), size: CGFloat(0.875 * rem), colors: colors)
+                } else {
+                    liveMarker(colors, language: language)
                 }
             }
             .padding(EdgeInsets(top: 16, leading: 12, bottom: 12, trailing: 12))
             colors.border.frame(height: 1)
+        }
+    }
+
+    /** "Live" with a green dot, or the offline marker in the warning colour. */
+    private func liveMarker(_ colors: StudioColors, language: ScreenLanguage) -> some View {
+        HStack(spacing: CGFloat(0.4 * rem)) {
+            Circle()
+                .fill(state.offline ? colors.warning : colors.up)
+                .frame(width: CGFloat(0.5 * rem), height: CGFloat(0.5 * rem))
+                .accessibilityHidden(true)
+            // "Offline — last update 14:05", as the TV's header.
+            Text(
+                state.offline
+                    ? TVTime.offlineMarker(updatedAt: state.updatedAt, timeZone: payload.timeZone, language: language)
+                    : L10n.tr("Live", language)
+            )
+                .font(.system(size: CGFloat(0.875 * rem)))
+                .foregroundStyle(state.offline ? colors.warning : colors.muted)
         }
     }
 

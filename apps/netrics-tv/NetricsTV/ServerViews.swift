@@ -23,8 +23,12 @@ struct ConnectingCloudView: View {
                 error: model.cloudError.map { "\($0.message(in: language))\n\(L10n.tr("Retrying…", language))" }
                     ?? model.storageError)
             Spacer()
-            Button(L10n.tr("Use your own server", language)) { model.switchToOwnServer() }
-                .font(.system(size: 24))
+            HStack(spacing: 40) {
+                // Offline the cloud never answers: the demo still works (#416).
+                Button(L10n.tr("Try a demo", language)) { model.startDemo() }
+                Button(L10n.tr("Use your own server", language)) { model.switchToOwnServer() }
+            }
+            .font(.system(size: 24))
         }
         .padding(.vertical, 60)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

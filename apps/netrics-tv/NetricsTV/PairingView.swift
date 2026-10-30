@@ -53,6 +53,7 @@ struct PairingView: View {
                     }
                 }
                 Spacer()
+                Button(L10n.tr("Try a demo", language)) { model.startDemo() }
                 if model.server?.kind == .cloud {
                     Button(L10n.tr("Use your own server", language)) { model.switchToOwnServer() }
                 } else {

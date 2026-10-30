@@ -36,6 +36,7 @@ struct TouchPairingView: View {
                             LocalNetworkHint()
                         }
                     }
+                    demoButton
                     serverFooter
                 }
                 .padding(.horizontal, 24)
@@ -130,6 +131,20 @@ struct TouchPairingView: View {
             try? await Task.sleep(for: .seconds(2))
             if !Task.isCancelled { copied = 0 }
         }
+    }
+
+    /** "Try a demo" (#416): a sample dashboard, offline, without an account. */
+    private var demoButton: some View {
+        VStack(spacing: 8) {
+            Button(L10n.tr("Try a demo", language), systemImage: "play.rectangle") { model.startDemo() }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            Text(L10n.tr("See a sample dashboard without an account.", language))
+                .font(.footnote)
+                .foregroundStyle(Theme.muted)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.top, 8)
     }
 
     private var serverFooter: some View {

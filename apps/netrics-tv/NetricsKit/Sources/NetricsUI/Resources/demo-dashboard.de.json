@@ -1,0 +1,670 @@
+{
+  "version": "demo-1-de",
+  "schema": 3,
+  "refreshAfterSec": 60,
+  "timeZone": "UTC",
+  "locale": "de",
+  "primaryFormat": "16x9",
+  "formats": {
+    "16x9": {
+      "columns": 12,
+      "rows": 8,
+      "reference": [
+        1920,
+        1080
+      ]
+    },
+    "21x9": {
+      "columns": 16,
+      "rows": 8,
+      "reference": [
+        2520,
+        1080
+      ]
+    },
+    "4x3": {
+      "columns": 9,
+      "rows": 8,
+      "reference": [
+        1440,
+        1080
+      ]
+    },
+    "3x4": {
+      "columns": 6,
+      "rows": 10,
+      "reference": [
+        1080,
+        1440
+      ]
+    },
+    "9x16": {
+      "columns": 6,
+      "rows": 14,
+      "reference": [
+        1080,
+        1920
+      ]
+    }
+  },
+  "device": {
+    "rotation": 0,
+    "displayMode": "screen"
+  },
+  "dashboard": {
+    "id": "de300000-0000-4000-8000-000000000000",
+    "name": "Beispiel-Rösterei",
+    "showHeader": true,
+    "logo": null
+  },
+  "theme": {
+    "name": "Midnight",
+    "tokens": {
+      "background": "#050a1a",
+      "surface": "#0c1630",
+      "border": "#1f2d52",
+      "text": "#e8eefc",
+      "label": "#c2cdec",
+      "muted": "#8d9cc2",
+      "accent": "#5cc8ff",
+      "up": "#7ee2a8",
+      "down": "#ff9e9e",
+      "warning": "#f2c14e",
+      "chartLine": "#6b7fb3",
+      "chartFill": "#2c4c94",
+      "fontScale": 1
+    }
+  },
+  "rotation": {
+    "autoAdvance": true,
+    "transition": "fade"
+  },
+  "slides": [
+    {
+      "id": "de300000-0000-4000-8000-00000000000a",
+      "name": "Überblick",
+      "durationSec": 15,
+      "background": null,
+      "widgets": [
+        {
+          "type": "metric",
+          "id": "de300000-0000-4000-8000-000000000001",
+          "x": 0,
+          "y": 0,
+          "w": 3,
+          "h": 2,
+          "min": {
+            "w": 3,
+            "h": 2
+          },
+          "label": "Besucher · Alle Websites",
+          "options": {
+            "showSparkline": true,
+            "showChange": true
+          },
+          "data": {
+            "period": "last_7_days",
+            "aggregation": "sum",
+            "unit": "count",
+            "conversion": null,
+            "kind": "delta",
+            "granularity": "day",
+            "better": "higher",
+            "status": "ok",
+            "updatedAt": "2026-10-29T08:57:00.000Z",
+            "value": 41454,
+            "change": {
+              "previousValue": 40695,
+              "delta": 759,
+              "ratio": 0.018650939918908958
+            },
+            "spark": [
+              5823,
+              4313,
+              4515,
+              6731,
+              6708,
+              7059,
+              6305
+            ]
+          }
+        },
+        {
+          "type": "metric",
+          "id": "de300000-0000-4000-8000-000000000002",
+          "x": 3,
+          "y": 0,
+          "w": 3,
+          "h": 2,
+          "min": {
+            "w": 3,
+            "h": 2
+          },
+          "label": "Registrierungen · Alle Websites",
+          "options": {
+            "showSparkline": true,
+            "showChange": true
+          },
+          "data": {
+            "period": "last_7_days",
+            "aggregation": "sum",
+            "unit": "count",
+            "conversion": null,
+            "kind": "delta",
+            "granularity": "day",
+            "better": "higher",
+            "status": "ok",
+            "updatedAt": "2026-10-29T08:57:00.000Z",
+            "value": 1521,
+            "change": {
+              "previousValue": 1452,
+              "delta": 69,
+              "ratio": 0.047520661157024795
+            },
+            "spark": [
+              215,
+              161,
+              162,
+              235,
+              249,
+              266,
+              233
+            ]
+          }
+        },
+        {
+          "type": "metric",
+          "id": "de300000-0000-4000-8000-000000000003",
+          "x": 6,
+          "y": 0,
+          "w": 3,
+          "h": 2,
+          "min": {
+            "w": 3,
+            "h": 2
+          },
+          "label": "Umsatz · Shop",
+          "options": {
+            "showSparkline": true,
+            "showChange": true
+          },
+          "data": {
+            "period": "this_month",
+            "aggregation": "sum",
+            "unit": "EUR_minor",
+            "conversion": null,
+            "kind": "delta",
+            "granularity": "day",
+            "better": "higher",
+            "status": "ok",
+            "updatedAt": "2026-10-29T08:53:00.000Z",
+            "value": 5642590,
+            "change": {
+              "previousValue": 5191712,
+              "delta": 450878,
+              "ratio": 0.08684572641933913
+            },
+            "spark": [
+              201243,
+              184858,
+              145487,
+              139620,
+              199285,
+              226058,
+              221208,
+              195747,
+              223116,
+              145554,
+              145992,
+              193809,
+              224395,
+              190357,
+              226092,
+              232766,
+              139434,
+              139742,
+              210419,
+              215975,
+              229362,
+              225151,
+              218670,
+              140717,
+              145830,
+              213393,
+              223550,
+              218622,
+              226138
+            ]
+          }
+        },
+        {
+          "type": "clock",
+          "id": "de300000-0000-4000-8000-000000000004",
+          "x": 9,
+          "y": 0,
+          "w": 3,
+          "h": 2,
+          "min": {
+            "w": 2,
+            "h": 1
+          },
+          "label": null,
+          "options": {
+            "showDate": true,
+            "hour12": false,
+            "timeZone": "UTC"
+          }
+        },
+        {
+          "type": "line",
+          "id": "de300000-0000-4000-8000-000000000005",
+          "x": 0,
+          "y": 2,
+          "w": 8,
+          "h": 6,
+          "min": {
+            "w": 4,
+            "h": 3
+          },
+          "label": "Besucher · Letzte 30 Tage",
+          "options": {
+            "showPrevious": true,
+            "showAxis": true
+          },
+          "data": {
+            "period": "last_30_days",
+            "aggregation": "sum",
+            "unit": "count",
+            "conversion": null,
+            "kind": "delta",
+            "granularity": "day",
+            "better": "higher",
+            "status": "ok",
+            "updatedAt": "2026-10-29T08:57:00.000Z",
+            "value": 171812,
+            "change": {
+              "previousValue": 152389,
+              "delta": 19423,
+              "ratio": 0.1274567061927042
+            },
+            "buckets": [
+              "2026-09-30T00:00:00.000Z",
+              "2026-10-01T00:00:00.000Z",
+              "2026-10-02T00:00:00.000Z",
+              "2026-10-03T00:00:00.000Z",
+              "2026-10-04T00:00:00.000Z",
+              "2026-10-05T00:00:00.000Z",
+              "2026-10-06T00:00:00.000Z",
+              "2026-10-07T00:00:00.000Z",
+              "2026-10-08T00:00:00.000Z",
+              "2026-10-09T00:00:00.000Z",
+              "2026-10-10T00:00:00.000Z",
+              "2026-10-11T00:00:00.000Z",
+              "2026-10-12T00:00:00.000Z",
+              "2026-10-13T00:00:00.000Z",
+              "2026-10-14T00:00:00.000Z",
+              "2026-10-15T00:00:00.000Z",
+              "2026-10-16T00:00:00.000Z",
+              "2026-10-17T00:00:00.000Z",
+              "2026-10-18T00:00:00.000Z",
+              "2026-10-19T00:00:00.000Z",
+              "2026-10-20T00:00:00.000Z",
+              "2026-10-21T00:00:00.000Z",
+              "2026-10-22T00:00:00.000Z",
+              "2026-10-23T00:00:00.000Z",
+              "2026-10-24T00:00:00.000Z",
+              "2026-10-25T00:00:00.000Z",
+              "2026-10-26T00:00:00.000Z",
+              "2026-10-27T00:00:00.000Z",
+              "2026-10-28T00:00:00.000Z",
+              "2026-10-29T00:00:00.000Z"
+            ],
+            "values": [
+              6100,
+              5598,
+              5716,
+              4039,
+              4497,
+              5971,
+              5537,
+              6445,
+              5775,
+              6494,
+              4198,
+              4545,
+              6627,
+              6194,
+              5742,
+              6185,
+              5958,
+              4442,
+              4684,
+              6202,
+              6581,
+              6021,
+              6807,
+              5823,
+              4313,
+              4515,
+              6731,
+              6708,
+              7059,
+              6305
+            ],
+            "previous": [
+              5107,
+              4804,
+              5425,
+              5257,
+              5017,
+              4118,
+              3851,
+              5837,
+              5149,
+              5496,
+              4952,
+              5083,
+              3967,
+              4329,
+              5708,
+              5180,
+              5820,
+              5357,
+              5347,
+              3660,
+              4253,
+              6006,
+              5192,
+              6170,
+              6107,
+              5553,
+              3856,
+              4229,
+              6244,
+              5315
+            ]
+          }
+        },
+        {
+          "type": "bar",
+          "id": "de300000-0000-4000-8000-000000000006",
+          "x": 8,
+          "y": 2,
+          "w": 4,
+          "h": 6,
+          "min": {
+            "w": 4,
+            "h": 3
+          },
+          "label": "Besucher nach Website",
+          "options": {
+            "groupBy": "resource",
+            "limit": 5
+          },
+          "data": {
+            "period": "last_30_days",
+            "aggregation": "sum",
+            "unit": "count",
+            "conversion": null,
+            "kind": "delta",
+            "granularity": "day",
+            "better": "higher",
+            "status": "ok",
+            "updatedAt": "2026-10-29T08:57:00.000Z",
+            "groupBy": "resource",
+            "bars": [
+              {
+                "key": "shop.example.com",
+                "label": "shop.example.com",
+                "value": 99651
+              },
+              {
+                "key": "blog.example.com",
+                "label": "blog.example.com",
+                "value": 46389
+              },
+              {
+                "key": "app.example.com",
+                "label": "app.example.com",
+                "value": 25772
+              }
+            ],
+            "others": null
+          }
+        }
+      ],
+      "layouts": []
+    },
+    {
+      "id": "de300000-0000-4000-8000-000000000014",
+      "name": "Wachstum",
+      "durationSec": 15,
+      "background": null,
+      "widgets": [
+        {
+          "type": "gauge",
+          "id": "de300000-0000-4000-8000-00000000000b",
+          "x": 0,
+          "y": 0,
+          "w": 3,
+          "h": 4,
+          "min": {
+            "w": 3,
+            "h": 3
+          },
+          "label": "Registrierungen diesen Monat",
+          "options": {
+            "showTimeLeft": true
+          },
+          "data": {
+            "period": "this_month",
+            "aggregation": "sum",
+            "unit": "count",
+            "conversion": null,
+            "kind": "delta",
+            "granularity": "day",
+            "better": "higher",
+            "status": "ok",
+            "updatedAt": "2026-10-29T08:57:00.000Z",
+            "goal": {
+              "id": "de300000-0000-4000-8000-000000000064",
+              "name": "6.500 Registrierungen pro Monat"
+            },
+            "value": 5831,
+            "target": 6500,
+            "progress": 0.8970769230769231,
+            "reachedAt": null,
+            "periodEnd": "2026-11-01T00:00:00.000Z"
+          }
+        },
+        {
+          "type": "compare",
+          "id": "de300000-0000-4000-8000-00000000000c",
+          "x": 3,
+          "y": 0,
+          "w": 5,
+          "h": 4,
+          "min": {
+            "w": 4,
+            "h": 3
+          },
+          "label": "Besucher zu Registrierungen",
+          "options": {
+            "format": "percent",
+            "ratioLabel": "Conversion",
+            "showChange": true
+          },
+          "data": {
+            "period": "last_30_days",
+            "aggregation": "sum",
+            "unit": null,
+            "conversion": null,
+            "kind": "delta",
+            "granularity": "day",
+            "better": "higher",
+            "status": "ok",
+            "updatedAt": "2026-10-29T08:57:00.000Z",
+            "numerator": {
+              "label": "Registrierungen",
+              "value": 6040,
+              "unit": "count"
+            },
+            "denominator": {
+              "label": "Besucher",
+              "value": 171812,
+              "unit": "count"
+            },
+            "ratio": {
+              "value": 0.03515470397876749,
+              "previousValue": 0.03218080045147616,
+              "format": "percent"
+            }
+          }
+        },
+        {
+          "type": "status",
+          "id": "de300000-0000-4000-8000-00000000000d",
+          "x": 8,
+          "y": 0,
+          "w": 4,
+          "h": 4,
+          "min": {
+            "w": 3,
+            "h": 3
+          },
+          "label": "Quellen",
+          "options": {
+            "connectionIds": null,
+            "showAge": true
+          },
+          "data": {
+            "status": "ok",
+            "items": [
+              {
+                "connectionId": "de300000-0000-4000-8000-0000000000c8",
+                "name": "Newsletter",
+                "status": "stale",
+                "lastSuccessAt": "2026-10-29T03:00:00.000Z"
+              },
+              {
+                "connectionId": "de300000-0000-4000-8000-0000000000c9",
+                "name": "App Store",
+                "status": "ok",
+                "lastSuccessAt": "2026-10-29T08:19:00.000Z"
+              },
+              {
+                "connectionId": "de300000-0000-4000-8000-0000000000ca",
+                "name": "Zahlungen",
+                "status": "ok",
+                "lastSuccessAt": "2026-10-29T08:53:00.000Z"
+              },
+              {
+                "connectionId": "de300000-0000-4000-8000-0000000000cb",
+                "name": "Shop-Analyse",
+                "status": "ok",
+                "lastSuccessAt": "2026-10-29T08:57:00.000Z"
+              }
+            ]
+          }
+        },
+        {
+          "type": "table",
+          "id": "de300000-0000-4000-8000-00000000000e",
+          "x": 0,
+          "y": 4,
+          "w": 8,
+          "h": 4,
+          "min": {
+            "w": 4,
+            "h": 4
+          },
+          "label": "Umsatz nach Land",
+          "options": {
+            "groupBy": "territory",
+            "limit": 5,
+            "showChange": true,
+            "showOthers": true
+          },
+          "data": {
+            "period": "last_30_days",
+            "aggregation": "sum",
+            "unit": "EUR_minor",
+            "conversion": null,
+            "kind": "delta",
+            "granularity": "day",
+            "better": "higher",
+            "status": "ok",
+            "updatedAt": "2026-10-29T08:53:00.000Z",
+            "groupBy": "territory",
+            "columns": {
+              "label": "Land",
+              "value": "Umsatz"
+            },
+            "rows": [
+              {
+                "key": "DE",
+                "label": "Deutschland",
+                "value": 2689667,
+                "previousValue": 2367585,
+                "ratio": 0.1360381992621173
+              },
+              {
+                "key": "AT",
+                "label": "Österreich",
+                "value": 994007,
+                "previousValue": 787291,
+                "ratio": 0.2625661921703665
+              },
+              {
+                "key": "CH",
+                "label": "Schweiz",
+                "value": 818594,
+                "previousValue": 771501,
+                "ratio": 0.06104075043324636
+              },
+              {
+                "key": "NL",
+                "label": "Niederlande",
+                "value": 526239,
+                "previousValue": 470524,
+                "ratio": 0.11841053803844225
+              },
+              {
+                "key": "FR",
+                "label": "Frankreich",
+                "value": 350826,
+                "previousValue": 283804,
+                "ratio": 0.23615593860551648
+              }
+            ],
+            "others": {
+              "label": "Andere",
+              "value": 467768,
+              "groups": 14
+            }
+          }
+        },
+        {
+          "type": "text",
+          "id": "de300000-0000-4000-8000-00000000000f",
+          "x": 8,
+          "y": 4,
+          "w": 4,
+          "h": 4,
+          "min": {
+            "w": 2,
+            "h": 1
+          },
+          "label": null,
+          "text": "## Das ist eine Demo\nDie Zahlen sind erfunden. Kopple diesen Bildschirm mit **netrics**, um dein eigenes Dashboard zu zeigen.",
+          "options": {
+            "size": "body",
+            "align": "start"
+          }
+        }
+      ],
+      "layouts": []
+    }
+  ],
+  "images": []
+}

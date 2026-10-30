@@ -31,15 +31,20 @@ struct RootView: View {
         let language = model.language
         ZStack {
             Theme.background.ignoresSafeArea()
-            switch model.route {
-            case .launching:
-                MessageView(title: "netrics", text: L10n.tr("Loading…", language))
-            case .connectingCloud:
-                ConnectingCloudView()
-            case .ownServer:
-                ServerEntryView()
-            case .running:
-                DeviceView()
+            if let demo = model.demo {
+                // "Try a demo" (#416): over whatever was on screen, until left.
+                DemoView(state: demo)
+            } else {
+                switch model.route {
+                case .launching:
+                    MessageView(title: "netrics", text: L10n.tr("Loading…", language))
+                case .connectingCloud:
+                    ConnectingCloudView()
+                case .ownServer:
+                    ServerEntryView()
+                case .running:
+                    DeviceView()
+                }
             }
         }
         // The whole screen, for the heartbeat (ADR 0017, section 7).

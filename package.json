@@ -26,7 +26,8 @@
     "web:build-check": "pnpm --filter \"@netrics/web^...\" build && node apps/web/scripts/build-env-check.ts",
     "vectors:compact": "UPDATE_COMPACT_VECTORS=1 vitest run packages/domain/src/compact-format.test.ts -t \"compact number vectors\"",
     "vectors:studio": "UPDATE_STUDIO_VECTORS=1 vitest run packages/domain/src/studio-layout.test.ts -t \"test vectors\"",
-    "vectors:formats": "UPDATE_FORMAT_VECTORS=1 vitest run packages/domain/src/screen-formats.test.ts -t \"test vectors\""
+    "vectors:formats": "UPDATE_FORMAT_VECTORS=1 vitest run packages/domain/src/screen-formats.test.ts -t \"test vectors\"",
+    "demo:tv": "UPDATE_TV_DEMO=1 vitest run packages/contracts/src/tv-demo-payload.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

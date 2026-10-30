@@ -6,26 +6,40 @@ import UIKit
 /**
  * A paired iPhone or iPad: the dashboard and the way to settings. On iPad
  * the screen view sized to the window (#412); on iPhone NetricsUI's scroll
- * view until the portrait and landscape views (#413) replace it here.
+ * view until the portrait and landscape views (#413) replace it here. The
+ * demo (#416) shows the same views with "Leave demo" instead of settings.
  */
 struct TouchDashboardView: View {
     @Environment(\.screenLanguage) private var language
     let state: DeviceState
     let images: FileImageCache
     let openSettings: () -> Void
+    /** Set in the demo: the button leaves it instead of opening settings. */
+    var leaveDemo: (() -> Void)? = nil
 
     var body: some View {
         content
             .overlay(alignment: .bottomTrailing) {
-                Button(action: openSettings) {
-                    Image(systemName: "gearshape")
-                        .font(.title3)
-                        .padding(6)
+                if let leaveDemo {
+                    Button(action: leaveDemo) {
+                        Label(L10n.tr("Leave demo", language), systemImage: "xmark")
+                            .font(.body.weight(.semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.glass)
+                    .padding()
+                } else {
+                    Button(action: openSettings) {
+                        Image(systemName: "gearshape")
+                            .font(.title3)
+                            .padding(6)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    .accessibilityLabel(L10n.tr("Settings", language))
+                    .padding()
                 }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel(L10n.tr("Settings", language))
-                .padding()
             }
     }
 
