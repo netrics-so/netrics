@@ -130,6 +130,15 @@ public enum ScreenView {
         StudioWidgetType(rawValue: widget.type) == nil ? widget.minimum : nil
     }
 
+    /** A slide's widgets as the layout sees them: their primary placement, type and minimum. */
+    public static func layoutWidgets(_ slide: DeviceSlide) -> [LayoutWidget] {
+        slide.widgets.map {
+            LayoutWidget(
+                id: $0.id, type: layoutType($0.type), x: $0.placement.x, y: $0.placement.y, w: $0.placement.w,
+                h: $0.placement.h, minimum: layoutMinimum($0))
+        }
+    }
+
     /**
      * The pages of a slide on a screen of `format` (ADR 0017, sections 3
      * and 4): the primary layout in the primary format; else the slide's
@@ -141,11 +150,7 @@ public enum ScreenView {
     public static func slidePages(_ slide: DeviceSlide, primaryFormat: ScreenFormat, format: ScreenFormat)
         -> [[LayoutPlacement]]
     {
-        let widgets = slide.widgets.map {
-            LayoutWidget(
-                id: $0.id, type: layoutType($0.type), x: $0.placement.x, y: $0.placement.y, w: $0.placement.w,
-                h: $0.placement.h, minimum: layoutMinimum($0))
-        }
+        let widgets = layoutWidgets(slide)
         let custom = format == primaryFormat
             ? nil
             : slide.layout(format).map {

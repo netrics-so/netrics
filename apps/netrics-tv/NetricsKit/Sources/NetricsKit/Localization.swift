@@ -10,7 +10,7 @@ import Foundation
 // package without Xcode's catalog compiler, and a table makes "every key
 // has a German value" a compile-time fact checked by a test. The wording
 // follows the shared catalog in packages/domain/src/i18n/shared and the
-// web's tile notices. The app's own text is in NetricsTV/Localizable.xcstrings.
+// web's tile notices. The apps' own text is in NetricsUI/Resources/Localizable.xcstrings.
 
 public enum ScreenLanguage: String, Sendable, CaseIterable, Codable {
     case en, de

@@ -1,5 +1,6 @@
 import Foundation
 import NetricsKit
+import NetricsUI
 import Observation
 import UIKit
 

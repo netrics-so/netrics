@@ -807,7 +807,7 @@ struct TableWidgetView: View {
     @Environment(\.enterProgress) private var progressValue
 
     /** A row's Δ: "+12 %" in `up`/`down` by `better`, "new", or "–". */
-    private func change(_ row: TableRow, unit: String) -> (text: String, color: Color) {
+    private func change(_ row: NetricsKit.TableRow, unit: String) -> (text: String, color: Color) {
         switch StudioLayout.tableChangeKind(value: row.value, previousValue: row.previousValue, ratio: row.ratio) {
         case .ratio:
             let delta = row.previousValue.map { row.value - $0 } ?? row.ratio ?? 0
@@ -1610,8 +1610,14 @@ struct ImageWidgetView: View {
 /** Decoded images by file and pixel size, so a slide change does not decode again. */
 @MainActor
 enum DecodedImages {
-    static let cache: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
+    /** A decoded image; NSCache needs a class. */
+    final class Entry: Sendable {
+        let image: CGImage
+        init(_ image: CGImage) { self.image = image }
+    }
+
+    static let cache: NSCache<NSString, Entry> = {
+        let cache = NSCache<NSString, Entry>()
         cache.totalCostLimit = 128 * 1024 * 1024
         return cache
     }()
@@ -1625,7 +1631,7 @@ struct DownsampledImage: View {
     let box: CGSize
     let displayScale: CGFloat
 
-    @State private var decoded: UIImage?
+    @State private var decoded: CGImage?
 
     /** The longest side in pixels that fills (cover) or fits (contain) the box. */
     private var maxPixelSize: Int {
@@ -1644,7 +1650,7 @@ struct DownsampledImage: View {
         let alignment: Alignment = align == .start ? .leading : align == .end ? .trailing : .center
         ZStack(alignment: alignment) {
             if let decoded {
-                Image(uiImage: decoded)
+                Image(decorative: decoded, scale: 1)
                     .resizable()
                     .aspectRatio(contentMode: fit == .cover ? .fill : .fit)
             }
@@ -1653,20 +1659,21 @@ struct DownsampledImage: View {
         .clipped()
         .task(id: key) {
             if let hit = DecodedImages.cache.object(forKey: key as NSString) {
-                decoded = hit
+                decoded = hit.image
                 return
             }
             let url = file
             let size = maxPixelSize
             let result = await Task.detached(priority: .userInitiated) { Self.decode(url, maxPixelSize: size) }.value
             if let result {
-                DecodedImages.cache.setObject(result, forKey: key as NSString, cost: Int(result.size.width * result.size.height * 4))
+                DecodedImages.cache.setObject(
+                    DecodedImages.Entry(result), forKey: key as NSString, cost: result.width * result.height * 4)
             }
             decoded = result
         }
     }
 
-    nonisolated static func decode(_ url: URL, maxPixelSize: Int) -> UIImage? {
+    nonisolated static func decode(_ url: URL, maxPixelSize: Int) -> CGImage? {
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else { return nil }
         let options =
@@ -1676,8 +1683,7 @@ struct DownsampledImage: View {
                 kCGImageSourceShouldCacheImmediately: true,
                 kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
             ] as CFDictionary
-        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
-        return UIImage(cgImage: thumbnail)
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options)
     }
 }
 

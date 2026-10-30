@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A1000000000000000000000B /* NetricsKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000000D /* NetricsKit */; };
+		A10000000000000000000016 /* NetricsUI in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000017 /* NetricsUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -42,6 +43,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000000000000000000000B /* NetricsKit in Frameworks */,
+				A10000000000000000000016 /* NetricsUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -94,6 +96,7 @@
 			name = NetricsTV;
 			packageProductDependencies = (
 				A1000000000000000000000D /* NetricsKit */,
+				A10000000000000000000017 /* NetricsUI */,
 			);
 			productName = NetricsTV;
 			productReference = A10000000000000000000004 /* NetricsTV.app */;
@@ -295,6 +298,10 @@
 		A1000000000000000000000D /* NetricsKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = NetricsKit;
+		};
+		A10000000000000000000017 /* NetricsUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = NetricsUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

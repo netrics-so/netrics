@@ -5,9 +5,16 @@ netrics server by code and shows one workspace dashboard full screen.
 
 ## Layout
 
-- `NetricsKit/` is a Swift package with all protocol and formatting logic
-  and no UI. It builds for tvOS 26 and macOS 26, so its tests run on a Mac.
-- `NetricsTV/` is the SwiftUI app. It only renders what NetricsKit reports.
+- `NetricsKit/` is a Swift package with two libraries. `NetricsKit` holds
+  all protocol and formatting logic and imports no UI framework.
+  `NetricsUI` is the SwiftUI rendering the tvOS app and the later iOS app
+  share (ADR 0021): widget views, the Signal design, the slide canvas and
+  its chrome (header, refresh countdown, slide footer), the schema 1 tile
+  grid, the scroll view and the app's String Catalog. Both build for tvOS
+  26, iOS 27 and macOS 26, so their tests run on a Mac.
+- `NetricsTV/` is the tvOS app: the slideshow with the Siri Remote's
+  commands, focus handling, pairing, server and settings screens. It only
+  renders what NetricsKit reports, with NetricsUI's views.
 - `NetricsTV.xcodeproj` builds the app. Its sources are a synchronized
   folder, so adding a file to `NetricsTV/` needs no project change.
 - `Config/Signing.xcconfig` is the base configuration of the app target
@@ -21,11 +28,14 @@ CoreImage and URLSession.
 ## Build and test
 
 Needs Xcode 27 (Swift 6.4 toolchain, the 27 SDKs); the app targets tvOS 26
-and later, in the Swift 6 language mode. CI's `netrics-tv` job runs both
+and later, in the Swift 6 language mode. CI's `netrics-tv` job runs the
 commands below on GitHub's `xcode-27` runner image.
 
 ```sh
 cd apps/netrics-tv/NetricsKit && swift test
+
+cd apps/netrics-tv/NetricsKit && xcodebuild -scheme NetricsUI \
+  -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO
 
 xcodebuild -project apps/netrics-tv/NetricsTV.xcodeproj -scheme NetricsTV \
   -destination 'generic/platform=tvOS Simulator' -configuration Debug \
@@ -57,6 +67,10 @@ xcrun simctl launch <udid> tv.netrics -NetricsDebugServer http://localhost:3000 
 ```
 
 `-NetricsDebugSettings YES` opens the settings screen after launch.
+`-NetricsDebugPayload /path/payload.json` shows a payload file as if paired,
+with no server and nothing in the Keychain (`-NetricsDebugImages /path`
+adds image files named by their SHA-256), to compare renderings in the
+simulator.
 
 ## Signing
 
@@ -162,6 +176,14 @@ drops the alpha channel of opaque images and checks the sizes.
   with ImageIO at the widget's pixel size.
 - **Heartbeat.** Every 5 minutes: app version, uptime, the last error and
   the screen (points after the rotation setting, scale, format, screen view).
+- **Scroll view (ADR 0017 section 5).** `ScrollDashboardView` in NetricsUI
+  is the scroll view for the later iPhone and iPad app (Apple TV is always
+  screen view): the header, then each slide as a section with its heading,
+  the widgets in reading order over 1 to 3 columns by `scrollLayout`
+  (`ScrollGeometry`, tested on the shared vectors), charts 16:9 between 200
+  and 360 points, images in their aspect, at most half the screen high. Its
+  cards are the screen's widget views at Dynamic Type's size (1 rem = 32
+  units); the web's dedicated scroll cards are not ported yet.
 - **Remote.** On a slide dashboard, left and right change the slide (or page) and
   Play/Pause pauses the rotation ("Paused" in the header).
 - **Settings.** Press and hold the clickpad on the dashboard, or press
@@ -187,7 +209,8 @@ and the text widget layout in `studio-widgets.ts`.
 ## Languages
 
 English and German (ADR 0016). The app's own text lives in
-`NetricsTV/Localizable.xcstrings` (keyed by the English text); NetricsKit's
+`NetricsKit/Sources/NetricsUI/Resources/Localizable.xcstrings` (keyed by the
+English text, looked up with `L10n.tr`; `Info.plist` lists both languages); NetricsKit's
 formatting words (periods, comparisons, notices) are a typed table in
 `Localization.swift`. Before pairing the app follows the Apple TV's
 language; once paired, the payload's `locale` (the workspace's screen

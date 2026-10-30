@@ -1,4 +1,5 @@
 import NetricsKit
+import NetricsUI
 import SwiftUI
 
 /**
