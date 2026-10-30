@@ -12,6 +12,7 @@ import SwiftUI
 struct DemoView: View {
     @Environment(DeviceSession.self) private var model
     @Environment(\.screenLanguage) private var language
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let state: DeviceState
     @State private var showMenu = false
     @State private var showHint = true
@@ -39,7 +40,7 @@ struct DemoView: View {
         }
         .task {
             try? await Task.sleep(for: .seconds(8))
-            withAnimation { showHint = false }
+            withAnimation(reduceMotion ? nil : .default) { showHint = false }
         }
         .fullScreenCover(isPresented: $showMenu) {
             DemoMenuView(close: { showMenu = false })

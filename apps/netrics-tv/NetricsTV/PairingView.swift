@@ -91,6 +91,9 @@ struct QRCodeView: View {
                     .padding(24)
                     .background(Color.white)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .accessibilityElement()
+                    .accessibilityLabel(L10n.tr("QR code of the approval page", language))
+                    .accessibilityAddTraits(.isImage)
             }
             Text(L10n.tr("Or scan with your phone", language))
                 .font(.system(size: 24))

@@ -508,6 +508,29 @@ struct LineChartView: View {
     @Environment(\.enterProgress) private var progress
 
     var body: some View {
+        // One element for VoiceOver: what the line spans, not its axis labels one by one.
+        content
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.summary(data, unit: unit, timeZone: timeZone, language: env.language))
+    }
+
+    /** "Chart, Oct 24 to Oct 30, lowest 120, highest 1.9K": the period and the range of the line. */
+    @MainActor static func summary(_ data: LineWidgetData, unit: String, timeZone: String, language: ScreenLanguage)
+        -> String
+    {
+        func bucket(_ key: String?) -> String {
+            key.flatMap { MetricFormat.bucketLabel($0, period: data.period, timeZone: timeZone, language: language) }
+                ?? ""
+        }
+        let values = data.values.compactMap { $0 }
+        guard let low = values.min(), let high = values.max() else { return L10n.tr("Chart", language) }
+        return L10n.tr(
+            "Chart, %@ to %@, lowest %@, highest %@", language, bucket(data.buckets.first), bucket(data.buckets.last),
+            MetricFormat.compactValue(low, unit: unit, language: language),
+            MetricFormat.compactValue(high, unit: unit, language: language))
+    }
+
+    @ViewBuilder private var content: some View {
         let colors = env.colors
         let count = data.values.count
         let current = PlotSeries(data.values, domain: domain, count: count)
@@ -1228,6 +1251,7 @@ struct CompareWidgetView: View {
                         .foregroundStyle(env.colors.muted)
                         .lineLimit(1)
                         .fixedSize()
+                        .accessibilityHidden(true)
                     operandView(data.denominator, text: denominator, layout: layout, stale: stale)
                 }
                 .padding(.top, env.pt(StudioLayout.CompareSpacing.stack))
@@ -1456,6 +1480,9 @@ struct GaugeWidgetView: View {
                 .foregroundStyle(stale ? env.colors.muted : accent)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
+                // "83 %" as one word for VoiceOver, not "83" and "%".
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(suffix != nil ? percent.map(GaugeWidgetView.percentText) ?? shown : shown)
             }
             let text = VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {
