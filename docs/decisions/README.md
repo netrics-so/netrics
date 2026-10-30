@@ -25,3 +25,4 @@ product is built.
 | [0018](./0018-signal-design.md)                         | Signal: the netrics visual identity                          |
 | [0019](./0019-signal-widget-types.md)                   | Widget types, goals, new periods and review text             |
 | [0020](./0020-apple-ads-platform-api-token-exchange.md) | Apple Ads: Platform API, token exchange and ad metrics       |
+| [0021](./0021-netrics-tv-on-ipad-and-iphone.md)         | netrics TV on iPad and iPhone: one product, pairing only     |

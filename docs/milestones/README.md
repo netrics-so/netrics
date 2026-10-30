@@ -64,6 +64,7 @@ distribution runs the signed images.
 | [09.2 — Screen formats and display modes](./09.2-screen-formats.md)       | Any screen, auto and custom layouts, two modes     |
 | [09.3 — Signal design](./09.3-signal-design.md)                           | Light admin, full sidebar, polished animated TV    |
 | [10 — Apple Ads](./10-apple-ads.md)                                       | Token-exchange auth and Apple Ads metrics          |
+| [10.1 — netrics TV on iPad and iPhone](./10.1-netrics-tv-ipad-iphone.md)  | Paired iPads and iPhones show the dashboard        |
 | [11 — Projects and derived metrics](./11-projects-and-derived-metrics.md) | Cross-connection analysis and organization         |
 | [12 — Community connector system](./12-community-connectors.md)           | Public SDK, template, catalog, and review pipeline |
 | [13 — Custom API connector](./13-custom-api-connector.md)                 | Safe declarative connection builder                |
@@ -91,6 +92,7 @@ distribution runs the signed images.
                                     ├── 09.1 internationalisation (cross-cutting)
                                     ├── 09.2 screen formats and display modes
                                     ├── 09.3 Signal design
+                                    ├── 10.1 netrics TV on iPad and iPhone (after 09.2 and 09.3)
                                     └── 10 Apple Ads
                                         └── 11 projects and derived metrics
                                             └── 12 community connectors
@@ -144,6 +146,9 @@ State on 2026-10-29.
   (#368 to #379). It starts now, beside the open exit gates of 06 to 09.3:
   the rule "complete one milestone before opening the next" is relaxed for
   it, as for 09.x.
+- In progress: 10.1 (netrics TV on iPad and iPhone, #404 to #420), designed
+  in [ADR 0021](../decisions/0021-netrics-tv-on-ipad-and-iphone.md) and
+  accepted by the owner on 2026-10-30. It runs beside 10.
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
 
