@@ -12,5 +12,7 @@ packages/contracts/openapi.json
 .swiftpm/
 apps/netrics-tv/NetricsTV.xcodeproj/
 apps/netrics-tv/NetricsTV/Assets.xcassets/
+apps/netrics-tv/NetricsTVTouch/Assets.xcassets/
+apps/netrics-tv/NetricsTVTouch/AppIcon.icon/
 # Generated test vectors (pnpm vectors:studio)
 packages/domain/test-vectors/

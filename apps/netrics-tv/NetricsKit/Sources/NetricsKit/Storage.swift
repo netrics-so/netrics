@@ -58,6 +58,13 @@ public struct KeychainError: Error, Sendable, Equatable {
 /**
  * Generic-password items in this device's Keychain, readable after the
  * first unlock (the TV runs unattended) and never synced or backed up.
+ *
+ * The items carry no explicit access group, so they go to the app's default
+ * group: the first entry of its `keychain-access-groups` entitlement,
+ * `$(AppIdentifierPrefix)tv.netrics` (#410). That is the application
+ * identifier, the group every item of the tvOS app already had before the
+ * entitlement existed, so paired Apple TVs keep their credentials without a
+ * migration, and a later widget extension with the same entry reads them.
  */
 public final class KeychainCredentialStore: CredentialStore {
     private let service: String
@@ -172,7 +179,7 @@ public final class InMemoryDashboardCache: DashboardCache {
 }
 
 /**
- * A JSON file in the Caches directory. The system may purge it; the app
+ * A JSON file in the cache folder (`CacheLocation`). The system may purge it; the app
  * then waits for the network, as on a first start.
  */
 public final class FileDashboardCache: DashboardCache {
@@ -182,9 +189,9 @@ public final class FileDashboardCache: DashboardCache {
         self.fileURL = fileURL
     }
 
-    public static func inCachesDirectory() -> FileDashboardCache {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        return FileDashboardCache(fileURL: caches.appending(path: "netrics/dashboard.json"))
+    /** `dashboard.json` in the cache folder (`CacheLocation.resolve`). */
+    public static func inFolder(_ folder: URL) -> FileDashboardCache {
+        FileDashboardCache(fileURL: folder.appending(path: "dashboard.json"))
     }
 
     public func load() -> CachedDashboard? {
