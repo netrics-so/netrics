@@ -1,6 +1,6 @@
 # 0021 — netrics TV on iPad and iPhone
 
-Status: proposed (2026-10-29; milestone 10.1). Extends ADR 0010 (server
+Status: accepted (2026-10-30; milestone 10.1). Extends ADR 0010 (server
 choice and pairing), ADR 0011 (device pairing and credentials) and ADR 0017
 (screen formats and display modes).
 
@@ -394,27 +394,25 @@ changes above still pairs: it ignores the platform body, has no self-revoke
 - Widgets, background refresh, managed app configuration for MDM fleets,
   and native approval in the admin app are follow-ups.
 
-## Decisions for the owner
+## Owner answers (2026-10-30)
 
-This ADR is proposed. Each point below is decided as recommended unless
-the owner chooses otherwise; the ADR becomes accepted with the answers.
+The owner accepted all eight recommendations:
 
 1. **Display name** "netrics TV" on all three platforms, and the tvOS app
-   renamed from "netrics". Recommended.
+   renamed from "netrics".
 2. **iPhone view:** scroll view in portrait, screen view in landscape, the
-   device setting "Screen view" for both. Recommended over either view alone.
+   device setting "Screen view" for both.
 3. **Deployment targets:** iOS and iPadOS 27; tvOS 26 (keeps Apple TV HD and
-   4K 1st generation). Recommended over tvOS 27.
+   4K 1st generation).
 4. **Widgets** in a follow-up milestone, with the App Group and Keychain
-   access group set up now. Recommended.
+   access group set up now.
 5. **Review path:** a bundled demo mode on all three platforms plus a
-   reviewer workspace. Recommended over a server-side demo pairing.
-6. **Approval** stays with owners and admins, also for phones. Recommended;
+   reviewer workspace.
+6. **Approval** stays with owners and admins, also for phones;
    editors pairing their own phone would need a new permission.
-7. **Folder** `apps/tvos/` renamed to `apps/netrics-tv/`. Recommended, once,
-   with the toolchain change.
+7. **Folder** `apps/tvos/` renamed to `apps/netrics-tv/`. Done once,
+   with the toolchain change (T2).
 8. **Mac and Vision Pro** availability off in App Store Connect for now.
-   Recommended.
 
 ## Open checks (exit gate)
 

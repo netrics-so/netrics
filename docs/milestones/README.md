@@ -146,10 +146,9 @@ State on 2026-10-29.
   (#368 to #379). It starts now, beside the open exit gates of 06 to 09.3:
   the rule "complete one milestone before opening the next" is relaxed for
   it, as for 09.x.
-- Planned: 10.1 (netrics TV on iPad and iPhone), proposed in
-  [ADR 0021](../decisions/0021-netrics-tv-on-ipad-and-iphone.md). Its
-  issues are opened once the owner has answered the ADR's open decisions;
-  it runs beside 10.
+- In progress: 10.1 (netrics TV on iPad and iPhone, #404 to #420), designed
+  in [ADR 0021](../decisions/0021-netrics-tv-on-ipad-and-iphone.md) and
+  accepted by the owner on 2026-10-30. It runs beside 10.
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
 
