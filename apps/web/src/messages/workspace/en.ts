@@ -157,6 +157,12 @@ export const workspaceEn = {
       scroll: "Scroll view",
     },
     appleTvMode: "Apple TV always uses Screen view.",
+    platforms: {
+      tvos: "Apple TV",
+      ipados: "iPad",
+      ios: "iPhone",
+      web: "Browser",
+    },
   },
   deviceApproval: {
     pageTitle: "Connect a TV · netrics",
@@ -172,6 +178,12 @@ export const workspaceEn = {
     noDashboard: "None yet",
     name: "Name of the TV",
     nameExample: "For example “Office lobby”.",
+    names: {
+      tvos: "Apple TV",
+      ipados: "iPad",
+      ios: "iPhone",
+      web: "Browser",
+    },
     connecting: "Connecting…",
     connect: "Connect TV",
   },

@@ -49,6 +49,23 @@ public struct ServerInfo: Codable, Sendable, Equatable {
     }
 }
 
+/**
+ * What the device runs on (#406, ADR 0021). Reported at pairing and in the
+ * heartbeat; the server picks the name and display mode defaults by it.
+ */
+public enum DevicePlatform: String, Codable, Sendable, Equatable {
+    case tvos, ipados, ios, web
+}
+
+/** Body of POST /v1/device/pairings (#406); servers before it ignore it. */
+public struct CreatePairingRequest: Codable, Sendable, Equatable {
+    public var platform: DevicePlatform
+
+    public init(platform: DevicePlatform) {
+        self.platform = platform
+    }
+}
+
 /** POST /v1/device/pairings */
 public struct CreatePairingResponse: Codable, Sendable, Equatable {
     public var pairingId: String
@@ -480,15 +497,21 @@ public struct DeviceHeartbeatRequest: Codable, Sendable, Equatable {
     public var lastError: String?
     /** The screen (#276); left out when nil, as older apps send it. */
     public var screen: DeviceScreenReport?
+    /** The platform (#406); fills in TVs paired before it. Left out when nil. */
+    public var platform: DevicePlatform?
 
-    public init(appVersion: String, uptimeSeconds: Int, lastError: String?, screen: DeviceScreenReport? = nil) {
+    public init(
+        appVersion: String, uptimeSeconds: Int, lastError: String?, screen: DeviceScreenReport? = nil,
+        platform: DevicePlatform? = nil
+    ) {
         self.appVersion = appVersion
         self.uptimeSeconds = uptimeSeconds
         self.lastError = lastError
         self.screen = screen
+        self.platform = platform
     }
 
-    private enum CodingKeys: String, CodingKey { case appVersion, uptimeSeconds, lastError, screen }
+    private enum CodingKeys: String, CodingKey { case appVersion, uptimeSeconds, lastError, screen, platform }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -496,6 +519,7 @@ public struct DeviceHeartbeatRequest: Codable, Sendable, Equatable {
         try container.encode(uptimeSeconds, forKey: .uptimeSeconds)
         try container.encode(lastError, forKey: .lastError)
         try container.encodeIfPresent(screen, forKey: .screen)
+        try container.encodeIfPresent(platform, forKey: .platform)
     }
 }
 

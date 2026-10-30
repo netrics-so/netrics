@@ -57,6 +57,11 @@ import Testing
         #expect(state.pairing?.pairingUrl == "https://kiosk.test/devices/approve")
         #expect(state.pairing?.approveUrl == "https://kiosk.test/devices/approve?code=ABCD-EFGH")
 
+        // The app reports its platform (#406).
+        let started = try #require(h.api.callsTo("POST /v1/device/pairings").first)
+        #expect(started.header("content-type") == "application/json")
+        #expect(started.json()?["platform"] as? String == "tvos")
+
         await h.advance(5)
         let polls = h.api.callsTo("POST /v1/device/pairings/poll")
         #expect(polls.count == 1)
@@ -368,6 +373,7 @@ import Testing
         #expect(body["appVersion"] as? String == "tvos 1.2.3")
         #expect(body["uptimeSeconds"] as? Int == 10)
         #expect(body["lastError"] as? String == "HTTP 500")
+        #expect(body["platform"] as? String == "tvos")
         // A rename in the web app reaches the settings screen.
         #expect(await h.state.device?.name == "Renamed")
         #expect(h.store.snapshot.device?.name == "Renamed")

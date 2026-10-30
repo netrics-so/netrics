@@ -1311,6 +1311,11 @@ export const devices = pgTable(
     // The screen the device last reported in a heartbeat (validated by the
     // contracts' deviceScreenSchema before it is stored); null until then.
     screen: jsonb("screen").$type<DeviceScreenColumn>(),
+    // What the device runs on (ADR 0021, #406): "tvos", "ipados", "ios" or
+    // "web", as it reported it at pairing or in a heartbeat; null when it
+    // never did (apps before #406). Self-reported: it steers defaults and
+    // labels only, never access.
+    platform: text("platform"),
   },
   (table) => [
     unique("devices_id_workspace_unique").on(table.id, table.workspaceId),
@@ -1326,6 +1331,10 @@ export const devices = pgTable(
     check(
       "devices_screen_object",
       sql`${table.screen} is null or jsonb_typeof(${table.screen}) = 'object'`,
+    ),
+    check(
+      "devices_platform_valid",
+      sql`${table.platform} is null or ${table.platform} in ('tvos', 'ipados', 'ios', 'web')`,
     ),
   ],
 );
@@ -1353,6 +1362,9 @@ export const devicePairings = pgTable(
     }),
     // When the device received its credentials; a pairing is spent after.
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    // The platform the device reported when it started pairing (ADR 0021,
+    // #406); copied to the device at approval. Null when it sent none.
+    platform: text("platform"),
   },
   (table) => [
     index("device_pairings_client_idx").on(table.clientKey, table.createdAt),
@@ -1360,6 +1372,10 @@ export const devicePairings = pgTable(
     check(
       "device_pairings_approval_complete",
       sql`(${table.approvedAt} is null) = (${table.deviceId} is null)`,
+    ),
+    check(
+      "device_pairings_platform_valid",
+      sql`${table.platform} is null or ${table.platform} in ('tvos', 'ipados', 'ios', 'web')`,
     ),
   ],
 );

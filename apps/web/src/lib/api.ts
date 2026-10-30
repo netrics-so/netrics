@@ -21,6 +21,8 @@ import {
   createDashboardRequestSchema,
   dashboardListResponseSchema,
   approveDeviceRequestSchema,
+  lookupPairingRequestSchema,
+  lookupPairingResponseSchema,
   dashboardResponseSchema,
   deviceListResponseSchema,
   deviceResponseSchema,
@@ -41,6 +43,7 @@ import {
   type CreateDashboardRequest,
   type DashboardListResponse,
   type ApproveDeviceRequest,
+  type LookupPairingResponse,
   type DashboardResponse,
   type DeviceListResponse,
   type DeviceResponse,
@@ -1325,6 +1328,20 @@ export function approveDevice(
     "POST",
     `/v1/workspaces/${workspaceId}/devices/approve`,
     approveDeviceRequestSchema.parse(body),
+  );
+}
+
+/**
+ * The platform a pending code's device reported (#406), to suggest a name.
+ * Throws ApiError "pairing_not_found" (counted as a failed approval) or
+ * "too_many_attempts".
+ */
+export function lookupPairing(code: string): Promise<LookupPairingResponse> {
+  return browserSend(
+    lookupPairingResponseSchema,
+    "POST",
+    "/v1/device-pairings/lookup",
+    lookupPairingRequestSchema.parse({ code }),
   );
 }
 

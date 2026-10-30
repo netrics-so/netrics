@@ -232,6 +232,11 @@ describe("kiosk pairing", () => {
       "http://kiosk.test/devices/approve",
     );
 
+    // The kiosk reports its platform (#406).
+    expect(api.callsTo("POST /v1/device/pairings")[0]?.body).toEqual({
+      platform: "web",
+    });
+
     await vi.advanceTimersByTimeAsync(5000);
     expect(api.callsTo("POST /v1/device/pairings/poll")).toHaveLength(1);
     expect(api.calls.at(-1)?.body).toEqual({
@@ -505,6 +510,7 @@ describe("kiosk dashboard loop", () => {
       appVersion: "web 1.2.3",
       uptimeSeconds: 10,
       lastError: "HttpError: HTTP 500",
+      platform: "web",
     });
 
     await vi.advanceTimersByTimeAsync(5 * 60_000);

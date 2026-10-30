@@ -191,7 +191,10 @@ bump and no new payload schema (schema 3 is enough):
   labels, never access.
 - **Defaults from the platform.** The approve form prefills the name
   ("Apple TV", "iPad", "iPhone", "Browser") and the server sets
-  `display_mode` at approval: `scroll` for `ios`, `screen` otherwise.
+  `display_mode` at approval: `scroll` for `ios`, `screen` otherwise. The
+  form learns the platform from `POST /v1/device-pairings/lookup` (signed
+  in, the code in the body); misses count as failed approvals, so the
+  lookup is no cheaper a way to guess codes (#406).
 - **Rotation** applies to `tvos` and `web` only. iPad and iPhone know their
   orientation, so the app ignores `rotation`, and the web hides the setting
   for them.

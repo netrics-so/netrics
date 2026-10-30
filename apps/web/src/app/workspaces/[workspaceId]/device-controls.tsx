@@ -6,12 +6,14 @@ import { useState, type FormEvent } from "react";
 import {
   DEVICE_ROTATIONS,
   DISPLAY_MODES,
+  type DevicePlatform,
   type DeviceRotation,
   type DisplayMode,
 } from "@netrics/contracts";
 
 import { apiErrorMessage, revokeDevice, updateDevice } from "@/lib/api";
 import { rotationKey } from "@/lib/device-heartbeat";
+import { hasRotationSetting } from "@/lib/device-platform";
 import { useLocale, useT } from "@/lib/i18n/client";
 
 interface DeviceControlsProps {
@@ -22,6 +24,8 @@ interface DeviceControlsProps {
     dashboardId: string | null;
     rotation: DeviceRotation;
     displayMode: DisplayMode;
+    /** iPads and iPhones turn by themselves: no rotation setting (#406). */
+    platform: DevicePlatform | null;
   };
   /** The Apple TV app shows Screen view only: no mode to choose. */
   appleTv: boolean;
@@ -125,25 +129,27 @@ export function DeviceControls({
             <option value="">{t("noDashboard")}</option>
           </select>
         </div>
-        <div className="field">
-          <label htmlFor={`device-${device.id}-rotation`}>
-            {t("orientation")}
-          </label>
-          <select
-            id={`device-${device.id}-rotation`}
-            value={rotation}
-            disabled={pending}
-            onChange={(event) =>
-              setRotation(Number(event.target.value) as DeviceRotation)
-            }
-          >
-            {DEVICE_ROTATIONS.map((degrees) => (
-              <option key={degrees} value={degrees}>
-                {t(`rotations.${rotationKey(degrees)}`)}
-              </option>
-            ))}
-          </select>
-        </div>
+        {hasRotationSetting(device.platform) ? (
+          <div className="field">
+            <label htmlFor={`device-${device.id}-rotation`}>
+              {t("orientation")}
+            </label>
+            <select
+              id={`device-${device.id}-rotation`}
+              value={rotation}
+              disabled={pending}
+              onChange={(event) =>
+                setRotation(Number(event.target.value) as DeviceRotation)
+              }
+            >
+              {DEVICE_ROTATIONS.map((degrees) => (
+                <option key={degrees} value={degrees}>
+                  {t(`rotations.${rotationKey(degrees)}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         <div className="field">
           <label htmlFor={`device-${device.id}-mode`}>{t("mode")}</label>
           {appleTv ? (

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import { apiErrorMessage, approveDevice } from "@/lib/api";
+import { apiErrorMessage, approveDevice, lookupPairing } from "@/lib/api";
+import { completePairingCode } from "@/lib/device-platform";
 import { useLocale, useT } from "@/lib/i18n/client";
 
 /** The format of a pairing code, as the TV shows it. */
@@ -31,10 +32,40 @@ export function ApproveDeviceForm({
   const [dashboardId, setDashboardId] = useState(
     workspace.dashboards[0]?.id ?? "",
   );
-  const [name, setName] = useState("Apple TV");
+  // Apple TV until the code's device says otherwise (#406); apps before
+  // it report no platform.
+  const [name, setName] = useState(() => t("names.tvos"));
+  const [nameEdited, setNameEdited] = useState(false);
+  const lookedUp = useRef<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paired, setPaired] = useState<string | null>(null);
+
+  // Once the code is complete, suggest a name by the platform its device
+  // reported, unless the name was typed. Each code is looked up once: a
+  // miss counts as a failed approval on the server.
+  const latest = useRef({ code, nameEdited });
+  latest.current = { code, nameEdited };
+  useEffect(() => {
+    const complete = completePairingCode(code);
+    if (nameEdited || complete === null || lookedUp.current === complete) {
+      return;
+    }
+    lookedUp.current = complete;
+    lookupPairing(complete)
+      .then(({ pairing }) => {
+        const now = latest.current;
+        if (
+          pairing.platform &&
+          !now.nameEdited &&
+          completePairingCode(now.code) === complete
+        ) {
+          setName(t(`names.${pairing.platform}`));
+        }
+      })
+      // The approval reports a wrong or expired code; the name stays.
+      .catch(() => undefined);
+  }, [code, nameEdited, t]);
 
   function selectWorkspace(id: string) {
     setWorkspaceId(id);
@@ -149,7 +180,10 @@ export function ApproveDeviceForm({
           value={name}
           maxLength={100}
           disabled={pending}
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => {
+            setNameEdited(true);
+            setName(event.target.value);
+          }}
         />
         <p className="help">{t("nameExample")}</p>
       </div>

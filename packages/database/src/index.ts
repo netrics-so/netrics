@@ -126,7 +126,12 @@ export {
   touchDevice,
   updateDevice,
 } from "./devices.js";
-export type { DeviceRow, PairingState, RefreshOutcome } from "./devices.js";
+export type {
+  DevicePlatformColumn,
+  DeviceRow,
+  PairingState,
+  RefreshOutcome,
+} from "./devices.js";
 export {
   consumeSetupToken,
   countUsers,

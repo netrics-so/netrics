@@ -5,6 +5,7 @@ import {
   DEVICE_API_VERSION,
   DEVICE_DASHBOARD_SCHEMAS,
   approveDeviceRequestSchema,
+  createPairingRequestSchema,
   createPairingResponseSchema,
   deviceDashboardQuerySchema,
   deviceDashboardResponseSchema,
@@ -14,6 +15,8 @@ import {
   deviceListResponseSchema,
   deviceResponseSchema,
   deviceSelfResponseSchema,
+  lookupPairingRequestSchema,
+  lookupPairingResponseSchema,
   pollPairingRequestSchema,
   pollPairingResponseSchema,
   refreshDeviceTokenRequestSchema,
@@ -120,21 +123,33 @@ export function registerDeviceRoutes(
       }),
   );
 
-  // Public: a device starts pairing without any credentials.
+  // Public: a device starts pairing without any credentials. The body is
+  // optional (#406): apps before it send none.
   app.post(
     "/v1/device/pairings",
     {
       schema: routeSchema({
-        summary: "Start pairing a device (shows a code on screen)",
+        summary:
+          "Start pairing a device (shows a code on screen); the optional " +
+          "body reports the device's platform",
         tags: ["devices"],
+        // Nullish: without a body Fastify hands the validator null.
+        body: createPairingRequestSchema.nullish(),
         response: createPairingResponseSchema,
         errors: [429],
         public: true,
       }),
     },
     async (request, reply) => {
+      const body = createPairingRequestSchema.nullish().safeParse(request.body);
+      if (!body.success) {
+        return sendError(reply, 400, "invalid_request");
+      }
       const pairing = unwrap(
-        await devices.createPairing(request.clientIp),
+        await devices.createPairing(
+          request.clientIp,
+          body.data?.platform ?? null,
+        ),
         reply,
       );
       if (!pairing) {
@@ -345,6 +360,41 @@ export function registerDeviceRoutes(
           return deviceListResponseSchema.parse({
             devices: await devices.list(access.workspaceId),
           });
+        },
+      );
+
+      // Installation-level like the pairing itself: any signed-in user may
+      // look up a code they hold; misses count as failed approvals.
+      scope.post(
+        "/device-pairings/lookup",
+        {
+          schema: routeSchema({
+            summary:
+              "Look up a pending pairing code before approving it (the " +
+              "platform its device reported)",
+            tags: ["devices"],
+            body: lookupPairingRequestSchema,
+            response: lookupPairingResponseSchema,
+            errors: [404, 429],
+          }),
+        },
+        async (request, reply) => {
+          const body = parseBody(lookupPairingRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const pairing = unwrap(
+            await devices.lookup(
+              request.sessionIdentity!.domainUserId,
+              body.code,
+            ),
+            reply,
+          );
+          if (!pairing) {
+            return;
+          }
+          void reply.header("cache-control", "no-store");
+          return lookupPairingResponseSchema.parse({ pairing });
         },
       );
 

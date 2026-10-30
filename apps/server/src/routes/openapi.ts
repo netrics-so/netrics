@@ -151,5 +151,47 @@ export async function registerOpenApi(
       },
     },
     transform: jsonSchemaTransform,
+    transformObject: (document) =>
+      "openapiObject" in document
+        ? optionalNullableBodies(document.openapiObject)
+        : document.swaggerObject,
   });
+}
+
+interface OpenApiOperation {
+  requestBody?: {
+    required?: boolean;
+    content?: Record<string, { schema?: { anyOf?: unknown[] } }>;
+  };
+}
+
+/**
+ * A route whose body schema is nullish (`schema.nullish()`) accepts a
+ * request without a body: Fastify hands its validator null then. The
+ * document says so as an optional body of the object schema, instead of a
+ * required body that may be JSON null.
+ */
+export function optionalNullableBodies<
+  T extends { paths?: Record<string, unknown> },
+>(document: T): T {
+  for (const path of Object.values(document.paths ?? {})) {
+    for (const operation of Object.values(
+      path as Record<string, OpenApiOperation>,
+    )) {
+      const body = operation.requestBody;
+      const media = body?.content?.["application/json"];
+      const variants = media?.schema?.anyOf;
+      if (!body || !media || !variants || variants.length !== 2) {
+        continue;
+      }
+      const isNull = (variant: unknown) =>
+        (variant as { type?: unknown }).type === "null";
+      const object = variants.find((variant) => !isNull(variant));
+      if (object && variants.some(isNull)) {
+        body.required = false;
+        media.schema = object as { anyOf?: unknown[] };
+      }
+    }
+  }
+  return document;
 }

@@ -2463,6 +2463,34 @@ export const serverInfoResponseSchema = z.object({
 });
 export type ServerInfoResponse = z.infer<typeof serverInfoResponseSchema>;
 
+/**
+ * What a device runs on (ADR 0021, #406): the Apple TV app, the iPad and
+ * iPhone app, or a browser kiosk. Self-reported; it steers defaults and
+ * labels (name, display mode, rotation, "last opened"), never access.
+ */
+export const DEVICE_PLATFORMS = ["tvos", "ipados", "ios", "web"] as const;
+export const devicePlatformSchema = z.enum(DEVICE_PLATFORMS);
+export type DevicePlatform = z.infer<typeof devicePlatformSchema>;
+
+/**
+ * A platform as a device reports it. Optional (apps before #406 send
+ * none), and a value this server does not know yet (a newer app) counts as
+ * not reported instead of failing the pairing or heartbeat.
+ */
+const reportedPlatformSchema = devicePlatformSchema
+  .optional()
+  .catch(undefined)
+  .describe("The device's platform; optional, and an unknown value is ignored");
+
+/**
+ * Optional body of POST /v1/device/pairings (#406). A request without a
+ * body, as from apps before it, stays valid.
+ */
+export const createPairingRequestSchema = z.object({
+  platform: reportedPlatformSchema,
+});
+export type CreatePairingRequest = z.infer<typeof createPairingRequestSchema>;
+
 export const createPairingResponseSchema = z.object({
   pairingId: z.uuid(),
   /** Shown on the TV as XXXX-XXXX. */
@@ -2512,6 +2540,24 @@ export const approveDeviceRequestSchema = z.object({
 });
 export type ApproveDeviceRequest = z.infer<typeof approveDeviceRequestSchema>;
 
+/**
+ * A pending pairing code, looked up before approving it (#406), so the
+ * approve form can suggest a name by platform. Unknown codes count as
+ * failed approvals.
+ */
+export const lookupPairingRequestSchema = approveDeviceRequestSchema.pick({
+  code: true,
+});
+export type LookupPairingRequest = z.infer<typeof lookupPairingRequestSchema>;
+
+export const lookupPairingResponseSchema = z.object({
+  pairing: z.object({
+    /** As the device reported it; null when it reported none. */
+    platform: devicePlatformSchema.nullable(),
+  }),
+});
+export type LookupPairingResponse = z.infer<typeof lookupPairingResponseSchema>;
+
 // Screen settings and reporting (ADR 0017 section 7, #276).
 
 /**
@@ -2556,6 +2602,11 @@ export const deviceSchema = z.object({
   displayMode: displayModeSchema,
   /** The screen of the latest heartbeat that reported one; null before. */
   screen: deviceScreenSchema.nullable(),
+  /**
+   * What the device runs on, as it reported it at pairing or in a
+   * heartbeat (#406); null when it never did.
+   */
+  platform: devicePlatformSchema.nullable(),
   createdAt: z.iso.datetime(),
   lastSeenAt: z.iso.datetime().nullable(),
   revokedAt: z.iso.datetime().nullable(),
@@ -3350,6 +3401,11 @@ export const deviceHeartbeatRequestSchema = z.object({
   lastError: z.string().max(500).nullable().optional(),
   /** The device's screen (#276); older apps send none. */
   screen: deviceScreenSchema.optional(),
+  /**
+   * The device's platform (#406). It fills in a device that has none (TVs
+   * paired before #406) and never replaces a stored one.
+   */
+  platform: reportedPlatformSchema,
 });
 export type DeviceHeartbeatRequest = z.infer<
   typeof deviceHeartbeatRequestSchema
