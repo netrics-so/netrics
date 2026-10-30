@@ -7,7 +7,7 @@ import SwiftUI
  * QR code of the approval link with the code filled in.
  */
 struct PairingView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(DeviceSession.self) private var model
     @Environment(\.screenLanguage) private var language
     let state: DeviceState
     let openSettings: () -> Void

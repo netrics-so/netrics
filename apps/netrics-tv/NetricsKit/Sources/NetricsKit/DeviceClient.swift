@@ -262,7 +262,7 @@ public actor DeviceClient {
             group.addTask {
                 while !Task.isCancelled {
                     guard let delay = await self.tick() else { return }
-                    try? await Task.sleep(for: delay)
+                    await self.nap(delay)
                 }
             }
             group.addTask {
@@ -277,6 +277,30 @@ public actor DeviceClient {
     }
 
     var isRunning: Bool { running }
+
+    /** The main loop's wait, which `wake()` ends early. */
+    private var napping: Task<Void, Never>?
+
+    private func nap(_ delay: Duration) async {
+        let sleep = Task<Void, Never> { try? await Task.sleep(for: delay) }
+        napping = sleep
+        await withTaskCancellationHandler {
+            await sleep.value
+        } onCancel: {
+            sleep.cancel()
+        }
+        if napping == sleep { napping = nil }
+    }
+
+    /**
+     * The app is in the foreground again (iOS suspends it in the
+     * background): end the main loop's wait, so it polls the same pairing,
+     * replaces an expired code or fetches the dashboard now.
+     */
+    public func wake() {
+        napping?.cancel()
+        napping = nil
+    }
 
     /** Does the next step; returns the wait before the next one, nil to stop. */
     public func tick() async -> Duration? {

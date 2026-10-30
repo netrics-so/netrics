@@ -1,10 +1,13 @@
 import NetricsKit
 import NetricsUI
 import SwiftUI
+import UIKit
 
 @main
 struct NetricsTVApp: App {
-    @State private var model = AppModel()
+    @State private var model = DeviceSession(
+        platform: .tvos,
+        appGroup: Bundle.main.object(forInfoDictionaryKey: CacheLocation.appGroupInfoKey) as? String)
 
     var body: some Scene {
         WindowGroup {
@@ -17,8 +20,12 @@ struct NetricsTVApp: App {
 }
 
 struct RootView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(DeviceSession.self) private var model
     @Environment(\.displayScale) private var displayScale
+
+    private func measured(_ size: CGSize) {
+        model.measured(Double(size.width), Double(size.height), scale: Double(displayScale))
+    }
 
     var body: some View {
         let language = model.language
@@ -39,10 +46,14 @@ struct RootView: View {
         .background {
             GeometryReader { screen in
                 Color.clear
-                    .onAppear { model.measured(screen.size, scale: displayScale) }
-                    .onChange(of: screen.size) { _, size in model.measured(size, scale: displayScale) }
+                    .onAppear { measured(screen.size) }
+                    .onChange(of: screen.size) { _, size in measured(size) }
             }
             .ignoresSafeArea()
+        }
+        // A wall screen stays on while it shows a dashboard.
+        .onChange(of: model.device.phase == .paired) { _, paired in
+            UIApplication.shared.isIdleTimerDisabled = paired
         }
         // Chrome and numbers in the screen language (ADR 0016).
         .environment(\.screenLanguage, language)
@@ -76,7 +87,7 @@ struct RotatedScreen<Content: View>: View {
 
 /** What a paired or pairing TV shows, by the client's phase. */
 struct DeviceView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(DeviceSession.self) private var model
     @Environment(\.screenLanguage) private var language
     @State private var showSettings = false
 

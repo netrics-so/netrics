@@ -8,7 +8,7 @@ import SwiftUI
  * not answer; it retries by itself, and offers the user's own server.
  */
 struct ConnectingCloudView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(DeviceSession.self) private var model
     @Environment(\.screenLanguage) private var language
 
     var body: some View {
@@ -58,7 +58,7 @@ private struct StatusLine: View {
 
 /** "Your own server": the address once, and the transport setting. */
 struct ServerEntryView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(DeviceSession.self) private var model
     @Environment(\.screenLanguage) private var language
     @State private var address = DebugLaunch.server ?? ""
     @State private var allowInsecure = DebugLaunch.allowInsecure
@@ -127,15 +127,9 @@ struct ServerEntryView: View {
         guard !checking else { return }
         checking = true
         error = nil
-        let result = await ServerChecker.live.check(
-            address: address, kind: .custom, allowInsecure: allowInsecure)
+        let failure = await model.checkOwnServer(address: address, allowInsecure: allowInsecure)
         checking = false
-        switch result {
-        case .success(let checked):
-            model.use(checked)
-        case .failure(let failure):
-            error = failure.message(in: language)
-        }
+        error = failure?.message(in: language)
     }
 }
 
@@ -148,32 +142,4 @@ struct InsecureBadge: View {
             .font(.system(size: 24, weight: .medium))
             .foregroundStyle(Theme.warning)
     }
-}
-
-/**
- * Debug builds only: prefill "Your own server" from launch arguments, so a
- * simulator can be driven without a remote, e.g.
- * `xcrun simctl launch <udid> tv.netrics -NetricsDebugServer http://localhost:3190
- *  -NetricsDebugInsecure YES -NetricsDebugAutoConnect YES`, or show a payload
- * file as if paired (`-NetricsDebugPayload /path/payload.json`, optionally
- * `-NetricsDebugImages /path/images`), which compares renderings.
- */
-enum DebugLaunch {
-    #if DEBUG
-        static var server: String? { UserDefaults.standard.string(forKey: "NetricsDebugServer") }
-        static var allowInsecure: Bool { UserDefaults.standard.bool(forKey: "NetricsDebugInsecure") }
-        static var autoConnect: Bool { UserDefaults.standard.bool(forKey: "NetricsDebugAutoConnect") }
-        static var openSettings: Bool { UserDefaults.standard.bool(forKey: "NetricsDebugSettings") }
-        /** A payload file (JSON) to show as if paired, without a server: screenshots of the rendering. */
-        static var payload: String? { UserDefaults.standard.string(forKey: "NetricsDebugPayload") }
-        /** A folder of image files named by their SHA-256, stored for `payload`'s images. */
-        static var images: String? { UserDefaults.standard.string(forKey: "NetricsDebugImages") }
-    #else
-        static let server: String? = nil
-        static let allowInsecure = false
-        static let autoConnect = false
-        static let openSettings = false
-        static let payload: String? = nil
-        static let images: String? = nil
-    #endif
 }
