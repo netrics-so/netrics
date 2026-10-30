@@ -353,12 +353,13 @@ Web environment variables:
 apps/
   web/        Next.js product application
   server/     Fastify API + job worker + scheduler (NETRICS_ROLE)
+  netrics-tv/ netrics TV for Apple TV, iPad and iPhone (Swift, Xcode)
 packages/
   domain/     Domain rules (role/permission matrix, pure functions)
   database/   Drizzle schema, migrations, PostgreSQL access
   contracts/  Shared zod schemas for HTTP contracts
   ui/         Shared product UI (placeholder)
-docs/         Architecture, milestones, decision records
+docs/         Architecture, milestones, decision records, guides
 deploy/       compose/: the supported self-hosted install (Docker Compose + Caddy)
 ```
 
@@ -386,6 +387,14 @@ Install netrics on your own server with Docker Compose: see
 HTTPS, backups, upgrades). Releases are published as signed multi-arch
 images (`linux/amd64`, `linux/arm64`) at `ghcr.io/netrics-so/{server,web}`,
 tagged `X.Y.Z` and `X.Y`; see [docs/release.md](docs/release.md).
+
+## netrics TV
+
+The native viewer for Apple TV, iPad and iPhone pairs by code and shows one
+workspace dashboard; see [apps/netrics-tv/README.md](apps/netrics-tv/README.md)
+to build it. To set up an iPad as a wall or desk screen (Guided Access,
+Single App Mode, power, mounting), follow
+[docs/guides/ipad-on-a-wall-or-desk.md](docs/guides/ipad-on-a-wall-or-desk.md).
 
 ## Docker
 
