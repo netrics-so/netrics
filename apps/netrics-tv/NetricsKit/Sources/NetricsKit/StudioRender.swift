@@ -107,6 +107,11 @@ public enum StudioRender {
     public struct FittedValue: Sendable, Equatable {
         public var text: String
         public var size: Double
+
+        public init(text: String, size: Double) {
+            self.text = text
+            self.size = size
+        }
     }
 
     /**

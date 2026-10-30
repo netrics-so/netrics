@@ -20,9 +20,10 @@ struct PadDashboardView: View {
     let images: FileImageCache
 
     @State private var rotation: SlideRotation?
+    @State private var window = CGSize.zero
 
     var body: some View {
-        let mode = PadScreen.displayMode(payload)
+        let mode = TouchScreen.displayMode(payload, device: .pad, window: StudioCanvas(window))
         Group {
             switch mode {
             case .screen:
@@ -34,13 +35,33 @@ struct PadDashboardView: View {
             }
         }
         .keepsScreenOn(in: mode)
+        .measuresWindow($window)
         #if DEBUG
             .modifier(PadDebugDriver())
         #endif
     }
 }
 
+extension StudioCanvas {
+    init(_ size: CGSize) {
+        self.init(width: Double(size.width), height: Double(size.height))
+    }
+}
+
 extension View {
+    /**
+     * The view's size in points, now and on every change (rotation,
+     * resizing). Inside the safe areas, which keeps the aspect: wider than
+     * high exactly when the window is.
+     */
+    func measuresWindow(_ size: Binding<CGSize>) -> some View {
+        background {
+            Color.clear
+                .ignoresSafeArea()
+                .onGeometryChange(for: CGSize.self, of: { $0.size }, action: { size.wrappedValue = $0 })
+        }
+    }
+
     /**
      * Turns the idle timer off in screen view while the app is in the
      * foreground (`isIdleTimerDisabled`), and back on otherwise and when the
@@ -57,7 +78,7 @@ private struct KeepsScreenOn: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: PadScreen.keepsScreenOn(mode: mode, foreground: scenePhase == .active), initial: true) {
+            .onChange(of: TouchScreen.keepsScreenOn(mode: mode, foreground: scenePhase == .active), initial: true) {
                 _, keepOn in
                 set(keepOn)
             }

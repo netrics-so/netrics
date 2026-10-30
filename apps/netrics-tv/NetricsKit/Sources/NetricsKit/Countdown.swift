@@ -283,6 +283,11 @@ extension TVTime {
 public struct CountdownShownGroup: Sendable, Equatable {
     public var value: String
     public var unit: String
+
+    public init(value: String, unit: String) {
+        self.value = value
+        self.unit = unit
+    }
 }
 
 /** What a countdown shows at a moment (web: countdownView). */

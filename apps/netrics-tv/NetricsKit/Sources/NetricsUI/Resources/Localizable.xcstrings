@@ -307,6 +307,23 @@
         }
       }
     },
+    "Image not available": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image not available"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bild nicht verfügbar"
+          }
+        }
+      }
+    },
     "Insecure connections": {
       "extractionState": "manual",
       "localizations": {
@@ -440,6 +457,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Noch kein Dashboard zugewiesen"
+          }
+        }
+      }
+    },
+    "Not enough data for a chart yet": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not enough data for a chart yet"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch nicht genug Daten für ein Diagramm"
           }
         }
       }

@@ -153,6 +153,12 @@ public actor DeviceClient {
     /** Bumped on every change between foreground and background. */
     private var lifecycleGeneration = 0
     private var waiters: [UUID: Waiter] = [:]
+    /** The poll loop's current wait, so `refreshNow()` ends only that one (not the heartbeat's). */
+    private var pollWait: UUID?
+    /** `refreshNow()` callers waiting for the next step of the poll loop to finish. */
+    private var refreshWaiters: [CheckedContinuation<Void, Never>] = []
+    /** Whether `run()`'s poll loop is going (tests drive `tick()` by hand without it). */
+    private var polling = false
     private let sleep: @Sendable (Duration) async throws -> Void
 
     /** A wait of the run loop that a lifecycle change or a stop cuts short. */
@@ -223,6 +229,7 @@ public actor DeviceClient {
         running = false
         epoch += 1
         wakeWaiters()
+        finishRefreshes()
     }
 
     /** Whether the app is in the foreground, as the app last reported. */
@@ -237,6 +244,30 @@ public actor DeviceClient {
         active = false
         lifecycleGeneration += 1
         wakeWaiters()
+        finishRefreshes()
+    }
+
+    /**
+     * Pull to refresh (#413): the poll loop's next step runs now instead of
+     * at the end of its wait (a dashboard poll with `If-None-Match` once
+     * paired, the pairing poll before), and this returns when that step is
+     * done. A step already under way is not counted: the answer is one
+     * asked for after the call. Returns at once when the client is not
+     * running or the app is in the background; the heartbeat keeps its
+     * schedule.
+     */
+    public func refreshNow() async {
+        guard running, active, polling else { return }
+        await withCheckedContinuation { continuation in
+            refreshWaiters.append(continuation)
+            if let pollWait { wake(pollWait) }
+        }
+    }
+
+    private func finishRefreshes() {
+        let waiting = refreshWaiters
+        refreshWaiters = []
+        for continuation in waiting { continuation.resume() }
     }
 
     /**
@@ -321,6 +352,11 @@ public actor DeviceClient {
 
     /** `tick()` after `tick()`; on return to the foreground at once, then a heartbeat. */
     private func pollLoop() async {
+        polling = true
+        defer {
+            polling = false
+            finishRefreshes()
+        }
         var generation = lifecycleGeneration
         var heartbeatDue = false
         // Ends when stopped too, also from the background (unpair).
@@ -333,15 +369,24 @@ public actor DeviceClient {
                 await pause(nil)
                 continue
             }
-            guard let delay = await tick() else { return }
+            // Pull to refresh: these callers get the answer of this step.
+            let answering = refreshWaiters
+            refreshWaiters = []
+            let next = await tick()
+            for continuation in answering { continuation.resume() }
+            guard let delay = next else {
+                finishRefreshes()
+                return
+            }
             if heartbeatDue {
                 // After the tick, so it carries a refreshed token.
                 heartbeatDue = false
                 await sendHeartbeat()
             }
-            // Left and came back during the tick: go again at once.
-            if generation == lifecycleGeneration {
-                await pause(delay)
+            // Left and came back during the tick, or a refresh asked during
+            // it: go again at once.
+            if generation == lifecycleGeneration, refreshWaiters.isEmpty {
+                await pause(delay, poll: true)
             }
         }
     }
@@ -370,10 +415,12 @@ public actor DeviceClient {
      * Waits for `delay` (nil: until woken), or less: a change between
      * foreground and background, a stop and cancellation end it early.
      */
-    private func pause(_ delay: Duration?) async {
+    private func pause(_ delay: Duration?, poll: Bool = false) async {
         let id = UUID()
         // Registered before the first suspension, so no change is missed.
         waiters[id] = .pending
+        if poll { pollWait = id }
+        defer { if poll, pollWait == id { pollWait = nil } }
         let sleep = self.sleep
         await withTaskGroup(of: Void.self) { group in
             if let delay {

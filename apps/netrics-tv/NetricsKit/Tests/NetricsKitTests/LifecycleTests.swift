@@ -349,3 +349,55 @@ private func withTimeout(_ task: Task<Bool, Never>) async throws -> Bool? {
         #expect(h.cache.load() == nil)
     }
 }
+
+// Pull to refresh (#413): `refreshNow()` ends the poll loop's wait for one
+// poll and returns once it is answered; the heartbeat keeps its schedule.
+
+/** A dashboard route like `versionedDashboard` whose answer asks for the next poll in an hour. */
+private func hourlyDashboard(_ version: @escaping @Sendable () -> String) -> Handler {
+    { call in
+        let current = version()
+        if call.header("if-none-match") == "\"\(current)\"" {
+            return HTTPResponse(status: 304, headers: ["etag": "\"\(current)\""])
+        }
+        var body = dashboard(current)
+        body.refreshAfterSec = 3600
+        return json(body, headers: ["etag": "\"\(current)\""])
+    }
+}
+
+@Suite struct RefreshNowTests {
+    @Test func pollsAtOnceAndReturnsWithTheAnswer() async throws {
+        let version = Version("v1")
+        let r = RunningClient { _ in [dashboardRoute: hourlyDashboard { version.value }] }
+        r.run()
+        #expect(await eventually { r.count(dashboardRoute) == 1 && r.count(heartbeatRoute) >= 1 })
+        // The next poll is an hour away (3.6 s here); a refresh does not wait for it.
+        version.value = "v2"
+        let started = ContinuousClock.now
+        await r.client.refreshNow()
+        #expect(ContinuousClock.now - started < .seconds(2))
+        #expect(r.count(dashboardRoute) == 2)
+        #expect(r.api.callsTo(dashboardRoute)[1].header("if-none-match") == "\"v1\"")
+        #expect(await r.client.state.dashboard?.version == "v2")
+        // Again: one more poll each time, a 304 now.
+        let beats = r.count(heartbeatRoute)
+        await r.client.refreshNow()
+        #expect(r.count(dashboardRoute) == 3)
+        #expect(r.count(heartbeatRoute) == beats)
+        #expect(await r.client.state.dashboard?.version == "v2")
+    }
+
+    @Test func returnsAtOnceInTheBackgroundAndWithoutTheRunLoop() async throws {
+        let r = RunningClient { _ in [dashboardRoute: hourlyDashboard { "v1" }] }
+        // Not running: nothing to wake.
+        await r.client.refreshNow()
+        #expect(r.count(dashboardRoute) == 0)
+        r.run()
+        #expect(await eventually { r.count(dashboardRoute) == 1 })
+        await r.client.enterBackground()
+        await r.client.refreshNow()
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(r.count(dashboardRoute) == 1)
+    }
+}

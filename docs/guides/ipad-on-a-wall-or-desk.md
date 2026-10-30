@@ -208,10 +208,14 @@ iPads with an LCD (every other current model) do not have this risk.
 ## iPhone
 
 netrics TV also runs on iPhone, paired the same way (the approval page
-fills in "iPhone"). An iPhone shows the scroll view by default: a quick
-look in the hand, which follows Auto-Lock. A screen view for iPhone, in
-landscape and on a desk stand, is planned (#413); until then an iPhone is
-not a wall screen. For a phone that stays on the charger, **Settings →
+fills in "iPhone"). Held upright, an iPhone shows the scroll view: a quick
+look in the hand, which follows Auto-Lock. Turned on its side it shows
+screen view full screen (the `21x9` layout, `16x9` on an iPhone SE) with
+the slides rotating, and the screen stays on while the app is open. For a
+phone upright on a desk stand, set the device's **Mode** to "Screen view"
+in netrics: it then shows screen view in portrait too (`9x16`) and stays
+on. Guided Access works on iPhone the same way as above. For a phone that
+stays on the charger, **Settings →
 Battery → Charging** on iPhone 15 and later sets a charge limit
 ([Apple: Set a charge limit on iPhone](https://support.apple.com/guide/iphone/set-a-charge-limit-iph0777c60aa/ios)).
 
