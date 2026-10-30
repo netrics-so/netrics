@@ -14,8 +14,9 @@ App Store app, "netrics TV", with the bundle identifier `tv.netrics`
   share (ADR 0021): widget views, the Signal design, the slide canvas and
   its chrome (header, refresh countdown, slide footer), the slideshow
   player (`SlideshowPlayer`: format, pages, rotation), the schema 1 tile
-  grid, the scroll view, the app's String Catalog, and `DeviceSession`, the
-  state both apps run on (server choice, pairing, unpair). Both build for tvOS
+  grid, the scroll view, the demo, the app's String Catalog, and
+  `DeviceSession`, the state both apps run on (server choice, pairing,
+  unpair). Both build for tvOS
   26, iOS 27 and macOS 26, so their tests run on a Mac.
 - `NetricsTV/` is the tvOS app: the slideshow with the Siri Remote's
   commands, focus handling, pairing, server and settings screens. It only
@@ -44,8 +45,8 @@ CoreImage and URLSession.
 
 ## Build and test
 
-Needs Xcode 27 (Swift 6.4 toolchain, the 27 SDKs); the app targets tvOS 26
-and later, in the Swift 6 language mode. CI's `netrics-tv` job runs the
+Needs Xcode 27 (Swift 6.4 toolchain, the 27 SDKs); the apps target tvOS 26
+and iOS/iPadOS 27 and later, in the Swift 6 language mode. CI's `netrics-tv` job runs the
 commands below on GitHub's `xcode-27` runner image.
 
 ```sh
@@ -127,7 +128,11 @@ identifiers are unique across teams, also sets its own
 netrics team). Never set the team in `project.pbxproj`: Xcode's Signing &
 Capabilities tab writes it there, so pick the team in the local file instead.
 For the iPhone and iPad app use the scheme `NetricsTVTouch` and
-`-destination 'generic/platform=iOS'`.
+`-destination 'generic/platform=iOS'`; its development profile needs a
+registered iPhone or iPad the same way (connect it to the Mac and turn on
+Developer Mode on the device). Both targets share the bundle identifier,
+the App Group and the local file, so one `Signing.local.xcconfig` signs
+both.
 
 ### Entitlements: App Group and Keychain access group
 
@@ -176,6 +181,26 @@ It needs Google Chrome (headless, also for the system font of the wordmark)
 and ImageMagick, renders every slot of the asset catalog and both layers of
 the iOS icon at their exact size, drops the alpha channel of opaque images
 and checks the sizes.
+
+## Platforms
+
+One codebase, three kinds of device. What differs, and where:
+
+|                     | Apple TV (`NetricsTV`)                                | iPad (`NetricsTVTouch`)                                                                    | iPhone (`NetricsTVTouch`)                    |
+| ------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------- |
+| Reports platform    | `tvos`                                                | `ipados`                                                                                   | `ios`                                        |
+| View                | Screen view only; the web shows the mode fixed        | Screen view by default; `display_mode = scroll` gives the scroll view                      | Scroll view (screen view in landscape: #413) |
+| Format and rotation | 16:9 screen, turned by the device's rotation setting  | From the window's size (4:3, 3:4, any window); rotation setting ignored                    | Follows the phone; rotation setting ignored  |
+| Screen stays on     | While paired (`isIdleTimerDisabled`)                  | Screen view in the foreground only (`PadScreen.keepsScreenOn`)                             | No, follows Auto-Lock                        |
+| Input               | Siri Remote: left/right, Play/Pause, press and hold   | Settings button; swipe and tap: #414                                                       | Settings button                              |
+| Pairing extras      | Code, URL, QR code                                    | Also "Open approval page", "Share link", "Copy code"                                       | Same as iPad                                 |
+| Demo                | Back (Menu) or the press-and-hold menu leaves         | "Leave demo" button                                                                        | "Leave demo" button                          |
+| Lifecycle           | Scene phase passed to the session (`deviceLifecycle`) | Same: no polling in the background, refresh on return                                      | Same                                         |
+| Kiosk setup         | Nothing needed                                        | Guided Access or Single App Mode: [the guide](../../docs/guides/ipad-on-a-wall-or-desk.md) | Not a wall screen until #413                 |
+
+The details are in "How it works" below; the wall and desk setup of an iPad
+(Guided Access, Single App Mode, Auto-Lock, power, mounting, OLED) is in
+[docs/guides/ipad-on-a-wall-or-desk.md](../../docs/guides/ipad-on-a-wall-or-desk.md).
 
 ## How it works
 
@@ -276,8 +301,8 @@ and checks the sizes.
   opened for 90 days finds its refresh token refused and shows a new code.
   There is no background refresh (`BGAppRefreshTask`).
 - **Scroll view (ADR 0017 section 5).** `ScrollDashboardView` in NetricsUI
-  is the scroll view for the later iPhone and iPad app (Apple TV is always
-  screen view): the header, then each slide as a section with its heading,
+  is the scroll view of the iPhone and iPad app (Apple TV is always screen
+  view): the header, then each slide as a section with its heading,
   the widgets in reading order over 1 to 3 columns by `scrollLayout`
   (`ScrollGeometry`, tested on the shared vectors), charts 16:9 between 200
   and 360 points, images in their aspect, at most half the screen high. Its
@@ -362,6 +387,13 @@ Redirects are not followed: the device API never redirects, and following
 one could leave these rules.
 
 ## Not done yet
+
+- iPhone: landscape screen view and `display_mode = screen` in portrait
+  (#413); today an iPhone always shows the scroll view.
+- Touch interaction (#414): swipe between slides, tap a widget for details,
+  chrome that shows on a tap and hides again.
+- The iPad guide followed once on a real iPad, and the other device checks
+  of milestone 10.1's exit gate (#420).
 
 - Final app icon and Top Shelf artwork (the current ones are a draft).
 - App Store Connect record and TestFlight.
