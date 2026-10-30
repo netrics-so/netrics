@@ -16,12 +16,12 @@ coverage/
 # OS / editor
 .DS_Store
 
-# tvOS app (apps/tvos): SwiftPM and Xcode build output, per-user Xcode state
+# tvOS app (apps/netrics-tv): SwiftPM and Xcode build output, per-user Xcode state
 .build/
 .swiftpm/
 DerivedData/
 xcuserdata/
 *.xcuserstate
 
-# tvOS signing team, per developer (see apps/tvos/Config/Signing.xcconfig)
+# tvOS signing team, per developer (see apps/netrics-tv/Config/Signing.xcconfig)
 Signing.local.xcconfig

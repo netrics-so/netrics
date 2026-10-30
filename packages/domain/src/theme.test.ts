@@ -121,7 +121,7 @@ describe("built-in themes", () => {
 
   it("netrics Dark is today's TV palette", () => {
     // apps/web/src/app/globals.css (.tv, .tile, .sparkline) and the tvOS
-    // Theme enum (apps/tvos/NetricsTV/NetricsTVApp.swift).
+    // Theme enum (apps/netrics-tv/NetricsTV/NetricsTVApp.swift).
     expect(BUILTIN_THEMES.netrics_dark).toEqual({
       key: "netrics_dark",
       name: "netrics Dark",

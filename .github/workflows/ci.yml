@@ -69,21 +69,33 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm web:build-check
 
-  # NetricsKit (tvOS protocol and layout logic) builds for macOS too, so its
-  # tests run here, including the studio layout vectors shared with
-  # packages/domain (#215). The app target itself needs the tvOS SDK of a
-  # current Xcode and is built locally.
-  netricskit:
-    runs-on: macos-15
+  # netrics TV (apps/netrics-tv) on Xcode 27 and the 27 SDKs: NetricsKit's
+  # tests (it builds for macOS too, including the vectors shared with
+  # packages/domain, #215) and an unsigned build of the tvOS app. GitHub's
+  # macos-26 image only carries Xcode 26; Xcode 27 is on the `xcode-27`
+  # image (actions/runner-images#14404, preview, macOS 27 based since
+  # 2026-09-16). DEVELOPER_DIR pins the Xcode version instead of the image
+  # default.
+  netrics-tv:
+    runs-on: xcode-27
     permissions:
       contents: read
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: swift --version
-      - run: swift test
-        working-directory: apps/tvos/NetricsKit
+      - run: xcodebuild -version && swift --version
+      - name: NetricsKit tests
+        run: swift test
+        working-directory: apps/netrics-tv/NetricsKit
+      - name: Build the tvOS app (unsigned)
+        run: >-
+          xcodebuild -project apps/netrics-tv/NetricsTV.xcodeproj
+          -scheme NetricsTV -configuration Debug
+          -destination 'generic/platform=tvOS Simulator'
+          build CODE_SIGNING_ALLOWED=NO
 
   migrations:
     runs-on: ubuntu-24.04

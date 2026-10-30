@@ -409,9 +409,7 @@ struct SlideHeaderView: View {
 /**
  * The header's dashboard name in narrow formats: line height equal to the
  * font size (the web's `line-height: 1` on `.studio-header-name--wrap`), so
- * two lines take 72 units instead of the system's taller lines. tvOS 26 sets
- * it exactly; earlier releases tighten the line spacing by the font's extra
- * leading as far as SwiftUI allows.
+ * two lines take 72 units instead of the system's taller lines.
  */
 struct HeaderNameLineHeight: ViewModifier {
     let size: CGFloat
@@ -420,10 +418,8 @@ struct HeaderNameLineHeight: ViewModifier {
     func body(content: Content) -> some View {
         if !wraps {
             content
-        } else if #available(tvOS 26.0, *) {
-            content.lineHeight(.exact(points: size))
         } else {
-            content.lineSpacing(size - UIFont.systemFont(ofSize: size, weight: .semibold).lineHeight)
+            content.lineHeight(.exact(points: size))
         }
     }
 }

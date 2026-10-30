@@ -3,7 +3,7 @@
  * the TypeScript implementation. They are checked in at
  * packages/domain/test-vectors/studio-layout.json; the domain tests fail
  * when the file and this output differ, and the Swift tests in
- * apps/tvos/NetricsKit run the same file. Regenerate with
+ * apps/netrics-tv/NetricsKit run the same file. Regenerate with
  * `pnpm vectors:studio` after a deliberate change, and port the change to
  * StudioLayout.swift.
  *

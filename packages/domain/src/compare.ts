@@ -5,7 +5,7 @@
  * `ratioOf` is the one rule for A ÷ B (milestone 11's derived metrics reuse
  * it); `compareChange` the change of the ratio against the previous period;
  * `compareLayout` the widget's content layout. Ported to Swift
- * (apps/tvos/NetricsKit, CompareLayout in StudioLayout.swift) and covered
+ * (apps/netrics-tv/NetricsKit, CompareLayout in StudioLayout.swift) and covered
  * by packages/domain/test-vectors/studio-layout.json, so keep every
  * function pure and its arithmetic in the same order on both sides.
  */

@@ -4,7 +4,7 @@
  * computed from the TypeScript implementation. They are checked in at
  * packages/domain/test-vectors/screen-formats.json; the domain tests fail
  * when the file and this output differ, and the Swift tests in
- * apps/tvos/NetricsKit run the same file (#278). Regenerate with
+ * apps/netrics-tv/NetricsKit run the same file (#278). Regenerate with
  * `pnpm vectors:formats` after a deliberate change, and port the change.
  *
  * Not exported from the package index: only tests use it.

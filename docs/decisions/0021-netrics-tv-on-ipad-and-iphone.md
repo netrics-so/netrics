@@ -115,7 +115,7 @@ This ADR brings the same viewer to iPad and iPhone.
   iOS 26 does. The tvOS minimum moves from 18 to **tvOS 26**, not 27, so
   Apple TV HD and Apple TV 4K (1st generation), the cheapest wall players,
   keep working; tvOS 27 APIs are used behind availability checks. CI moves to
-  a macOS 26 runner with Xcode 27 and builds both app targets
+  GitHub's `xcode-27` runner image (Xcode 27 on macOS 27) and builds both app targets
   (`CODE_SIGNING_ALLOWED=NO`) besides `swift test`.
 - **Name.** The display name is **"netrics TV" on all three platforms**,
   and the tvOS target changes from "netrics" to "netrics TV". The name says
@@ -385,7 +385,7 @@ changes above still pairs: it ignores the platform body, has no self-revoke
 - The tvOS rendering code moves into `NetricsUI`; the tvOS app must look and
   behave the same after the move. Each new widget type is drawn once for both
   platforms.
-- CI needs a macOS 26 runner with Xcode 27, and builds both app targets.
+- CI needs GitHub's `xcode-27` runner image (Xcode 27 on macOS 27), and builds both app targets.
 - The server gains `devices.platform`, an optional pairing body, an optional
   heartbeat field and the device self-revoke: one migration, no new payload
   schema. Released TVs and older servers keep working.

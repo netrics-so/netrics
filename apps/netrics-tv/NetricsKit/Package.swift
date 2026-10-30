@@ -1,11 +1,11 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.4
 // NetricsKit: the tvOS app's protocol and formatting logic, without UI.
 // It builds for macOS too, so `swift test` runs on a Mac.
 import PackageDescription
 
 let package = Package(
     name: "NetricsKit",
-    platforms: [.tvOS(.v18), .macOS(.v15)],
+    platforms: [.tvOS(.v26), .macOS(.v26)],
     products: [
         .library(name: "NetricsKit", targets: ["NetricsKit"]),
     ],

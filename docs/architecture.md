@@ -70,7 +70,7 @@ netrics/
     web/                    Next.js product application
     server/                 API, worker, scheduler entry points
     renderer/               Playwright snapshot worker (not yet; see ADR 0007)
-    tvos/                   Native SwiftUI Apple TV application
+    netrics-tv/             Native SwiftUI app for Apple TV (netrics TV)
   packages/
     domain/                 Domain rules independent of transport/storage
     database/               PostgreSQL access and migrations
