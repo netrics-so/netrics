@@ -49,6 +49,10 @@ public final class DeviceSession {
     private var runTask: Task<Void, Never>?
     private var updatesTask: Task<Void, Never>?
     private var cloudTask: Task<Void, Never>?
+    /** False while the scene is in the background (#415); a client started then starts paused. */
+    public private(set) var inForeground = true
+    /** The last lifecycle call to the client, so they reach it in order. */
+    private var lifecycleTask: Task<Void, Never>?
 
     /**
      * `appGroup`: the App Group that holds the caches (Info.plist's
@@ -236,16 +240,46 @@ public final class DeviceSession {
                 self?.device = state
             }
         }
+        if !inForeground {
+            forward { await client.enterBackground() }
+        }
         runTask = Task { await client.run() }
     }
 
     /**
-     * The app is in the foreground again: the client goes on at once with
-     * the same pairing (or a new code when it expired) or the dashboard.
+     * The scene went to the background (ADR 0021, section 3): the client
+     * stops polling and sending heartbeats. `deviceLifecycle` calls this.
      */
-    public func resume() {
+    public func enterBackground() {
+        guard inForeground else { return }
+        inForeground = false
         guard let client else { return }
-        Task { await client.wake() }
+        forward { await client.enterBackground() }
+    }
+
+    /**
+     * The scene is in front again: the client goes on at once with the same
+     * pairing (or a new code when it expired), or refreshes the tokens when
+     * due, polls the dashboard and sends a heartbeat. While netrics cloud did
+     * not answer, it is checked again now instead of after the retry wait.
+     */
+    public func enterForeground() {
+        guard !inForeground else { return }
+        inForeground = true
+        if route == .connectingCloud {
+            connectToCloud()
+        }
+        guard let client else { return }
+        forward { await client.enterForeground() }
+    }
+
+    /** Runs lifecycle calls on the client one after the other, in the order made. */
+    private func forward(_ call: @escaping @Sendable () async -> Void) {
+        let previous = lifecycleTask
+        lifecycleTask = Task {
+            await previous?.value
+            await call()
+        }
     }
 
     /** The root view measured the screen (launch, or a new display mode or window size). */

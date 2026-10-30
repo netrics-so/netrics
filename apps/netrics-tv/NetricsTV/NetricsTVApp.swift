@@ -55,6 +55,8 @@ struct RootView: View {
         .onChange(of: model.device.phase == .paired) { _, paired in
             UIApplication.shared.isIdleTimerDisabled = paired
         }
+        // No polling while the app is in the background (#415).
+        .deviceLifecycle(model)
         // Chrome and numbers in the screen language (ADR 0016).
         .environment(\.screenLanguage, language)
         .environment(\.locale, language.locale)

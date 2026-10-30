@@ -444,23 +444,6 @@
         }
       }
     },
-    "Offline": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Offline"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Offline"
-          }
-        }
-      }
-    },
     "On (not recommended)": {
       "extractionState": "manual",
       "localizations": {

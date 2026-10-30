@@ -243,8 +243,10 @@ and checks the sizes.
   `Caches/netrics/images` (in the App Group container). Beyond 50 MB, images the current payload does
   not reference are evicted, least recently used first. They are decoded
   with ImageIO at the widget's pixel size.
-- **Heartbeat.** Every 5 minutes: app version, uptime, the last error and
-  the screen (points after the rotation setting, scale, format, screen view).
+- **Heartbeat.** Every 5 minutes: app version ("tvos", "ios" or "ipados"
+  and the version, shown as tvOS, iOS and iPadOS in the web's device list),
+  uptime, the last error and the screen (points after the rotation setting,
+  scale, format, screen view).
 - **iPad (ADR 0021 section 3, #412).** Screen view by default, as on the
   TV: NetricsUI's `SlideshowPlayer`, which the tvOS slideshow uses too, over
   the whole window. The format comes from the window's size (`PadScreen`):
@@ -255,6 +257,23 @@ and checks the sizes.
   knows its orientation. `display_mode = scroll` shows the scroll view
   instead. The screen stays on (`isIdleTimerDisabled`) only in screen view
   while the app is in the foreground; scroll view follows Auto-Lock.
+- **Foreground and background (ADR 0021, section 3, #415).** Both apps hand
+  the scene phase to the session (`deviceLifecycle` in NetricsUI calls
+  `DeviceSession.enterBackground()` and `enterForeground()`, which pass it
+  on to `DeviceClient` in order and to a client started later). In the
+  background the poll and the heartbeat stop and nothing is sent; inactive
+  (Control Center, the app switcher) keeps them going. Back in the
+  foreground the client goes at once: while pairing it polls the same
+  code (or shows a new one when it expired); once paired the last dashboard
+  stays on screen while it refreshes the tokens when due, polls with
+  `If-None-Match`, then sends a heartbeat with the fresh token, and the
+  5 minute heartbeat starts over. While netrics cloud does not answer, it is
+  checked again at once.
+  A request in flight when the app leaves is not cancelled, so a token pair
+  the server already rotated is still saved. An app the system ended in the
+  background starts from the cache like an offline start. A device not
+  opened for 90 days finds its refresh token refused and shows a new code.
+  There is no background refresh (`BGAppRefreshTask`).
 - **Scroll view (ADR 0017 section 5).** `ScrollDashboardView` in NetricsUI
   is the scroll view for the later iPhone and iPad app (Apple TV is always
   screen view): the header, then each slide as a section with its heading,
@@ -268,8 +287,8 @@ and checks the sizes.
 - **iPhone and iPad (#411).** The pairing screen also opens `approveUrl`
   in Safari ("Open approval page"; the web session approves, the app never
   sees a user credential), shares it, and copies the code. Back in the
-  foreground the app polls the same pairing at once (`DeviceClient.wake`),
-  or shows a new code when it expired. iOS never tells an app that Local
+  foreground the app polls the same pairing at once (#415, above), or
+  shows a new code when it expired. iOS never tells an app that Local
   Network access was denied: when a server on the local network does not
   answer, the server screen and the pairing screen explain the setting and
   open Settings. The settings sheet shows the server, the transport

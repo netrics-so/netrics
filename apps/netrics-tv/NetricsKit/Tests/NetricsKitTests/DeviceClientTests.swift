@@ -20,6 +20,12 @@ import Testing
         #expect(DeviceClient.reportedAppVersion(" 1.2.3 ") == "tvos 1.2.3")
     }
 
+    @Test func reportsThePlatformOnIPhoneAndIPad() {
+        #expect(DeviceClient.reportedAppVersion("0.1.0", platform: .ios) == "ios 0.1.0")
+        #expect(DeviceClient.reportedAppVersion("0.1.0", platform: .ipados) == "ipados 0.1.0")
+        #expect(DeviceClient.reportedAppVersion("", platform: .ipados) == "ipados")
+    }
+
     @Test func fallsBackToTvosAndStaysWithin50Characters() {
         #expect(DeviceClient.reportedAppVersion("") == "tvos")
         #expect(DeviceClient.reportedAppVersion("  ") == "tvos")
@@ -101,8 +107,11 @@ import Testing
         #expect(await h.state.pairing?.code == "CODE-0002")
     }
 
-    /** iOS suspends the app: back in the foreground, `wake()` polls the same pairing at once (#411). */
-    @Test func wakeEndsTheWaitAndPollsTheSamePairing() async throws {
+    /**
+     * iOS suspends the app: nothing is polled in the background, and back in
+     * the foreground the same pairing is polled at once (#411, #415).
+     */
+    @Test func returningToTheForegroundPollsTheSamePairingAtOnce() async throws {
         let clock = ManualClock()
         let api = FakeAPI(
             clock: clock,
@@ -135,8 +144,11 @@ import Testing
         #expect(api.callsTo("POST /v1/device/pairings/poll").isEmpty)
         #expect(api.callsTo("POST /v1/device/pairings").first?.json()?["platform"] as? String == "ios")
 
-        // The next poll is an hour away; waking polls now, with the same code.
-        await client.wake()
+        // The next poll is an hour away; returning to the foreground polls now, with the same code.
+        await client.enterBackground()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(api.callsTo("POST /v1/device/pairings/poll").isEmpty)
+        await client.enterForeground()
         try await waitFor { !api.callsTo("POST /v1/device/pairings/poll").isEmpty }
         #expect(api.callsTo("POST /v1/device/pairings/poll").count == 1)
         #expect(api.callsTo("POST /v1/device/pairings").count == 1)

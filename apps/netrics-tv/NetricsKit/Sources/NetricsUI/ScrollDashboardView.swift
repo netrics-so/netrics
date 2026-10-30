@@ -86,7 +86,13 @@ public struct ScrollDashboardView: View {
                         .fill(state.offline ? colors.warning : colors.up)
                         .frame(width: CGFloat(0.5 * rem), height: CGFloat(0.5 * rem))
                         .accessibilityHidden(true)
-                    Text(L10n.tr(state.offline ? "Offline" : "Live", language))
+                    // "Offline — last update 14:05", as the TV's header.
+                    Text(
+                        state.offline
+                            ? TVTime.offlineMarker(
+                                updatedAt: state.updatedAt, timeZone: payload.timeZone, language: language)
+                            : L10n.tr("Live", language)
+                    )
                         .font(.system(size: CGFloat(0.875 * rem)))
                         .foregroundStyle(state.offline ? colors.warning : colors.muted)
                 }
