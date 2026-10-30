@@ -565,6 +565,108 @@ describe("kiosk dashboard loop", () => {
   });
 });
 
+describe("kiosk unpair (#407)", () => {
+  function pairedStorage() {
+    return memoryStorage({
+      [CREDENTIALS_KEY]: JSON.stringify(credentialsFor("a")),
+      [DASHBOARD_KEY]: JSON.stringify({
+        etag: '"v1"',
+        payload: dashboard("v1"),
+        updatedAt: T0 - 60_000,
+      }),
+    });
+  }
+
+  function expectUnpaired(kiosk: KioskClient, data: Map<string, string>) {
+    expect(data.has(CREDENTIALS_KEY)).toBe(false);
+    expect(data.has(DASHBOARD_KEY)).toBe(false);
+    expect(kiosk.getState().phase).toBe("pairing");
+    expect(kiosk.getState().dashboard).toBeNull();
+    expect(kiosk.getState().pairing?.code).toBe("ABCD-EFGH");
+  }
+
+  it("revokes the device on the server, then clears it and shows a new code", async () => {
+    const { storage, data } = pairedStorage();
+    let storedAtRevoke: string | null = null;
+    const api = fakeApi({
+      "GET /v1/device/dashboard": () => json(dashboard("v1")),
+      "POST /v1/device/me/revoke": () => {
+        storedAtRevoke = data.get(CREDENTIALS_KEY) ?? null;
+        return reply(204, null);
+      },
+      "POST /v1/device/pairings": () => pairingResponse(),
+    });
+    const kiosk = start({ fetch: api.fetch, storage });
+    await vi.advanceTimersByTimeAsync(0);
+    await kiosk.unpair();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const revokes = api.callsTo("POST /v1/device/me/revoke");
+    expect(revokes).toHaveLength(1);
+    expect(revokes[0]!.headers.get("authorization")).toBe("Bearer access-a");
+    expect(storedAtRevoke).not.toBeNull();
+    expectUnpaired(kiosk, data);
+  });
+
+  it("unpairs locally on an older server (404)", async () => {
+    const { storage, data } = pairedStorage();
+    const api = fakeApi({
+      "GET /v1/device/dashboard": () => json(dashboard("v1")),
+      "POST /v1/device/me/revoke": () =>
+        json({ error: "not_found" }, { status: 404 }),
+      "POST /v1/device/pairings": () => pairingResponse(),
+    });
+    const kiosk = start({ fetch: api.fetch, storage });
+    await vi.advanceTimersByTimeAsync(0);
+    await kiosk.unpair();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.callsTo("POST /v1/device/me/revoke")).toHaveLength(1);
+    expect(api.callsTo("POST /v1/device/token")).toHaveLength(0);
+    expectUnpaired(kiosk, data);
+  });
+
+  it("unpairs locally when the server cannot be reached", async () => {
+    const { storage, data } = pairedStorage();
+    const api = fakeApi({
+      "GET /v1/device/dashboard": () => json(dashboard("v1")),
+      "POST /v1/device/me/revoke": () => {
+        throw new TypeError("fetch failed");
+      },
+      "POST /v1/device/pairings": () => pairingResponse(),
+    });
+    const kiosk = start({ fetch: api.fetch, storage });
+    await vi.advanceTimersByTimeAsync(0);
+    await kiosk.unpair();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.callsTo("POST /v1/device/me/revoke")).toHaveLength(1);
+    expectUnpaired(kiosk, data);
+  });
+
+  it("refreshes once after a 401 and revokes with the new token", async () => {
+    const { storage, data } = pairedStorage();
+    const api = fakeApi({
+      "GET /v1/device/dashboard": () => json(dashboard("v1")),
+      "POST /v1/device/token": () => json({ credentials: credentialsFor("b") }),
+      "POST /v1/device/me/revoke": (call) =>
+        call.headers.get("authorization") === "Bearer access-b"
+          ? reply(204, null)
+          : json({ error: "unauthorized" }, { status: 401 }),
+      "POST /v1/device/pairings": () => pairingResponse(),
+    });
+    const kiosk = start({ fetch: api.fetch, storage });
+    await vi.advanceTimersByTimeAsync(0);
+    await kiosk.unpair();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(
+      api
+        .callsTo("POST /v1/device/me/revoke")
+        .map((call) => call.headers.get("authorization")),
+    ).toEqual(["Bearer access-a", "Bearer access-b"]);
+    expect(api.callsTo("POST /v1/device/token")).toHaveLength(1);
+    expectUnpaired(kiosk, data);
+  });
+});
+
 describe("kioskScreen", () => {
   it("rounds the viewport and keeps it inside the API's bounds", () => {
     expect(kioskScreen(1366.4, 767.6, 1.25)).toEqual({

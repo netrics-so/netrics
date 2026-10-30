@@ -425,6 +425,35 @@ export function createDeviceService(deps: DeviceServiceDeps) {
       );
     },
     /**
+     * Settings → Unpair on the device itself (ADR 0021): revokes the calling
+     * device and all its tokens in one transaction, audited with the device
+     * as actor (no user; `by: "device"`). The token that authorized the call
+     * is revoked with the rest, so a repeat gets 401 from the device guard;
+     * one that races past the guard finds the device revoked and gets 401
+     * too, without a second audit event.
+     */
+    async selfRevoke(principal: {
+      workspaceId: string;
+      deviceId: string;
+    }): Promise<Result<null>> {
+      const { workspaceId, deviceId } = principal;
+      return withWorkspace(db, { workspaceId }, async (tx) => {
+        const device = await findDevice(tx, workspaceId, deviceId);
+        if (!device || !(await revokeDevice(tx, workspaceId, deviceId))) {
+          return fail<null>(401, "unauthorized");
+        }
+        await insertAuditEvent(tx, {
+          workspaceId,
+          actorUserId: null,
+          action: "device.revoked",
+          target: deviceId,
+          metadata: { name: device.name, by: "device", reason: "unpaired" },
+        });
+        return ok(null);
+      });
+    },
+
+    /**
      * Exchanges a refresh token for a new pair. A refresh token that comes
      * back after it was replaced revokes the device (ADR 0011).
      */

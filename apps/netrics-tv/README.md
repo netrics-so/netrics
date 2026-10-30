@@ -166,8 +166,10 @@ drops the alpha channel of opaque images and checks the sizes.
   Play/Pause pauses the rotation ("Paused" in the header).
 - **Settings.** Press and hold the clickpad on the dashboard, or press
   Play/Pause where there is nothing to rotate (one slide, or a schema 1
-  dashboard). The pairing screen has a Settings button. Unpair clears the
-  Keychain and the cache and shows a new netrics cloud code. Once paired,
+  dashboard). The pairing screen has a Settings button. Unpair revokes the
+  device on the server (`POST /v1/device/me/revoke`, #407), then clears the
+  Keychain and the cache and shows a new netrics cloud code; offline or on
+  an older server (404) it unpairs locally only. Once paired,
   settings turn with the content by the rotation setting; the pairing
   screen and its settings stay upright (`ScreenView.settingsRotation`,
   #298). The tvOS focus engine reads presses along the panel, so on a

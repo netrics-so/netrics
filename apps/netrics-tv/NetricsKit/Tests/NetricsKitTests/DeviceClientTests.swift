@@ -496,6 +496,103 @@ import Testing
         #expect(await h.client.tick() == nil)
     }
 
+    /** A paired client whose revoke route answers with `revoke`. */
+    private func unpairHarness(extra: [String: Handler] = [:], revoke: @escaping Handler) async -> Harness {
+        var routes: [String: Handler] = [
+            "GET /v1/device/dashboard": { _ in json(dashboard("v1")) },
+            "POST /v1/device/me/revoke": revoke,
+        ]
+        routes.merge(extra) { _, new in new }
+        let h = Harness(
+            credentials: { credentialsFor("a", clock: $0) },
+            cached: CachedDashboard(etag: "\"v1\"", payload: dashboard("v1"), updatedAt: T0)
+        ) { _ in routes }
+        await h.start()
+        return h
+    }
+
+    private func expectUnpairedLocally(_ h: Harness) async {
+        #expect(h.store.snapshot == InMemoryCredentialStore.Contents())
+        #expect(h.cache.load() == nil)
+        #expect(await h.state.phase == .unpaired)
+        #expect(await h.client.tick() == nil)
+    }
+
+    @Test func unpairRevokesTheDeviceOnTheServerFirst() async throws {
+        let storedAtRevoke = Mutex<DeviceCredentials?>(nil)
+        let storeBox = Mutex<InMemoryCredentialStore?>(nil)
+        let h = await unpairHarness { _ in
+            storedAtRevoke.withLock { $0 = storeBox.withLock { $0 }?.snapshot.credentials }
+            return HTTPResponse(status: 204, headers: [:])
+        }
+        storeBox.withLock { $0 = h.store }
+        await h.client.unpair()
+        let call = try #require(h.api.callsTo("POST /v1/device/me/revoke").first)
+        #expect(call.header("authorization") == "Bearer access-a")
+        #expect(h.api.callsTo("POST /v1/device/me/revoke").count == 1)
+        // The server was asked while the credentials were still there.
+        #expect(storedAtRevoke.withLock { $0 }?.accessToken == "access-a")
+        await expectUnpairedLocally(h)
+    }
+
+    @Test func unpairOnAnOlderServerStaysLocal() async {
+        let h = await unpairHarness { _ in jsonObject(["error": "not_found"], status: 404) }
+        await h.client.unpair()
+        #expect(h.api.callsTo("POST /v1/device/me/revoke").count == 1)
+        #expect(h.api.callsTo("POST /v1/device/token").isEmpty)
+        await expectUnpairedLocally(h)
+    }
+
+    @Test func unpairOfflineStaysLocal() async {
+        let h = await unpairHarness { _ in throw TransportError.unreachable("offline") }
+        await h.client.unpair()
+        #expect(h.api.callsTo("POST /v1/device/me/revoke").count == 1)
+        await expectUnpairedLocally(h)
+    }
+
+    @Test func unpairRefreshesOnceAfterA401AndRetries() async throws {
+        let h = await unpairHarness(
+            extra: [
+                "POST /v1/device/token": { _ in
+                    json(RefreshDeviceTokenResponse(credentials: credentialsFor("b", clock: ManualClock())))
+                }
+            ]
+        ) { call in
+            call.header("authorization") == "Bearer access-b"
+                ? HTTPResponse(status: 204, headers: [:])
+                : jsonObject(["error": "unauthorized"], status: 401)
+        }
+        await h.client.unpair()
+        let calls = h.api.callsTo("POST /v1/device/me/revoke")
+        #expect(calls.map { $0.header("authorization") } == ["Bearer access-a", "Bearer access-b"])
+        #expect(h.api.callsTo("POST /v1/device/token").count == 1)
+        await expectUnpairedLocally(h)
+    }
+
+    @Test func unpairWhenAlreadyRevokedStaysLocal() async {
+        let h = await unpairHarness(
+            extra: ["POST /v1/device/token": { _ in jsonObject(["error": "unauthorized"], status: 401) }]
+        ) { _ in jsonObject(["error": "unauthorized"], status: 401) }
+        await h.client.unpair()
+        #expect(h.api.callsTo("POST /v1/device/me/revoke").count == 1)
+        #expect(h.api.callsTo("POST /v1/device/token").count == 1)
+        await expectUnpairedLocally(h)
+    }
+
+    @Test func aBlockedClientUnpairsWithoutSending() async {
+        let h = Harness(credentials: { credentialsFor("a", clock: $0) }) { _ in
+            [
+                "GET /v1/device/dashboard": { _ in throw TransportError.certificateChanged },
+                "POST /v1/device/me/revoke": { _ in HTTPResponse(status: 204, headers: [:]) },
+            ]
+        }
+        await h.start()
+        await h.advance(0)
+        await h.client.unpair()
+        #expect(h.api.callsTo("POST /v1/device/me/revoke").isEmpty)
+        await expectUnpairedLocally(h)
+    }
+
     @Test func plainHTTPToAPublicHostIsNeverSent() async {
         let clock = ManualClock()
         let api = FakeAPI(clock: clock, routes: [:])
