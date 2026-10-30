@@ -137,6 +137,40 @@
         }
       }
     },
+    "Chart": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chart"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagramm"
+          }
+        }
+      }
+    },
+    "Chart, %@ to %@, lowest %@, highest %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chart, %@ to %@, lowest %@, highest %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagramm, %@ bis %@, niedrigster Wert %@, höchster Wert %@"
+          }
+        }
+      }
+    },
     "Checking the server…": {
       "extractionState": "manual",
       "localizations": {
@@ -831,6 +865,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fortschritt"
+          }
+        }
+      }
+    },
+    "QR code of the approval page": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR code of the approval page"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR-Code der Freigabeseite"
           }
         }
       }

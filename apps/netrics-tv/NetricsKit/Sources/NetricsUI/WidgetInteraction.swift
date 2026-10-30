@@ -30,13 +30,16 @@ public struct WidgetInteraction {
 }
 
 extension View {
-    /** The widget's tap and VoiceOver actions; unchanged without an interaction (Apple TV). */
+    /**
+     * The widget's tap and VoiceOver actions. Without an interaction (Apple
+     * TV) only one VoiceOver element per widget, as on touch (#417).
+     */
     @ViewBuilder
     func touch(_ widget: DeviceWidget, _ interaction: WidgetInteraction?, language: ScreenLanguage) -> some View {
         if let interaction {
             modifier(WidgetTouch(widget: widget, interaction: interaction, language: language))
         } else {
-            self
+            accessibilityElement(children: .combine)
         }
     }
 

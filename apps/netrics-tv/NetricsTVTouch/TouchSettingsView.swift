@@ -13,7 +13,10 @@ struct TouchSettingsView: View {
     @Environment(DeviceSession.self) private var model
     @Environment(\.screenLanguage) private var language
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var confirmUnpair = false
+    /** Values sit right of their label; at the accessibility sizes the row stacks and they start left. */
+    private var valueAlignment: TextAlignment { typeSize.isAccessibilitySize ? .leading : .trailing }
 
     var body: some View {
         let state = model.device
@@ -37,7 +40,7 @@ struct TouchSettingsView: View {
                             LabeledContent(L10n.tr("Pinned certificate", language)) {
                                 Text(verbatim: "SHA-256 " + CertificatePinning.display(pin))
                                     .font(.caption.monospaced())
-                                    .multilineTextAlignment(.trailing)
+                                    .multilineTextAlignment(valueAlignment)
                             }
                         }
                     }
@@ -49,7 +52,7 @@ struct TouchSettingsView: View {
                     row(L10n.tr("App version", language), DeviceSession.appVersion)
                     if let error = state.lastError, state.offline {
                         LabeledContent(L10n.tr("Last error", language)) {
-                            Text(error).font(.footnote).multilineTextAlignment(.trailing)
+                            Text(error).font(.footnote).multilineTextAlignment(valueAlignment)
                         }
                     }
                 }
@@ -87,7 +90,7 @@ struct TouchSettingsView: View {
         LabeledContent(label) {
             Text(value)
                 .foregroundStyle(warning ? Theme.warning : .secondary)
-                .multilineTextAlignment(.trailing)
+                .multilineTextAlignment(valueAlignment)
         }
     }
 

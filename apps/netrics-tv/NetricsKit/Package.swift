@@ -14,8 +14,11 @@ let package = Package(
         .library(name: "NetricsUI", targets: ["NetricsUI"]),
     ],
     targets: [
-        .target(name: "NetricsKit"),
-        .target(name: "NetricsUI", dependencies: ["NetricsKit"], resources: [.process("Resources")]),
+        // Each library carries its privacy manifest (#417), which the apps' privacy report lists.
+        .target(name: "NetricsKit", resources: [.copy("PrivacyInfo.xcprivacy")]),
+        .target(
+            name: "NetricsUI", dependencies: ["NetricsKit"],
+            resources: [.process("Resources"), .copy("PrivacyInfo.xcprivacy")]),
         .testTarget(name: "NetricsKitTests", dependencies: ["NetricsKit"]),
         .testTarget(name: "NetricsUITests", dependencies: ["NetricsUI", "NetricsKit"]),
     ]

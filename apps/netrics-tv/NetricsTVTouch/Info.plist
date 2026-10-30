@@ -15,7 +15,7 @@
 	<!-- The App Group that holds the caches (CacheLocation, Signing.xcconfig). -->
 	<key>NetricsAppGroup</key>
 	<string>$(NETRICS_APP_GROUP)</string>
-	<!-- HTTPS and the system's standard cryptography only (#417 checks the answers). -->
+	<!-- HTTPS and the system's standard cryptography only: exempt from export documentation (#417). -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<!--

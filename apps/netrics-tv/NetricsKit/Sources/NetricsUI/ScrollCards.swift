@@ -612,10 +612,17 @@ struct ScrollCompareCard: View {
     let units: Double
     let env: WidgetEnv
     let now: Date
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let language = env.language
         let stale = data.status == .stale
+        // Side by side; one under the other at the accessibility text sizes, where half the card cuts them.
+        let stacked = typeSize.isAccessibilitySize
+        let operands =
+            stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: env.pt(16)))
         let ratio = CompareText.ratio(data.ratio.value, format: data.ratio.format, unit: data.unit, language: language)
         let change =
             options.showChange
@@ -631,13 +638,13 @@ struct ScrollCompareCard: View {
         VStack(alignment: .leading, spacing: CGFloat(ScrollGeometry.cardGap)) {
             ScrollLabel(label: label, env: env)
             ScrollMutedLine(text: MetricFormat.periodLabel(data.period, language: language), env: env)
-            HStack(alignment: .top, spacing: env.pt(16)) {
-                operand(data.numerator, stale: stale)
+            operands {
+                operand(data.numerator, stale: stale, units: stacked ? units : (units - 48) / 2)
                 Text(verbatim: StudioLayout.compareSeparator)
                     .font(env.font(Size.valueMin))
                     .foregroundStyle(env.colors.muted)
                     .accessibilityHidden(true)
-                operand(data.denominator, stale: stale)
+                operand(data.denominator, stale: stale, units: stacked ? units : (units - 48) / 2)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(ratio)
@@ -665,15 +672,17 @@ struct ScrollCompareCard: View {
         }
     }
 
-    /** One operand: the number (as large as half the card allows, at most the value minimum) over its caption. */
-    private func operand(_ operand: CompareOperand, stale: Bool) -> some View {
+    /** One operand: the number (as large as its room allows, at most the value minimum) over its caption. */
+    private func operand(_ operand: CompareOperand, stale: Bool, units: Double) -> some View {
         let text = CompareText.operand(operand, language: env.language)
-        let value = ScrollGeometry.value(full: text.full, compact: text.compact, units: (units - 48) / 2)
+        let value = ScrollGeometry.value(full: text.full, compact: text.compact, units: units)
         return VStack(alignment: .leading, spacing: 0) {
             Text(value.text)
                 .font(env.font(Swift.min(value.size, Size.valueMin), .semibold).monospacedDigit())
                 .foregroundStyle(operand.value == nil || stale ? env.colors.muted : env.colors.text)
                 .lineLimit(1)
+                // Dynamic Type can outgrow the room `value` chose for: smaller, never cut.
+                .minimumScaleFactor(0.5)
             ScrollMutedLine(text: operand.label, env: env)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -732,6 +741,11 @@ struct ScrollGaugeCard: View {
                     }
                     .foregroundStyle(stale ? env.colors.muted : (reached ? env.colors.up : env.colors.text))
                     .lineLimit(1)
+                    // "83 %" as one word for VoiceOver, not "83" and "%".
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(
+                        suffix != nil
+                            ? Goals.percent(data.progress).map(GaugeWidgetView.percentText) ?? value.text : value.text)
                 }
                 .padding(.vertical, 4)
                 Text(GaugeWidgetView.progressLine(data, options: options, now: now, timeZone: env.timeZone, language: language))
@@ -859,17 +873,18 @@ struct ScrollCountdownCard: View {
                     .foregroundStyle(env.colors.accent)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    ForEach(Array(view.groups.enumerated()), id: \.offset) { index, group in
-                        HStack(alignment: .firstTextBaseline, spacing: env.pt(sizes.value * 0.08)) {
-                            Text(group.value)
-                                .font(env.font(sizes.value, .semibold).monospacedDigit())
-                                .foregroundStyle(env.colors.text)
-                            Text(group.unit)
-                                .font(env.font(sizes.unit, .medium))
-                                .foregroundStyle(env.colors.muted)
+                // One line; at the largest text sizes, where it would be cut, one group a line.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        ForEach(Array(view.groups.enumerated()), id: \.offset) { index, group in
+                            countdownGroup(group, sizes: sizes)
+                                .padding(.leading, index > 0 ? env.pt(sizes.value * 0.3) : 0)
                         }
-                        .padding(.leading, index > 0 ? env.pt(sizes.value * 0.3) : 0)
+                    }
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(view.groups.enumerated()), id: \.offset) { _, group in
+                            countdownGroup(group, sizes: sizes)
+                        }
                     }
                 }
                 .lineLimit(1)
@@ -879,6 +894,17 @@ struct ScrollCountdownCard: View {
             if let target = view.target {
                 ScrollMutedLine(text: target, env: env)
             }
+        }
+    }
+
+    private func countdownGroup(_ group: CountdownShownGroup, sizes: (value: Double, unit: Double)) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: env.pt(sizes.value * 0.08)) {
+            Text(group.value)
+                .font(env.font(sizes.value, .semibold).monospacedDigit())
+                .foregroundStyle(env.colors.text)
+            Text(group.unit)
+                .font(env.font(sizes.unit, .medium))
+                .foregroundStyle(env.colors.muted)
         }
     }
 }

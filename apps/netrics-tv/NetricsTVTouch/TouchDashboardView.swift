@@ -71,14 +71,20 @@ struct TouchScrollView: View {
     let actions: TouchActions
 
     @State private var detail: WidgetDetailSelection?
+    /** The corner button's height, which grows with Dynamic Type. */
+    @State private var buttonHeight = 56.0
 
     var body: some View {
         ScrollDashboardView(
             state: state, payload: payload, images: images, refresh: refresh,
             interaction: WidgetInteraction(openWidget: { detail = WidgetDetailSelection(widget: $0) })
         )
+        // Room under the last card, so the button in the corner never covers it.
+        .contentMargins(.bottom, buttonHeight + 24, for: .scrollContent)
         .overlay(alignment: .bottomTrailing) {
-            TouchSettingsButton(actions: actions, language: payload.language).padding()
+            TouchSettingsButton(actions: actions, language: payload.language)
+                .onGeometryChange(for: Double.self, of: { $0.size.height }, action: { buttonHeight = $0 })
+                .padding()
         }
         .sheet(item: $detail) { selection in
             WidgetDetailSheet(

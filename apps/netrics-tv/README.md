@@ -378,6 +378,71 @@ notices and the grid follow `format-metric.ts`, `tile-status.ts` and
 `tv-grid.ts`; the widget layout follows `studio-render.ts`, `studio-chart.ts`
 and the text widget layout in `studio-widgets.ts`.
 
+## Accessibility
+
+- **VoiceOver.** Every widget is one element, read in the order of its
+  card: label, period, value, change, freshness (on Apple TV too). Charts
+  are read as their period and range ("Chart, Oct 24 to Oct 30, lowest
+  1.2K, highest 1.9K"), a goal as "83 %", stars as "4 of 5 stars", a
+  countdown as one phrase; separators, sparklines, bar tracks and warning
+  glyph before a widget's notice are hidden. On iPhone and iPad a widget with numbers
+  is a button that opens its detail sheet, and every widget in screen view
+  has the actions next slide, previous slide and pause. The QR code is
+  labelled, the chrome stays on screen while VoiceOver or Switch Control
+  runs, and the header is a heading.
+- **Dynamic Type (iPhone and iPad).** Pairing, the server screen, settings,
+  the detail sheet and the scroll view use the system's text styles, up to
+  the largest accessibility size: the pairing code grows (`@ScaledMetric`),
+  "Share link" and "Copy code" stack, settings and sheet values start left
+  under their label, the sheet opens in full, and in the scroll view a
+  countdown puts one unit a line and a comparison one operand under the
+  other where they would be cut. Screen view is a fixed canvas scaled to
+  the screen (ADR 0015) and keeps its sizes.
+- **Reduce Motion.** No slide fade, no count-up, draw or grow, no pulse,
+  blink or skeleton sweep, no progress bar fill, and the chrome and the
+  tvOS demo hint appear and go without animating.
+
+## Privacy
+
+Both apps ship a privacy manifest (`PrivacyInfo.xcprivacy`), and so do
+NetricsKit and NetricsUI (in their resource bundles), which Xcode's privacy
+report of an archive lists. No tracking, no tracking domains, no analytics,
+advertising or crash-reporting SDKs. Required-reason APIs:
+
+- File timestamps, `C617.1`: the image cache sets and reads its files'
+  modification dates in the App Group container (`ImageCache`).
+- User defaults, `CA92.1`: debug builds read their launch arguments
+  (`DebugLaunch`, `PadDebug`, `PhoneDebug`); release builds do not use
+  them, the declaration only covers the debug code.
+
+No system boot time, disk space or active keyboard APIs (the uptime in the
+heartbeat is the time since the client started, from `Date`). Both
+`Info.plist` files set `ITSAppUsesNonExemptEncryption` to false: the app
+uses HTTPS through URLSession and CryptoKit's SHA-256 only, no encryption of
+its own.
+
+What the app sends, and only to the server it is paired with (netrics cloud
+or the workspace's own server):
+
+- Pairing: the platform (`tvos`, `ios`, `ipados`). The server issues a
+  device ID and tokens, kept in the Keychain.
+- Heartbeat every 5 minutes: the app version and platform, the seconds
+  since the app started, the last connection error and the screen (size in
+  points, scale, format and mode).
+- Requests carry the device token; no name, email, contacts, location,
+  photos, advertising identifier or any other personal data. The person who
+  approves a device signs in on the web, never in the app.
+
+App Privacy answers for App Store Connect (a draft, for the netrics cloud
+case; a self-hosted server is the workspace's own and sends nothing to
+netrics):
+
+| Data type (App Store Connect)                          | Collected | Linked to the user                                               | Tracking | Purpose           |
+| ------------------------------------------------------ | --------- | ---------------------------------------------------------------- | -------- | ----------------- |
+| Identifiers > Device ID (the device record and tokens) | Yes       | Yes: the device belongs to the workspace whose admin approved it | No       | App Functionality |
+| Diagnostics > Other Diagnostic Data (heartbeat)        | Yes       | Yes, the same device record                                      | No       | App Functionality |
+| Everything else (contact info, location, usage data …) | No        | –                                                                | –        | –                 |
+
 ## Languages
 
 English and German (ADR 0016). The app's own text lives in
@@ -414,7 +479,10 @@ one could leave these rules.
   of milestone 10.1's exit gate (#420).
 
 - Final app icon and Top Shelf artwork (the current ones are a draft).
-- App Store Connect record and TestFlight.
+- App Store Connect record and TestFlight; enter the App Privacy answers
+  above and check Xcode's privacy report on the first archive (#417).
+- A VoiceOver walk on a real iPhone and iPad (#417 checked the
+  accessibility tree in the simulator only).
 - A run on a physical Apple TV, and the exit gate of milestone 06. Xcode
   pairs with an Apple TV on another subnet but drops the connection, because
   `remotepairingd` requires the TV to be on the Mac's own link (ARP); put the

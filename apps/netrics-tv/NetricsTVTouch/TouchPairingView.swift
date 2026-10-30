@@ -15,9 +15,12 @@ struct TouchPairingView: View {
     @Environment(DeviceSession.self) private var model
     @Environment(\.screenLanguage) private var language
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var typeSize
     let state: DeviceState
     let openSettings: () -> Void
     @State private var copied = 0
+    /** The code grows with Dynamic Type; one line, so it shrinks before it would wrap. */
+    @ScaledMetric(relativeTo: .largeTitle) private var codeSize = 52.0
 
     var body: some View {
         NavigationStack {
@@ -61,7 +64,7 @@ struct TouchPairingView: View {
                 .multilineTextAlignment(.center)
             if let pairing = state.pairing {
                 Text(pairing.code)
-                    .font(.system(size: 52, weight: .semibold, design: .monospaced))
+                    .font(.system(size: codeSize, weight: .semibold, design: .monospaced))
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
                     .foregroundStyle(Theme.text)
@@ -73,7 +76,7 @@ struct TouchPairingView: View {
                     .multilineTextAlignment(.center)
             } else {
                 Text(verbatim: "····-····")
-                    .font(.system(size: 52, weight: .semibold, design: .monospaced))
+                    .font(.system(size: codeSize, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.faint)
                     .accessibilityHidden(true)
                 ProgressView()
@@ -92,7 +95,10 @@ struct TouchPairingView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
 
-            HStack(spacing: 12) {
+            // Side by side; stacked at the accessibility text sizes, where they would be cut.
+            let stacked = typeSize.isAccessibilitySize
+            let layout = stacked ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+            layout {
                 ShareLink(item: approve) {
                     Label(L10n.tr("Share link", language), systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
@@ -112,9 +118,9 @@ struct TouchPairingView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
-            // German labels are longer: one line each, a little smaller if needed.
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
+            // German labels are longer: side by side one line each, a little smaller if needed.
+            .lineLimit(stacked ? nil : 1)
+            .minimumScaleFactor(stacked ? 1 : 0.75)
 
             Text(
                 L10n.tr(
@@ -191,6 +197,9 @@ struct QRCodeCard: View {
                     .padding(14)
                     .background(Color.white)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .accessibilityElement()
+                    .accessibilityLabel(L10n.tr("QR code of the approval page", language))
+                    .accessibilityAddTraits(.isImage)
             }
             Text(L10n.tr("Or scan with another device", language))
                 .font(.footnote)

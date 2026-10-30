@@ -13,6 +13,7 @@ struct WidgetDetailSheet: View {
     let widget: DeviceWidget
     let language: ScreenLanguage
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         NavigationStack {
@@ -28,17 +29,31 @@ struct WidgetDetailSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        // At the accessibility text sizes half a screen shows a row or two: open in full.
+        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
         .environment(\.locale, language.locale)
     }
 
     private func content(_ detail: WidgetDetail) -> some View {
-        List {
+        // Under the title it stays put; at the accessibility sizes it takes several lines,
+        // so it scrolls with the rows instead of covering them.
+        let inList = typeSize.isAccessibilitySize
+        return List {
+            if inList, let subtitle = detail.subtitle {
+                Section {
+                } header: {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .textCase(nil)
+                }
+            }
             Section {
                 ForEach(Array(detail.rows.enumerated()), id: \.offset) { _, row in
                     LabeledContent(title(row.field)) {
                         Text(row.text)
-                            .multilineTextAlignment(.trailing)
+                            // The row stacks at the accessibility sizes; the value then starts left.
+                            .multilineTextAlignment(typeSize.isAccessibilitySize ? .leading : .trailing)
                             .textSelection(.enabled)
                     }
                 }
@@ -59,7 +74,7 @@ struct WidgetDetailSheet: View {
         .navigationTitle(detail.title)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .top, spacing: 0) {
-            if let subtitle = detail.subtitle {
+            if !inList, let subtitle = detail.subtitle {
                 Text(subtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
