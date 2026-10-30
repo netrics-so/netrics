@@ -33,6 +33,13 @@ describe("describeAppVersion", () => {
     expect(describeAppVersion("tvos")).toBe("tvOS");
   });
 
+  it("shows the iPhone and iPad app's prefixes as iOS and iPadOS", () => {
+    expect(describeAppVersion("ios 0.1.0")).toBe("iOS 0.1.0");
+    expect(describeAppVersion("ipados 0.1.0")).toBe("iPadOS 0.1.0");
+    expect(describeAppVersion("iPadOS")).toBe("iPadOS");
+    expect(describeAppVersion("iosx 1")).toBe("iosx 1");
+  });
+
   it("shows anything else unchanged", () => {
     expect(describeAppVersion("0.1.0")).toBe("0.1.0");
     expect(describeAppVersion("tvosx 1")).toBe("tvosx 1");

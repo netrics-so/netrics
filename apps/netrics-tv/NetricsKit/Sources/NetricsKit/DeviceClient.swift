@@ -21,6 +21,14 @@ import Foundation
 // The client is driven by `tick()`, which does the next step and returns
 // how long to wait before the following one. `run()` loops over it with
 // real sleeps; tests call `tick()` with a manual clock.
+//
+// Lifecycle (ADR 0021, section 3): `enterBackground()` stops the loop and
+// the heartbeat, with nothing sent until `enterForeground()`. On return the
+// last dashboard is still on screen (an app iOS ended in the background
+// starts from the cache instead), and the loop runs at once: it refreshes
+// the tokens when due, polls with `If-None-Match`, then sends a heartbeat
+// with the fresh token. A request in flight when the app leaves is not
+// cancelled, so a token rotation the server already made is still saved.
 
 public enum DevicePhase: Sendable, Equatable {
     /** Reading the stored credentials. */
@@ -140,6 +148,19 @@ public actor DeviceClient {
     // phase are dropped instead of acting on the new one.
     private var epoch = 0
     private var refreshing: Task<RefreshOutcome, any Error>?
+    /** False while the app is in the background: the loops wait and nothing is sent. */
+    private var active = true
+    /** Bumped on every change between foreground and background. */
+    private var lifecycleGeneration = 0
+    private var waiters: [UUID: Waiter] = [:]
+    private let sleep: @Sendable (Duration) async throws -> Void
+
+    /** A wait of the run loop that a lifecycle change or a stop cuts short. */
+    private enum Waiter {
+        case pending
+        case waiting(CheckedContinuation<Void, Never>)
+        case done
+    }
 
     public init(
         server: ServerConfig,
@@ -150,7 +171,8 @@ public actor DeviceClient {
         appVersion: String,
         now: @escaping @Sendable () -> Date = { Date() },
         screen: (@Sendable () async -> DeviceScreenReport?)? = nil,
-        platform: DevicePlatform = .tvos
+        platform: DevicePlatform = .tvos,
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.server = server
         self.transport = transport
@@ -161,6 +183,7 @@ public actor DeviceClient {
         self.now = now
         self.screen = screen
         self.platform = platform
+        self.sleep = sleep
         (updates, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(16))
     }
 
@@ -199,6 +222,33 @@ public actor DeviceClient {
     public func stop() {
         running = false
         epoch += 1
+        wakeWaiters()
+    }
+
+    /** Whether the app is in the foreground, as the app last reported. */
+    public var isActive: Bool { active }
+
+    /**
+     * The scene went to the background: the loop and the heartbeat stop
+     * until `enterForeground()`. No background refresh (ADR 0021).
+     */
+    public func enterBackground() {
+        guard active else { return }
+        active = false
+        lifecycleGeneration += 1
+        wakeWaiters()
+    }
+
+    /**
+     * The scene is active again: the dashboard on screen stays, and the run
+     * loop refreshes the tokens when due, polls with `If-None-Match` and
+     * sends a heartbeat at once. Nothing happens when already active.
+     */
+    public func enterForeground() {
+        guard !active else { return }
+        active = true
+        lifecycleGeneration += 1
+        wakeWaiters()
     }
 
     /**
@@ -212,6 +262,7 @@ public actor DeviceClient {
         if case .blocked = state.phase { blocked = true }
         running = false
         epoch += 1
+        wakeWaiters()
         // A blocked client sends nothing: the certificate changed.
         if !blocked, credentials != nil {
             await revokeOnServer()
@@ -254,52 +305,118 @@ public actor DeviceClient {
 
     /**
      * Runs the client until the task is cancelled, it is unpaired or a
-     * certificate change blocks it: the main loop and the heartbeat.
+     * certificate change blocks it: the main loop and the heartbeat, both
+     * paused while the app is in the background.
      */
     public func run() async {
         start()
         await withTaskGroup(of: Void.self) { group in
-            group.addTask {
-                while !Task.isCancelled {
-                    guard let delay = await self.tick() else { return }
-                    await self.nap(delay)
-                }
-            }
-            group.addTask {
-                try? await Task.sleep(for: Self.firstHeartbeat)
-                while !Task.isCancelled, await self.isRunning {
-                    let sent = await self.sendHeartbeat()
-                    try? await Task.sleep(for: sent ? Self.heartbeatInterval : Self.firstHeartbeat)
-                }
-            }
+            group.addTask { await self.pollLoop() }
+            group.addTask { await self.heartbeatLoop() }
         }
         stop()
     }
 
     var isRunning: Bool { running }
 
-    /** The main loop's wait, which `wake()` ends early. */
-    private var napping: Task<Void, Never>?
-
-    private func nap(_ delay: Duration) async {
-        let sleep = Task<Void, Never> { try? await Task.sleep(for: delay) }
-        napping = sleep
-        await withTaskCancellationHandler {
-            await sleep.value
-        } onCancel: {
-            sleep.cancel()
+    /** `tick()` after `tick()`; on return to the foreground at once, then a heartbeat. */
+    private func pollLoop() async {
+        var generation = lifecycleGeneration
+        var heartbeatDue = false
+        // Ends when stopped too, also from the background (unpair).
+        while !Task.isCancelled, running {
+            if generation != lifecycleGeneration {
+                generation = lifecycleGeneration
+                heartbeatDue = true
+            }
+            guard active else {
+                await pause(nil)
+                continue
+            }
+            guard let delay = await tick() else { return }
+            if heartbeatDue {
+                // After the tick, so it carries a refreshed token.
+                heartbeatDue = false
+                await sendHeartbeat()
+            }
+            // Left and came back during the tick: go again at once.
+            if generation == lifecycleGeneration {
+                await pause(delay)
+            }
         }
-        if napping == sleep { napping = nil }
+    }
+
+    /** Every 5 minutes in the foreground; the poll loop sends the one on return. */
+    private func heartbeatLoop() async {
+        var generation = lifecycleGeneration
+        var wait = Self.firstHeartbeat
+        while !Task.isCancelled, running {
+            guard active else {
+                await pause(nil)
+                continue
+            }
+            if generation != lifecycleGeneration {
+                generation = lifecycleGeneration
+                wait = Self.heartbeatInterval
+            }
+            await pause(wait)
+            guard generation == lifecycleGeneration, active else { continue }
+            let sent = await sendHeartbeat()
+            wait = sent ? Self.heartbeatInterval : Self.firstHeartbeat
+        }
     }
 
     /**
-     * The app is in the foreground again (iOS suspends it in the
-     * background): end the main loop's wait, so it polls the same pairing,
-     * replaces an expired code or fetches the dashboard now.
+     * Waits for `delay` (nil: until woken), or less: a change between
+     * foreground and background, a stop and cancellation end it early.
      */
-    public func wake() {
-        napping?.cancel()
-        napping = nil
+    private func pause(_ delay: Duration?) async {
+        let id = UUID()
+        // Registered before the first suspension, so no change is missed.
+        waiters[id] = .pending
+        let sleep = self.sleep
+        await withTaskGroup(of: Void.self) { group in
+            if let delay {
+                group.addTask { try? await sleep(delay) }
+            }
+            group.addTask { await self.waitForWake(id) }
+            await group.next()
+            group.cancelAll()
+            wake(id)
+        }
+        waiters[id] = nil
+    }
+
+    private func waitForWake(_ id: UUID) async {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if case .pending = waiters[id] {
+                    waiters[id] = .waiting(continuation)
+                } else {
+                    continuation.resume()
+                }
+            }
+        } onCancel: {
+            Task { await self.wake(id) }
+        }
+    }
+
+    private func wake(_ id: UUID) {
+        switch waiters[id] {
+        case .waiting(let continuation):
+            waiters[id] = .done
+            continuation.resume()
+        case .pending:
+            waiters[id] = .done
+        case .done, nil:
+            break
+        }
+    }
+
+    private func wakeWaiters() {
+        for id in waiters.keys {
+            wake(id)
+        }
     }
 
     /** Does the next step; returns the wait before the next one, nil to stop. */
@@ -379,6 +496,7 @@ public actor DeviceClient {
     private func block() -> Duration? {
         epoch += 1
         running = false
+        wakeWaiters()
         update {
             // English here; the app shows it in its language (KitStrings.translate).
             $0.phase = .blocked(KitStrings.text(.certificateChangedBlocked))
@@ -741,13 +859,15 @@ public actor DeviceClient {
     }
 
     /**
-     * What the TV reports as its app version: "tvos <version>" (#125), the
-     * counterpart of the browser kiosk's "web <version>", so the TV list can
-     * tell the two apart. "tvos" alone when the bundle carries no version.
+     * What the device reports as its app version: the platform and the
+     * version, "tvos <version>" (#125), "ios <version>" or "ipados
+     * <version>", the counterparts of the browser kiosk's "web <version>",
+     * so the device list can tell them apart. The platform alone when the
+     * bundle carries no version.
      */
-    public static func reportedAppVersion(_ version: String) -> String {
+    public static func reportedAppVersion(_ version: String, platform: DevicePlatform = .tvos) -> String {
         let trimmed = version.trimmingCharacters(in: .whitespacesAndNewlines)
-        let reported = trimmed.isEmpty ? "tvos" : "tvos \(trimmed)"
+        let reported = trimmed.isEmpty ? platform.rawValue : "\(platform.rawValue) \(trimmed)"
         return String(reported.prefix(maxAppVersionLength))
     }
 
@@ -763,7 +883,7 @@ public actor DeviceClient {
         let uptime = max(Int(now().timeIntervalSince(startedAt)), 0)
         let measured = await screen?()
         let body = DeviceHeartbeatRequest(
-            appVersion: Self.reportedAppVersion(appVersion),
+            appVersion: Self.reportedAppVersion(appVersion, platform: platform),
             uptimeSeconds: uptime,
             lastError: state.lastError,
             screen: measured,

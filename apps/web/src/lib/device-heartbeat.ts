@@ -17,16 +17,25 @@ export interface HeartbeatSummary {
   lastErrorFull: string | null;
 }
 
+/** How the netrics TV apps' platform prefixes are written (#125, #415). */
+const APPLE_PLATFORMS: Record<string, string> = {
+  tvos: "tvOS",
+  ios: "iOS",
+  ipados: "iPadOS",
+};
+
 /**
  * The app version as the TV list shows it (#125). Browser kiosks report
- * "web <version>" and the Apple TV app "tvos <version>"; the latter is shown
- * as "tvOS <version>". Anything else is shown as reported.
+ * "web <version>"; the netrics TV app reports "tvos <version>" on Apple TV
+ * and "ios" or "ipados <version>" on iPhone and iPad, shown as "tvOS",
+ * "iOS" and "iPadOS". Anything else is shown as reported.
  */
 export function describeAppVersion(appVersion: string): string {
   const version = appVersion.trim();
-  const tvos = /^tvos(?=\s|$)/i.exec(version);
-  if (tvos) {
-    return `tvOS${version.slice(tvos[0].length)}`;
+  const prefix = /^(tvos|ipados|ios)(?=\s|$)/i.exec(version)?.[1];
+  const name = prefix && APPLE_PLATFORMS[prefix.toLowerCase()];
+  if (prefix && name) {
+    return `${name}${version.slice(prefix.length)}`;
   }
   return version;
 }

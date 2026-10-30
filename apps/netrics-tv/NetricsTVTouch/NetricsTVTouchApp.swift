@@ -16,7 +16,6 @@ struct NetricsTVTouchApp: App {
     @State private var model = DeviceSession(
         platform: UIDevice.current.userInterfaceIdiom == .pad ? .ipados : .ios,
         appGroup: Bundle.main.object(forInfoDictionaryKey: CacheLocation.appGroupInfoKey) as? String)
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         // One window: the app is one device pairing (Info.plist turns off
@@ -26,11 +25,6 @@ struct NetricsTVTouchApp: App {
                 .environment(model)
                 .preferredColorScheme(.dark)
                 .task { model.launch() }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            // iOS suspends the app in the background: back in front, poll the
-            // same pairing (or show a new code) and the dashboard at once.
-            if phase == .active { model.resume() }
         }
     }
 }
@@ -63,6 +57,8 @@ struct TouchRootView: View {
             }
             .ignoresSafeArea()
         }
+        // Polls only in the foreground; on return at once, with a heartbeat (#415).
+        .deviceLifecycle(model)
         // The app's text and numbers in the screen language (ADR 0016).
         .environment(\.screenLanguage, language)
         .environment(\.locale, language.locale)
