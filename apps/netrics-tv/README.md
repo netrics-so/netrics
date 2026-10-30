@@ -12,7 +12,8 @@ App Store app, "netrics TV", with the bundle identifier `tv.netrics`
   all protocol and formatting logic and imports no UI framework.
   `NetricsUI` is the SwiftUI rendering the tvOS app and the later iOS app
   share (ADR 0021): widget views, the Signal design, the slide canvas and
-  its chrome (header, refresh countdown, slide footer), the schema 1 tile
+  its chrome (header, refresh countdown, slide footer), the slideshow
+  player (`SlideshowPlayer`: format, pages, rotation), the schema 1 tile
   grid, the scroll view and the app's String Catalog. Both build for tvOS
   26, iOS 27 and macOS 26, so their tests run on a Mac.
 - `NetricsTV/` is the tvOS app: the slideshow with the Siri Remote's
@@ -20,9 +21,10 @@ App Store app, "netrics TV", with the bundle identifier `tv.netrics`
   renders what NetricsKit reports, with NetricsUI's views.
 - `NetricsTVTouch/` is the iPhone and iPad app (iOS and iPadOS 27, #410).
   For now it is the shell: Info.plist, entitlements, icon, and a notice
-  until pairing comes (#411); Debug builds render `-NetricsDebugPayload`
-  with NetricsUI's scroll view. Its iOS-only strings (the local network
-  prompt) are in `NetricsTVTouch/InfoPlist.xcstrings`.
+  until pairing comes (#411); Debug builds render `-NetricsDebugPayload`,
+  on iPad in screen view sized to the window (`PadDashboardView`, #412),
+  on iPhone with NetricsUI's scroll view. Its iOS-only strings (the local
+  network prompt) are in `NetricsTVTouch/InfoPlist.xcstrings`.
 - `NetricsTV.xcodeproj` builds both apps: the targets `NetricsTV` (tvOS)
   and `NetricsTVTouch` (iPhone and iPad), each with a shared scheme. Their
   sources are synchronized folders, so adding a file to `NetricsTV/` or
@@ -85,6 +87,11 @@ xcrun simctl launch <udid> tv.netrics -NetricsDebugServer http://localhost:3000 
 ```
 
 `-NetricsDebugSettings YES` opens the settings screen after launch.
+On iPad, `-NetricsDebugWindowSizes 1376x1032,375x1032` (with
+`-NetricsDebugStepSeconds 6`) gives the screen view each size in turn, as a
+Split View, Slide Over or Stage Manager window would, to check the re-layout
+from a script; `simctl` cannot turn a simulator, a UI test can
+(`XCUIDevice.shared.orientation`).
 `-NetricsDebugPayload /path/payload.json` shows a payload file as if paired,
 with no server and nothing in the Keychain (`-NetricsDebugImages /path`
 adds image files named by their SHA-256), to compare renderings in the
@@ -232,6 +239,16 @@ and checks the sizes.
   with ImageIO at the widget's pixel size.
 - **Heartbeat.** Every 5 minutes: app version, uptime, the last error and
   the screen (points after the rotation setting, scale, format, screen view).
+- **iPad (ADR 0021 section 3, #412).** Screen view by default, as on the
+  TV: NetricsUI's `SlideshowPlayer`, which the tvOS slideshow uses too, over
+  the whole window. The format comes from the window's size (`PadScreen`):
+  `4x3` in landscape and `3x4` in portrait on every current iPad, and any
+  Split View, Slide Over or Stage Manager window gets the format of its
+  aspect; every size change re-lays out at once, offline too, keeping the
+  slide on screen. The device's rotation setting is ignored, since an iPad
+  knows its orientation. `display_mode = scroll` shows the scroll view
+  instead. The screen stays on (`isIdleTimerDisabled`) only in screen view
+  while the app is in the foreground; scroll view follows Auto-Lock.
 - **Scroll view (ADR 0017 section 5).** `ScrollDashboardView` in NetricsUI
   is the scroll view for the later iPhone and iPad app (Apple TV is always
   screen view): the header, then each slide as a section with its heading,
