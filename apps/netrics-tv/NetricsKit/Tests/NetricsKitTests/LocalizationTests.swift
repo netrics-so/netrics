@@ -147,7 +147,7 @@ import Testing
 
 /**
  * The apps' String Catalog (NetricsUI's Resources/Localizable.xcstrings) and
- * the keys NetricsUI and the tvOS app look up.
+ * the keys NetricsUI and the apps look up.
  */
 @Suite struct AppStringCatalogTests {
     /** apps/netrics-tv */
@@ -156,8 +156,8 @@ import Testing
         .deletingLastPathComponent()
     static let catalogFile = appsDirectory.appendingPathComponent(
         "NetricsKit/Sources/NetricsUI/Resources/Localizable.xcstrings")
-    /** Where `L10n.tr` is called: the shared rendering and the tvOS app. */
-    static let sourceDirectories = ["NetricsKit/Sources/NetricsUI", "NetricsTV"].map {
+    /** Where `L10n.tr` is called: the shared code, the tvOS app and the iPhone and iPad app. */
+    static let sourceDirectories = ["NetricsKit/Sources/NetricsUI", "NetricsTV", "NetricsTVTouch"].map {
         appsDirectory.appendingPathComponent($0)
     }
 

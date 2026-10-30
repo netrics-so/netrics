@@ -1,17 +1,22 @@
 import NetricsKit
 import NetricsUI
 import SwiftUI
+import UIKit
 
 /**
- * netrics TV on iPhone and iPad (ADR 0021, #410): the app shell. Pairing,
- * the iPad and iPhone layouts, touch and the lifecycle follow in #411 to
- * #415; until then the app shows a notice, and Debug builds render a payload
- * file (`-NetricsDebugPayload`, as on tvOS): on iPad in screen view sized to
- * the window (#412), on iPhone with NetricsUI's scroll view.
+ * netrics TV on iPhone and iPad (ADR 0021). The flows are the Apple TV's
+ * (`DeviceSession` in NetricsUI): netrics cloud at once, "Use your own
+ * server", the code with the approval link, and the dashboard once an owner
+ * or admin approves it on the web (#411). The iPad and iPhone layouts,
+ * touch and the lifecycle follow in #412 to #415; `TouchDashboardView` is
+ * where they plug in.
  */
 @main
 struct NetricsTVTouchApp: App {
-    @State private var model = TouchModel()
+    @State private var model = DeviceSession(
+        platform: UIDevice.current.userInterfaceIdiom == .pad ? .ipados : .ios,
+        appGroup: Bundle.main.object(forInfoDictionaryKey: CacheLocation.appGroupInfoKey) as? String)
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         // One window: the app is one device pairing (Info.plist turns off
@@ -22,94 +27,105 @@ struct NetricsTVTouchApp: App {
                 .preferredColorScheme(.dark)
                 .task { model.launch() }
         }
-    }
-}
-
-@MainActor
-@Observable
-final class TouchModel {
-    private(set) var state = DeviceState()
-    /** The cache folder in the App Group container, from the first build on (ADR 0021, section 4). */
-    let images: FileImageCache
-
-    init() {
-        let folder = CacheLocation.resolve(
-            appGroup: Bundle.main.object(forInfoDictionaryKey: CacheLocation.appGroupInfoKey) as? String)
-        images = FileImageCache.inFolder(folder)
-    }
-
-    var language: ScreenLanguage { state.payload?.language ?? .system() }
-
-    func launch() {
-        #if DEBUG
-            if let path = UserDefaults.standard.string(forKey: "NetricsDebugPayload") {
-                showFixture(path, images: UserDefaults.standard.string(forKey: "NetricsDebugImages"))
-            }
-        #endif
-    }
-
-    #if DEBUG
-        /** Debug builds: a payload file shown as if paired, with no server and nothing in the Keychain. */
-        private func showFixture(_ path: String, images folder: String?) {
-            var state = DeviceState()
-            do {
-                state.payload = try JSONDecoder().decode(
-                    DashboardPayload.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
-            } catch {
-                state.phase = .blocked("Debug payload \(path): \(error)")
-                self.state = state
-                return
-            }
-            if let folder, case .v2(let payload) = state.payload {
-                for image in payload.images {
-                    let file = URL(fileURLWithPath: folder).appendingPathComponent(image.sha256)
-                    guard let bytes = try? Data(contentsOf: file) else { continue }
-                    images.store(bytes, sha256: image.sha256)
-                    state.storedImages.insert(image.sha256)
-                }
-            }
-            state.phase = .paired
-            state.updatedAt = Date()
-            self.state = state
+        .onChange(of: scenePhase) { _, phase in
+            // iOS suspends the app in the background: back in front, poll the
+            // same pairing (or show a new code) and the dashboard at once.
+            if phase == .active { model.resume() }
         }
-    #endif
+    }
 }
 
 struct TouchRootView: View {
-    @Environment(TouchModel.self) private var model
+    @Environment(DeviceSession.self) private var model
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         let language = model.language
         ZStack {
             Theme.background.ignoresSafeArea()
-            if let payload = model.state.dashboardV2, payload.dashboard != nil {
-                if UIDevice.current.userInterfaceIdiom == .pad {
-                    // iPad: screen view sized to the window, or scroll view by the device setting (#412).
-                    PadDashboardView(state: model.state, payload: payload, images: model.images)
-                } else {
-                    ScrollDashboardView(state: model.state, payload: payload, images: model.images)
-                }
-            } else if case .blocked(let message) = model.state.phase {
-                notice(text: message)
-            } else {
-                notice(text: L10n.tr("Pairing on iPhone and iPad comes with the next update.", language))
+            switch model.route {
+            case .launching:
+                ProgressView()
+            case .connectingCloud:
+                TouchConnectingCloudView()
+            case .ownServer:
+                TouchServerEntryView()
+            case .running:
+                TouchDeviceView()
             }
         }
+        // The window, for the heartbeat (ADR 0017, section 7).
+        .background {
+            GeometryReader { window in
+                Color.clear
+                    .onAppear { measured(window.size) }
+                    .onChange(of: window.size) { _, size in measured(size) }
+            }
+            .ignoresSafeArea()
+        }
+        // The app's text and numbers in the screen language (ADR 0016).
         .environment(\.screenLanguage, language)
         .environment(\.locale, language.locale)
     }
 
-    private func notice(text: String) -> some View {
-        VStack(spacing: 12) {
-            Text(verbatim: "netrics TV")
-                .font(.largeTitle.weight(.semibold))
-                .foregroundStyle(Theme.text)
-            Text(text)
-                .font(.body)
-                .foregroundStyle(Theme.muted)
-                .multilineTextAlignment(.center)
+    private func measured(_ size: CGSize) {
+        model.measured(Double(size.width), Double(size.height), scale: Double(displayScale))
+    }
+}
+
+/** What a paired or pairing iPhone or iPad shows, by the client's phase. */
+struct TouchDeviceView: View {
+    @Environment(DeviceSession.self) private var model
+    @Environment(\.screenLanguage) private var language
+    @State private var showSettings = false
+
+    var body: some View {
+        let state = model.device
+        Group {
+            switch state.phase {
+            case .starting, .unpaired:
+                ProgressView()
+            case .pairing:
+                TouchPairingView(state: state, openSettings: { showSettings = true })
+            case .blocked(let message):
+                TouchBlockedView(
+                    message: KitStrings.translate(message, to: language), openSettings: { showSettings = true })
+            case .paired:
+                TouchDashboardView(state: state, images: model.images, openSettings: { showSettings = true })
+            }
         }
-        .padding(32)
-        .frame(maxWidth: 520)
+        .sheet(isPresented: $showSettings) {
+            TouchSettingsView()
+                // The sheet is its own presentation: give it the language again.
+                .environment(model)
+                .environment(\.screenLanguage, language)
+                .environment(\.locale, language.locale)
+                .preferredColorScheme(.dark)
+        }
+        .task {
+            if DebugLaunch.openSettings {
+                try? await Task.sleep(for: .seconds(4))
+                showSettings = true
+            }
+        }
+    }
+}
+
+/** The pinned certificate changed: stop and warn instead of connecting. */
+struct TouchBlockedView: View {
+    @Environment(\.screenLanguage) private var language
+    let message: String
+    let openSettings: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(L10n.tr("⚠ Connection stopped", language), systemImage: "exclamationmark.triangle")
+                .foregroundStyle(Theme.warning)
+        } description: {
+            Text(message)
+        } actions: {
+            Button(L10n.tr("Settings", language), action: openSettings)
+                .buttonStyle(.borderedProminent)
+        }
     }
 }

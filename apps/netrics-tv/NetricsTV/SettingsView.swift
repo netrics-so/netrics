@@ -17,7 +17,7 @@ import SwiftUI
  * confirmation dialog cannot turn, so a turned screen asks in place.
  */
 struct SettingsView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(DeviceSession.self) private var model
     @Environment(\.screenLanguage) private var language
     let rotation: ScreenRotation
     let close: () -> Void
@@ -89,7 +89,7 @@ struct SettingsView: View {
                     }
                 }
                 Row(label: L10n.tr("This TV", language), value: state.device?.name ?? (state.phase == .pairing ? L10n.tr("Not paired yet", language) : "—"), narrow: narrow)
-                Row(label: L10n.tr("App version", language), value: AppModel.appVersion, narrow: narrow)
+                Row(label: L10n.tr("App version", language), value: DeviceSession.appVersion, narrow: narrow)
                 if let error = state.lastError, state.offline {
                     Row(label: L10n.tr("Last error", language), value: error, small: true, narrow: narrow)
                 }

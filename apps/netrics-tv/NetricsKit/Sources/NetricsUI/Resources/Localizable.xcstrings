@@ -52,6 +52,23 @@
         }
       }
     },
+    "Approving on this device? Open the approval page, approve as an owner or admin, then come back here: the dashboard appears on its own.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approving on this device? Open the approval page, approve as an owner or admin, then come back here: the dashboard appears on its own."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Freigabe auf diesem Gerät? Öffne die Freigabeseite, gib das Gerät als Inhaber oder Admin frei und kehre hierher zurück: Das Dashboard erscheint von selbst."
+          }
+        }
+      }
+    },
     "Cancel": {
       "extractionState": "manual",
       "localizations": {
@@ -120,6 +137,23 @@
         }
       }
     },
+    "Code copied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code copied"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code kopiert"
+          }
+        }
+      }
+    },
     "Connect": {
       "extractionState": "manual",
       "localizations": {
@@ -167,6 +201,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Verbinde mit netrics…"
+          }
+        }
+      }
+    },
+    "Copy code": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy code"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code kopieren"
           }
         }
       }
@@ -239,6 +290,24 @@
         }
       }
     },
+    "Insecure connections allowed (not recommended)": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Insecure connections allowed (not recommended)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unsichere Verbindungen erlaubt (nicht empfohlen)"
+          }
+        }
+      }
+    },
     "Last error": {
       "extractionState": "manual",
       "localizations": {
@@ -286,6 +355,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Wird geladen…"
+          }
+        }
+      }
+    },
+    "Local network access": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local network access"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zugriff auf das lokale Netzwerk"
           }
         }
       }
@@ -392,6 +478,57 @@
         }
       }
     },
+    "Open Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Settings"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einstellungen öffnen"
+          }
+        }
+      }
+    },
+    "Open approval page": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open approval page"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Freigabeseite öffnen"
+          }
+        }
+      }
+    },
+    "Or scan with another device": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Or scan with another device"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oder scanne den Code mit einem anderen Gerät"
+          }
+        }
+      }
+    },
     "Or scan with your phone": {
       "extractionState": "manual",
       "localizations": {
@@ -422,23 +559,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kopplungscode %@"
-          }
-        }
-      }
-    },
-    "Pairing on iPhone and iPad comes with the next update.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pairing on iPhone and iPad comes with the next update."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Das Koppeln auf iPhone und iPad kommt mit dem nächsten Update."
           }
         }
       }
@@ -528,6 +648,23 @@
         }
       }
     },
+    "Share link": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share link"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Link teilen"
+          }
+        }
+      }
+    },
     "Show a netrics dashboard on this screen": {
       "extractionState": "manual",
       "localizations": {
@@ -592,6 +729,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Den Server kannst du nur durch Entkoppeln ändern. Entferne diesen TV danach unter TVs in netrics."
+          }
+        }
+      }
+    },
+    "The server can be changed only by unpairing. After unpairing, remove this device under TVs in netrics.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server can be changed only by unpairing. After unpairing, remove this device under TVs in netrics."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Den Server kannst du nur durch Entkoppeln ändern. Entferne dieses Gerät danach unter TVs in netrics."
           }
         }
       }
@@ -677,6 +831,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dieses Dashboard hat noch keine Kacheln."
+          }
+        }
+      }
+    },
+    "This device": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Gerät"
+          }
+        }
+      }
+    },
+    "This device could not save the server in its Keychain (%@).": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device could not save the server in its Keychain (%@)."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Gerät konnte den Server nicht im Schlüsselbund speichern (%@)."
+          }
+        }
+      }
+    },
+    "This device forgets its server and credentials and shows a new pairing code for netrics cloud.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device forgets its server and credentials and shows a new pairing code for netrics cloud."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Gerät vergisst seinen Server und seine Zugangsdaten und zeigt einen neuen Kopplungscode für netrics cloud."
           }
         }
       }
@@ -767,6 +972,41 @@
         }
       }
     },
+    "Unpair this device": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unpair this device"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Gerät entkoppeln"
+          }
+        }
+      }
+    },
+    "Unpair this device?": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unpair this device?"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Gerät entkoppeln?"
+          }
+        }
+      }
+    },
     "Use netrics cloud": {
       "extractionState": "manual",
       "localizations": {
@@ -831,6 +1071,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Eigener Server"
+          }
+        }
+      }
+    },
+    "netrics TV needs access to your local network to reach a server there. If you did not allow it, turn on Local Network for netrics TV in Settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "netrics TV needs access to your local network to reach a server there. If you did not allow it, turn on Local Network for netrics TV in Settings."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "netrics TV braucht Zugriff auf dein lokales Netzwerk, um einen Server dort zu erreichen. Falls du ihn nicht erlaubt hast, schalte „Lokales Netzwerk“ für netrics TV in den Einstellungen ein."
           }
         }
       }

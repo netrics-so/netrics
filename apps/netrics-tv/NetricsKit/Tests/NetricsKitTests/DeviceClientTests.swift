@@ -101,6 +101,48 @@ import Testing
         #expect(await h.state.pairing?.code == "CODE-0002")
     }
 
+    /** iOS suspends the app: back in the foreground, `wake()` polls the same pairing at once (#411). */
+    @Test func wakeEndsTheWaitAndPollsTheSamePairing() async throws {
+        let clock = ManualClock()
+        let api = FakeAPI(
+            clock: clock,
+            routes: [
+                "POST /v1/device/pairings": { _ in
+                    json(
+                        CreatePairingResponse(
+                            pairingId: pairingID, code: "WAKE-CODE", pollSecret: pollSecret,
+                            expiresAt: ISODate.format(Date().addingTimeInterval(600)), pollIntervalSeconds: 3600,
+                            pairingUrl: "https://kiosk.test/devices/approve",
+                            approveUrl: "https://kiosk.test/devices/approve?code=WAKE-CODE"))
+                },
+                "POST /v1/device/pairings/poll": { _ in
+                    json(PollPairingResponse.pending(expiresAt: ISODate.format(Date().addingTimeInterval(600))))
+                },
+            ])
+        let client = DeviceClient(
+            server: testServer, transport: api, store: InMemoryCredentialStore(server: testServer),
+            cache: InMemoryDashboardCache(), appVersion: "1.2.3", platform: .ios)
+        let running = Task { await client.run() }
+        defer { running.cancel() }
+
+        func waitFor(_ condition: () async -> Bool) async throws {
+            for _ in 0..<200 where !(await condition()) {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        try await waitFor { await client.state.pairing != nil }
+        #expect(await client.state.pairing?.code == "WAKE-CODE")
+        #expect(api.callsTo("POST /v1/device/pairings/poll").isEmpty)
+        #expect(api.callsTo("POST /v1/device/pairings").first?.json()?["platform"] as? String == "ios")
+
+        // The next poll is an hour away; waking polls now, with the same code.
+        await client.wake()
+        try await waitFor { !api.callsTo("POST /v1/device/pairings/poll").isEmpty }
+        #expect(api.callsTo("POST /v1/device/pairings/poll").count == 1)
+        #expect(api.callsTo("POST /v1/device/pairings").count == 1)
+        #expect(await client.state.pairing?.code == "WAKE-CODE")
+    }
+
     @Test func startsNewPairingWhenCodeExpires() async {
         let codes = Mutex(0)
         let h = Harness { clock in

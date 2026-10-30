@@ -14,17 +14,20 @@ App Store app, "netrics TV", with the bundle identifier `tv.netrics`
   share (ADR 0021): widget views, the Signal design, the slide canvas and
   its chrome (header, refresh countdown, slide footer), the slideshow
   player (`SlideshowPlayer`: format, pages, rotation), the schema 1 tile
-  grid, the scroll view and the app's String Catalog. Both build for tvOS
+  grid, the scroll view, the app's String Catalog, and `DeviceSession`, the
+  state both apps run on (server choice, pairing, unpair). Both build for tvOS
   26, iOS 27 and macOS 26, so their tests run on a Mac.
 - `NetricsTV/` is the tvOS app: the slideshow with the Siri Remote's
   commands, focus handling, pairing, server and settings screens. It only
   renders what NetricsKit reports, with NetricsUI's views.
-- `NetricsTVTouch/` is the iPhone and iPad app (iOS and iPadOS 27, #410).
-  For now it is the shell: Info.plist, entitlements, icon, and a notice
-  until pairing comes (#411); Debug builds render `-NetricsDebugPayload`,
-  on iPad in screen view sized to the window (`PadDashboardView`, #412),
-  on iPhone with NetricsUI's scroll view. Its iOS-only strings (the local
-  network prompt) are in `NetricsTVTouch/InfoPlist.xcstrings`.
+- `NetricsTVTouch/` is the iPhone and iPad app (iOS and iPadOS 27, #410):
+  the same server choice and pairing on touch, with "Open approval page",
+  "Share link" and "Copy code" (#411), the settings sheet, and the
+  dashboard (`TouchDashboardView`): on iPad in screen view sized to the
+  window (`PadDashboardView`, #412), on iPhone in NetricsUI's scroll view
+  until #413. It reports the platform `ios` or `ipados` when it pairs. Its
+  iOS-only strings (the local network prompt) are in
+  `NetricsTVTouch/InfoPlist.xcstrings`.
 - `NetricsTV.xcodeproj` builds both apps: the targets `NetricsTV` (tvOS)
   and `NetricsTVTouch` (iPhone and iPad), each with a shared scheme. Their
   sources are synchronized folders, so adding a file to `NetricsTV/` or
@@ -74,7 +77,10 @@ follow `packages/domain/src/compact-format.ts` the same way:
 To run it, open `NetricsTV.xcodeproj` in Xcode and pick an Apple TV
 simulator (scheme `NetricsTV`) or an iPhone or iPad simulator (scheme
 `NetricsTVTouch`). Simulator builds need no signing team. The iOS app takes
-the same `-NetricsDebugPayload` and `-NetricsDebugImages` arguments.
+the same debug arguments. A build with `CODE_SIGNING_ALLOWED=NO` has no
+Keychain entitlement, so in the simulator it cannot keep its server and
+credentials across launches; Xcode's own simulator builds ("Sign to Run
+Locally") can.
 
 The simulator reaches the Mac's `localhost`. With the local stack running
 (`pnpm dev`), choose "Your own server", enter `http://localhost:3000` and
@@ -259,6 +265,15 @@ and checks the sizes.
   units); the web's dedicated scroll cards are not ported yet.
 - **Remote.** On a slide dashboard, left and right change the slide (or page) and
   Play/Pause pauses the rotation ("Paused" in the header).
+- **iPhone and iPad (#411).** The pairing screen also opens `approveUrl`
+  in Safari ("Open approval page"; the web session approves, the app never
+  sees a user credential), shares it, and copies the code. Back in the
+  foreground the app polls the same pairing at once (`DeviceClient.wake`),
+  or shows a new code when it expired. iOS never tells an app that Local
+  Network access was denied: when a server on the local network does not
+  answer, the server screen and the pairing screen explain the setting and
+  open Settings. The settings sheet shows the server, the transport
+  setting, the device and the app version, and unpairs as on Apple TV.
 - **Settings.** Press and hold the clickpad on the dashboard, or press
   Play/Pause where there is nothing to rotate (one slide, or a schema 1
   dashboard). The pairing screen has a Settings button. Unpair revokes the
