@@ -153,7 +153,9 @@ struct InsecureBadge: View {
  * Debug builds only: prefill "Your own server" from launch arguments, so a
  * simulator can be driven without a remote, e.g.
  * `xcrun simctl launch <udid> tv.netrics -NetricsDebugServer http://localhost:3190
- *  -NetricsDebugInsecure YES -NetricsDebugAutoConnect YES`.
+ *  -NetricsDebugInsecure YES -NetricsDebugAutoConnect YES`, or show a payload
+ * file as if paired (`-NetricsDebugPayload /path/payload.json`, optionally
+ * `-NetricsDebugImages /path/images`), which compares renderings.
  */
 enum DebugLaunch {
     #if DEBUG
@@ -161,10 +163,16 @@ enum DebugLaunch {
         static var allowInsecure: Bool { UserDefaults.standard.bool(forKey: "NetricsDebugInsecure") }
         static var autoConnect: Bool { UserDefaults.standard.bool(forKey: "NetricsDebugAutoConnect") }
         static var openSettings: Bool { UserDefaults.standard.bool(forKey: "NetricsDebugSettings") }
+        /** A payload file (JSON) to show as if paired, without a server: screenshots of the rendering. */
+        static var payload: String? { UserDefaults.standard.string(forKey: "NetricsDebugPayload") }
+        /** A folder of image files named by their SHA-256, stored for `payload`'s images. */
+        static var images: String? { UserDefaults.standard.string(forKey: "NetricsDebugImages") }
     #else
         static let server: String? = nil
         static let allowInsecure = false
         static let autoConnect = false
         static let openSettings = false
+        static let payload: String? = nil
+        static let images: String? = nil
     #endif
 }
