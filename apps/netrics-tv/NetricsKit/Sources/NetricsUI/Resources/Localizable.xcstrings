@@ -256,6 +256,23 @@
         }
       }
     },
+    "Live": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live"
+          }
+        }
+      }
+    },
     "Loading…": {
       "extractionState": "manual",
       "localizations": {
@@ -337,6 +354,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aus"
+          }
+        }
+      }
+    },
+    "Offline": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline"
           }
         }
       }
@@ -494,6 +528,40 @@
         }
       }
     },
+    "Slide %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Slide %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folie %@"
+          }
+        }
+      }
+    },
+    "Slides of %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Slides of %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folien von %@"
+          }
+        }
+      }
+    },
     "The server can be changed only by unpairing. After unpairing, remove this TV under TVs in netrics.": {
       "extractionState": "manual",
       "localizations": {
@@ -596,6 +664,23 @@
         }
       }
     },
+    "This slide has no widgets yet.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This slide has no widgets yet."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Folie hat noch keine Widgets."
+          }
+        }
+      }
+    },
     "This tile could not load.": {
       "extractionState": "manual",
       "localizations": {
@@ -649,6 +734,7 @@
     },
     "Unpair this TV?": {
       "extractionState": "manual",
+      "generatesSymbol": false,
       "localizations": {
         "en": {
           "stringUnit": {

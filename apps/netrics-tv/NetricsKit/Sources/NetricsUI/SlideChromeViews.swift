@@ -45,13 +45,20 @@ struct RefreshCountdownView: View {
 }
 
 /** What the slide footer shows: its text and where the slide's time is. */
-struct SlideFooterInfo: Equatable {
-    var text: String
+public struct SlideFooterInfo: Equatable {
+    public var text: String
     /** How much of the slide's time has passed, 0 … 1. */
-    var progress: Double
+    public var progress: Double
     /** Seconds left of the slide's time. */
-    var remaining: TimeInterval
-    var paused: Bool
+    public var remaining: TimeInterval
+    public var paused: Bool
+
+    public init(text: String, progress: Double, remaining: TimeInterval, paused: Bool) {
+        self.text = text
+        self.progress = progress
+        self.remaining = remaining
+        self.paused = paused
+    }
 }
 
 /**

@@ -1,5 +1,6 @@
 import Foundation
 import NetricsKit
+import NetricsUI
 import Observation
 import UIKit
 
@@ -49,6 +50,12 @@ final class AppModel {
 
     func launch() {
         guard route == .launching else { return }
+        #if DEBUG
+            if let path = DebugLaunch.payload {
+                showFixture(path)
+                return
+            }
+        #endif
         if let server = store.loadServer() {
             start(server)
         } else if DebugLaunch.server != nil {
@@ -57,6 +64,34 @@ final class AppModel {
             connectToCloud()
         }
     }
+
+    #if DEBUG
+        /** Debug builds: a payload file shown as if paired, with no server and nothing stored in the Keychain. */
+        private func showFixture(_ path: String) {
+            var state = DeviceState()
+            do {
+                let data = try Data(contentsOf: URL(fileURLWithPath: path))
+                state.payload = try JSONDecoder().decode(DashboardPayload.self, from: data)
+            } catch {
+                state.phase = .blocked("Debug payload \(path): \(error)")
+                device = state
+                route = .running
+                return
+            }
+            if let folder = DebugLaunch.images, case .v2(let payload) = state.payload {
+                for image in payload.images {
+                    let file = URL(fileURLWithPath: folder).appendingPathComponent(image.sha256)
+                    guard let bytes = try? Data(contentsOf: file) else { continue }
+                    images.store(bytes, sha256: image.sha256)
+                    state.storedImages.insert(image.sha256)
+                }
+            }
+            state.phase = .paired
+            state.updatedAt = Date()
+            device = state
+            route = .running
+        }
+    #endif
 
     /** Checks netrics cloud and starts pairing; retries while it is unreachable. */
     func connectToCloud() {

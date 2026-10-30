@@ -6,12 +6,17 @@ import SwiftUI
  * The full-screen TV layout (web: TvFrame + TileView variant "tv"): name
  * and clock on top, every tile on one screen below.
  */
-struct DashboardView: View {
+public struct DashboardView: View {
     @Environment(\.screenLanguage) private var language
     let state: DeviceState
     let dashboard: DeviceDashboard
 
-    var body: some View {
+    public init(state: DeviceState, dashboard: DeviceDashboard) {
+        self.state = state
+        self.dashboard = dashboard
+    }
+
+    public var body: some View {
         GeometryReader { screen in
             let height = screen.size.height
             let gap = height * 0.016

@@ -69,9 +69,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm web:build-check
 
-  # netrics TV (apps/netrics-tv) on Xcode 27 and the 27 SDKs: NetricsKit's
-  # tests (it builds for macOS too, including the vectors shared with
-  # packages/domain, #215) and an unsigned build of the tvOS app. GitHub's
+  # netrics TV (apps/netrics-tv) on Xcode 27 and the 27 SDKs: the package
+  # tests of NetricsKit and NetricsUI (they build for macOS too, including
+  # the vectors shared with packages/domain, #215), NetricsUI for iOS (#409)
+  # and an unsigned build of the tvOS app. GitHub's
   # macos-26 image only carries Xcode 26; Xcode 27 is on the `xcode-27`
   # image (actions/runner-images#14404, preview, macOS 27 based since
   # 2026-09-16). DEVELOPER_DIR pins the Xcode version instead of the image
@@ -87,8 +88,14 @@ jobs:
         with:
           persist-credentials: false
       - run: xcodebuild -version && swift --version
-      - name: NetricsKit tests
+      - name: NetricsKit and NetricsUI tests
         run: swift test
+        working-directory: apps/netrics-tv/NetricsKit
+      - name: Build NetricsUI for iOS
+        run: >-
+          xcodebuild -scheme NetricsUI
+          -destination 'generic/platform=iOS Simulator'
+          build CODE_SIGNING_ALLOWED=NO
         working-directory: apps/netrics-tv/NetricsKit
       - name: Build the tvOS app (unsigned)
         run: >-

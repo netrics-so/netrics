@@ -1,16 +1,22 @@
 // swift-tools-version: 6.4
-// NetricsKit: the tvOS app's protocol and formatting logic, without UI.
-// It builds for macOS too, so `swift test` runs on a Mac.
+// NetricsKit: netrics TV's protocol and formatting logic, without UI.
+// NetricsUI: the SwiftUI rendering the tvOS and iOS apps share (widgets,
+// Signal design, slide canvas and chrome, scroll view, the app's strings).
+// Both build for macOS too, so `swift test` runs on a Mac.
 import PackageDescription
 
 let package = Package(
     name: "NetricsKit",
-    platforms: [.tvOS(.v26), .macOS(.v26)],
+    defaultLocalization: "en",
+    platforms: [.tvOS(.v26), .iOS(.v27), .macOS(.v26)],
     products: [
         .library(name: "NetricsKit", targets: ["NetricsKit"]),
+        .library(name: "NetricsUI", targets: ["NetricsUI"]),
     ],
     targets: [
         .target(name: "NetricsKit"),
+        .target(name: "NetricsUI", dependencies: ["NetricsKit"], resources: [.process("Resources")]),
         .testTarget(name: "NetricsKitTests", dependencies: ["NetricsKit"]),
+        .testTarget(name: "NetricsUITests", dependencies: ["NetricsUI", "NetricsKit"]),
     ]
 )

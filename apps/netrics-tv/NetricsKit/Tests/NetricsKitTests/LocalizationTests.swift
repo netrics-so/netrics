@@ -145,11 +145,21 @@ import Testing
     }
 }
 
-/** The app's String Catalog (NetricsTV/Localizable.xcstrings) and the keys the app uses. */
+/**
+ * The apps' String Catalog (NetricsUI's Resources/Localizable.xcstrings) and
+ * the keys NetricsUI and the tvOS app look up.
+ */
 @Suite struct AppStringCatalogTests {
-    static let appDirectory = URL(fileURLWithPath: #filePath)
+    /** apps/netrics-tv */
+    static let appsDirectory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().appendingPathComponent("NetricsTV")
+        .deletingLastPathComponent()
+    static let catalogFile = appsDirectory.appendingPathComponent(
+        "NetricsKit/Sources/NetricsUI/Resources/Localizable.xcstrings")
+    /** Where `L10n.tr` is called: the shared rendering and the tvOS app. */
+    static let sourceDirectories = ["NetricsKit/Sources/NetricsUI", "NetricsTV"].map {
+        appsDirectory.appendingPathComponent($0)
+    }
 
     struct Catalog: Decodable {
         struct Entry: Decodable {
@@ -167,7 +177,7 @@ import Testing
     }
 
     func catalog() throws -> Catalog {
-        let data = try Data(contentsOf: Self.appDirectory.appendingPathComponent("Localizable.xcstrings"))
+        let data = try Data(contentsOf: Self.catalogFile)
         return try JSONDecoder().decode(Catalog.self, from: data)
     }
 
@@ -189,7 +199,9 @@ import Testing
         let keys = Set(try catalog().strings.keys)
         let pattern = try NSRegularExpression(pattern: #"L10n\.tr\(\s*(?:[a-z.]+ \? )?"((?:[^"\\]|\\.)*)"(?: : "((?:[^"\\]|\\.)*)")?"#)
         var used: Set<String> = []
-        let files = try FileManager.default.contentsOfDirectory(at: Self.appDirectory, includingPropertiesForKeys: nil)
+        let files = try Self.sourceDirectories.flatMap {
+            try FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)
+        }
         for file in files where file.pathExtension == "swift" {
             let source = try String(contentsOf: file, encoding: .utf8)
             for match in pattern.matches(in: source, range: NSRange(source.startIndex..., in: source)) {
