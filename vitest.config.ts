@@ -31,6 +31,8 @@ export default defineConfig({
     include: [
       "apps/*/src/**/*.test.ts",
       "apps/web/src/**/*.test.tsx",
+      // netrics TV's release script (#434).
+      "apps/netrics-tv/scripts/*.test.ts",
       "packages/*/src/**/*.test.ts",
       "*.test.ts",
     ],

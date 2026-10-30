@@ -45,6 +45,8 @@ App Store app, "netrics TV", with the bundle identifier `tv.netrics`
 - `Design/icon/` holds the SVG sources of the app icons and Top Shelf images
   and `render.sh`, which writes them into the tvOS asset catalog and the
   iOS icon.
+- `Config/ExportOptions.plist` and `scripts/asc-submit.ts` are the App Store
+  release (see Releasing below).
 
 Apple frameworks only: SwiftUI, Swift Charts, Security, CryptoKit,
 CoreImage and URLSession.
@@ -169,6 +171,49 @@ Apple TVs paired before #410 kept their cache in their own Caches
 directory; the first launch moves it into the group container
 (`CacheLocation.migrate`, tested in `CacheLocationTests`), so they still
 start offline with their last dashboard.
+
+## Releasing
+
+A GitHub Release tagged `netrics-tv/vX.Y.Z` ships both apps
+(`.github/workflows/netrics-tv-release.yml`, #434; details in
+`docs/release.md`, "netrics TV releases"):
+
+```sh
+# TestFlight only
+gh release create netrics-tv/v1.2.0 --target main --prerelease --notes "…"
+# App Review, with the notes as "What's New"
+gh release create netrics-tv/v1.2.0 --target main --notes-file notes.md
+# a tag that already exists: upload again, and submit with -f submit=true
+gh workflow run netrics-tv-release.yml --ref netrics-tv/v1.2.0 -f submit=true
+```
+
+The workflow archives with `MARKETING_VERSION` from the tag and a build
+number from the UTC start time (`YYYYMMDD.HHMM`, for example
+`20261030.1530`), signs with cloud-managed certificates through an App Store
+Connect API key, and uploads with `Config/ExportOptions.plist`.
+`scripts/asc-submit.ts` (Node 24, no dependencies, tests in
+`asc-submit.test.ts` under `pnpm test`) waits for processing and, on a full
+release, attaches the build, sets "What's New" and submits both platforms.
+The key, its ID, the issuer ID and the team ID are secrets of the GitHub
+environment `app-store`; set them with `gh secret set NAME -e app-store`.
+The first version's metadata (screenshots, description, App Privacy, review
+contact) is entered once by hand in App Store Connect before the first full
+release.
+
+To try the archive and the export options locally without uploading, with
+the team from `Config/Signing.local.xcconfig`:
+
+```sh
+xcodebuild archive -project apps/netrics-tv/NetricsTV.xcodeproj \
+  -scheme NetricsTVTouch -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath /tmp/NetricsTVTouch.xcarchive \
+  -allowProvisioningUpdates MARKETING_VERSION=1.2.0 CURRENT_PROJECT_VERSION=1
+cp apps/netrics-tv/Config/ExportOptions.plist /tmp/ExportOptions.plist
+/usr/libexec/PlistBuddy -c 'Set :destination export' /tmp/ExportOptions.plist
+xcodebuild -exportArchive -archivePath /tmp/NetricsTVTouch.xcarchive \
+  -exportOptionsPlist /tmp/ExportOptions.plist -exportPath /tmp/export \
+  -allowProvisioningUpdates
+```
 
 ## App icons and Top Shelf
 
@@ -479,8 +524,10 @@ one could leave these rules.
   of milestone 10.1's exit gate (#420).
 
 - Final app icon and Top Shelf artwork (the current ones are a draft).
-- App Store Connect record and TestFlight; enter the App Privacy answers
-  above and check Xcode's privacy report on the first archive (#417).
+- App Store Connect record and the first version's metadata; enter the App
+  Privacy answers above and check Xcode's privacy report on the first
+  archive (#417). The API key secrets of the `app-store` environment, and a
+  first pre-release that lands both apps in TestFlight (#434).
 - A VoiceOver walk on a real iPhone and iPad (#417 checked the
   accessibility tree in the simulator only).
 - A run on a physical Apple TV, and the exit gate of milestone 06. Xcode

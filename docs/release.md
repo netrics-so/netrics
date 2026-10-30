@@ -139,6 +139,130 @@ netrics is pre-1.0. Only the newest `0.Y` minor gets fixes, as new patch
 releases. Security fixes are released as a patch of the current minor. Minor
 releases may change configuration; their release notes say what to do.
 
+## netrics TV releases
+
+The Apple TV, iPhone and iPad app (`apps/netrics-tv`, one App Store app with
+the bundle ID `tv.netrics`) has its own versions and its own workflow,
+`.github/workflows/netrics-tv-release.yml` (#434). Its tags are
+`netrics-tv/vX.Y.Z`; they never match the server's `vX.Y.Z`, and a server
+release does not start it.
+
+### Releasing
+
+1. Create a GitHub Release with a new tag `netrics-tv/vX.Y.Z` on a `main`
+   commit (`gh release create netrics-tv/v1.2.0 --target main --notes-file
+notes.md`, or the web UI). The version is strict `X.Y.Z`: no suffixes, no
+   leading zeros.
+2. **Pre-release** (`--prerelease`): both apps are built, uploaded and
+   processed, and land in TestFlight. Nothing is submitted.
+3. **Full release**: the same, then version `X.Y.Z` of both platforms is
+   created in App Store Connect (or the editable version is renamed to it),
+   gets the new build, takes the release body as "What's New" in every
+   localization (en-US and de-DE), and is submitted for App Review. What
+   happens after approval follows the version's release option in App Store
+   Connect (automatic by default).
+
+Turning a pre-release into a full release later does not run the workflow
+again (GitHub sends `released`, not `published`). To submit a version that
+was tested in TestFlight, run the workflow on its tag:
+
+```sh
+gh workflow run netrics-tv-release.yml --ref netrics-tv/v1.2.0 -f submit=true
+```
+
+That builds and uploads a new build of the same version and submits it; the
+release body of the tag, if it has a GitHub Release, becomes "What's New".
+Without `-f submit=true` a manual run uploads to TestFlight only. A manual
+run must use the tag as its ref, because the `app-store` environment admits
+only `netrics-tv/v*` tags.
+
+### What the workflow does
+
+- `prepare` checks the tag (`apps/netrics-tv/scripts/asc-submit.ts version`)
+  and picks the build number.
+- `build (iOS)` and `build (tvOS)` run on the `xcode-27` image with
+  `DEVELOPER_DIR` pinned to Xcode 27.1, like CI's `netrics-tv` job.
+  `xcodebuild archive` signs automatically with `-allowProvisioningUpdates`
+  and the API key (`-authenticationKeyPath`, `-authenticationKeyID`,
+  `-authenticationKeyIssuerID`), with `DEVELOPMENT_TEAM`,
+  `MARKETING_VERSION=X.Y.Z` and `CURRENT_PROJECT_VERSION=<build>` on the
+  command line. `xcodebuild -exportArchive` with
+  `apps/netrics-tv/Config/ExportOptions.plist` (method `app-store-connect`,
+  destination `upload`, automatic signing, `manageAppVersionAndBuildNumber`
+  off so the build number stays ours) uploads the app; the distribution
+  certificate is cloud-managed, so no certificate or profile is stored
+  anywhere. The team ID is added to a copy of the plist at run time.
+- `app-store-connect` runs `apps/netrics-tv/scripts/asc-submit.ts run`, a
+  dependency-free Node script on the App Store Connect API v1 (ES256 token
+  from the built-in `crypto`, built-in `fetch`). It finds the app by bundle
+  ID, waits up to 60 minutes per platform until the build is `VALID`, and on
+  a full release attaches it, sets "What's New" (cut to Apple's 4000
+  characters) and submits through `reviewSubmissions`. It prints the API's
+  `errors[].detail` and fails on any error.
+
+Every step can be repeated: "Re-run failed jobs" keeps the build number of
+the first attempt, rebuilds only a failed platform, and the script finds the
+version, build and review submission it already made. One release runs at a
+time (concurrency group `netrics-tv-release`).
+
+### Build numbers
+
+The build number (`CFBundleVersion`) is the UTC time the run started,
+`YYYYMMDD.HHMM` with the time as a plain integer: 2026-10-30 15:30 is
+`20261030.1530`, 09:05 is `20261030.905`. Apple compares the components as
+integers, so it only grows, across versions, runs and full re-runs, and fits
+Apple's rule (up to three period-separated non-negative integers, each well
+inside 32 bits). It does not depend on the workflow's run number, which
+restarts if the workflow is renamed. Both platforms of a run share it.
+
+### Secrets
+
+The repository holds no account details. The GitHub environment `app-store`
+(deployment rule: tags `netrics-tv/v*`) holds four secrets:
+
+| Secret          | Value                                                 |
+| --------------- | ----------------------------------------------------- |
+| `ASC_API_KEY`   | The content of the API key file `AuthKey_<key id>.p8` |
+| `ASC_KEY_ID`    | The key's ID                                          |
+| `ASC_ISSUER_ID` | The issuer ID shown above the key list                |
+| `APPLE_TEAM_ID` | The team ID (developer.apple.com, Membership)         |
+
+Create the key in App Store Connect under Users and Access, Integrations,
+App Store Connect API, Team Keys, with the Admin role: cloud-managed
+distribution certificates and automatic provisioning need it. The `.p8` can
+be downloaded once. Then:
+
+```sh
+gh secret set ASC_API_KEY -e app-store -R netrics-so/netrics < AuthKey_XXXXXXXXXX.p8
+gh secret set ASC_KEY_ID -e app-store -R netrics-so/netrics
+gh secret set ASC_ISSUER_ID -e app-store -R netrics-so/netrics
+gh secret set APPLE_TEAM_ID -e app-store -R netrics-so/netrics
+```
+
+(each prompts for the value, which stays out of the shell history). The
+jobs write the key to `$RUNNER_TEMP` with mode 0600, pass only its path, and
+delete it in an `always()` step; GitHub masks all four values in logs. No
+App Store Connect app ID is needed: the script looks the app up by its
+bundle ID.
+
+### The first submission
+
+The API can submit a version only when App Store Connect has everything App
+Review needs. Before the first full release, once, by hand in App Store
+Connect:
+
+- the app record for `tv.netrics` with both platforms (iOS and tvOS);
+- the first version's metadata in en-US and de-DE: description, keywords,
+  support URL, screenshots for each platform, App Privacy answers (see
+  `apps/netrics-tv/README.md`, Privacy), age rating, category, price and
+  availability, and App Review contact details (with a pairing code or demo
+  instructions for the reviewer).
+
+A missing item makes the submission step fail with Apple's error detail;
+fill it in and re-run the failed job. The first version of an app has no
+"What's New": Apple refuses the field, and the script logs that and goes on.
+Later versions carry the metadata over and only need the notes.
+
 ## Verifying an image
 
 Every published image (commit and version tags, both platforms) is signed and
