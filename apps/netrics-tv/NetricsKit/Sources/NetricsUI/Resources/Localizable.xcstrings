@@ -69,6 +69,23 @@
         }
       }
     },
+    "Back to the demo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to the demo"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zurück zur Demo"
+          }
+        }
+      }
+    },
     "Cancel": {
       "extractionState": "manual",
       "localizations": {
@@ -222,6 +239,23 @@
         }
       }
     },
+    "Demo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo"
+          }
+        }
+      }
+    },
     "Done": {
       "extractionState": "manual",
       "localizations": {
@@ -321,6 +355,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Letzter Fehler"
+          }
+        }
+      }
+    },
+    "Leave demo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave demo"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo beenden"
           }
         }
       }
@@ -580,6 +631,23 @@
         }
       }
     },
+    "Press Back on the remote to leave the demo.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press Back on the remote to leave the demo."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drücke „Zurück“ auf der Fernbedienung, um die Demo zu beenden."
+          }
+        }
+      }
+    },
     "Retrying…": {
       "extractionState": "manual",
       "localizations": {
@@ -593,6 +661,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Neuer Versuch…"
+          }
+        }
+      }
+    },
+    "See a sample dashboard without an account.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "See a sample dashboard without an account."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sieh dir ein Beispiel-Dashboard an, ganz ohne Konto."
           }
         }
       }
@@ -869,6 +954,23 @@
         }
       }
     },
+    "This sample dashboard shows made-up numbers and works without a connection. Pair this TV to show your own dashboard.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This sample dashboard shows made-up numbers and works without a connection. Pair this TV to show your own dashboard."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Beispiel-Dashboard zeigt erfundene Zahlen und funktioniert ohne Verbindung. Kopple diesen TV, um dein eigenes Dashboard zu zeigen."
+          }
+        }
+      }
+    },
     "This slide has no widgets yet.": {
       "extractionState": "manual",
       "localizations": {
@@ -899,6 +1001,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Diese Kachel konnte nicht geladen werden."
+          }
+        }
+      }
+    },
+    "Try a demo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try a demo"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo ansehen"
           }
         }
       }

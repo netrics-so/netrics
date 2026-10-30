@@ -37,15 +37,21 @@ struct TouchRootView: View {
         let language = model.language
         ZStack {
             Theme.background.ignoresSafeArea()
-            switch model.route {
-            case .launching:
-                ProgressView()
-            case .connectingCloud:
-                TouchConnectingCloudView()
-            case .ownServer:
-                TouchServerEntryView()
-            case .running:
-                TouchDeviceView()
+            if let demo = model.demo {
+                // "Try a demo" (#416): over whatever was on screen, until left.
+                TouchDashboardView(state: demo, images: model.images, openSettings: {}, leaveDemo: model.leaveDemo)
+                    .environment(\.demoMode, true)
+            } else {
+                switch model.route {
+                case .launching:
+                    ProgressView()
+                case .connectingCloud:
+                    TouchConnectingCloudView()
+                case .ownServer:
+                    TouchServerEntryView()
+                case .running:
+                    TouchDeviceView()
+                }
             }
         }
         // The window, for the heartbeat (ADR 0017, section 7).

@@ -219,6 +219,7 @@ struct SlideHeaderView: View {
     let state: DeviceState
     let paused: Bool
     let logo: StoredImage?
+    @Environment(\.demoMode) private var demo
 
     var body: some View {
         let colors = env.colors
@@ -277,6 +278,9 @@ struct SlideHeaderView: View {
             HStack(spacing: env.pt(RefreshCountdown.metaGap)) {
                 if showCountdown, let cycle {
                     RefreshCountdownView(since: cycle.since, every: cycle.every, env: env)
+                }
+                if demo {
+                    DemoBadge(text: L10n.tr("Demo", env.language), size: env.pt(26), colors: colors)
                 }
                 if paused {
                     Text("❚❚ \(L10n.tr("Paused", env.language))")

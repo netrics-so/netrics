@@ -31,6 +31,9 @@ struct TouchConnectingCloudView: View {
                 Text(storage).font(.footnote).foregroundStyle(Theme.down)
             }
             Spacer()
+            // Offline the cloud never answers: the demo still works (#416).
+            Button(L10n.tr("Try a demo", language), systemImage: "play.rectangle") { model.startDemo() }
+                .buttonStyle(.bordered)
             Button(L10n.tr("Use your own server", language)) { model.switchToOwnServer() }
         }
         .padding(32)

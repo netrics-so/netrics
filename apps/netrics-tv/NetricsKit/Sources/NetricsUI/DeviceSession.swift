@@ -36,6 +36,13 @@ public final class DeviceSession {
     /** The screen in points and its scale, as the root view measures it (unrotated). */
     public private(set) var screen = StudioCanvas(width: 0, height: 0)
     public private(set) var screenScale = 1.0
+    /**
+     * "Try a demo" (#416): the bundled dashboard, shown instead of the route
+     * while set. The route, the server and the pairing state stay as they
+     * were; the pairing pauses meanwhile, so nothing is sent and nothing is
+     * stored.
+     */
+    public private(set) var demo: DeviceState?
 
     /** What the device reports when it pairs and in its heartbeat (#406). */
     public let platform: DevicePlatform
@@ -94,6 +101,7 @@ public final class DeviceSession {
         } else {
             connectToCloud()
         }
+        if DebugLaunch.demo { startDemo() }
     }
 
     #if DEBUG
@@ -163,6 +171,54 @@ public final class DeviceSession {
      */
     public var language: ScreenLanguage {
         device.payload?.language ?? .system()
+    }
+
+    /** Before pairing: the pairing screen, or netrics cloud not answering yet (offline). */
+    public var canTryDemo: Bool {
+        guard demo == nil else { return false }
+        switch route {
+        case .connectingCloud:
+            return true
+        case .running:
+            switch device.phase {
+            case .starting, .unpaired, .pairing: return true
+            case .paired, .blocked: return false
+            }
+        case .launching, .ownServer:
+            return false
+        }
+    }
+
+    /**
+     * Shows the demo dashboard (ADR 0021 section 5). The pairing (or the
+     * cloud check) stops first: no request goes out and no credential can
+     * arrive while the demo is on screen.
+     */
+    public func startDemo(now: Date = Date(), timeZone: TimeZone = .current) {
+        guard canTryDemo, let state = try? DemoDashboard.state(language: language, now: now, timeZone: timeZone)
+        else { return }
+        cloudTask?.cancel()
+        cloudTask = nil
+        stopClient()
+        demo = state
+    }
+
+    /**
+     * Back to where the demo started, with the same server: netrics cloud is
+     * checked again, or pairing starts over (a new code when the old one
+     * expired meanwhile).
+     */
+    public func leaveDemo() {
+        guard demo != nil else { return }
+        demo = nil
+        switch route {
+        case .connectingCloud:
+            connectToCloud()
+        case .running:
+            if let server { start(server) }
+        case .launching, .ownServer:
+            break
+        }
     }
 
     /** True while the device is not paired, so changing the server loses nothing. */
@@ -266,7 +322,8 @@ public final class DeviceSession {
     public func enterForeground() {
         guard !inForeground else { return }
         inForeground = true
-        if route == .connectingCloud {
+        // In the demo nothing is checked: leaving it checks again (#416).
+        if route == .connectingCloud, demo == nil {
             connectToCloud()
         }
         guard let client else { return }
@@ -325,7 +382,8 @@ public final class DeviceSession {
  * `xcrun simctl launch <udid> tv.netrics -NetricsDebugServer http://localhost:3190
  *  -NetricsDebugInsecure YES -NetricsDebugAutoConnect YES`, or show a payload
  * file as if paired (`-NetricsDebugPayload /path/payload.json`, optionally
- * `-NetricsDebugImages /path/images`), which compares renderings.
+ * `-NetricsDebugImages /path/images`), which compares renderings, or open
+ * the demo (`-NetricsDebugDemo YES`).
  */
 public enum DebugLaunch {
     #if DEBUG
@@ -337,6 +395,8 @@ public enum DebugLaunch {
         public static var payload: String? { UserDefaults.standard.string(forKey: "NetricsDebugPayload") }
         /** A folder of image files named by their SHA-256, stored for `payload`'s images. */
         public static var images: String? { UserDefaults.standard.string(forKey: "NetricsDebugImages") }
+        /** Opens "Try a demo" right after launch. */
+        public static var demo: Bool { UserDefaults.standard.bool(forKey: "NetricsDebugDemo") }
     #else
         public static let server: String? = nil
         public static let allowInsecure = false
@@ -344,5 +404,6 @@ public enum DebugLaunch {
         public static let openSettings = false
         public static let payload: String? = nil
         public static let images: String? = nil
+        public static let demo = false
     #endif
 }
