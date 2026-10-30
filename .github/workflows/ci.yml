@@ -72,7 +72,7 @@ jobs:
   # netrics TV (apps/netrics-tv) on Xcode 27 and the 27 SDKs: the package
   # tests of NetricsKit and NetricsUI (they build for macOS too, including
   # the vectors shared with packages/domain, #215), NetricsUI for iOS (#409)
-  # and an unsigned build of the tvOS app. GitHub's
+  # and unsigned builds of the tvOS and iOS apps (#410). GitHub's
   # macos-26 image only carries Xcode 26; Xcode 27 is on the `xcode-27`
   # image (actions/runner-images#14404, preview, macOS 27 based since
   # 2026-09-16). DEVELOPER_DIR pins the Xcode version instead of the image
@@ -102,6 +102,12 @@ jobs:
           xcodebuild -project apps/netrics-tv/NetricsTV.xcodeproj
           -scheme NetricsTV -configuration Debug
           -destination 'generic/platform=tvOS Simulator'
+          build CODE_SIGNING_ALLOWED=NO
+      - name: Build the iOS app (unsigned)
+        run: >-
+          xcodebuild -project apps/netrics-tv/NetricsTV.xcodeproj
+          -scheme NetricsTVTouch -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
           build CODE_SIGNING_ALLOWED=NO
 
   migrations:

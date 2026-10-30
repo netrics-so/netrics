@@ -426,6 +426,23 @@
         }
       }
     },
+    "Pairing on iPhone and iPad comes with the next update.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing on iPhone and iPad comes with the next update."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Koppeln auf iPhone und iPad kommt mit dem nächsten Update."
+          }
+        }
+      }
+    },
     "Paused": {
       "extractionState": "manual",
       "localizations": {

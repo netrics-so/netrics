@@ -36,9 +36,17 @@ final class AppModel {
     private(set) var screenScale = 1.0
 
     private let store: any CredentialStore = KeychainCredentialStore()
-    private let cache: any DashboardCache = FileDashboardCache.inCachesDirectory()
+    private let cache: any DashboardCache
     /** Schema 2 images by SHA-256, next to the cached payload. */
-    let images = FileImageCache.inCachesDirectory()
+    let images: FileImageCache
+
+    init() {
+        // The App Group container (moving a cache from before #410 there once).
+        let folder = CacheLocation.resolve(
+            appGroup: Bundle.main.object(forInfoDictionaryKey: CacheLocation.appGroupInfoKey) as? String)
+        cache = FileDashboardCache.inFolder(folder)
+        images = FileImageCache.inFolder(folder)
+    }
     private var client: DeviceClient?
     private var runTask: Task<Void, Never>?
     private var updatesTask: Task<Void, Never>?

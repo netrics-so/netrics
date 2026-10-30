@@ -1,4 +1,4 @@
-// Signing for the NetricsTV app target.
+// Signing for both app targets, NetricsTV (tvOS) and NetricsTVTouch (iOS).
 //
 // The repository is public, so no Apple team ID is committed. Copy
 // Signing.local.xcconfig.example to Signing.local.xcconfig (git-ignored) and
@@ -10,5 +10,10 @@ DEVELOPMENT_TEAM =
 // Bundle identifiers are unique across all Apple teams, so a fork signing
 // with its own team overrides this in Signing.local.xcconfig.
 PRODUCT_BUNDLE_IDENTIFIER = tv.netrics
+
+// The App Group of both targets (Config/NetricsTV.entitlements), also passed
+// to the app in Info.plist (NetricsAppGroup). It follows the bundle
+// identifier, so a fork's own identifier brings its own group.
+NETRICS_APP_GROUP = group.$(PRODUCT_BUNDLE_IDENTIFIER)
 
 #include? "Signing.local.xcconfig"

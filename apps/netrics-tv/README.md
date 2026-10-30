@@ -1,7 +1,10 @@
-# netrics for Apple TV
+# netrics TV
 
-The native tvOS app (#58, ADR 0007, ADR 0010, ADR 0011). It pairs with a
-netrics server by code and shows one workspace dashboard full screen.
+The native viewer app for Apple TV (#58, ADR 0007, ADR 0010, ADR 0011) and,
+from milestone 10.1, iPad and iPhone (ADR 0021). It pairs with a netrics
+server by code and shows one workspace dashboard. Both platforms are one
+App Store app, "netrics TV", with the bundle identifier `tv.netrics`
+(universal purchase).
 
 ## Layout
 
@@ -15,12 +18,21 @@ netrics server by code and shows one workspace dashboard full screen.
 - `NetricsTV/` is the tvOS app: the slideshow with the Siri Remote's
   commands, focus handling, pairing, server and settings screens. It only
   renders what NetricsKit reports, with NetricsUI's views.
-- `NetricsTV.xcodeproj` builds the app. Its sources are a synchronized
-  folder, so adding a file to `NetricsTV/` needs no project change.
-- `Config/Signing.xcconfig` is the base configuration of the app target
-  (see Signing below).
-- `Design/icon/` holds the SVG sources of the app icon and Top Shelf images
-  and `render.sh`, which writes them into the asset catalog.
+- `NetricsTVTouch/` is the iPhone and iPad app (iOS and iPadOS 27, #410).
+  For now it is the shell: Info.plist, entitlements, icon, and a notice
+  until pairing comes (#411); Debug builds render `-NetricsDebugPayload`
+  with NetricsUI's scroll view. Its iOS-only strings (the local network
+  prompt) are in `NetricsTVTouch/InfoPlist.xcstrings`.
+- `NetricsTV.xcodeproj` builds both apps: the targets `NetricsTV` (tvOS)
+  and `NetricsTVTouch` (iPhone and iPad), each with a shared scheme. Their
+  sources are synchronized folders, so adding a file to `NetricsTV/` or
+  `NetricsTVTouch/` needs no project change.
+- `Config/Signing.xcconfig` is the base configuration of both app targets
+  and `Config/NetricsTV.entitlements` their entitlements (see Signing
+  below).
+- `Design/icon/` holds the SVG sources of the app icons and Top Shelf images
+  and `render.sh`, which writes them into the tvOS asset catalog and the
+  iOS icon.
 
 Apple frameworks only: SwiftUI, Swift Charts, Security, CryptoKit,
 CoreImage and URLSession.
@@ -40,6 +52,10 @@ cd apps/netrics-tv/NetricsKit && xcodebuild -scheme NetricsUI \
 xcodebuild -project apps/netrics-tv/NetricsTV.xcodeproj -scheme NetricsTV \
   -destination 'generic/platform=tvOS Simulator' -configuration Debug \
   build CODE_SIGNING_ALLOWED=NO
+
+xcodebuild -project apps/netrics-tv/NetricsTV.xcodeproj -scheme NetricsTVTouch \
+  -destination 'generic/platform=iOS Simulator' -configuration Debug \
+  build CODE_SIGNING_ALLOWED=NO
 ```
 
 `StudioLayout.swift` ports the slide layout and readability rules of
@@ -54,7 +70,9 @@ follow `packages/domain/src/compact-format.ts` the same way:
 `pnpm vectors:compact` regenerates.
 
 To run it, open `NetricsTV.xcodeproj` in Xcode and pick an Apple TV
-simulator. Simulator builds need no signing team.
+simulator (scheme `NetricsTV`) or an iPhone or iPad simulator (scheme
+`NetricsTVTouch`). Simulator builds need no signing team. The iOS app takes
+the same `-NetricsDebugPayload` and `-NetricsDebugImages` arguments.
 
 The simulator reaches the Mac's `localhost`. With the local stack running
 (`pnpm dev`), choose "Your own server", enter `http://localhost:3000` and
@@ -74,7 +92,7 @@ simulator.
 
 ## Signing
 
-The repository is public, so it holds no Apple team ID. The app target's
+The repository is public, so it holds no Apple team ID. Both app targets'
 base configuration, `Config/Signing.xcconfig`, leaves `DEVELOPMENT_TEAM`
 empty and includes `Config/Signing.local.xcconfig` if it exists. That file
 is git-ignored. To sign for a device:
@@ -94,18 +112,56 @@ identifiers are unique across teams, also sets its own
 `PRODUCT_BUNDLE_IDENTIFIER` in the local file (`tv.netrics` belongs to the
 netrics team). Never set the team in `project.pbxproj`: Xcode's Signing &
 Capabilities tab writes it there, so pick the team in the local file instead.
+For the iPhone and iPad app use the scheme `NetricsTVTouch` and
+`-destination 'generic/platform=iOS'`.
 
-## App icon and Top Shelf
+### Entitlements: App Group and Keychain access group
 
-The icon is two layers for the tvOS parallax effect: an opaque back layer
+Both targets sign with `Config/NetricsTV.entitlements` (ADR 0021, section 4),
+written in build settings only:
+
+- **App Group** `$(NETRICS_APP_GROUP)`, which `Signing.xcconfig` sets to
+  `group.$(PRODUCT_BUNDLE_IDENTIFIER)` (`group.tv.netrics`; a fork's own
+  identifier brings its own group). `Info.plist` passes it to the app as
+  `NetricsAppGroup`. The dashboard and image caches live in
+  `Library/Caches/netrics` of the group's container (`CacheLocation`), so a
+  later widget extension shares them. A build without the entitlement
+  (`CODE_SIGNING_ALLOWED=NO`) keeps them in the app's own Caches directory.
+  The group must exist in the team's developer account and be enabled on
+  the App ID; automatic signing with `-allowProvisioningUpdates` registers
+  it.
+- **Keychain access group** `$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)`:
+  the application identifier, which needs no registration. It was already
+  the group of every Keychain item the tvOS app wrote before the
+  entitlement existed, so paired Apple TVs keep their credentials. Being
+  first in the list, it stays the default group for new items, which a
+  widget extension with the same entry can read.
+
+Apple TVs paired before #410 kept their cache in their own Caches
+directory; the first launch moves it into the group container
+(`CacheLocation.migrate`, tested in `CacheLocationTests`), so they still
+start offline with their last dashboard.
+
+## App icons and Top Shelf
+
+The tvOS icon is two layers for the parallax effect: an opaque back layer
 (dark background and chart grid) and a front layer with a rising sparkline
 on transparency. The Top Shelf images carry the wordmark. The artwork is a
 draft until netrics has a logo.
 
+The iOS icon, `NetricsTVTouch/AppIcon.icon`, is in Icon Composer's layered
+format, from which the system draws the shape, the Liquid Glass and the
+dark, tinted and clear looks. Its `icon.json` fills the background with the
+back layer's gradient; its two layers are the same SVGs cut square: the back
+layer's glow and grid (without the opaque background) and the front layer's
+sparkline, which is glass. Open it in Icon Composer (in Xcode's developer
+tools) to preview every look.
+
 Edit the SVGs in `Design/icon/`, then run `apps/netrics-tv/Design/icon/render.sh`.
 It needs Google Chrome (headless, also for the system font of the wordmark)
-and ImageMagick, renders every slot of the asset catalog at its exact size,
-drops the alpha channel of opaque images and checks the sizes.
+and ImageMagick, renders every slot of the asset catalog and both layers of
+the iOS icon at their exact size, drops the alpha channel of opaque images
+and checks the sizes.
 
 ## How it works
 
@@ -125,7 +181,7 @@ drops the alpha channel of opaque images and checks the sizes.
   A 401 on refresh means the TV was revoked: it forgets its credentials and
   shows a new code.
 - **Dashboard.** Polled with `If-None-Match` every `refreshAfterSec`. The
-  last payload is cached in the Caches directory, so an offline start shows
+  last payload is cached in the App Group's Caches directory, so an offline start shows
   it at once. Failures back off 5, 10, 20, 40, then 60 seconds, and the
   header shows "Offline — last update HH:MM".
 - **Slides (payload schema 2, ADR 0015).** Before the first poll, and every
@@ -171,7 +227,7 @@ drops the alpha channel of opaque images and checks the sizes.
 - **Images.** The payload's images are downloaded once with the device
   token from their device URL (only `/v1/device/images/…` on the paired
   server), verified against their SHA-256 and stored by hash in
-  `Caches/netrics/images`. Beyond 50 MB, images the current payload does
+  `Caches/netrics/images` (in the App Group container). Beyond 50 MB, images the current payload does
   not reference are evicted, least recently used first. They are decoded
   with ImageIO at the widget's pixel size.
 - **Heartbeat.** Every 5 minutes: app version, uptime, the last error and

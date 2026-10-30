@@ -110,7 +110,7 @@ public final class InMemoryImageCache: ImageCache {
 }
 
 /**
- * Files in Caches/netrics/images, named by hash; the file's modification
+ * Files in the cache folder's `images` (`CacheLocation`), named by hash; the file's modification
  * date records its last use. The system may purge the directory; missing
  * images are then fetched again.
  */
@@ -123,9 +123,9 @@ public final class FileImageCache: ImageCache {
         self.now = now
     }
 
-    public static func inCachesDirectory() -> FileImageCache {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        return FileImageCache(directory: caches.appending(path: "netrics/images"))
+    /** `images` in the cache folder (`CacheLocation.resolve`). */
+    public static func inFolder(_ folder: URL, now: @escaping @Sendable () -> Date = { Date() }) -> FileImageCache {
+        FileImageCache(directory: folder.appending(path: "images", directoryHint: .isDirectory), now: now)
     }
 
     /** Where the image with this hash is stored (it may not exist). */

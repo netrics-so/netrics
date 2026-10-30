@@ -11,6 +11,9 @@
 		<string>en</string>
 		<string>de</string>
 	</array>
+	<!-- The App Group that holds the caches (CacheLocation, Signing.xcconfig). -->
+	<key>NetricsAppGroup</key>
+	<string>$(NETRICS_APP_GROUP)</string>
 	<!--
 	Plain HTTP only to local-network hosts (ADR 0010). Never
 	NSAllowsArbitraryLoads: the app refuses plain HTTP to public hosts in

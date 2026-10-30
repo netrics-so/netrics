@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+Both app targets, tvOS and iOS (ADR 0021, section 4). Build settings only, so
+no team ID is in the repository: AppIdentifierPrefix is the signing team's
+prefix, NETRICS_APP_GROUP comes from Signing.xcconfig.
+
+- The App Group container holds the dashboard and image caches
+  (CacheLocation), so a later widget extension shares them.
+- The Keychain access group is the application identifier, the group the
+  tvOS app's credentials were already stored in; listing it first keeps it
+  the default group for new items and lets a widget extension join it.
+-->
+<dict>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>$(NETRICS_APP_GROUP)</string>
+	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	</array>
+</dict>
+</plist>
