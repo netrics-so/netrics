@@ -25,8 +25,9 @@ App Store app, "netrics TV", with the bundle identifier `tv.netrics`
   the same server choice and pairing on touch, with "Open approval page",
   "Share link" and "Copy code" (#411), the settings sheet, and the
   dashboard (`TouchDashboardView`): on iPad in screen view sized to the
-  window (`PadDashboardView`, #412), on iPhone in NetricsUI's scroll view
-  until #413. It reports the platform `ios` or `ipados` when it pairs. Its
+  window (`PadDashboardView`, #412), on iPhone scroll view in portrait and
+  screen view in landscape (`PhoneDashboardView`, #413). It reports the
+  platform `ios` or `ipados` when it pairs. Its
   iOS-only strings (the local network prompt) are in
   `NetricsTVTouch/InfoPlist.xcstrings`.
 - `NetricsTV.xcodeproj` builds both apps: the targets `NetricsTV` (tvOS)
@@ -98,7 +99,10 @@ On iPad, `-NetricsDebugWindowSizes 1376x1032,375x1032` (with
 `-NetricsDebugStepSeconds 6`) gives the screen view each size in turn, as a
 Split View, Slide Over or Stage Manager window would, to check the re-layout
 from a script; `simctl` cannot turn a simulator, a UI test can
-(`XCUIDevice.shared.orientation`).
+(`XCUIDevice.shared.orientation`). On iPhone,
+`-NetricsDebugOrientations landscape,portrait` (with the same step) turns
+the window in turn (`requestGeometryUpdate`), to check the switch between
+scroll and screen view from a script.
 `-NetricsDebugDemo YES` opens "Try a demo" right after launch.
 `-NetricsDebugPayload /path/payload.json` shows a payload file as if paired,
 with no server and nothing in the Keychain (`-NetricsDebugImages /path`
@@ -186,17 +190,17 @@ and checks the sizes.
 
 One codebase, three kinds of device. What differs, and where:
 
-|                     | Apple TV (`NetricsTV`)                                | iPad (`NetricsTVTouch`)                                                                    | iPhone (`NetricsTVTouch`)                    |
-| ------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------- |
-| Reports platform    | `tvos`                                                | `ipados`                                                                                   | `ios`                                        |
-| View                | Screen view only; the web shows the mode fixed        | Screen view by default; `display_mode = scroll` gives the scroll view                      | Scroll view (screen view in landscape: #413) |
-| Format and rotation | 16:9 screen, turned by the device's rotation setting  | From the window's size (4:3, 3:4, any window); rotation setting ignored                    | Follows the phone; rotation setting ignored  |
-| Screen stays on     | While paired (`isIdleTimerDisabled`)                  | Screen view in the foreground only (`PadScreen.keepsScreenOn`)                             | No, follows Auto-Lock                        |
-| Input               | Siri Remote: left/right, Play/Pause, press and hold   | Settings button; swipe and tap: #414                                                       | Settings button                              |
-| Pairing extras      | Code, URL, QR code                                    | Also "Open approval page", "Share link", "Copy code"                                       | Same as iPad                                 |
-| Demo                | Back (Menu) or the press-and-hold menu leaves         | "Leave demo" button                                                                        | "Leave demo" button                          |
-| Lifecycle           | Scene phase passed to the session (`deviceLifecycle`) | Same: no polling in the background, refresh on return                                      | Same                                         |
-| Kiosk setup         | Nothing needed                                        | Guided Access or Single App Mode: [the guide](../../docs/guides/ipad-on-a-wall-or-desk.md) | Not a wall screen until #413                 |
+|                     | Apple TV (`NetricsTV`)                                | iPad (`NetricsTVTouch`)                                                                    | iPhone (`NetricsTVTouch`)                                                                                              |
+| ------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Reports platform    | `tvos`                                                | `ipados`                                                                                   | `ios`                                                                                                                  |
+| View                | Screen view only; the web shows the mode fixed        | Screen view by default; `display_mode = scroll` gives the scroll view                      | Portrait: scroll view; landscape: screen view (`21x9`); `display_mode = screen` keeps screen view in portrait (`9x16`) |
+| Format and rotation | 16:9 screen, turned by the device's rotation setting  | From the window's size (4:3, 3:4, any window); rotation setting ignored                    | Follows the phone; rotation setting ignored                                                                            |
+| Screen stays on     | While paired (`isIdleTimerDisabled`)                  | Screen view in the foreground only (`TouchScreen.keepsScreenOn`)                           | In screen view in the foreground (landscape, or the screen setting); scroll view follows Auto-Lock                     |
+| Input               | Siri Remote: left/right, Play/Pause, press and hold   | Settings button; swipe and tap: #414                                                       | Settings button                                                                                                        |
+| Pairing extras      | Code, URL, QR code                                    | Also "Open approval page", "Share link", "Copy code"                                       | Same as iPad                                                                                                           |
+| Demo                | Back (Menu) or the press-and-hold menu leaves         | "Leave demo" button                                                                        | "Leave demo" button                                                                                                    |
+| Lifecycle           | Scene phase passed to the session (`deviceLifecycle`) | Same: no polling in the background, refresh on return                                      | Same                                                                                                                   |
+| Kiosk setup         | Nothing needed                                        | Guided Access or Single App Mode: [the guide](../../docs/guides/ipad-on-a-wall-or-desk.md) | A desk stand: `display_mode = screen` and the guide's iPhone section                                                   |
 
 The details are in "How it works" below; the wall and desk setup of an iPad
 (Guided Access, Single App Mode, Auto-Lock, power, mounting, OLED) is in
@@ -271,11 +275,12 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   with ImageIO at the widget's pixel size.
 - **Heartbeat.** Every 5 minutes: app version ("tvos", "ios" or "ipados"
   and the version, shown as tvOS, iOS and iPadOS in the web's device list),
-  uptime, the last error and the screen (points after the rotation setting,
-  scale, format, screen view).
+  uptime, the last error and the screen: on Apple TV the points after the
+  rotation setting, scale, format and screen view; on iPhone and iPad the
+  window, scale, its format and the mode in use (`TouchScreen.report`).
 - **iPad (ADR 0021 section 3, #412).** Screen view by default, as on the
   TV: NetricsUI's `SlideshowPlayer`, which the tvOS slideshow uses too, over
-  the whole window. The format comes from the window's size (`PadScreen`):
+  the whole window. The format comes from the window's size (`TouchScreen`):
   `4x3` in landscape and `3x4` in portrait on every current iPad, and any
   Split View, Slide Over or Stage Manager window gets the format of its
   aspect; every size change re-lays out at once, offline too, keeping the
@@ -300,14 +305,26 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   background starts from the cache like an offline start. A device not
   opened for 90 days finds its refresh token refused and shows a new code.
   There is no background refresh (`BGAppRefreshTask`).
+- **iPhone (ADR 0021 section 3, #413).** Portrait shows the scroll view,
+  landscape screen view full screen in the phone's format (`21x9`; `16x9`
+  on an iPhone SE) with the slides rotating and the screen kept on.
+  `display_mode = screen` keeps screen view in portrait (`9x16`). The mode
+  comes from the window's size (`TouchScreen.displayMode`), so turning the
+  phone switches at once, offline too, and the slideshow goes on where it
+  was. Pull to refresh in scroll view asks the client for the dashboard now
+  (`DeviceSession.refresh`).
 - **Scroll view (ADR 0017 section 5).** `ScrollDashboardView` in NetricsUI
-  is the scroll view of the iPhone and iPad app (Apple TV is always screen
-  view): the header, then each slide as a section with its heading,
-  the widgets in reading order over 1 to 3 columns by `scrollLayout`
-  (`ScrollGeometry`, tested on the shared vectors), charts 16:9 between 200
-  and 360 points, images in their aspect, at most half the screen high. Its
-  cards are the screen's widget views at Dynamic Type's size (1 rem = 32
-  units); the web's dedicated scroll cards are not ported yet.
+  is the scroll view of iPhone and iPad (Apple TV is always screen view),
+  as the web's: the header, then each slide as a section with its heading
+  over its background image under the slide's dim, the widgets in reading
+  order over 1 to 3 columns by `scrollLayout` (`ScrollGeometry`, tested on
+  the shared vectors). Its cards (`ScrollCards.swift`) port the web's
+  `scroll-widgets.tsx`: text in Dynamic Type's size (1 rem = 32 units, the
+  web's `SCROLL_TYPE`), labels and lists in full (the card grows), values
+  shrinking and then compact, charts 16:9 between 200 and 360 points,
+  images in their aspect at most half the screen high, clocks and
+  countdowns ticking locally. At the largest accessibility sizes a table's
+  rows stack (label, then value and Δ), where the web keeps its columns.
 - **Remote.** On a slide dashboard, left and right change the slide (or page) and
   Play/Pause pauses the rotation ("Paused" in the header).
 - **iPhone and iPad (#411).** The pairing screen also opens `approveUrl`
@@ -388,8 +405,6 @@ one could leave these rules.
 
 ## Not done yet
 
-- iPhone: landscape screen view and `display_mode = screen` in portrait
-  (#413); today an iPhone always shows the scroll view.
 - Touch interaction (#414): swipe between slides, tap a widget for details,
   chrome that shows on a tap and hides again.
 - The iPad guide followed once on a real iPad, and the other device checks

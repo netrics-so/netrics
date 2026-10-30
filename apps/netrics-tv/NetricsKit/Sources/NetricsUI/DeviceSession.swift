@@ -346,11 +346,31 @@ public final class DeviceSession {
     }
 
     /**
-     * What the heartbeat reports (ADR 0017, section 7): the size after the
-     * rotation setting, the format shown and screen view.
+     * What the heartbeat reports (ADR 0017, section 7). Apple TV: the size
+     * after the rotation setting, the format shown and screen view. iPhone
+     * and iPad: the window, its format and the mode in use, which on iPhone
+     * follows the orientation (`TouchScreen`, #413).
      */
     public func screenReport() -> DeviceScreenReport? {
-        ScreenView.report(screen: screen, scale: screenScale, payload: device.dashboardV2)
+        switch platform {
+        case .ios:
+            return TouchScreen.report(window: screen, scale: screenScale, payload: device.dashboardV2, device: .phone)
+        case .ipados:
+            return TouchScreen.report(window: screen, scale: screenScale, payload: device.dashboardV2, device: .pad)
+        default:
+            return ScreenView.report(screen: screen, scale: screenScale, payload: device.dashboardV2)
+        }
+    }
+
+    /**
+     * Pull to refresh (#413): the client polls now instead of at the end of
+     * its wait, and this returns once that poll is done, so the spinner
+     * shows the request (`DeviceClient.refreshNow`). Without a client (a
+     * Debug payload file) or in the background it returns at once.
+     */
+    public func refresh() async {
+        guard let client else { return }
+        await client.refreshNow()
     }
 
     private func stopClient() {

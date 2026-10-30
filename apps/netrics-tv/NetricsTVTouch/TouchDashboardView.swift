@@ -5,12 +5,13 @@ import UIKit
 
 /**
  * A paired iPhone or iPad: the dashboard and the way to settings. On iPad
- * the screen view sized to the window (#412); on iPhone NetricsUI's scroll
- * view until the portrait and landscape views (#413) replace it here. The
- * demo (#416) shows the same views with "Leave demo" instead of settings.
+ * the screen view sized to the window (#412); on iPhone scroll view in
+ * portrait and screen view in landscape (#413). The demo (#416) shows the
+ * same views with "Leave demo" instead of settings.
  */
 struct TouchDashboardView: View {
     @Environment(\.screenLanguage) private var language
+    @Environment(DeviceSession.self) private var model
     let state: DeviceState
     let images: FileImageCache
     let openSettings: () -> Void
@@ -50,7 +51,11 @@ struct TouchDashboardView: View {
                 // iPad: screen view sized to the window, or scroll view by the device setting (#412).
                 PadDashboardView(state: state, payload: payload, images: images)
             } else {
-                ScrollDashboardView(state: state, payload: payload, images: images)
+                // iPhone: scroll view in portrait, screen view in landscape (#413).
+                // The demo is bundled and offline: no pull to refresh there (#416).
+                PhoneDashboardView(
+                    state: state, payload: payload, images: images,
+                    refresh: leaveDemo == nil ? { await model.refresh() } : nil)
             }
         } else if let dashboard = state.dashboard, dashboard.dashboard != nil {
             // Schema 1 (an older server): the tile grid.

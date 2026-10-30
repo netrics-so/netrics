@@ -12,19 +12,27 @@ import SwiftUI
  * keep the theme's surface, so text never sits on the image. No rotation,
  * no canvases. Text follows Dynamic Type: 1 rem is the body size.
  *
- * The cards are the screen's widget views at the column's width: charts
- * 16:9 (200 to 360 points high), images in their aspect (at most half the
- * viewport high), the others as many units high as in the primary layout.
+ * The cards are the web's scroll cards (`ScrollCards.swift`, after
+ * scroll-widgets.tsx), each as high as its content: charts 16:9 of their
+ * width (200 to 360 points high), images in their aspect (at most half the
+ * viewport high), labels and lists in full. Pull to refresh calls
+ * `refresh` when the app gives one.
  */
 public struct ScrollDashboardView: View {
     let state: DeviceState
     let payload: DeviceDashboardV2
     let images: FileImageCache
+    /** Pull to refresh: asks the app for the dashboard now; without it the view does not offer the gesture. */
+    let refresh: (@MainActor () async -> Void)?
 
-    public init(state: DeviceState, payload: DeviceDashboardV2, images: FileImageCache) {
+    public init(
+        state: DeviceState, payload: DeviceDashboardV2, images: FileImageCache,
+        refresh: (@MainActor () async -> Void)? = nil
+    ) {
         self.state = state
         self.payload = payload
         self.images = images
+        self.refresh = refresh
     }
 
     @Environment(\.displayScale) private var displayScale
@@ -55,6 +63,7 @@ public struct ScrollDashboardView: View {
                 .frame(maxWidth: .infinity)
             }
             .accessibilityLabel(L10n.tr("Slides of %@", payload.language, payload.dashboard?.name ?? ""))
+            .modifier(PullToRefresh(refresh: refresh))
         }
         .background(colors.background.ignoresSafeArea())
         .environment(\.enterProgress, 1)
@@ -176,31 +185,13 @@ public struct ScrollDashboardView: View {
         }
     }
 
-    /** One card: the widget's view at the item's width, as high as its height rule says. */
-    private func card(
-        _ widget: DeviceWidget, item: ScrollItem, layout: ScrollLayout, env: WidgetEnv, viewportHeight: Double
-    ) -> some View
+    /** One card: the widget's scroll card at the item's width, as high as its content. */
+    private func card(_ widget: DeviceWidget, item: ScrollItem, layout: ScrollLayout, env: WidgetEnv, viewportHeight: Double)
+        -> some View
     {
-        let width = ScrollGeometry.itemWidth(layout, span: item.span)
-        let height: Double
-        switch item.height {
-        case .chart:
-            height = ScrollGeometry.chartHeight(width: width)
-        case .image:
-            let image = imageForWidget(widget)?.image
-            let aspect = image.flatMap { $0.height > 0 ? Double($0.width) / Double($0.height) : nil }
-            height = ScrollGeometry.imageHeight(width: width, aspect: aspect, viewportHeight: viewportHeight)
-        case .content:
-            height = ScrollGeometry.contentHeight(
-                placement: widget.placement, primaryFormat: payload.primaryFormat, showHeader: env.showHeader,
-                unit: Double(env.u))
-        }
-        let u = Double(env.u)
-        let placement = ScreenPlacement(
-            cells: widget.placement, format: payload.primaryFormat,
-            unitBox: u > 0 ? StudioCanvas(width: width / u, height: height / u) : nil)
-        return WidgetView(widget: widget, placement: placement, env: env, image: imageForWidget(widget))
-            .frame(width: CGFloat(width), height: CGFloat(height))
+        ScrollCardView(
+            widget: widget, width: ScrollGeometry.itemWidth(layout, span: item.span), rem: Double(rem),
+            viewportHeight: viewportHeight, env: env, image: imageForWidget(widget))
     }
 
     private func imageForWidget(_ widget: DeviceWidget) -> StoredImage? {
@@ -209,5 +200,18 @@ public struct ScrollDashboardView: View {
 
     private func imageFile(_ id: String?) -> StoredImage? {
         StoredImage.find(id, payload: payload, state: state, images: images)
+    }
+}
+
+/** `refreshable` only when there is something to call, so the gesture is not offered for nothing. */
+private struct PullToRefresh: ViewModifier {
+    let refresh: (@MainActor () async -> Void)?
+
+    func body(content: Content) -> some View {
+        if let refresh {
+            content.refreshable { await refresh() }
+        } else {
+            content
+        }
     }
 }

@@ -1368,6 +1368,31 @@ struct GaugeWidgetView: View {
     /** "122 %": the percent with a no-break space. */
     static func percentText(_ percent: Int) -> String { "\(percent)\u{00A0}%" }
 
+    /** The progress line: "2,520 to go · 9 days left", "✓ Reached · 122 % · 2 days early", or why there is none. */
+    static func progressLine(
+        _ data: GaugeWidgetData, options: GaugeWidgetOptions, now: Date, timeZone: String, language: ScreenLanguage
+    ) -> String {
+        let unit = data.unit ?? "count"
+        let approx = data.conversion != nil ? "≈ " : ""
+        let timeText = data.periodEnd.flatMap {
+            Goals.timeText(
+                period: data.period?.rawValue ?? "", periodEnd: $0, reachedAt: data.reachedAt,
+                progress: data.progress, now: now, timeZone: timeZone)
+        }
+        let time = options.showTimeLeft ? timeText.map { Goals.words($0, language: language) } : nil
+        guard let value = data.value, let target = data.target else {
+            return KitStrings.text(data.unit == nil ? .couldNotLoad : .noDataYet, language)
+        }
+        if Goals.reached(data.progress) {
+            let percent = Goals.percent(data.progress)
+            return ([KitStrings.text(.goalReached, language), Self.percentText(percent ?? 100)] + (time.map { [$0] } ?? []))
+                .joined(separator: " · ")
+        }
+        let toGo = KitStrings.text(
+            .goalToGo, language, approx + MetricFormat.value(Swift.max(0, target - value), unit: unit, language: language))
+        return ([toGo] + (time.map { [$0] } ?? [])).joined(separator: " · ")
+    }
+
     var body: some View {
         let language = env.language
         let unit = data.unit ?? "count"
@@ -1384,24 +1409,7 @@ struct GaugeWidgetView: View {
         // Inside the ring: the percent's digits (and "%"), or the value once reached.
         let (full, compact, suffix) = Self.ringTexts(
             reached: reachedGoal, value: data.value, percent: percent, unit: unit, approx: approx, language: language)
-        let timeText = data.periodEnd.flatMap {
-            Goals.timeText(
-                period: data.period?.rawValue ?? "", periodEnd: $0, reachedAt: data.reachedAt,
-                progress: data.progress, now: now, timeZone: env.timeZone)
-        }
-        let time = options.showTimeLeft ? timeText.map { Goals.words($0, language: language) } : nil
-        let progressLine: String = {
-            guard let value = data.value, let target = data.target else {
-                return KitStrings.text(data.unit == nil ? .couldNotLoad : .noDataYet, language)
-            }
-            if reachedGoal {
-                return ([KitStrings.text(.goalReached, language), Self.percentText(percent ?? 100)] + (time.map { [$0] } ?? []))
-                    .joined(separator: " · ")
-            }
-            let toGo = KitStrings.text(
-                .goalToGo, language, approx + MetricFormat.value(Swift.max(0, target - value), unit: unit, language: language))
-            return ([toGo] + (time.map { [$0] } ?? [])).joined(separator: " · ")
-        }()
+        let progressLine = Self.progressLine(data, options: options, now: now, timeZone: env.timeZone, language: language)
         let layout = StudioLayout.gaugeLayout(
             label: label, width: box.width, height: box.height, fontScale: env.fontScale,
             value: StudioLayout.TableValueText(full: full, compact: compact), suffix: suffix, progress: progressLine)
