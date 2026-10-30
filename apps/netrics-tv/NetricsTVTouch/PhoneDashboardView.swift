@@ -12,6 +12,7 @@ import SwiftUI
  * on a desk stand). The mode comes from the window's size (`TouchScreen`),
  * so turning the phone switches at once, offline too; the slideshow's
  * rotation is kept here, so it goes on where it was when the phone turns back.
+ * Touch (swipe, widget details, chrome) is `TouchSlideshowView`'s (#414).
  */
 struct PhoneDashboardView: View {
     let state: DeviceState
@@ -19,6 +20,7 @@ struct PhoneDashboardView: View {
     let images: FileImageCache
     /** Pull to refresh in scroll view; nil offers none (the demo). */
     let refresh: (@MainActor () async -> Void)?
+    let actions: TouchActions
 
     @State private var rotation: SlideRotation?
     @State private var window = CGSize.zero
@@ -30,11 +32,13 @@ struct PhoneDashboardView: View {
         Group {
             switch mode {
             case .screen:
-                SlideshowPlayer(state: state, payload: payload, images: images, rotation: $rotation)
-                    .statusBarHidden()
-                    .persistentSystemOverlays(.hidden)
+                TouchSlideshowView(
+                    state: state, payload: payload, images: images, rotation: $rotation, actions: actions
+                )
+                .statusBarHidden()
+                .persistentSystemOverlays(.hidden)
             case .scroll:
-                ScrollDashboardView(state: state, payload: payload, images: images, refresh: refresh)
+                TouchScrollView(state: state, payload: payload, images: images, refresh: refresh, actions: actions)
             }
         }
         .keepsScreenOn(in: mode)

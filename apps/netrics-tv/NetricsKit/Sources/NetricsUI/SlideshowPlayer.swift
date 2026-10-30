@@ -14,21 +14,26 @@ import SwiftUI
  * says where it is and what comes next (ADR 0018 section 5).
  *
  * The rotation is the caller's state, so each platform adds its own input
- * on top: the Siri Remote on tvOS, touch on iPad.
+ * on top with `SlideRotation.perform`: the Siri Remote on tvOS, swipes,
+ * taps and VoiceOver actions on iPhone and iPad (`interaction`, #414).
  */
 public struct SlideshowPlayer: View {
     let state: DeviceState
     let payload: DeviceDashboardV2
     let images: FileImageCache
     @Binding var rotation: SlideRotation?
+    /** Touch on iPhone and iPad (#414): widget taps and VoiceOver actions; nil on Apple TV. */
+    let interaction: WidgetInteraction?
 
     public init(
-        state: DeviceState, payload: DeviceDashboardV2, images: FileImageCache, rotation: Binding<SlideRotation?>
+        state: DeviceState, payload: DeviceDashboardV2, images: FileImageCache, rotation: Binding<SlideRotation?>,
+        interaction: WidgetInteraction? = nil
     ) {
         self.state = state
         self.payload = payload
         self.images = images
         _rotation = rotation
+        self.interaction = interaction
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -88,7 +93,7 @@ public struct SlideshowPlayer: View {
                 SlideCanvasView(
                     payload: payload, slide: slide, page: page, format: format, viewport: viewport, colors: colors,
                     state: state, images: images, paused: rotation?.isPaused ?? false,
-                    footer: footer(pages: pages, page: page)
+                    footer: footer(pages: pages, page: page), interaction: interaction
                 )
                 .id(page.id)
                 .transition(.opacity)

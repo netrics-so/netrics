@@ -75,10 +75,13 @@ public struct SlideCanvasView: View {
     let images: FileImageCache
     let paused: Bool
     var footer: SlideFooterInfo?
+    /** Touch on iPhone and iPad (#414); nil on Apple TV. */
+    var interaction: WidgetInteraction?
 
     public init(
         payload: DeviceDashboardV2, slide: DeviceSlide, page: ScreenPage, format: ScreenFormat, viewport: StudioCanvas,
-        colors: StudioColors, state: DeviceState, images: FileImageCache, paused: Bool, footer: SlideFooterInfo? = nil
+        colors: StudioColors, state: DeviceState, images: FileImageCache, paused: Bool, footer: SlideFooterInfo? = nil,
+        interaction: WidgetInteraction? = nil
     ) {
         self.payload = payload
         self.slide = slide
@@ -90,6 +93,7 @@ public struct SlideCanvasView: View {
         self.images = images
         self.paused = paused
         self.footer = footer
+        self.interaction = interaction
     }
 
     @Environment(\.displayScale) private var displayScale
@@ -132,6 +136,7 @@ public struct SlideCanvasView: View {
                     paused: paused, logo: imageFile(payload.dashboard?.logoImageId)
                 )
                 .frame(width: CGFloat(band.width), height: CGFloat(band.height))
+                .slideActions(interaction)
                 .position(x: CGFloat(band.x + band.width / 2), y: CGFloat(band.y + band.height / 2))
             }
             ForEach(page.placements, id: \.id) { cell in
@@ -140,6 +145,7 @@ public struct SlideCanvasView: View {
                     let rect = placed.rect
                     WidgetView(widget: widget, placement: placed.placement, env: env, image: imageForWidget(widget))
                         .frame(width: CGFloat(rect.width), height: CGFloat(rect.height))
+                        .touch(widget, interaction, language: payload.language)
                         .position(x: CGFloat(rect.x + rect.width / 2), y: CGFloat(rect.y + rect.height / 2))
                 }
             }

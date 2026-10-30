@@ -66,6 +66,7 @@ public enum KitText: String, Sendable, CaseIterable {
     case goalReached, goalEarlyOne, goalEarlyOther, goalDeleted, goalDeletedHint
     case updated, updatedFrom, reconnect, reconnectSource, reconnectHint, loadingHistory
     case nextRefresh, slidePosition, nextSlide
+    case sourceConnected, goalPercent
     case serverInvalidAddress, serverPlainHTTPToPublicHost, serverPlainHTTPNeedsSetting, serverUnreachable
     case serverTimedOut, serverUntrustedCertificateSettingHelps, serverUntrustedCertificate
     case serverCertificateChanged, serverRedirected, serverRedirectedSomewhere, serverNotNetrics
@@ -168,6 +169,8 @@ public enum KitStrings {
         .nextRefresh: "next refresh in %d s",
         .slidePosition: "%d / %d",
         .nextSlide: "next: %@",
+        .sourceConnected: "Connected",
+        .goalPercent: "%d%% of the goal",
         .serverInvalidAddress: "Enter the address of your netrics server, for example netrics.example.com.",
         .serverPlainHTTPToPublicHost:
             "%@ is not on your local network, so it needs HTTPS. Plain HTTP is only possible for local servers.",
@@ -284,6 +287,8 @@ public enum KitStrings {
         .nextRefresh: "nächste Aktualisierung in %d s",
         .slidePosition: "%d / %d",
         .nextSlide: "als Nächstes: %@",
+        .sourceConnected: "Verbunden",
+        .goalPercent: "%d %% des Ziels",
         .serverInvalidAddress: "Gib die Adresse deines netrics-Servers ein, zum Beispiel netrics.example.com.",
         .serverPlainHTTPToPublicHost:
             "%@ ist nicht in deinem lokalen Netzwerk und braucht daher HTTPS. Einfaches HTTP geht nur bei lokalen Servern.",
