@@ -195,16 +195,7 @@ export function ModelEditor({
               {
                 name: name.trim(),
                 definition: model,
-                ...(record
-                  ? {
-                      version: record.version,
-                      ...(publish &&
-                      !record.restoredFromVersion &&
-                      record.publishedVersion === record.version
-                        ? { adoptLatestInputs: true }
-                        : {}),
-                    }
-                  : {}),
+                ...(record ? { version: record.version } : {}),
               },
               record?.id,
             );

@@ -401,6 +401,8 @@ export const dataEn = {
         "This published version is unavailable. Reload its history and choose another version.",
       unavailable:
         "A required source or input version is unavailable. Check its connection and published preparations before restoring or publishing.",
+      pinConflict:
+        "These inputs depend on different published versions of the same preparation. Use latest published inputs, or remove the input that needs a newer version.",
       scope:
         "Group by the required dimensions, or select one value for each, before using this measure.",
       label:

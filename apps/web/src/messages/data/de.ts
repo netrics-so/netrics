@@ -415,6 +415,8 @@ export const dataDe: Catalog<typeof dataEn> = {
         "Diese veröffentlichte Version ist nicht verfügbar. Lade den Verlauf neu und wähle eine andere Version.",
       unavailable:
         "Eine benötigte Quelle oder Eingabeversion ist nicht verfügbar. Prüfe die Verbindung und veröffentlichte Vorbereitungen vor dem Wiederherstellen oder Veröffentlichen.",
+      pinConflict:
+        "Diese Eingaben hängen von unterschiedlichen veröffentlichten Versionen derselben Vorbereitung ab. Verwende die neuesten veröffentlichten Eingaben oder entferne die Eingabe, die eine neuere Version benötigt.",
       scope:
         "Gruppiere nach den erforderlichen Dimensionen oder wähle für jede genau einen Wert aus, bevor du diese Kennzahl verwendest.",
       label:

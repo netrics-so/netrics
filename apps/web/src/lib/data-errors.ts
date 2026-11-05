@@ -2,8 +2,8 @@ export function dataErrorCodeKey(code: string) {
   if (/measure_scope_required|measure_grain_invalid/.test(code)) return "scope";
   if (/dimension_label/.test(code)) return "label";
   if (code === "data_publication_not_found") return "history";
-  if (/data_(source|schema)_not_found|dependency_version_conflict/.test(code))
-    return "unavailable";
+  if (code === "data_dependency_version_conflict") return "pinConflict";
+  if (/data_(source|schema)_not_found/.test(code)) return "unavailable";
   if (code === "version_conflict") return "conflict";
   if (/cardinality|not_unique|identity_conflict/.test(code))
     return "cardinality";
