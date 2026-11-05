@@ -15,6 +15,34 @@ const productionUrls = {
 };
 
 describe("loadConfig", () => {
+  it("allows self-hosters to raise or remove data and execution policy ceilings", () => {
+    const config = loadConfig({
+      NETRICS_DATA_POLICY: JSON.stringify({
+        maxGenerationRows: 10000000,
+        maxWorkspaceBytes: null,
+        queryRows: null,
+        queryOperations: null,
+        queryTimeoutMs: null,
+        syncPagesPerRun: null,
+      }),
+    });
+    expect(config.dataPolicy).toMatchObject({
+      maxGenerationRows: 10000000,
+      maxWorkspaceBytes: null,
+      queryRows: null,
+      queryOperations: null,
+      queryTimeoutMs: null,
+      syncPagesPerRun: null,
+    });
+    for (const input of [
+      '{"queryRows":-1}',
+      '{"unknownLimit":1}',
+      "invalid-json",
+    ])
+      expect(() => loadConfig({ NETRICS_DATA_POLICY: input })).toThrow(
+        "NETRICS_DATA_POLICY",
+      );
+  });
   it("applies defaults", () => {
     const config = loadConfig({});
     expect(config.port).toBe(3001);

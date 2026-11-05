@@ -382,16 +382,16 @@ Umbrella: [#439](https://github.com/netrics-so/netrics/issues/439).
 11D: [#443](https://github.com/netrics-so/netrics/issues/443),
 11E: [#444](https://github.com/netrics-so/netrics/issues/444).
 
-The initial 11A limits are 100 fields, 1,000 records/1 MiB per page, 100
-pages/100,000 records per refresh, 128 MiB per published source generation,
-256 MiB of logical source payload per workspace, 100 preview rows, and a
-15-second database statement timeout. These apply to retained source data,
-not existing observation history. Default source retention is 30 days; a
-personal field requires an explicit deadline of at most 90 days, and the
-shortest field policy applies to the whole retained source record. Replay
-preserves original collection time/deadlines. Existing schema-version policy
-cannot be edited in place; retention/classification changes require an explicit
-migration rather than silently extending or reclassifying retained data.
+The policy update agreed on 2026-11-05 separates customer/tier limits from
+transport safeguards. Retained volume, source/app count, refresh size and
+retention have no fixed product ceilings. Instance defaults and workspace
+overrides can set or remove policy ceilings; hosted tiers use those overrides,
+and self-hosters control the same settings. Execution budgets are configurable
+independently of retained history. See `docs/data-processing.md` for the current
+settings, defaults and installation API. Sources may retain indefinitely with
+an explicit null retention. Personal fields require an explicit retention
+choice. Shortening retention cannot be undone by later increasing it or replay.
+The first 11A fixed storage/row/day ceilings are superseded by this policy.
 
 Source transport/schema validators live in the standalone connector SDK. API
 contracts reuse that portable lower layer; database code imports it through

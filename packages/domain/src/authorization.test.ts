@@ -29,6 +29,11 @@ const ALL_ACTIONS: WorkspaceAction[] = [
   "devices:view",
   "devices:manage",
   "audit:view",
+  "data:preview",
+  "data:edit",
+  "data:publish",
+  "data:query",
+  "data:delete",
 ];
 
 const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
@@ -54,6 +59,11 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
     "devices:view": true,
     "devices:manage": true,
     "audit:view": true,
+    "data:preview": true,
+    "data:edit": true,
+    "data:publish": true,
+    "data:query": true,
+    "data:delete": true,
   },
   admin: {
     "workspace:view": true,
@@ -77,6 +87,11 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
     "devices:view": true,
     "devices:manage": true,
     "audit:view": true,
+    "data:preview": true,
+    "data:edit": true,
+    "data:publish": true,
+    "data:query": true,
+    "data:delete": true,
   },
   editor: {
     "workspace:view": true,
@@ -100,6 +115,11 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
     "devices:view": true,
     "devices:manage": false,
     "audit:view": false,
+    "data:preview": true,
+    "data:edit": true,
+    "data:publish": true,
+    "data:query": true,
+    "data:delete": false,
   },
   viewer: {
     "workspace:view": true,
@@ -123,6 +143,11 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
     "devices:view": false,
     "devices:manage": false,
     "audit:view": false,
+    "data:preview": false,
+    "data:edit": false,
+    "data:publish": false,
+    "data:query": true,
+    "data:delete": false,
   },
 };
 

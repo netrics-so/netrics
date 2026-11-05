@@ -3428,3 +3428,6 @@ export type {
   DatasetRecord,
   DatasetPage,
 } from "@netrics/connector-sdk";
+
+export * from "./data-processing.js";
+export * from "./data-policy.js";

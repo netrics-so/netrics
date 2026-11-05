@@ -1094,7 +1094,7 @@ describe("page-wise ingest (#145)", () => {
     const connectionId = await seedConnection(workspaceA, "endless");
     await expect(
       runAttempt("connection.backfill", workspaceA, connectionId, 0),
-    ).rejects.toThrow(/paged more than 100 times/);
+    ).rejects.toThrow(/configured sync page budget/);
 
     const state = await committed(connectionId);
     expect(endlessPages).toBe(100);

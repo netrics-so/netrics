@@ -138,6 +138,21 @@ set `NETRICS_IMAGE_QUOTA_COUNT` and `NETRICS_IMAGE_QUOTA_MIB` in `.env` and
 restart the `api`. Images above a lowered quota stay; only new uploads are
 refused.
 
+### Data volume and retention
+
+`NETRICS_DATA_POLICY` in `.env` configures data storage, retention and execution
+budgets for both the API and worker. For example:
+
+```dotenv
+NETRICS_DATA_POLICY='{"maxWorkspaceBytes":null,"queryRows":1000000,"queryOperations":50000000}'
+```
+
+Storage and source counts have no default quota. Any policy ceiling can be
+removed with `null`. Restart the API and worker after changing defaults.
+Instance administrators can also set workspace overrides through the
+installation API. See [data processing](../../docs/data-processing.md) for
+all settings and retention/deletion behavior.
+
 ### Another port
 
 If the host already serves 443, install with `--https-port 8443`. This sets

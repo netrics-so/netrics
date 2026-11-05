@@ -8,10 +8,6 @@ export const DATASET_LIMITS = {
   pageBytes: 1_048_576,
   rowBytes: 65_536,
   keyBytes: 1_024,
-  pages: 100,
-  rows: 100_000,
-  generationBytes: 134_217_728,
-  workspaceBytes: 268_435_456,
   previewRows: 100,
   retentionDays: 30,
 } as const;
@@ -38,8 +34,14 @@ export const datasetFieldSchema = z.strictObject({
   type: datasetFieldTypeSchema,
   nullable: z.boolean(),
   classification: z.enum(["public", "internal", "personal"]),
-  /** Personal-data sources must explicitly cap retention at no more than 90 days. */
-  retentionDays: z.number().int().min(1).max(3650).optional(),
+  /** null explicitly keeps data until deleted; omitted inherits dataset retention. */
+  retentionDays: z
+    .number()
+    .int()
+    .positive()
+    .max(Number.MAX_SAFE_INTEGER)
+    .nullable()
+    .optional(),
   unit: z.string().min(1).max(100).optional(),
   currencyField: id.optional(),
   scale: z.number().int().min(0).max(18).optional(),
@@ -59,7 +61,8 @@ export const sourceDatasetSchema = z
       .number()
       .int()
       .min(1)
-      .max(3650)
+      .max(Number.MAX_SAFE_INTEGER)
+      .nullable()
       .default(DATASET_LIMITS.retentionDays),
   })
   .superRefine((schema, ctx) => {
@@ -117,9 +120,9 @@ export const sourceDatasetSchema = z
         problem("Scale requires an exact numeric field");
       if (
         field.classification === "personal" &&
-        (!field.retentionDays || field.retentionDays > 90)
+        field.retentionDays === undefined
       )
-        problem("Personal fields require retention of at most 90 days");
+        problem("Personal fields require an explicit retention policy");
     }
   });
 export type SourceDatasetDefinition = z.infer<typeof sourceDatasetSchema>;
@@ -180,11 +183,14 @@ export const datasetPageSchema = z.strictObject({
 });
 export type DatasetPage = z.infer<typeof datasetPageSchema>;
 
-export function datasetRetentionDays(schema: SourceDatasetDefinition): number {
-  return Math.min(
+export function datasetRetentionDays(
+  schema: SourceDatasetDefinition,
+): number | null {
+  const finite = [
     schema.retentionDays,
-    ...schema.fields.map((f) => f.retentionDays ?? schema.retentionDays),
-  );
+    ...schema.fields.map((f) => f.retentionDays),
+  ].filter((value): value is number => typeof value === "number");
+  return finite.length ? Math.min(...finite) : null;
 }
 
 const decimal = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;

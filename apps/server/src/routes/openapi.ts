@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import {
   jsonSchemaTransform,
+  jsonSchemaTransformObject,
   serializerCompiler,
   validatorCompiler,
 } from "fastify-type-provider-zod";
@@ -153,7 +154,7 @@ export async function registerOpenApi(
     transform: jsonSchemaTransform,
     transformObject: (document) =>
       "openapiObject" in document
-        ? optionalNullableBodies(document.openapiObject)
+        ? optionalNullableBodies(jsonSchemaTransformObject(document))
         : document.swaggerObject,
   });
 }

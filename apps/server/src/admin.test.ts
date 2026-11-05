@@ -134,6 +134,71 @@ afterAll(async () => {
 });
 
 describe("installation admin API", () => {
+  it("separates data-policy read and write scopes from workspace administration", async () => {
+    const ws = adminWorkspaceListResponseSchema.parse(
+      (await listWorkspaces({ cookie: instanceAdminCookie })).json(),
+    ).workspaces[0]!.id;
+    const url = `/v1/admin/workspaces/${ws}/data-policy`;
+    expect((await app.inject({ url })).statusCode).toBe(401);
+    expect(
+      (await app.inject({ url, headers: { cookie: memberCookie } })).statusCode,
+    ).toBe(403);
+    const readOnly = await serviceToken(["installation:data-policy:read"]);
+    expect(
+      (
+        await app.inject({
+          url,
+          headers: { authorization: `Bearer ${readOnly.token}` },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url,
+          headers: { authorization: `Bearer ${readOnly.token}` },
+          payload: {},
+        })
+      ).statusCode,
+    ).toBe(403);
+    const writer = await serviceToken(["installation:data-policy:write"]);
+    const put = await app.inject({
+      method: "PUT",
+      url,
+      headers: { authorization: `Bearer ${writer.token}` },
+      payload: {
+        maxGenerationRows: 1000000,
+        queryRows: null,
+        maxWorkspaceBytes: null,
+      },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().policy).toMatchObject({
+      maxGenerationRows: 1000000,
+      queryRows: null,
+      maxWorkspaceBytes: null,
+    });
+    expect(
+      (
+        await app.inject({ url, headers: { cookie: instanceAdminCookie } })
+      ).json().overrides,
+    ).toEqual({
+      maxGenerationRows: 1000000,
+      queryRows: null,
+      maxWorkspaceBytes: null,
+    });
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url,
+          headers: { cookie: instanceAdminCookie },
+          payload: { queryRows: 0 },
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
   it("serves the setup account (instance admin) across all workspaces", async () => {
     const response = await listWorkspaces({ cookie: instanceAdminCookie });
     expect(response.statusCode).toBe(200);

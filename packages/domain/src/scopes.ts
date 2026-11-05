@@ -3,7 +3,11 @@
  * reach across workspaces through the admin API only; workspace data stays
  * behind memberships and roles.
  */
-export const INSTALLATION_SCOPES = ["installation:workspaces:read"] as const;
+export const INSTALLATION_SCOPES = [
+  "installation:workspaces:read",
+  "installation:data-policy:read",
+  "installation:data-policy:write",
+] as const;
 export type InstallationScope = (typeof INSTALLATION_SCOPES)[number];
 
 export function isInstallationScope(value: string): value is InstallationScope {

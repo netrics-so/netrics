@@ -142,6 +142,24 @@ afterAll(async () => {
 });
 
 describe("durable typed dataset ingestion", () => {
+  it("accepts more than the old 100-page refresh ceiling when policy permits", async () => {
+    const d = definition("many-pages", "snapshot");
+    let result;
+    for (let index = 0; index < 101; index++)
+      result = await ingest(
+        d,
+        page(d, {
+          pageKey: "p" + index,
+          previousPageKey: index ? "p" + (index - 1) : null,
+          records: [record("row" + index)],
+          complete: index === 100,
+        }),
+      );
+    expect(result?.generationId).toBeTruthy();
+    const [generation] =
+      await admin`select row_count from data_generations where id=${result!.generationId}`;
+    expect(generation!.row_count).toBe(101);
+  });
   it("migrates populated prior databases without altering existing connections", async () => {
     expect(
       (await admin`select name from connections order by name`).map(

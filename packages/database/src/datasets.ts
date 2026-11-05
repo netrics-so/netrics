@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, sql, isNull, or } from "drizzle-orm";
 import {
   DATASET_LIMITS,
   datasetRecordKey,
@@ -12,6 +12,8 @@ import {
   type SourceDatasetDefinition,
 } from "@netrics/contracts";
 import type { Db, Transaction } from "./context.js";
+import { exceedsDataPolicy, type DataPolicy } from "@netrics/domain";
+import { resolveDataPolicy } from "./data-policy.js";
 import {
   connections,
   dataDatasets,
@@ -32,6 +34,17 @@ const fail = (code: string): never => {
   throw new DatasetStoreError(code);
 };
 const DAY = 86_400_000;
+function earlier(a: Date | null, b: Date | null): Date | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return a < b ? a : b;
+}
+function retentionExpiry(collectedAt: Date, days: number | null): Date | null {
+  if (days === null) return null;
+  const millis = collectedAt.getTime() + days * DAY;
+  // Beyond the database/client timestamp range means no practical expiry.
+  return millis <= 253402300799000 ? new Date(millis) : null;
+}
 /** Canonical structural digest; never expose raw records through errors. */
 function stable(value: unknown): string {
   if (Array.isArray(value)) return "[" + value.map(stable).join(",") + "]";
@@ -95,35 +108,54 @@ function compatible(
 async function register(
   tx: Transaction,
   workspaceId: string,
-  connectionId: string,
+  connectionId: string | null,
   definition: SourceDatasetDefinition,
+  kind: "source" | "manual",
+  maxSources: number | null,
 ) {
-  const [connection] = await tx
-    .select({ id: connections.id })
-    .from(connections)
-    .where(
-      and(
-        eq(connections.id, connectionId),
-        eq(connections.workspaceId, workspaceId),
-      ),
-    );
-  if (!connection) fail("dataset_connection_not_found");
-  await tx
+  if (kind === "source") {
+    if (!connectionId) return fail("dataset_connection_not_found");
+    const [connection] = await tx
+      .select({ id: connections.id })
+      .from(connections)
+      .where(
+        and(
+          eq(connections.id, connectionId),
+          eq(connections.workspaceId, workspaceId),
+        ),
+      );
+    if (!connection) return fail("dataset_connection_not_found");
+  } else if (connectionId !== null)
+    return fail("dataset_manual_connection_invalid");
+  const created = await tx
     .insert(dataDatasets)
     .values({
       workspaceId,
       connectionId,
       key: definition.key,
       name: definition.name,
+      kind,
     })
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning({ id: dataDatasets.id });
+  if (created.length && maxSources !== null) {
+    const [count] = await tx
+      .select({ count: sql<string>`count(*)` })
+      .from(dataDatasets)
+      .where(eq(dataDatasets.workspaceId, workspaceId));
+    if (exceedsDataPolicy(Number(count?.count ?? 0), maxSources))
+      fail("dataset_source_quota");
+  }
   const [dataset] = await tx
     .select()
     .from(dataDatasets)
     .where(
       and(
         eq(dataDatasets.workspaceId, workspaceId),
-        eq(dataDatasets.connectionId, connectionId),
+        eq(dataDatasets.kind, kind),
+        connectionId === null
+          ? isNull(dataDatasets.connectionId)
+          : eq(dataDatasets.connectionId, connectionId),
         eq(dataDatasets.key, definition.key),
       ),
     )
@@ -171,14 +203,17 @@ async function register(
 
 export interface IngestDatasetPageInput {
   workspaceId: string;
-  connectionId: string;
+  connectionId: string | null;
+  kind?: "source" | "manual";
   definition: SourceDatasetDefinition;
   page: DatasetPage;
   now?: Date;
   /** Host-only replay provenance; never extend a retained source deadline. */
-  retainedSource?: { collectedAt: Date; expiresAt: Date };
-  /** Host operational policy may lower the hard transport/storage ceiling. */
-  maxWorkspaceBytes?: number;
+  retainedSource?: { collectedAt: Date; expiresAt: Date | null };
+  /** Instance defaults; workspace/tier overrides resolve in the tenant transaction. */
+  policyDefaults?: DataPolicy;
+  /** Compatibility shorthand for an explicit storage quota. */
+  maxWorkspaceBytes?: number | null;
 }
 
 /** Page + checkpoint callers share one transaction. No generation until complete. */
@@ -190,12 +225,16 @@ async function ingestPage(
   generationId: string | null;
   replayed: boolean;
 }> {
-  const quota = input.maxWorkspaceBytes ?? DATASET_LIMITS.workspaceBytes;
-  if (
-    !Number.isSafeInteger(quota) ||
-    quota < 1 ||
-    quota > DATASET_LIMITS.workspaceBytes
-  )
+  const { policy } = await resolveDataPolicy(
+    tx,
+    input.workspaceId,
+    input.policyDefaults,
+  );
+  const quota =
+    input.maxWorkspaceBytes === undefined
+      ? policy.maxWorkspaceBytes
+      : input.maxWorkspaceBytes;
+  if (quota !== null && (!Number.isSafeInteger(quota) || quota < 1))
     return fail("dataset_quota_invalid");
   const definitionResult = sourceDatasetSchema.safeParse(input.definition);
   if (!definitionResult.success) return fail("dataset_schema_invalid");
@@ -208,21 +247,32 @@ async function ingestPage(
   }
   const { workspaceId, connectionId } = input;
   const now = input.now ?? new Date();
-  const retentionDays = datasetRetentionDays(definition);
+  const requestedRetention = datasetRetentionDays(definition);
+  const retentionDays =
+    policy.maxRetentionDays === null
+      ? requestedRetention
+      : Math.min(requestedRetention ?? Infinity, policy.maxRetentionDays);
   const sourceCollectedAt = input.retainedSource?.collectedAt ?? now;
-  const expiresAt = new Date(
-    Math.min(
-      sourceCollectedAt.getTime() + retentionDays * DAY,
-      input.retainedSource?.expiresAt.getTime() ?? Infinity,
-    ),
+  const expiresAt = earlier(
+    retentionExpiry(sourceCollectedAt, retentionDays),
+    input.retainedSource?.expiresAt ?? null,
   );
-  if (expiresAt <= now || sourceCollectedAt > now)
+  if ((expiresAt !== null && expiresAt <= now) || sourceCollectedAt > now)
     return fail("dataset_replay_unavailable");
-  await tx.execute(sql`set local statement_timeout = '15s'`);
+  await tx.execute(
+    sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
+  );
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}, 440))`,
   );
-  const dataset = await register(tx, workspaceId, connectionId, definition);
+  const dataset = await register(
+    tx,
+    workspaceId,
+    connectionId,
+    definition,
+    input.kind ?? "source",
+    policy.maxSources,
+  );
   await tx
     .insert(dataRefreshes)
     .values({
@@ -248,7 +298,8 @@ async function ingestPage(
     )
     .for("update");
   if (!refresh) return fail("dataset_refresh_not_found");
-  if (refresh.expiresAt <= now) fail("dataset_refresh_expired");
+  if (refresh.expiresAt !== null && refresh.expiresAt <= now)
+    fail("dataset_refresh_expired");
   if (
     refresh.schemaVersion !== definition.version ||
     stable(refresh.replacementWindow) !== stable(page.window ?? null)
@@ -287,8 +338,11 @@ async function ingestPage(
   if (refresh.lastPageKey !== page.previousPageKey)
     fail("dataset_page_out_of_order");
   if (
-    refresh.pageCount >= DATASET_LIMITS.pages ||
-    refresh.rowCount + page.records.length > DATASET_LIMITS.rows
+    exceedsDataPolicy(refresh.pageCount + 1, policy.maxRefreshPages) ||
+    exceedsDataPolicy(
+      refresh.rowCount + page.records.length,
+      policy.maxGenerationRows,
+    )
   )
     fail("dataset_refresh_limit");
   await tx.insert(dataPages).values({
@@ -314,10 +368,14 @@ async function ingestPage(
       ),
     );
   if (!page.complete) {
-    const [usage] = await tx.execute<{ bytes: string }>(
-      sql`select (coalesce((select sum(octet_length(payload::text) + 256) from data_pages where workspace_id = ${workspaceId}),0) + coalesce((select sum(octet_length("values"::text) + octet_length(record_key) + 128) from data_records where workspace_id = ${workspaceId}),0))::text as bytes`,
-    );
-    if (Number(usage?.bytes ?? 0) > quota) fail("dataset_workspace_quota");
+    const [usage] =
+      quota === null
+        ? []
+        : await tx.execute<{ bytes: string }>(
+            sql`select (coalesce((select sum(octet_length(payload::text) + 256) from data_pages where workspace_id = ${workspaceId}),0) + coalesce((select sum(octet_length("values"::text) + octet_length(record_key) + 128) from data_records where workspace_id = ${workspaceId}),0))::text as bytes`,
+          );
+    if (exceedsDataPolicy(Number(usage?.bytes ?? 0), quota))
+      fail("dataset_workspace_quota");
     return { datasetId: dataset.id, generationId: null, replayed: false };
   }
 
@@ -341,34 +399,35 @@ async function ingestPage(
   type Row = {
     values: Record<string, unknown>;
     collectedAt: Date;
-    expiresAt: Date;
+    expiresAt: Date | null;
   };
   const rows = new Map<string, Row>();
   if (previous && definition.mode !== "snapshot") {
-    const old = await tx
+    const oldQuery = tx
       .select()
       .from(dataRecords)
       .where(
         and(
           eq(dataRecords.workspaceId, workspaceId),
           eq(dataRecords.generationId, previous.id),
-          gt(dataRecords.expiresAt, now),
+          or(isNull(dataRecords.expiresAt), gt(dataRecords.expiresAt, now)),
         ),
-      )
-      .limit(DATASET_LIMITS.rows + 1);
-    if (old.length > DATASET_LIMITS.rows) fail("dataset_generation_limit");
+      );
+    const old = await (policy.maxGenerationRows === null
+      ? oldQuery
+      : oldQuery.limit(policy.maxGenerationRows + 1));
+    if (exceedsDataPolicy(old.length, policy.maxGenerationRows))
+      fail("dataset_generation_limit");
     for (const row of old) {
       const values = { ...(row.values as Record<string, unknown>) };
       for (const field of definition.fields)
         if (!Object.hasOwn(values, field.id) && field.nullable)
           values[field.id] = null;
-      const expiry = new Date(
-        Math.min(
-          row.expiresAt.getTime(),
-          row.collectedAt.getTime() + retentionDays * DAY,
-        ),
+      const expiry = earlier(
+        row.expiresAt,
+        retentionExpiry(row.collectedAt, retentionDays),
       );
-      if (expiry <= now) continue;
+      if (expiry !== null && expiry <= now) continue;
       if (page.window) {
         const time = values[definition.reportingField!] as string;
         const instant =
@@ -393,7 +452,7 @@ async function ingestPage(
       });
     }
   }
-  const pages = await tx
+  const pagesQuery = tx
     .select()
     .from(dataPages)
     .where(
@@ -402,8 +461,10 @@ async function ingestPage(
         eq(dataPages.refreshId, refresh.id),
       ),
     )
-    .orderBy(asc(dataPages.sequence))
-    .limit(DATASET_LIMITS.pages);
+    .orderBy(asc(dataPages.sequence));
+  const pages = await (policy.maxRefreshPages === null
+    ? pagesQuery
+    : pagesQuery.limit(policy.maxRefreshPages));
   if (
     pages.length !== refresh.pageCount + 1 ||
     pages.some((entry, index) => entry.sequence !== index + 1)
@@ -437,15 +498,20 @@ async function ingestPage(
       });
     }
   }
-  if (rows.size > DATASET_LIMITS.rows) fail("dataset_generation_limit");
+  if (exceedsDataPolicy(rows.size, policy.maxGenerationRows))
+    fail("dataset_generation_limit");
   let bytes = 0;
   let generationExpiresAt = expiresAt;
   for (const row of rows.values()) {
     bytes += Buffer.byteLength(JSON.stringify(row.values));
-    if (row.expiresAt > generationExpiresAt)
+    if (
+      row.expiresAt === null ||
+      (generationExpiresAt !== null && row.expiresAt > generationExpiresAt)
+    )
       generationExpiresAt = row.expiresAt;
   }
-  if (bytes > DATASET_LIMITS.generationBytes) fail("dataset_generation_limit");
+  if (exceedsDataPolicy(bytes, policy.maxGenerationBytes))
+    fail("dataset_generation_limit");
   const [generation] = await tx
     .insert(dataGenerations)
     .values({
@@ -469,10 +535,14 @@ async function ingestPage(
   }));
   for (let offset = 0; offset < entries.length; offset += 1000)
     await tx.insert(dataRecords).values(entries.slice(offset, offset + 1000));
-  const [usage] = await tx.execute<{ bytes: string }>(
-    sql`select (coalesce((select sum(octet_length(payload::text) + 256) from data_pages where workspace_id = ${workspaceId}),0) + coalesce((select sum(octet_length("values"::text) + octet_length(record_key) + 128) from data_records where workspace_id = ${workspaceId}),0))::text as bytes`,
-  );
-  if (Number(usage?.bytes ?? 0) > quota) fail("dataset_workspace_quota");
+  const [usage] =
+    quota === null
+      ? []
+      : await tx.execute<{ bytes: string }>(
+          sql`select (coalesce((select sum(octet_length(payload::text) + 256) from data_pages where workspace_id = ${workspaceId}),0) + coalesce((select sum(octet_length("values"::text) + octet_length(record_key) + 128) from data_records where workspace_id = ${workspaceId}),0))::text as bytes`,
+        );
+  if (exceedsDataPolicy(Number(usage?.bytes ?? 0), quota))
+    fail("dataset_workspace_quota");
   return {
     datasetId: dataset.id,
     generationId: generation.id,
@@ -513,7 +583,11 @@ export async function previewDataset(
     )
     .orderBy(desc(dataGenerations.sequence))
     .limit(1);
-  if (!generation || generation.expiresAt <= now) return null;
+  if (
+    !generation ||
+    (generation.expiresAt !== null && generation.expiresAt <= now)
+  )
+    return null;
   const rows = await tx
     .select({ values: dataRecords.values })
     .from(dataRecords)
@@ -521,7 +595,7 @@ export async function previewDataset(
       and(
         eq(dataRecords.workspaceId, input.workspaceId),
         eq(dataRecords.generationId, generation.id),
-        gt(dataRecords.expiresAt, now),
+        or(isNull(dataRecords.expiresAt), gt(dataRecords.expiresAt, now)),
       ),
     )
     .orderBy(asc(dataRecords.recordKey))
@@ -673,7 +747,11 @@ export async function replayDatasetRefresh(
       ),
     )
     .for("update", { of: dataRefreshes });
-  if (!source || !source.refresh.complete || source.refresh.expiresAt <= now)
+  if (
+    !source ||
+    !source.refresh.complete ||
+    (source.refresh.expiresAt !== null && source.refresh.expiresAt <= now)
+  )
     return fail("dataset_replay_unavailable");
   const pages = await tx
     .select()
@@ -684,8 +762,7 @@ export async function replayDatasetRefresh(
         eq(dataPages.refreshId, source.refresh.id),
       ),
     )
-    .orderBy(asc(dataPages.sequence))
-    .limit(DATASET_LIMITS.pages);
+    .orderBy(asc(dataPages.sequence));
   if (pages.length !== source.refresh.pageCount)
     return fail("dataset_replay_unavailable");
   let result: {
@@ -697,6 +774,7 @@ export async function replayDatasetRefresh(
     result = await ingestDatasetPage(tx, {
       workspaceId: input.workspaceId,
       connectionId: source.dataset.connectionId,
+      kind: source.dataset.kind === "manual" ? "manual" : "source",
       definition: sourceDatasetSchema.parse(source.version.definition),
       page: { ...(p.payload as DatasetPage), refreshKey: input.newRefreshKey },
       now,
@@ -717,18 +795,16 @@ export async function readObservationDataset(
     metricDefinitionId: string;
     from: Date;
     toExclusive: Date;
-    limit?: number;
+    limit?: number | null;
   },
 ) {
-  const limit = input.limit ?? DATASET_LIMITS.previewRows;
+  const limit =
+    input.limit === undefined ? DATASET_LIMITS.previewRows : input.limit;
   if (
-    !Number.isInteger(limit) ||
-    limit < 1 ||
-    limit > DATASET_LIMITS.rows ||
+    (limit !== null && (!Number.isSafeInteger(limit) || limit < 1)) ||
     !Number.isFinite(input.from.getTime()) ||
     !Number.isFinite(input.toExclusive.getTime()) ||
-    input.from >= input.toExclusive ||
-    input.toExclusive.getTime() - input.from.getTime() > 3660 * DAY
+    input.from >= input.toExclusive
   )
     return fail("dataset_observation_query_invalid");
   const dataset = (await listObservationDatasets(tx, input.workspaceId)).find(
@@ -743,12 +819,12 @@ export async function readObservationDataset(
     source_timestamp: Date;
     series_key: string;
   }>(
-    sql`select value,dimensions,source_timestamp,series_key from observations where workspace_id=${input.workspaceId} and connection_id=${input.connectionId} and metric_definition_id=${input.metricDefinitionId} and source_timestamp >= ${input.from.toISOString()}::timestamptz and source_timestamp < ${input.toExclusive.toISOString()}::timestamptz order by source_timestamp,series_key limit ${limit + 1}`,
+    sql`select value,dimensions,source_timestamp,series_key from observations where workspace_id=${input.workspaceId} and connection_id=${input.connectionId} and metric_definition_id=${input.metricDefinitionId} and source_timestamp >= ${input.from.toISOString()}::timestamptz and source_timestamp < ${input.toExclusive.toISOString()}::timestamptz order by source_timestamp,series_key limit ${limit === null ? sql`all` : sql`${limit + 1}`}`,
   );
   return {
     dataset,
-    truncated: found.length > limit,
-    rows: found.slice(0, limit).map((row) => {
+    truncated: limit !== null && found.length > limit,
+    rows: found.slice(0, limit ?? undefined).map((row) => {
       const at = new Date(row.source_timestamp).toISOString();
       const values: Record<string, unknown> = {
         time: dataset.granularity === "day" ? at.slice(0, 10) : at,

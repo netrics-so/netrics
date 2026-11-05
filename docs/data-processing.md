@@ -124,31 +124,106 @@ The database exports `previewDataset` (bounded, workspace-scoped) and
 `replayDatasetRefresh` (rebuild from retained complete pages without network
 access). Replay preserves the original collection time and expiry. Published
 row values remain typed JSONB source views; prepared analytical relations,
-expression graphs and semantic queries belong to the next slice.
+expression graphs and semantic queries are described below.
 
 Legacy observation descriptors from `listObservationDatasets` explicitly mark
 their already-aggregated grain. Daily values remain reporting dates; the adapter
 does not claim a provider timezone or reconstruct raw transactions. Existing
 observation queries and retention remain unchanged.
 
-## Bounds and privacy
+## Policy, execution budgets and retention
 
-Defaults: 100 fields; 1,000 records and 1 MiB per page; 64 KiB per record;
-1 KiB per source key; 100 pages/100,000 records per refresh; 128 MiB per
-published generation; 256 MiB logical source payload per workspace; 100 preview
-rows; and a 15-second database statement timeout. A host can lower the workspace
-budget. Quota failures roll back the page and its checkpoint. These are initial
-operational bounds, not billing or feature gates.
+Storage volume, refresh size, source/app count, preparation/model count and
+retention are installation/tier policy, not fixed product ceilings. Instance
+defaults are read at runtime from `NETRICS_DATA_POLICY` (a JSON object). Omitted
+keys use `DEFAULT_DATA_POLICY`; `null` removes that policy ceiling. Workspace
+overrides inherit those instance defaults. For example:
 
-Default retained-source lifetime is 30 days after collection. Personal fields
-require an explicit retention policy of at most 90 days. The shortest field
-policy applies to the complete record. Credential envelopes, headers and tokens
-never belong in a dataset. JSON depth/size and scalar types are validated before
-persistence; errors identify structure or field IDs without echoing values.
+```json
+{
+  "maxWorkspaceBytes": null,
+  "maxGenerationRows": null,
+  "maxRefreshPages": null,
+  "maxSources": null,
+  "queryRows": 1000000,
+  "queryOperations": 50000000,
+  "maxRetentionDays": null
+}
+```
+
+The installation API exposes `GET/PUT /v1/admin/workspaces/:id/data-policy`.
+Instance administrators qualify; service tokens need the separate
+`installation:data-policy:read` or `installation:data-policy:write` scope.
+Workspace owners/editors cannot raise their tier's policy. PUT replaces the
+overrides; `{}` restores inheritance. No billing plan identifiers are built
+into the dataset or processing schema. A hosted plan service can manage these
+overrides; self-hosters control the same defaults and API.
+
+Storage and source-count policy defaults are uncapped. Execution defaults are
+100,000 rows, 5 million operations and 128 MiB of output per evaluation, 15
+seconds per database statement and 100 connector pages per sync attempt. All
+are configurable, including `null`. They govern an individual execution, not
+the amount of retained history. Query snapshots default to 100 identities per
+release and a one-day lifetime; prepared cache entries default to one day,
+bounded by the earliest source expiry. Those policies are configurable too.
+Wire safeguards remain: 100 fields, 1,000 records/1 MiB per page, 64 KiB per
+record, 1 KiB per key, and 100 rows per preview. Paged ingestion can exceed one
+page; expression depth and permitted functions stay bounded. These safeguards
+protect transport and execution rather than defining customer data quotas.
+
+Source retention defaults to 30 days after collection. A source can request
+any positive retention period or explicitly use `retentionDays: null` to retain
+until deleted. Personal fields require an explicit retention choice; no fixed
+90-day rule is imposed. The shortest finite source/field/tier retention applies
+to the complete record. A shorter workspace retention policy immediately
+reduces stored deadlines and clears derived caches; increasing it later cannot
+revive expired data. Replay preserves original collection time and deadlines.
+Credentials, headers and tokens never belong in datasets.
 
 Expired rows are excluded at read time. Hourly scheduler maintenance removes
-expired rows and pages in bounded batches through `prune_dataset_history`;
-the scheduler role has no direct read access to source records. Every source
-table uses forced RLS and tenant-aware foreign keys. SQL query predicates also
-name the workspace. Published generation metadata may survive expiry so an
-expired current dataset cannot fall back to older data.
+expired rows, pages, prepared outputs and query snapshots in batches through
+`prune_dataset_history`. The scheduler has no direct read access to source
+records. Dataset/model tables use forced RLS and explicit tenant predicates.
+
+## Preparations and semantic models
+
+Workspace editors can use the data API under `/v1/workspaces/:id/data`:
+
+- `sources` and `preview` expose typed fields and bounded previews, including
+  legacy observations, entered reference tables and published preparations.
+- `manual` publishes reference snapshots with generation-based optimistic
+  concurrency. Creating an existing key never overwrites it.
+- `formula` parses readable expressions such as `[Revenue] / [Downloads]`
+  into stable field references. Arbitrary code and SQL are unavailable.
+- `preparations` stores graph drafts. Select, rename, cast, replace, filter,
+  calculate, deduplicate, append, validated inner/left joins and aggregation
+  are supported. `preview` evaluates without publishing; `publish` validates
+  outputs and records an immutable version.
+- `models` stores shared dimensions, directed relationships, aggregate
+  measures and formulas over measures. `preview` uses the draft; `publish`
+  creates an immutable release; `query` evaluates the active release.
+
+Each query pins source generations in one serializable transaction. Independent
+facts aggregate before their results combine, preventing join fanout. Typed
+filters apply to every operand through declared dimensions; incompatible
+filters fail. Exact decimal money stays a string, mixed-currency totals fail,
+and divide-by-zero produces null with a warning. Missing values remain distinct
+from zero. Prepared generations are identified by preparation version and input
+provenance; late corrections invalidate them automatically on the next read.
+
+Published models pin preparation definition versions while reading newer
+compatible source generations. Editing drafts cannot change live queries.
+Republishing a model adopts newer preparation definitions. A failed build
+leaves its previous publication active. A previously successful query can
+fall back to its complete retained source vector after a processing/schema
+failure, with `stale: true`, the error code and a warning. Fallback re-authorizes
+every source and cannot restore removed or expired data. Legacy observation
+snapshots cannot be reconstructed after their values change.
+
+The current executor evaluates typed JSONB rows in memory and materializes
+prepared outputs in JSONB. Removing policy ceilings does not yet provide a
+streaming or SQL execution path. Representative-volume checks and a scalable
+execution/storage path remain release work; this implementation does not claim
+a tested unbounded workload. Rolling/previous-period calculations, explicit
+rollback/history controls, preparation/model authoring UI, widget integration
+and connector templates remain tracked in milestone 11.

@@ -304,3 +304,26 @@ it("preserves sub-millisecond timestamp identity and replacement boundaries", ()
     validateDatasetPage(schema, { ...p, records: [{ values: b }] }),
   ).toThrow("Record outside replacement window");
 });
+
+it("allows explicit indefinite retention or a customer-defined period without a fixed day ceiling", () => {
+  const unlimited = sourceDatasetSchema.parse({
+    ...definition,
+    retentionDays: null,
+  });
+  expect(datasetRetentionDays(unlimited)).toBeNull();
+  const long = sourceDatasetSchema.parse({
+    ...definition,
+    retentionDays: 10000,
+  });
+  expect(datasetRetentionDays(long)).toBe(10000);
+  expect(
+    datasetRetentionDays({
+      ...unlimited,
+      fields: unlimited.fields.map((f) =>
+        f.id === "id"
+          ? { ...f, classification: "personal", retentionDays: 730 }
+          : f,
+      ),
+    }),
+  ).toBe(730);
+});

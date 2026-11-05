@@ -1,4 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
+import type { DataPolicy } from "@netrics/domain";
 
 import {
   ContractViolationError,
@@ -23,6 +24,7 @@ import {
   ingestAppReviews,
   ingestDatasetPage,
   DatasetStoreError,
+  resolveDataPolicy,
   schema,
   upsertConnectionResources,
   withWorkspace,
@@ -66,8 +68,6 @@ import {
 
 /** First-ever incremental sync with no cursor and no last success. */
 const INITIAL_INCREMENTAL_WINDOW_MS = 24 * 60 * 60 * 1000;
-/** Pagination bound: a connector paging forever is a contract violation. */
-const MAX_PAGES = 100;
 /**
  * Rows per observation INSERT: PostgreSQL binds at most 65,535 parameters in
  * one statement and a row binds six.
@@ -82,6 +82,7 @@ const DEFAULT_IMAGE_QUOTA: ImageQuota = {
 };
 
 export interface SyncEngineDeps {
+  dataPolicy?: DataPolicy;
   registry: ConnectorRegistry;
   credentialKeyring: CredentialKeyring;
   /** Clock for sync windows and state timestamps; defaults to the wall clock. */
@@ -287,7 +288,12 @@ async function runSync(
       .from(schema.connectionState)
       .where(eq(schema.connectionState.connectionId, connectionId))
       .limit(1);
-    return { connection, state: state ?? null };
+    const { policy } = await resolveDataPolicy(
+      tx,
+      workspaceId,
+      deps.dataPolicy,
+    );
+    return { connection, state: state ?? null, policy };
   });
 
   // Belt-and-braces: RLS already hides cross-workspace rows (a tampered job
@@ -603,7 +609,7 @@ async function runSync(
   }
 
   // Step 3: fetch pages from the provider OUTSIDE any transaction (no
-  // database connection waits on external I/O), bounded by MAX_PAGES, and
+  // database connection waits on external I/O), bounded by the configured sync page budget, and
   // commit each one as it arrives (see the run's doc comment).
   try {
     let metricDefinitionIds: Map<string, string> | null = null;
@@ -697,6 +703,7 @@ async function runSync(
             definition,
             page,
             now,
+            policyDefaults: deps.dataPolicy,
           });
         } catch (error) {
           if (error instanceof DatasetStoreError)
@@ -712,9 +719,12 @@ async function runSync(
     if (window.from < window.to) {
       let cursor = startCursor ?? undefined;
       for (let page = 1; ; page += 1) {
-        if (page > MAX_PAGES) {
+        if (
+          loaded.policy.syncPagesPerRun !== null &&
+          page > loaded.policy.syncPagesPerRun
+        ) {
           throw new ContractViolationError(
-            `connector "${manifest.id}" paged more than ${MAX_PAGES} times without finishing`,
+            `connector "${manifest.id}" exceeded the configured sync page budget`,
           );
         }
         const request: SyncRequest = {
