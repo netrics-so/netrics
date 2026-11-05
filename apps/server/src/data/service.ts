@@ -56,6 +56,44 @@ export interface DataActor {
   workspaceId: string;
   callerId: string;
 }
+export interface DataModelQuery extends Omit<ModelQuery, "now"> {
+  pageToken?: string;
+  pinPages?: boolean;
+}
+export type DataModelQueryResult = ReturnType<typeof querySemanticModel> & {
+  receivedAt: string | null;
+  expiresAt: string | null;
+  releaseId: string | null;
+  stale: boolean;
+  error?: string;
+  nextPageToken?: string;
+  pageExpiresAt?: string;
+};
+interface PageToken {
+  releaseId: string;
+  sessionId: string;
+  offset: number;
+}
+function readPageToken(token: string): PageToken {
+  const [releaseId, sessionId, offset, extra] = token.split(":");
+  if (
+    extra !== undefined ||
+    !z.uuid().safeParse(releaseId).success ||
+    !z.uuid().safeParse(sessionId).success ||
+    !offset ||
+    !/^[1-9][0-9]*$/.test(offset) ||
+    !Number.isSafeInteger(Number(offset))
+  )
+    fail("data_page_invalid");
+  return {
+    releaseId: releaseId!,
+    sessionId: sessionId!,
+    offset: Number(offset),
+  };
+}
+function writePageToken(token: PageToken) {
+  return token.releaseId + ":" + token.sessionId + ":" + token.offset;
+}
 interface Dependencies {
   prepared: Record<string, number>;
 }
@@ -315,9 +353,19 @@ export function createDataLoader(
                   ),
                   eq(schema.dataPreparedGenerations.version, version),
                   eq(schema.dataPreparedGenerations.inputKey, inputKey),
+                  ...(options.generations?.[id]
+                    ? [
+                        eq(
+                          schema.dataPreparedGenerations.id,
+                          options.generations[id]!,
+                        ),
+                      ]
+                    : []),
                   gt(schema.dataPreparedGenerations.expiresAt, now),
                 ),
               );
+      if (options.generations?.[id] && !cachedGeneration)
+        fail("data_snapshot_unavailable", 409);
       let preparedGenerationId = cachedGeneration?.id;
       if (cachedGeneration) {
         const cached = cachedGeneration.outputs as {
@@ -915,9 +963,11 @@ export function createDataService(
     previewModel: (
       actor: DataActor,
       definition: SemanticModelDefinition,
-      query: Omit<ModelQuery, "now">,
+      query: DataModelQuery,
     ) =>
       run(actor, async (tx, now) => {
+        if (query.pageToken || query.pinPages)
+          fail("data_page_preview_unsupported");
         const parsed = semanticModelDefinitionSchema.parse(definition),
           loader = loadFor(tx, actor.workspaceId, now, {
             allowPendingSchemas: true,
@@ -1531,7 +1581,7 @@ export function createDataService(
     query: (
       actor: DataActor,
       id: string,
-      query: Omit<ModelQuery, "now">,
+      query: DataModelQuery,
       preview = false,
     ) =>
       run(actor, async (tx, now) => {
@@ -1573,11 +1623,41 @@ export async function queryDataModel(
   tx: Transaction,
   workspaceId: string,
   id: string,
-  query: Omit<ModelQuery, "now">,
+  query: DataModelQuery,
   now: Date,
   policy: DataPolicy,
   preview = false,
-) {
+): Promise<DataModelQueryResult> {
+  const continuation = query.pageToken ? readPageToken(query.pageToken) : null;
+  if ((continuation || query.pinPages) && preview)
+    fail("data_page_preview_unsupported");
+  if (continuation && query.offset !== undefined)
+    fail("data_page_offset_conflict");
+  const { pageToken: _pageToken, pinPages: _pinPages, ...queryInputs } = query;
+  const executionQuery = {
+    ...queryInputs,
+    ...(continuation ? { offset: continuation.offset } : {}),
+  };
+  const { offset: _offset, ...pageInputs } = queryInputs;
+  const pageQueryKey = createHash("sha256")
+    .update(
+      stable({
+        engine: DATA_EXECUTION_VERSION,
+        query: { ...pageInputs, limit: query.limit ?? 1000 },
+      }),
+    )
+    .digest("hex");
+  const snapshotExpiry = (
+    snapshot: typeof schema.dataModelQuerySnapshots.$inferSelect,
+  ) =>
+    new Date(
+      Math.min(
+        snapshot.expiresAt.getTime(),
+        policy.querySnapshotSeconds === null
+          ? Infinity
+          : snapshot.updatedAt.getTime() + policy.querySnapshotSeconds * 1000,
+      ),
+    );
   const model = await findDataModel(tx, workspaceId, id);
   if (!preview && !model.publishedVersion)
     fail("data_model_not_published", 409);
@@ -1590,10 +1670,16 @@ export async function queryDataModel(
           and(
             eq(schema.dataModelReleases.workspaceId, workspaceId),
             eq(schema.dataModelReleases.modelId, id),
-            eq(schema.dataModelReleases.version, model.publishedVersion!),
+            continuation
+              ? eq(schema.dataModelReleases.id, continuation.releaseId)
+              : eq(schema.dataModelReleases.version, model.publishedVersion!),
           ),
         );
-  if (!preview && !release) fail("data_model_not_published", 409);
+  if (!preview && !release)
+    fail(
+      continuation ? "data_page_unavailable" : "data_model_not_published",
+      409,
+    );
   const definition = semanticModelDefinitionSchema.parse(
     preview ? model.definition : release!.definition,
   );
@@ -1629,7 +1715,7 @@ export async function queryDataModel(
     const result = querySemanticModel(
       definition,
       loader.tables,
-      { ...query, now: now.toISOString() },
+      { ...executionQuery, now: now.toISOString() },
       loader.budget,
     );
     const retainedInputs = result.provenance.filter(
@@ -1684,8 +1770,58 @@ export async function queryDataModel(
       },
     };
   };
+  const pageResult = (
+    result: Awaited<ReturnType<typeof evaluate>>["result"],
+    sessionId: string,
+    expiresAt: Date,
+  ) => ({
+    ...result,
+    ...(result.offset + result.rows.length < result.totalRows
+      ? {
+          nextPageToken: writePageToken({
+            releaseId: release!.id,
+            sessionId,
+            offset: result.offset + result.rows.length,
+          }),
+          pageExpiresAt: expiresAt.toISOString(),
+        }
+      : {}),
+  });
+  if (continuation) {
+    const [snapshot] = await tx
+      .select()
+      .from(schema.dataModelQuerySnapshots)
+      .where(
+        and(
+          eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
+          eq(schema.dataModelQuerySnapshots.releaseId, release!.id),
+          eq(
+            schema.dataModelQuerySnapshots.queryKey,
+            "page:" + continuation.sessionId + ":" + pageQueryKey,
+          ),
+          gt(schema.dataModelQuerySnapshots.expiresAt, now),
+        ),
+      );
+    if (
+      !snapshot ||
+      policy.querySnapshotCount === 0 ||
+      snapshotExpiry(snapshot) <= now
+    )
+      fail("data_page_unavailable", 409);
+    // No fallback, renewal or current-generation substitution on a continuation.
+    const execution = await evaluate(
+      snapshot.generations as Record<string, string>,
+    );
+    if (execution.loader.warnings.has("data_source_pending"))
+      fail("data_page_unavailable", 409);
+    return pageResult(
+      execution.result,
+      continuation.sessionId,
+      snapshotExpiry(snapshot),
+    );
+  }
   const queryKey = createHash("sha256")
-    .update(stable({ engine: DATA_EXECUTION_VERSION, query }))
+    .update(stable({ engine: DATA_EXECUTION_VERSION, query: queryInputs }))
     .digest("hex");
   let execution: Awaited<ReturnType<typeof evaluate>>;
   try {
@@ -1715,7 +1851,12 @@ export async function queryDataModel(
           gt(schema.dataModelQuerySnapshots.expiresAt, now),
         ),
       );
-    if (!snapshot) throw error;
+    if (
+      !snapshot ||
+      policy.querySnapshotCount === 0 ||
+      snapshotExpiry(snapshot) <= now
+    )
+      throw error;
     const fallback = await evaluate(
       snapshot.generations as Record<string, string>,
     );
@@ -1726,9 +1867,11 @@ export async function queryDataModel(
       warnings: [
         ...fallback.result.warnings,
         "using_last_valid_source_snapshot",
+        ...(query.pinPages ? ["immutable_pagination_unavailable"] : []),
       ],
     };
   }
+  let result: ReturnType<typeof pageResult> = execution.result;
   if (release && !execution.result.pendingSources?.length) {
     // Cache only generation identities, never a second copy of source rows.
     // Limit cache cardinality and lifetime independently of source retention.
@@ -1741,9 +1884,77 @@ export async function queryDataModel(
           eq(schema.dataModelQuerySnapshots.releaseId, release.id),
         ),
       );
+    let snapshotCount = existing.length;
     if (
-      !exceedsDataPolicy(existing.length + 1, policy.querySnapshotCount) ||
-      existing.some((s) => s.queryKey === queryKey)
+      query.pinPages &&
+      execution.result.offset + execution.result.rows.length <
+        execution.result.totalRows
+    ) {
+      if (
+        !execution.loader.warnings.has("data_source_pending") &&
+        !execution.loader.warnings.has("retained_source_history_incomplete") &&
+        !exceedsDataPolicy(snapshotCount + 1, policy.querySnapshotCount) &&
+        policy.querySnapshotSeconds !== 0
+      ) {
+        const sessionId = randomUUID();
+        const generations = { ...execution.loader.generations };
+        for (const table of execution.loader.tables.values())
+          for (const source of table.provenance ?? [])
+            if (source.datasetId.startsWith("prepared:"))
+              generations[source.datasetId] = source.generationId;
+        const preparedIds = Object.entries(generations)
+          .filter(([id]) => id.startsWith("prepared:"))
+          .map(([, generation]) => generation);
+        const preparedExpiries = preparedIds.length
+          ? await tx
+              .select({ expiresAt: schema.dataPreparedGenerations.expiresAt })
+              .from(schema.dataPreparedGenerations)
+              .where(
+                and(
+                  eq(schema.dataPreparedGenerations.workspaceId, workspaceId),
+                  inArray(schema.dataPreparedGenerations.id, preparedIds),
+                ),
+              )
+          : [];
+        const expiresAt = [...execution.loader.tables.values()].reduce(
+          (expiry, table) =>
+            table.expiresAt && new Date(table.expiresAt) < expiry
+              ? new Date(table.expiresAt)
+              : expiry,
+          new Date(
+            policy.querySnapshotSeconds === null
+              ? "9999-12-31T23:59:59Z"
+              : now.getTime() + policy.querySnapshotSeconds * 1000,
+          ),
+        );
+        for (const prepared of preparedExpiries)
+          if (prepared.expiresAt < expiresAt)
+            expiresAt.setTime(prepared.expiresAt.getTime());
+        await tx.insert(schema.dataModelQuerySnapshots).values({
+          workspaceId,
+          releaseId: release.id,
+          queryKey: "page:" + sessionId + ":" + pageQueryKey,
+          generations,
+          expiresAt,
+          updatedAt: now,
+        });
+        snapshotCount++;
+        result = pageResult(execution.result, sessionId, expiresAt);
+      } else {
+        result = {
+          ...execution.result,
+          warnings: [
+            ...execution.result.warnings,
+            "immutable_pagination_unavailable",
+          ],
+        };
+      }
+    }
+    if (
+      policy.querySnapshotCount !== 0 &&
+      policy.querySnapshotSeconds !== 0 &&
+      (!exceedsDataPolicy(snapshotCount + 1, policy.querySnapshotCount) ||
+        existing.some((s) => s.queryKey === queryKey))
     ) {
       const expiresAt = [...execution.loader.tables.values()].reduce(
         (expiry, table) =>
@@ -1780,5 +1991,15 @@ export async function queryDataModel(
         });
     }
   }
-  return execution.result;
+  if (
+    query.pinPages &&
+    result.offset + result.rows.length < result.totalRows &&
+    !result.nextPageToken &&
+    !result.warnings.includes("immutable_pagination_unavailable")
+  )
+    return {
+      ...result,
+      warnings: [...result.warnings, "immutable_pagination_unavailable"],
+    };
+  return result;
 }

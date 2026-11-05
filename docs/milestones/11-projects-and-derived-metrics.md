@@ -166,6 +166,9 @@ implementation work; this plan does not create or complete issue records.
   - Existing-step editing, explicit append matching and typed reference authoring:
     [#464](https://github.com/netrics-so/netrics/issues/464).
 - 11D: [#443](https://github.com/netrics-so/netrics/issues/443)
+  - Immutable semantic result continuation across corrections/publication:
+    [#471](https://github.com/netrics-so/netrics/issues/471). Opt-in API sessions
+    pin retained inputs; chart interactions and other 11D acceptance remain open.
 - 11E: [#444](https://github.com/netrics-so/netrics/issues/444)
   - Apple storefront rating snapshots: [#452](https://github.com/netrics-so/netrics/issues/452).
     Implements the scoped raw rating/count source, not the complete portfolio
