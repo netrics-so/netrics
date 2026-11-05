@@ -47,31 +47,31 @@ distribution runs the signed images.
 
 ## Sequence
 
-| Milestone                                                                 | Working result                                     |
-| ------------------------------------------------------------------------- | -------------------------------------------------- |
-| [00 — Repository foundation](./00-repository-foundation.md)               | Local web, API, and PostgreSQL skeleton            |
-| [01 — Delivery foundation](./01-delivery-foundation.md)                   | A merge to main deploys exact images to Railway    |
-| [02 — Identity and tenancy](./02-identity-and-tenancy.md)                 | Secure workspace login and isolation               |
-| [03 — Connector and metrics spine](./03-connector-and-metrics-spine.md)   | Demo connector syncs durable observations          |
-| [03.1–03.3 — Post-audit hardening](./03x-post-audit-hardening.md)         | Secure roles, correct sync, portable self-host     |
-| [04 — Dashboard MVP](./04-dashboard-mvp.md)                               | A browser dashboard displays collected data        |
-| [05 — Vercel Web Analytics](./05-vercel-connector.md)                     | First real marketplace connection                  |
-| [06 — Screens and Apple TV](./06-screens-and-apple-tv.md)                 | Paired Apple TV displays a managed playlist        |
-| [07 — Google Search Console](./07-google-search-console.md)               | Reusable user OAuth and Google metrics             |
-| [08 — App Store Connect](./08-app-store-connect.md)                       | Signed-key auth and app-store metrics              |
-| [09 — Dashboard Studio](./09-dashboard-studio.md)                         | Slides, widgets, themes and images on every screen |
-| [09.1 — Internationalisation](./09.1-internationalisation.md)             | English and German everywhere                      |
-| [09.2 — Screen formats and display modes](./09.2-screen-formats.md)       | Any screen, auto and custom layouts, two modes     |
-| [09.3 — Signal design](./09.3-signal-design.md)                           | Light admin, full sidebar, polished animated TV    |
-| [10 — Apple Ads](./10-apple-ads.md)                                       | Token-exchange auth and Apple Ads metrics          |
-| [10.1 — netrics TV on iPad and iPhone](./10.1-netrics-tv-ipad-iphone.md)  | Paired iPads and iPhones show the dashboard        |
-| [11 — Projects and derived metrics](./11-projects-and-derived-metrics.md) | Cross-connection analysis and organization         |
-| [12 — Community connector system](./12-community-connectors.md)           | Public SDK, template, catalog, and review pipeline |
-| [13 — Custom API connector](./13-custom-api-connector.md)                 | Safe declarative connection builder                |
-| [14 — Alerts and notifications](./14-alerts-and-notifications.md)         | Stateful rules deliver email and webhooks          |
-| [15 — Collaboration and access](./15-collaboration-and-access.md)         | Complete sharing, identity, and administration     |
-| [16 — SaaS control plane](./16-saas-control-plane.md)                     | Billing, provisioning, limits, and operations      |
-| [17 — Production hardening and v1](./17-production-hardening.md)          | Tested self-host and SaaS v1 release               |
+| Milestone                                                                                 | Working result                                                   |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [00 — Repository foundation](./00-repository-foundation.md)                               | Local web, API, and PostgreSQL skeleton                          |
+| [01 — Delivery foundation](./01-delivery-foundation.md)                                   | A merge to main deploys exact images to Railway                  |
+| [02 — Identity and tenancy](./02-identity-and-tenancy.md)                                 | Secure workspace login and isolation                             |
+| [03 — Connector and metrics spine](./03-connector-and-metrics-spine.md)                   | Demo connector syncs durable observations                        |
+| [03.1–03.3 — Post-audit hardening](./03x-post-audit-hardening.md)                         | Secure roles, correct sync, portable self-host                   |
+| [04 — Dashboard MVP](./04-dashboard-mvp.md)                                               | A browser dashboard displays collected data                      |
+| [05 — Vercel Web Analytics](./05-vercel-connector.md)                                     | First real marketplace connection                                |
+| [06 — Screens and Apple TV](./06-screens-and-apple-tv.md)                                 | Paired Apple TV displays a managed playlist                      |
+| [07 — Google Search Console](./07-google-search-console.md)                               | Reusable user OAuth and Google metrics                           |
+| [08 — App Store Connect](./08-app-store-connect.md)                                       | Signed-key auth and app-store metrics                            |
+| [09 — Dashboard Studio](./09-dashboard-studio.md)                                         | Slides, widgets, themes and images on every screen               |
+| [09.1 — Internationalisation](./09.1-internationalisation.md)                             | English and German everywhere                                    |
+| [09.2 — Screen formats and display modes](./09.2-screen-formats.md)                       | Any screen, auto and custom layouts, two modes                   |
+| [09.3 — Signal design](./09.3-signal-design.md)                                           | Light admin, full sidebar, polished animated TV                  |
+| [10 — Apple Ads](./10-apple-ads.md)                                                       | Token-exchange auth and Apple Ads metrics                        |
+| [10.1 — netrics TV on iPad and iPhone](./10.1-netrics-tv-ipad-iphone.md)                  | Paired iPads and iPhones show the dashboard                      |
+| [11 — Reusable data models and dashboard filtering](./11-projects-and-derived-metrics.md) | Prepare and relate data, define measures, filter full dashboards |
+| [12 — Community connector system](./12-community-connectors.md)                           | Public SDK, template, catalog, and review pipeline               |
+| [13 — Custom API connector](./13-custom-api-connector.md)                                 | Safe declarative connection builder                              |
+| [14 — Alerts and notifications](./14-alerts-and-notifications.md)                         | Stateful rules deliver email and webhooks                        |
+| [15 — Collaboration and access](./15-collaboration-and-access.md)                         | Complete sharing, identity, and administration                   |
+| [16 — SaaS control plane](./16-saas-control-plane.md)                                     | Billing, provisioning, limits, and operations                    |
+| [17 — Production hardening and v1](./17-production-hardening.md)                          | Tested self-host and SaaS v1 release                             |
 
 ## Dependency map
 
@@ -94,7 +94,7 @@ distribution runs the signed images.
                                     ├── 09.3 Signal design
                                     ├── 10.1 netrics TV on iPad and iPhone (after 09.2 and 09.3)
                                     └── 10 Apple Ads
-                                        └── 11 projects and derived metrics
+                                        └── 11 reusable data models and dashboard filtering
                                             └── 12 community connectors
                                                 └── 13 custom API
                                                     └── 14 alerts
@@ -141,14 +141,23 @@ State on 2026-10-29.
 - In progress: the hosted web frontend moves to Vercel
   ([ADR 0013](../decisions/0013-web-frontend-on-vercel.md)). The web build
   guard (#160) and the cut-over (#161) remain.
-- Next: 10 (Apple Ads), planned in
+- Built, real-account acceptance open: 10 (Apple Ads), designed in
   [ADR 0020](../decisions/0020-apple-ads-platform-api-token-exchange.md)
-  (#368 to #379). It starts now, beside the open exit gates of 06 to 09.3:
-  the rule "complete one milestone before opening the next" is relaxed for
-  it, as for 09.x.
-- In progress: 10.1 (netrics TV on iPad and iPhone, #404 to #420), designed
+  (#370, #378 and the separate owner OAuth application #379 remain).
+- Built, real-device/store acceptance open: 10.1 (netrics TV on iPad and
+  iPhone, #419 and #420), designed
   in [ADR 0021](../decisions/0021-netrics-tv-on-ipad-and-iphone.md) and
-  accepted by the owner on 2026-10-30. It runs beside 10.
+  accepted by the owner on 2026-10-30. Both platforms reached TestFlight on
+  2026-10-30; App Store preparation/submission is deferred by the owner.
+- Priority update 2026-11-04: the owner requests reusable data preparation,
+  cross-source relationships, calculations and full-dashboard filtering,
+  with easy multi-app Apple/Google Play templates. Milestone 11 now proposes
+  five delivery gates for this expanded scope; implementation architecture
+  and logical schema are proposed in
+  [ADR 0022](../decisions/0022-reusable-data-model-and-processing.md).
+  Google Play ingestion and the overall store rating are not implemented.
+  This takes priority over starting the later connector/community features;
+  existing real-account/device/self-hosted acceptance gates remain open.
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
 

@@ -8,7 +8,7 @@ marketplace and hosted connector bundle.
 
 ## Dependencies
 
-- Milestones 03, 05–08 and 10
+- Milestones 03, 05–08, 10 and the dataset capability from 11
 
 ## Why this follows real connectors
 
@@ -17,7 +17,8 @@ earlier would freeze guesses and create avoidable compatibility obligations.
 
 ## In scope
 
-- Versioned public connector SDK package
+- Versioned public connector SDK package, including the dataset capability
+  designed in milestone 11 and ADR 0022
 - Connector template repository or template directory
 - Local fixture runner and mocked credential context
 - Contract, pagination, cursor, idempotency, and redaction tests
@@ -38,7 +39,9 @@ earlier would freeze guesses and create avoidable compatibility obligations.
 
 ## Implementation slices
 
-1. Stabilize and document SDK v1 from the four production connectors.
+1. Stabilize and document SDK v1 from the proven production connectors,
+   including typed datasets, source identity/revisions, retention declarations
+   and checkpoint semantics (ADR 0022). Keep the legacy observation adapter.
 2. Extract a minimal connector template and local development command.
 3. Package reusable contract and fixture tests.
 4. Define catalog metadata, signing, and compatibility rules.
