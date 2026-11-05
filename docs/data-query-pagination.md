@@ -47,15 +47,18 @@ legacy observations have fingerprints rather than retained historical rows;
 changes to those adapters also cause a continuation to fail. The server never
 silently restarts against current data or falls back to another vector. After
 an unavailable/expired session, a caller may explicitly start a new query and
-replace its displayed pages.
+replace its displayed pages. Every such continuation failure returns `409
+data_page_unavailable`; the new query reports the underlying cause.
 
 Session expiry is the earliest of the configured query-snapshot lifetime,
 retained input expiry and pinned prepared-cache expiry. Following a token does
 not renew that deadline. Shortening the current snapshot lifetime applies to
 existing sessions on read. Retention changes can invalidate sessions immediately.
 
-Page sessions share `querySnapshotCount` capacity with last-valid query snapshots.
-The server preserves existing sessions when capacity is full. A new pinned
+Page sessions and last-valid query snapshots each have their own
+`querySnapshotCount` capacity per release, so pinned clients cannot displace the
+fallback snapshots of ordinary and dashboard queries. The server preserves
+existing sessions when session capacity is full. A new pinned
 request then returns its ordinary first result with
 `immutable_pagination_unavailable` and no token. Pending/incomplete inputs and
 last-valid fallback results also cannot start a session. Every loaded prepared
