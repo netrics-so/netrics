@@ -425,3 +425,14 @@ fixed scope, exact money, boolean measures, corrections and shared publication.
 Unsupported keyword-level revenue and ambiguous/fanout joins are rejected. These
 synthetic imports prove reuse of the same engine; they do not implement a new
 advertising connector or replace real-account hosted/self-hosted acceptance.
+
+## Measured workload boundaries
+
+[#466](https://github.com/netrics-so/netrics/issues/466) adds an opt-in persisted
+workload check and [measured local results with remaining scaling work](./data-scale-validation.md).
+It covers 5,001 source records, 1,300 resource identities and a separate 100,001-row
+in-memory query. The legacy observation catalog now uses the configured row policy
+instead of a fixed 1,000-entry ceiling; individual observation reads fetch their
+specific scoped descriptor. These checks establish correctness at the measured
+sizes. Provider report staging, full-copy generation storage, concurrent execution
+and scalable catalog/reference editing remain open before claiming larger capacity.
