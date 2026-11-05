@@ -1678,6 +1678,8 @@ export const dataDatasets = pgTable(
     kind: text("kind").notNull().default("source"),
     key: text("key").notNull(),
     name: text("name").notNull(),
+    /** Survives retention pruning, distinguishing first import from lost history. */
+    hasPublishedData: boolean("has_published_data").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

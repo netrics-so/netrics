@@ -156,6 +156,9 @@ implementation work; this plan does not create or complete issue records.
 - 11B: [#441](https://github.com/netrics-so/netrics/issues/441)
   - Cooperative sync continuations across configurable page budgets:
     [#456](https://github.com/netrics-so/netrics/issues/456).
+  - Definition preview/publication before the first complete source report:
+    [#460](https://github.com/netrics-so/netrics/issues/460). This prepares
+    template installation without fabricated zero values or empty generations.
 - 11C: [#442](https://github.com/netrics-so/netrics/issues/442)
 - 11D: [#443](https://github.com/netrics-so/netrics/issues/443)
 - 11E: [#444](https://github.com/netrics-so/netrics/issues/444)

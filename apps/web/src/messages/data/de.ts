@@ -216,6 +216,8 @@ export const dataDe: Catalog<typeof dataEn> = {
       "Die Veröffentlichung stellt diese Ausgabe für Modelle und weitere Aufbereitungen bereit.",
     warnings: "Hinweise zur Vorschau",
     warningLabels: {
+      data_source_pending:
+        "Schema geprüft. Die erste vollständige Datenlieferung dieser Quelle steht noch aus; diese Vorschau enthält deshalb keine berechneten Werte.",
       aggregate_missing_inputs:
         "Eine Zusammenfassung enthält fehlende Eingabewerte. Das Ergebnis verwendet die gemeldeten Werte und kann unvollständig sein.",
       decimal_rounded:
@@ -302,6 +304,8 @@ export const dataDe: Catalog<typeof dataEn> = {
     previewOutdated:
       "Der Entwurf wurde geändert. Prüfe ihn vor der Veröffentlichung erneut.",
     errors: {
+      pending:
+        "Die erste vollständige Datenlieferung dieser Quelle steht noch aus. Prüfe den Synchronisierungsstatus der Verbindung; die Daten erscheinen, sobald der Anbieterbericht vorliegt.",
       generic:
         "Der Vorgang konnte nicht abgeschlossen werden. Versuche es erneut.",
       conflict:

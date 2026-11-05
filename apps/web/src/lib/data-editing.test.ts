@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { dataErrorCodeKey } from "./data-errors";
 import { parseEnteredTable, enteredValue, preparationAt } from "./data-editing";
 import type { PreparationGraph } from "@netrics/domain";
 describe("entered reference data", () => {
@@ -64,4 +65,10 @@ it("previews a step without executing broken downstream or unrelated nodes", () 
     nodes: graph.nodes.slice(0, 2),
     outputs: ["first"],
   });
+});
+
+it("distinguishes a first import from unpublished definitions and unavailable retained history", () => {
+  expect(dataErrorCodeKey("data_source_pending")).toBe("pending");
+  expect(dataErrorCodeKey("data_source_not_published")).toBe("unpublished");
+  expect(dataErrorCodeKey("data_source_history_unavailable")).toBe("expired");
 });

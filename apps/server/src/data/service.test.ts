@@ -6,6 +6,8 @@ import {
   type Database,
   type Sql,
   adminSetDataPolicy,
+  ingestDatasetPage,
+  withWorkspace,
 } from "@netrics/database";
 import {
   sourceDatasetSchema,
@@ -169,6 +171,206 @@ beforeAll(async () => {
 afterAll(async () => {
   await admin?.end({ timeout: 5 });
   await db?.$client.end({ timeout: 5 });
+});
+
+describe("publication before the first complete report", () => {
+  it("publishes ordinary definitions without fake generations, then reads the first completed input", async () => {
+    const [connection] =
+      await admin`select id from connections where workspace_id=${actor.workspaceId} limit 1`;
+    const pendingDefinition = { ...salesDefinition, key: "pending-sales" };
+    const page = {
+      datasetKey: pendingDefinition.key,
+      schemaVersion: 1,
+      refreshKey: "first-report",
+      pageKey: "p1",
+      previousPageKey: null,
+      complete: false,
+      records: [
+        {
+          values: {
+            id: "pending-order",
+            app: "a",
+            amount: "3.50",
+            currency: "EUR",
+          },
+        },
+      ],
+    };
+    const input = {
+      workspaceId: actor.workspaceId,
+      connectionId: connection!.id as string,
+      definition: pendingDefinition,
+      page,
+      now: NOW,
+    };
+    const first = await withWorkspace(
+      db,
+      { workspaceId: actor.workspaceId },
+      (tx) => ingestDatasetPage(tx, input),
+    );
+    expect(first.generationId).toBeNull();
+    const graph: PreparationGraph = {
+      version: 1,
+      nodes: [
+        { id: "source", type: "source", datasetId: first.datasetId },
+        {
+          id: "double",
+          type: "calculate",
+          input: "source",
+          fieldId: "double",
+          name: "Double",
+          expression: {
+            kind: "call",
+            fn: "multiply",
+            args: [f("amount"), { kind: "literal", type: "integer", value: 2 }],
+          },
+        },
+      ],
+      outputs: ["double"],
+    };
+    const preparationPreview = await service.previewPreparation(actor, graph);
+    expect(preparationPreview.outputs.double?.rows).toEqual([]);
+    expect(preparationPreview.warnings).toContain("data_source_pending");
+    const preparation = await service.savePreparation(actor, {
+      name: "Waiting calculation",
+      graph,
+    });
+    await service.publishPreparation(actor, preparation.preparation.id, 1);
+    const prepared = `prepared:${preparation.preparation.id}:double`;
+    const definition: SemanticModelDefinition = {
+      version: 1,
+      datasets: [prepared],
+      relationships: [],
+      dimensions: [],
+      measures: [
+        {
+          id: "count",
+          name: "Count",
+          kind: "aggregate",
+          datasetId: prepared,
+          aggregate: { id: "count", name: "Count", op: "count" },
+        },
+        {
+          id: "double",
+          name: "Double",
+          kind: "aggregate",
+          datasetId: prepared,
+          aggregate: {
+            id: "double",
+            name: "Double",
+            op: "sum",
+            fieldId: "double",
+          },
+        },
+      ],
+    };
+    const modelPreview = await service.previewModel(actor, definition, {
+      measureIds: ["count", "double"],
+      groupBy: [],
+    });
+    expect(modelPreview.rows).toEqual([]);
+    expect(modelPreview.warnings).toContain("data_source_pending");
+    const model = await service.saveModel(actor, {
+      name: "Waiting model",
+      definition,
+    });
+    await service.publishModel(actor, model.model.id, 1);
+    const mapping = await service.saveManual(actor, {
+      definition: { ...pendingDefinition, key: "waiting-map" },
+      records: [
+        { values: { id: "map-1", app: "a", amount: "0", currency: "EUR" } },
+        { values: { id: "map-2", app: "a", amount: "0", currency: "EUR" } },
+      ],
+    });
+    const badMapping = await service.saveModel(actor, {
+      name: "Bad mapping beside pending input",
+      definition: {
+        ...definition,
+        datasets: [prepared, mapping.datasetId],
+        relationships: [
+          {
+            id: "mapping",
+            from: { datasetId: prepared, fieldId: "app" },
+            to: { datasetId: mapping.datasetId, fieldId: "app" },
+            cardinality: "many_to_one",
+          },
+        ],
+      },
+    });
+    await expect(
+      service.publishModel(actor, badMapping.model.id, 1),
+    ).rejects.toThrow("model_relationship_cardinality_violation");
+    expect(
+      await admin`select id from data_generations where dataset_id=${first.datasetId}`,
+    ).toHaveLength(0);
+    expect(
+      await admin`select id from data_prepared_generations where preparation_id=${preparation.preparation.id}`,
+    ).toHaveLength(0);
+    await expect(
+      service.query(actor, model.model.id, {
+        measureIds: ["count"],
+        groupBy: [],
+      }),
+    ).rejects.toThrow("data_source_pending");
+    await expect(service.preview(actor, first.datasetId)).rejects.toThrow(
+      "data_source_pending",
+    );
+    const foreign = await service.saveModel(other, {
+      name: "Forbidden schema",
+      definition,
+    });
+    await expect(
+      service.publishModel(other, foreign.model.id, 1),
+    ).rejects.toThrow("data_source_not_found");
+    const completed = await withWorkspace(
+      db,
+      { workspaceId: actor.workspaceId },
+      (tx) =>
+        ingestDatasetPage(tx, {
+          ...input,
+          page: {
+            ...page,
+            pageKey: "p2",
+            previousPageKey: "p1",
+            complete: true,
+            records: [],
+          },
+        }),
+    );
+    expect(completed.generationId).toBeTruthy();
+    const result = await service.query(actor, model.model.id, {
+      measureIds: ["count", "double"],
+      groupBy: [],
+    });
+    expect(result.rows[0]?.measures.count).toMatchObject({
+      value: 1,
+      status: "ok",
+    });
+    expect(result.rows[0]?.measures.double).toMatchObject({
+      value: "7",
+      currency: "EUR",
+      status: "ok",
+    });
+    expect(result.provenance).toContainEqual({
+      datasetId: first.datasetId,
+      generationId: completed.generationId,
+    });
+    // A source that once had data never turns back into an empty first import.
+    await admin`delete from data_generations where dataset_id=${first.datasetId}`;
+    expect(
+      (
+        await admin`select has_published_data from data_datasets where id=${first.datasetId}`
+      )[0]!.has_published_data,
+    ).toBe(true);
+    const changed = await service.saveModel(
+      actor,
+      { name: "Waiting model", definition, version: 1 },
+      model.model.id,
+    );
+    await expect(
+      service.publishModel(actor, model.model.id, changed.model.version),
+    ).rejects.toThrow("data_source_history_unavailable");
+  });
 });
 
 describe("persistent reusable data processing", () => {

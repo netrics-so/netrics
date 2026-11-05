@@ -27,8 +27,11 @@ struct MeasureWidgetView: View {
             Text(label).font(font(36, .semibold)).foregroundStyle(env.colors.label).lineLimit(
                 scroll ? nil : 2)
             if data.error != nil || expired {
-                Text(KitStrings.text(.noticeOutage, env.language)).font(font(24)).foregroundStyle(
-                    env.colors.muted)
+                Text(
+                    KitStrings.text(
+                        data.error == "data_source_pending" && !expired ? .noDataYet : .noticeOutage,
+                        env.language)
+                ).font(font(24)).foregroundStyle(env.colors.muted)
             } else if options.view == "value" {
                 Text(
                     measureIds.first.flatMap { rows.first?.measures[$0]?.text(language: env.language) } ?? "—"

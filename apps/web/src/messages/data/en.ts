@@ -211,6 +211,8 @@ export const dataEn = {
       "Publishing makes this output available to models and other preparations.",
     warnings: "Preview notes",
     warningLabels: {
+      data_source_pending:
+        "Schema checked. This source’s first complete import is still pending, so this preview contains no calculated values.",
       aggregate_missing_inputs:
         "An aggregate contains missing input values. The result uses the reported values and may be incomplete.",
       decimal_rounded:
@@ -292,6 +294,8 @@ export const dataEn = {
     previewInitial: "Choose measures and preview this draft before publishing.",
     previewOutdated: "The draft changed. Preview it again before publishing.",
     errors: {
+      pending:
+        "Waiting for this source’s first complete import. Check the connection’s sync status; data will appear when the provider report arrives.",
       generic: "This operation could not finish. Try again.",
       conflict:
         "Someone changed this data. Reload the page before saving again.",

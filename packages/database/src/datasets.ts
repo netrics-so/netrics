@@ -543,6 +543,15 @@ async function ingestPage(
         );
   if (exceedsDataPolicy(Number(usage?.bytes ?? 0), quota))
     fail("dataset_workspace_quota");
+  await tx
+    .update(dataDatasets)
+    .set({ hasPublishedData: true })
+    .where(
+      and(
+        eq(dataDatasets.workspaceId, workspaceId),
+        eq(dataDatasets.id, dataset.id),
+      ),
+    );
   return {
     datasetId: dataset.id,
     generationId: generation.id,
