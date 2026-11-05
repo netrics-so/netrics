@@ -21,6 +21,12 @@ import {
   parseEnteredTable,
 } from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
+import { ReferenceFieldOptions } from "./reference-field-options";
+import {
+  setReferenceCurrency,
+  referenceTypeAllowed,
+  referenceTypeConstraint,
+} from "@/lib/reference-fields";
 
 export function ReferenceEditor({
   workspaceId,
@@ -280,12 +286,48 @@ export function ReferenceEditor({
                           }
                         >
                           {DATA_TYPES.map((type) => (
-                            <option key={type} value={type}>
+                            <option
+                              key={type}
+                              value={type}
+                              disabled={
+                                !referenceTypeAllowed(field, fields, type)
+                              }
+                            >
                               {t(`types.${type}`)}
                             </option>
                           ))}
                         </select>
                       </label>
+                      {referenceTypeConstraint(field, fields) ? (
+                        <p className="help">
+                          {t(
+                            referenceTypeConstraint(field, fields) ===
+                              "currency"
+                              ? "currencyTypeHint"
+                              : "typeMetadataHint",
+                          )}
+                        </p>
+                      ) : null}
+                      <ReferenceFieldOptions
+                        field={field}
+                        fields={fields}
+                        required={
+                          keyFields.includes(field.id) ||
+                          fields.some(
+                            (candidate) => candidate.currencyField === field.id,
+                          )
+                        }
+                        onChange={(patch) => changeField(field.id, patch)}
+                        onCurrency={(currencyField) =>
+                          setFields((current) =>
+                            setReferenceCurrency(
+                              current,
+                              field.id,
+                              currencyField,
+                            ),
+                          )
+                        }
+                      />
                     </th>
                   ))}
                   <th scope="col">{t("rows")}</th>

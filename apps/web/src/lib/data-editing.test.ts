@@ -98,3 +98,114 @@ it("round-trips reference cells without losing null, empty text, quotes, false o
   expect(pages.flat()).toEqual(records);
   expect([...referenceRecordPages([])]).toEqual([[]]);
 });
+
+it("appends a step without changing public output identities or existing branch meaning", async () => {
+  const { appendPreparation } = await import("./data-editing");
+  const { executePreparation } = await import("@netrics/domain");
+  const graph: PreparationGraph = {
+    version: 1,
+    nodes: [
+      { id: "source", type: "source", datasetId: "numbers" },
+      {
+        id: "output",
+        type: "calculate",
+        input: "source",
+        fieldId: "twice",
+        name: "Twice",
+        expression: {
+          kind: "call",
+          fn: "multiply",
+          args: [
+            { kind: "field", fieldId: "value" },
+            { kind: "literal", type: "decimal", value: "2" },
+          ],
+        },
+      },
+      { id: "side", type: "select", input: "output", fields: ["twice"] },
+    ],
+    outputs: ["output", "side"],
+  };
+  const next = appendPreparation(
+    graph,
+    [
+      {
+        id: "new",
+        type: "calculate",
+        input: "output",
+        fieldId: "triple",
+        name: "Triple",
+        expression: {
+          kind: "call",
+          fn: "multiply",
+          args: [
+            { kind: "field", fieldId: "value" },
+            { kind: "literal", type: "decimal", value: "3" },
+          ],
+        },
+      },
+    ],
+    "output",
+  );
+  expect(next.outputs).toEqual(graph.outputs);
+  expect(graph.nodes[1]!.id).toBe("output");
+  const data = new Map([
+    [
+      "numbers",
+      {
+        fields: [
+          {
+            id: "value",
+            name: "Value",
+            type: "decimal" as const,
+            nullable: false,
+          },
+        ],
+        rows: [{ value: "1.10" }],
+      },
+    ],
+  ]);
+  const result = executePreparation(next, data);
+  expect(result.outputs.output!.rows).toEqual([
+    { value: "1.10", twice: "2.2", triple: "3.3" },
+  ]);
+  expect(result.outputs.side!.rows).toEqual([{ twice: "2.2" }]);
+  expect(result.outputs.side!.fields.map((field) => field.id)).toEqual([
+    "twice",
+  ]);
+  expect(() => appendPreparation(graph, [], "output")).toThrow(
+    "preparation_output_invalid",
+  );
+});
+
+it("keeps explicit append column mappings attached when preserving an existing public output", async () => {
+  const { appendPreparation } = await import("./data-editing");
+  const graph: PreparationGraph = {
+    version: 1,
+    nodes: [
+      { id: "output", type: "source", datasetId: "one" },
+      { id: "other", type: "source", datasetId: "two" },
+      {
+        id: "branch",
+        type: "append",
+        inputs: ["output", "other"],
+        columnMappings: {
+          output: { value: "aligned" },
+          other: { alternate: "aligned" },
+        },
+      },
+    ],
+    outputs: ["output", "branch"],
+  };
+  const result = appendPreparation(
+    graph,
+    [{ id: "next", type: "select", input: "output", fields: ["value"] }],
+    "output",
+  );
+  const branch = result.nodes.find((node) => node.id === "branch")!;
+  if (branch.type !== "append") throw new Error("missing append");
+  expect(branch.columnMappings?.[branch.inputs[0]!]).toEqual({
+    value: "aligned",
+  });
+  expect(branch.columnMappings?.output).toBeUndefined();
+  expect(result.outputs).toEqual(graph.outputs);
+});

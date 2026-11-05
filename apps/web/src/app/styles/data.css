@@ -105,6 +105,9 @@
 .data-preview-header button {
   flex-shrink: 0;
 }
+.data-step-actions {
+  padding: 0 20px 16px;
+}
 .data-preview-panel > .notice,
 .data-preview-panel > .error {
   margin: 0 20px 16px;
@@ -346,6 +349,10 @@
 }
 .data-reference-table th {
   min-width: 200px;
+  vertical-align: top;
+}
+.data-reference-table th .help {
+  font-weight: 400;
 }
 .data-reference-table .field {
   margin-bottom: 8px;

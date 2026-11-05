@@ -180,6 +180,65 @@ export const dataEn = {
     defaultPreparation: "Untitled preparation",
     defaultModel: "Untitled model",
     steps: "Applied steps",
+    editStep: "Edit step",
+    applyStepChanges: "Preview and apply changes",
+    moveStepUp: "Move step earlier",
+    moveStepDown: "Move step later",
+    removeStep: "Remove step",
+    outputRemovalHint:
+      "The output keeps its published identity. Removing this final operation promotes the preceding step and checks all dependent outputs.",
+    stepMoveHint:
+      "Move steps within a single pipeline. Each change checks every output; branches keep their existing inputs.",
+    finishStep:
+      "Apply or cancel this step before selecting another step or saving.",
+    removeStepHint:
+      "Remove this operation and keep the other steps. Their previews are checked before the change is applied. Undo restores this operation.",
+    continueInput: "Continue with data from",
+    stepInput: "Step {number}: {name}",
+    datasetInput: "Dataset: {name}",
+    appendInput: "Input {number}",
+    matchAppendColumns: "Match columns before appending",
+    appendMatchHint:
+      "Review suggested matches by name. Only matched columns are kept. Columns missing from an input appear as null when another input supplies them. Match currency columns alongside monetary amounts. Each input needs at least one match.",
+    noMatchingColumn: "No matching column",
+    addInput: "Add input",
+    addJoinKey: "Add matching columns",
+    addRename: "Rename another column",
+    mergedNamePrefix: "Prefix for merged column names (optional)",
+    aggregateFilter: "Filter before aggregation (optional)",
+    preparationAdoptionHint:
+      "Published models keep their chosen preparation version. After publishing these changes, preview and publish updated inputs in each model that should adopt them.",
+    republish: "Publish updated inputs",
+    unit: "Unit",
+    unitHint:
+      "Optional unit, such as visits or currency. Use a currency column for monetary amounts.",
+    currencyColumn: "Currency column",
+    noCurrencyColumn: "Not a monetary amount",
+    decimalScale: "Decimal places (optional)",
+    typeMetadataHint:
+      "Clear currency or decimal precision in Column options before choosing another type.",
+    currencyTypeHint:
+      "This column identifies currencies. Unlink it from amounts before changing its type.",
+    fieldOptions: "Column options",
+    removeColumn: "Remove column",
+    allowMissing: "Allow missing values",
+    editErrors: {
+      missingStep:
+        "This step or one of its inputs is missing. Reload the preparation.",
+      outputIdentity:
+        "Published output identities stay fixed. Edit this output’s options; removing or moving an output could break models that use it.",
+      sourceInUse:
+        "Other steps use this source. Edit its dataset or remove the dependent operations first.",
+      chooseInput:
+        "Choose which input should continue after removing this merge or append.",
+      branchMove:
+        "This move crosses a source, merge or shared branch. Move only adjacent steps in a single pipeline.",
+      noNeighbour: "There is no adjacent step in this direction.",
+      cycle:
+        "This input would create a loop. Choose an earlier or independent step.",
+      identityChanged:
+        "Keep existing step, calculated-column and merged-column identities when editing.",
+    },
     addStep: "Add a step",
     applyStep: "Apply step",
     operation: "What should this step do?",

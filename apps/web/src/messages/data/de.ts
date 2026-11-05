@@ -188,6 +188,65 @@ export const dataDe: Catalog<typeof dataEn> = {
     defaultPreparation: "Unbenannte Aufbereitung",
     defaultModel: "Unbenanntes Modell",
     steps: "Angewendete Schritte",
+    editStep: "Schritt bearbeiten",
+    applyStepChanges: "Änderungen prüfen und anwenden",
+    moveStepUp: "Schritt früher ausführen",
+    moveStepDown: "Schritt später ausführen",
+    removeStep: "Schritt entfernen",
+    outputRemovalHint:
+      "Die Ausgabe behält ihre veröffentlichte Identität. Beim Entfernen dieses letzten Vorgangs übernimmt der vorherige Schritt die Ausgabe; alle abhängigen Ausgaben werden geprüft.",
+    stepMoveHint:
+      "Verschiebe Schritte innerhalb einer einzelnen Verarbeitungskette. Jede Änderung prüft alle Ausgaben; Verzweigungen behalten ihre bisherigen Eingaben.",
+    finishStep:
+      "Wende diesen Schritt an oder brich ihn ab, bevor du einen anderen Schritt auswählst oder speicherst.",
+    removeStepHint:
+      "Entferne diesen Vorgang und behalte die anderen Schritte. Ihre Vorschauen werden vor dem Anwenden geprüft. Rückgängig stellt diesen Vorgang wieder her.",
+    continueInput: "Mit diesen Daten fortfahren",
+    stepInput: "Schritt {number}: {name}",
+    datasetInput: "Datensatz: {name}",
+    appendInput: "Eingabe {number}",
+    matchAppendColumns: "Spalten vor dem Anfügen zuordnen",
+    appendMatchHint:
+      "Prüfe die anhand der Namen vorgeschlagenen Zuordnungen. Nur zugeordnete Spalten bleiben erhalten. Fehlende Spalten einer Eingabe ergeben null, wenn eine andere Eingabe sie bereitstellt. Ordne Geldbeträgen auch ihre Währungsspalten zu. Jede Eingabe benötigt mindestens eine Zuordnung.",
+    noMatchingColumn: "Keine passende Spalte",
+    addInput: "Eingabe hinzufügen",
+    addJoinKey: "Weitere Spalten zuordnen",
+    addRename: "Weitere Spalte umbenennen",
+    mergedNamePrefix: "Präfix für Namen verbundener Spalten (optional)",
+    aggregateFilter: "Vor der Aggregation filtern (optional)",
+    preparationAdoptionHint:
+      "Veröffentlichte Modelle behalten ihre gewählte Aufbereitungsversion. Nach dem Veröffentlichen dieser Änderungen prüfst und veröffentlichst du die aktualisierten Eingaben in jedem Modell, das sie übernehmen soll.",
+    republish: "Aktualisierte Eingaben veröffentlichen",
+    unit: "Einheit",
+    unitHint:
+      "Optionale Einheit, zum Beispiel visits oder currency. Verwende für Geldbeträge eine Währungsspalte.",
+    currencyColumn: "Währungsspalte",
+    noCurrencyColumn: "Kein Geldbetrag",
+    decimalScale: "Nachkommastellen (optional)",
+    typeMetadataHint:
+      "Entferne Währung oder Nachkommastellen unter Spaltenoptionen, bevor du einen anderen Typ auswählst.",
+    currencyTypeHint:
+      "Diese Spalte kennzeichnet Währungen. Löse ihre Verknüpfung mit Geldbeträgen, bevor du ihren Typ änderst.",
+    fieldOptions: "Spaltenoptionen",
+    removeColumn: "Spalte entfernen",
+    allowMissing: "Fehlende Werte erlauben",
+    editErrors: {
+      missingStep:
+        "Dieser Schritt oder eine seiner Eingaben fehlt. Lade die Aufbereitung neu.",
+      outputIdentity:
+        "Veröffentlichte Ausgabeidentitäten bleiben erhalten. Bearbeite die Optionen dieser Ausgabe; Entfernen oder Verschieben könnte abhängige Modelle beschädigen.",
+      sourceInUse:
+        "Andere Schritte verwenden diese Quelle. Ändere ihren Datensatz oder entferne zuerst die abhängigen Vorgänge.",
+      chooseInput:
+        "Wähle, welche Eingabe nach dem Entfernen der Verbindung oder Anfügung weiterverwendet werden soll.",
+      branchMove:
+        "Diese Verschiebung überschreitet eine Quelle, Verbindung oder gemeinsam genutzte Verzweigung. Verschiebe nur benachbarte Schritte einer einzelnen Verarbeitungskette.",
+      noNeighbour: "In dieser Richtung gibt es keinen benachbarten Schritt.",
+      cycle:
+        "Diese Eingabe würde eine Schleife erzeugen. Wähle einen früheren oder unabhängigen Schritt.",
+      identityChanged:
+        "Behalte beim Bearbeiten die Identitäten bestehender Schritte, berechneter und verbundener Spalten.",
+    },
     addStep: "Schritt hinzufügen",
     applyStep: "Schritt anwenden",
     operation: "Was soll dieser Schritt tun?",

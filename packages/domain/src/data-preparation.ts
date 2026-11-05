@@ -77,7 +77,12 @@ export type PreparationNode = { id: string } & (
       keys: string[];
       keep: "first" | "last";
     }
-  | { type: "append"; inputs: string[] }
+  | {
+      type: "append";
+      inputs: string[];
+      /** Explicitly project/align source columns; omitted inputs keep their IDs. */
+      columnMappings?: Record<string, Record<string, string>>;
+    }
   | {
       type: "join";
       left: string;
@@ -424,7 +429,49 @@ export function executePreparation(
     } else if (node.type === "append") {
       if (node.inputs.length < 2 || node.inputs.length > 20)
         dataFail("preparation_append_inputs_invalid");
-      const inputs = node.inputs.map(execute),
+      if (
+        Object.keys(node.columnMappings ?? {}).some(
+          (id) => !node.inputs.includes(id),
+        )
+      )
+        dataFail("preparation_append_mapping_input_invalid");
+      const inputs = node.inputs.map((id) => {
+          const input = execute(id);
+          if (!node.columnMappings || !Object.hasOwn(node.columnMappings, id))
+            return input;
+          const mapping = node.columnMappings[id]!,
+            entries = Object.entries(mapping),
+            fields = entries.map(([sourceId, targetId]) => {
+              budget.tick();
+              const field = fieldOf(input, sourceId);
+              if (
+                field.currencyField &&
+                !Object.hasOwn(mapping, field.currencyField)
+              )
+                dataFail("preparation_currency_field_required");
+              return {
+                ...field,
+                id: targetId,
+                ...(field.currencyField
+                  ? { currencyField: mapping[field.currencyField]! }
+                  : {}),
+              };
+            });
+          assertDataFields(fields);
+          return {
+            ...input,
+            fields,
+            rows: input.rows.map((row) => {
+              budget.tick(entries.length);
+              return Object.fromEntries(
+                entries.map(([sourceId, targetId]) => [
+                  targetId,
+                  row[sourceId],
+                ]),
+              );
+            }),
+          };
+        }),
         fields = new Map<string, DataField>();
       for (const input of inputs)
         for (const field of input.fields) {

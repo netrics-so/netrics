@@ -41,10 +41,50 @@ export function appendPreparation(
   nodes: PreparationNode[],
   output: string,
 ) {
+  if (!nodes.length || !graph.outputs.includes(output))
+    throw new DataProcessingError("preparation_output_invalid");
+  let internal = newDataId();
+  const ids = new Set([...graph.nodes, ...nodes].map((node) => node.id));
+  while (ids.has(internal)) internal = newDataId();
+  const remap = (node: PreparationNode): PreparationNode => {
+    if ("input" in node)
+      return { ...node, input: node.input === output ? internal : node.input };
+    if (node.type === "join")
+      return {
+        ...node,
+        left: node.left === output ? internal : node.left,
+        right: node.right === output ? internal : node.right,
+      };
+    if (node.type === "append")
+      return {
+        ...node,
+        inputs: node.inputs.map((id) => (id === output ? internal : id)),
+        ...(node.columnMappings
+          ? {
+              columnMappings: Object.fromEntries(
+                Object.entries(node.columnMappings).map(([id, fields]) => [
+                  id === output ? internal : id,
+                  fields,
+                ]),
+              ),
+            }
+          : {}),
+      };
+    return node;
+  };
+  // The output ID is part of a public prepared dataset identity. Keep it stable
+  // while other branches continue consuming the stage they originally used.
+  const existing = graph.nodes.map((node) => ({
+    ...remap(node),
+    id: node.id === output ? internal : node.id,
+  }));
+  const appended = nodes.map((node, index) => ({
+    ...remap(node),
+    id: index === nodes.length - 1 ? output : node.id,
+  }));
   return {
     ...graph,
-    nodes: [...graph.nodes, ...nodes],
-    outputs: graph.outputs.map((id) => (id === output ? nodes.at(-1)!.id : id)),
+    nodes: [...existing, ...appended],
   };
 }
 export function dataErrorKey(error: unknown) {
