@@ -21,6 +21,7 @@ describe("createDefaultRegistry", () => {
       "vercel",
       "google-search-console",
       "app-store-connect",
+      "google-play",
     ]);
     for (const nodeEnv of ["development", "test"] as const) {
       expect(createDefaultRegistry({ nodeEnv }).get("apple-ads")).toBeDefined();

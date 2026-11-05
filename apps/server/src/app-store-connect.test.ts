@@ -10,6 +10,7 @@ import {
   connectionListResponseSchema,
   connectionResourcesResponseSchema,
   connectionResponseSchema,
+  storedConnectionPreviewResponseSchema,
   dataSourcesResponseSchema,
   modelQueryResponseSchema,
   modelResponseSchema,
@@ -430,6 +431,121 @@ describe("App Store Connect connections", () => {
     expect(await discovered(ids.b)).toEqual(["2000000001"]);
     const issuers = asc.requests.slice(seen).map((request) => request.issuerId);
     expect(issuers).toEqual([TEAM_A.issuerId, TEAM_B.issuerId]);
+  });
+
+  it("previews draft settings with the stored team key without saving or importing", async () => {
+    const before =
+      await admin`select config from connections where id = ${ids.a}`;
+    const jobsBefore =
+      await admin`select id, status from jobs where connection_id = ${ids.a} order by id`;
+    const response = await call("POST", `/connections/${ids.a}/preview`, {
+      config: { vendorNumber: TEAM_A.vendorNumbers[0], ratingStorefront: "DE" },
+    });
+    expect(response.statusCode).toBe(200);
+    const preview = storedConnectionPreviewResponseSchema.parse(
+      response.json(),
+    );
+    expect(preview.check.ok).toBe(true);
+    expect(preview.resources.map((resource) => resource.id)).toEqual([
+      "1000000002",
+      "1000000001",
+    ]);
+    expect(preview.selection).toEqual(["1000000001"]);
+    expect(
+      await admin`select config from connections where id = ${ids.a}`,
+    ).toEqual(before);
+    expect(
+      await admin`select id, status from jobs where connection_id = ${ids.a} order by id`,
+    ).toEqual(jobsBefore);
+    expect(response.body).not.toContain(TEAM_A.key.privateKeyPem);
+    const invalid = await call("POST", `/connections/${ids.a}/preview`, {
+      config: { vendorNumber: TEAM_B.vendorNumbers[0] },
+    });
+    expect(
+      storedConnectionPreviewResponseSchema.parse(invalid.json()).check.ok,
+    ).toBe(false);
+    expect(
+      (
+        await call("POST", `/connections/${randomUUID()}/preview`, {
+          config: { vendorNumber: TEAM_A.vendorNumbers[0] },
+        })
+      ).statusCode,
+    ).toBe(404);
+  });
+
+  it("changes the app scope using the stored key, preserving history and rejecting foreign app IDs", async () => {
+    const before =
+      await admin`select config from connections where id = ${ids.a}`;
+    expect(
+      (
+        await call("PATCH", `/connections/${ids.a}`, {
+          resources: [TEAM_B.apps[0]!.id],
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      await admin`select config from connections where id = ${ids.a}`,
+    ).toEqual(before);
+    expect(
+      (
+        await call("PATCH", `/connections/${ids.a}`, {
+          resources: ["1000000002", "1000000001", "1000000002"],
+        })
+      ).statusCode,
+    ).toBe(200);
+    const scope = async () =>
+      (await call("GET", `/connections/${ids.a}/resources`)).json().selection;
+    expect(await scope()).toEqual(["1000000001", "1000000002"]);
+    const waiting =
+      await admin`select id from jobs where connection_id = ${ids.a} and status in ('pending', 'continuing') order by id`;
+    expect(
+      (
+        await call("PATCH", `/connections/${ids.a}`, {
+          resources: ["1000000002", "1000000001"],
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      await admin`select id from jobs where connection_id = ${ids.a} and status in ('pending', 'continuing') order by id`,
+    ).toEqual(waiting);
+    // An ordinary settings save keeps the app scope.
+    expect(
+      (
+        await call("PATCH", `/connections/${ids.a}`, {
+          config: {
+            vendorNumber: TEAM_A.vendorNumbers[0],
+            ratingStorefront: "US",
+          },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(await scope()).toEqual(["1000000001", "1000000002"]);
+    expect(
+      (await call("PATCH", `/connections/${ids.a}`, { resources: null }))
+        .statusCode,
+    ).toBe(200);
+    expect(await scope()).toBeNull();
+    expect(
+      (await call("PATCH", `/connections/${ids.a}`, { resources: [] }))
+        .statusCode,
+    ).toBe(200);
+    expect(await scope()).toEqual([]);
+    expect(
+      (
+        await call("PATCH", `/connections/${ids.a}`, {
+          resources: ["1000000001"],
+          credentials: credentialsOf(TEAM_A),
+        })
+      ).statusCode,
+    ).toBe(400);
+    // Restore the selected app for the following correction/retention tests.
+    expect(
+      (
+        await call("PATCH", `/connections/${ids.a}`, {
+          resources: ["1000000001"],
+        })
+      ).statusCode,
+    ).toBe(200);
   });
 
   it("syncs each team's sales through the engine; a replay adds nothing and a revision updates", async () => {

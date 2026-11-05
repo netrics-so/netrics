@@ -20,6 +20,8 @@ import type {
   PreviewConnectionRequest,
   SharedKeyResourcesResponse,
   UpdateConnectionRequest,
+  StoredConnectionPreviewRequest,
+  StoredConnectionPreviewResponse,
 } from "@netrics/contracts";
 import { validateConnectionConfig } from "@netrics/contracts";
 import {
@@ -201,7 +203,7 @@ function canonicalJson(value: unknown): string {
  * connector selects or shapes its data (the Search Console property,
  * breakdown and rows per day; the Vercel team), so any change counts;
  * defaults are applied to both sides first, so an omitted default is no
- * change. The resource selection is not part of a PATCH and is ignored.
+ * change. Resource selections compare as sets; null follows all resources.
  */
 function configChanged(
   manifest: ConnectorManifest,
@@ -211,9 +213,21 @@ function configChanged(
   const normalize = (config: Record<string, unknown>): string => {
     const { resourceSelection: _selection, ...rest } = config;
     const validated = validateConnectionConfig(manifest.configSchema, rest);
-    return canonicalJson(validated.ok ? validated.config : rest);
+    return canonicalJson({
+      config: validated.ok ? validated.config : rest,
+      selection: resourceSelectionOf(config),
+    });
   };
   return normalize(before) !== normalize(after);
+}
+
+function resourceSelectionOf(config: Record<string, unknown>): string[] | null {
+  const value = config.resourceSelection;
+  return Array.isArray(value)
+    ? [
+        ...new Set(value.filter((id): id is string => typeof id === "string")),
+      ].sort()
+    : null;
 }
 
 /**
@@ -536,6 +550,131 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     } catch (error) {
       // OAuthTokenError and connector failures carry redacted messages.
       return oauthCallFailure(error);
+    }
+  }
+
+  async function callStoredConnection<T>(
+    actor: Actor,
+    connectionId: string,
+    call: (
+      connector: Connector,
+      context: ConnectionContext,
+      options: ExecuteOptions,
+    ) => Promise<T>,
+    configOverride?: Record<string, unknown>,
+    rejected?: (value: T) => boolean,
+  ): Promise<Result<T>> {
+    const existing = await inWorkspace(actor, (tx) =>
+      findConnection(tx, actor.workspaceId, connectionId),
+    );
+    if (!existing) {
+      return fail(404, NOT_FOUND);
+    }
+    const registered = registry.get(existing.row.connectorId);
+    if (!registered) {
+      return fail(400, "connector_unavailable");
+    }
+    const config =
+      configOverride ?? (existing.row.config as Record<string, unknown>);
+    const connector = registered.connector;
+    if (existing.oauth) {
+      const strategy = oauthStrategyFor(
+        registered.manifest,
+        existing.oauth.provider,
+      );
+      if (!strategy) {
+        return fail(400, "connector_unavailable");
+      }
+      return ok(
+        await callWithAccessToken({
+          tokens: oauthTokens,
+          binding: { workspaceId: actor.workspaceId, connectionId },
+          requiredScopes: strategy.scopes,
+          rejected,
+          call: (credentials, options) =>
+            call(
+              connector,
+              { connectionId, config, credentials: { ...credentials } },
+              options,
+            ),
+        }),
+      );
+    }
+    const envelope = openEnvelope(actor.workspaceId, existing.row);
+    if (!envelope.ok) {
+      return envelope;
+    }
+    const key = storedSignedKey(registered.manifest, envelope.value);
+    if (key && !key.ok) {
+      return key;
+    }
+    if (key) {
+      return ok(
+        await callWithSignedKey({
+          key: key.value,
+          ...signedKeyCache(key.value, actor.workspaceId, connectionId),
+          rejected,
+          call: (tokenCredentials, options) =>
+            call(
+              connector,
+              { connectionId, config, credentials: { ...tokenCredentials } },
+              options,
+            ),
+        }),
+      );
+    }
+    return ok(
+      await call(
+        connector,
+        { connectionId, config, credentials: envelope.value },
+        {},
+      ),
+    );
+  }
+
+  /** Check a draft configuration using stored credentials, without importing. */
+  async function previewStoredConnection(
+    actor: Actor,
+    connectionId: string,
+    input: StoredConnectionPreviewRequest,
+  ): Promise<Result<StoredConnectionPreviewResponse>> {
+    const existing = await inWorkspace(actor, (tx) =>
+      findConnection(tx, actor.workspaceId, connectionId),
+    );
+    if (!existing) return fail(404, NOT_FOUND);
+    const registered = registry.get(existing.row.connectorId);
+    if (!registered) return fail(400, "connector_unavailable");
+    const validated = validateConfig(registered.manifest, input.config);
+    if (!validated.ok) return validated;
+    const selection = resourceSelectionOf(
+      existing.row.config as Record<string, unknown>,
+    );
+    try {
+      const checked = await callStoredConnection(
+        actor,
+        connectionId,
+        (connector, context, options) =>
+          executeCheck(connector, context, options),
+        validated.value,
+        (result) => !result.ok,
+      );
+      if (!checked.ok) return checked;
+      if (!checked.value.ok)
+        return ok({ check: checked.value, resources: [], selection });
+      const discovered = await callStoredConnection(
+        actor,
+        connectionId,
+        (connector, context, options) =>
+          executeDiscover(connector, context, options),
+        validated.value,
+      );
+      return discovered.ok
+        ? ok({ check: checked.value, resources: discovered.value, selection })
+        : discovered;
+    } catch (error) {
+      return existing.oauth
+        ? oauthCallFailure(error)
+        : signedKeyCallFailure(error);
     }
   }
 
@@ -1228,8 +1367,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return validated;
       }
       const config = { ...validated.value };
-      if (entry.resources && entry.resources.length > 0) {
-        config.resourceSelection = entry.resources;
+      if (
+        entry.resources !== undefined &&
+        (registered.manifest.supportsResourceSelection ||
+          entry.resources.length > 0)
+      ) {
+        config.resourceSelection = [...new Set(entry.resources)].sort();
       }
       // Two connections of one request reading the same thing would only
       // count it twice.
@@ -1554,6 +1697,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           version: manifest.version,
           description: manifest.description,
           metricsCount: manifest.metrics.length,
+          datasetsCount: manifest.datasets?.length ?? 0,
+          supportsResourceSelection:
+            manifest.supportsResourceSelection ?? false,
           category: manifest.category ?? "other",
           brandColor: manifest.brandColor ?? null,
           metrics: manifest.metrics
@@ -1817,7 +1963,19 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return fail(404, NOT_FOUND);
       }
       if (!existing.oauth) {
-        return discoverWithSignedKey(actor, connectionId, existing);
+        const discovered = await discoverWithSignedKey(
+          actor,
+          connectionId,
+          existing,
+        );
+        return discovered.ok
+          ? ok({
+              ...discovered.value,
+              selection: resourceSelectionOf(
+                existing.row.config as Record<string, unknown>,
+              ),
+            })
+          : discovered;
       }
       const registered = registry.get(existing.row.connectorId);
       const strategy = registered
@@ -1839,7 +1997,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               options,
             ),
         });
-        return ok({ resources });
+        return ok({ resources, selection: resourceSelectionOf(config) });
       } catch (error) {
         return oauthCallFailure(error);
       }
@@ -1853,79 +2011,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
      * runtime), for the caller to classify. Used for resource icons
      * (#226).
      */
-    async callConnection<T>(
-      actor: Actor,
-      connectionId: string,
-      call: (
-        connector: Connector,
-        context: ConnectionContext,
-        options: ExecuteOptions,
-      ) => Promise<T>,
-    ): Promise<Result<T>> {
-      const existing = await inWorkspace(actor, (tx) =>
-        findConnection(tx, actor.workspaceId, connectionId),
-      );
-      if (!existing) {
-        return fail(404, NOT_FOUND);
-      }
-      const registered = registry.get(existing.row.connectorId);
-      if (!registered) {
-        return fail(400, "connector_unavailable");
-      }
-      const config = existing.row.config as Record<string, unknown>;
-      const connector = registered.connector;
-      if (existing.oauth) {
-        const strategy = oauthStrategyFor(
-          registered.manifest,
-          existing.oauth.provider,
-        );
-        if (!strategy) {
-          return fail(400, "connector_unavailable");
-        }
-        return ok(
-          await callWithAccessToken({
-            tokens: oauthTokens,
-            binding: { workspaceId: actor.workspaceId, connectionId },
-            requiredScopes: strategy.scopes,
-            call: (credentials, options) =>
-              call(
-                connector,
-                { connectionId, config, credentials: { ...credentials } },
-                options,
-              ),
-          }),
-        );
-      }
-      const envelope = openEnvelope(actor.workspaceId, existing.row);
-      if (!envelope.ok) {
-        return envelope;
-      }
-      const key = storedSignedKey(registered.manifest, envelope.value);
-      if (key && !key.ok) {
-        return key;
-      }
-      if (key) {
-        return ok(
-          await callWithSignedKey({
-            key: key.value,
-            ...signedKeyCache(key.value, actor.workspaceId, connectionId),
-            call: (tokenCredentials, options) =>
-              call(
-                connector,
-                { connectionId, config, credentials: { ...tokenCredentials } },
-                options,
-              ),
-          }),
-        );
-      }
-      return ok(
-        await call(
-          connector,
-          { connectionId, config, credentials: envelope.value },
-          {},
-        ),
-      );
-    },
+    callConnection: callStoredConnection,
+    previewStored: previewStoredConnection,
 
     /**
      * Whether an App Store Connect connection holds the optional reviews
@@ -2032,10 +2119,54 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           return validated;
         }
         nextConfig = { ...validated.value };
-        // PATCH cannot change the resource selection; carry it over.
+        // Configuration forms do not clear an existing resource selection.
         if (existingConfig.resourceSelection !== undefined) {
           nextConfig.resourceSelection = existingConfig.resourceSelection;
         }
+      }
+
+      if (body.resources !== undefined) {
+        if (!registered.manifest.supportsResourceSelection)
+          return fail(
+            400,
+            "This connector manages its resource through its connection settings.",
+          );
+        if (body.credentials !== undefined || body.pendingKeyId !== undefined)
+          return fail(
+            400,
+            "Change credentials and the app selection in separate requests.",
+          );
+        if (existing.row.setupPending && body.config === undefined)
+          return fail(
+            400,
+            "Finish the connection settings before choosing apps.",
+          );
+        nextConfig ??= { ...existingConfig };
+        const selection =
+          body.resources === null ? null : [...new Set(body.resources)].sort();
+        if (selection?.length) {
+          const { resourceSelection: _selection, ...candidate } = nextConfig;
+          const preview = await previewStoredConnection(actor, connectionId, {
+            config: candidate,
+          });
+          if (!preview.ok) return preview;
+          if (!preview.value.check.ok)
+            return fail(
+              400,
+              preview.value.check.message ?? "credential check failed",
+            );
+          const allowed = new Set([
+            ...preview.value.resources.map((resource) => resource.id),
+            ...(resourceSelectionOf(existingConfig) ?? []),
+          ]);
+          if (selection.some((id) => !allowed.has(id)))
+            return fail(
+              400,
+              "Choose apps returned by this account. Refresh the app list and try again.",
+            );
+        }
+        if (selection === null) delete nextConfig.resourceSelection;
+        else nextConfig.resourceSelection = selection;
       }
 
       if (body.projectId) {

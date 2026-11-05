@@ -7,6 +7,20 @@ published-measure dashboard bindings are implemented in stacked draft pull
 requests. Advanced interactions and connector templates remain
 separate delivery work.
 
+Store connectors can declare `supportsResourceSelection` to offer one stored
+account credential with a configurable app scope. Stored-connection preview
+checks draft config and discovers apps without saving or enqueueing an import.
+An atomic settings update accepts `resources: null` for all current/future apps,
+an explicit list for selected apps, or `[]` to collect no new app data. Omission
+preserves the existing scope; none of these choices deletes retained history.
+
+Aggregates such as sum, average, minimum and maximum keep their known result
+when some input values are null, but mark it partial and emit
+`aggregate_missing_inputs`. Formulas inherit that partial status. Count and
+three-valued boolean semantics are unchanged. A deliberate filter excluding
+missing rows is evaluated before aggregation. Execution version 3 invalidates
+older prepared/query caches so these warnings are not silently lost.
+
 ## Typed source datasets
 
 SDK 0.2.9 adds optional `manifest.datasets` and `SyncResult.datasetPages`.

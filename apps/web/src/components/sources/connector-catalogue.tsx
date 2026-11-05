@@ -152,6 +152,10 @@ function CatalogueCard({
           ))}
           {more > 0 ? <li>{t("moreMetrics", { count: more })}</li> : null}
         </ul>
+      ) : (connector.datasetsCount ?? 0) > 0 ? (
+        <p className="help">
+          {t("dataTables", { count: connector.datasetsCount! })}
+        </p>
       ) : null}
       <div className="catalogue-card-foot">
         <span className="catalogue-facts">

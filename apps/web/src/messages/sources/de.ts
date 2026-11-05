@@ -50,6 +50,7 @@ export const sourcesDe: Catalog<typeof sourcesEn> = {
       hours: "{count, plural, one {stündlich} other {alle # Stunden}}",
       days: "{count, plural, one {täglich} other {alle # Tage}}",
     },
+    dataTables: "{count, plural, one {# Datentabelle} other {# Datentabellen}}",
     moreMetrics: "+{count}",
     cta: {
       connect: "Verbinden",

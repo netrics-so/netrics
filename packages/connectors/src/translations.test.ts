@@ -8,6 +8,7 @@ import { appStoreConnectManifest } from "./app-store-connect/index.js";
 import { appleAdsManifest } from "./apple-ads/index.js";
 import { demoManifest } from "./demo/index.js";
 import { searchConsoleManifest } from "./google-search-console/index.js";
+import { googlePlayManifest } from "./google-play/index.js";
 import { vercelManifest } from "./vercel/index.js";
 
 // #257 (ADR 0016 section 6): the first-party connectors are complete in
@@ -20,6 +21,7 @@ const FIRST_PARTY: ConnectorManifest[] = [
   searchConsoleManifest,
   appStoreConnectManifest,
   appleAdsManifest,
+  googlePlayManifest,
 ];
 
 const LOCALES = ["de"] as const;
@@ -41,7 +43,7 @@ describe.each(FIRST_PARTY.map((manifest) => [manifest.id, manifest] as const))(
   (_id, manifest) => {
     it("validate against the SDK version required by their capabilities", () => {
       expect(manifest.sdkVersion).toBe(
-        manifest.id === "app-store-connect" ? "^0.2.9" : "^0.2.7",
+        manifest.datasets?.length ? "^0.2.9" : "^0.2.7",
       );
       expect(assertManifestCompatible(manifest).translations).toEqual(
         manifest.translations,

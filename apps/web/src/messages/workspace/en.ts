@@ -188,6 +188,46 @@ export const workspaceEn = {
     connect: "Connect TV",
   },
   connections: {
+    apps: {
+      unsaved:
+        "Your connection settings or app selection have not been saved. Leave this page?",
+      title: "Apps to collect",
+      all: "All current and future apps",
+      allHelp:
+        "New apps available to this account will be included automatically.",
+      choose: "Choose apps",
+      search: "Search apps by name or ID",
+      selectResults: "Select results ({count})",
+      clear: "Clear selection",
+      selected: "{count, plural, one {# app selected} other {# apps selected}}",
+      unlisted: "Not currently listed",
+      unlistedHelp:
+        "Previously selected apps stay selected when the provider temporarily stops listing them. Their collected history is kept.",
+      empty:
+        "No apps found. Check the account permissions or add package names in Advanced settings.",
+      noResults: "No matching apps.",
+      noneHelp:
+        "No apps selected: new app data will not be imported. Existing history stays available.",
+      pages: "App list pages",
+      previous: "Previous",
+      next: "Next",
+      page: "Page {page} of {pages}",
+      intro:
+        "Check access, choose your apps, then save. All selected apps use this connection’s credentials.",
+      name: "Connection name",
+      reportGuide: "Find your report URI and permissions",
+      advanced: "Advanced settings",
+      scopeHelp:
+        "Ratings refer to the selected store country. Revenue stays in its original currencies; currencies are never combined into a misleading total.",
+      check: "Check access and find apps",
+      checking: "Checking access…",
+      accessOk: "Access checked. Choose the apps to collect.",
+      accessFailed: "Access could not be verified.",
+      save: "Save settings and app selection",
+      start: "Save and start importing",
+      saved:
+        "Saved. The selected data is queued for import; existing history is kept.",
+    },
     newPage: {
       pageTitle: "Add connection · netrics",
       title: "Add connection",
@@ -197,9 +237,13 @@ export const workspaceEn = {
       finishSetup: "Finish setup",
     },
     detail: {
+      dataTables: "Data tables",
+      dataTablesHelp:
+        "Explore raw reports, prepare data and create reusable measures for your dashboards.",
+      openData: "Open Data & measures",
       back: "Back to sources",
       setupFinished:
-        "Setup finished. The first sync is queued and reads up to 16 months back; new data then arrives every few hours.",
+        "Setup finished. The first import is queued for the configured history; new data then arrives on this connection’s schedule.",
       pausedCredentials:
         "Syncing is paused: this connection needs new credentials.",
       uploadNewKey: "Upload a new {name} key.",

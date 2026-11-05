@@ -315,6 +315,7 @@ export const appStoreConnectManifest: ConnectorManifest = {
     additionalProperties: false,
   },
   datasets: [storeRatingsDataset, salesDataset],
+  supportsResourceSelection: true,
   metrics: [
     {
       key: SALES_METRIC_KEYS.downloads,

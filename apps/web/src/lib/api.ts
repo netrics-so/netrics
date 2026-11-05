@@ -75,6 +75,10 @@ import {
   connectionDetailResponseSchema,
   connectionListResponseSchema,
   connectionPreviewResponseSchema,
+  storedConnectionPreviewRequestSchema,
+  storedConnectionPreviewResponseSchema,
+  type StoredConnectionPreviewRequest,
+  type StoredConnectionPreviewResponse,
   connectionResourcesResponseSchema,
   connectionResponseSchema,
   connectorListResponseSchema,
@@ -666,6 +670,19 @@ export function previewConnection(
     "POST",
     `/v1/workspaces/${workspaceId}/connections/preview`,
     previewConnectionRequestSchema.parse(input),
+  );
+}
+
+export function previewStoredConnection(
+  workspaceId: string,
+  connectionId: string,
+  input: StoredConnectionPreviewRequest,
+): Promise<StoredConnectionPreviewResponse> {
+  return browserSend(
+    storedConnectionPreviewResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/preview`,
+    storedConnectionPreviewRequestSchema.parse(input),
   );
 }
 

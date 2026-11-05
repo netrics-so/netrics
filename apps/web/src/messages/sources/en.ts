@@ -50,6 +50,7 @@ export const sourcesEn = {
       hours: "{count, plural, one {hourly} other {every # hours}}",
       days: "{count, plural, one {daily} other {every # days}}",
     },
+    dataTables: "{count, plural, one {# data table} other {# data tables}}",
     moreMetrics: "+{count}",
     cta: {
       connect: "Connect",

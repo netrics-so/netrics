@@ -7,6 +7,8 @@ import {
   connectionDetailResponseSchema,
   connectionListResponseSchema,
   connectionPreviewResponseSchema,
+  storedConnectionPreviewRequestSchema,
+  storedConnectionPreviewResponseSchema,
   connectionResourcesResponseSchema,
   connectionResponseSchema,
   connectorListResponseSchema,
@@ -325,6 +327,46 @@ export function registerConnectionRoutes(
       // gets a freshly signed token from its stored key. Needs
       // connections:update, because it
       // serves finishing setup and changing the chosen resource.
+      scope.post(
+        "/workspaces/:workspaceId/connections/:connectionId/preview",
+        {
+          schema: routeSchema({
+            summary:
+              "Check draft settings and discover resources using stored credentials",
+            tags: ["connections"],
+            body: storedConnectionPreviewRequestSchema,
+            response: storedConnectionPreviewResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) return;
+          if (!can(access.role, "connections:update"))
+            return sendError(reply, 403, "forbidden");
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success)
+            return sendError(reply, 404, "connection_not_found");
+          const body = parseBody(
+            storedConnectionPreviewRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) return;
+          const result = unwrap(
+            await connections.previewStored(
+              access,
+              params.data.connectionId,
+              body,
+            ),
+            reply,
+          );
+          if (!result) return;
+          reply.header("cache-control", "no-store");
+          return storedConnectionPreviewResponseSchema.parse(result);
+        },
+      );
+
       scope.get(
         "/workspaces/:workspaceId/connections/:connectionId/resources",
         {

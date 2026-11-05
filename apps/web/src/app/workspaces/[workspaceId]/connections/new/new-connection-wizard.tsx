@@ -10,6 +10,7 @@ import type {
 } from "@netrics/contracts";
 
 import { AppleAdsSetup } from "./apple-ads-setup";
+import { AppPicker } from "../app-picker";
 import { ConfigFields } from "../config-fields";
 import { ConnectOAuthButton } from "../connect-oauth-button";
 import { SignedKeyFields } from "../signed-key-fields";
@@ -92,6 +93,7 @@ export function NewConnectionWizard({
   );
   const [selectedResources, setSelectedResources] =
     useState<Set<string> | null>(null);
+  const [appSelection, setAppSelection] = useState<string[] | null>(null);
   const [pending, setPending] = useState<"preview" | "create" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -197,6 +199,7 @@ export function NewConnectionWizard({
       });
       setPreview(result);
       setSelectedResources(new Set(result.resources.map((r) => r.id)));
+      setAppSelection(null);
       if (!result.check.ok) {
         showFailure(result.check.message ?? t("checkFailed"));
       }
@@ -217,7 +220,9 @@ export function NewConnectionWizard({
     try {
       const payload = buildPayload();
       let resources: string[] | undefined;
-      if (preview && preview.resources.length > 0 && selectedResources) {
+      if (appStore) {
+        resources = appSelection ?? undefined;
+      } else if (preview && preview.resources.length > 0 && selectedResources) {
         if (selectedResources.size === 0) {
           setError(appStore ? t("selectApp") : t("selectResource"));
           setPending(null);
@@ -420,7 +425,14 @@ export function NewConnectionWizard({
               ? t("checkPassedWith", { message: preview.check.message })
               : t("checkPassed")}
           </div>
-          {preview.resources.length > 0 ? (
+          {appStore ? (
+            <AppPicker
+              resources={preview.resources}
+              value={appSelection}
+              onChange={setAppSelection}
+              disabled={pending !== null}
+            />
+          ) : preview.resources.length > 0 ? (
             <>
               <p className="muted">
                 {t(appStore ? "foundApps" : "foundResources", {

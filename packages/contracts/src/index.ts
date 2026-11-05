@@ -495,6 +495,8 @@ export const connectorCatalogEntrySchema = z.object({
   version: z.string().min(1),
   description: z.string().min(1),
   metricsCount: z.number().int().nonnegative(),
+  datasetsCount: z.number().int().nonnegative().optional(),
+  supportsResourceSelection: z.boolean().optional(),
   /** Catalogue category; "other" when the manifest does not say (#306). */
   category: connectorCategorySchema,
   /** The icon tile's colour, "#rrggbb", or null for a neutral tile. */
@@ -629,6 +631,19 @@ export const connectionPreviewResponseSchema = z.object({
   check: connectionCheckResultSchema,
   resources: z.array(discoveredResourceSchema),
 });
+export const storedConnectionPreviewRequestSchema = z.strictObject({
+  config: connectionConfigSchema,
+});
+export type StoredConnectionPreviewRequest = z.infer<
+  typeof storedConnectionPreviewRequestSchema
+>;
+export const storedConnectionPreviewResponseSchema =
+  connectionPreviewResponseSchema.extend({
+    selection: z.array(z.string().min(1)).nullable(),
+  });
+export type StoredConnectionPreviewResponse = z.infer<
+  typeof storedConnectionPreviewResponseSchema
+>;
 export type ConnectionPreviewResponse = z.infer<
   typeof connectionPreviewResponseSchema
 >;
@@ -662,6 +677,8 @@ export type SharedKeyResourcesResponse = z.infer<
  */
 export const connectionResourcesResponseSchema = z.object({
   resources: z.array(discoveredResourceSchema),
+  /** null follows all current/future resources; [] pauses collection. */
+  selection: z.array(z.string().min(1)).nullable().optional(),
 });
 export type ConnectionResourcesResponse = z.infer<
   typeof connectionResourcesResponseSchema
@@ -1024,6 +1041,8 @@ export const updateConnectionRequestSchema = z.object({
   credentials: connectionCredentialsSchema.optional(),
   pendingKeyId: pendingKeyIdSchema.optional(),
   projectId: z.uuid().nullable().optional(),
+  /** null follows all current/future resources; omitted keeps the selection. */
+  resources: z.array(z.string().min(1)).nullable().optional(),
 });
 export type UpdateConnectionRequest = z.infer<
   typeof updateConnectionRequestSchema

@@ -108,6 +108,59 @@ const model: SemanticModelDefinition = {
 };
 
 describe("shared semantic query context", () => {
+  it("marks aggregates and dependent formulas partial when reported values are missing", () => {
+    const incomplete: DataTable = {
+      ...apple,
+      fields: apple.fields.map((field) =>
+        field.id === "downloads" ? { ...field, nullable: true } : field,
+      ),
+      rows: [
+        { app: "a", downloads: 10 },
+        { app: "a", downloads: null },
+        { app: "b", downloads: 0 },
+      ],
+    };
+    const inputs = new Map(sources).set("apple", incomplete);
+    const result = querySemanticModel(model, inputs, {
+      measureIds: ["apple-downloads", "total-downloads"],
+      groupBy: ["app"],
+    });
+    expect(result.rows[0]?.measures).toMatchObject({
+      "apple-downloads": { value: "10", status: "partial" },
+      "total-downloads": { value: "15", status: "partial" },
+    });
+    expect(result.rows[1]?.measures).toMatchObject({
+      "apple-downloads": { value: "0", status: "ok" },
+      "total-downloads": { value: "7", status: "ok" },
+    });
+    expect(result.warnings).toContain("aggregate_missing_inputs");
+    const explicit: SemanticModelDefinition = {
+      ...model,
+      measures: model.measures.map((measure) =>
+        measure.id === "apple-downloads" && measure.kind === "aggregate"
+          ? {
+              ...measure,
+              aggregate: {
+                ...measure.aggregate,
+                filter: {
+                  kind: "call",
+                  fn: "not",
+                  args: [
+                    { kind: "call", fn: "is_null", args: [field("downloads")] },
+                  ],
+                },
+              },
+            }
+          : measure,
+      ),
+    };
+    expect(
+      querySemanticModel(explicit, inputs, {
+        measureIds: ["apple-downloads"],
+        groupBy: ["app"],
+      }).rows[0]?.measures["apple-downloads"]?.status,
+    ).toBe("ok");
+  });
   it("aggregates each fact before combining and applies dimensions across sources", () => {
     const result = querySemanticModel(model, sources, {
       measureIds: ["total-downloads"],

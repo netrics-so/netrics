@@ -216,6 +216,8 @@ export const dataDe: Catalog<typeof dataEn> = {
       "Die Veröffentlichung stellt diese Ausgabe für Modelle und weitere Aufbereitungen bereit.",
     warnings: "Hinweise zur Vorschau",
     warningLabels: {
+      aggregate_missing_inputs:
+        "Eine Zusammenfassung enthält fehlende Eingabewerte. Das Ergebnis verwendet die gemeldeten Werte und kann unvollständig sein.",
       decimal_rounded:
         "Einige Dezimalergebnisse wurden auf 18 Nachkommastellen gerundet.",
       division_by_zero: "Eine Division durch null ergibt einen leeren Wert.",

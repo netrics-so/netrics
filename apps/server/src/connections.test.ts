@@ -815,6 +815,16 @@ describe("role matrix", () => {
     );
     expectError(
       await call(world.app, {
+        method: "POST",
+        url: `/v1/workspaces/${w1Id}/connections/${connectionId}/preview`,
+        cookie: cookies.viewer,
+        payload: { config: {} },
+      }),
+      403,
+      "forbidden",
+    );
+    expectError(
+      await call(world.app, {
         method: "PATCH",
         url: `/v1/workspaces/${w1Id}/connections/${connectionId}`,
         cookie: cookies.viewer,

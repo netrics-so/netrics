@@ -32,6 +32,10 @@
       "types": "./dist/google-search-console/index.d.ts",
       "default": "./dist/google-search-console/index.js"
     },
+    "./google-play": {
+      "types": "./dist/google-play/index.d.ts",
+      "default": "./dist/google-play/index.js"
+    },
     "./vercel": {
       "types": "./dist/vercel/index.d.ts",
       "default": "./dist/vercel/index.js"

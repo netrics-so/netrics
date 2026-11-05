@@ -312,6 +312,8 @@ export const connectorManifestSchema = z
     outboundDomains: z.array(z.string().min(1)),
     rateLimit: rateLimitHintSchema.optional(),
     resourceNoun: resourceNounSchema.optional(),
+    /** Honors SyncRequest.resources as a multi-resource collection scope. */
+    supportsResourceSelection: z.boolean().optional(),
     /**
      * Texts in other languages, by locale (SDK 0.2.6, ADR 0016). Optional;
      * hosts show the English values for anything not translated.

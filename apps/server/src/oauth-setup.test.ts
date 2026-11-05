@@ -6,6 +6,7 @@ import {
   connectionDetailResponseSchema,
   connectionResourcesResponseSchema,
   connectionResponseSchema,
+  storedConnectionPreviewResponseSchema,
   createWorkspaceResponseSchema,
   oauthCallbackResponseSchema,
   startOAuthAuthorizationResponseSchema,
@@ -62,6 +63,7 @@ const manifest: ConnectorManifest = {
   name: "Properties (test)",
   sdkVersion: "^0.2.1",
   authStrategies: [{ strategy: "oauth2", provider: "google", scopes: [SCOPE] }],
+  supportsResourceSelection: true,
   configSchema: {
     type: "object",
     properties: {
@@ -276,6 +278,93 @@ afterAll(async () => {
   await app?.close();
   await db?.$client.end({ timeout: 5 }).catch(() => undefined);
   await admin?.end({ timeout: 5 }).catch(() => undefined);
+});
+
+describe("checking setup before the first app import", () => {
+  it("checks draft config with stored OAuth access, then saves config and scope together", async () => {
+    const { id } = await connect();
+    const before = await setupState(id);
+    received.length = 0;
+    const response = await inject(
+      "POST",
+      `${connectionUrl(id)}/preview`,
+      cookies.editor,
+      { config: { siteUrl: SITE } },
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    const preview = storedConnectionPreviewResponseSchema.parse(
+      response.json(),
+    );
+    expect(preview.check.ok).toBe(true);
+    expect(preview.selection).toBeNull();
+    expect(preview.resources).toHaveLength(2);
+    expect(received.map((entry) => entry.call)).toEqual(["check", "discover"]);
+    expect(
+      received.every(
+        (entry) => Object.keys(entry.credentials).join() === "accessToken",
+      ),
+    ).toBe(true);
+    expect(response.body).not.toContain("fixture-at");
+    expect(await setupState(id)).toEqual(before);
+    const saved = await inject("PATCH", connectionUrl(id), cookies.editor, {
+      config: { siteUrl: SITE },
+      resources: [SITE],
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(await setupState(id)).toMatchObject({
+      setup_pending: false,
+      jobs: 1,
+      config: { siteUrl: SITE, resourceSelection: [SITE] },
+    });
+  });
+
+  it("keeps unfinished setup untouched after a failed preview or invalid app selection", async () => {
+    const { id } = await connect();
+    const before = await setupState(id);
+    const failed = await inject(
+      "POST",
+      `${connectionUrl(id)}/preview`,
+      cookies.editor,
+      { config: {} },
+    );
+    expect(
+      storedConnectionPreviewResponseSchema.parse(failed.json()),
+    ).toMatchObject({ check: { ok: false }, resources: [] });
+    expect(
+      (
+        await inject("PATCH", connectionUrl(id), cookies.editor, {
+          resources: [],
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await inject("PATCH", connectionUrl(id), cookies.editor, {
+          config: { siteUrl: SITE },
+          resources: ["foreign-app"],
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(await setupState(id)).toEqual(before);
+    expect(
+      (
+        await inject("POST", `${connectionUrl(id)}/preview`, cookies.viewer, {
+          config: { siteUrl: SITE },
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await inject(
+          "POST",
+          `${connectionUrl(id, otherWorkspaceId)}/preview`,
+          cookies.owner,
+          { config: { siteUrl: SITE } },
+        )
+      ).statusCode,
+    ).toBe(404);
+  });
 });
 
 describe("discovering resources of an OAuth connection", () => {
