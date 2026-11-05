@@ -413,3 +413,15 @@ there is no separate cancel-upload garbage collector yet. Empty text, null, fals
 zero and exact decimal strings remain distinct. The UI renders 50 rows at a time
 but currently holds the whole editable table in browser memory. Source and query
 budgets still apply; paging does not claim warehouse-scale execution.
+
+## Non-store campaign example
+
+[#465](https://github.com/netrics-so/netrics/issues/465) supplies a persisted
+advertising + website proof and [six CSV imports with a customer walkthrough](./examples/campaign-dashboard.md).
+Different source identities require confirmed campaign links. Independently authored
+columns are explicitly matched before append. Independent fact aggregation keeps
+ad spend and website revenue correct, including shared campaign/market/day filters,
+fixed scope, exact money, boolean measures, corrections and shared publication.
+Unsupported keyword-level revenue and ambiguous/fanout joins are rejected. These
+synthetic imports prove reuse of the same engine; they do not implement a new
+advertising connector or replace real-account hosted/self-hosted acceptance.
