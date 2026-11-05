@@ -105,6 +105,7 @@ export const dataDe: Catalog<typeof dataEn> = {
         number: "Zahl",
       },
     },
+    loadingInputVersions: "Eingabeversionen des Entwurfs werden geladen…",
     versionHistory: "Veröffentlichte Versionen",
     historyHint:
       "Stelle veröffentlichte Schritte oder Modelldefinitionen als neuen gespeicherten Entwurf wieder her. Der gespeicherte Entwurf wird ersetzt. Der aktuelle Name, Quelldaten und Live-Dashboards bleiben erhalten. Prüfe die Vorschau und veröffentliche den Entwurf, wenn er bereit ist.",

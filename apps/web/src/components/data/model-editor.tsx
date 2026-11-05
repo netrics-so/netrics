@@ -23,6 +23,7 @@ import { AggregateFields, ColumnChecks, ColumnSelect } from "./fields";
 import { DataTable } from "./data-table";
 import { PreviewNotes } from "./preview-notes";
 import { DefinitionHistory } from "./definition-history";
+import { useDraftSources } from "@/lib/data-source-metadata";
 
 const EMPTY: SemanticModelDefinition = {
   version: 1,
@@ -33,7 +34,7 @@ const EMPTY: SemanticModelDefinition = {
 };
 export function ModelEditor({
   workspaceId,
-  sources,
+  sources: sourceCatalog,
   initial,
   onSaved,
   onClose,
@@ -62,6 +63,13 @@ export function ModelEditor({
   };
   const [record, setRecord] = useState(initial),
     [name, setName] = useState(initial?.name ?? t("defaultModel"));
+  const inputMetadata = useDraftSources(
+    workspaceId,
+    "models",
+    record,
+    sourceCatalog,
+  );
+  const sources = inputMetadata.sources;
   const [definition, setDefinition] = useState(initial?.definition ?? EMPTY);
   const [formulaTexts, setFormulaTexts] = useState<Record<string, string>>({});
   const [savedState, setSavedState] = useState(
@@ -123,7 +131,7 @@ export function ModelEditor({
     };
   }
   async function preview() {
-    if (!valid()) return;
+    if (inputMetadata.loading || inputMetadata.error || !valid()) return;
     setBusy("preview");
     setError(null);
     setNotice(null);
@@ -171,7 +179,7 @@ export function ModelEditor({
     }
   }
   async function persist(publish: boolean) {
-    if (!valid()) return;
+    if (inputMetadata.loading || inputMetadata.error || !valid()) return;
     setBusy(publish ? "publish" : "save");
     setError(null);
     setNotice(null);
@@ -358,6 +366,8 @@ export function ModelEditor({
             type="button"
             disabled={
               !!busy ||
+              inputMetadata.loading ||
+              !!inputMetadata.error ||
               !name.trim() ||
               !definition.measures.length ||
               (!!record && !dirty)
@@ -371,6 +381,8 @@ export function ModelEditor({
             className="primary"
             disabled={
               !!busy ||
+              inputMetadata.loading ||
+              !!inputMetadata.error ||
               !fresh ||
               !!error ||
               !name.trim() ||
@@ -404,6 +416,21 @@ export function ModelEditor({
           {notice}
         </p>
       ) : null}
+      {inputMetadata.loading ? (
+        <p role="status" className="page-meta">
+          {t("loadingInputVersions")}
+        </p>
+      ) : null}
+      {inputMetadata.error ? (
+        <div role="alert">
+          <p className="error">
+            {t(`errors.${dataErrorKey(inputMetadata.error)}`)}
+          </p>
+          <button type="button" onClick={inputMetadata.retry}>
+            {t("retry")}
+          </button>
+        </div>
+      ) : null}
       {record ? (
         <DefinitionHistory
           workspaceId={workspaceId}
@@ -419,7 +446,7 @@ export function ModelEditor({
       ) : null}
       <fieldset
         ref={fieldsRef}
-        disabled={!!busy}
+        disabled={!!busy || inputMetadata.loading || !!inputMetadata.error}
         className="data-editor-fields"
       >
         <div className="field data-name-field">
@@ -904,7 +931,12 @@ export function ModelEditor({
           <button
             type="button"
             className="primary"
-            disabled={!!busy || !measureIds.length}
+            disabled={
+              !!busy ||
+              inputMetadata.loading ||
+              !!inputMetadata.error ||
+              !measureIds.length
+            }
             onClick={() => void preview()}
           >
             {t(busy === "preview" ? "previewing" : "preview")}

@@ -47,6 +47,7 @@ export function StepForm({
   busy,
   graph,
   initial,
+  draft,
   onApply,
   onCancel,
 }: {
@@ -57,6 +58,7 @@ export function StepForm({
   busy: boolean;
   graph?: PreparationGraph;
   initial?: PreparationNode;
+  draft?: { id: string; version: number };
   onApply: (nodes: PreparationNode[]) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -206,8 +208,9 @@ export function StepForm({
         ? previewPreparation(
             workspaceId,
             preparationAt(graph, other.slice(5)),
+            draft,
           ).then((preview) => preview.outputs[other.slice(5)]!)
-        : previewData(workspaceId, other.slice(8));
+        : previewData(workspaceId, other.slice(8), draft);
     result
       .then((value) => {
         if (alive) {
@@ -229,7 +232,7 @@ export function StepForm({
     return () => {
       alive = false;
     };
-  }, [workspaceId, other, operation, graph, t]);
+  }, [workspaceId, other, operation, graph, t, draft?.id, draft?.version]);
   const appendKey = JSON.stringify(appendInputs);
   useEffect(() => {
     let alive = true;
@@ -251,9 +254,10 @@ export function StepForm({
                       await previewPreparation(
                         workspaceId,
                         preparationAt(graph, choice.slice(5)),
+                        draft,
                       )
                     ).outputs[choice.slice(5)]!
-                  : await previewData(workspaceId, choice.slice(8));
+                  : await previewData(workspaceId, choice.slice(8), draft);
               loaded[choice] = value.fields;
             }),
         );
@@ -285,7 +289,17 @@ export function StepForm({
     return () => {
       alive = false;
     };
-  }, [operation, matchColumns, appendKey, workspaceId, graph, initial, t]);
+  }, [
+    operation,
+    matchColumns,
+    appendKey,
+    workspaceId,
+    graph,
+    initial,
+    t,
+    draft?.id,
+    draft?.version,
+  ]);
   function mappingFor(choice: string): Record<string, string> {
     if (Object.hasOwn(appendMappings, choice)) return appendMappings[choice]!;
     const source = appendSchemas[choice] ?? [];

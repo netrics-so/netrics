@@ -100,6 +100,7 @@ export const dataEn = {
         number: "Number",
       },
     },
+    loadingInputVersions: "Loading the draft’s input versions…",
     versionHistory: "Published version history",
     historyHint:
       "Restore published steps or model definitions as a new saved draft, replacing the saved draft. The current name, source data and live dashboards stay as they are. Preview the restored draft, then publish when ready.",

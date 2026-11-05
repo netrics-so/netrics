@@ -98,7 +98,12 @@ export function registerDataRoutes(
               reply,
             );
             if (!body) return;
-            return service.preview(a, body.sourceId, body.limit);
+            return service.preview(
+              a,
+              body.sourceId,
+              body.limit,
+              body.preparationDraft,
+            );
           }),
       );
       scope.post(
@@ -452,6 +457,32 @@ export function registerDataRoutes(
           }),
       );
       for (const kind of ["preparations", "models"] as const) {
+        scope.get(
+          `/workspaces/:workspaceId/data/${kind}/:id/inputs`,
+          {
+            schema: routeSchema({
+              summary:
+                "Read draft-bound input dataset metadata using restored definition versions",
+              tags: ["data"],
+              querystring: contracts.dataDraftInputsQuerySchema,
+              response: contracts.dataSourcesResponseSchema,
+              errors: [400, 403, 404, 409, 413, 503],
+            }),
+          },
+          (request, reply) =>
+            execute(request, reply, "data:edit", async (actor) => {
+              const resourceId = id(request, reply);
+              if (!resourceId) return;
+              const input = contracts.dataDraftInputsQuerySchema.parse(
+                request.query,
+              );
+              reply.header("cache-control", "no-store");
+              return kind === "preparations"
+                ? service.preparationInputs(actor, resourceId, input.version)
+                : service.modelInputs(actor, resourceId, input.version);
+            }),
+        );
+
         scope.get(
           `/workspaces/:workspaceId/data/${kind}/:id/history`,
           {

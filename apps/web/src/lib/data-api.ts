@@ -60,12 +60,16 @@ export async function getDataWorkspace(
   ]);
   return { ...sources, ...preparations, ...models };
 }
-export const previewData = (workspaceId: string, sourceId: string) =>
+export const previewData = (
+  workspaceId: string,
+  sourceId: string,
+  preparationDraft?: { id: string; version: number },
+) =>
   browserSend(
     dataPreviewResponseSchema,
     "POST",
     base(workspaceId) + "/preview",
-    { sourceId },
+    { sourceId, ...(preparationDraft ? { preparationDraft } : {}) },
   );
 export const previewPreparation = (
   workspaceId: string,
@@ -288,4 +292,15 @@ export const restoreModel = (
     "POST",
     base(workspaceId) + `/models/${id}/restore`,
     { version, publishedVersion },
+  );
+
+export const readDraftInputs = (
+  workspaceId: string,
+  kind: "preparations" | "models",
+  id: string,
+  version: number,
+) =>
+  read(
+    dataSourcesResponseSchema,
+    base(workspaceId) + `/${kind}/${id}/inputs?version=${version}`,
   );

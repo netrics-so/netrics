@@ -1106,9 +1106,34 @@ export function createDataService(
           warnings: [...loader.warnings, ...result.warnings],
         };
       }),
-    preview: (actor: DataActor, id: string, limit = 100) =>
+    preview: (
+      actor: DataActor,
+      id: string,
+      limit = 100,
+      draft?: DraftContext,
+    ) =>
       run(actor, async (tx, now) => {
-        const loader = loadFor(tx, actor.workspaceId, now),
+        const row = draft
+          ? await findPreparation(tx, actor.workspaceId, draft.id)
+          : null;
+        if (row && row.version !== draft!.version)
+          fail("version_conflict", 409);
+        const restored = row?.restoredFromVersion
+          ? await preparationPublication(
+              tx,
+              actor.workspaceId,
+              row.id,
+              row.restoredFromVersion,
+            )
+          : null;
+        const loader = loadFor(
+            tx,
+            actor.workspaceId,
+            now,
+            restored
+              ? { dependencies: restored.dependencies as Dependencies }
+              : {},
+          ),
           table = await loader.load(id);
         return {
           fields: table.fields,
@@ -1454,6 +1479,35 @@ export function createDataService(
           await findPreparation(tx, actor.workspaceId, id),
         ),
       })),
+    preparationInputs: (actor: DataActor, id: string, expected: number) =>
+      run(actor, async (tx, now) => {
+        const row = await findPreparation(tx, actor.workspaceId, id);
+        if (row.version !== expected) fail("version_conflict", 409);
+        const restored = row.restoredFromVersion
+          ? await preparationPublication(
+              tx,
+              actor.workspaceId,
+              id,
+              row.restoredFromVersion,
+            )
+          : null;
+        const loader = loadFor(tx, actor.workspaceId, now, {
+          allowPendingSchemas: true,
+          ...(restored
+            ? { dependencies: restored.dependencies as Dependencies }
+            : {}),
+        });
+        const inputs = [
+          ...new Set(
+            preparationGraphSchema
+              .parse(row.graph)
+              .nodes.filter((node) => node.type === "source")
+              .map((node) => node.datasetId),
+          ),
+        ];
+        for (const input of inputs) await loader.load(input);
+        return { sources: [...loader.views.values()] };
+      }),
     preparationHistory: (
       actor: DataActor,
       id: string,
@@ -1733,6 +1787,34 @@ export function createDataService(
       run(actor, async (tx) => ({
         model: modelView(await findDataModel(tx, actor.workspaceId, id)),
       })),
+    modelInputs: (actor: DataActor, id: string, expected: number) =>
+      run(actor, async (tx, now) => {
+        const row = await findDataModel(tx, actor.workspaceId, id);
+        if (row.version !== expected) fail("version_conflict", 409);
+        const restored = row.restoredFromVersion
+          ? await modelPublication(
+              tx,
+              actor.workspaceId,
+              id,
+              row.restoredFromVersion,
+            )
+          : null;
+        const definition = semanticModelDefinitionSchema.parse(row.definition);
+        const loader = loadFor(tx, actor.workspaceId, now, {
+          allowPendingSchemas: true,
+          ...(restored
+            ? { dependencies: restored.dependencies as Dependencies }
+            : {}),
+        });
+        for (const input of definition.datasets) await loader.load(input);
+        if (restored)
+          checkSchemaBindings(
+            restored.schemaBindings as Record<string, DataField[]>,
+            loader.bindings,
+            true,
+          );
+        return { sources: [...loader.views.values()] };
+      }),
     modelHistory: (
       actor: DataActor,
       id: string,

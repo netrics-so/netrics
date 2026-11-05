@@ -227,13 +227,17 @@ export const dataPreviewResponseSchema = z.object({
   truncated: z.boolean(),
   warnings: z.array(z.string()),
 });
-export const dataPreviewRequestSchema = z.strictObject({
-  sourceId: dataSourceIdSchema,
-  limit: z.number().int().min(1).max(100).optional(),
-});
 const draftContextSchema = z.strictObject({
   id: z.uuid(),
   version: z.number().int().positive(),
+});
+export const dataPreviewRequestSchema = z.strictObject({
+  sourceId: dataSourceIdSchema,
+  limit: z.number().int().min(1).max(100).optional(),
+  preparationDraft: draftContextSchema.optional(),
+});
+export const dataDraftInputsQuerySchema = z.strictObject({
+  version: z.coerce.number().int().positive(),
 });
 export const dataHistoryQuerySchema = z.strictObject({
   beforeVersion: z.coerce.number().int().positive().optional(),

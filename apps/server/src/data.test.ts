@@ -490,6 +490,26 @@ describe("data API authorization and contract", () => {
           })
         ).statusCode,
       ).toBe(404);
+      const metadata = await call(
+        "GET",
+        `/${kind}/${resourceId}/inputs?version=1`,
+        editor,
+      );
+      expect(metadata.statusCode, metadata.body).toBe(200);
+      expect(metadata.headers["cache-control"]).toBe("no-store");
+      expect(metadata.json().sources[0].fields.length).toBeGreaterThan(0);
+      expect(
+        (await call("GET", `/${kind}/${resourceId}/inputs?version=1`, viewer))
+          .statusCode,
+      ).toBe(403);
+      expect(
+        (await call("GET", `/${kind}/${resourceId}/inputs?version=1`, stranger))
+          .statusCode,
+      ).toBe(404);
+      expect(
+        (await call("GET", `/${kind}/${resourceId}/inputs?version=99`, editor))
+          .statusCode,
+      ).toBe(409);
       const restored = await call(
         "POST",
         `/${kind}/${resourceId}/restore`,

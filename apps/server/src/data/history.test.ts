@@ -273,6 +273,18 @@ describe("published definition history", () => {
       publishedVersion: 2,
       restoredFromVersion: 1,
     });
+    const nestedInputs = await service.modelInputs(
+      actor,
+      model.id,
+      model.version,
+    );
+    expect(nestedInputs.sources.map((input) => input.id)).toContain(
+      `prepared:${base.id}:output`,
+    );
+    expect(nestedInputs.sources.map((input) => input.id)).toContain(
+      `prepared:${parent.id}:output`,
+    );
+
     expect(
       (
         await service.previewModel(actor, semantic, query, {
@@ -355,6 +367,249 @@ describe("published definition history", () => {
         metadata: { fromVersion: 1, draftVersion: 3 },
       },
     ]);
+  });
+
+  it("reloads historical field and removed output identities for restored model and preparation editors", async () => {
+    const source = await service.saveManual(actor, {
+      definition: definition("history-fields"),
+      records: [{ values: { id: "a", amount: "5" } }],
+    });
+    const shaped = (prefix: string, output = "output"): PreparationGraph => ({
+      version: 1,
+      nodes: [
+        { id: "source", type: "source", datasetId: source.datasetId },
+        {
+          id: "amount",
+          type: "calculate",
+          input: "source",
+          fieldId: prefix + "_amount",
+          name: prefix + " amount",
+          expression: { kind: "field", fieldId: "amount" },
+        },
+        {
+          id: output,
+          type: "calculate",
+          input: "amount",
+          fieldId: prefix + "_group",
+          name: prefix + " group",
+          expression: { kind: "field", fieldId: "id" },
+        },
+      ],
+      outputs: [output],
+    });
+    let input = (
+      await service.savePreparation(actor, {
+        name: "Changing fields",
+        graph: shaped("old"),
+      })
+    ).preparation;
+    await service.publishPreparation(actor, input.id, input.version);
+    const sourceId = `prepared:${input.id}:output`;
+    const semantic = (
+      datasetId: string,
+      prefix: string,
+    ): SemanticModelDefinition => ({
+      version: 1,
+      datasets: [datasetId],
+      relationships: [],
+      dimensions: [
+        { id: "group", name: "Group", datasetId, fieldId: prefix + "_group" },
+      ],
+      measures: [
+        {
+          id: "total",
+          name: "Total",
+          kind: "aggregate",
+          datasetId,
+          aggregate: {
+            id: "total",
+            name: "Total",
+            op: "sum",
+            fieldId: prefix + "_amount",
+          },
+        },
+      ],
+    });
+    let model = (
+      await service.saveModel(actor, {
+        name: "Historical fields",
+        definition: semantic(sourceId, "old"),
+      })
+    ).model;
+    await service.publishModel(actor, model.id, model.version);
+    const select = (prefix: string): PreparationGraph => ({
+      version: 1,
+      nodes: [
+        { id: "source", type: "source", datasetId: sourceId },
+        {
+          id: "selected",
+          type: "select",
+          input: "source",
+          fields: [prefix + "_amount", prefix + "_group"],
+        },
+      ],
+      outputs: ["selected"],
+    });
+    let parent = (
+      await service.savePreparation(actor, {
+        name: "Historical input",
+        graph: select("old"),
+      })
+    ).preparation;
+    await service.publishPreparation(actor, parent.id, parent.version);
+
+    input = (
+      await service.savePreparation(
+        actor,
+        { name: input.name, graph: shaped("new"), version: input.version },
+        input.id,
+      )
+    ).preparation;
+    await service.publishPreparation(actor, input.id, input.version);
+    parent = (
+      await service.savePreparation(
+        actor,
+        { name: parent.name, graph: select("new"), version: parent.version },
+        parent.id,
+      )
+    ).preparation;
+    await service.publishPreparation(actor, parent.id, parent.version);
+    model = (
+      await service.saveModel(
+        actor,
+        {
+          name: model.name,
+          definition: semantic(sourceId, "new"),
+          version: model.version,
+        },
+        model.id,
+      )
+    ).model;
+    await service.publishModel(actor, model.id, model.version);
+    expect(
+      (await service.listSources(actor)).sources
+        .find((item) => item.id === sourceId)!
+        .fields.map((field) => field.id),
+    ).not.toContain("old_amount");
+
+    model = (
+      await service.restoreModel(actor, model.id, {
+        version: model.version,
+        publishedVersion: 1,
+      })
+    ).model;
+    parent = (
+      await service.restorePreparation(actor, parent.id, {
+        version: parent.version,
+        publishedVersion: 1,
+      })
+    ).preparation;
+    // A fresh editor obtains metadata from persisted draft pins, never from stale client state.
+    const reloadedModel = (await service.getModel(actor, model.id)).model;
+    const reloadedParent = (await service.getPreparation(actor, parent.id))
+      .preparation;
+    for (const metadata of [
+      await service.modelInputs(actor, model.id, reloadedModel.version),
+      await service.preparationInputs(actor, parent.id, reloadedParent.version),
+    ]) {
+      expect(metadata.sources.find((entry) => entry.id === sourceId)!.id).toBe(
+        sourceId,
+      );
+      expect(
+        metadata.sources
+          .find((entry) => entry.id === sourceId)!
+          .fields.map((field) => field.id),
+      ).toContain("old_amount");
+      expect(
+        metadata.sources
+          .find((entry) => entry.id === sourceId)!
+          .fields.map((field) => field.id),
+      ).toContain("old_group");
+      expect(
+        metadata.sources
+          .find((entry) => entry.id === sourceId)!
+          .fields.map((field) => field.id),
+      ).not.toContain("new_amount");
+    }
+    expect(
+      (
+        await service.preview(actor, sourceId, 100, {
+          id: parent.id,
+          version: parent.version,
+        })
+      ).fields.map((field) => field.id),
+    ).toContain("old_amount");
+    expect(
+      (await service.preview(actor, sourceId)).fields.map((field) => field.id),
+    ).not.toContain("old_amount");
+    const grouping = { measureIds: ["total"], groupBy: ["group"] };
+    expect(
+      (
+        await service.previewModel(actor, model.definition, grouping, {
+          id: model.id,
+          version: model.version,
+        })
+      ).rows,
+    ).toMatchObject([
+      { dimensions: { group: "a" }, measures: { total: { value: "5" } } },
+    ]);
+    expect(
+      (
+        await service.previewPreparation(actor, parent.graph, {
+          id: parent.id,
+          version: parent.version,
+        })
+      ).outputs.selected!.fields.map((field) => field.id),
+    ).toEqual(["old_amount", "old_group"]);
+
+    // The historical output itself may disappear from the current public catalog.
+    input = (
+      await service.savePreparation(
+        actor,
+        {
+          name: input.name,
+          graph: shaped("replacement", "replacement"),
+          version: input.version,
+        },
+        input.id,
+      )
+    ).preparation;
+    await service.publishPreparation(actor, input.id, input.version);
+    expect(
+      (await service.listSources(actor)).sources.some(
+        (item) => item.id === sourceId,
+      ),
+    ).toBe(false);
+    expect(
+      (await service.modelInputs(actor, model.id, model.version)).sources.find(
+        (entry) => entry.id === sourceId,
+      )!.id,
+    ).toBe(sourceId);
+    expect(
+      (
+        await service.preparationInputs(actor, parent.id, parent.version)
+      ).sources
+        .find((entry) => entry.id === sourceId)!
+        .fields.map((field) => field.id),
+    ).toContain("old_amount");
+    await expect(
+      service.modelInputs(other, model.id, model.version),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      service.preparationInputs(other, parent.id, parent.version),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      service.modelInputs(actor, model.id, model.version - 1),
+    ).rejects.toThrow("version_conflict");
+    await expect(
+      service.preparationInputs(actor, parent.id, parent.version - 1),
+    ).rejects.toThrow("version_conflict");
+    await service.publishModel(actor, model.id, model.version);
+    await service.publishPreparation(actor, parent.id, parent.version);
+    expect(
+      (await service.query(actor, model.id, grouping)).rows[0]!.measures.total!
+        .value,
+    ).toBe("5");
   });
 
   it("rejects foreign publications, stale draft versions, removed and expired inputs atomically", async () => {
