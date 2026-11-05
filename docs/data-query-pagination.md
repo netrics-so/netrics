@@ -58,7 +58,10 @@ Page sessions share `querySnapshotCount` capacity with last-valid query snapshot
 The server preserves existing sessions when capacity is full. A new pinned
 request then returns its ordinary first result with
 `immutable_pagination_unavailable` and no token. Pending/incomplete inputs and
-last-valid fallback results also cannot start a session. Setting
+last-valid fallback results also cannot start a session. Every loaded prepared
+output needs a retained cache identity; a cache-capacity refusal also prevents
+starting a session. Expired snapshot identities free capacity on the next
+successful query without waiting for scheduled maintenance. Setting
 `querySnapshotCount` or `querySnapshotSeconds` to `0` disables storing and reusing
 query snapshots, including last-valid fallback. Other data/execution quotas
 remain positive or `null`.

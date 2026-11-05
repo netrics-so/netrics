@@ -10,6 +10,7 @@ import {
 import { sourceDatasetSchema } from "@netrics/contracts";
 import {
   DEFAULT_DATA_POLICY,
+  type DataPolicy,
   type SemanticModelDefinition,
 } from "@netrics/domain";
 import { createTestDatabase } from "../test-db.js";
@@ -61,12 +62,15 @@ afterAll(async () => {
   await admin?.end({ timeout: 5 });
 });
 
-async function fixture(nested = false) {
+async function fixture(nested = false, defaults: Partial<DataPolicy> = {}) {
   const [workspace] =
     await admin`insert into workspaces(name) values ('Pagination') returning id`;
   const actor: DataActor = { workspaceId: workspace!.id as string, callerId };
   let now = NOW;
-  const service = createDataService(db, () => now);
+  const service = createDataService(db, () => now, {
+    ...DEFAULT_DATA_POLICY,
+    ...defaults,
+  });
   const records = ["a", "b", "c", "d"].map((id, index) => ({
     values: { id, amount: String(index + 1) },
   }));
@@ -294,6 +298,83 @@ describe("immutable semantic result pagination", () => {
     await expect(
       f.read({ ...query, pageToken: first.nextPageToken! }),
     ).rejects.toThrow("data_snapshot_unavailable");
+  });
+
+  it("rebuilds expired matching prepared caches while keeping old page sessions unavailable", async () => {
+    const f = await fixture(true, { preparedCacheSeconds: 5 });
+    const sibling = await f.service.savePreparation(f.actor, {
+      name: "Unused preparation",
+      graph: {
+        version: 1,
+        nodes: [
+          { id: "source", type: "source", datasetId: f.source.datasetId },
+        ],
+        outputs: ["source"],
+      },
+    });
+    await f.service.publishPreparation(f.actor, sibling.preparation.id, 1);
+    const siblingCache =
+      await admin`select id from data_prepared_generations where preparation_id=${sibling.preparation.id}`;
+    const first = await f.read();
+    expect(first.pageExpiresAt).toBe(
+      new Date(NOW.getTime() + 5_000).toISOString(),
+    );
+    const oldPrepared = first.provenance.filter((p) =>
+      p.datasetId.startsWith("prepared:"),
+    );
+    f.advance(6_000);
+    await expect(
+      f.read({ ...query, pageToken: first.nextPageToken! }),
+    ).rejects.toThrow("data_page_unavailable");
+    const rebuilt = await f.read(query);
+    expect(rebuilt.rows).toEqual(first.rows);
+    expect(rebuilt.provenance).toContainEqual({
+      datasetId: f.source.datasetId,
+      generationId: f.source.generationId,
+    });
+    for (const old of oldPrepared)
+      expect(rebuilt.provenance).not.toContainEqual(old);
+    expect(
+      await admin`select id from data_prepared_generations where preparation_id=${sibling.preparation.id}`,
+    ).toEqual(siblingCache);
+    const pinned = await f.read();
+    expect(pinned.nextPageToken).toBeDefined();
+    expect(pinned.pageExpiresAt).toBe(
+      new Date(NOW.getTime() + 11_000).toISOString(),
+    );
+    await expect(
+      f.read({ ...query, pageToken: first.nextPageToken! }),
+    ).rejects.toThrow("data_page_unavailable");
+  });
+
+  it("does not issue immutable tokens for unretained prepared outputs when cache capacity can later change", async () => {
+    const f = await fixture(true, { maxPreparedBytes: 1 });
+    const first = await f.read();
+    expect(first.rows).toHaveLength(1);
+    expect(
+      first.provenance.some((p) => p.datasetId.startsWith("prepared:")),
+    ).toBe(false);
+    expect(first.warnings).toContain("prepared_cache_capacity_reached");
+    expect(first.warnings).toContain("immutable_pagination_unavailable");
+    expect(first.nextPageToken).toBeUndefined();
+    expect(
+      await admin`select id from data_prepared_generations where workspace_id=${f.actor.workspaceId}`,
+    ).toHaveLength(0);
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      maxPreparedBytes: null,
+    });
+    const retained = await f.read();
+    expect(retained.rows).toEqual(first.rows);
+    expect(
+      retained.provenance.filter((p) => p.datasetId.startsWith("prepared:")),
+    ).toHaveLength(2);
+    expect(retained.nextPageToken).toBeDefined();
+    const second = await f.read({
+      ...query,
+      pageToken: retained.nextPageToken!,
+    });
+    expect(second.provenance).toEqual(retained.provenance);
+    expect(second.rows[0]?.dimensions.id).toBe("b");
   });
 
   it("rejects continuations when non-retained resource names or legacy observations change", async () => {

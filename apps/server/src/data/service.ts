@@ -399,6 +399,19 @@ export function createDataLoader(
         result = execution.outputs[output]!;
         if (!override && !warnings.has("data_source_pending")) {
           const byteSize = Buffer.byteLength(JSON.stringify(execution.outputs));
+          // The immutable key remains unique after its cache deadline. Reclaim
+          // only this expired entry before rebuilding the same input vector.
+          await tx
+            .delete(schema.dataPreparedGenerations)
+            .where(
+              and(
+                eq(schema.dataPreparedGenerations.workspaceId, workspaceId),
+                eq(schema.dataPreparedGenerations.preparationId, preparationId),
+                eq(schema.dataPreparedGenerations.version, version),
+                eq(schema.dataPreparedGenerations.inputKey, inputKey),
+                lte(schema.dataPreparedGenerations.expiresAt, now),
+              ),
+            );
           const [usage] = await tx
             .select({
               bytes: sql<string>`coalesce(sum(${schema.dataPreparedGenerations.byteSize}),0)`,
@@ -1930,6 +1943,10 @@ export async function queryDataModel(
       if (
         !execution.loader.warnings.has("data_source_pending") &&
         !execution.loader.warnings.has("retained_source_history_incomplete") &&
+        [...execution.loader.views.values()].every(
+          (source) =>
+            source.kind !== "prepared" || source.generationId !== null,
+        ) &&
         !exceedsDataPolicy(snapshotCount + 1, policy.querySnapshotCount) &&
         policy.querySnapshotSeconds !== 0
       ) {
