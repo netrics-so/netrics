@@ -48,6 +48,7 @@ import {
   TOP_TERRITORIES,
   syncSalesPage,
 } from "./sales-sync.js";
+import { salesDataset } from "./sales-dataset.js";
 
 export {
   APP_STORE_CONNECT_API,
@@ -279,7 +280,7 @@ const appStoreConnectDe: ManifestTranslation = {
 
 export const appStoreConnectManifest: ConnectorManifest = {
   id: "app-store-connect",
-  version: "0.1.3",
+  version: "0.1.4",
   sdkVersion: "^0.2.9",
   category: "apps",
   brandColor: "#0d84ff",
@@ -313,7 +314,7 @@ export const appStoreConnectManifest: ConnectorManifest = {
     required: ["vendorNumber"],
     additionalProperties: false,
   },
-  datasets: [storeRatingsDataset],
+  datasets: [storeRatingsDataset, salesDataset],
   metrics: [
     {
       key: SALES_METRIC_KEYS.downloads,
@@ -655,6 +656,8 @@ export interface AppStoreConnectConnectorOptions {
   analytics?: boolean;
   /** Read public all-version storefront rating snapshots (default true). */
   ratings?: boolean;
+  /** Retain typed original sales records (default true). */
+  rawSales?: boolean;
 }
 
 /**
@@ -694,6 +697,7 @@ export function createAppStoreConnectConnector(
   const log = options.log ?? ((message: string) => console.warn(message));
   const analytics = options.analytics ?? true;
   const ratings = options.ratings ?? true;
+  const rawSales = options.rawSales ?? true;
 
   function token(context: ConnectionContext): string {
     const value = accessTokenOf(context);
@@ -880,6 +884,8 @@ export function createAppStoreConnectConnector(
       now: now(),
       vendorNumber,
       log,
+      rawData: rawSales,
+      listAppIds: appIdsOf,
       listAppSkus: async () =>
         new Map(
           (await listApps(client)).flatMap((app) =>
@@ -891,10 +897,14 @@ export function createAppStoreConnectConnector(
       return sales;
     }
     if (!analytics) {
-      return afterAnalytics(sales.observations, sales.nextCursor!);
+      return {
+        ...afterAnalytics(sales.observations, sales.nextCursor!),
+        ...(sales.datasetPages ? { datasetPages: sales.datasetPages } : {}),
+      };
     }
     return {
       observations: sales.observations,
+      ...(sales.datasetPages ? { datasetPages: sales.datasetPages } : {}),
       nextCursor: analyticsCursor(0, sales.nextCursor!),
       done: false,
     };

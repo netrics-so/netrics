@@ -111,6 +111,7 @@ async function runAll(
 ) {
   const connector = createAppStoreConnectConnector({
     ratings: false,
+    rawSales: false,
     now: () => NOW,
     analytics: false,
     log: (message) => options.log?.push(message),
@@ -215,6 +216,7 @@ describe("without a reviews key", () => {
   it("ends a resumed reviews page when the key was removed meanwhile", async () => {
     const connector = createAppStoreConnectConnector({
       ratings: false,
+      rawSales: false,
       now: () => NOW,
       log: () => {},
     });
@@ -468,6 +470,7 @@ describe("reviews sync", () => {
     const log: string[] = [];
     const connector = createAppStoreConnectConnector({
       ratings: false,
+      rawSales: false,
       now: () => NOW,
       log: (message) => log.push(message),
     });
@@ -493,6 +496,7 @@ describe("reviews sync", () => {
     const log: string[] = [];
     const connector = createAppStoreConnectConnector({
       ratings: false,
+      rawSales: false,
       now: () => NOW,
       log: (message) => log.push(message),
     });

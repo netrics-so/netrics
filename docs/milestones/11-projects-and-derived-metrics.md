@@ -160,3 +160,6 @@ implementation work; this plan does not create or complete issue records.
   - Apple storefront rating snapshots: [#452](https://github.com/netrics-so/netrics/issues/452).
     Implements the scoped raw rating/count source, not the complete portfolio
     template or Google Play gate.
+  - Original Apple sales rows and authoritative app/window corrections:
+    [#454](https://github.com/netrics-so/netrics/issues/454). General preparations
+    can calculate proceeds and classify downloads from these retained fields.

@@ -13,6 +13,7 @@ import {
   dataSourcesResponseSchema,
   modelQueryResponseSchema,
   modelResponseSchema,
+  preparationResponseSchema,
   errorResponseSchema,
   workspaceListResponseSchema,
 } from "@netrics/contracts";
@@ -585,6 +586,129 @@ describe("App Store Connect connections", () => {
         (item) => new URL(item.url).searchParams.get("country") === "us",
       ),
     ).toBe(true);
+  });
+
+  it("prepares exact proceeds from raw report rows and removes rows deleted by a correction", async () => {
+    const source = dataSourcesResponseSchema
+      .parse((await call("GET", "/data/sources")).json())
+      .sources.find(
+        (item) =>
+          item.connectionId === ids.a &&
+          item.name === "App Store sales report rows",
+      );
+    expect(source).toMatchObject({
+      aggregated: false,
+      rowCount: 3,
+      expiresAt: null,
+    });
+    const preparation = await call("POST", "/data/preparations", {
+      name: "Exact proceeds",
+      graph: {
+        version: 1,
+        nodes: [
+          { id: "raw", type: "source", datasetId: source!.id },
+          {
+            id: "amounts",
+            type: "calculate",
+            input: "raw",
+            fieldId: "proceeds",
+            name: "Developer proceeds",
+            expression: {
+              kind: "call",
+              fn: "multiply",
+              args: [
+                { kind: "field", fieldId: "units" },
+                { kind: "field", fieldId: "developer_proceeds_per_unit" },
+              ],
+            },
+          },
+        ],
+        outputs: ["amounts"],
+      },
+    });
+    expect(preparation.statusCode, preparation.body).toBe(200);
+    const preparationId = preparationResponseSchema.parse(preparation.json())
+      .preparation.id;
+    const publishedPreparation = await call(
+      "POST",
+      `/data/preparations/${preparationId}/publish`,
+      { version: 1 },
+    );
+    expect(publishedPreparation.statusCode, publishedPreparation.body).toBe(
+      200,
+    );
+    const datasetId = `prepared:${preparationId}:amounts`;
+    const model = await call("POST", "/data/models", {
+      name: "Calculated store proceeds",
+      definition: {
+        version: 1,
+        datasets: [datasetId],
+        relationships: [],
+        dimensions: [
+          { id: "currency", name: "Currency", datasetId, fieldId: "currency" },
+        ],
+        measures: [
+          {
+            id: "proceeds",
+            name: "Developer proceeds",
+            kind: "aggregate",
+            datasetId,
+            aggregate: {
+              id: "proceeds",
+              name: "Developer proceeds",
+              op: "sum",
+              fieldId: "proceeds",
+            },
+          },
+        ],
+      },
+    });
+    expect(model.statusCode, model.body).toBe(200);
+    const modelId = modelResponseSchema.parse(model.json()).model.id;
+    const publication = await call("POST", `/data/models/${modelId}/publish`, {
+      version: 1,
+    });
+    expect(publication.statusCode, publication.body).toBe(200);
+    const query = async () => {
+      const response = await call("POST", `/data/models/${modelId}/query`, {
+        measureIds: ["proceeds"],
+        groupBy: ["currency"],
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      return modelQueryResponseSchema.parse(response.json());
+    };
+    const first = await query();
+    expect(
+      first.rows.map((row) => [
+        row.dimensions.currency,
+        row.measures.proceeds?.value,
+      ]),
+    ).toEqual([
+      ["JPY", "84"],
+      ["USD", "1.4"],
+    ]);
+    TEAM_A.reports!["2026-09-30"] = alphaReport(5)
+      .split("\n")
+      .filter((_, index) => index !== 3)
+      .map((line, index) => {
+        if (index !== 2) return line;
+        const fields = line.split("\t");
+        fields[REPORT_HEADER.indexOf("Units")] = "-1";
+        return fields.join("\t");
+      })
+      .join("\n");
+    await runSync(ids.a);
+    const second = await query();
+    expect(second.rows).toHaveLength(1);
+    expect(second.rows[0]).toMatchObject({
+      dimensions: { currency: "USD" },
+      measures: { proceeds: { value: "-0.7", currency: "USD", status: "ok" } },
+    });
+    expect(second.provenance).not.toEqual(first.provenance);
+    const corrected = dataSourcesResponseSchema
+      .parse((await call("GET", "/data/sources")).json())
+      .sources.find((item) => item.id === source!.id);
+    expect(corrected?.rowCount).toBe(2);
   });
 
   it("shows the stored key's issuer ID and key ID, never the private key", async () => {

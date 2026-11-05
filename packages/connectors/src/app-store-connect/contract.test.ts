@@ -47,7 +47,11 @@ const TEAM_A: FakeTeam = {
 };
 
 function connector() {
-  return createAppStoreConnectConnector({ ratings: false, now: () => NOW });
+  return createAppStoreConnectConnector({
+    ratings: false,
+    rawSales: false,
+    now: () => NOW,
+  });
 }
 
 function context(

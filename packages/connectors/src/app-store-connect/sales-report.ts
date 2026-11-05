@@ -137,6 +137,8 @@ export interface SalesRow {
   /** For an in-app purchase: the SKU of its app. */
   parentId: string;
   device: string;
+  /** Original provider columns, including columns not used by fixed metrics. */
+  providerFields: Record<string, string>;
 }
 
 const DECIMAL = /^[-+]?\d+(\.\d+)?$/;
@@ -154,11 +156,16 @@ export function parseDecimal(raw: string, what: string): number {
 /**
  * Parses a report's tab-separated text. Columns are matched by header name,
  * never by position: a missing column the sync needs fails the report, and
- * columns it does not know are ignored.
+ * additional columns are retained for user-defined preparations.
  */
 export function parseSalesReport(text: string): SalesRow[] {
   const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
   const header = (lines[0] ?? "").split("\t").map((name) => name.trim());
+  if (new Set(header).size !== header.length || header.some((name) => !name)) {
+    throw new Error(
+      "App Store sales report has duplicate or empty column names",
+    );
+  }
   const index = {} as Record<Column, number>;
   const missing: string[] = [];
   for (const [column, names] of Object.entries(COLUMNS) as Array<
@@ -189,6 +196,9 @@ export function parseSalesReport(text: string): SalesRow[] {
       appleId: field("appleId"),
       parentId: field("parentId"),
       device: field("device"),
+      providerFields: Object.fromEntries(
+        header.map((name, position) => [name, fields[position] ?? ""]),
+      ),
     });
   }
   return rows;
