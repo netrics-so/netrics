@@ -58153,7 +58153,8 @@
                             "enum": [
                               "running",
                               "succeeded",
-                              "failed"
+                              "failed",
+                              "continued"
                             ]
                           },
                           "requestedFrom": {

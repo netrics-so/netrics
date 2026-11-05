@@ -996,7 +996,7 @@ export type ConnectionsResponse = z.infer<typeof connectionsResponseSchema>;
 export const syncRunSchema = z.object({
   id: z.uuid(),
   mode: z.enum(["backfill", "incremental"]),
-  status: z.enum(["running", "succeeded", "failed"]),
+  status: z.enum(["running", "succeeded", "failed", "continued"]),
   requestedFrom: z.iso.datetime(),
   requestedTo: z.iso.datetime(),
   cursorBefore: z.string().nullable(),

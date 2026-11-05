@@ -270,6 +270,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       },
       runStatus: {
         running: "läuft",
+        continued: "wird fortgesetzt",
         succeeded: "erfolgreich",
         failed: "fehlgeschlagen",
       },

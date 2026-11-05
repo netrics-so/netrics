@@ -255,6 +255,7 @@ export const workspaceEn = {
       },
       runStatus: {
         running: "running",
+        continued: "continuing",
         succeeded: "succeeded",
         failed: "failed",
       },

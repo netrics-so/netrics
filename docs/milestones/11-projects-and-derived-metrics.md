@@ -154,6 +154,8 @@ implementation work; this plan does not create or complete issue records.
 - Umbrella: [#439](https://github.com/netrics-so/netrics/issues/439)
 - 11A: [#440](https://github.com/netrics-so/netrics/issues/440)
 - 11B: [#441](https://github.com/netrics-so/netrics/issues/441)
+  - Cooperative sync continuations across configurable page budgets:
+    [#456](https://github.com/netrics-so/netrics/issues/456).
 - 11C: [#442](https://github.com/netrics-so/netrics/issues/442)
 - 11D: [#443](https://github.com/netrics-so/netrics/issues/443)
 - 11E: [#444](https://github.com/netrics-so/netrics/issues/444)

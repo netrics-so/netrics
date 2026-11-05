@@ -357,6 +357,7 @@ const resumePagerConnector = pagerConnector(
 
 /** Never finishes: every page advances an opaque cursor. */
 let endlessPages = 0;
+let endlessRequests: SyncRequest[] = [];
 const endlessConnector: Connector = {
   manifest: testManifest("endless", "endless.hits"),
   async check() {
@@ -365,8 +366,12 @@ const endlessConnector: Connector = {
   async discover() {
     return [];
   },
-  async sync() {
+  async sync(context, request) {
     endlessPages += 1;
+    endlessRequests.push(request);
+    const done =
+      typeof context.config.finishAfter === "number" &&
+      endlessPages >= context.config.finishAfter;
     return {
       observations: [
         {
@@ -376,8 +381,10 @@ const endlessConnector: Connector = {
           dimensions: { resource: `page-${endlessPages}` },
         },
       ],
-      nextCursor: `page-${String(endlessPages + 1).padStart(4, "0")}`,
-      done: false,
+      nextCursor: done
+        ? request.to
+        : `page-${String(endlessPages + 1).padStart(4, "0")}`,
+      done,
     };
   },
 };
@@ -1089,12 +1096,12 @@ describe("page-wise ingest (#145)", () => {
     ).toBe(3 * perPage);
   });
 
-  it("a connector paging without end fails as contract, keeping the pages it committed", async () => {
+  it("yields at the configured page budget, keeping progress without reporting an outage", async () => {
     endlessPages = 0;
     const connectionId = await seedConnection(workspaceA, "endless");
     await expect(
       runAttempt("connection.backfill", workspaceA, connectionId, 0),
-    ).rejects.toThrow(/configured sync page budget/);
+    ).rejects.toThrow(/Continue from the committed checkpoint/);
 
     const state = await committed(connectionId);
     expect(endlessPages).toBe(100);
@@ -1102,13 +1109,67 @@ describe("page-wise ingest (#145)", () => {
     expect(state.cursor).toBe("page-0101");
     const runs = await syncRunsFor(workspaceA, connectionId);
     expect(runs).toHaveLength(1);
-    expect(runs[0]!.status).toBe("failed");
-    expect(runs[0]!.error_class).toBe("contract");
+    expect(runs[0]!.status).toBe("continued");
+    expect(runs[0]!.error_class).toBeNull();
     expect(runs[0]!.observations_written).toBe(100);
     expect(runs[0]!.cursor_after).toBe("page-0101");
     const row = await stateFor(workspaceA, connectionId);
     expect(row!.lastSuccessAt).toBeNull();
-    expect(row!.consecutiveFailures).toBe(1);
+    expect(row!.consecutiveFailures).toBe(0);
+  });
+
+  it("finishes a large backfill across worker budgets with one job identity and no lost pages", async () => {
+    endlessPages = 0;
+    endlessRequests = [];
+    const connectionId = await seedConnection(workspaceA, "endless", {
+      finishAfter: 205,
+    });
+    const jobId = await withWorkspace(
+      appDb,
+      { workspaceId: workspaceA },
+      (tx) =>
+        enqueueJob(tx, {
+          kind: "connection.backfill",
+          workspaceId: workspaceA,
+          connectionId,
+          maxAttempts: 1,
+        }),
+    );
+    await waitFor(
+      async () => (await jobRow(jobId))?.status === "succeeded",
+      15_000,
+    );
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs.map((run) => run.status).sort()).toEqual([
+      "continued",
+      "continued",
+      "succeeded",
+    ]);
+    expect(
+      runs.every((run) => run.attempt === 1 && run.error_class === null),
+    ).toBe(true);
+    expect(
+      runs.reduce((total, run) => total + Number(run.observations_written), 0),
+    ).toBe(205);
+    expect((await committed(connectionId)).observations).toBe(205);
+    expect(
+      new Set(
+        endlessRequests.map((request) =>
+          JSON.stringify([request.from, request.to]),
+        ),
+      ).size,
+    ).toBe(1);
+    expect(endlessRequests[100]?.cursor).toBe("page-0101");
+    expect(endlessRequests[200]?.cursor).toBe("page-0201");
+    expect(await jobRow(jobId)).toMatchObject({
+      status: "succeeded",
+      attempts: 0,
+    });
+    expect(await stateFor(workspaceA, connectionId)).toMatchObject({
+      authState: "ok",
+      consecutiveFailures: 0,
+      backfillJobId: jobId,
+    });
   });
 
   it("ingests a page wider than one INSERT can bind", async () => {

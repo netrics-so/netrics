@@ -45,6 +45,26 @@ Implement the queue ourselves as a single durable `jobs` table, claimed with
 - `idempotency_key` (unique, nullable) lets enqueuers suppress duplicates for
   scheduled recurring jobs.
 
+### Cooperative continuation (milestone 11, #456)
+
+Finite connector-page budgets control one worker turn, not the total size of
+an import. After durable progress, `ContinueJobError` releases the lease and
+moves that same job to `continuing` with a short scheduling delay. Its payload
+keeps a reserved `continuation` object; sync handlers pin the original reporting
+window there. The checkpoint remains in connection state. Successful handoffs
+do not increment attempts or set outage/last-success state. History records a
+`continued` sync segment; only completion records the full sync as successful.
+
+`continuing` is distinct from a newly queued `pending` sync. The existing
+one-pending-sync/backfill indexes can keep their coalescing behavior while an
+active continuation waits. Claiming reserves that connection for its oldest
+continuation until completion or cancellation; a later request cannot overwrite
+its cursor, and other connections can run during the delay. Retries and stale
+lease recovery preserve the continuation marker, current-owner fencing and the
+usual failure-attempt policy. A new backfill request supersedes waiting
+continuations under the same rules as waiting backfills; connection deletion
+cancels them. The claim index covers both schedulable states.
+
 ## Alternatives considered
 
 - **pg-boss** — feature-complete, but it owns its own schema, functions, and

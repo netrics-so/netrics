@@ -8,6 +8,7 @@ import { createDefaultRegistry } from "./connectors.js";
 import {
   claimJobs,
   completeJob,
+  deferJob,
   createDatabase,
   failJob,
   heartbeat,
@@ -22,6 +23,7 @@ import { createOAuthProviders } from "./oauth/config.js";
 import { createOAuthTokenService } from "./oauth/tokens.js";
 import {
   createJobHandlers,
+  ContinueJobError,
   NonRetryableJobError,
   TerminalJobError,
   type JobHandler,
@@ -172,6 +174,30 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
         jobLogger.warn("job finished after its lease was lost; not completed");
       }
     } catch (error) {
+      if (error instanceof ContinueJobError) {
+        stopRenewing();
+        try {
+          const deferred = await deferJob(
+            schedulerDb,
+            job.id,
+            workerId,
+            error.continuation,
+          );
+          if (deferred) jobLogger.info("job continues from checkpoint");
+          else
+            jobLogger.warn(
+              "job lease lost before continuation; not rescheduled",
+            );
+        } catch (deferError) {
+          // Leave the running lease for normal crash recovery. An expected
+          // handoff must never become a provider failure or consume a retry.
+          jobLogger.error(
+            { err: safeErrorMessage(deferError) },
+            "failed to schedule continuation",
+          );
+        }
+        return;
+      }
       // NonRetryable → dead-letter; Terminal → 'failed' (no retries, no
       // dead-letter, e.g. rejected credentials); anything else retries.
       const terminal = error instanceof TerminalJobError;
