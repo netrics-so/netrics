@@ -44,6 +44,7 @@ export default async function WorkspaceLayout({
       permissions={{
         viewDevices: can(membership.role, "devices:view"),
         createConnections: can(membership.role, "connections:create"),
+        editData: can(membership.role, "data:edit"),
       }}
       sourceCount={connections.length}
       attention={sourcesNeedingAttention(connections)}

@@ -1,3 +1,4 @@
+import { dataEn } from "./data/en";
 import { accountEn } from "./account/en";
 import { apiErrorsEn } from "./api-errors/en";
 import { authEn } from "./auth/en";
@@ -38,6 +39,7 @@ export const EN_AREAS = {
   screens: screensEn,
   shell: shellEn,
   sources: sourcesEn,
+  data: dataEn,
 } as const;
 
 export const en = {
@@ -55,6 +57,7 @@ export const en = {
   ...screensEn,
   ...shellEn,
   ...sourcesEn,
+  ...dataEn,
 } as const;
 
 export type WebMessages = typeof en;

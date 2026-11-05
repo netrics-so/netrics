@@ -43,6 +43,12 @@ const PATHS: Record<NavKey, ReactNode> = {
       <path d="M10 7v6M7 10h6" />
     </>
   ),
+  data: (
+    <>
+      <rect x="3" y="3.5" width="14" height="13" rx="2" />
+      <path d="M3 8h14M8 8v8.5M3 12h14" />
+    </>
+  ),
   screens: (
     <>
       <rect x="2.5" y="4" width="15" height="9.5" rx="1.5" />

@@ -286,6 +286,26 @@ export function registerDataRoutes(
           execute(request, reply, "data:edit", (a) => service.listModels(a)),
       );
       scope.post(
+        "/workspaces/:workspaceId/data/models/preview",
+        {
+          schema: doc(
+            "Preview an unsaved model without persisting a draft",
+            contracts.modelQueryResponseSchema,
+            contracts.modelDefinitionPreviewRequestSchema,
+          ),
+        },
+        (request, reply) =>
+          execute(request, reply, "data:preview", async (a) => {
+            const body = parseBody(
+              contracts.modelDefinitionPreviewRequestSchema,
+              request,
+              reply,
+            );
+            if (!body) return;
+            return service.previewModel(a, body.definition, body.query);
+          }),
+      );
+      scope.post(
         "/workspaces/:workspaceId/data/models",
         {
           schema: doc(

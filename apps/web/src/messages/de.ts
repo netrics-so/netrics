@@ -1,3 +1,4 @@
+import { dataDe } from "./data/de";
 import type { Catalog } from "@netrics/domain";
 
 import { accountDe } from "./account/de";
@@ -41,4 +42,5 @@ export const de: Catalog<WebMessages> = {
   ...screensDe,
   ...shellDe,
   ...sourcesDe,
+  ...dataDe,
 };

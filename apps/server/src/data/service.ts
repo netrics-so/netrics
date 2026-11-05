@@ -9,6 +9,7 @@ import {
 } from "@netrics/contracts";
 import {
   DataProcessingError,
+  DATA_EXECUTION_VERSION,
   ProcessingBudget,
   executePreparation,
   querySemanticModel,
@@ -58,6 +59,16 @@ interface Dependencies {
 interface OutputSchema {
   fields: DataField[];
   rowCount: number;
+  aggregated?: boolean;
+}
+function outputName(name: string, graph: PreparationGraph, output: string) {
+  if (graph.outputs.length === 1) return name;
+  const node = graph.nodes.find((node) => node.id === output);
+  return (
+    name +
+    " / " +
+    (node?.type === "calculate" ? node.name : graph.outputs.indexOf(output) + 1)
+  );
 }
 interface SourceView {
   id: string;
@@ -192,12 +203,13 @@ export function createDataLoader(
           inputs.set(node.datasetId, await load(node.datasetId));
       const inputKey = createHash("sha256")
         .update(
-          stable(
-            [...inputs.entries()].map(([source, table]) => ({
+          stable({
+            engine: DATA_EXECUTION_VERSION,
+            inputs: [...inputs.entries()].map(([source, table]) => ({
               source,
               provenance: table.provenance ?? [],
             })),
-          ),
+          }),
         )
         .digest("hex");
       const [cachedGeneration] = override
@@ -291,13 +303,13 @@ export function createDataLoader(
         };
       views.set(id, {
         id,
-        name: parent.name + " / " + output,
+        name: outputName(parent.name, graph, output),
         kind: "prepared",
         fields: result.fields,
         generationId: preparedGenerationId ?? null,
         rowCount: result.rows.length,
         schemaVersion: version,
-        aggregated: true,
+        aggregated: result.aggregated ?? false,
         expiresAt: result.expiresAt ?? null,
         connectionId: null,
       });
@@ -346,6 +358,7 @@ export function createDataLoader(
       result = {
         fields,
         rows: read.rows,
+        aggregated: true,
         provenance: [{ datasetId: id, generationId: generations[id]! }],
       };
       views.set(id, {
@@ -671,13 +684,17 @@ export function createDataService(
         ))
           items.push({
             id: "prepared:" + parent.id + ":" + node,
-            name: parent.name + " / " + node,
+            name: outputName(
+              parent.name,
+              preparationGraphSchema.parse(version.graph),
+              node,
+            ),
             kind: "prepared",
             fields: output.fields,
             generationId: null,
             rowCount: null,
             schemaVersion: version.version,
-            aggregated: true,
+            aggregated: output.aggregated ?? false,
             expiresAt: null,
             connectionId: null,
           });
@@ -738,6 +755,28 @@ export function createDataService(
   };
   return {
     listSources,
+    previewModel: (
+      actor: DataActor,
+      definition: SemanticModelDefinition,
+      query: Omit<ModelQuery, "now">,
+    ) =>
+      run(actor, async (tx, now) => {
+        const parsed = semanticModelDefinitionSchema.parse(definition),
+          loader = loadFor(tx, actor.workspaceId, now);
+        for (const source of parsed.datasets) await loader.load(source);
+        const result = querySemanticModel(
+          parsed,
+          loader.tables,
+          { ...query, now: now.toISOString() },
+          loader.budget,
+        );
+        return {
+          ...result,
+          releaseId: null,
+          stale: false,
+          warnings: [...loader.warnings, ...result.warnings],
+        };
+      }),
     preview: (actor: DataActor, id: string, limit = 100) =>
       run(actor, async (tx, now) => {
         const loader = loadFor(tx, actor.workspaceId, now),
@@ -952,7 +991,11 @@ export function createDataService(
           outputSchemas: Object.fromEntries(
             Object.entries(output.outputs).map(([key, table]) => [
               key,
-              { fields: table.fields, rowCount: table.rows.length },
+              {
+                fields: table.fields,
+                rowCount: table.rows.length,
+                aggregated: table.aggregated ?? false,
+              },
             ]),
           ),
           dependencies: loader.dependencies,
@@ -1150,14 +1193,14 @@ export function createDataService(
             loader,
             result: {
               ...result,
-              releaseId: release?.id ?? id,
+              releaseId: release?.id ?? null,
               stale: false,
               warnings: [...loader.warnings, ...result.warnings],
             },
           };
         };
         const queryKey = createHash("sha256")
-          .update(stable(query))
+          .update(stable({ engine: DATA_EXECUTION_VERSION, query }))
           .digest("hex");
         let execution: Awaited<ReturnType<typeof evaluate>>;
         try {

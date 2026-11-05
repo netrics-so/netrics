@@ -464,7 +464,7 @@ export async function fetchApiHealth(): Promise<ApiHealth> {
 // automatically.
 // ---------------------------------------------------------------------------
 
-async function browserSend<T>(
+export async function browserSend<T>(
   schema: ZodType<T>,
   method: string,
   path: string,
