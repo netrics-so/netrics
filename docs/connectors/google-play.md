@@ -99,7 +99,10 @@ never renew it. Missing or expired staging causes a real provider re-read and
 restarts the incomplete partition. Resumed publication keeps the original source
 collection time and retention deadline. Atomic staging publication, digest checks,
 forced RLS and connection-scoped access apply; temporary bytes count toward the
-workspace data quota. A stage is bounded to 128 MiB of serialized JSONB and
+workspace data quota until the stage expires. If the host refuses a stage (size,
+quota or storage error), the turn continues from the buffered report without
+staging. A rebuilt stage restarts only the pending app partition; apps already
+completed in the task are not emitted again. A stage is bounded to 128 MiB of serialized JSONB and
 metadata to 1 MiB, with the normal per-page/record transport limits. The scheduler
 prunes expired pages in batches. See [ADR 0023](../decisions/0023-connector-dataset-staging.md).
 
