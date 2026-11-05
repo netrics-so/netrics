@@ -1866,6 +1866,7 @@ export const dataPreparations = pgTable(
     graph: jsonb("graph").notNull(),
     version: integer("version").notNull().default(1),
     publishedVersion: integer("published_version"),
+    restoredFromVersion: integer("restored_from_version"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1912,6 +1913,7 @@ export const dataModels = pgTable(
     definition: jsonb("definition").notNull(),
     version: integer("version").notNull().default(1),
     publishedVersion: integer("published_version"),
+    restoredFromVersion: integer("restored_from_version"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -12,6 +12,7 @@ import {
   previewModelDefinition,
   saveModel,
   publishModel,
+  restoreModel,
   type DataSource,
   type ModelDraft,
   type ModelResult,
@@ -21,6 +22,7 @@ import { useT } from "@/lib/i18n/client";
 import { AggregateFields, ColumnChecks, ColumnSelect } from "./fields";
 import { DataTable } from "./data-table";
 import { PreviewNotes } from "./preview-notes";
+import { DefinitionHistory } from "./definition-history";
 
 const EMPTY: SemanticModelDefinition = {
   version: 1,
@@ -77,7 +79,9 @@ export function ModelEditor({
   const [result, setResult] = useState<ModelResult | null>(null),
     [previewState, setPreviewState] = useState("");
   const [outputFields, setOutputFields] = useState<DataField[]>([]);
-  const [busy, setBusy] = useState<"preview" | "save" | "publish" | null>(null);
+  const [busy, setBusy] = useState<
+    "preview" | "save" | "publish" | "history" | null
+  >(null);
   const [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
   const current = JSON.stringify({ name, definition, formulaTexts }),
@@ -128,11 +132,16 @@ export function ModelEditor({
       const filter = filterText.trim()
         ? parseDataFormula(filterText, model.dimensions)
         : undefined;
-      const next = await previewModelDefinition(workspaceId, model, {
-        measureIds,
-        groupBy,
-        ...(filter ? { filter } : {}),
-      });
+      const next = await previewModelDefinition(
+        workspaceId,
+        model,
+        {
+          measureIds,
+          groupBy,
+          ...(filter ? { filter } : {}),
+        },
+        record ? { id: record.id, version: record.version } : undefined,
+      );
       setResult(next);
       setOutputFields([
         ...groupBy.map((id): DataField => {
@@ -178,7 +187,16 @@ export function ModelEditor({
               {
                 name: name.trim(),
                 definition: model,
-                ...(record ? { version: record.version } : {}),
+                ...(record
+                  ? {
+                      version: record.version,
+                      ...(publish &&
+                      !record.restoredFromVersion &&
+                      record.publishedVersion === record.version
+                        ? { adoptLatestInputs: true }
+                        : {}),
+                    }
+                  : {}),
               },
               record?.id,
             );
@@ -203,6 +221,52 @@ export function ModelEditor({
         onSaved(published.model);
         setNotice(t("publishedNotice"));
       } else setNotice(t("saved"));
+    } catch (failure) {
+      setError(t(`errors.${dataErrorKey(failure)}`));
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function restore(version?: number) {
+    if (!record) return;
+    setBusy("history");
+    setError(null);
+    setNotice(null);
+    try {
+      const saved =
+        version === undefined
+          ? await saveModel(
+              workspaceId,
+              {
+                name,
+                definition,
+                version: record.version,
+                adoptLatestInputs: true,
+              },
+              record.id,
+            )
+          : await restoreModel(workspaceId, record.id, record.version, version);
+      const next = saved.model;
+      setRecord(next);
+      setName(next.name);
+      setDefinition(next.definition);
+      setFormulaTexts({});
+      setSavedState(
+        JSON.stringify({
+          name: next.name,
+          definition: next.definition,
+          formulaTexts: {},
+        }),
+      );
+      setMeasureIds(next.definition.measures.map((measure) => measure.id));
+      setGroupBy([]);
+      setFilterText("");
+      setResult(null);
+      setPreviewState("");
+      onSaved(next);
+      setNotice(
+        t(version === undefined ? "latestInputsNotice" : "restoredNotice"),
+      );
     } catch (failure) {
       setError(t(`errors.${dataErrorKey(failure)}`));
     } finally {
@@ -305,13 +369,24 @@ export function ModelEditor({
           <button
             type="button"
             className="primary"
-            disabled={!!busy || !fresh || !!error || !name.trim()}
+            disabled={
+              !!busy ||
+              !fresh ||
+              !!error ||
+              !name.trim() ||
+              (!!record?.restoredFromVersion &&
+                record.publishedVersion === record.version &&
+                !dirty)
+            }
             onClick={() => void persist(true)}
           >
             {t(
               busy === "publish"
                 ? "publishing"
-                : !dirty && record && record.publishedVersion === record.version
+                : !dirty &&
+                    record &&
+                    !record.restoredFromVersion &&
+                    record.publishedVersion === record.version
                   ? "republish"
                   : "publish",
             )}
@@ -328,6 +403,19 @@ export function ModelEditor({
         <p role="status" className="notice">
           {notice}
         </p>
+      ) : null}
+      {record ? (
+        <DefinitionHistory
+          workspaceId={workspaceId}
+          kind="models"
+          id={record.id}
+          publishedVersion={record.publishedVersion}
+          restoredFromVersion={record.restoredFromVersion}
+          disabled={!!busy}
+          unsaved={dirty}
+          onRestore={restore}
+          onAdoptLatest={() => restore()}
+        />
       ) : null}
       <fieldset
         ref={fieldsRef}

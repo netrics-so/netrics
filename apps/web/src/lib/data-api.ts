@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   dataSourcesResponseSchema,
+  dataHistoryResponseSchema,
   dataPreviewResponseSchema,
   preparationListResponseSchema,
   preparationResponseSchema,
@@ -69,16 +70,22 @@ export const previewData = (workspaceId: string, sourceId: string) =>
 export const previewPreparation = (
   workspaceId: string,
   graph: PreparationGraph,
+  draft?: { id: string; version: number },
 ) =>
   browserSend(
     preparationPreviewResponseSchema,
     "POST",
     base(workspaceId) + "/preparations/preview",
-    { graph },
+    { graph, ...(draft ? { draft } : {}) },
   );
 export const savePreparation = (
   workspaceId: string,
-  draft: { name: string; graph: PreparationGraph; version?: number },
+  draft: {
+    name: string;
+    graph: PreparationGraph;
+    version?: number;
+    adoptLatestInputs?: boolean;
+  },
   id?: string,
 ) =>
   browserSend(
@@ -104,6 +111,7 @@ export const saveModel = (
     name: string;
     definition: SemanticModelDefinition;
     version?: number;
+    adoptLatestInputs?: boolean;
   },
   id?: string,
 ) =>
@@ -140,12 +148,13 @@ export const previewModelDefinition = (
   workspaceId: string,
   definition: SemanticModelDefinition,
   query: Omit<ModelQuery, "now">,
+  draft?: { id: string; version: number },
 ) =>
   browserSend(
     modelQueryResponseSchema,
     "POST",
     base(workspaceId) + "/models/preview",
-    { definition, query },
+    { definition, query, ...(draft ? { draft } : {}) },
   );
 export const saveReference = (
   workspaceId: string,
@@ -242,3 +251,41 @@ export async function saveReferencePages(
   }
   throw new ApiError(503, "data_operation_failed");
 }
+
+export type DefinitionHistory = z.infer<typeof dataHistoryResponseSchema>;
+export const readDefinitionHistory = (
+  workspaceId: string,
+  kind: "preparations" | "models",
+  id: string,
+  beforeVersion?: number,
+) =>
+  read(
+    dataHistoryResponseSchema,
+    base(workspaceId) +
+      `/${kind}/${id}/history` +
+      (beforeVersion ? `?beforeVersion=${beforeVersion}` : ""),
+  );
+export const restorePreparation = (
+  workspaceId: string,
+  id: string,
+  version: number,
+  publishedVersion: number,
+) =>
+  browserSend(
+    preparationResponseSchema,
+    "POST",
+    base(workspaceId) + `/preparations/${id}/restore`,
+    { version, publishedVersion },
+  );
+export const restoreModel = (
+  workspaceId: string,
+  id: string,
+  version: number,
+  publishedVersion: number,
+) =>
+  browserSend(
+    modelResponseSchema,
+    "POST",
+    base(workspaceId) + `/models/${id}/restore`,
+    { version, publishedVersion },
+  );

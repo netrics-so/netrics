@@ -6,6 +6,7 @@ import {
   eq,
   gt,
   lte,
+  lt,
   sql,
   or,
   isNull,
@@ -155,6 +156,7 @@ function preparationView(row: typeof schema.dataPreparations.$inferSelect) {
     graph: preparationGraphSchema.parse(row.graph),
     version: row.version,
     publishedVersion: row.publishedVersion,
+    restoredFromVersion: row.restoredFromVersion,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -165,8 +167,75 @@ function modelView(row: typeof schema.dataModels.$inferSelect) {
     definition: semanticModelDefinitionSchema.parse(row.definition),
     version: row.version,
     publishedVersion: row.publishedVersion,
+    restoredFromVersion: row.restoredFromVersion,
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+interface DraftContext {
+  id: string;
+  version: number;
+}
+async function preparationPublication(
+  tx: Transaction,
+  workspaceId: string,
+  id: string,
+  version: number,
+) {
+  const [publication] = await tx
+    .select()
+    .from(schema.dataPreparationVersions)
+    .where(
+      and(
+        eq(schema.dataPreparationVersions.workspaceId, workspaceId),
+        eq(schema.dataPreparationVersions.preparationId, id),
+        eq(schema.dataPreparationVersions.version, version),
+      ),
+    );
+  if (!publication) fail("data_publication_not_found", 404);
+  return publication;
+}
+async function modelPublication(
+  tx: Transaction,
+  workspaceId: string,
+  id: string,
+  version: number,
+) {
+  const [publication] = await tx
+    .select()
+    .from(schema.dataModelReleases)
+    .where(
+      and(
+        eq(schema.dataModelReleases.workspaceId, workspaceId),
+        eq(schema.dataModelReleases.modelId, id),
+        eq(schema.dataModelReleases.version, version),
+      ),
+    );
+  if (!publication) fail("data_publication_not_found", 404);
+  return publication;
+}
+function checkSchemaBindings(
+  pinned: Record<string, DataField[]>,
+  actual: Record<string, DataField[]>,
+  ignoreUnused = false,
+) {
+  for (const [source, fields] of Object.entries(pinned)) {
+    const nextFields = actual[source];
+    if (!nextFields && ignoreUnused) continue;
+    if (
+      !nextFields ||
+      fields.some((field) => {
+        const next = nextFields.find((f) => f.id === field.id);
+        return (
+          !next ||
+          next.type !== field.type ||
+          next.unit !== field.unit ||
+          next.currencyField !== field.currencyField
+        );
+      })
+    )
+      fail("data_model_schema_changed", 409);
+  }
 }
 
 const RESOURCE_FIELDS: DataField[] = [
@@ -807,13 +876,14 @@ export function createDataService(
     actor: DataActor,
     action: string,
     target: string,
+    metadata: Record<string, unknown> = {},
   ) =>
     insertAuditEvent(tx, {
       workspaceId: actor.workspaceId,
       actorUserId: actor.callerId,
       action,
       target,
-      metadata: {},
+      metadata,
     });
   const listSources = (actor: DataActor) =>
     run(actor, async (tx, now) => {
@@ -988,15 +1058,38 @@ export function createDataService(
       actor: DataActor,
       definition: SemanticModelDefinition,
       query: DataModelQuery,
+      draft?: DraftContext,
     ) =>
       run(actor, async (tx, now) => {
         if (query.pageToken || query.pinPages)
           fail("data_page_preview_unsupported");
+        const row = draft
+          ? await findDataModel(tx, actor.workspaceId, draft.id)
+          : null;
+        if (row && row.version !== draft!.version)
+          fail("version_conflict", 409);
+        const restored = row?.restoredFromVersion
+          ? await modelPublication(
+              tx,
+              actor.workspaceId,
+              row.id,
+              row.restoredFromVersion,
+            )
+          : null;
         const parsed = semanticModelDefinitionSchema.parse(definition),
           loader = loadFor(tx, actor.workspaceId, now, {
             allowPendingSchemas: true,
+            ...(restored
+              ? { dependencies: restored.dependencies as Dependencies }
+              : {}),
           });
         for (const source of parsed.datasets) await loader.load(source);
+        if (restored)
+          checkSchemaBindings(
+            restored.schemaBindings as Record<string, DataField[]>,
+            loader.bindings,
+            true,
+          );
         const result = querySemanticModel(
           parsed,
           loader.tables,
@@ -1361,9 +1454,101 @@ export function createDataService(
           await findPreparation(tx, actor.workspaceId, id),
         ),
       })),
+    preparationHistory: (
+      actor: DataActor,
+      id: string,
+      input: { beforeVersion?: number; limit: number },
+    ) =>
+      run(actor, async (tx) => {
+        const current = await findPreparation(tx, actor.workspaceId, id);
+        const versions = await tx
+          .select({
+            version: schema.dataPreparationVersions.version,
+            createdAt: schema.dataPreparationVersions.createdAt,
+          })
+          .from(schema.dataPreparationVersions)
+          .where(
+            and(
+              eq(schema.dataPreparationVersions.workspaceId, actor.workspaceId),
+              eq(schema.dataPreparationVersions.preparationId, id),
+              ...(input.beforeVersion
+                ? [
+                    lt(
+                      schema.dataPreparationVersions.version,
+                      input.beforeVersion,
+                    ),
+                  ]
+                : []),
+            ),
+          )
+          .orderBy(desc(schema.dataPreparationVersions.version))
+          .limit(input.limit + 1);
+        const page = versions.slice(0, input.limit);
+        return {
+          versions: page.map((v) => ({
+            version: v.version,
+            createdAt: v.createdAt.toISOString(),
+            active: v.version === current.publishedVersion,
+          })),
+          nextBeforeVersion:
+            versions.length > input.limit ? page.at(-1)!.version : null,
+        };
+      }),
+    restorePreparation: (
+      actor: DataActor,
+      id: string,
+      input: { version: number; publishedVersion: number },
+    ) =>
+      run(actor, async (tx, now) => {
+        const current = await findPreparation(tx, actor.workspaceId, id, true);
+        if (current.version !== input.version) fail("version_conflict", 409);
+        const publication = await preparationPublication(
+          tx,
+          actor.workspaceId,
+          id,
+          input.publishedVersion,
+        );
+        const graph = preparationGraphSchema.parse(publication.graph);
+        // Re-authorize and validate current retained data using historical definition pins.
+        await executeGraph(
+          tx,
+          actor.workspaceId,
+          now,
+          graph,
+          loadFor(tx, actor.workspaceId, now, {
+            allowPendingSchemas: true,
+            dependencies: publication.dependencies as Dependencies,
+          }),
+        );
+        const [updated] = await tx
+          .update(schema.dataPreparations)
+          .set({
+            graph,
+            restoredFromVersion: publication.version,
+            version: current.version + 1,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(schema.dataPreparations.workspaceId, actor.workspaceId),
+              eq(schema.dataPreparations.id, id),
+            ),
+          )
+          .returning();
+        await audit(tx, actor, "data.preparation_restored", id, {
+          fromVersion: publication.version,
+          draftVersion: updated!.version,
+        });
+        return { preparation: preparationView(updated!) };
+      }),
     savePreparation: (
       actor: DataActor,
-      input: { name: string; graph: PreparationGraph; version?: number },
+      input: {
+        name: string;
+        graph: PreparationGraph;
+        version?: number;
+        adoptLatestInputs?: boolean;
+      },
       id?: string,
     ) =>
       run(actor, async (tx, now) => {
@@ -1381,6 +1566,7 @@ export function createDataService(
             .set({
               name: input.name,
               graph,
+              ...(input.adoptLatestInputs ? { restoredFromVersion: null } : {}),
               version: current.version + 1,
               updatedAt: now,
             })
@@ -1412,14 +1598,36 @@ export function createDataService(
         await audit(tx, actor, "data.preparation_created", row!.id);
         return { preparation: preparationView(row!) };
       }),
-    previewPreparation: (actor: DataActor, graph: PreparationGraph) =>
+    previewPreparation: (
+      actor: DataActor,
+      graph: PreparationGraph,
+      draft?: DraftContext,
+    ) =>
       run(actor, async (tx, now) => {
+        const row = draft
+          ? await findPreparation(tx, actor.workspaceId, draft.id)
+          : null;
+        if (row && row.version !== draft!.version)
+          fail("version_conflict", 409);
+        const restored = row?.restoredFromVersion
+          ? await preparationPublication(
+              tx,
+              actor.workspaceId,
+              row.id,
+              row.restoredFromVersion,
+            )
+          : null;
         const { loader, output } = await executeGraph(
           tx,
           actor.workspaceId,
           now,
           preparationGraphSchema.parse(graph),
-          loadFor(tx, actor.workspaceId, now, { allowPendingSchemas: true }),
+          loadFor(tx, actor.workspaceId, now, {
+            allowPendingSchemas: true,
+            ...(restored
+              ? { dependencies: restored.dependencies as Dependencies }
+              : {}),
+          }),
         );
         const pending = loader.warnings.has("data_source_pending");
         return {
@@ -1443,13 +1651,26 @@ export function createDataService(
         if (row.version !== expected) fail("version_conflict", 409);
         if (row.publishedVersion === expected)
           return { preparation: preparationView(row) };
+        const restored = row.restoredFromVersion
+          ? await preparationPublication(
+              tx,
+              actor.workspaceId,
+              id,
+              row.restoredFromVersion,
+            )
+          : null;
         const graph = preparationGraphSchema.parse(row.graph),
           { loader, output } = await executeGraph(
             tx,
             actor.workspaceId,
             now,
             graph,
-            loadFor(tx, actor.workspaceId, now, { allowPendingSchemas: true }),
+            loadFor(tx, actor.workspaceId, now, {
+              allowPendingSchemas: true,
+              ...(restored
+                ? { dependencies: restored.dependencies as Dependencies }
+                : {}),
+            }),
           );
         if (
           graph.nodes.some(
@@ -1512,12 +1733,101 @@ export function createDataService(
       run(actor, async (tx) => ({
         model: modelView(await findDataModel(tx, actor.workspaceId, id)),
       })),
+    modelHistory: (
+      actor: DataActor,
+      id: string,
+      input: { beforeVersion?: number; limit: number },
+    ) =>
+      run(actor, async (tx) => {
+        const current = await findDataModel(tx, actor.workspaceId, id);
+        const versions = await tx
+          .select({
+            version: schema.dataModelReleases.version,
+            createdAt: schema.dataModelReleases.createdAt,
+          })
+          .from(schema.dataModelReleases)
+          .where(
+            and(
+              eq(schema.dataModelReleases.workspaceId, actor.workspaceId),
+              eq(schema.dataModelReleases.modelId, id),
+              ...(input.beforeVersion
+                ? [lt(schema.dataModelReleases.version, input.beforeVersion)]
+                : []),
+            ),
+          )
+          .orderBy(desc(schema.dataModelReleases.version))
+          .limit(input.limit + 1);
+        const page = versions.slice(0, input.limit);
+        return {
+          versions: page.map((v) => ({
+            version: v.version,
+            createdAt: v.createdAt.toISOString(),
+            active: v.version === current.publishedVersion,
+          })),
+          nextBeforeVersion:
+            versions.length > input.limit ? page.at(-1)!.version : null,
+        };
+      }),
+    restoreModel: (
+      actor: DataActor,
+      id: string,
+      input: { version: number; publishedVersion: number },
+    ) =>
+      run(actor, async (tx, now) => {
+        const current = await findDataModel(tx, actor.workspaceId, id, true);
+        if (current.version !== input.version) fail("version_conflict", 409);
+        const publication = await modelPublication(
+          tx,
+          actor.workspaceId,
+          id,
+          input.publishedVersion,
+        );
+        const definition = semanticModelDefinitionSchema.parse(
+          publication.definition,
+        );
+        const loader = loadFor(tx, actor.workspaceId, now, {
+          allowPendingSchemas: true,
+          dependencies: publication.dependencies as Dependencies,
+        });
+        for (const source of definition.datasets) await loader.load(source);
+        checkSchemaBindings(
+          publication.schemaBindings as Record<string, DataField[]>,
+          loader.bindings,
+        );
+        validateSemanticModel(
+          definition,
+          loader.tables,
+          now.toISOString(),
+          loader.budget,
+        );
+        const [updated] = await tx
+          .update(schema.dataModels)
+          .set({
+            definition,
+            restoredFromVersion: publication.version,
+            version: current.version + 1,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(schema.dataModels.workspaceId, actor.workspaceId),
+              eq(schema.dataModels.id, id),
+            ),
+          )
+          .returning();
+        await audit(tx, actor, "data.model_restored", id, {
+          fromVersion: publication.version,
+          draftVersion: updated!.version,
+        });
+        return { model: modelView(updated!) };
+      }),
     saveModel: (
       actor: DataActor,
       input: {
         name: string;
         definition: SemanticModelDefinition;
         version?: number;
+        adoptLatestInputs?: boolean;
       },
       id?: string,
     ) =>
@@ -1533,6 +1843,7 @@ export function createDataService(
             .set({
               name: input.name,
               definition,
+              ...(input.adoptLatestInputs ? { restoredFromVersion: null } : {}),
               version: row.version + 1,
               updatedAt: now,
             })
@@ -1569,11 +1880,28 @@ export function createDataService(
         const row = await findDataModel(tx, actor.workspaceId, id, true);
         if (row.version !== expected) fail("version_conflict", 409);
         if (row.publishedVersion === expected) return { model: modelView(row) };
+        const restored = row.restoredFromVersion
+          ? await modelPublication(
+              tx,
+              actor.workspaceId,
+              id,
+              row.restoredFromVersion,
+            )
+          : null;
         const definition = semanticModelDefinitionSchema.parse(row.definition),
           loader = loadFor(tx, actor.workspaceId, now, {
             allowPendingSchemas: true,
+            ...(restored
+              ? { dependencies: restored.dependencies as Dependencies }
+              : {}),
           });
         for (const source of definition.datasets) await loader.load(source);
+        if (restored)
+          checkSchemaBindings(
+            restored.schemaBindings as Record<string, DataField[]>,
+            loader.bindings,
+            true,
+          );
         validateSemanticModel(
           definition,
           loader.tables,
@@ -1704,6 +2032,10 @@ export async function queryDataModel(
       continuation ? "data_page_unavailable" : "data_model_not_published",
       409,
     );
+  const restored =
+    preview && model.restoredFromVersion
+      ? await modelPublication(tx, workspaceId, id, model.restoredFromVersion)
+      : null;
   const definition = semanticModelDefinitionSchema.parse(
     preview ? model.definition : release!.definition,
   );
@@ -1712,30 +2044,17 @@ export async function queryDataModel(
       policy,
       allowPendingResults: true,
       ...(generations ? { generations } : {}),
-      ...(release
-        ? { dependencies: release.dependencies as Dependencies }
+      ...(release || restored
+        ? { dependencies: (release ?? restored)!.dependencies as Dependencies }
         : {}),
     });
     for (const source of definition.datasets) await loader.load(source);
-    if (release)
-      for (const [source, pinned] of Object.entries(
-        release.schemaBindings as Record<string, DataField[]>,
-      )) {
-        const actual = loader.bindings[source];
-        if (
-          !actual ||
-          pinned.some((field) => {
-            const next = actual.find((f) => f.id === field.id);
-            return (
-              !next ||
-              next.type !== field.type ||
-              next.unit !== field.unit ||
-              next.currencyField !== field.currencyField
-            );
-          })
-        )
-          fail("data_model_schema_changed", 409);
-      }
+    if (release || restored)
+      checkSchemaBindings(
+        (release ?? restored)!.schemaBindings as Record<string, DataField[]>,
+        loader.bindings,
+        !release,
+      );
     const result = querySemanticModel(
       definition,
       loader.tables,

@@ -10,6 +10,7 @@ import {
   previewPreparation,
   savePreparation,
   publishPreparation,
+  restorePreparation,
   type DataSource,
   type PreparationDraft,
   type DataPreview,
@@ -23,6 +24,7 @@ import { useT } from "@/lib/i18n/client";
 import { DataTable } from "./data-table";
 import { StepForm } from "./step-form";
 import { PreviewNotes } from "./preview-notes";
+import { DefinitionHistory } from "./definition-history";
 import {
   PreparationEditError,
   preparationStepInputs,
@@ -81,7 +83,9 @@ export function PreparationEditor({
   const [removing, setRemoving] = useState(false),
     [bypass, setBypass] = useState("");
   const [adding, setAdding] = useState(false),
-    [busy, setBusy] = useState<"preview" | "save" | "publish" | null>(null);
+    [busy, setBusy] = useState<
+      "preview" | "save" | "publish" | "history" | null
+    >(null);
   const [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
   const request = useRef(0);
@@ -105,11 +109,19 @@ export function PreparationEditor({
     setNotice(null);
     try {
       const validation = validateAll
-        ? await previewPreparation(workspaceId, next)
+        ? await previewPreparation(
+            workspaceId,
+            next,
+            record ? { id: record.id, version: record.version } : undefined,
+          )
         : null;
       const result = validation?.outputs[output]
         ? validation
-        : await previewPreparation(workspaceId, preparationAt(next, output));
+        : await previewPreparation(
+            workspaceId,
+            preparationAt(next, output),
+            record ? { id: record.id, version: record.version } : undefined,
+          );
       if (sequence !== request.current) return;
       const table = result.outputs[output]!;
       setPreview({ ...table, warnings: result.warnings });
@@ -169,6 +181,48 @@ export function PreparationEditor({
       setBusy(null);
     }
   }
+  async function restore(version?: number) {
+    if (!record) return;
+    setBusy("history");
+    setError(null);
+    setNotice(null);
+    request.current++;
+    try {
+      const result =
+        version === undefined
+          ? await savePreparation(
+              workspaceId,
+              { name, graph, version: record.version, adoptLatestInputs: true },
+              record.id,
+            )
+          : await restorePreparation(
+              workspaceId,
+              record.id,
+              record.version,
+              version,
+            );
+      const next = result.preparation;
+      setRecord(next);
+      setName(next.name);
+      setGraph(next.graph);
+      setSavedState(JSON.stringify({ name: next.name, graph: next.graph }));
+      setHistory([]);
+      setSelected(next.graph.outputs[0] ?? "");
+      setAdding(false);
+      setEditing(null);
+      setRemoving(false);
+      setPreview(null);
+      setPreviewState("");
+      onSaved(next);
+      setNotice(
+        t(version === undefined ? "latestInputsNotice" : "restoredNotice"),
+      );
+    } catch (failure) {
+      setError(t(`errors.${dataErrorKey(failure)}`));
+    } finally {
+      setBusy(null);
+    }
+  }
   const initialSource = graph.nodes.find((n) => n.type === "source");
   function changeSource(id: string) {
     const outputId = initialSource?.id ?? "source";
@@ -222,7 +276,11 @@ export function PreparationEditor({
           ? undefined
           : preparationStepInputs(selectedNode)[0];
       const input = inputId
-        ? await previewPreparation(workspaceId, preparationAt(graph, inputId))
+        ? await previewPreparation(
+            workspaceId,
+            preparationAt(graph, inputId),
+            record ? { id: record.id, version: record.version } : undefined,
+          )
         : null;
       if (sequence === request.current)
         setEditing({
@@ -316,6 +374,19 @@ export function PreparationEditor({
         <p className="notice" role="status">
           {notice}
         </p>
+      ) : null}
+      {record ? (
+        <DefinitionHistory
+          workspaceId={workspaceId}
+          kind="preparations"
+          id={record.id}
+          publishedVersion={record.publishedVersion}
+          restoredFromVersion={record.restoredFromVersion}
+          disabled={!!busy || formOpen}
+          unsaved={dirty}
+          onRestore={restore}
+          onAdoptLatest={() => restore()}
+        />
       ) : null}
       <div className="data-builder">
         <aside className="data-steps">

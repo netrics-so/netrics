@@ -105,6 +105,26 @@ export const dataDe: Catalog<typeof dataEn> = {
         number: "Zahl",
       },
     },
+    versionHistory: "Veröffentlichte Versionen",
+    historyHint:
+      "Stelle veröffentlichte Schritte oder Modelldefinitionen als neuen gespeicherten Entwurf wieder her. Der gespeicherte Entwurf wird ersetzt. Der aktuelle Name, Quelldaten und Live-Dashboards bleiben erhalten. Prüfe die Vorschau und veröffentliche den Entwurf, wenn er bereit ist.",
+    historyUnsaved:
+      "Speichere deine Änderungen, bevor du eine Version wiederherstellst oder Eingabeversionen änderst.",
+    historyLoading: "Veröffentlichte Versionen werden geladen…",
+    historyEmpty:
+      "Veröffentliche diesen Entwurf, um den Versionsverlauf zu beginnen.",
+    historyVersion: "Version {version}",
+    historyActive: "Aktuell veröffentlicht",
+    historyNewest: "Neueste Versionen",
+    historyOlder: "Ältere Versionen",
+    restoreDraft: "Als Entwurf wiederherstellen",
+    restoredNotice:
+      "Die veröffentlichte Definition wurde als Entwurf wiederhergestellt. Prüfe die Vorschau vor dem Veröffentlichen. Live-Dashboards nutzen weiterhin die aktuelle Veröffentlichung.",
+    restoredInputs:
+      "Basiert auf der veröffentlichten Version {version}. Die damaligen Vorbereitungsversionen bleiben festgelegt; Korrekturen der Quelldaten gelten weiterhin.",
+    adoptLatestInputs: "Neueste veröffentlichte Eingaben verwenden",
+    latestInputsNotice:
+      "Der Entwurf verwendet jetzt die neuesten veröffentlichten Eingaben. Prüfe die Vorschau vor dem Veröffentlichen.",
     title: "Daten & Kennzahlen",
     subtitle:
       "Bereite deine Daten vor und definiere wiederverwendbare Kennzahlen.",
@@ -390,6 +410,10 @@ export const dataDe: Catalog<typeof dataEn> = {
     previewOutdated:
       "Der Entwurf wurde geändert. Prüfe ihn vor der Veröffentlichung erneut.",
     errors: {
+      history:
+        "Diese veröffentlichte Version ist nicht verfügbar. Lade den Verlauf neu und wähle eine andere Version.",
+      unavailable:
+        "Eine benötigte Quelle oder Eingabeversion ist nicht verfügbar. Prüfe die Verbindung und veröffentlichte Vorbereitungen vor dem Wiederherstellen oder Veröffentlichen.",
       scope:
         "Gruppiere nach den erforderlichen Dimensionen oder wähle für jede genau einen Wert aus, bevor du diese Kennzahl verwendest.",
       label:

@@ -231,15 +231,41 @@ export const dataPreviewRequestSchema = z.strictObject({
   sourceId: dataSourceIdSchema,
   limit: z.number().int().min(1).max(100).optional(),
 });
+const draftContextSchema = z.strictObject({
+  id: z.uuid(),
+  version: z.number().int().positive(),
+});
+export const dataHistoryQuerySchema = z.strictObject({
+  beforeVersion: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+export const dataHistoryResponseSchema = z.object({
+  versions: z
+    .array(
+      z.object({
+        version: z.number().int().positive(),
+        createdAt: z.iso.datetime(),
+        active: z.boolean(),
+      }),
+    )
+    .max(50),
+  nextBeforeVersion: z.number().int().positive().nullable(),
+});
+export const dataRestoreRequestSchema = z.strictObject({
+  version: z.number().int().positive(),
+  publishedVersion: z.number().int().positive(),
+});
 export const preparationInputSchema = z.strictObject({
   name: z.string().trim().min(1).max(100),
   graph: preparationGraphSchema,
   version: z.number().int().positive().optional(),
+  adoptLatestInputs: z.boolean().optional(),
 });
 export const modelInputSchema = z.strictObject({
   name: z.string().trim().min(1).max(100),
   definition: semanticModelDefinitionSchema,
   version: z.number().int().positive().optional(),
+  adoptLatestInputs: z.boolean().optional(),
 });
 export const dataPublishRequestSchema = z.strictObject({
   version: z.number().int().positive(),
@@ -250,6 +276,7 @@ export const preparationViewSchema = z.object({
   graph: preparationGraphSchema,
   version: z.number().int().positive(),
   publishedVersion: z.number().int().positive().nullable(),
+  restoredFromVersion: z.number().int().positive().nullable().optional(),
   updatedAt: z.iso.datetime(),
 });
 export const preparationResponseSchema = z.object({
@@ -264,6 +291,7 @@ export const modelViewSchema = z.object({
   definition: semanticModelDefinitionSchema,
   version: z.number().int().positive(),
   publishedVersion: z.number().int().positive().nullable(),
+  restoredFromVersion: z.number().int().positive().nullable().optional(),
   updatedAt: z.iso.datetime(),
 });
 export const modelResponseSchema = z.object({ model: modelViewSchema });
@@ -333,6 +361,7 @@ export const modelQueryResponseSchema = z.object({
 export const modelDefinitionPreviewRequestSchema = z.strictObject({
   definition: semanticModelDefinitionSchema,
   query: modelQueryInputSchema,
+  draft: draftContextSchema.optional(),
 });
 export const parseFormulaRequestSchema = z.strictObject({
   formula: z.string().min(1).max(10000),
@@ -370,6 +399,7 @@ export const preparationPreviewResponseSchema = z.object({
 });
 export const preparationPreviewRequestSchema = z.strictObject({
   graph: preparationGraphSchema,
+  draft: draftContextSchema.optional(),
 });
 
 export const manualDatasetPageInputSchema = z.strictObject({
