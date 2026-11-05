@@ -3417,6 +3417,7 @@ export {
   datasetPageSchema,
   validateDatasetPage,
   datasetRecordKey,
+  datasetTimeKey,
   datasetPartitionMatches,
   datasetRetentionDays,
   DATASET_LIMITS,

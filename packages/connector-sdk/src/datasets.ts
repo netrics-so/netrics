@@ -211,7 +211,8 @@ function validValue(field: DatasetField, value: unknown): boolean {
     case "timestamp":
       return (
         typeof value === "string" &&
-        z.iso.datetime({ offset: false }).safeParse(value).success
+        z.iso.datetime({ offset: false }).safeParse(value).success &&
+        (value.match(/\.([0-9]+)Z$/)?.[1]?.length ?? 0) <= 9
       );
     case "json":
       return jsonValue.safeParse(value).success;
@@ -242,7 +243,8 @@ export function validateDatasetPage(
       !validValue(field, page.window.from) ||
       !validValue(field, page.window.toExclusive) ||
       (field.type === "timestamp"
-        ? Date.parse(page.window.from) >= Date.parse(page.window.toExclusive)
+        ? datasetTimeKey(page.window.from) >=
+          datasetTimeKey(page.window.toExclusive)
         : page.window.from >= page.window.toExclusive)
     )
       throw new Error("Invalid dataset replacement window");
@@ -296,10 +298,10 @@ export function validateDatasetPage(
       const instant = fields.get(schema.reportingField!)!.type === "timestamp";
       if (
         (instant
-          ? Date.parse(time) < Date.parse(page.window.from)
+          ? datasetTimeKey(time) < datasetTimeKey(page.window.from)
           : time < page.window.from) ||
         (instant
-          ? Date.parse(time) >= Date.parse(page.window.toExclusive)
+          ? datasetTimeKey(time) >= datasetTimeKey(page.window.toExclusive)
           : time >= page.window.toExclusive) ||
         !datasetPartitionMatches(schema, row.values, page.window.partition)
       )
@@ -330,7 +332,7 @@ export function datasetRecordKey(
         schema.fields.find((field) => field.id === key)?.type === "timestamp" &&
         typeof value === "string"
       )
-        value = new Date(value).toISOString();
+        value = datasetTimeKey(value);
       return [key, value];
     }),
   );
@@ -345,5 +347,14 @@ export function datasetPartitionMatches(
     ([key, value]) =>
       datasetRecordKey({ ...schema, keyFields: [key] }, values) ===
       datasetRecordKey({ ...schema, keyFields: [key] }, { [key]: value }),
+  );
+}
+
+/** Canonical UTC instants with up to nanosecond precision; never truncate source keys. */
+export function datasetTimeKey(value: string): string {
+  return value.replace(
+    /(?:\.([0-9]+))?Z$/,
+    (_match, fraction: string | undefined) =>
+      "." + (fraction ?? "").padEnd(9, "0") + "Z",
   );
 }

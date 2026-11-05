@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
 import {
   DATASET_LIMITS,
   datasetRecordKey,
+  datasetTimeKey,
   datasetPartitionMatches,
   datasetRetentionDays,
   sourceDatasetSchema,
@@ -376,10 +377,10 @@ async function ingestPage(
           )?.type === "timestamp";
         if (
           (instant
-            ? Date.parse(time) >= Date.parse(page.window.from)
+            ? datasetTimeKey(time) >= datasetTimeKey(page.window.from)
             : time >= page.window.from) &&
           (instant
-            ? Date.parse(time) < Date.parse(page.window.toExclusive)
+            ? datasetTimeKey(time) < datasetTimeKey(page.window.toExclusive)
             : time < page.window.toExclusive) &&
           datasetPartitionMatches(definition, values, page.window.partition)
         )

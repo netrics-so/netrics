@@ -275,3 +275,32 @@ it("declares exact money and rejects fractional precision/currency mismatches", 
     }).success,
   ).toBe(false);
 });
+
+it("preserves sub-millisecond timestamp identity and replacement boundaries", () => {
+  const schema = sourceDatasetSchema.parse({
+    ...definition,
+    keyFields: ["day"],
+    mode: "replace_window",
+    fields: definition.fields.map((f) =>
+      f.id === "day" ? { ...f, type: "timestamp" } : f,
+    ),
+  });
+  const a = { ...values, day: "2026-11-05T00:00:00.000001Z" };
+  const b = { ...values, day: "2026-11-05T00:00:00.000002Z" };
+  expect(datasetRecordKey(schema, a)).not.toBe(datasetRecordKey(schema, b));
+  expect(datasetRecordKey(schema, a)).toBe(
+    datasetRecordKey(schema, { ...a, day: "2026-11-05T00:00:00.000001000Z" }),
+  );
+  const p = page({
+    window: {
+      from: "2026-11-05T00:00:00.000001Z",
+      toExclusive: "2026-11-05T00:00:00.000002Z",
+      partition: {},
+    },
+    records: [{ values: a }],
+  });
+  expect(validateDatasetPage(schema, p).records).toHaveLength(1);
+  expect(() =>
+    validateDatasetPage(schema, { ...p, records: [{ values: b }] }),
+  ).toThrow("Record outside replacement window");
+});
