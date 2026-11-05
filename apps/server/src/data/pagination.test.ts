@@ -471,6 +471,72 @@ describe("immutable semantic result pagination", () => {
     ).toBeUndefined();
   });
 
+  it("reclaims expired session capacity immediately and preserves another workspace's active session", async () => {
+    const f = await fixture();
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 1,
+      querySnapshotSeconds: 10,
+    });
+    const first = await f.read();
+    f.advance(5_000);
+    const continued = await f.read({
+      ...query,
+      pageToken: first.nextPageToken!,
+    });
+    expect(continued.pageExpiresAt).toBe(first.pageExpiresAt);
+    const denied = await f.read();
+    expect(denied.nextPageToken).toBeUndefined();
+    f.advance(11_000);
+    const replacement = await f.read();
+    expect(replacement.nextPageToken).toBeDefined();
+    expect(replacement.nextPageToken).not.toBe(first.nextPageToken);
+    expect(replacement.pageExpiresAt).toBe(
+      new Date(NOW.getTime() + 21_000).toISOString(),
+    );
+    await expect(
+      f.read({ ...query, pageToken: first.nextPageToken! }),
+    ).rejects.toThrow("data_page_unavailable");
+    const stored =
+      await admin`select query_key from data_model_query_snapshots where workspace_id=${f.actor.workspaceId}`;
+    expect(stored).toHaveLength(1);
+    const other = await fixture();
+    const active = await other.read();
+    f.advance(22_000);
+    await f.read();
+    expect(
+      (await other.read({ ...query, pageToken: active.nextPageToken! })).rows[0]
+        ?.dimensions.id,
+    ).toBe("b");
+  });
+
+  it("reclaims capacity using the shortened current lifetime without extending existing deadlines", async () => {
+    const f = await fixture();
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 1,
+      querySnapshotSeconds: 60,
+    });
+    const first = await f.read();
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 1,
+      querySnapshotSeconds: 5,
+    });
+    f.advance(6_000);
+    const replacement = await f.read();
+    expect(replacement.nextPageToken).toBeDefined();
+    expect(replacement.pageExpiresAt).toBe(
+      new Date(NOW.getTime() + 11_000).toISOString(),
+    );
+    await expect(
+      f.read({ ...query, pageToken: first.nextPageToken! }),
+    ).rejects.toThrow("data_page_unavailable");
+    f.advance(7_000);
+    const second = await f.read({
+      ...query,
+      pageToken: replacement.nextPageToken!,
+    });
+    expect(second.pageExpiresAt).toBe(replacement.pageExpiresAt);
+  });
+
   it("applies disabled and shortened snapshot policy to last-valid fallback too", async () => {
     const f = await fixture();
     const mappingDefinition = sourceDatasetSchema.parse({

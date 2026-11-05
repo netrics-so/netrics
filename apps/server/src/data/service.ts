@@ -1,5 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, sql, or, isNull, inArray } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  lte,
+  sql,
+  or,
+  isNull,
+  inArray,
+} from "drizzle-orm";
 import { z } from "zod";
 import {
   sourceDatasetSchema,
@@ -1875,6 +1886,32 @@ export async function queryDataModel(
   if (release && !execution.result.pendingSources?.length) {
     // Cache only generation identities, never a second copy of source rows.
     // Limit cache cardinality and lifetime independently of source retention.
+    // Reclaim expired identities before admission, including deadlines shortened
+    // by the current policy. Active sessions are never evicted or renewed here.
+    await tx
+      .delete(schema.dataModelQuerySnapshots)
+      .where(
+        and(
+          eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
+          eq(schema.dataModelQuerySnapshots.releaseId, release.id),
+          or(
+            lte(schema.dataModelQuerySnapshots.expiresAt, now),
+            ...(policy.querySnapshotSeconds !== null
+              ? [
+                  lte(
+                    schema.dataModelQuerySnapshots.updatedAt,
+                    new Date(
+                      Math.max(
+                        -62135596800000,
+                        now.getTime() - policy.querySnapshotSeconds * 1000,
+                      ),
+                    ),
+                  ),
+                ]
+              : []),
+          ),
+        ),
+      );
     const existing = await tx
       .select({ queryKey: schema.dataModelQuerySnapshots.queryKey })
       .from(schema.dataModelQuerySnapshots)
