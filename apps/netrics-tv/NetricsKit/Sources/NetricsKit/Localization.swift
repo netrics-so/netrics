@@ -50,6 +50,8 @@ public enum KitText: String, Sendable, CaseIterable {
     case periodThisWeek, periodThisQuarter, periodThisYear
     case comparisonThisWeek, comparisonThisQuarter, comparisonThisYear
     case aggregationSum, aggregationAvg, aggregationMin, aggregationMax, aggregationLast
+    case sourceAccess, sourcePaused
+    case sourceReportsPending
     case noDataForPeriod, noDataYet, noDataToCompare, noComparison, couldNotLoad
     case noticeAuthFailed, noticeOutage, noticeFirstSync, noticeLastSync
     case justNow, never, timeAgo, timeIn, minuteOne, minuteOther, hourOne, hourOther, dayOne, dayOther
@@ -102,6 +104,9 @@ public enum KitStrings {
         .aggregationLast: "Latest",
         .noDataForPeriod: "No data for this period yet",
         .noDataYet: "No data yet",
+        .sourceAccess: "Update the connection’s access to resume imports.",
+        .sourcePaused: "App collection is paused; retained history remains available.",
+        .sourceReportsPending: "Waiting for some source reports. Known values may be incomplete.",
         .noDataToCompare: "No data to compare %@",
         .noComparison: "No comparison",
         .couldNotLoad: "Could not load",
@@ -220,6 +225,9 @@ public enum KitStrings {
         .aggregationLast: "Aktuell",
         .noDataForPeriod: "Noch keine Daten für diesen Zeitraum",
         .noDataYet: "Noch keine Daten",
+        .sourceAccess: "Aktualisiere den Zugriff der Verbindung, um Importe fortzusetzen.",
+        .sourcePaused: "Die App-Erfassung ist pausiert; aufbewahrte Daten bleiben verfügbar.",
+        .sourceReportsPending: "Einige Quellenberichte stehen noch aus. Bekannte Werte können unvollständig sein.",
         .noDataToCompare: "Keine Daten zum Vergleich (%@)",
         .noComparison: "Kein Vergleich",
         .couldNotLoad: "Konnte nicht geladen werden",

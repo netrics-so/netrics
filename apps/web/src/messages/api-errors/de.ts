@@ -4,6 +4,19 @@ import type { apiErrorsEn } from "./en";
 
 export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
   apiErrors: {
+    store_mapping_duplicate:
+      "Jede App darf nur zu einem verknüpften Produkt gehören.",
+    store_scope_invalid:
+      "Wähle eine App aus einer der ausgewählten Verbindungen.",
+    store_template_request_reused:
+      "Diese Einrichtung wurde bereits gesendet. Öffne deine Dashboards oder starte eine neue Einrichtung.",
+    store_template_removed:
+      "Dieses Dashboard wurde nach dem Erstellen entfernt. Starte eine neue Einrichtung, um ein weiteres zu erstellen.",
+    store_connector_required:
+      "Wähle Verbindungen zu App Store Connect oder Google Play.",
+    store_source_schema_unavailable:
+      "Diese Connector-Version stellt die für die Vorlage benötigten Datensätze nicht bereit.",
+
     last_owner:
       "Der letzte Inhaber eines Workspaces kann weder herabgestuft noch entfernt werden.",
     membership_exists: "Diese Person ist schon Mitglied dieses Workspaces.",

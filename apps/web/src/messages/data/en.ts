@@ -1,6 +1,17 @@
 export const dataEn = {
   data: {
     dashboard: {
+      sourceReconnect: "Reconnect {name} to resume imports.",
+      sourceAccess: "Update access for {name} to resume imports.",
+      sourcePaused:
+        "App collection is paused for {name}. Retained history remains available.",
+      sourcePending: "Waiting for the first complete import from {name}.",
+      sourceOutage:
+        "Imports from {name} are interrupted. Check the connection.",
+
+      requiresScope: "Keep separate, or filter to one value: {dimensions}.",
+      pendingResult:
+        "Some source reports have not arrived yet. Known values are shown as partial; missing values are not zero.",
       partialResult:
         "Some source data is missing. Check the model before using this result.",
       done: "Done",
@@ -97,6 +108,13 @@ export const dataEn = {
     search: "Find a dataset",
     newPreparation: "New preparation",
     newModel: "New model",
+    editReference: "Edit table",
+    referenceEditHint:
+      "Saving replaces this table after every page is accepted. Measures and dashboards using it then read the new data. A concurrent edit requires reloading before saving.",
+    referenceCellHint:
+      'An empty nullable cell means missing. Enter "" for empty text. Text beginning with a quote can use JSON string notation to preserve its quotes.',
+    referenceLoadProgress: "Loading table: {loaded} of {total} rows.",
+    referenceSaveProgress: "Saving table: {saved} of {total} rows.",
     newReference: "Enter reference data",
     connectSource: "Connect a source",
     back: "Back to data",
@@ -111,6 +129,7 @@ export const dataEn = {
     sourceName: "Dataset",
     prepare: "Prepare this data",
     raw: "Source records",
+    resources: "Connection resource names",
     observations: "Already aggregated",
     prepared: "Prepared",
     manual: "Reference table",
@@ -247,7 +266,12 @@ export const dataEn = {
       "Relate shared entities, then define measures. Each fact is aggregated separately before results are combined.",
     factDataset: "Data with repeated keys",
     dimensionDataset: "Data with unique keys",
+    dimensionLabel: "Display name column (optional)",
+    dimensionLabelNone: "Use the value itself",
     dimensionName: "Dimension name",
+    requiredScope: "Keep these dimensions separate",
+    requiredScopeHelp:
+      "This measure requires grouping by each chosen dimension, or filtering it to one value. Useful for ratings, snapshots and other values that cannot be combined.",
     measureName: "Measure name",
     measureKind: "Calculation",
     aggregateMeasure: "Aggregate a column",
@@ -294,6 +318,10 @@ export const dataEn = {
     previewInitial: "Choose measures and preview this draft before publishing.",
     previewOutdated: "The draft changed. Preview it again before publishing.",
     errors: {
+      scope:
+        "Group by the required dimensions, or select one value for each, before using this measure.",
+      label:
+        "Choose a text column for display names. Each identity needs one consistent name.",
       pending:
         "Waiting for this source’s first complete import. Check the connection’s sync status; data will appear when the provider report arrives.",
       generic: "This operation could not finish. Try again.",

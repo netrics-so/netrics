@@ -72,12 +72,35 @@ export const dashboardDataQuerySchema = z.strictObject({
 export const dashboardMeasureMetadataSchema = z.object({
   modelId: z.uuid(),
   modelName: z.string(),
-  measures: z.array(z.object({ id, name: z.string() })),
+  measures: z.array(
+    z.object({
+      id,
+      name: z.string(),
+      requiredDimensions: z.array(id).optional(),
+    }),
+  ),
   dimensions: z.array(
     z.object({ id, name: z.string(), type: z.enum(DATA_TYPES) }),
   ),
 });
 export const dashboardWidgetDataSchema = z.object({
+  sourceHealth: z
+    .array(
+      z.object({
+        connectionId: z.uuid(),
+        name: z.string(),
+        status: z.enum([
+          "ok",
+          "pending",
+          "auth_failed",
+          "needs_reauthorization",
+          "outage",
+          "paused",
+        ]),
+        lastSuccessAt: z.iso.datetime().nullable(),
+      }),
+    )
+    .optional(),
   scope: z.array(z.string()).optional(),
   status: z.enum(["ok", "no_data", "stale", "outage"]).optional(),
   widgetId: z.uuid(),
@@ -121,6 +144,7 @@ export const dashboardDimensionValuesInputSchema = z.strictObject({
 });
 export const dashboardDimensionValuesResponseSchema = z.object({
   values: z.array(scalar).max(1000),
+  labels: z.array(z.string()).max(1000).optional(),
   total: z.number().int().nonnegative(),
   offset: z.number().int().nonnegative(),
 });

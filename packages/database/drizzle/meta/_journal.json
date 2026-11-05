@@ -400,6 +400,13 @@
       "when": 1793886693004,
       "tag": "0056_dataset_publication_state",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1793891841427,
+      "tag": "0057_store_template_installs",
+      "breakpoints": true
     }
   ]
 }

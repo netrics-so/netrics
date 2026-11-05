@@ -3,6 +3,8 @@ import { and, asc, desc, eq, gt, sql, or, isNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   sourceDatasetSchema,
+  manualDatasetReadInputSchema,
+  manualDatasetPageInputSchema,
   preparationGraphSchema,
   semanticModelDefinitionSchema,
   type SourceDatasetDefinition,
@@ -74,7 +76,7 @@ function outputName(name: string, graph: PreparationGraph, output: string) {
 interface SourceView {
   id: string;
   name: string;
-  kind: "source" | "manual" | "observations" | "prepared";
+  kind: "source" | "manual" | "observations" | "prepared" | "resources";
   fields: DataField[];
   generationId: string | null;
   rowCount: number | null;
@@ -118,6 +120,87 @@ function modelView(row: typeof schema.dataModels.$inferSelect) {
   };
 }
 
+const RESOURCE_FIELDS: DataField[] = [
+  {
+    id: "resource_id",
+    name: "Resource ID",
+    type: "string",
+    nullable: false,
+  },
+  {
+    id: "name",
+    name: "Resource name",
+    type: "string",
+    nullable: false,
+  },
+  {
+    id: "kind",
+    name: "Resource kind",
+    type: "string",
+    nullable: false,
+  },
+];
+async function resourceCatalog(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+  policy: DataPolicy,
+) {
+  const [connection] = await tx
+    .select({ id: schema.connections.id, name: schema.connections.name })
+    .from(schema.connections)
+    .where(
+      and(
+        eq(schema.connections.workspaceId, workspaceId),
+        eq(schema.connections.id, connectionId),
+      ),
+    );
+  if (!connection) fail("data_source_not_found", 404);
+  const query = tx
+    .select({
+      resource_id: schema.connectionResources.resourceId,
+      name: schema.connectionResources.name,
+      kind: schema.connectionResources.kind,
+    })
+    .from(schema.connectionResources)
+    .where(
+      and(
+        eq(schema.connectionResources.workspaceId, workspaceId),
+        eq(schema.connectionResources.connectionId, connectionId),
+      ),
+    )
+    .orderBy(
+      asc(schema.connectionResources.resourceId),
+      asc(schema.connectionResources.kind),
+    );
+  const rows = await (policy.queryRows === null
+    ? query
+    : query.limit(policy.queryRows + 1));
+  if (exceedsDataPolicy(rows.length, policy.queryRows))
+    fail("data_source_row_limit", 413);
+  const id = "resources:" + connectionId;
+  const generationId =
+    "resources:" + createHash("sha256").update(stable(rows)).digest("hex");
+  const table: DataTable = {
+    fields: RESOURCE_FIELDS.map((field) => ({ ...field })),
+    rows,
+    provenance: [{ datasetId: id, generationId }],
+  };
+  const view: SourceView = {
+    id,
+    name: connection.name + " / Resources",
+    kind: "resources",
+    fields: table.fields,
+    generationId,
+    rowCount: rows.length,
+    schemaVersion: 1,
+    aggregated: false,
+    expiresAt: null,
+    connectionId,
+  };
+  return { table, view };
+}
+
 /** One loader per serializable transaction pins each source generation once. */
 export function createDataLoader(
   tx: Transaction,
@@ -130,6 +213,8 @@ export function createDataLoader(
     policy?: DataPolicy;
     /** Definition preview/publication only; never interpret a pending input as collected rows. */
     allowPendingSchemas?: boolean;
+    /** Queries may expose known values as partial, with pending input identities. */
+    allowPendingResults?: boolean;
   } = {},
 ) {
   const tables = new Map<string, DataTable>(),
@@ -320,6 +405,24 @@ export function createDataLoader(
         expiresAt: result.expiresAt ?? null,
         connectionId: null,
       });
+    } else if (id.startsWith("resources:")) {
+      const connectionId = id.slice("resources:".length);
+      if (!z.uuid().safeParse(connectionId).success)
+        fail("data_source_not_found", 404);
+      const catalog = await resourceCatalog(
+        tx,
+        workspaceId,
+        connectionId,
+        policy,
+      );
+      generations[id] = catalog.view.generationId!;
+      if (
+        options.generations?.[id] &&
+        options.generations[id] !== generations[id]
+      )
+        fail("data_snapshot_unavailable", 409);
+      result = catalog.table;
+      views.set(id, catalog.view);
     } else if (id.startsWith("observation:")) {
       const parts = id.split(":");
       if (
@@ -410,7 +513,10 @@ export function createDataLoader(
         // import after retention/GC. Snapshot fallback must also stay exact.
         if (dataset.hasPublishedData)
           fail("data_source_history_unavailable", 409);
-        if (!options.allowPendingSchemas || requested)
+        if (
+          (!options.allowPendingSchemas && !options.allowPendingResults) ||
+          requested
+        )
           fail("data_source_pending", 409);
         const [version] = await tx
           .select()
@@ -428,6 +534,7 @@ export function createDataLoader(
         const pending: DataTable = {
           fields: definition.fields.map((field) => ({ ...field })),
           rows: [],
+          pendingSources: [id],
         };
         validateDataTable(pending, budget);
         warnings.add("data_source_pending");
@@ -553,7 +660,7 @@ export function createDataLoader(
 }
 
 export function createDataService(
-  db: Database,
+  db: Pick<Database, "transaction">,
   clock: () => Date = () => new Date(),
   defaults: DataPolicy = { ...DEFAULT_DATA_POLICY },
 ) {
@@ -690,6 +797,21 @@ export function createDataService(
           connectionId: d.connectionId,
         });
       }
+      const namedConnections = await tx
+        .selectDistinct({ id: schema.connectionResources.connectionId })
+        .from(schema.connectionResources)
+        .where(eq(schema.connectionResources.workspaceId, actor.workspaceId));
+      for (const connection of namedConnections)
+        items.push(
+          (
+            await resourceCatalog(
+              tx,
+              actor.workspaceId,
+              connection.id,
+              policyFor(tx),
+            )
+          ).view,
+        );
       for (const legacy of await listObservationDatasets(tx, actor.workspaceId))
         items.push({
           id: legacy.id,
@@ -822,6 +944,243 @@ export function createDataService(
           rows: table.rows.slice(0, limit),
           truncated: table.rows.length > limit,
           warnings: [...loader.warnings],
+        };
+      }),
+    readManual: (
+      actor: DataActor,
+      id: string,
+      input: z.infer<typeof manualDatasetReadInputSchema>,
+    ) =>
+      run(actor, async (tx, now) => {
+        const [dataset] = await tx
+          .select()
+          .from(schema.dataDatasets)
+          .where(
+            and(
+              eq(schema.dataDatasets.workspaceId, actor.workspaceId),
+              eq(schema.dataDatasets.id, id),
+              eq(schema.dataDatasets.kind, "manual"),
+            ),
+          );
+        if (!dataset) fail("data_source_not_found", 404);
+        const [generation] = await tx
+          .select()
+          .from(schema.dataGenerations)
+          .where(
+            and(
+              eq(schema.dataGenerations.workspaceId, actor.workspaceId),
+              eq(schema.dataGenerations.datasetId, id),
+              ...(input.generationId
+                ? [eq(schema.dataGenerations.id, input.generationId)]
+                : []),
+            ),
+          )
+          .orderBy(desc(schema.dataGenerations.sequence))
+          .limit(1);
+        if (input.generationId && !generation)
+          fail("data_snapshot_unavailable", 409);
+        if (dataset.hasPublishedData && !generation)
+          fail("data_source_history_unavailable", 409);
+        if (generation?.expiresAt && generation.expiresAt <= now)
+          fail("data_source_expired", 409);
+        const [version] = await tx
+          .select()
+          .from(schema.dataSchemaVersions)
+          .where(
+            and(
+              eq(schema.dataSchemaVersions.workspaceId, actor.workspaceId),
+              eq(schema.dataSchemaVersions.datasetId, id),
+              ...(generation
+                ? [
+                    eq(
+                      schema.dataSchemaVersions.version,
+                      generation.schemaVersion,
+                    ),
+                  ]
+                : []),
+            ),
+          )
+          .orderBy(desc(schema.dataSchemaVersions.version))
+          .limit(1);
+        if (!version) fail("data_schema_not_found", 409);
+        const definition = sourceDatasetSchema.parse(version.definition),
+          policy = policyFor(tx);
+        if (!generation)
+          return {
+            definition,
+            generationId: null,
+            records: [],
+            total: 0,
+            offset: input.offset,
+          };
+        const eligible = and(
+          eq(schema.dataRecords.workspaceId, actor.workspaceId),
+          eq(schema.dataRecords.generationId, generation.id),
+          or(
+            isNull(schema.dataRecords.expiresAt),
+            gt(schema.dataRecords.expiresAt, now),
+          ),
+          ...(policy.maxRetentionDays === null
+            ? []
+            : [
+                gt(
+                  schema.dataRecords.collectedAt,
+                  new Date(
+                    Math.max(
+                      -62135596800000,
+                      now.getTime() - policy.maxRetentionDays * 86400000,
+                    ),
+                  ),
+                ),
+              ]),
+        );
+        const [count] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(schema.dataRecords)
+          .where(eligible);
+        // Never copy an expired subset into a fresh editable snapshot.
+        if (count?.count !== generation.rowCount)
+          fail("data_source_expired", 409);
+        const rows = await tx
+          .select({ values: schema.dataRecords.values })
+          .from(schema.dataRecords)
+          .where(eligible)
+          .orderBy(asc(schema.dataRecords.recordKey))
+          .offset(input.offset)
+          .limit(Math.min(input.limit, policy.queryRows ?? input.limit));
+        const records: Array<{ values: Record<string, unknown> }> = [];
+        let bytes = Buffer.byteLength(JSON.stringify(definition)) + 256;
+        const maximum = Math.min(
+          512 * 1024,
+          policy.queryOutputBytes ?? Infinity,
+        );
+        for (const row of rows) {
+          const record = { values: row.values as Record<string, unknown> },
+            size = Buffer.byteLength(JSON.stringify(record));
+          if (bytes + size > maximum) {
+            if (!records.length) fail("data_output_limit", 413);
+            break;
+          }
+          records.push(record);
+          bytes += size;
+        }
+        return {
+          definition,
+          generationId: generation.id,
+          records,
+          total: generation.rowCount,
+          offset: input.offset,
+        };
+      }),
+    saveManualPage: (
+      actor: DataActor,
+      input: z.infer<typeof manualDatasetPageInputSchema>,
+    ) =>
+      run(actor, async (tx, now) => {
+        const [dataset] = await tx
+          .select()
+          .from(schema.dataDatasets)
+          .where(
+            and(
+              eq(schema.dataDatasets.workspaceId, actor.workspaceId),
+              eq(schema.dataDatasets.kind, "manual"),
+              input.datasetId
+                ? eq(schema.dataDatasets.id, input.datasetId)
+                : eq(schema.dataDatasets.key, input.definition.key),
+            ),
+          )
+          .for("update");
+        if (input.datasetId && !dataset) fail("data_source_not_found", 404);
+        if (dataset && dataset.key !== input.definition.key)
+          fail("data_source_identity_changed", 409);
+        const [generation] = dataset
+          ? await tx
+              .select()
+              .from(schema.dataGenerations)
+              .where(
+                and(
+                  eq(schema.dataGenerations.workspaceId, actor.workspaceId),
+                  eq(schema.dataGenerations.datasetId, dataset.id),
+                ),
+              )
+              .orderBy(desc(schema.dataGenerations.sequence))
+              .limit(1)
+          : [];
+        if (
+          (generation?.id ?? null) !== input.generationId &&
+          generation?.refreshKey !== input.refreshId
+        )
+          fail("version_conflict", 409);
+        if (dataset?.hasPublishedData && !generation)
+          fail("data_source_history_unavailable", 409);
+        const [refresh] = dataset
+          ? await tx
+              .select({ version: schema.dataRefreshes.schemaVersion })
+              .from(schema.dataRefreshes)
+              .where(
+                and(
+                  eq(schema.dataRefreshes.workspaceId, actor.workspaceId),
+                  eq(schema.dataRefreshes.datasetId, dataset.id),
+                  eq(schema.dataRefreshes.refreshKey, input.refreshId),
+                ),
+              )
+          : [];
+        const [latestSchema] =
+          dataset && !refresh
+            ? await tx
+                .select({ version: schema.dataSchemaVersions.version })
+                .from(schema.dataSchemaVersions)
+                .where(
+                  and(
+                    eq(
+                      schema.dataSchemaVersions.workspaceId,
+                      actor.workspaceId,
+                    ),
+                    eq(schema.dataSchemaVersions.datasetId, dataset.id),
+                  ),
+                )
+                .orderBy(desc(schema.dataSchemaVersions.version))
+                .limit(1)
+            : [];
+        // Staged edits reserve immutable schema versions. A cancelled proposal
+        // must not prevent a later editor from creating a different definition.
+        const definition = {
+          ...input.definition,
+          version: refresh?.version ?? (latestSchema?.version ?? 0) + 1,
+        };
+        const result = await ingestDatasetPage(tx, {
+          workspaceId: actor.workspaceId,
+          connectionId: null,
+          kind: "manual",
+          definition,
+          page: {
+            datasetKey: input.definition.key,
+            schemaVersion: definition.version,
+            refreshKey: input.refreshId,
+            pageKey: "page-" + input.page,
+            previousPageKey: input.page ? "page-" + (input.page - 1) : null,
+            complete: input.complete,
+            records: input.records,
+          },
+          now,
+          policyDefaults: policyFor(tx),
+        });
+        if (input.complete && !result.replayed) {
+          await tx
+            .update(schema.dataDatasets)
+            .set({ name: definition.name })
+            .where(
+              and(
+                eq(schema.dataDatasets.workspaceId, actor.workspaceId),
+                eq(schema.dataDatasets.id, result.datasetId),
+                eq(schema.dataDatasets.kind, "manual"),
+              ),
+            );
+          await audit(tx, actor, "data.manual_saved", result.datasetId);
+        }
+        return {
+          datasetId: result.datasetId,
+          generationId: result.generationId,
         };
       }),
     saveManual: (
@@ -1237,6 +1596,7 @@ export async function queryDataModel(
   const evaluate = async (generations?: Record<string, string>) => {
     const loader = createDataLoader(tx, workspaceId, now, {
       policy,
+      allowPendingResults: true,
       ...(generations ? { generations } : {}),
       ...(release
         ? { dependencies: release.dependencies as Dependencies }
@@ -1268,7 +1628,12 @@ export async function queryDataModel(
       { ...query, now: now.toISOString() },
       loader.budget,
     );
-    const rawGenerations = result.provenance
+    const retainedInputs = result.provenance.filter(
+      (source) =>
+        !source.datasetId.startsWith("resources:") &&
+        !source.datasetId.startsWith("prepared:"),
+    );
+    const rawGenerations = retainedInputs
       .map((source) => source.generationId)
       .filter((id) => z.uuid().safeParse(id).success);
     const stamps = rawGenerations.length
@@ -1283,7 +1648,9 @@ export async function queryDataModel(
           )
       : [];
     const receivedAt =
-      stamps.length === result.provenance.length && stamps.length
+      !result.pendingSources?.length &&
+      stamps.length === retainedInputs.length &&
+      stamps.length
         ? new Date(
             Math.min(...stamps.map((stamp) => stamp.at.getTime())),
           ).toISOString()
@@ -1299,7 +1666,17 @@ export async function queryDataModel(
         expiresAt: expiries[0] ?? null,
         releaseId: release?.id ?? null,
         stale: false,
-        warnings: [...loader.warnings, ...result.warnings],
+        warnings: [
+          ...new Set(
+            [...loader.warnings]
+              .filter(
+                (warning) =>
+                  warning !== "data_source_pending" ||
+                  result.pendingSources?.length,
+              )
+              .concat(result.warnings),
+          ),
+        ],
       },
     };
   };
@@ -1348,7 +1725,7 @@ export async function queryDataModel(
       ],
     };
   }
-  if (release) {
+  if (release && !execution.result.pendingSources?.length) {
     // Cache only generation identities, never a second copy of source rows.
     // Limit cache cardinality and lifetime independently of source retention.
     const existing = await tx

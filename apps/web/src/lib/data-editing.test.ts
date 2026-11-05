@@ -72,3 +72,29 @@ it("distinguishes a first import from unpublished definitions and unavailable re
   expect(dataErrorCodeKey("data_source_not_published")).toBe("unpublished");
   expect(dataErrorCodeKey("data_source_history_unavailable")).toBe("expired");
 });
+
+it("round-trips reference cells without losing null, empty text, quotes, false or exact decimals", async () => {
+  const { referenceCellText, referenceCellValue, referenceRecordPages } =
+    await import("./data-editing");
+  for (const [type, value] of [
+    ["string", null],
+    ["string", ""],
+    ["string", '"quoted"'],
+    ["string", "001"],
+    ["decimal", "12345678901234567890.1200"],
+    ["boolean", false],
+    ["integer", 0],
+    ["json", { empty: "", enabled: false }],
+  ] as const) {
+    expect(
+      referenceCellValue(type, referenceCellText(type, value), true),
+    ).toEqual(value);
+  }
+  const records = Array.from({ length: 2501 }, (_, id) => ({
+    values: { id: String(id) },
+  }));
+  const pages = [...referenceRecordPages(records)];
+  expect(pages.map((page) => page.length)).toEqual([1000, 1000, 501]);
+  expect(pages.flat()).toEqual(records);
+  expect([...referenceRecordPages([])]).toEqual([[]]);
+});

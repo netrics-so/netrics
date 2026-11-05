@@ -1,9 +1,11 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   getDataWorkspace,
   previewData,
+  readReference,
+  type ReferenceTable,
   type DataWorkspace as WorkspaceData,
   type DataPreview,
   type PreparationDraft,
@@ -22,7 +24,7 @@ type Section = "datasets" | "preparations" | "models";
 type Editor = { key: string } & (
   | { kind: "preparation"; initial: PreparationDraft | null; sourceId?: string }
   | { kind: "model"; initial: ModelDraft | null }
-  | { kind: "reference" }
+  | { kind: "reference"; initial?: ReferenceTable }
 );
 export function DataWorkspace({
   workspaceId,
@@ -46,6 +48,37 @@ export function DataWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [previewRevision, setPreviewRevision] = useState(0);
   useLeaveGuard(dirty, t("unsaved"));
+  const referenceAbort = useRef<AbortController | null>(null);
+  const [referenceLoading, setReferenceLoading] = useState<{
+    loaded: number;
+    total: number;
+  } | null>(null);
+  useEffect(
+    () => () => referenceAbort.current?.abort(),
+    [selected, editor?.key, section],
+  );
+  async function editReference() {
+    referenceAbort.current?.abort();
+    const controller = new AbortController();
+    referenceAbort.current = controller;
+    setReferenceLoading({ loaded: 0, total: 0 });
+    setError(null);
+    try {
+      const reference = await readReference(
+        workspaceId,
+        selected,
+        (loaded, total) => setReferenceLoading({ loaded, total }),
+        controller.signal,
+      );
+      if (!controller.signal.aborted)
+        open({ kind: "reference", initial: reference });
+    } catch (cause) {
+      if (!controller.signal.aborted)
+        setError(t(`errors.${dataErrorKey(cause)}`));
+    } finally {
+      if (referenceAbort.current === controller) setReferenceLoading(null);
+    }
+  }
   const selectedSource = data.sources.find((source) => source.id === selected);
   useEffect(() => {
     let alive = true;
@@ -191,6 +224,7 @@ export function DataWorkspace({
         />
       ) : editor?.kind === "reference" ? (
         <ReferenceEditor
+          initial={editor.initial}
           key={editor.key}
           workspaceId={workspaceId}
           onDirty={setDirty}
@@ -292,22 +326,44 @@ export function DataWorkspace({
                     </h2>
                     <p className="page-meta">{t("sampleHint")}</p>
                   </div>
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={!preview || loading}
-                    onClick={() => {
-                      setSection("preparations");
-                      open({
-                        kind: "preparation",
-                        initial: null,
-                        sourceId: selected,
-                      });
-                    }}
-                  >
-                    {t("prepare")}
-                  </button>
+                  <div className="actions">
+                    {selectedSource?.kind === "manual" ? (
+                      <button
+                        type="button"
+                        disabled={loading || !!referenceLoading}
+                        onClick={() => void editReference()}
+                      >
+                        {t("editReference")}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={!preview || loading || !!referenceLoading}
+                      onClick={() => {
+                        setSection("preparations");
+                        open({
+                          kind: "preparation",
+                          initial: null,
+                          sourceId: selected,
+                        });
+                      }}
+                    >
+                      {t("prepare")}
+                    </button>
+                  </div>
                 </div>
+                {referenceLoading ? (
+                  <p className="notice" role="status">
+                    {t("referenceLoadProgress", referenceLoading)}{" "}
+                    <button
+                      type="button"
+                      onClick={() => referenceAbort.current?.abort()}
+                    >
+                      {t("cancel")}
+                    </button>
+                  </p>
+                ) : null}
                 {selectedSource?.aggregated ? (
                   <p className="notice">{t("aggregatedHint")}</p>
                 ) : null}

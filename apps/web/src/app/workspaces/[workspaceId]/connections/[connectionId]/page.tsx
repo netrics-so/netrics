@@ -64,6 +64,7 @@ export default async function ConnectionDetailPage({
   const { cookieHeader } = await requireSession();
   const locale = await getLocale();
   const t = await getT("connections.detail");
+  const stores = await getT("storeTemplate");
   const ads = await getT("connections.appleAds");
   const health = await getT("health");
 
@@ -142,6 +143,23 @@ export default async function ConnectionDetailPage({
         </div>
       ) : null}
 
+      {!connection.setupPending &&
+      (appStore || connection.connectorId === "google-play") &&
+      can(role, "dashboards:create") &&
+      can(role, "data:publish") ? (
+        <div className="card stack">
+          <h2>{stores("title")}</h2>
+          <p className="muted">{stores("subtitle")}</p>
+          <div className="actions">
+            <Link
+              className="button primary"
+              href={`/workspaces/${workspaceId}/dashboards/stores?connection=${connection.id}`}
+            >
+              {stores("appDashboard")}
+            </Link>
+          </div>
+        </div>
+      ) : null}
       {connection.setupPending ? (
         <FinishSetup
           workspaceId={workspaceId}

@@ -173,5 +173,6 @@ implementation work; this plan does not create or complete issue records.
     setup preview and app management: [#457](https://github.com/netrics-so/netrics/issues/457).
     Connector integration proves exact proceeds/corrections, OAuth refresh and
     workspace isolation. Editable portfolio templates, confirmed cross-store
-    mappings, dashboard source-health actions and real-account acceptance remain
-    open. See [current implementation boundaries](../connectors/google-play.md#current-implementation-boundaries).
+    mappings and dashboard source-health actions are implemented in
+    [#462](https://github.com/netrics-so/netrics/issues/462). Real-account
+    acceptance remains open. See [current implementation boundaries](../connectors/google-play.md#current-implementation-boundaries).

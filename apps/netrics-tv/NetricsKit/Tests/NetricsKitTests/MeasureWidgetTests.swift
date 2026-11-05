@@ -43,4 +43,15 @@ import Testing
                 == "9,007,199,254,740,993.12 EUR")
         #expect(WidgetDetail.make(widget, now: Date(timeIntervalSince1970: 2_000_000_000))?.items.isEmpty == true)
     }
+    @Test func retainsLabelsPendingInputsAndSourceActionsInOfflinePayloads() throws {
+        let json = #"{"sourceHealth":[{"connectionId":"c","name":"Store account","status":"needs_reauthorization","lastSuccessAt":null}],"result":{"pendingSources":["waiting"],"rows":[{"dimensions":{"app":"stable-id"},"dimensionLabels":{"app":"Friendly app"},"measures":{"total":{"value":"1.20","type":"decimal","status":"partial"}}}],"warnings":["data_source_pending"],"provenance":[],"stale":false},"exclusions":[]}"#
+        let data = try JSONDecoder().decode(MeasureWidgetData.self, from: Data(json.utf8))
+        #expect(data.result?.rows[0].dimensionLabels?["app"] == "Friendly app")
+        #expect(data.result?.rows[0].dimensions["app"] == .text("stable-id"))
+        #expect(data.result?.pendingSources == ["waiting"])
+        #expect(data.sourceHealth?.first?.status == "needs_reauthorization")
+        let cached = try JSONDecoder().decode(MeasureWidgetData.self, from: JSONEncoder().encode(data))
+        #expect(cached == data)
+    }
+
 }

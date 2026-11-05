@@ -1,4 +1,5 @@
 import { registerDataRoutes } from "./routes/data.js";
+import { registerStoreTemplateRoutes } from "./routes/store-templates.js";
 import { registerDataPolicyRoutes } from "./routes/data-policy.js";
 import cors from "@fastify/cors";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
@@ -206,6 +207,13 @@ export async function buildApp(
   registerDataRoutes(app, {
     authService,
     db,
+    policy: config.dataPolicy,
+    ...(deps.now ? { now: deps.now } : {}),
+  });
+  registerStoreTemplateRoutes(app, {
+    authService,
+    db,
+    registry,
     policy: config.dataPolicy,
     ...(deps.now ? { now: deps.now } : {}),
   });

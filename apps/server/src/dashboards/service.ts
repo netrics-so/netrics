@@ -1245,7 +1245,9 @@ function counts(dashboard: Dashboard) {
   };
 }
 
-export function createDashboardService(deps: { db: Database }) {
+export function createDashboardService(deps: {
+  db: Pick<Database, "transaction">;
+}) {
   const inWorkspace = <T>(actor: Actor, run: (tx: Transaction) => Promise<T>) =>
     withWorkspace(
       deps.db,

@@ -4,8 +4,8 @@ The architecture is [ADR 0022](./decisions/0022-reusable-data-model-and-processi
 Implementation is tracked in [#439](https://github.com/netrics-so/netrics/issues/439).
 The dataset foundation, processing engine, data authoring workspace and first
 published-measure dashboard bindings are implemented in stacked draft pull
-requests. Advanced interactions and connector templates remain
-separate delivery work.
+requests. Editable app-store portfolio templates are included; advanced
+authoring, history and dashboard interactions remain separate delivery work.
 
 Store connectors can declare `supportsResourceSelection` to offer one stored
 account credential with a configurable app scope. Stored-connection preview
@@ -17,18 +17,20 @@ preserves the existing scope; none of these choices deletes retained history.
 Aggregates such as sum, average, minimum and maximum keep their known result
 when some input values are null, but mark it partial and emit
 `aggregate_missing_inputs`. Formulas inherit that partial status. Count and
-three-valued boolean semantics are unchanged. A deliberate filter excluding
-missing rows is evaluated before aggregation. Execution version 3 invalidates
-older prepared/query caches so these warnings are not silently lost.
+three-valued boolean semantics distinguish unknown inputs from false. A deliberate
+filter excluding missing rows is evaluated before aggregation. Execution version 4
+invalidates older prepared/query caches so pending-input status is preserved.
 
 Definition previews and publication can use a newly registered source's schema
 before its first complete report arrives. Previews show a waiting note and no
 calculated rows; publication stores definitions and schema bindings without
-creating raw or prepared generations. Ordinary dataset/model queries continue
-to report `data_source_pending`, including count measures, until a real complete
-generation arrives. The published definitions then read that generation without
-republishing. Available inputs still undergo actual relationship/cardinality
-checks during publication.
+creating raw or prepared generations. Raw previews still report
+`data_source_pending`. Model queries retain known values as partial and include
+pending source identities. A wholly pending count is null, never zero; boolean
+aggregates preserve unknown truth unless a known value decides the result.
+Incomplete inputs never create prepared generations or last-valid query snapshots.
+The definitions read the first complete generation without republishing. Available
+inputs still undergo actual relationship/cardinality checks during publication.
 
 `data_datasets.has_published_data` survives retention pruning. A source that
 once published data cannot become a schema-only first import after its history
@@ -343,4 +345,54 @@ streaming or SQL execution path. Representative-volume checks and a scalable
 execution/storage path remain release work; this implementation does not claim
 a tested unbounded workload. Rolling/previous-period calculations, explicit
 rollback/history controls, advanced authoring controls, dashboard interactions
-and connector templates remain tracked in milestone 11.
+remain tracked in milestone 11.
+
+## Editable app portfolio templates
+
+[#462](https://github.com/netrics-so/netrics/issues/462) adds an account chooser,
+searchable app selection, explicit cross-store product links and a review step at
+`/workspaces/:id/dashboards/stores`. Matching names are suggestions that require
+confirmation. A customer can create a portfolio or a dashboard fixed to one
+app/product. The starting date filter covers all retained history.
+
+Installation creates ordinary manual tables (Products and Confirmed app mapping),
+preparations, three published models, three table widgets and six shared filters.
+Rename a product once in Products; change a listing's product ID in the mapping
+table. Future apps retain their source identity until explicitly linked. Resource
+names are exposed as a tenant-scoped `resources:<connectionId>` dataset whose
+content fingerprint invalidates dependent outputs when names change. It is current
+metadata, not a retained historical resource-name snapshot. It is excluded from
+report freshness timestamps; retained report/reference generations determine those.
+
+Apple first-download units and Google daily user installs stay separated by store.
+Proceeds include signed refunds, fees and adjustments, with currencies kept apart.
+Ratings use the latest snapshot per listing and rating country; linking products
+never combines listing scores. Measures can declare required dimensions: group by
+those dimensions or fix each to a single value in a conjunctive filter. Formula
+measures inherit the requirements of their dependencies. `OR` and multi-value
+filters do not satisfy a single-value requirement. Stable identity values are kept
+separate from optional dimension display labels in queries, filter choices and
+native payloads.
+
+Each affected widget includes connection health and, in the workspace browser,
+a link to resolve missing access, reauthorization, failed sync or paused app
+selection. Retained history remains queryable after authorization is revoked;
+source health describes collection, not permission to read retained workspace data.
+A filter exclusion is shown when that filter is active.
+
+Installation is atomic and keyed by a workspace/request UUID and normalized
+request hash. Retry returns the installed IDs without duplicating records or
+replacing customer edits; a changed request with the same UUID is rejected. Policy
+failures roll back datasets, definitions and dashboards. Migration 0057 adds a
+forced-RLS installation ledger and is exercised on populated 0056 data.
+
+Reference tables can be edited through Data & measures. Reading pins a retained
+generation and pages through every record, rather than treating the preview as the
+whole table. Saving stages bounded transport pages and publishes one complete
+snapshot. Concurrent edits require the current generation; retries cannot publish
+duplicates. Cancelled staged edits do not publish rows or reserve the next editor's
+definition permanently. Staging data follows dataset retention/maintenance policy;
+there is no separate cancel-upload garbage collector yet. Empty text, null, false,
+zero and exact decimal strings remain distinct. The UI renders 50 rows at a time
+but currently holds the whole editable table in browser memory. Source and query
+budgets still apply; paging does not claim warehouse-scale execution.

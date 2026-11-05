@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import type {
   DashboardDataFilter,
   DashboardFilterValue,
@@ -13,12 +13,14 @@ export function DashboardFilterInput({
   initialBrowse = false,
   value,
   onChange,
+  onLabels,
 }: {
   filter: DashboardDataFilter;
   workspaceId?: string;
   initialBrowse?: boolean;
   value: DashboardFilterValue;
   onChange: (value: DashboardFilterValue) => void;
+  onLabels?: (labels: Record<string, string>) => void;
 }) {
   const id = useId(),
     t = useT("data.dashboard"),
@@ -30,11 +32,16 @@ export function DashboardFilterInput({
     [revision, setRevision] = useState(0);
   const [choices, setChoices] = useState<{
       values: unknown[];
+      labels?: string[];
       total: number;
     } | null>(null),
     [choicesError, setChoicesError] = useState(false),
     [choicesLoading, setChoicesLoading] = useState(false);
+  const [labelCache, setLabelCache] = useState<Record<string, string>>({});
   const mapping = filter.mappings[0];
+  useEffect(() => {
+    setLabelCache({});
+  }, [mapping?.modelId, mapping?.dimensionId]);
   useEffect(() => {
     if (!browse || !workspaceId || !mapping || filter.mode !== "values") return;
     let alive = true;
@@ -50,7 +57,28 @@ export function DashboardFilterInput({
         offset,
       )
         .then((response) => {
-          if (alive) setChoices(response);
+          if (alive) {
+            setChoices(response);
+            if (response.labels)
+              onLabels?.(
+                Object.fromEntries(
+                  response.values.map((value, index) => [
+                    JSON.stringify(value),
+                    response.labels![index]!,
+                  ]),
+                ),
+              );
+            if (response.labels)
+              setLabelCache((current) => ({
+                ...current,
+                ...Object.fromEntries(
+                  response.values.map((value, index) => [
+                    JSON.stringify(value),
+                    response.labels![index]!,
+                  ]),
+                ),
+              }));
+          }
         })
         .catch(() => {
           if (alive) setChoicesError(true);
@@ -72,6 +100,7 @@ export function DashboardFilterInput({
     search,
     offset,
     revision,
+    onLabels,
   ]);
   function parse(text: string) {
     return enteredValue(filter.type, text, false);
@@ -168,11 +197,12 @@ export function DashboardFilterInput({
                         })
                       }
                     >
-                      {raw === null
-                        ? t("unmatched")
-                        : typeof raw === "boolean"
-                          ? t(raw ? "yes" : "no")
-                          : String(raw)}
+                      {choices.labels?.[index] ||
+                        (raw === null
+                          ? t("unmatched")
+                          : typeof raw === "boolean"
+                            ? t(raw ? "yes" : "no")
+                            : String(raw))}
                     </button>
                   </li>
                 ))}
@@ -215,11 +245,12 @@ export function DashboardFilterInput({
               value: raw === null ? t("unmatched") : String(raw),
             })}
           >
-            {raw === null
-              ? t("unmatched")
-              : typeof raw === "boolean"
-                ? t(raw ? "yes" : "no")
-                : String(raw)}{" "}
+            {labelCache[JSON.stringify(raw)] ||
+              (raw === null
+                ? t("unmatched")
+                : typeof raw === "boolean"
+                  ? t(raw ? "yes" : "no")
+                  : String(raw))}{" "}
             ×
           </button>
         ))}
@@ -316,6 +347,56 @@ function CompactFilter({
     id = useId(),
     [open, setOpen] = useState(false),
     [left, setLeft] = useState(0);
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const receiveLabels = useCallback(
+    (next: Record<string, string>) =>
+      setLabels((current) => ({ ...current, ...next })),
+    [],
+  );
+  const mapping = filter.mappings[0];
+  const selectedKey = JSON.stringify(
+    value?.kind === "values" ? value.values : [],
+  );
+  useEffect(() => {
+    if (!workspaceId || !mapping) return;
+    let alive = true;
+    const selected = JSON.parse(selectedKey) as unknown[];
+    const load = async () => {
+      for (let offset = 0; offset < selected.length && alive; offset += 4) {
+        const results = await Promise.allSettled(
+          selected.slice(offset, offset + 4).map(async (value) => {
+            if (value === null) return {};
+            const response = await loadDimensionValues(
+              workspaceId,
+              mapping.modelId,
+              mapping.dimensionId,
+              String(value),
+            );
+            const index = response.values.findIndex(
+              (candidate) =>
+                JSON.stringify(candidate) === JSON.stringify(value),
+            );
+            return index >= 0 && response.labels?.[index]
+              ? { [JSON.stringify(value)]: response.labels[index]! }
+              : {};
+          }),
+        );
+        if (alive)
+          for (const result of results)
+            if (result.status === "fulfilled") receiveLabels(result.value);
+      }
+    };
+    void load();
+    return () => {
+      alive = false;
+    };
+  }, [
+    workspaceId,
+    mapping?.modelId,
+    mapping?.dimensionId,
+    selectedKey,
+    receiveLabels,
+  ]);
   const label =
     value === null
       ? t("allValues")
@@ -323,12 +404,14 @@ function CompactFilter({
         ? `${String(value.from ?? "…")} – ${String(value.to ?? "…")}`
         : value.values.length
           ? value.values
-              .map((value) =>
-                value === null
-                  ? t("unmatched")
-                  : typeof value === "boolean"
-                    ? t(value ? "yes" : "no")
-                    : String(value),
+              .map(
+                (value) =>
+                  labels[JSON.stringify(value)] ||
+                  (value === null
+                    ? t("unmatched")
+                    : typeof value === "boolean"
+                      ? t(value ? "yes" : "no")
+                      : String(value)),
               )
               .join(", ")
           : t("allValues");
@@ -397,6 +480,7 @@ function CompactFilter({
             filter={filter}
             value={value}
             onChange={onChange}
+            onLabels={receiveLabels}
           />
           {filter.fixedValue ? (
             <p className="help">{t("fixedScopeActive")}</p>
@@ -433,7 +517,7 @@ export function DashboardFilters({
       <div className="dashboard-filter-controls">
         {filters.map((filter) => (
           <CompactFilter
-            key={filter.id}
+            key={filter.id + JSON.stringify(filter.mappings[0])}
             filter={filter}
             workspaceId={workspaceId}
             value={

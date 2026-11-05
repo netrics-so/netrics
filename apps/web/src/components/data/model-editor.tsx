@@ -243,7 +243,7 @@ export function ModelEditor({
       Object.fromEntries([
         ...Object.entries(row.dimensions).map(([id, value]) => [
           "d." + id,
-          value,
+          row.dimensionLabels?.[id] ?? value,
         ]),
         ...Object.entries(row.measures).map(([id, cell]) => [
           "m." + id,
@@ -510,6 +510,7 @@ export function ModelEditor({
                         (definition.dimensions.length + 1),
                       datasetId: selectedSources[0]!.id,
                       fieldId: "",
+                      labelFieldId: undefined,
                     },
                   ],
                 })
@@ -549,6 +550,7 @@ export function ModelEditor({
                     update({
                       datasetId,
                       fieldId: "",
+                      labelFieldId: undefined,
                       timeAlignment: undefined,
                     }),
                 )}
@@ -573,6 +575,24 @@ export function ModelEditor({
                     });
                   }}
                 />
+                <label className="field">
+                  {t("dimensionLabel")}
+                  <select
+                    value={dimension.labelFieldId ?? ""}
+                    onChange={(event) =>
+                      update({ labelFieldId: event.target.value || undefined })
+                    }
+                  >
+                    <option value="">{t("dimensionLabelNone")}</option>
+                    {fieldsFor(dimension.datasetId)
+                      .filter((field) => field.type === "string")
+                      .map((field) => (
+                        <option key={field.id} value={field.id}>
+                          {field.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
                 <button
                   type="button"
                   onClick={() => {
@@ -580,6 +600,12 @@ export function ModelEditor({
                       dimensions: definition.dimensions.filter(
                         (d) => d.id !== dimension.id,
                       ),
+                      measures: definition.measures.map((measure) => ({
+                        ...measure,
+                        requiredDimensions: measure.requiredDimensions?.filter(
+                          (id) => id !== dimension.id,
+                        ),
+                      })),
                     });
                     setGroupBy((ids) =>
                       ids.filter((id) => id !== dimension.id),
@@ -648,6 +674,7 @@ export function ModelEditor({
                           ? {
                               id: measure.id,
                               name: measure.name,
+                              requiredDimensions: measure.requiredDimensions,
                               kind: "aggregate",
                               datasetId: definition.datasets[0]!,
                               aggregate: {
@@ -659,6 +686,7 @@ export function ModelEditor({
                           : {
                               id: measure.id,
                               name: measure.name,
+                              requiredDimensions: measure.requiredDimensions,
                               kind: "formula",
                               expression: {
                                 kind: "literal",
@@ -690,6 +718,37 @@ export function ModelEditor({
                     )
                   : null}
               </div>
+              {definition.dimensions.length ? (
+                <fieldset className="stack">
+                  <legend>{t("requiredScope")}</legend>
+                  <p className="help">{t("requiredScopeHelp")}</p>
+                  {definition.dimensions.map((dimension) => (
+                    <label className="checkbox-row" key={dimension.id}>
+                      <input
+                        type="checkbox"
+                        checked={
+                          measure.requiredDimensions?.includes(dimension.id) ??
+                          false
+                        }
+                        onChange={(event) =>
+                          changeMeasure(measure.id, {
+                            ...measure,
+                            requiredDimensions: event.target.checked
+                              ? [
+                                  ...(measure.requiredDimensions ?? []),
+                                  dimension.id,
+                                ]
+                              : (measure.requiredDimensions ?? []).filter(
+                                  (id) => id !== dimension.id,
+                                ),
+                          })
+                        }
+                      />
+                      {dimension.name}
+                    </label>
+                  ))}
+                </fieldset>
+              ) : null}
               {measure.kind === "aggregate" ? (
                 <AggregateFields
                   showName={false}

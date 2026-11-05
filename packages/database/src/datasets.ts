@@ -201,6 +201,32 @@ async function register(
   return dataset;
 }
 
+/** Host-owned schema registration for templates; never invents records or a refresh. */
+export async function registerSourceDataset(
+  tx: Transaction,
+  input: {
+    workspaceId: string;
+    connectionId: string;
+    definition: SourceDatasetDefinition;
+    policyDefaults?: DataPolicy;
+  },
+) {
+  const definition = sourceDatasetSchema.parse(input.definition);
+  const { policy } = await resolveDataPolicy(
+    tx,
+    input.workspaceId,
+    input.policyDefaults,
+  );
+  return register(
+    tx,
+    input.workspaceId,
+    input.connectionId,
+    definition,
+    "source",
+    policy.maxSources,
+  );
+}
+
 export interface IngestDatasetPageInput {
   workspaceId: string;
   connectionId: string | null;

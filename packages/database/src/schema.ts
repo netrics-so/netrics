@@ -2026,3 +2026,26 @@ export const dataWorkspacePolicies = pgTable("data_workspace_policies", {
     .notNull()
     .defaultNow(),
 });
+
+/** Idempotent template creation; result IDs never authorize a subsequent read. */
+export const dataTemplateInstalls = pgTable(
+  "data_template_installs",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    requestId: uuid("request_id").notNull(),
+    requestHash: text("request_hash").notNull(),
+    result: jsonb("result").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.requestId] }),
+    check(
+      "data_template_installs_hash",
+      sql`${table.requestHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+);

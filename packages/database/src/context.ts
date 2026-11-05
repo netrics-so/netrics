@@ -30,7 +30,7 @@ const uuidSchema = z.uuid();
  * set_config(..., true) keeps transaction-local.
  */
 export async function withWorkspace<T>(
-  db: Db,
+  db: Pick<Db, "transaction">,
   ctx: WorkspaceContext,
   fn: (tx: Transaction) => Promise<T>,
   options?: {

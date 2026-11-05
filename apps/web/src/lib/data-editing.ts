@@ -160,3 +160,49 @@ export function parseEnteredTable(text: string): {
     rows,
   };
 }
+
+/** Preserve empty text, null, exact decimals and quoted text while editing cells. */
+export function referenceCellText(
+  type: import("@netrics/domain").DataType,
+  value: unknown,
+): string {
+  if (value === null) return "";
+  if (type === "json") return JSON.stringify(value);
+  if (type === "string" && (value === "" || String(value).startsWith('"')))
+    return JSON.stringify(value);
+  return String(value);
+}
+export function referenceCellValue(
+  type: import("@netrics/domain").DataType,
+  text: string,
+  nullable: boolean,
+): unknown {
+  if (type === "string" && text.startsWith('"')) {
+    try {
+      const value: unknown = JSON.parse(text);
+      if (typeof value === "string") return value;
+    } catch {
+      /* Unquoted source text is also valid text. */
+    }
+  }
+  return enteredValue(type, text, nullable);
+}
+
+/** Batch size bounds transport, never the total number of editable records. */
+export function* referenceRecordPages<
+  T extends { values: Record<string, unknown> },
+>(records: readonly T[]): Generator<T[]> {
+  let page: T[] = [],
+    bytes = 0;
+  for (const record of records) {
+    const size = new TextEncoder().encode(JSON.stringify(record)).length;
+    if (page.length && (page.length >= 1000 || bytes + size > 512 * 1024)) {
+      yield page;
+      page = [];
+      bytes = 0;
+    }
+    page.push(record);
+    bytes += size;
+  }
+  if (page.length || !records.length) yield page;
+}

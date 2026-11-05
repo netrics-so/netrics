@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   dashboardDataFiltersSchema,
   measureWidgetBindingSchema,
@@ -9,6 +9,9 @@ import {
 import {
   dashboardModelQuery,
   compareDataValues,
+  dimensionValueLabels,
+  dataKey,
+  measureRequiredDimensions,
   querySemanticModel,
   validateMeasureView,
   DataProcessingError,
@@ -77,7 +80,14 @@ export async function publishedModel(
     metadata: {
       modelId,
       modelName: row.name,
-      measures: definition.measures.map(({ id, name }) => ({ id, name })),
+      measures: definition.measures.map(({ id, name }) => {
+        const requiredDimensions = measureRequiredDimensions(definition, [id]);
+        return {
+          id,
+          name,
+          ...(requiredDimensions.length ? { requiredDimensions } : {}),
+        };
+      }),
       dimensions,
     },
   };
@@ -102,6 +112,82 @@ export function safeDataError(error: unknown): string {
     error instanceof DataProcessingError
     ? error.code
     : "data_storage_failed";
+}
+
+async function modelSourceHealth(
+  tx: Transaction,
+  workspaceId: string,
+  modelId: string,
+): Promise<NonNullable<DashboardWidgetData["sourceHealth"]>> {
+  const model = await publishedModel(tx, workspaceId, modelId);
+  const raw = Object.keys(model.bindings).filter((id) =>
+    /^[0-9a-f-]{36}$/i.test(id),
+  );
+  const connections = new Set<string>();
+  for (const id of Object.keys(model.bindings)) {
+    if (id.startsWith("resources:") || id.startsWith("observation:")) {
+      const connectionId = id.split(":")[1];
+      if (connectionId && /^[0-9a-f-]{36}$/i.test(connectionId))
+        connections.add(connectionId);
+    }
+  }
+  if (raw.length)
+    for (const dataset of await tx
+      .select({ connectionId: schema.dataDatasets.connectionId })
+      .from(schema.dataDatasets)
+      .where(
+        and(
+          eq(schema.dataDatasets.workspaceId, workspaceId),
+          inArray(schema.dataDatasets.id, raw),
+        ),
+      ))
+      if (dataset.connectionId) connections.add(dataset.connectionId);
+  if (!connections.size) return [];
+  const rows = await tx
+    .select({
+      id: schema.connections.id,
+      name: schema.connections.name,
+      config: schema.connections.config,
+      setupPending: schema.connections.setupPending,
+      authState: schema.connectionState.authState,
+      failures: schema.connectionState.consecutiveFailures,
+      lastSuccess: schema.connectionState.lastSuccessAt,
+    })
+    .from(schema.connections)
+    .leftJoin(
+      schema.connectionState,
+      and(
+        eq(schema.connectionState.workspaceId, workspaceId),
+        eq(schema.connectionState.connectionId, schema.connections.id),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.connections.workspaceId, workspaceId),
+        inArray(schema.connections.id, [...connections]),
+      ),
+    );
+  return rows.map((row) => {
+    const selection = (row.config as Record<string, unknown>).resourceSelection;
+    const status: NonNullable<
+      DashboardWidgetData["sourceHealth"]
+    >[number]["status"] =
+      row.authState && row.authState !== "ok"
+        ? (row.authState as "auth_failed" | "needs_reauthorization" | "outage")
+        : Array.isArray(selection) && selection.length === 0
+          ? "paused"
+          : (row.failures ?? 0) > 0
+            ? "outage"
+            : row.setupPending || !row.lastSuccess
+              ? "pending"
+              : "ok";
+    return {
+      connectionId: row.id,
+      name: row.name,
+      status,
+      lastSuccessAt: row.lastSuccess?.toISOString() ?? null,
+    };
+  });
 }
 export async function validateDashboardMeasure(
   tx: Transaction,
@@ -134,10 +220,19 @@ export async function validateDashboardMeasure(
   );
   querySemanticModel(model.definition, tables, query);
   if (options.view === "bar" || options.view === "line") {
-    const ungrouped = querySemanticModel(model.definition, tables, {
-      ...query,
-      groupBy: [],
-    });
+    const ungrouped = querySemanticModel(
+      {
+        ...model.definition,
+        measures: model.definition.measures.map(
+          ({ requiredDimensions: _grain, ...measure }) => measure,
+        ),
+      },
+      tables,
+      {
+        ...query,
+        groupBy: [],
+      },
+    );
     const measure = ungrouped.rows[0]?.measures[binding.measureIds[0]!];
     if (measure && !["integer", "number", "decimal"].includes(measure.type))
       throw new DataServiceError("dashboard_measure_numeric_required");
@@ -168,6 +263,21 @@ export async function queryDashboardMeasure(
   defaults: DataPolicy = DEFAULT_DATA_POLICY,
   locale: "en" | "de" = "en",
 ): Promise<DashboardWidgetData> {
+  let sourceHealth: DashboardWidgetData["sourceHealth"];
+  const exclusions = input.binding.exclusions.filter((exclusion) => {
+    const filter = filters.find((filter) => filter.id === exclusion.filterId);
+    if (!filter) return false;
+    const value = Object.hasOwn(values, filter.id)
+      ? values[filter.id]
+      : filter.defaultValue;
+    return [value, filter.fixedValue].some(
+      (value) =>
+        value &&
+        (value.kind === "values"
+          ? value.values.length > 0
+          : value.from !== null || value.to !== null),
+    );
+  });
   try {
     return await tx.transaction(async (savepoint) => {
       const metadata = await validateDashboardMeasure(
@@ -176,6 +286,11 @@ export async function queryDashboardMeasure(
         filters,
         input.binding,
         input.options,
+      );
+      sourceHealth = await modelSourceHealth(
+        savepoint,
+        workspaceId,
+        input.binding.modelId,
       );
       const { policy } = await resolveDataPolicy(
         savepoint,
@@ -210,24 +325,35 @@ export async function queryDashboardMeasure(
         if (currencies.size > 1)
           throw new DataServiceError("dashboard_measure_currency_incompatible");
       }
-      const selection = (value: DashboardFilterValue | undefined): string =>
+      const selection = (
+        value: DashboardFilterValue | undefined,
+        dimensionId?: string,
+      ): string =>
         !value
           ? ""
           : value.kind === "range"
-            ? `${String(value.from ?? "…")} – ${String(value.to ?? "…")}`
+            ? value.from === null && value.to === null
+              ? ""
+              : `${String(value.from ?? "…")} – ${String(value.to ?? "…")}`
             : value.values
-                .map((value) =>
-                  value === null
-                    ? "—"
-                    : typeof value === "boolean"
-                      ? locale === "de"
-                        ? value
-                          ? "Wahr"
-                          : "Falsch"
-                        : value
-                          ? "True"
-                          : "False"
-                      : String(value),
+                .map(
+                  (value) =>
+                    result.filterValueLabels?.find(
+                      (entry) =>
+                        entry.dimensionId === dimensionId &&
+                        JSON.stringify(entry.value) === JSON.stringify(value),
+                    )?.label ??
+                    (value === null
+                      ? "—"
+                      : typeof value === "boolean"
+                        ? locale === "de"
+                          ? value
+                            ? "Wahr"
+                            : "Falsch"
+                          : value
+                            ? "True"
+                            : "False"
+                        : String(value)),
                 )
                 .join(", ");
       const scope = filters
@@ -238,16 +364,21 @@ export async function queryDashboardMeasure(
             ),
         )
         .flatMap((filter) => {
+          const dimensionId = filter.mappings.find(
+            (mapping) => mapping.modelId === input.binding.modelId,
+          )?.dimensionId;
           const chosen = selection(
               Object.hasOwn(values, filter.id)
                 ? values[filter.id]
                 : filter.defaultValue,
+              dimensionId,
             ),
-            fixed = selection(filter.fixedValue);
+            fixed = selection(filter.fixedValue, dimensionId);
           const text = [chosen, fixed].filter(Boolean).join(" ∩ ");
           return text ? [`${filter.name}: ${text}`] : [];
         });
       return {
+        sourceHealth,
         scope,
         status: result.stale
           ? ("stale" as const)
@@ -260,17 +391,18 @@ export async function queryDashboardMeasure(
         metadata,
         result,
         error: null,
-        exclusions: input.binding.exclusions,
+        exclusions,
       };
     });
   } catch (error) {
     return {
+      ...(sourceHealth ? { sourceHealth } : {}),
       status: "outage",
       widgetId: input.id,
       metadata: null,
       result: null,
       error: safeDataError(error),
-      exclusions: input.binding.exclusions,
+      exclusions,
     };
   }
 }
@@ -342,6 +474,7 @@ export async function dashboardDimensionValues(
   const loader = createDataLoader(tx, workspaceId, now, {
     policy,
     dependencies: model.dependencies,
+    allowPendingResults: true,
   });
   const table = await loader.load(dimension.datasetId);
   const field = table.fields.find((field) => field.id === dimension.fieldId);
@@ -353,20 +486,25 @@ export async function dashboardDimensionValues(
     throw new DataServiceError("data_model_schema_changed", 409);
   if (field.type === "json")
     throw new DataServiceError("model_dimension_json_unsupported");
-  const unique = new Map<string, unknown>(),
+  const labels = dimensionValueLabels(dimension, table, loader.budget);
+  const unique = new Map<string, { value: unknown; label: string }>(),
     search = input.search.toLowerCase();
   for (const row of table.rows) {
     loader.budget.tick();
     const value = row[dimension.fieldId] ?? null;
+    const label =
+      labels.get(dataKey(table.fields, row, [dimension.fieldId])) ??
+      String(value ?? "");
     if (
       !search ||
       String(value ?? "")
         .toLowerCase()
-        .includes(search)
+        .includes(search) ||
+      label.toLowerCase().includes(search)
     )
-      unique.set(JSON.stringify(value), value);
+      unique.set(JSON.stringify(value), { value, label });
   }
-  const values = [...unique.values()].sort((a, b) =>
+  const values = [...unique.values()].sort(({ value: a }, { value: b }) =>
     a === null
       ? b === null
         ? 0
@@ -376,7 +514,16 @@ export async function dashboardDimensionValues(
         : compareDataValues(field.type, a, b),
   );
   return {
-    values: values.slice(input.offset, input.offset + input.limit),
+    values: values
+      .slice(input.offset, input.offset + input.limit)
+      .map((entry) => entry.value),
+    ...(dimension.labelFieldId
+      ? {
+          labels: values
+            .slice(input.offset, input.offset + input.limit)
+            .map((entry) => entry.label),
+        }
+      : {}),
     total: values.length,
     offset: input.offset,
   };
