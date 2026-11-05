@@ -177,6 +177,9 @@ importers:
 
   packages/contracts:
     dependencies:
+      '@netrics/connector-sdk':
+        specifier: workspace:*
+        version: link:../connector-sdk
       '@netrics/domain':
         specifier: workspace:*
         version: link:../domain
@@ -190,6 +193,9 @@ importers:
 
   packages/database:
     dependencies:
+      '@netrics/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@netrics/domain':
         specifier: workspace:*
         version: link:../domain

@@ -462,3 +462,14 @@ export async function checkDatabaseConnection(
     await client.end({ timeout: 0 }).catch(() => undefined);
   }
 }
+
+export {
+  ingestDatasetPage,
+  pruneDatasetHistory,
+  replayDatasetRefresh,
+  listObservationDatasets,
+  readObservationDataset,
+  previewDataset,
+  DatasetStoreError,
+} from "./datasets.js";
+export type { IngestDatasetPageInput } from "./datasets.js";

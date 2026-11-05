@@ -1,3 +1,4 @@
+import { sourceDatasetSchema } from "@netrics/connector-sdk";
 import type {
   CheckResult,
   ConnectionContext,
@@ -615,4 +616,80 @@ describe("executeResourceIcons (SDK 0.2.5)", () => {
       executeResourceIcons(sneaky, baseContext, iconsRequest),
     ).rejects.toThrow(/not in the connector's outboundDomains/);
   });
+});
+
+describe("dataset transport validation (#440)", () => {
+  it("rejects undeclared and incorrectly typed pages without echoing source values", async () => {
+    const definition = sourceDatasetSchema.parse({
+      key: "events",
+      name: "Events",
+      version: 1,
+      keyFields: ["id"],
+      grain: "one event",
+      mode: "upsert",
+      fields: [
+        {
+          id: "id",
+          name: "ID",
+          type: "string",
+          nullable: false,
+          classification: "internal",
+        },
+      ],
+    });
+    const page = {
+      datasetKey: "events",
+      schemaVersion: 1,
+      refreshKey: "r",
+      pageKey: "p",
+      previousPageKey: null,
+      complete: true,
+      records: [{ values: { id: 123456789 } }],
+    };
+    await expect(
+      executeSync(
+        connectorWith(demoManifest, () => ({
+          observations: [],
+          datasetPages: [page],
+          done: true,
+        })),
+        baseContext,
+        request,
+      ),
+    ).rejects.toThrow("Undeclared source dataset");
+    await expect(
+      executeSync(
+        connectorWith({ ...demoManifest, datasets: [definition] }, () => ({
+          observations: [],
+          datasetPages: [page],
+          done: true,
+        })),
+        baseContext,
+        request,
+      ),
+    ).rejects.toThrow("Invalid dataset field type: id");
+  });
+});
+
+it("does not accept a successful final sync with an incomplete dataset page", async () => {
+  const p = {
+    datasetKey: "events",
+    schemaVersion: 1,
+    refreshKey: "r",
+    pageKey: "p",
+    previousPageKey: null,
+    complete: false,
+    records: [],
+  };
+  await expect(
+    executeSync(
+      connectorWith(demoManifest, () => ({
+        observations: [],
+        datasetPages: [p],
+        done: true,
+      })),
+      baseContext,
+      request,
+    ),
+  ).rejects.toThrow("Final sync page contains an incomplete dataset refresh");
 });

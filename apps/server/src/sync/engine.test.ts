@@ -1,3 +1,4 @@
+import { sourceDatasetSchema } from "@netrics/connector-sdk";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import { eq, sql } from "drizzle-orm";
@@ -80,8 +81,35 @@ function flakyObservation(identity: string) {
 let flakyShouldFail = true;
 /** Requests for page 1 (no cursor). */
 let flakyFirstPageCalls = 0;
+const flakyDataset = sourceDatasetSchema.parse({
+  key: "events",
+  name: "Events",
+  version: 1,
+  keyFields: ["id"],
+  grain: "one event",
+  mode: "upsert",
+  fields: [
+    {
+      id: "id",
+      name: "ID",
+      type: "string",
+      nullable: false,
+      classification: "internal",
+    },
+    {
+      id: "amount",
+      name: "Amount",
+      type: "decimal",
+      nullable: false,
+      classification: "internal",
+    },
+  ],
+});
 const flakyConnector: Connector = {
-  manifest: testManifest("flaky-pages", "flaky.hits"),
+  manifest: {
+    ...testManifest("flaky-pages", "flaky.hits"),
+    datasets: [flakyDataset],
+  },
   async check() {
     return { ok: true };
   },
@@ -96,6 +124,17 @@ const flakyConnector: Connector = {
           flakyObservation("flaky:p1:a"),
           flakyObservation("flaky:p1:b"),
         ],
+        datasetPages: [
+          {
+            datasetKey: "events",
+            schemaVersion: 1,
+            refreshKey: "fixture-refresh",
+            pageKey: "p1",
+            previousPageKey: null,
+            complete: false,
+            records: [{ values: { id: "one", amount: "10.25" } }],
+          },
+        ],
         nextCursor: "page-2",
         done: false,
       };
@@ -107,6 +146,17 @@ const flakyConnector: Connector = {
       observations: [
         flakyObservation("flaky:p2:a"),
         flakyObservation("flaky:p2:b"),
+      ],
+      datasetPages: [
+        {
+          datasetKey: "events",
+          schemaVersion: 1,
+          refreshKey: "fixture-refresh",
+          pageKey: "p2",
+          previousPageKey: "p1",
+          complete: true,
+          records: [{ values: { id: "two", amount: "20.00" } }],
+        },
       ],
       done: true,
     };
@@ -1264,5 +1314,29 @@ describe("resource names (#194)", () => {
     expect(runs.map((run) => run.status)).toEqual(["succeeded"]);
     expect(await connectionObservationCount(workspaceA, connectionId)).toBe(1);
     expect(await names(connectionId)).toEqual([]);
+  });
+});
+
+describe("dataset checkpoint integration (#440)", () => {
+  it("resumes durable dataset pages with the connection cursor and publishes only at completion", async () => {
+    const connectionId = await seedConnection(workspaceA, "flaky-pages");
+    flakyShouldFail = true;
+    const jobId = randomUUID();
+    await expect(
+      runAttempt("connection.sync", workspaceA, connectionId, 1, jobId),
+    ).rejects.toThrow("provider exploded");
+    const staged =
+      await activityProbe!`select (select count(*)::int from data_pages p join data_refreshes r on p.refresh_id=r.id join data_datasets d on d.id=r.dataset_id where d.connection_id=${connectionId}) as pages,(select count(*)::int from data_generations g join data_datasets d on d.id=g.dataset_id where d.connection_id=${connectionId}) as generations`;
+    expect(staged[0]?.pages).toBe(1);
+    expect(staged[0]?.generations).toBe(0);
+    expect((await stateFor(workspaceA, connectionId))?.cursor).toBe("page-2");
+    flakyShouldFail = false;
+    await runAttempt("connection.sync", workspaceA, connectionId, 2, jobId);
+    const rows =
+      await activityProbe!`select r.values from data_records r join data_generations g on g.id=r.generation_id join data_datasets d on d.id=g.dataset_id where d.connection_id=${connectionId} order by r.record_key`;
+    expect(rows.map((r) => r.values)).toEqual([
+      { id: "one", amount: "10.25" },
+      { id: "two", amount: "20.00" },
+    ]);
   });
 });

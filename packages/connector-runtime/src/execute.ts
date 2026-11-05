@@ -1,3 +1,4 @@
+import { validateDatasetPage } from "@netrics/connector-sdk";
 import {
   CURRENCY_DIMENSION,
   CURRENCY_MINOR_UNIT,
@@ -175,9 +176,25 @@ function validateSyncResult(
     );
   }
   const result = parsed.data;
+  if (result.done && result.datasetPages?.some((page) => !page.complete))
+    throw new ContractViolationError(
+      "Final sync page contains an incomplete dataset refresh",
+    );
   const metrics = new Map(
     manifest.metrics.map((metric) => [metric.key, metric]),
   );
+  for (const page of result.datasetPages ?? []) {
+    const definition = manifest.datasets?.find(
+      (dataset) => dataset.key === page.datasetKey,
+    );
+    if (!definition)
+      throw new ContractViolationError("Undeclared source dataset");
+    try {
+      validateDatasetPage(definition, page);
+    } catch (error) {
+      throw new ContractViolationError((error as Error).message);
+    }
+  }
   for (const observation of result.observations) {
     const metric = metrics.get(observation.metricKey);
     if (!metric) {

@@ -8,9 +8,10 @@ filters. Templates provide a useful starting point and remain editable through
 the same tools. Apple and Google Play app metrics are the first complete
 journey; a non-store scenario proves reuse.
 
-Scope direction agreed with the owner on 2026-11-04. The implementation design
+Scope direction agreed with the owner on 2026-11-04; implementation authorized
+on 2026-11-05. The architecture
 in [ADR 0022](../decisions/0022-reusable-data-model-and-processing.md) is
-proposed. This plan expands the previous derived-metrics milestone; none of
+accepted. This plan expands the previous derived-metrics milestone; none of
 the gates below is recorded as complete. Keep this filename for existing links.
 
 ## Dependencies
@@ -147,3 +148,12 @@ without double-counting or cross-workspace access.
 Before implementation PRs, split each gate into GitHub issues with one
 reviewable change per PR. GitHub issues remain the source of truth for open
 implementation work; this plan does not create or complete issue records.
+
+## GitHub tracking
+
+- Umbrella: [#439](https://github.com/netrics-so/netrics/issues/439)
+- 11A: [#440](https://github.com/netrics-so/netrics/issues/440)
+- 11B: [#441](https://github.com/netrics-so/netrics/issues/441)
+- 11C: [#442](https://github.com/netrics-so/netrics/issues/442)
+- 11D: [#443](https://github.com/netrics-so/netrics/issues/443)
+- 11E: [#444](https://github.com/netrics-so/netrics/issues/444)

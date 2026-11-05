@@ -1651,3 +1651,182 @@ export const goals = pgTable(
     check("goals_version_positive", sql`${table.version} >= 1`),
   ],
 );
+
+// ADR 0022 / #440: immutable source schemas, refresh pages and published data.
+export const dataDatasets = pgTable(
+  "data_datasets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id").notNull(),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique("data_datasets_tenant_key").on(t.id, t.workspaceId),
+    unique("data_datasets_connection_key").on(t.connectionId, t.key),
+    foreignKey({
+      columns: [t.connectionId, t.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+      name: "data_datasets_connection_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const dataSchemaVersions = pgTable(
+  "data_schema_versions",
+  {
+    datasetId: uuid("dataset_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    version: integer("version").notNull(),
+    definition: jsonb("definition").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.datasetId, t.workspaceId, t.version] }),
+    foreignKey({
+      columns: [t.datasetId, t.workspaceId],
+      foreignColumns: [dataDatasets.id, dataDatasets.workspaceId],
+      name: "data_schema_versions_dataset_fk",
+    }).onDelete("cascade"),
+    check("data_schema_versions_positive", sql`${t.version} > 0`),
+  ],
+);
+
+export const dataRefreshes = pgTable(
+  "data_refreshes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    datasetId: uuid("dataset_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    refreshKey: text("refresh_key").notNull(),
+    replacementWindow: jsonb("replacement_window"),
+    sourceCollectedAt: timestamp("source_collected_at", {
+      withTimezone: true,
+    }).notNull(),
+    lastPageKey: text("last_page_key"),
+    pageCount: integer("page_count").notNull().default(0),
+    rowCount: integer("row_count").notNull().default(0),
+    complete: boolean("complete").notNull().default(false),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique("data_refreshes_tenant_key").on(t.id, t.workspaceId),
+    unique("data_refreshes_dataset_key").on(t.datasetId, t.refreshKey),
+    foreignKey({
+      columns: [t.datasetId, t.workspaceId, t.schemaVersion],
+      foreignColumns: [
+        dataSchemaVersions.datasetId,
+        dataSchemaVersions.workspaceId,
+        dataSchemaVersions.version,
+      ],
+      name: "data_refreshes_schema_fk",
+    }).onDelete("cascade"),
+    check(
+      "data_refreshes_counts",
+      sql`${t.pageCount} between 0 and 100 and ${t.rowCount} between 0 and 100000`,
+    ),
+    index("data_refreshes_expiry_idx").on(t.expiresAt),
+  ],
+);
+
+export const dataPages = pgTable(
+  "data_pages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    refreshId: uuid("refresh_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    pageKey: text("page_key").notNull(),
+    sequence: integer("sequence").notNull(),
+    digest: text("digest").notNull(),
+    payload: jsonb("payload").notNull(),
+  },
+  (t) => [
+    unique("data_pages_refresh_key").on(t.refreshId, t.pageKey),
+    unique("data_pages_sequence_key").on(t.refreshId, t.sequence),
+    foreignKey({
+      columns: [t.refreshId, t.workspaceId],
+      foreignColumns: [dataRefreshes.id, dataRefreshes.workspaceId],
+      name: "data_pages_refresh_fk",
+    }).onDelete("cascade"),
+    check(
+      "data_pages_payload_limit",
+      sql`octet_length(${t.payload}::text) <= 2097152`,
+    ),
+  ],
+);
+
+export const dataGenerations = pgTable(
+  "data_generations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    datasetId: uuid("dataset_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    refreshKey: text("refresh_key").notNull(),
+    sourceStartedAt: timestamp("source_started_at", {
+      withTimezone: true,
+    }).notNull(),
+    sequence: integer("sequence").notNull(),
+    rowCount: integer("row_count").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique("data_generations_tenant_key").on(t.id, t.workspaceId),
+    unique("data_generations_sequence_key").on(t.datasetId, t.sequence),
+    unique("data_generations_refresh_key").on(t.datasetId, t.refreshKey),
+    foreignKey({
+      columns: [t.datasetId, t.workspaceId, t.schemaVersion],
+      foreignColumns: [
+        dataSchemaVersions.datasetId,
+        dataSchemaVersions.workspaceId,
+        dataSchemaVersions.version,
+      ],
+      name: "data_generations_schema_fk",
+    }).onDelete("cascade"),
+    check(
+      "data_generations_counts",
+      sql`${t.sequence} > 0 and ${t.rowCount} between 0 and 100000`,
+    ),
+    index("data_generations_expiry_idx").on(t.expiresAt),
+  ],
+);
+
+export const dataRecords = pgTable(
+  "data_records",
+  {
+    generationId: uuid("generation_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    recordKey: text("record_key").notNull(),
+    collectedAt: timestamp("collected_at", { withTimezone: true }).notNull(),
+    values: jsonb("values").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.generationId, t.recordKey] }),
+    foreignKey({
+      columns: [t.generationId, t.workspaceId],
+      foreignColumns: [dataGenerations.id, dataGenerations.workspaceId],
+      name: "data_records_generation_fk",
+    }).onDelete("cascade"),
+    check(
+      "data_records_value_limit",
+      sql`octet_length(${t.values}::text) <= 131072`,
+    ),
+    index("data_records_expiry_idx").on(t.expiresAt),
+  ],
+);

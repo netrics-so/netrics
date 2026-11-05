@@ -1,9 +1,9 @@
 # 0022 — Reusable data processing and semantic models
 
-Status: proposed implementation design (2026-11-04). The owner agreed the
+Status: accepted (2026-11-05; milestone 11). The owner agreed the
 product direction: reusable data preparation, calculations, relationships
 across sources, dashboard filtering, and editable templates. This record
-specifies the implementation proposal; it does not describe shipped features.
+specifies the architecture to implement; it does not describe shipped features.
 
 Extends ADR 0008 (observation identity), ADR 0015 (Studio bindings) and
 ADR 0019 (compare widgets). Implementation belongs to milestone 11; milestones
@@ -53,7 +53,7 @@ logical types, source keys, row grain, time semantics, sync strategy and
 capabilities. Display names are editable and never serve as identifiers.
 Credentials remain separate from records and never enter expressions.
 
-Supported logical types are string, boolean, integer, decimal, date, timestamp
+Supported logical types are string, boolean, integer, finite number, decimal, date, timestamp
 and JSON, with explicit nullability. JSON is inspectable and extractable into
 typed fields; it is not implicitly comparable or joinable. Decimal values use
 exact decimal strings over JSON and PostgreSQL numeric for processing. Money
@@ -362,7 +362,7 @@ Audit mapping changes, publication, template updates and replay operations.
 ## Consequences and boundaries
 
 This expands milestone 11 beyond derived metrics; its earlier narrow scope is
-superseded by this proposal when accepted. It adds retention/storage costs,
+superseded by this accepted architecture. It adds retention/storage costs,
 query planning, versioning and a preparation UI, but avoids separate engines
 for each connector, custom APIs and widget calculations.
 
@@ -370,5 +370,30 @@ The initial product supports bounded analytical tables and validated expression
 graphs. Arbitrary SQL/JavaScript execution, automatic many-to-many relationship
 inference, streaming event infrastructure and a general data-warehouse service
 are outside this proposal. They are not required to prove reusable cross-source
-dashboards. The architecture and schema remain proposed until implementation
-slices resolve migration details, resource budgets and supported query plans.
+dashboards. Implementation slices resolve migration details, resource budgets and supported
+query plans under the gates in milestone 11.
+
+## Implementation tracking
+
+Umbrella: [#439](https://github.com/netrics-so/netrics/issues/439).
+11A: [#440](https://github.com/netrics-so/netrics/issues/440),
+11B: [#441](https://github.com/netrics-so/netrics/issues/441),
+11C: [#442](https://github.com/netrics-so/netrics/issues/442),
+11D: [#443](https://github.com/netrics-so/netrics/issues/443),
+11E: [#444](https://github.com/netrics-so/netrics/issues/444).
+
+The initial 11A limits are 100 fields, 1,000 records/1 MiB per page, 100
+pages/100,000 records per refresh, 128 MiB per published source generation,
+256 MiB of logical source payload per workspace, 100 preview rows, and a
+15-second database statement timeout. These apply to retained source data,
+not existing observation history. Default source retention is 30 days; a
+personal field requires an explicit deadline of at most 90 days, and the
+shortest field policy applies to the whole retained source record. Replay
+preserves original collection time/deadlines. Existing schema-version policy
+cannot be edited in place; retention/classification changes require an explicit
+migration rather than silently extending or reclassifying retained data.
+
+Source transport/schema validators live in the standalone connector SDK. API
+contracts reuse that portable lower layer; database code imports it through
+contracts. The package dependency rule now allows contracts to depend on both
+domain and connector SDK. No external dependency is added.
