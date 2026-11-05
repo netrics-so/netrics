@@ -138,6 +138,22 @@ Do not restart at a new refresh key when resuming the middle of an earlier one.
 A new provider report revision requires a new refresh key. A final sync result
 cannot contain an incomplete dataset page.
 
+SDK 0.2.10 adds optional `runtime.datasetStaging` for immutable parsed transport
+pages. [#472](https://github.com/netrics-so/netrics/issues/472) uses it for Google
+Play reports: the host scopes storage to the connection/workspace, validates and
+hashes page contents, counts staged bytes toward the workspace data policy and
+expires them within 24 hours or the shorter source/tier retention. Committing a
+staged page verifies its exact rows/window and preserves the original source
+collection time and retention deadline. Repeated reads cannot renew retention.
+Scheduler maintenance removes expired chunks. See [ADR 0023](./decisions/0023-connector-dataset-staging.md).
+
+Google continuations read the needed parsed page instead of downloading and
+parsing each report again. Each turn still discovers current reports and checks
+object-level access to the pinned generations. Corrections or expired staging
+restart the pending partition. The initial download/parse remains buffered under
+the existing HTTP and decompression safeguards; this does not establish support
+for arbitrarily large provider files.
+
 ## Publication and replay
 
 Pages and connection checkpoints commit together. Staged records are not
@@ -441,5 +457,7 @@ It covers 5,001 source records, 1,300 resource identities and a separate 100,001
 in-memory query. The legacy observation catalog now uses the configured row policy
 instead of a fixed 1,000-entry ceiling; individual observation reads fetch their
 specific scoped descriptor. These checks establish correctness at the measured
-sizes. Provider report staging, full-copy generation storage, concurrent execution
-and scalable catalog/reference editing remain open before claiming larger capacity.
+sizes. [The Google staging fixture](./data-scale-validation.md#google-report-staging-check)
+also covers 20,001 install rows across restarted connector instances. Initial
+buffered provider parsing, full-copy generation storage, concurrent execution and
+scalable catalog/reference editing remain open before claiming larger capacity.

@@ -21,6 +21,7 @@ import {
 } from "@netrics/connector-sdk";
 import {
   connectionResourcesDiscoveredAt,
+  connectorStageProvenance,
   ingestAppReviews,
   ingestDatasetPage,
   DatasetStoreError,
@@ -66,6 +67,8 @@ import {
   createSignedKeyTokenStore,
   type SignedKeyTokenStore,
 } from "../signed-keys/token-store.js";
+
+import { createDatasetStaging } from "./staging.js";
 
 /** First-ever incremental sync with no cursor and no last success. */
 const INITIAL_INCREMENTAL_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -729,6 +732,21 @@ async function runSync(
             page,
             now,
             policyDefaults: deps.dataPolicy,
+            ...(page.stagingId || page.stagingPageKey
+              ? {
+                  retainedSource: await connectorStageProvenance(
+                    tx,
+                    {
+                      workspaceId,
+                      connectionId,
+                      connectorId: manifest.id,
+                      now,
+                      policyDefaults: deps.dataPolicy,
+                    },
+                    page,
+                  ),
+                }
+              : {}),
           });
         } catch (error) {
           if (error instanceof DatasetStoreError)
@@ -776,7 +794,19 @@ async function runSync(
           ...(selectedResources ? { resources: selectedResources } : {}),
         };
         const result = await callConnector((callContext, options) =>
-          executeSync(connector, callContext, request, options),
+          executeSync(connector, callContext, request, {
+            ...options,
+            datasetStaging: (signal) =>
+              createDatasetStaging({
+                db: appDb,
+                workspaceId,
+                connectionId,
+                manifest,
+                now,
+                policyDefaults: deps.dataPolicy,
+                signal,
+              }),
+          }),
         );
         if (result.done) {
           finalObservations = result.observations;

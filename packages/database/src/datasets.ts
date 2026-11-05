@@ -13,6 +13,7 @@ import {
 } from "@netrics/contracts";
 import type { Db, Transaction } from "./context.js";
 import { exceedsDataPolicy, type DataPolicy } from "@netrics/domain";
+import { datasetWorkspaceBytes } from "./data-usage.js";
 import { resolveDataPolicy } from "./data-policy.js";
 import {
   connections,
@@ -394,13 +395,10 @@ async function ingestPage(
       ),
     );
   if (!page.complete) {
-    const [usage] =
-      quota === null
-        ? []
-        : await tx.execute<{ bytes: string }>(
-            sql`select (coalesce((select sum(octet_length(payload::text) + 256) from data_pages where workspace_id = ${workspaceId}),0) + coalesce((select sum(octet_length("values"::text) + octet_length(record_key) + 128) from data_records where workspace_id = ${workspaceId}),0))::text as bytes`,
-          );
-    if (exceedsDataPolicy(Number(usage?.bytes ?? 0), quota))
+    if (
+      quota !== null &&
+      exceedsDataPolicy(await datasetWorkspaceBytes(tx, workspaceId), quota)
+    )
       fail("dataset_workspace_quota");
     return { datasetId: dataset.id, generationId: null, replayed: false };
   }
@@ -561,13 +559,10 @@ async function ingestPage(
   }));
   for (let offset = 0; offset < entries.length; offset += 1000)
     await tx.insert(dataRecords).values(entries.slice(offset, offset + 1000));
-  const [usage] =
-    quota === null
-      ? []
-      : await tx.execute<{ bytes: string }>(
-          sql`select (coalesce((select sum(octet_length(payload::text) + 256) from data_pages where workspace_id = ${workspaceId}),0) + coalesce((select sum(octet_length("values"::text) + octet_length(record_key) + 128) from data_records where workspace_id = ${workspaceId}),0))::text as bytes`,
-        );
-  if (exceedsDataPolicy(Number(usage?.bytes ?? 0), quota))
+  if (
+    quota !== null &&
+    exceedsDataPolicy(await datasetWorkspaceBytes(tx, workspaceId), quota)
+  )
     fail("dataset_workspace_quota");
   await tx
     .update(dataDatasets)

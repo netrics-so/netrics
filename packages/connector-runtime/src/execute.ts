@@ -14,6 +14,7 @@ import {
   type Connector,
   type ConnectorManifest,
   type ConnectorRuntime,
+  type ConnectorDatasetStaging,
   type Resource,
   type ResourceIconsRequest,
   type SyncRequest,
@@ -30,6 +31,8 @@ import { redactConnectorError, redactCredentialValues } from "./redact.js";
 
 /** Time budget per connector call (one check, discover, or sync page). */
 export interface ExecuteOptions {
+  /** Host-owned, already connection-scoped durable dataset staging. */
+  datasetStaging?: (signal: AbortSignal) => ConnectorDatasetStaging;
   timeoutMs?: number;
   /**
    * Observes the status of every response connector code receives through
@@ -100,6 +103,9 @@ async function withRuntime<T>(
         }
       : egressFetch,
     signal: controller.signal,
+    ...(options.datasetStaging
+      ? { datasetStaging: options.datasetStaging(controller.signal) }
+      : {}),
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -112,6 +118,8 @@ async function withRuntime<T>(
     return await Promise.race([call(runtime), timeout]);
   } finally {
     clearTimeout(timer);
+    // Revoke durable storage access even if connector code retains the runtime.
+    controller.abort();
   }
 }
 

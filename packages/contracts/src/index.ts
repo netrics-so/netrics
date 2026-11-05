@@ -3466,6 +3466,7 @@ export type DeviceHeartbeatRequest = z.infer<
 export {
   sourceDatasetSchema,
   datasetPageSchema,
+  datasetRecordSchema,
   validateDatasetPage,
   datasetRecordKey,
   datasetTimeKey,

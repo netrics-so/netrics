@@ -2049,3 +2049,64 @@ export const dataTemplateInstalls = pgTable(
     ),
   ],
 );
+
+/** Disposable immutable parsed provider report, never shared across connections. */
+export const dataConnectorStages = pgTable(
+  "data_connector_stages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id").notNull(),
+    connectorId: text("connector_id").notNull(),
+    key: text("key").notNull(),
+    datasetKey: text("dataset_key").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    metadata: jsonb("metadata").notNull(),
+    digest: text("digest").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    sourceCollectedAt: timestamp("source_collected_at", {
+      withTimezone: true,
+    }).notNull(),
+    sourceExpiresAt: timestamp("source_expires_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique("data_connector_stages_tenant_key").on(t.id, t.workspaceId),
+    unique("data_connector_stages_connection_key").on(t.connectionId, t.key),
+    foreignKey({
+      columns: [t.connectionId, t.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+      name: "data_connector_stages_connection_fk",
+    }).onDelete("cascade"),
+    check(
+      "data_connector_stages_size",
+      sql`${t.byteSize} between 0 and 134217728`,
+    ),
+    index("data_connector_stages_expiry_idx").on(t.expiresAt),
+  ],
+);
+
+export const dataConnectorStagePages = pgTable(
+  "data_connector_stage_pages",
+  {
+    stageId: uuid("stage_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    pageKey: text("page_key").notNull(),
+    payload: jsonb("payload").notNull(),
+    digest: text("digest").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.stageId, t.pageKey] }),
+    foreignKey({
+      columns: [t.stageId, t.workspaceId],
+      foreignColumns: [dataConnectorStages.id, dataConnectorStages.workspaceId],
+      name: "data_connector_stage_pages_stage_fk",
+    }).onDelete("cascade"),
+    check(
+      "data_connector_stage_pages_size",
+      sql`octet_length(${t.payload}::text) <= 2097152`,
+    ),
+  ],
+);

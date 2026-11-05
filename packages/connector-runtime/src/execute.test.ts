@@ -4,6 +4,7 @@ import type {
   ConnectionContext,
   Connector,
   ConnectorManifest,
+  ConnectorDatasetStaging,
   Observation,
   SyncRequest,
   SyncResult,
@@ -339,6 +340,39 @@ describe("executeDiscover", () => {
 });
 
 describe("runtime capabilities", () => {
+  it("passes optional connection staging the call signal and revokes it after completion", async () => {
+    let staged: ConnectorDatasetStaging | undefined;
+    let calls = 0;
+    const connector: Connector = {
+      ...connectorWith(demoManifest),
+      async sync(_context, _request, runtime) {
+        expect(runtime.datasetStaging).toBeDefined();
+        staged = runtime.datasetStaging;
+        expect(await staged!.get("report")).toBeNull();
+        return { observations: [], done: true };
+      },
+    };
+    await executeSync(connector, baseContext, request, {
+      datasetStaging: (signal) => ({
+        async get() {
+          signal.throwIfAborted();
+          calls++;
+          return null;
+        },
+        async getPage() {
+          signal.throwIfAborted();
+          throw new Error("unused");
+        },
+        async put() {
+          signal.throwIfAborted();
+          throw new Error("unused");
+        },
+      }),
+    });
+    await expect(staged!.get("report")).rejects.toThrow();
+    expect(calls).toBe(1);
+  });
+
   it("times out a connector call even when the connector ignores the signal", async () => {
     const hanging: Connector = {
       ...connectorWith(demoManifest),

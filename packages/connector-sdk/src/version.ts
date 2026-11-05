@@ -13,7 +13,8 @@ import { satisfiesRange } from "./semver.js";
 // 0.2.8: optional SyncResult.reviews and reviewWindows (ADR 0019 §11).
 // All are additive: ^0.2.0 connectors keep loading.
 // 0.2.9: optional typed source datasets and durable dataset pages (ADR 0022).
-export const SDK_VERSION = "0.2.9";
+// 0.2.10: optional durable dataset staging and page provenance (ADR 0023).
+export const SDK_VERSION = "0.2.10";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

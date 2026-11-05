@@ -1,7 +1,8 @@
 # Data workload validation
 
 This records the bounded validation and implementation audit for
-[#466](https://github.com/netrics-so/netrics/issues/466), part of milestone 11.
+[#466](https://github.com/netrics-so/netrics/issues/466) and Google report staging
+in [#472](https://github.com/netrics-so/netrics/issues/472), part of milestone 11.
 It establishes correctness at the measured sizes and exposes the next scaling
 work. It does not establish a production capacity or a maximum supported account
 size.
@@ -82,6 +83,32 @@ occupied 15,008,271 bytes, including the migrated schema and unrelated catalog
 metadata. This demonstrates full-copy amplification: a tiny correction creates
 another full source generation.
 
+## Google report staging check
+
+`apps/server/src/sync/staging.test.ts` exercises the actual host staging adapter
+under the application database role. Run it with the normal test PostgreSQL
+server using:
+
+```sh
+NETRICS_TEST_ADMIN_URL=postgres://netrics:netrics@localhost:5433/postgres \
+pnpm exec vitest run apps/server/src/sync/staging.test.ts --reporter=verbose --silent=false
+```
+
+The larger fixture contains 20,001 install rows (1,698,034 provider CSV bytes)
+plus eight financial rows for several apps. A fresh connector instance on every
+turn reads 24 parsed pages; the four report objects are each downloaded once.
+The local check recorded about two seconds and 10,197,736 staged JSONB bytes.
+These numbers describe a synthetic bounded fixture, not production capacity or
+peak memory. The test prints `NETRICS_GOOGLE_STAGE_RESULT` on each run.
+
+Further cases cover changed generations, missing/expired stages, object-level
+permission loss, scope isolation, altered payloads, digest corruption, database
+collation, quota rollback, abort/ended-call revocation, irreversible retention
+shortening and batched cleanup. The initial read still buffers and parses the
+whole provider report; metadata discovery and object authorization still run on
+continuations. A stage expires within 24 hours, so a later continuation may need
+a fresh provider read and restart its pending partition. See [ADR 0023](./decisions/0023-connector-dataset-staging.md).
+
 ## Configurable policy versus implementation safeguards
 
 [Data policy](../packages/domain/src/data-policy.ts) is resolved from installation
@@ -100,9 +127,11 @@ Some limits bound one message or definition rather than a customer's total data:
 | Dataset transport             | At most 1,000 records/1 MiB per page, 64 KiB per row, 1 KiB per key; further pages continue the refresh                                                 |
 | Manual-table editor transport | At most 1,000 records and about 512 KiB per client batch; pinned read pages and one complete publication                                                |
 | Model query response          | At most 1,000 groups per response; `totalRows` and `offset` expose further pages                                                                        |
+| Pinned query continuation     | Opt-in sessions retain release/input identities under query-snapshot capacity/lifetime; expiry or unavailable history fails explicitly                  |
 | Definition shape              | Bounded AST depth/node count, 100 fields, 100 graph steps, and bounded join/group keys; these are protocol/validation limits, not tier quotas           |
 | Connector HTTP response       | Runtime default is 10 MiB per fully buffered response; `EgressOptions.maxResponseBytes` exists, but the Google connector uses the ordinary runtime path |
 | Google earnings ZIP           | 64 MiB total decoded CSV bytes by default; encrypted, multipart and ZIP64 archives are rejected; the parser supports stored/deflate members             |
+| Parsed connector staging      | 128 MiB serialized JSONB per stage, 1 MiB metadata, normal SDK page/record bounds; at most 24-hour cache lifetime capped by source/tier retention       |
 
 These structural and transport checks cannot all be disabled through the customer
 data-policy API. Removing a customer quota therefore does not mean that arbitrary
@@ -125,14 +154,13 @@ from discovery or collection.
 
 ## Remaining scaling work
 
-1. **Stage or stream provider files once per pinned report generation.** Google
-   continuations currently list reports, download/decode complete relevant report
-   files, build the full frame, then slice the next dataset page. There is no
-   persistent parsed-frame cache. Earnings files can be re-read across both app
-   and page continuations. Cooperative page budgets preserve correctness but do
-   not avoid repeated transfer, decompression and parsing. Add a bounded durable
-   file/row staging path or streaming/range reader before claiming large-report
-   support; retain generation/digest checks and decompression protections.
+1. **Stream initial provider reads beyond the measured bounded staging path.**
+   Google now durably stages parsed per-app pages for pinned report generations,
+   avoiding repeated report transfer/decompression/parsing while the stage is live.
+   The first read still buffers the complete report/frame under the existing
+   10 MiB HTTP, 64 MiB ZIP inflation and 128 MiB stage safeguards. Streaming/range
+   download and incremental parsing remain necessary before claiming larger-file
+   support. Preserve generation/digest, egress and decompression protections.
 2. **Avoid full retained-generation copies for small corrections.** Ingestion
    loads prior rows into a map for upserts/replaced windows, reads staged pages,
    constructs the next complete map and writes all resulting records again.

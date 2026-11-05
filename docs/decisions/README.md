@@ -27,3 +27,4 @@ product is built.
 | [0020](./0020-apple-ads-platform-api-token-exchange.md) | Apple Ads: Platform API, token exchange and ad metrics                |
 | [0021](./0021-netrics-tv-on-ipad-and-iphone.md)         | netrics TV on iPad and iPhone: one product, pairing only              |
 | [0022](./0022-reusable-data-model-and-processing.md)    | Reusable datasets, preparation, semantic models and dashboard filters |
+| [0023](./0023-connector-dataset-staging.md)             | Durable parsed dataset staging for connector continuations            |
