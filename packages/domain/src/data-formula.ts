@@ -19,6 +19,7 @@ const functions = new Set<DataFunction>([
   "abs",
   "round",
   "eq",
+  "in",
   "ne",
   "lt",
   "lte",

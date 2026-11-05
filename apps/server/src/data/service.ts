@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, sql, or, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, sql, or, isNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   sourceDatasetSchema,
@@ -13,6 +13,7 @@ import {
   ProcessingBudget,
   executePreparation,
   querySemanticModel,
+  validateSemanticModel,
   DEFAULT_DATA_POLICY,
   exceedsDataPolicy,
   type DataPolicy,
@@ -720,25 +721,7 @@ export function createDataService(
     if (!row) fail("data_preparation_not_found", 404);
     return row;
   };
-  const findModel = async (
-    tx: Transaction,
-    workspaceId: string,
-    id: string,
-    lock = false,
-  ) => {
-    const q = tx
-      .select()
-      .from(schema.dataModels)
-      .where(
-        and(
-          eq(schema.dataModels.workspaceId, workspaceId),
-          eq(schema.dataModels.id, id),
-        ),
-      );
-    const [row] = await (lock ? q.for("update") : q);
-    if (!row) fail("data_model_not_found", 404);
-    return row;
-  };
+
   const executeGraph = async (
     tx: Transaction,
     workspaceId: string,
@@ -1033,7 +1016,7 @@ export function createDataService(
       })),
     getModel: (actor: DataActor, id: string) =>
       run(actor, async (tx) => ({
-        model: modelView(await findModel(tx, actor.workspaceId, id)),
+        model: modelView(await findDataModel(tx, actor.workspaceId, id)),
       })),
     saveModel: (
       actor: DataActor,
@@ -1049,7 +1032,7 @@ export function createDataService(
           input.definition,
         );
         if (id) {
-          const row = await findModel(tx, actor.workspaceId, id, true);
+          const row = await findDataModel(tx, actor.workspaceId, id, true);
           if (input.version !== row.version) fail("version_conflict", 409);
           const [updated] = await tx
             .update(schema.dataModels)
@@ -1089,25 +1072,18 @@ export function createDataService(
       }),
     publishModel: (actor: DataActor, id: string, expected: number) =>
       run(actor, async (tx, now) => {
-        const row = await findModel(tx, actor.workspaceId, id, true);
+        const row = await findDataModel(tx, actor.workspaceId, id, true);
         if (row.version !== expected) fail("version_conflict", 409);
         if (row.publishedVersion === expected) return { model: modelView(row) };
         const definition = semanticModelDefinitionSchema.parse(row.definition),
           loader = loadFor(tx, actor.workspaceId, now);
         for (const source of definition.datasets) await loader.load(source);
-        for (let offset = 0; offset < definition.measures.length; offset += 50)
-          querySemanticModel(
-            definition,
-            loader.tables,
-            {
-              measureIds: definition.measures
-                .slice(offset, offset + 50)
-                .map((m) => m.id),
-              groupBy: [],
-              now: now.toISOString(),
-            },
-            loader.budget,
-          );
+        validateSemanticModel(
+          definition,
+          loader.tables,
+          now.toISOString(),
+          loader.budget,
+        );
         await tx.insert(schema.dataModelReleases).values({
           workspaceId: actor.workspaceId,
           modelId: id,
@@ -1137,177 +1113,232 @@ export function createDataService(
       preview = false,
     ) =>
       run(actor, async (tx, now) => {
-        const model = await findModel(tx, actor.workspaceId, id);
-        if (!preview && !model.publishedVersion)
-          fail("data_model_not_published", 409);
-        const [release] = preview
-          ? []
-          : await tx
-              .select()
-              .from(schema.dataModelReleases)
-              .where(
-                and(
-                  eq(schema.dataModelReleases.workspaceId, actor.workspaceId),
-                  eq(schema.dataModelReleases.modelId, id),
-                  eq(schema.dataModelReleases.version, model.publishedVersion!),
-                ),
-              );
-        if (!preview && !release) fail("data_model_not_published", 409);
-        const definition = semanticModelDefinitionSchema.parse(
-          preview ? model.definition : release!.definition,
+        return queryDataModel(
+          tx,
+          actor.workspaceId,
+          id,
+          query,
+          now,
+          policyFor(tx),
+          preview,
         );
-        const evaluate = async (generations?: Record<string, string>) => {
-          const loader = loadFor(tx, actor.workspaceId, now, {
-            ...(generations ? { generations } : {}),
-            ...(release
-              ? { dependencies: release.dependencies as Dependencies }
-              : {}),
-          });
-          for (const source of definition.datasets) await loader.load(source);
-          if (release)
-            for (const [source, pinned] of Object.entries(
-              release.schemaBindings as Record<string, DataField[]>,
-            )) {
-              const actual = loader.bindings[source];
-              if (
-                !actual ||
-                pinned.some((field) => {
-                  const next = actual.find((f) => f.id === field.id);
-                  return (
-                    !next ||
-                    next.type !== field.type ||
-                    next.unit !== field.unit ||
-                    next.currencyField !== field.currencyField
-                  );
-                })
-              )
-                fail("data_model_schema_changed", 409);
-            }
-          const result = querySemanticModel(
-            definition,
-            loader.tables,
-            { ...query, now: now.toISOString() },
-            loader.budget,
-          );
-          return {
-            loader,
-            result: {
-              ...result,
-              releaseId: release?.id ?? null,
-              stale: false,
-              warnings: [...loader.warnings, ...result.warnings],
-            },
-          };
-        };
-        const queryKey = createHash("sha256")
-          .update(stable({ engine: DATA_EXECUTION_VERSION, query }))
-          .digest("hex");
-        let execution: Awaited<ReturnType<typeof evaluate>>;
-        try {
-          execution = await evaluate();
-        } catch (error) {
-          // No SQL failures or removed sources are hidden by a previous snapshot.
-          // The source IDs are re-authorized by the loader on every fallback.
-          const recoverable =
-            error instanceof DataProcessingError ||
-            (error instanceof DataServiceError &&
-              [
-                "data_model_schema_changed",
-                "data_source_pending",
-                "data_schema_not_found",
-                "data_source_row_limit",
-                "data_dependency_version_conflict",
-              ].includes(error.code));
-          if (!release || !recoverable) throw error;
-          const [snapshot] = await tx
-            .select()
-            .from(schema.dataModelQuerySnapshots)
-            .where(
-              and(
-                eq(
-                  schema.dataModelQuerySnapshots.workspaceId,
-                  actor.workspaceId,
-                ),
-                eq(schema.dataModelQuerySnapshots.releaseId, release.id),
-                eq(schema.dataModelQuerySnapshots.queryKey, queryKey),
-                gt(schema.dataModelQuerySnapshots.expiresAt, now),
-              ),
-            );
-          if (!snapshot) throw error;
-          const fallback = await evaluate(
-            snapshot.generations as Record<string, string>,
-          );
-          return {
-            ...fallback.result,
-            stale: true,
-            error: error.code,
-            warnings: [
-              ...fallback.result.warnings,
-              "using_last_valid_source_snapshot",
-            ],
-          };
-        }
-        if (release) {
-          // Cache only generation identities, never a second copy of source rows.
-          // Limit cache cardinality and lifetime independently of source retention.
-          const existing = await tx
-            .select({ queryKey: schema.dataModelQuerySnapshots.queryKey })
-            .from(schema.dataModelQuerySnapshots)
-            .where(
-              and(
-                eq(
-                  schema.dataModelQuerySnapshots.workspaceId,
-                  actor.workspaceId,
-                ),
-                eq(schema.dataModelQuerySnapshots.releaseId, release.id),
-              ),
-            );
-          if (
-            !exceedsDataPolicy(
-              existing.length + 1,
-              policyFor(tx).querySnapshotCount,
-            ) ||
-            existing.some((s) => s.queryKey === queryKey)
-          ) {
-            const expiresAt = [...execution.loader.tables.values()].reduce(
-              (expiry, table) =>
-                table.expiresAt && new Date(table.expiresAt) < expiry
-                  ? new Date(table.expiresAt)
-                  : expiry,
-              new Date(
-                policyFor(tx).querySnapshotSeconds === null
-                  ? "9999-12-31T23:59:59Z"
-                  : now.getTime() + policyFor(tx).querySnapshotSeconds! * 1000,
-              ),
-            );
-            await tx
-              .insert(schema.dataModelQuerySnapshots)
-              .values({
-                workspaceId: actor.workspaceId,
-                releaseId: release.id,
-                queryKey,
-                generations: execution.loader.generations,
-                expiresAt,
-                updatedAt: now,
-              })
-              .onConflictDoUpdate({
-                target: [
-                  schema.dataModelQuerySnapshots.releaseId,
-                  schema.dataModelQuerySnapshots.queryKey,
-                ],
-                set: {
-                  generations: execution.loader.generations,
-                  expiresAt,
-                  updatedAt: now,
-                },
-                setWhere: eq(
-                  schema.dataModelQuerySnapshots.workspaceId,
-                  actor.workspaceId,
-                ),
-              });
-          }
-        }
-        return execution.result;
       }),
   };
+}
+
+async function findDataModel(
+  tx: Transaction,
+  workspaceId: string,
+  id: string,
+  lock = false,
+) {
+  const q = tx
+    .select()
+    .from(schema.dataModels)
+    .where(
+      and(
+        eq(schema.dataModels.workspaceId, workspaceId),
+        eq(schema.dataModels.id, id),
+      ),
+    );
+  const [row] = await (lock ? q.for("update") : q);
+  if (!row) fail("data_model_not_found", 404);
+  return row;
+}
+
+/** Internal query entry for dashboard/device transactions. Caller supplies an authorized workspace. */
+export async function queryDataModel(
+  tx: Transaction,
+  workspaceId: string,
+  id: string,
+  query: Omit<ModelQuery, "now">,
+  now: Date,
+  policy: DataPolicy,
+  preview = false,
+) {
+  const model = await findDataModel(tx, workspaceId, id);
+  if (!preview && !model.publishedVersion)
+    fail("data_model_not_published", 409);
+  const [release] = preview
+    ? []
+    : await tx
+        .select()
+        .from(schema.dataModelReleases)
+        .where(
+          and(
+            eq(schema.dataModelReleases.workspaceId, workspaceId),
+            eq(schema.dataModelReleases.modelId, id),
+            eq(schema.dataModelReleases.version, model.publishedVersion!),
+          ),
+        );
+  if (!preview && !release) fail("data_model_not_published", 409);
+  const definition = semanticModelDefinitionSchema.parse(
+    preview ? model.definition : release!.definition,
+  );
+  const evaluate = async (generations?: Record<string, string>) => {
+    const loader = createDataLoader(tx, workspaceId, now, {
+      policy,
+      ...(generations ? { generations } : {}),
+      ...(release
+        ? { dependencies: release.dependencies as Dependencies }
+        : {}),
+    });
+    for (const source of definition.datasets) await loader.load(source);
+    if (release)
+      for (const [source, pinned] of Object.entries(
+        release.schemaBindings as Record<string, DataField[]>,
+      )) {
+        const actual = loader.bindings[source];
+        if (
+          !actual ||
+          pinned.some((field) => {
+            const next = actual.find((f) => f.id === field.id);
+            return (
+              !next ||
+              next.type !== field.type ||
+              next.unit !== field.unit ||
+              next.currencyField !== field.currencyField
+            );
+          })
+        )
+          fail("data_model_schema_changed", 409);
+      }
+    const result = querySemanticModel(
+      definition,
+      loader.tables,
+      { ...query, now: now.toISOString() },
+      loader.budget,
+    );
+    const rawGenerations = result.provenance
+      .map((source) => source.generationId)
+      .filter((id) => z.uuid().safeParse(id).success);
+    const stamps = rawGenerations.length
+      ? await tx
+          .select({ at: schema.dataGenerations.createdAt })
+          .from(schema.dataGenerations)
+          .where(
+            and(
+              eq(schema.dataGenerations.workspaceId, workspaceId),
+              inArray(schema.dataGenerations.id, rawGenerations),
+            ),
+          )
+      : [];
+    const receivedAt =
+      stamps.length === result.provenance.length && stamps.length
+        ? new Date(
+            Math.min(...stamps.map((stamp) => stamp.at.getTime())),
+          ).toISOString()
+        : null;
+    const expiries = [...loader.tables.values()]
+      .flatMap((table) => (table.expiresAt ? [table.expiresAt] : []))
+      .sort();
+    return {
+      loader,
+      result: {
+        ...result,
+        receivedAt,
+        expiresAt: expiries[0] ?? null,
+        releaseId: release?.id ?? null,
+        stale: false,
+        warnings: [...loader.warnings, ...result.warnings],
+      },
+    };
+  };
+  const queryKey = createHash("sha256")
+    .update(stable({ engine: DATA_EXECUTION_VERSION, query }))
+    .digest("hex");
+  let execution: Awaited<ReturnType<typeof evaluate>>;
+  try {
+    execution = await evaluate();
+  } catch (error) {
+    // No SQL failures or removed sources are hidden by a previous snapshot.
+    // The source IDs are re-authorized by the loader on every fallback.
+    const recoverable =
+      error instanceof DataProcessingError ||
+      (error instanceof DataServiceError &&
+        [
+          "data_model_schema_changed",
+          "data_source_pending",
+          "data_schema_not_found",
+          "data_source_row_limit",
+          "data_dependency_version_conflict",
+        ].includes(error.code));
+    if (!release || !recoverable) throw error;
+    const [snapshot] = await tx
+      .select()
+      .from(schema.dataModelQuerySnapshots)
+      .where(
+        and(
+          eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
+          eq(schema.dataModelQuerySnapshots.releaseId, release.id),
+          eq(schema.dataModelQuerySnapshots.queryKey, queryKey),
+          gt(schema.dataModelQuerySnapshots.expiresAt, now),
+        ),
+      );
+    if (!snapshot) throw error;
+    const fallback = await evaluate(
+      snapshot.generations as Record<string, string>,
+    );
+    return {
+      ...fallback.result,
+      stale: true,
+      error: error.code,
+      warnings: [
+        ...fallback.result.warnings,
+        "using_last_valid_source_snapshot",
+      ],
+    };
+  }
+  if (release) {
+    // Cache only generation identities, never a second copy of source rows.
+    // Limit cache cardinality and lifetime independently of source retention.
+    const existing = await tx
+      .select({ queryKey: schema.dataModelQuerySnapshots.queryKey })
+      .from(schema.dataModelQuerySnapshots)
+      .where(
+        and(
+          eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
+          eq(schema.dataModelQuerySnapshots.releaseId, release.id),
+        ),
+      );
+    if (
+      !exceedsDataPolicy(existing.length + 1, policy.querySnapshotCount) ||
+      existing.some((s) => s.queryKey === queryKey)
+    ) {
+      const expiresAt = [...execution.loader.tables.values()].reduce(
+        (expiry, table) =>
+          table.expiresAt && new Date(table.expiresAt) < expiry
+            ? new Date(table.expiresAt)
+            : expiry,
+        new Date(
+          policy.querySnapshotSeconds === null
+            ? "9999-12-31T23:59:59Z"
+            : now.getTime() + policy.querySnapshotSeconds! * 1000,
+        ),
+      );
+      await tx
+        .insert(schema.dataModelQuerySnapshots)
+        .values({
+          workspaceId: workspaceId,
+          releaseId: release.id,
+          queryKey,
+          generations: execution.loader.generations,
+          expiresAt,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [
+            schema.dataModelQuerySnapshots.releaseId,
+            schema.dataModelQuerySnapshots.queryKey,
+          ],
+          set: {
+            generations: execution.loader.generations,
+            expiresAt,
+            updatedAt: now,
+          },
+          setWhere: eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
+        });
+    }
+  }
+  return execution.result;
 }

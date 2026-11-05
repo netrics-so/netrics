@@ -24,6 +24,7 @@ export const WIDGET_TYPES = [
   "countdown",
   "gauge",
   "review",
+  "measure",
 ] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 
@@ -49,7 +50,7 @@ export function isDataWidgetType(type: string): type is DataWidgetType {
  */
 export function dataWidgetCost(type: string): number {
   if (type === "compare") return 2;
-  if (type === "gauge" || type === "review") return 1;
+  if (type === "gauge" || type === "review" || type === "measure") return 1;
   return isDataWidgetType(type) ? 1 : 0;
 }
 

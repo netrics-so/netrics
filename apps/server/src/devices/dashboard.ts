@@ -1,7 +1,11 @@
+import { queryDashboardMeasure } from "../dashboards/data.js";
 import { createHash } from "node:crypto";
 
 import {
   DEVICE_REFRESH_AFTER_SECONDS,
+  dashboardDataFiltersSchema,
+  measureWidgetBindingSchema,
+  measureWidgetOptionsSchema,
   barWidgetOptionsSchema,
   clockWidgetOptionsSchema,
   compareWidgetOptionsSchema,
@@ -122,6 +126,7 @@ export interface TileErrorLogger {
 
 export interface BuildOptions {
   now: Date;
+  dataPolicy?: import("@netrics/domain").DataPolicy;
   log?: TileErrorLogger;
   /** NETRICS_EXCHANGE_RATES: display-currency conversion (#191). */
   exchangeRates?: boolean;
@@ -1052,7 +1057,41 @@ async function buildSlides(
         w: widget.w,
         h: widget.h,
       };
-      if (isDataWidget(widget)) {
+      if (widget.type === "measure") {
+        const binding = measureWidgetBindingSchema.parse(widget.modelBinding),
+          measureOptions = measureWidgetOptionsSchema.parse(widget.options);
+        const data = await queryDashboardMeasure(
+          tx,
+          workspaceId,
+          { id: widget.id, binding, options: measureOptions },
+          dashboardDataFiltersSchema.parse(dashboard?.dataFilters ?? []),
+          {},
+          options.now,
+          options.dataPolicy,
+          options.locale,
+        );
+        widgets.push({
+          type: "measure",
+          ...placement,
+          label:
+            widget.title ??
+            (data.metadata
+              ? binding.measureIds
+                  .map(
+                    (id) =>
+                      data.metadata!.measures.find(
+                        (measure) => measure.id === id,
+                      )?.name ?? id,
+                  )
+                  .join(" · ")
+              : undefined) ??
+            (options.locale === "de" ? "Kennzahl" : "Measure"),
+          measureIds: binding.measureIds,
+          groupBy: binding.groupBy,
+          options: measureOptions,
+          data,
+        });
+      } else if (isDataWidget(widget)) {
         widgets.push(await dataWidgetOf(tx, widget, context));
       } else if (widget.type === "gauge") {
         const goal =

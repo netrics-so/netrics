@@ -21,3 +21,5 @@ export * from "./data-preparation.js";
 export * from "./data-model.js";
 export * from "./data-formula.js";
 export * from "./data-policy.js";
+
+export * from "./dashboard-data.js";

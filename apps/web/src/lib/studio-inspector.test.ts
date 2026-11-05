@@ -124,6 +124,14 @@ const clockWidget: DashboardWidget = {
 };
 
 const context = {
+  models: [
+    {
+      modelId: ID(80),
+      modelName: "Published portfolio",
+      measures: [{ id: "income", name: "Income" }],
+      dimensions: [],
+    },
+  ],
   metrics,
   imageIds: [ID(50)],
   locale: "en" as const,
@@ -769,5 +777,75 @@ describe("compare widget (ADR 0019 section 10)", () => {
     expect(
       newWidget("compare", { metrics: [proceeds], imageIds: [], locale: "en" }),
     ).toMatchObject({ reason: expect.any(String) });
+  });
+});
+
+describe("shared filter document state", () => {
+  const filters: NonNullable<Dashboard["settings"]["dataFilters"]> = [
+    {
+      id: "country",
+      name: "Country",
+      type: "string",
+      mode: "values",
+      mappings: [{ modelId: ID(80), dimensionId: "country" }],
+      defaultValue: { kind: "values", values: ["DE"] },
+      fixedValue: { kind: "values", values: ["DE", "FR"] },
+    },
+  ];
+  it("preserves defaults, mappings and fixed scopes in the actual Studio save request", () => {
+    const state = initialStudioState(
+      {
+        ...dashboard([]),
+        settings: { ...dashboard([]).settings, dataFilters: filters },
+      },
+      "en",
+    );
+    const request = toReplaceRequest(state);
+    expect(request.settings?.dataFilters).toEqual(filters);
+    const reduce = createStudioReducer(() => ID(90));
+    const cleared = reduce(state, {
+      type: "updateSettings",
+      patch: { dataFilters: [] },
+    });
+    expect(toReplaceRequest(cleared).settings?.dataFilters).toEqual([]);
+  });
+  it("removes obsolete widget exclusions in the same undoable edit as removing a filter", () => {
+    const widget: DashboardWidget = {
+      id: ID(81),
+      type: "measure",
+      x: 0,
+      y: 0,
+      w: 4,
+      h: 3,
+      title: null,
+      binding: {
+        modelId: ID(80),
+        measureIds: ["income"],
+        groupBy: [],
+        exclusions: [{ filterId: "country", reason: "Independent total" }],
+      },
+      options: { view: "value", limit: 20 },
+    };
+    const initial = initialStudioState(
+      {
+        ...dashboard([widget]),
+        settings: {
+          ...dashboard([]).settings,
+          dataFilters: filters.map((filter) => ({
+            ...filter,
+            fixedValue: null,
+          })),
+        },
+      },
+      "en",
+    );
+    const reduce = createStudioReducer(() => ID(90)),
+      changed = reduce(initial, {
+        type: "updateSettings",
+        patch: { dataFilters: [] },
+      });
+    const result = changed.draft.slides[0]!.widgets[0]!;
+    expect(result.type === "measure" && result.binding.exclusions).toEqual([]);
+    expect(reduce(changed, { type: "undo" }).draft).toEqual(initial.draft);
   });
 });

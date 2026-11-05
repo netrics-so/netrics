@@ -1057,6 +1057,7 @@ public struct ReviewWidgetData: Codable, Sendable, Equatable {
 // MARK: Widgets and slides
 
 public enum WidgetContent: Sendable, Equatable {
+    case measure(measureIds: [String], groupBy: [String], MeasureWidgetOptions, MeasureWidgetData)
     case metric(MetricWidgetOptions, MetricWidgetData)
     case line(LineWidgetOptions, LineWidgetData)
     case bar(BarWidgetOptions, BarWidgetData)
@@ -1101,7 +1102,7 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, type, x, y, w, h, min, label, options, data, imageId, text
+        case id, type, x, y, w, h, min, label, options, data, imageId, text, measureIds, groupBy
     }
 
     public init(from decoder: Decoder) throws {
@@ -1127,6 +1128,12 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
 
     private static func content(type: String, _ c: KeyedDecodingContainer<CodingKeys>) -> WidgetContent {
         switch type {
+        case "measure":
+            guard let data = c.lenient(MeasureWidgetData.self, .data),
+                let measures = c.lenient([String].self, .measureIds),
+                let groups = c.lenient([String].self, .groupBy) else { return .unsupported }
+            return .measure(measureIds: measures, groupBy: groups,
+                c.lenient(MeasureWidgetOptions.self, .options) ?? .init(), data)
         case "metric":
             guard let data = c.lenient(MetricWidgetData.self, .data) else { return .unsupported }
             return .metric(c.lenient(MetricWidgetOptions.self, .options) ?? .init(), data)
@@ -1180,6 +1187,11 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
         try c.encodeIfPresent(minimum, forKey: .min)
         try c.encode(label, forKey: .label)
         switch content {
+        case .measure(let measures, let groups, let options, let data):
+            try c.encode(measures, forKey: .measureIds)
+            try c.encode(groups, forKey: .groupBy)
+            try c.encode(options, forKey: .options)
+            try c.encode(data, forKey: .data)
         case .metric(let options, let data):
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)

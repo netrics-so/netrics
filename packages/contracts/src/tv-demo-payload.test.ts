@@ -333,7 +333,7 @@ function buildDemoPayload(language: Language): DeviceDashboardV3Response {
         ratio: {
           value: sum(signups30) / sum(visitors30),
           previousValue: sum(before(signups, 30)) / sum(before(visitors, 30)),
-          format: "percent",
+          format: "percent" as const,
         },
       },
     },

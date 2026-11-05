@@ -1,4 +1,5 @@
 "use client";
+import { MeasureWidgetView } from "@/components/studio/measure-widget";
 
 import type { DeviceWidget } from "@netrics/contracts";
 
@@ -87,6 +88,17 @@ export function DeviceScrollWidget({
 }) {
   const locale = useLocale();
   switch (widget.type) {
+    case "measure":
+      return (
+        <MeasureWidgetView
+          widget={{
+            title: widget.label,
+            binding: { measureIds: widget.measureIds, groupBy: widget.groupBy },
+            options: widget.options,
+          }}
+          data={widget.data}
+        />
+      );
     case "metric":
       return (
         <ScrollMetricCard

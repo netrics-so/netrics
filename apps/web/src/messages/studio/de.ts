@@ -76,7 +76,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       add: "Widget hinzufügen",
       hint: "Klick, um es am ersten freien Platz einzufügen, oder zieh es auf die Folie",
       addType:
-        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} other {Widget}} hinzufügen",
+        "{type, select, measure {Modellkennzahl} metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} other {Widget}} hinzufügen",
     },
     assignTvs: {
       title: "„{name}“ auf TVs zeigen",
@@ -348,6 +348,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       noReviewShown: "Gerade wird keine Bewertung gezeigt.",
     },
     newWidget: {
+      noModels: "Veröffentliche zuerst ein Modell unter Daten & Kennzahlen.",
       noMetrics: "Füg zuerst eine Verbindung mit Metriken hinzu.",
       noBreakdown: "Noch lässt sich keine Metrik aufschlüsseln.",
       noImage: "Lade zuerst ein Bild hoch (Dashboard-Einstellungen, Logo).",
@@ -542,9 +543,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}}",
+        "{type, select, measure {Modellkennzahl} metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}})",
+        "{title} ({type, select, measure {Modellkennzahl} metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}})",
       copyOf: "{name} (Kopie)",
       continued: "{name} ({part})",
       slide: "Folie {number}",

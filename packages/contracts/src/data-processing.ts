@@ -271,6 +271,12 @@ export const modelQueryInputSchema = z.strictObject({
   groupBy: z.array(id).max(10),
   filter: dataExpressionSchema.optional(),
   limit: z.number().int().min(1).max(1000).optional(),
+  offset: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(Number.MAX_SAFE_INTEGER)
+    .optional(),
 });
 export const modelMeasureCellSchema = z.object({
   value: z.unknown(),
@@ -280,6 +286,10 @@ export const modelMeasureCellSchema = z.object({
   status: z.enum(["ok", "missing", "partial"]),
 });
 export const modelQueryResponseSchema = z.object({
+  receivedAt: z.iso.datetime().nullable().optional(),
+  expiresAt: z.iso.datetime().nullable().optional(),
+  totalRows: z.number().int().nonnegative().optional(),
+  offset: z.number().int().nonnegative().optional(),
   releaseId: z.uuid().nullable(),
   rows: z
     .array(

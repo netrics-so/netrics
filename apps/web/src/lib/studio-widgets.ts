@@ -181,6 +181,8 @@ export interface StudioConnection {
 
 /** What live widgets read besides their own settings. */
 export interface StudioEnv {
+  dataFilters?: import("@netrics/domain").DashboardDataFilter[];
+  filterValues?: Record<string, import("@netrics/domain").DashboardFilterValue>;
   workspaceId: string;
   /** The workspace's time zone: clocks and chart labels. */
   timeZone: string;

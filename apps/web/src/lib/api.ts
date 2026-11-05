@@ -1,3 +1,4 @@
+import { dataErrorCodeKey } from "./data-errors";
 import { ZodError, type ZodType } from "zod";
 
 import {
@@ -210,6 +211,8 @@ type ApiErrorKey = MessageKey<WebMessages["apiErrors"]>;
 export function apiErrorMessage(error: unknown, locale: Locale): string {
   const t = webTranslator(locale, "apiErrors");
   if (error instanceof ApiError) {
+    if (/^(dashboard_(?:filter|measure)|data_|model_)/.test(error.code))
+      return webTranslator(locale, "data.errors")(dataErrorCodeKey(error.code));
     const code = API_ERROR_ALIASES[error.code] ?? error.code;
     if (code === "theme_in_use" || code === "image_in_use") {
       const names = error.details.dashboards?.map((d) => d.name) ?? [];

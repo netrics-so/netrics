@@ -80,6 +80,7 @@ export interface PreviewWidget {
 }
 
 export interface DashboardSettings {
+  dataFilters?: import("@netrics/domain").DashboardDataFilter[];
   showHeader: boolean;
   autoAdvance: boolean;
   defaultSlideSeconds: number;
@@ -115,6 +116,9 @@ export interface WidgetInput {
   /** Goal widgets (ADR 0019 section 5); null: none, or deleted. */
   goalId: string | null;
   options: Record<string, unknown>;
+  modelId?: string | null;
+  modelBinding?: import("@netrics/domain").MeasureWidgetBinding | null;
+  filterExclusions?: import("@netrics/domain").DashboardFilterExclusion[];
   /**
    * Compare widgets: the denominator's binding (ADR 0019 section 10);
    * missing or null for every other type.
@@ -529,6 +533,9 @@ async function writeSlides(
       dashboardId,
       workspaceId,
       type: widget.type,
+      modelId: widget.modelId ?? null,
+      modelBinding: widget.modelBinding ?? null,
+      filterExclusions: widget.filterExclusions ?? [],
       x: widget.x,
       y: widget.y,
       w: widget.w,
@@ -731,4 +738,24 @@ export async function deleteDashboard(
     .where(dashboardScope(workspaceId, dashboardId))
     .returning({ id: schema.dashboards.id });
   return rows.length === 1;
+}
+
+/** A cheap cache dependency check, scoped on top of RLS. */
+export async function dashboardHasModelWidgets(
+  tx: Transaction,
+  workspaceId: string,
+  dashboardId: string,
+): Promise<boolean> {
+  const rows = await tx
+    .select({ id: schema.dashboardWidgets.id })
+    .from(schema.dashboardWidgets)
+    .where(
+      and(
+        eq(schema.dashboardWidgets.workspaceId, workspaceId),
+        eq(schema.dashboardWidgets.dashboardId, dashboardId),
+        eq(schema.dashboardWidgets.type, "measure"),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }

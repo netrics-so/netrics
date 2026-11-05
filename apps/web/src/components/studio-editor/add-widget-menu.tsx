@@ -66,6 +66,7 @@ export function AddWidgetMenu({
   metrics,
   imageIds,
   goals = [],
+  models = [],
   reviewConnectionIds = [],
   dispatch,
   showHeader = true,
@@ -78,6 +79,7 @@ export function AddWidgetMenu({
   imageIds: readonly string[];
   /** The workspace's goals: a new goal widget shows the first. */
   goals?: readonly Goal[];
+  models?: import("@netrics/contracts").PublishedModelCatalog["models"];
   /** Connections that keep review text (a latest review), first first. */
   reviewConnectionIds?: readonly string[];
   dispatch: (action: StudioAction) => void;
@@ -201,6 +203,7 @@ export function AddWidgetMenu({
       </span>
       {WIDGET_TYPES.map((type) => {
         const made = newWidget(type, {
+          models,
           metrics,
           imageIds,
           locale,

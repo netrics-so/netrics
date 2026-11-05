@@ -27,6 +27,14 @@ import {
   type ThemeColorToken,
 } from "@netrics/domain";
 
+import {
+  dashboardWidgetDataSchema,
+  dashboardDataFiltersSchema,
+  dashboardFilterExclusionSchema,
+  measureWidgetBindingSchema,
+  measureWidgetOptionsSchema,
+} from "./dashboard-data.js";
+
 import { goalProgressSchema } from "./goals.js";
 import { imageContentTypeSchema } from "./images.js";
 
@@ -1618,6 +1626,7 @@ const slideSecondsSchema = z
 export const dashboardSettingsSchema = z.object({
   /** The band with name, slide name and clock above the grid. */
   showHeader: z.boolean(),
+  dataFilters: dashboardDataFiltersSchema.optional(),
   /** False: screens show only the first enabled slide. */
   autoAdvance: z.boolean(),
   /** How long a slide without its own duration stays on screen. */
@@ -1930,6 +1939,7 @@ export const compareDenominatorInputSchema = z.object({
 });
 
 const widgetInputShape = {
+  filterExclusions: z.array(dashboardFilterExclusionSchema).max(30).optional(),
   /**
    * A widget of this dashboard keeps its id; a missing or unknown id gets
    * a new one.
@@ -1941,6 +1951,12 @@ const widgetInputShape = {
 };
 
 export const dashboardWidgetInputSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("measure"),
+    ...widgetInputShape,
+    binding: measureWidgetBindingSchema,
+    options: measureWidgetOptionsSchema.prefault({}),
+  }),
   z.object({
     type: z.literal("metric"),
     ...widgetInputShape,
@@ -2081,6 +2097,7 @@ export const dashboardSlideInputSchema = z.object({
 export type DashboardSlideInput = z.input<typeof dashboardSlideInputSchema>;
 
 const widgetShape = {
+  filterExclusions: z.array(dashboardFilterExclusionSchema).max(30).optional(),
   id: z.uuid(),
   ...widgetPlacementShape,
   title: z.string().nullable(),
@@ -2100,6 +2117,12 @@ const dataBindingShape = {
 };
 
 export const dashboardWidgetSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("measure"),
+    ...widgetShape,
+    binding: measureWidgetBindingSchema,
+    options: measureWidgetOptionsSchema,
+  }),
   z.object({
     type: z.literal("metric"),
     ...widgetShape,
@@ -3097,6 +3120,15 @@ function deviceWidgetUnion<E extends z.ZodRawShape>(
   };
   return z.discriminatedUnion("type", [
     z.object({
+      type: z.literal("measure"),
+      ...deviceWidgetShape,
+      label: deviceDataLabelSchema,
+      measureIds: z.array(z.string()),
+      groupBy: z.array(z.string()),
+      options: measureWidgetOptionsSchema,
+      data: dashboardWidgetDataSchema,
+    }),
+    z.object({
       type: z.literal("metric"),
       ...deviceWidgetShape,
       label: deviceDataLabelSchema,
@@ -3431,3 +3463,5 @@ export type {
 
 export * from "./data-processing.js";
 export * from "./data-policy.js";
+
+export * from "./dashboard-data.js";

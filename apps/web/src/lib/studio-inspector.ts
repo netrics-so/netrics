@@ -384,6 +384,7 @@ export function convertWidget(
   widget: DashboardWidget,
   to: WidgetType,
   context: {
+    models?: import("@netrics/contracts").PublishedModelCatalog["models"];
     metrics: readonly WorkspaceMetric[];
     imageIds: readonly string[];
     locale: Locale;

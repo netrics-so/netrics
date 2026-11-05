@@ -1,3 +1,20 @@
+import { withWorkspace, findDashboard } from "@netrics/database";
+import { DEFAULT_DATA_POLICY, type DataPolicy } from "@netrics/domain";
+import {
+  dashboardDimensionValuesInputSchema,
+  dashboardDimensionValuesResponseSchema,
+  dashboardDataQuerySchema,
+  dashboardDataResponseSchema,
+  dashboardMeasurePreviewSchema,
+  publishedModelCatalogSchema,
+} from "@netrics/contracts";
+import {
+  dashboardDimensionValues,
+  queryDashboardData,
+  queryDashboardMeasure,
+  publishedModels,
+  safeDataError,
+} from "../dashboards/data.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
@@ -27,6 +44,8 @@ import { createRequireSession } from "./session.js";
 export interface DashboardRouteDeps {
   authService: AuthService;
   db: Database;
+  policy?: DataPolicy;
+  now?: () => Date;
 }
 
 const dashboardParamsSchema = z.object({ dashboardId: z.uuid() });
@@ -75,6 +94,169 @@ export function registerDashboardRoutes(
   void app.register(
     (scope, _opts, done) => {
       scope.addHook("onRequest", requireSession);
+
+      scope.post(
+        "/workspaces/:workspaceId/dashboards/models/:modelId/dimensions/:dimensionId/values",
+        {
+          schema: routeSchema({
+            summary: "Search published dimension values",
+            tags: ["dashboards"],
+            body: dashboardDimensionValuesInputSchema,
+            response: dashboardDimensionValuesResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "data:query");
+          if (!access) return;
+          const params = z
+            .object({
+              modelId: z.uuid(),
+              dimensionId: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$/),
+            })
+            .safeParse(request.params);
+          if (!params.success)
+            return sendError(reply, 404, "data_model_not_found");
+          const body = parseBody(
+            dashboardDimensionValuesInputSchema,
+            request,
+            reply,
+          );
+          if (!body) return;
+          try {
+            return await withWorkspace(
+              deps.db,
+              { workspaceId: access.workspaceId, userId: access.callerId },
+              (tx) =>
+                dashboardDimensionValues(
+                  tx,
+                  access.workspaceId,
+                  params.data.modelId,
+                  params.data.dimensionId,
+                  body,
+                  deps.now?.() ?? new Date(),
+                  deps.policy,
+                ),
+              { isolationLevel: "repeatable read" },
+            );
+          } catch (error) {
+            return sendError(reply, 400, safeDataError(error));
+          }
+        },
+      );
+      scope.get(
+        "/workspaces/:workspaceId/dashboards/published-models",
+        {
+          schema: routeSchema({
+            summary: "List published models for dashboard bindings",
+            tags: ["dashboards"],
+            response: publishedModelCatalogSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "data:query");
+          if (!access) return;
+          return withWorkspace(
+            deps.db,
+            { workspaceId: access.workspaceId, userId: access.callerId },
+            (tx) => publishedModels(tx, access.workspaceId),
+          );
+        },
+      );
+      scope.post(
+        "/workspaces/:workspaceId/dashboards/data/preview",
+        {
+          schema: routeSchema({
+            summary: "Query unsaved widgets against published models",
+            tags: ["dashboards"],
+            body: dashboardMeasurePreviewSchema,
+            response: dashboardDataResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "data:query");
+          if (!access) return;
+          const body = parseBody(dashboardMeasurePreviewSchema, request, reply);
+          if (!body) return;
+          return withWorkspace(
+            deps.db,
+            { workspaceId: access.workspaceId, userId: access.callerId },
+            async (tx) => ({
+              widgets: await (async () => {
+                const results = [];
+                const now = new Date();
+                for (const widget of body.widgets)
+                  results.push(
+                    await queryDashboardMeasure(
+                      tx,
+                      access.workspaceId,
+                      widget,
+                      body.filters,
+                      body.values,
+                      now,
+                      deps.policy ?? DEFAULT_DATA_POLICY,
+                      access.locale,
+                    ),
+                  );
+                return results;
+              })(),
+              values: body.values,
+            }),
+            { isolationLevel: "repeatable read" },
+          );
+        },
+      );
+      scope.post(
+        "/workspaces/:workspaceId/dashboards/:dashboardId/data",
+        {
+          schema: routeSchema({
+            summary: "Query a dashboard with shared filters",
+            tags: ["dashboards"],
+            body: dashboardDataQuerySchema,
+            response: dashboardDataResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "data:query");
+          const id = access && dashboardId(request, reply);
+          if (!access || !id) return;
+          const body = parseBody(dashboardDataQuerySchema, request, reply);
+          if (!body) return;
+          try {
+            return await withWorkspace(
+              deps.db,
+              { workspaceId: access.workspaceId, userId: access.callerId },
+              async (tx) => {
+                const dashboard = await findDashboard(
+                  tx,
+                  access.workspaceId,
+                  id,
+                );
+                if (!dashboard) {
+                  sendError(reply, 404, "dashboard_not_found");
+                  return;
+                }
+                return queryDashboardData(
+                  tx,
+                  access.workspaceId,
+                  dashboard.slides.flatMap((slide) => slide.widgets),
+                  dashboard.dataFilters,
+                  body.values,
+                  deps.now?.() ?? new Date(),
+                  deps.policy,
+                  access.locale,
+                );
+              },
+              { isolationLevel: "repeatable read" },
+            );
+          } catch (error) {
+            sendError(reply, 400, safeDataError(error));
+          }
+        },
+      );
 
       scope.get(
         "/workspaces/:workspaceId/dashboards",

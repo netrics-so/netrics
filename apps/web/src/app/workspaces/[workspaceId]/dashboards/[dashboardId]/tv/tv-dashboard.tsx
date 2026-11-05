@@ -1,4 +1,5 @@
 "use client";
+import { DashboardDataProvider } from "@/components/studio/dashboard-data-provider";
 
 import Link from "next/link";
 import { useMemo } from "react";
@@ -59,6 +60,7 @@ export function TvDashboard({
   const env: StudioEnv = useMemo(
     () => ({
       workspaceId,
+      dataFilters: dashboard.settings.dataFilters ?? [],
       timeZone,
       fontScale: theme.tokens.fontScale,
       showHeader: settings.showHeader,
@@ -91,24 +93,30 @@ export function TvDashboard({
       className={idle ? "slide-screen slide-screen--idle" : "slide-screen"}
       style={themeStyle(theme.tokens)}
     >
-      <SlidePlayer
-        slides={slides}
-        autoAdvance={settings.autoAdvance}
-        transition={settings.transition}
-        tokens={theme.tokens}
-        showHeader={settings.showHeader}
-        header={{
-          name: dashboard.name,
-          logoImageId: logoImageId(settings),
-          timeZone,
-          offline,
-          refresh,
-        }}
-        images={env.images}
-        renderWidget={(widget) => <LiveWidget widget={widget} env={env} />}
-        primaryFormat={dashboard.primaryFormat}
-        empty={<p className="tv-empty">{t("allHidden")}</p>}
-      />
+      <DashboardDataProvider
+        workspaceId={workspaceId}
+        widgets={dashboard.slides.flatMap((slide) => slide.widgets)}
+        filters={dashboard.settings.dataFilters ?? []}
+      >
+        <SlidePlayer
+          slides={slides}
+          autoAdvance={settings.autoAdvance}
+          transition={settings.transition}
+          tokens={theme.tokens}
+          showHeader={settings.showHeader}
+          header={{
+            name: dashboard.name,
+            logoImageId: logoImageId(settings),
+            timeZone,
+            offline,
+            refresh,
+          }}
+          images={env.images}
+          renderWidget={(widget) => <LiveWidget widget={widget} env={env} />}
+          primaryFormat={dashboard.primaryFormat}
+          empty={<p className="tv-empty">{t("allHidden")}</p>}
+        />
+      </DashboardDataProvider>
       <div className="slide-screen-status">
         <Link
           className="tv-exit"

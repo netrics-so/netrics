@@ -48,6 +48,7 @@ export interface ModelQuery {
   filter?: DataExpression;
   now?: string;
   limit?: number;
+  offset?: number;
 }
 export interface ModelMeasureResult extends DataCell {
   status: "ok" | "missing" | "partial";
@@ -103,6 +104,9 @@ export function querySemanticModel(
   )
     dataFail("model_ids_not_unique");
   const limit = query.limit ?? 1000;
+  const offset = query.offset ?? 0;
+  if (!Number.isSafeInteger(offset) || offset < 0)
+    dataFail("model_result_offset_invalid");
   if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
     dataFail("model_result_limit_invalid");
   const usedDatasets = new Set<string>();
@@ -286,14 +290,27 @@ export function querySemanticModel(
       const members = groups.get(group) ?? [];
       members.push(row);
       groups.set(group, members);
-      if (groupValues.size > limit) dataFail("model_result_limit_exceeded");
     }
   }
   const results: Array<{
     dimensions: DataRow;
     measures: Record<string, ModelMeasureResult>;
   }> = [];
-  for (const [key, values] of groupValues) {
+  const orderedGroups = [...groupValues].sort(([, a], [, b]) => {
+    budget.tick();
+    for (const id of query.groupBy) {
+      const av = a[id],
+        bv = b[id];
+      if (av === null && bv === null) continue;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      const type = dimensionFields.find((field) => field.id === id)!.type;
+      const comparison = compareDataValues(type, av, bv);
+      if (comparison) return comparison;
+    }
+    return 0;
+  });
+  for (const [key, values] of orderedGroups.slice(offset, offset + limit)) {
     const computed = new Map<string, ModelMeasureResult>();
     const evaluate = (id: string): ModelMeasureResult => {
       const cached = computed.get(id);
@@ -367,10 +384,70 @@ export function querySemanticModel(
       lineage.set(p.datasetId + ":" + p.generationId, p);
   return {
     rows: results,
+    totalRows: orderedGroups.length,
+    offset,
     warnings: [...budget.warnings],
     operations: budget.operations,
     provenance: [...lineage.values()],
     appliedFilter: query.filter ?? null,
     groupBy: query.groupBy,
   };
+}
+
+/** Publication validates schemas, expressions and actual mapping cardinality.
+ * A model containing multiple currencies is valid; an incompatible unfiltered
+ * total is refused when that query is requested, not by banning the model.
+ */
+export function validateSemanticModel(
+  model: SemanticModelDefinition,
+  sources: ReadonlyMap<string, DataTable>,
+  now: string,
+  budget = new ProcessingBudget(),
+): void {
+  const schemas = new Map(
+    [...sources].map(([id, table]) => [id, { fields: table.fields, rows: [] }]),
+  );
+  for (const dimension of model.dimensions) {
+    const field = schemas
+      .get(dimension.datasetId)
+      ?.fields.find((field) => field.id === dimension.fieldId);
+    if (!model.datasets.includes(dimension.datasetId) || !field)
+      dataFail("model_field_not_found", dimension.fieldId);
+    if (field.type === "json") dataFail("model_dimension_json_unsupported");
+    if (field.type === "date" && !dimension.timeAlignment)
+      dataFail("model_date_alignment_required");
+  }
+  for (let offset = 0; offset < model.measures.length; offset += 50)
+    querySemanticModel(
+      model,
+      schemas,
+      {
+        measureIds: model.measures
+          .slice(offset, offset + 50)
+          .map((measure) => measure.id),
+        groupBy: [],
+        now,
+      },
+      budget,
+    );
+  for (const table of sources.values()) validateDataTable(table, budget);
+  const datasetId = model.datasets[0];
+  if (!datasetId) dataFail("model_dataset_not_declared");
+  querySemanticModel(
+    {
+      ...model,
+      measures: [
+        {
+          id: "__validate_rows",
+          name: "Validation",
+          kind: "aggregate",
+          datasetId,
+          aggregate: { id: "__validate_rows", name: "Validation", op: "count" },
+        },
+      ],
+    },
+    sources,
+    { measureIds: ["__validate_rows"], groupBy: [], now },
+    budget,
+  );
 }

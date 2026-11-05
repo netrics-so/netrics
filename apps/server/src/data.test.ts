@@ -1,7 +1,12 @@
+import { buildDeviceDashboardV3 } from "./devices/dashboard.js";
 import type { FastifyInstance, InjectOptions } from "fastify";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDatabase, type Database } from "@netrics/database";
+import {
+  createDatabase,
+  withWorkspace,
+  type Database,
+} from "@netrics/database";
 import {
   workspaceResponseSchema,
   modelResponseSchema,
@@ -235,5 +240,472 @@ describe("data API authorization and contract", () => {
     });
     expect(response.statusCode).toBe(400);
     expect(response.body).not.toContain("process");
+  });
+});
+
+describe("published dashboard measure bindings", () => {
+  let dashboardId: string, portfolioId: string;
+  const dataCall = (
+    method: "GET" | "POST" | "PUT",
+    path: string,
+    cookie: string,
+    payload?: unknown,
+  ) =>
+    app.inject({
+      method,
+      url: `/v1/workspaces/${workspaceId}/dashboards${path}`,
+      headers: { cookie },
+      ...(payload === undefined
+        ? {}
+        : { payload: payload as InjectOptions["payload"] }),
+    });
+  const filter = () => ({
+    id: "country",
+    name: "Country",
+    type: "string",
+    mode: "values",
+    mappings: [{ modelId: portfolioId, dimensionId: "country" }],
+    defaultValue: null,
+  });
+  const widget = (measureId: string, x = 0) => ({
+    type: "measure",
+    x,
+    y: 0,
+    w: 4,
+    h: 3,
+    binding: {
+      modelId: portfolioId,
+      measureIds: [measureId],
+      groupBy: [],
+      exclusions: [],
+    },
+    options: { view: "value", limit: 20 },
+  });
+  async function source(
+    key: string,
+    fields: Array<{
+      id: string;
+      type: string;
+      unit?: string;
+      currencyField?: string;
+    }>,
+    rows: Array<Record<string, unknown>>,
+  ) {
+    const result = await call("POST", "/manual", editor, {
+      definition: {
+        key,
+        name: key,
+        version: 1,
+        mode: "snapshot",
+        grain: "one fixture record",
+        keyFields: ["id"],
+        retentionDays: null,
+        fields: fields.map((field) => ({
+          ...field,
+          name: field.id,
+          nullable: false,
+          classification: "internal",
+        })),
+      },
+      records: rows.map((values) => ({ values })),
+    });
+    expect(result.statusCode, result.body).toBe(200);
+    return result.json().datasetId as string;
+  }
+  it("publishes independently aggregated facts and exposes only published metadata to viewers", async () => {
+    const products = await source(
+      "products",
+      [
+        { id: "id", type: "string" },
+        { id: "country", type: "string" },
+      ],
+      [
+        { id: "a", country: "DE" },
+        { id: "b", country: "FR" },
+      ],
+    );
+    const fields = [
+      { id: "id", type: "string" },
+      { id: "product", type: "string" },
+      { id: "amount", type: "decimal" },
+    ];
+    const proceeds = await source("proceeds", fields, [
+      { id: "one", product: "a", amount: "100" },
+      { id: "two", product: "a", amount: "50" },
+      { id: "three", product: "b", amount: "25" },
+    ]);
+    const spend = await source("spend", fields, [
+      { id: "one", product: "a", amount: "30" },
+      { id: "two", product: "b", amount: "10" },
+    ]);
+    const created = await call("POST", "/models", editor, {
+      name: "Portfolio",
+      definition: {
+        version: 1,
+        datasets: [products, proceeds, spend],
+        relationships: [proceeds, spend].map((datasetId, index) => ({
+          id: `r${index}`,
+          from: { datasetId, fieldId: "product" },
+          to: { datasetId: products, fieldId: "id" },
+          cardinality: "many_to_one",
+        })),
+        dimensions: [
+          {
+            id: "country",
+            name: "Country",
+            datasetId: products,
+            fieldId: "country",
+          },
+        ],
+        measures: [
+          ...[
+            ["income", proceeds],
+            ["spend", spend],
+          ].map(([id, datasetId]) => ({
+            id,
+            name: id,
+            kind: "aggregate",
+            datasetId,
+            aggregate: { id, name: id, op: "sum", fieldId: "amount" },
+          })),
+          {
+            id: "margin",
+            name: "Contribution",
+            kind: "formula",
+            expression: {
+              kind: "call",
+              fn: "subtract",
+              args: [
+                { kind: "field", fieldId: "income" },
+                { kind: "field", fieldId: "spend" },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    portfolioId = created.json().model.id as string;
+    const before = await dataCall("GET", "/published-models", viewer);
+    expect(
+      before
+        .json()
+        .models.some(
+          (model: { modelId: string }) => model.modelId === portfolioId,
+        ),
+    ).toBe(false);
+    expect(
+      (
+        await call("POST", `/models/${portfolioId}/publish`, editor, {
+          version: 1,
+        })
+      ).statusCode,
+    ).toBe(200);
+    const catalog = await dataCall("GET", "/published-models", viewer);
+    expect(catalog.statusCode, catalog.body).toBe(200);
+    expect(
+      catalog
+        .json()
+        .models.find(
+          (model: { modelId: string }) => model.modelId === portfolioId,
+        ),
+    ).toMatchObject({
+      modelName: "Portfolio",
+      dimensions: [{ id: "country", type: "string" }],
+    });
+    expect(catalog.body).not.toContain(proceeds);
+    expect(catalog.body).not.toContain('"definition"');
+    expect(
+      (await dataCall("GET", "/published-models", stranger)).statusCode,
+    ).toBe(404);
+  });
+  it("saves reusable measure bindings and shares filters across independent facts", async () => {
+    const created = await dataCall("POST", "", editor, {
+      name: "Portfolio overview",
+      settings: { dataFilters: [filter()] },
+      slides: [
+        {
+          widgets: [widget("income"), widget("spend", 4), widget("margin", 8)],
+        },
+      ],
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    dashboardId = created.json().dashboard.id as string;
+    expect(created.json().dashboard.settings.dataFilters).toEqual([filter()]);
+    const query = await dataCall("POST", `/${dashboardId}/data`, viewer, {
+      values: { country: { kind: "values", values: ["DE"] } },
+    });
+    expect(query.statusCode, query.body).toBe(200);
+    expect(
+      query.json().widgets.map(
+        (widget: {
+          result: {
+            rows: Array<{ measures: Record<string, { value: unknown }> }>;
+          };
+        }) => Object.values(widget.result.rows[0]!.measures)[0]!.value,
+      ),
+    ).toEqual(["150", "30", "120"]);
+    expect(
+      query
+        .json()
+        .widgets.every(
+          (widget: { result: { releaseId: string; provenance: unknown[] } }) =>
+            widget.result.releaseId && widget.result.provenance.length,
+        ),
+    ).toBe(true);
+    const reset = await dataCall("POST", `/${dashboardId}/data`, viewer, {
+      values: {},
+    });
+    expect(reset.json().widgets[2].result.rows[0].measures.margin.value).toBe(
+      "135",
+    );
+    expect(
+      (await dataCall("POST", `/${dashboardId}/data`, stranger, { values: {} }))
+        .statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await dataCall("POST", `/${dashboardId}/data`, viewer, {
+          values: { unknown: null },
+        })
+      ).statusCode,
+    ).toBe(400);
+    const duplicate = await dataCall(
+      "POST",
+      `/${dashboardId}/duplicate`,
+      editor,
+      {},
+    );
+    expect(duplicate.statusCode, duplicate.body).toBe(200);
+    expect(
+      duplicate.json().dashboard.slides[0].widgets[0].binding.modelId,
+    ).toBe(portfolioId);
+  });
+  it("intersects viewer choices with fixed scope and never lets all-values remove it", async () => {
+    for (const values of [
+      { country: null },
+      { country: { kind: "values", values: ["DE", "FR"] } },
+      { country: { kind: "values", values: ["FR"] } },
+    ]) {
+      const result = await dataCall("POST", "/data/preview", viewer, {
+        filters: [
+          { ...filter(), fixedValue: { kind: "values", values: ["DE"] } },
+        ],
+        values,
+        widgets: [
+          { ...widget("income"), id: "51bb53cb-3540-4b70-a287-151c5fa16803" },
+        ].map(({ id, binding, options }) => ({ id, binding, options })),
+      });
+      expect(result.statusCode, result.body).toBe(200);
+      expect(
+        result.json().widgets[0].result.rows[0].measures.income.value,
+      ).toBe(values.country?.values?.length === 1 ? null : "150");
+    }
+  });
+  it("refuses incompatible saved bindings and contains an invalid preview widget", async () => {
+    for (const change of [
+      { settings: { dataFilters: [{ ...filter(), mappings: [] }] } },
+      { settings: { dataFilters: [{ ...filter(), type: "integer" }] } },
+      { settings: { dataFilters: [filter(), filter()] } },
+      {
+        settings: { dataFilters: [filter()] },
+        slides: [
+          {
+            widgets: [
+              {
+                ...widget("income"),
+                binding: {
+                  ...widget("income").binding,
+                  modelId: "7c271797-0183-4591-b219-e2c6d8357b28",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ]) {
+      const result = await dataCall("POST", "", editor, {
+        name: "Invalid",
+        ...{
+          settings: { dataFilters: [filter()] },
+          slides: [{ widgets: [widget("income")] }],
+        },
+        ...change,
+      });
+      expect(result.statusCode, result.body).toBe(400);
+    }
+    const widgets = [widget("unknown"), widget("income")].map(
+      ({ binding, options }, index) => ({
+        binding,
+        options,
+        id: index
+          ? "51bb53cb-3540-4b70-a287-151c5fa16803"
+          : "97118a1d-d1a4-4abb-b9c7-b20309178d0e",
+      }),
+    );
+    const preview = await dataCall("POST", "/data/preview", viewer, {
+      widgets,
+      filters: [],
+      values: {},
+    });
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(preview.json().widgets[0]).toMatchObject({
+      error: "model_measure_not_found",
+      result: null,
+    });
+    expect(preview.json().widgets[1].result.rows[0].measures.income.value).toBe(
+      "175",
+    );
+  });
+  it("searches typed dimension values with paging and enforces workspace access", async () => {
+    const path = `/models/${portfolioId}/dimensions/country/values`;
+    const page = await dataCall("POST", path, viewer, { limit: 1, offset: 1 });
+    expect(page.statusCode, page.body).toBe(200);
+    expect(page.json()).toEqual({ values: ["FR"], total: 2, offset: 1 });
+    const search = await dataCall("POST", path, viewer, { search: "de" });
+    expect(search.json()).toEqual({ values: ["DE"], total: 1, offset: 0 });
+    expect((await dataCall("POST", path, stranger, {})).statusCode).toBe(404);
+  });
+  it("computes paired-screen results from the saved scope and refuses a foreign dashboard", async () => {
+    const current = (await dataCall("GET", `/${dashboardId}`, editor)).json()
+      .dashboard;
+    const saved = await dataCall("PUT", `/${dashboardId}`, editor, {
+      name: current.name,
+      version: current.version,
+      projectId: current.projectId,
+      slides: current.slides,
+      settings: {
+        ...current.settings,
+        dataFilters: [
+          { ...filter(), defaultValue: { kind: "values", values: ["DE"] } },
+        ],
+      },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const payload = await withWorkspace(
+      db,
+      { workspaceId },
+      (tx) =>
+        buildDeviceDashboardV3(tx, workspaceId, dashboardId, {
+          now: new Date(),
+        }),
+      { isolationLevel: "repeatable read" },
+    );
+    const widgets = payload.slides[0]!.widgets;
+    expect(widgets.map((widget) => widget.type)).toEqual([
+      "measure",
+      "measure",
+      "measure",
+    ]);
+    expect(
+      widgets.map(
+        (widget) =>
+          widget.type === "measure" &&
+          Object.values(widget.data.result!.rows[0]!.measures)[0]!.value,
+      ),
+    ).toEqual(["150", "30", "120"]);
+    expect(widgets[0]!.type === "measure" && widgets[0]!.data.scope).toEqual([
+      "Country: DE",
+    ]);
+    const foreign = await app.inject({
+      method: "POST",
+      url: "/v1/workspaces",
+      headers: { cookie: stranger },
+      payload: { name: "Foreign" },
+    });
+    const other = foreign.json().workspace.id as string;
+    const denied = await withWorkspace(db, { workspaceId: other }, (tx) =>
+      buildDeviceDashboardV3(tx, other, dashboardId, { now: new Date() }),
+    );
+    expect(denied.slides).toEqual([]);
+  });
+  it("allows a multi-currency model while refusing mixed totals and incomparable charts", async () => {
+    const sourceId = await source(
+      "multiple-currencies",
+      [
+        { id: "id", type: "string" },
+        { id: "country", type: "string" },
+        {
+          id: "amount",
+          type: "decimal",
+          unit: "currency",
+          currencyField: "currency",
+        },
+        { id: "currency", type: "string" },
+      ],
+      [
+        { id: "a", country: "DE", amount: "10.25", currency: "EUR" },
+        { id: "b", country: "US", amount: "20.5", currency: "USD" },
+      ],
+    );
+    const created = await call("POST", "/models", editor, {
+      name: "Multi-currency",
+      definition: {
+        version: 1,
+        datasets: [sourceId],
+        relationships: [],
+        dimensions: [
+          {
+            id: "country",
+            name: "Country",
+            datasetId: sourceId,
+            fieldId: "country",
+          },
+        ],
+        measures: [
+          {
+            id: "amount",
+            name: "Proceeds",
+            kind: "aggregate",
+            datasetId: sourceId,
+            aggregate: {
+              id: "amount",
+              name: "Proceeds",
+              op: "sum",
+              fieldId: "amount",
+            },
+          },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const id = created.json().model.id as string;
+    const published = await call("POST", `/models/${id}/publish`, editor, {
+      version: 1,
+    });
+    expect(published.statusCode, published.body).toBe(200);
+    const binding = {
+      modelId: id,
+      measureIds: ["amount"],
+      groupBy: ["country"],
+      exclusions: [],
+    };
+    const run = (view: string, groupBy = binding.groupBy) =>
+      dataCall("POST", "/data/preview", viewer, {
+        filters: [],
+        values: {},
+        widgets: [
+          {
+            id: "51bb53cb-3540-4b70-a287-151c5fa16803",
+            binding: { ...binding, groupBy },
+            options: { view, limit: 20 },
+          },
+        ],
+      });
+    const table = await run("table");
+    expect(
+      table
+        .json()
+        .widgets[0].result.rows.map(
+          (row: { measures: { amount: { currency: string } } }) =>
+            row.measures.amount.currency,
+        ),
+    ).toEqual(["EUR", "USD"]);
+    expect((await run("bar")).json().widgets[0].error).toBe(
+      "dashboard_measure_currency_incompatible",
+    );
+    expect((await run("value", [])).json().widgets[0].error).toBe(
+      "aggregate_currency_mixed",
+    );
   });
 });

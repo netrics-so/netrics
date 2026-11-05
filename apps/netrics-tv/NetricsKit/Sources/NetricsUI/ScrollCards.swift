@@ -38,6 +38,10 @@ struct ScrollCardView: View {
     private func card(now: Date) -> some View {
         let label = widget.label ?? ""
         switch widget.content {
+        case .measure(let measures, let groups, let options, let data):
+            MeasureWidgetView(label: label, measureIds: measures, groupBy: groups, options: options,
+                data: data, env: env, scroll: true, now: now).scrollCard(env)
+
         case .metric(let options, let data):
             ScrollMetricCard(label: label, options: options, data: data, units: units, env: env, now: now)
                 .scrollCard(env)
