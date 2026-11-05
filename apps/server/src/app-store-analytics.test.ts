@@ -146,7 +146,11 @@ function registry(): ConnectorRegistry {
   registry.register(createDemoConnector());
   registry.register(
     towardsFake(
-      createAppStoreConnectConnector({ now: () => NOW, log: () => {} }),
+      createAppStoreConnectConnector({
+        ratings: false,
+        now: () => NOW,
+        log: () => {},
+      }),
     ),
   );
   return registry;

@@ -30,6 +30,11 @@ import { ANALYTICS_SOURCE_TYPES, OTHER_SOURCE } from "./analytics-report.js";
 import { ARTWORK_HOSTS, ITUNES_LOOKUP_HOST, appIcons } from "./icons.js";
 import { checkKey, vendorNumberOf } from "./probes.js";
 import {
+  ratingStorefront,
+  storeRatingsDataset,
+  syncWithStoreRatings,
+} from "./store-ratings.js";
+import {
   RATINGS,
   REVIEWS_APPS_PER_PAGE,
   REVIEW_METRIC_KEYS,
@@ -173,8 +178,6 @@ export {
 
 /** Apps per page of `GET /v1/apps` (Apple allows up to 200). */
 export const APPS_PAGE_SIZE = 100;
-/** Pages of apps read at most (5,000 apps). */
-const MAX_APP_PAGES = 50;
 
 /**
  * German texts of the manifest (ADR 0016, #257): "du" where the text
@@ -183,9 +186,14 @@ const MAX_APP_PAGES = 50;
 const appStoreConnectDe: ManifestTranslation = {
   name: "App Store Connect",
   description:
-    "Downloads, In-App-Käufe und Erlöse deiner Apps aus den Verkaufsberichten von App Store Connect, pro App; Impressionen, Produktseitenaufrufe und Downloads nach Quelle, sobald die App-Store-Analysen aktiviert sind; Bewertungen und Rezensionen mit einem optionalen Customer-Support-Schlüssel.",
+    "Downloads, In-App-Käufe und Erlöse pro App; Gesamtbewertung und Anzahl der App-Store-Bewertungen für dein gewähltes Land; App-Store-Analysen nach Aktivierung und geschriebene Rezensionen mit einem optionalen Customer-Support-Schlüssel.",
   resourceNoun: { singular: "App", plural: "Apps" },
   config: {
+    ratingStorefront: {
+      title: "Storefront für Bewertungen",
+      description:
+        "Ländercode aus zwei Buchstaben für die Gesamtbewertung und Anzahl der Bewertungen im App Store (z. B. US oder DE). Standard: US. Jedes Land hat eigene Bewertungen; diese sind getrennt von geschriebenen Rezensionen.",
+    },
     vendorNumber: {
       title: "Anbieternummer",
       description:
@@ -271,13 +279,13 @@ const appStoreConnectDe: ManifestTranslation = {
 
 export const appStoreConnectManifest: ConnectorManifest = {
   id: "app-store-connect",
-  version: "0.1.2",
-  sdkVersion: "^0.2.8",
+  version: "0.1.3",
+  sdkVersion: "^0.2.9",
   category: "apps",
   brandColor: "#0d84ff",
   name: "App Store Connect",
   description:
-    "Downloads, in-app purchases and proceeds of your apps from App Store Connect sales reports, per app; impressions, product page views and downloads by source once App Store analytics are enabled; ratings and reviews with an optional Customer Support key.",
+    "Downloads, in-app purchases and proceeds per app; overall App Store rating and rating count for your chosen storefront; App Store analytics once enabled and written reviews with an optional Customer Support key.",
   url: "https://appstoreconnect.apple.com/",
   docsUrl:
     "https://github.com/netrics-so/netrics/blob/main/docs/connectors/app-store-connect.md",
@@ -291,10 +299,21 @@ export const appStoreConnectManifest: ConnectorManifest = {
         description:
           "The number shown in App Store Connect under Payments and Financial Reports, next to your legal entity name (digits only, e.g. 85012345).",
       },
+      ratingStorefront: {
+        type: "string",
+        title: "Rating storefront",
+        description:
+          "Two-letter country code for the overall App Store rating and rating count (for example US or DE). Defaults to US. Each storefront has its own ratings; these are separate from written reviews.",
+        default: "US",
+        minLength: 2,
+        maxLength: 2,
+        pattern: "^[A-Za-z]{2}$",
+      },
     },
     required: ["vendorNumber"],
     additionalProperties: false,
   },
+  datasets: [storeRatingsDataset],
   metrics: [
     {
       key: SALES_METRIC_KEYS.downloads,
@@ -552,12 +571,15 @@ export async function listApps(
     "limit[appStoreVersions]": "50",
     limit: String(APPS_PAGE_SIZE),
   };
-  for (let page = 0; next !== undefined; page += 1) {
-    if (page >= MAX_APP_PAGES) {
-      throw new Error(
-        `App Store Connect listed more than ${MAX_APP_PAGES * APPS_PAGE_SIZE} apps`,
-      );
-    }
+  const visited = new Set<string>();
+  while (next !== undefined) {
+    const pageUrl = new URL(
+      next,
+      `https://${APP_STORE_CONNECT_HOST}`,
+    ).toString();
+    if (visited.has(pageUrl))
+      throw new Error("App Store Connect repeated an app-listing page");
+    visited.add(pageUrl);
     const body = appsPageSchema.parse(await client.getJson(next, query));
     const platformOf = new Map(
       (body.included ?? [])
@@ -631,6 +653,8 @@ export interface AppStoreConnectConnectorOptions {
    * tests turn it off to look at sales pages alone.
    */
   analytics?: boolean;
+  /** Read public all-version storefront rating snapshots (default true). */
+  ratings?: boolean;
 }
 
 /**
@@ -669,6 +693,7 @@ export function createAppStoreConnectConnector(
   const now = options.now ?? Date.now;
   const log = options.log ?? ((message: string) => console.warn(message));
   const analytics = options.analytics ?? true;
+  const ratings = options.ratings ?? true;
 
   function token(context: ConnectionContext): string {
     const value = accessTokenOf(context);
@@ -695,6 +720,14 @@ export function createAppStoreConnectConnector(
           ok: false,
           message:
             "Enter the vendor number from Payments and Financial Reports (digits only) to finish setup.",
+        };
+      }
+      try {
+        ratingStorefront(context.config);
+      } catch {
+        return {
+          ok: false,
+          message: "Enter a two-letter country code for the rating storefront.",
         };
       }
       return checkKey(
@@ -740,110 +773,130 @@ export function createAppStoreConnectConnector(
     },
 
     async sync(context, request: SyncRequest, runtime): Promise<SyncResult> {
-      const vendorNumber = vendorNumberOf(context.config);
-      if (!vendorNumber) {
-        throw new Error(
-          "Enter the vendor number from Payments and Financial Reports (digits only) to finish setup.",
-        );
-      }
-      const client = createAppStoreConnectClient(runtime.fetch, token(context));
-      const reviewsToken = reviewsTokenOf(context);
-      const appIdsOf = async () =>
-        request.resources !== undefined
-          ? [...request.resources].sort()
-          : (await listApps(client)).map((app) => app.id).sort();
-      /** What follows the analytics: the reviews, or the end of the run. */
-      const afterAnalytics = (
-        observations: SyncResult["observations"],
-        salesCursor: string,
-      ): SyncResult =>
-        reviewsToken !== undefined && request.resources?.length !== 0
-          ? {
-              observations,
-              nextCursor: reviewsCursor(0, salesCursor),
-              done: false,
-            }
-          : { observations, nextCursor: salesCursor, done: true };
-
-      // Reviews pages come last (#190), with the reviews key's own token
-      // and hourly budget. A refused reviews key pauses only the reviews.
-      const reviewsResumed = REVIEWS_CURSOR.exec(request.cursor ?? "");
-      if (reviewsResumed) {
-        const start = Number(reviewsResumed[1]);
-        const salesCursor = reviewsResumed[2]!;
-        if (reviewsToken === undefined) {
-          return { observations: [], nextCursor: salesCursor, done: true };
-        }
-        const appIds = await appIdsOf();
-        const end = Math.min(start + REVIEWS_APPS_PER_PAGE, appIds.length);
-        const { observations, reviews, reviewWindows, stop } =
-          await syncReviewApps(
-            createAppStoreConnectClient(runtime.fetch, reviewsToken),
-            appIds.slice(start, end),
-            { now: now(), from: request.from, maxDays: BACKFILL_DAYS, log },
-          );
-        // Review text (ADR 0019 §11): the newest reviews of each app read
-        // on this page, and the spans read completely (neither when no app
-        // was read, e.g. after a rate limit).
-        const text =
-          reviews.length > 0 || reviewWindows.length > 0
-            ? { reviews, reviewWindows }
-            : {};
-        return end < appIds.length && !stop
-          ? {
-              observations,
-              ...text,
-              nextCursor: reviewsCursor(end, salesCursor),
-              done: false,
-            }
-          : { observations, ...text, nextCursor: salesCursor, done: true };
-      }
-
-      // Analytics pages come after the sales of a sync (ADR 0014, #174):
-      // a few apps per page, each page within its own time budget.
-      const resumed = ANALYTICS_CURSOR.exec(request.cursor ?? "");
-      if (resumed) {
-        const start = Number(resumed[1]);
-        const salesCursor = resumed[2]!;
-        const appIds = await appIdsOf();
-        const end = Math.min(start + ANALYTICS_APPS_PER_PAGE, appIds.length);
-        const { observations, rateLimited } = await syncAnalyticsApps(
-          client,
-          runtime.fetch,
-          appIds.slice(start, end),
-          { now: now(), log },
-        );
-        return end < appIds.length && !rateLimited
-          ? {
-              observations,
-              nextCursor: analyticsCursor(end, salesCursor),
-              done: false,
-            }
-          : afterAnalytics(observations, salesCursor);
-      }
-
-      const sales = await syncSalesPage(client, request, {
+      if (!ratings) return syncLegacy(context, request, runtime);
+      return syncWithStoreRatings(request, runtime, {
+        storefront: ratingStorefront(context.config),
         now: now(),
-        vendorNumber,
-        log,
-        listAppSkus: async () =>
-          new Map(
-            (await listApps(client)).flatMap((app) =>
-              app.sku ? [[app.sku, app.id] as const] : [],
-            ),
-          ),
+        appIds: async () =>
+          request.resources ??
+          (
+            await listApps(
+              createAppStoreConnectClient(runtime.fetch, token(context)),
+            )
+          ).map((app) => app.id),
+        legacy: (next) => syncLegacy(context, next, runtime),
       });
-      if (!sales.done || request.resources?.length === 0) {
-        return sales;
-      }
-      if (!analytics) {
-        return afterAnalytics(sales.observations, sales.nextCursor!);
-      }
-      return {
-        observations: sales.observations,
-        nextCursor: analyticsCursor(0, sales.nextCursor!),
-        done: false,
-      };
     },
   };
+
+  async function syncLegacy(
+    context: ConnectionContext,
+    request: SyncRequest,
+    runtime: Parameters<Connector["sync"]>[2],
+  ): Promise<SyncResult> {
+    const vendorNumber = vendorNumberOf(context.config);
+    if (!vendorNumber) {
+      throw new Error(
+        "Enter the vendor number from Payments and Financial Reports (digits only) to finish setup.",
+      );
+    }
+    const client = createAppStoreConnectClient(runtime.fetch, token(context));
+    const reviewsToken = reviewsTokenOf(context);
+    const appIdsOf = async () =>
+      request.resources !== undefined
+        ? [...request.resources].sort()
+        : (await listApps(client)).map((app) => app.id).sort();
+    /** What follows the analytics: the reviews, or the end of the run. */
+    const afterAnalytics = (
+      observations: SyncResult["observations"],
+      salesCursor: string,
+    ): SyncResult =>
+      reviewsToken !== undefined && request.resources?.length !== 0
+        ? {
+            observations,
+            nextCursor: reviewsCursor(0, salesCursor),
+            done: false,
+          }
+        : { observations, nextCursor: salesCursor, done: true };
+
+    // Reviews pages come last (#190), with the reviews key's own token
+    // and hourly budget. A refused reviews key pauses only the reviews.
+    const reviewsResumed = REVIEWS_CURSOR.exec(request.cursor ?? "");
+    if (reviewsResumed) {
+      const start = Number(reviewsResumed[1]);
+      const salesCursor = reviewsResumed[2]!;
+      if (reviewsToken === undefined) {
+        return { observations: [], nextCursor: salesCursor, done: true };
+      }
+      const appIds = await appIdsOf();
+      const end = Math.min(start + REVIEWS_APPS_PER_PAGE, appIds.length);
+      const { observations, reviews, reviewWindows, stop } =
+        await syncReviewApps(
+          createAppStoreConnectClient(runtime.fetch, reviewsToken),
+          appIds.slice(start, end),
+          { now: now(), from: request.from, maxDays: BACKFILL_DAYS, log },
+        );
+      // Review text (ADR 0019 §11): the newest reviews of each app read
+      // on this page, and the spans read completely (neither when no app
+      // was read, e.g. after a rate limit).
+      const text =
+        reviews.length > 0 || reviewWindows.length > 0
+          ? { reviews, reviewWindows }
+          : {};
+      return end < appIds.length && !stop
+        ? {
+            observations,
+            ...text,
+            nextCursor: reviewsCursor(end, salesCursor),
+            done: false,
+          }
+        : { observations, ...text, nextCursor: salesCursor, done: true };
+    }
+
+    // Analytics pages come after the sales of a sync (ADR 0014, #174):
+    // a few apps per page, each page within its own time budget.
+    const resumed = ANALYTICS_CURSOR.exec(request.cursor ?? "");
+    if (resumed) {
+      const start = Number(resumed[1]);
+      const salesCursor = resumed[2]!;
+      const appIds = await appIdsOf();
+      const end = Math.min(start + ANALYTICS_APPS_PER_PAGE, appIds.length);
+      const { observations, rateLimited } = await syncAnalyticsApps(
+        client,
+        runtime.fetch,
+        appIds.slice(start, end),
+        { now: now(), log },
+      );
+      return end < appIds.length && !rateLimited
+        ? {
+            observations,
+            nextCursor: analyticsCursor(end, salesCursor),
+            done: false,
+          }
+        : afterAnalytics(observations, salesCursor);
+    }
+
+    const sales = await syncSalesPage(client, request, {
+      now: now(),
+      vendorNumber,
+      log,
+      listAppSkus: async () =>
+        new Map(
+          (await listApps(client)).flatMap((app) =>
+            app.sku ? [[app.sku, app.id] as const] : [],
+          ),
+        ),
+    });
+    if (!sales.done || request.resources?.length === 0) {
+      return sales;
+    }
+    if (!analytics) {
+      return afterAnalytics(sales.observations, sales.nextCursor!);
+    }
+    return {
+      observations: sales.observations,
+      nextCursor: analyticsCursor(0, sales.nextCursor!),
+      done: false,
+    };
+  }
 }

@@ -72,6 +72,7 @@ function fake(
 function connector(now = NOW, log: string[] = []) {
   // Sales pages alone; analytics.test.ts covers the analytics pages.
   return createAppStoreConnectConnector({
+    ratings: false,
     now: () => now,
     log: (message) => log.push(message),
     analytics: false,
@@ -164,7 +165,11 @@ for (let day = 1; day <= 24; day += 1) {
 }
 
 runConnectorContractTests(
-  createAppStoreConnectConnector({ now: () => CONTRACT_NOW, log: () => {} }),
+  createAppStoreConnectConnector({
+    ratings: false,
+    now: () => CONTRACT_NOW,
+    log: () => {},
+  }),
   {
     context: CONTEXT,
     runtime: fake({ reports: contractReports }).runtime,

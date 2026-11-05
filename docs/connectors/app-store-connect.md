@@ -3,13 +3,57 @@
 Reads your apps' App Store sales (downloads, in-app purchases and proceeds)
 from [App Store Connect](https://appstoreconnect.apple.com/), for one team
 and one vendor number per connection, and, once enabled, App Store
-analytics (impressions, product page views, downloads by source) and, with
-an optional second key, ratings and reviews
+analytics (impressions, product page views, downloads by source), public
+storefront rating snapshots and, with an optional second key, written reviews
 ([ADR 0014](../decisions/0014-app-store-connect-signed-keys.md)).
 
 > Status: the key check, app discovery (#171), the daily sales sync (#172),
 > App Store analytics (#174) and ratings and reviews (#190) are in place.
 > The exit gate (#176) checks them against a real account.
+
+## Overall store rating and rating count
+
+The **Rating storefront** connection setting selects a two-letter country
+code, for example `US` (the default) or `DE`. The public
+[Apple lookup API](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/LookupExamples.html)
+provides `averageUserRating` and `userRatingCount` for an app's all-version
+rating in that storefront. Apple documents country selection in its
+[Search API reference](https://performance-partners.apple.com/search-api).
+This needs no additional key; the signed App Store Connect token is never
+sent to the public lookup host.
+
+Before sales backfill, sync collects the selected apps in batches and
+publishes **App Store rating snapshots** in Data & measures. It retains the
+original rating fields, app ID/name, storefront, UTC collection day and
+collection-start timestamp. A later collection on the same UTC day replaces
+that day's app/storefront row; earlier days remain. This is collected history,
+not a way to recover ratings from before the connection was created. Changing
+the storefront starts collecting that country's values and retains existing
+history under its original country.
+
+The availability field distinguishes `available`, `unrated` (a returned count
+of zero), `not_listed`, `incomplete` and `temporarily_unavailable`. A failed
+lookup produces missing rating/count values, never a synthetic zero; it does
+not stop independent sales, analytics or review ingestion. Provider rate
+limits and outages can make this data unavailable until a later sync. An app
+that is not public in the selected storefront may be absent from lookup.
+
+For a model, expose **last rating** and **last rating count**, ordered by
+`captured_at`, grouped by app and storefront. Retain that scope in dashboards:
+do not sum cumulative counts across days or average scores across apps or
+storefronts and label the result an overall store rating. The current-version
+fields are retained separately in `provider_fields`; they are not substituted
+for the all-version fields. Written review averages below have different
+coverage and remain separate.
+
+These public aggregate snapshots have no connector-imposed expiry. Installation
+and workspace retention/deletion policies can shorten their lifetime; uncapped
+self-hosted policy keeps them until deletion. Transport batches bound each
+request, not the number of apps in an account. App discovery follows provider
+pages with cycle detection and the host's execution budget, without a fixed
+app-count ceiling. Large-history storage and workload acceptance remain part
+of the shared data engine's open scale work; uncapped policy is not a claim of
+unlimited hardware capacity.
 
 ## Connect
 

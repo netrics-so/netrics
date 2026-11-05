@@ -57,7 +57,7 @@ describe("App Store Connect in the bundle", () => {
       validateConnectionConfig(appStoreConnectManifest.configSchema, config);
     expect(validate({ vendorNumber: "85012345" })).toEqual({
       ok: true,
-      config: { vendorNumber: "85012345" },
+      config: { vendorNumber: "85012345", ratingStorefront: "US" },
     });
     expect(validate({}).ok).toBe(false);
     expect(validate({ vendorNumber: "85012345", issuerId: "x" }).ok).toBe(

@@ -39,9 +39,9 @@ function textKeys(schema: unknown, text: "title" | "description"): string[] {
 describe.each(FIRST_PARTY.map((manifest) => [manifest.id, manifest] as const))(
   "%s translations",
   (_id, manifest) => {
-    it("validate against SDK 0.2.7 (0.2.8 with review text)", () => {
+    it("validate against the SDK version required by their capabilities", () => {
       expect(manifest.sdkVersion).toBe(
-        manifest.id === "app-store-connect" ? "^0.2.8" : "^0.2.7",
+        manifest.id === "app-store-connect" ? "^0.2.9" : "^0.2.7",
       );
       expect(assertManifestCompatible(manifest).translations).toEqual(
         manifest.translations,
