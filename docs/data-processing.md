@@ -4,8 +4,9 @@ The architecture is [ADR 0022](./decisions/0022-reusable-data-model-and-processi
 Implementation is tracked in [#439](https://github.com/netrics-so/netrics/issues/439).
 The dataset foundation, processing engine, data authoring workspace and first
 published-measure dashboard bindings are implemented in stacked draft pull
-requests. Editable app-store portfolio templates are included; advanced
-authoring, history and dashboard interactions remain separate delivery work.
+requests. Editable app-store portfolio templates and published-definition
+restoration are included; advanced authoring and dashboard interactions remain
+separate delivery work.
 
 Store connectors can declare `supportsResourceSelection` to offer one stored
 account credential with a configurable app scope. Stored-connection preview
@@ -322,7 +323,23 @@ a mapped input projects only the confirmed columns, including required currency
 companions. The form proposes matches by name and requires an explicit matching
 choice. Omitted mappings keep the existing union-by-ID behavior. Missing values
 remain null; schema/unit/currency incompatibilities still fail validation.
-Persistent version history and rollback controls remain tracked in
+[#470](https://github.com/netrics-so/netrics/issues/470) adds paged published
+definition history for preparations and models. **Restore as draft** creates a
+new saved draft with optimistic concurrency; active dashboards keep their current
+release until preview and explicit publication. Restored definitions preserve
+their historical nested preparation versions and model schema bindings. Editors
+load metadata under those same pins, including fields/outputs removed from the
+latest catalog. Restored joins/appends use that context in source previews too.
+**Use latest published inputs** intentionally clears the restored pins and
+requires a new preview before publication.
+
+Restoration reauthorizes and validates currently retained inputs; it cannot
+recover removed or expired sources. Source-data corrections continue to apply.
+History contains published definitions, not every unpublished draft or old source
+values; the current preparation/model name is preserved. Both restore and publish
+are audited. Failed restoration leaves the draft unchanged; failed publication
+keeps the active release usable.
+Other authoring/lifecycle acceptance remains in
 [#442](https://github.com/netrics-so/netrics/issues/442).
 
 ## Published measures on dashboards
@@ -383,9 +400,9 @@ The current executor evaluates typed JSONB rows in memory and materializes
 prepared outputs in JSONB. Removing policy ceilings does not yet provide a
 streaming or SQL execution path. Representative-volume checks and a scalable
 execution/storage path remain release work; this implementation does not claim
-a tested unbounded workload. Rolling/previous-period calculations, explicit
-rollback/history controls, advanced authoring controls, dashboard interactions
-remain tracked in milestone 11.
+a tested unbounded workload. Rolling/previous-period calculations, lifecycle
+controls, advanced authoring and dashboard interactions remain tracked in
+milestone 11.
 
 ## Editable app portfolio templates
 
