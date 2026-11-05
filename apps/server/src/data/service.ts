@@ -61,6 +61,7 @@ export class DataServiceError extends Error {
     this.name = "DataServiceError";
   }
 }
+const MAX_SNAPSHOT_EXPIRY = Date.parse("9999-12-31T23:59:59Z");
 function fail(code: string, status: 400 | 404 | 409 | 413 | 503 = 400): never {
   throw new DataServiceError(code, status);
 }
@@ -2081,6 +2082,17 @@ export async function queryDataModel(
       }),
     )
     .digest("hex");
+  // Clamp to the latest representable deadline: the policy allows lifetimes
+  // up to MAX_SAFE_INTEGER seconds, which would otherwise be an Invalid Date.
+  const snapshotDeadline = () =>
+    new Date(
+      policy.querySnapshotSeconds === null
+        ? MAX_SNAPSHOT_EXPIRY
+        : Math.min(
+            MAX_SNAPSHOT_EXPIRY,
+            now.getTime() + policy.querySnapshotSeconds * 1000,
+          ),
+    );
   const snapshotExpiry = (
     snapshot: typeof schema.dataModelQuerySnapshots.$inferSelect,
   ) =>
@@ -2234,9 +2246,23 @@ export async function queryDataModel(
     )
       fail("data_page_unavailable", 409);
     // No fallback, renewal or current-generation substitution on a continuation.
-    const execution = await evaluate(
-      snapshot.generations as Record<string, string>,
-    );
+    // Any pinned input that is no longer available (expired or deleted source,
+    // pruned history, changed schema) ends the session with one stable code;
+    // starting a new query reports the underlying cause.
+    let execution: Awaited<ReturnType<typeof evaluate>>;
+    try {
+      execution = await evaluate(
+        snapshot.generations as Record<string, string>,
+      );
+    } catch (error) {
+      if (
+        error instanceof DataProcessingError ||
+        (error instanceof DataServiceError &&
+          (error.status === 404 || error.status === 409))
+      )
+        fail("data_page_unavailable", 409);
+      throw error;
+    }
     if (execution.loader.warnings.has("data_source_pending"))
       fail("data_page_unavailable", 409);
     return pageResult(
@@ -2335,7 +2361,13 @@ export async function queryDataModel(
           eq(schema.dataModelQuerySnapshots.releaseId, release.id),
         ),
       );
-    let snapshotCount = existing.length;
+    // Page sessions and last-valid snapshots have separate capacity, each
+    // bounded by querySnapshotCount, so pinned clients cannot crowd out the
+    // fallback snapshots that ordinary and dashboard queries rely on.
+    const sessionCount = existing.filter((s) =>
+      s.queryKey.startsWith("page:"),
+    ).length;
+    const snapshotCount = existing.length - sessionCount;
     if (
       query.pinPages &&
       execution.result.offset + execution.result.rows.length <
@@ -2348,7 +2380,7 @@ export async function queryDataModel(
           (source) =>
             source.kind !== "prepared" || source.generationId !== null,
         ) &&
-        !exceedsDataPolicy(snapshotCount + 1, policy.querySnapshotCount) &&
+        !exceedsDataPolicy(sessionCount + 1, policy.querySnapshotCount) &&
         policy.querySnapshotSeconds !== 0
       ) {
         const sessionId = randomUUID();
@@ -2376,11 +2408,7 @@ export async function queryDataModel(
             table.expiresAt && new Date(table.expiresAt) < expiry
               ? new Date(table.expiresAt)
               : expiry,
-          new Date(
-            policy.querySnapshotSeconds === null
-              ? "9999-12-31T23:59:59Z"
-              : now.getTime() + policy.querySnapshotSeconds * 1000,
-          ),
+          snapshotDeadline(),
         );
         for (const prepared of preparedExpiries)
           if (prepared.expiresAt < expiresAt)
@@ -2393,7 +2421,6 @@ export async function queryDataModel(
           expiresAt,
           updatedAt: now,
         });
-        snapshotCount++;
         result = pageResult(execution.result, sessionId, expiresAt);
       } else {
         result = {
@@ -2416,11 +2443,7 @@ export async function queryDataModel(
           table.expiresAt && new Date(table.expiresAt) < expiry
             ? new Date(table.expiresAt)
             : expiry,
-        new Date(
-          policy.querySnapshotSeconds === null
-            ? "9999-12-31T23:59:59Z"
-            : now.getTime() + policy.querySnapshotSeconds! * 1000,
-        ),
+        snapshotDeadline(),
       );
       await tx
         .insert(schema.dataModelQuerySnapshots)

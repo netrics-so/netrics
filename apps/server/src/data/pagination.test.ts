@@ -297,7 +297,7 @@ describe("immutable semantic result pagination", () => {
     await admin`delete from data_prepared_generations where id=${cached.generationId}`;
     await expect(
       f.read({ ...query, pageToken: first.nextPageToken! }),
-    ).rejects.toThrow("data_snapshot_unavailable");
+    ).rejects.toThrow("data_page_unavailable");
   });
 
   it("rebuilds expired matching prepared caches while keeping old page sessions unavailable", async () => {
@@ -452,7 +452,7 @@ describe("immutable semantic result pagination", () => {
           ...query,
           pageToken: first.nextPageToken!,
         }),
-      ).rejects.toThrow("data_snapshot_unavailable");
+      ).rejects.toThrow("data_page_unavailable");
     }
   });
 
@@ -467,11 +467,12 @@ describe("immutable semantic result pagination", () => {
     await admin`update data_records set expires_at=${NOW} where generation_id=${f.source.generationId} and record_key=(select min(record_key) from data_records where generation_id=${f.source.generationId})`;
     await expect(
       f.read({ ...query, pageToken: first.nextPageToken! }),
-    ).rejects.toThrow("data_snapshot_expired");
+    ).rejects.toThrow("data_page_unavailable");
     await admin`delete from data_datasets where id=${f.source.datasetId}`;
     await expect(
       f.read({ ...query, pageToken: first.nextPageToken! }),
-    ).rejects.toThrow("data_source_not_found");
+    ).rejects.toThrow("data_page_unavailable");
+    await expect(f.read()).rejects.toThrow("data_source_not_found");
   });
 
   it("does not renew expiry and obeys shortened or disabled snapshot policies", async () => {
@@ -522,7 +523,7 @@ describe("immutable semantic result pagination", () => {
     expect(denied.nextPageToken).toBeUndefined();
     expect(denied.warnings).toContain("immutable_pagination_unavailable");
     const stored =
-      await admin`select query_key from data_model_query_snapshots where workspace_id=${f.actor.workspaceId}`;
+      await admin`select query_key from data_model_query_snapshots where workspace_id=${f.actor.workspaceId} and query_key like 'page:%'`;
     expect(stored).toHaveLength(1);
     expect(
       (await f.read({ ...query, pageToken: first.nextPageToken! })).rows[0]
@@ -532,6 +533,39 @@ describe("immutable semantic result pagination", () => {
     await expect(
       f.read({ ...query, pageToken: first.nextPageToken! }),
     ).rejects.toThrow("data_page_unavailable");
+  });
+
+  it("keeps last-valid snapshot capacity for ordinary queries when page sessions are full", async () => {
+    const f = await fixture();
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 2,
+    });
+    // Two distinct pinned queries fill session capacity.
+    expect((await f.read()).nextPageToken).toBeDefined();
+    expect(
+      (await f.read({ ...query, limit: 2, pinPages: true })).nextPageToken,
+    ).toBeDefined();
+    const denied = await f.read({ ...query, limit: 3, pinPages: true });
+    expect(denied.nextPageToken).toBeUndefined();
+    expect(denied.warnings).toContain("immutable_pagination_unavailable");
+    const [counts] =
+      await admin`select count(*) filter (where query_key like 'page:%')::int as sessions, count(*) filter (where query_key not like 'page:%')::int as snapshots from data_model_query_snapshots where workspace_id=${f.actor.workspaceId}`;
+    expect(counts!.sessions).toBe(2);
+    // Ordinary snapshots stay admitted up to their own capacity.
+    expect(counts!.snapshots).toBe(2);
+  });
+
+  it("clamps very long snapshot lifetimes instead of failing", async () => {
+    const f = await fixture();
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotSeconds: Number.MAX_SAFE_INTEGER,
+    });
+    const first = await f.read();
+    expect(first.pageExpiresAt).toBe("9999-12-31T23:59:59.000Z");
+    expect(
+      (await f.read({ ...query, pageToken: first.nextPageToken! })).rows[0]
+        ?.dimensions.id,
+    ).toBe("b");
   });
 
   it("cannot restore access after retention policy removes the retained inputs", async () => {
@@ -578,7 +612,7 @@ describe("immutable semantic result pagination", () => {
       f.read({ ...query, pageToken: first.nextPageToken! }),
     ).rejects.toThrow("data_page_unavailable");
     const stored =
-      await admin`select query_key from data_model_query_snapshots where workspace_id=${f.actor.workspaceId}`;
+      await admin`select query_key from data_model_query_snapshots where workspace_id=${f.actor.workspaceId} and query_key like 'page:%'`;
     expect(stored).toHaveLength(1);
     const other = await fixture();
     const active = await other.read();

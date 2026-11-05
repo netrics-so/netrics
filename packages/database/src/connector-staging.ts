@@ -269,7 +269,7 @@ export async function storeConnectorStage(
     .where(and(scopeWhere(scope), eq(dataConnectorStages.id, stage!.id)));
   if (
     exceedsDataPolicy(
-      await datasetWorkspaceBytes(tx, scope.workspaceId),
+      await datasetWorkspaceBytes(tx, scope.workspaceId, now),
       policy.maxWorkspaceBytes,
     )
   )

@@ -267,6 +267,68 @@ describe("durable parsed Google Play report staging", () => {
       mediaCalls(fake, name).map((c) => c.url.searchParams.get("generation")),
     ).toEqual(["200", "201", "201"]);
   });
+
+  it("restarts only the pending app when a multi-app stage is rebuilt", async () => {
+    const fake = fakePlay();
+    const connector = createGooglePlayConnector({ now: () => TEST_NOW });
+    let runtime: ConnectorRuntime = {
+      ...fake.runtime,
+      datasetStaging: staging(connector.manifest),
+    };
+    let cursor: string | undefined;
+    for (let turn = 0; ; turn++) {
+      if (turn === 50) throw new Error("No earnings page for the first app");
+      const page = await connector.sync(
+        context(),
+        { ...request, cursor },
+        runtime,
+      );
+      cursor = page.nextCursor;
+      const earning = page.datasetPages?.find(
+        (p) => p.datasetKey === "earning_rows",
+      );
+      if (earning?.window?.partition.app_id === ALPHA) {
+        expect(earning.complete).toBe(true);
+        break;
+      }
+    }
+    runtime = {
+      ...fake.runtime,
+      datasetStaging: staging(
+        connector.manifest,
+        new Date(TEST_NOW + 86_400_001),
+      ),
+    };
+    const next = await connector.sync(
+      context(),
+      { ...request, cursor },
+      runtime,
+    );
+    const earning = next.datasetPages?.find(
+      (p) => p.datasetKey === "earning_rows",
+    );
+    expect(earning?.window?.partition.app_id).toBe(BETA);
+    expect(earning).toMatchObject({ pageKey: "0", previousPageKey: null });
+  });
+
+  it("falls back to the buffered report when staging refuses a stage", async () => {
+    const fake = fakePlay();
+    const name = `stats/installs/installs_${ALPHA}_202610_country.csv`;
+    fake.put(name, installFile(3), "300");
+    const store = staging(createGooglePlayConnector().manifest);
+    const runtime: ConnectorRuntime = {
+      ...fake.runtime,
+      datasetStaging: {
+        ...store,
+        put: () => Promise.reject(new Error("dataset_stage_limit")),
+      },
+    };
+    const raw = await firstRaw(runtime);
+    const page = raw.datasetPages?.find((p) => p.datasetKey === "install_rows");
+    expect(page?.records).toHaveLength(3);
+    expect(page?.stagingId).toBeUndefined();
+    expect(page?.complete).toBe(true);
+  });
 });
 
 const retainedDefinition = sourceDatasetSchema.parse({
@@ -461,6 +523,35 @@ describe("host staging storage boundaries", () => {
     during.abort();
     await expect(pending).rejects.toThrow();
     expect(await store.get("aborted-during-write")).toBeNull();
+  });
+
+  it("stops counting expired stages toward the workspace quota before pruning", async () => {
+    const [w] =
+      await owner`insert into workspaces(name) values ('Stage quota') returning id`;
+    const [c] =
+      await owner`insert into connections(workspace_id,connector_id,name) values (${w!.id},'google-play','Quota') returning id`;
+    const manifest = retainedManifest();
+    const at = (time: Date) =>
+      staging(manifest, time, undefined, w!.id as string, c!.id as string);
+    const first = await at(now).put({
+      key: "first",
+      metadata: {},
+      pages: [retainedPage()],
+    });
+    const [header] =
+      await owner`select byte_size, expires_at from data_connector_stages where id=${first.id}`;
+    const size = header!.byte_size as number;
+    // Room for one stage, not two.
+    await adminSetDataPolicy(db, w!.id as string, {
+      maxWorkspaceBytes: size + Math.floor(size / 2),
+    });
+    await expect(
+      at(now).put({ key: "second", metadata: {}, pages: [retainedPage()] }),
+    ).rejects.toThrow("dataset_workspace_quota");
+    const later = new Date((header!.expires_at as Date).getTime() + 1);
+    await expect(
+      at(later).put({ key: "second", metadata: {}, pages: [retainedPage()] }),
+    ).resolves.toMatchObject({ key: "second" });
   });
 
   it("irreversibly shortens existing staged retention and prunes chunks in bounded scheduler batches", async () => {

@@ -335,7 +335,15 @@ async function reusableFrame(
     unmapped: frame.unmapped,
     parts,
   };
-  const stored = await store.put({ key, metadata, pages });
+  let stored: { id: string };
+  try {
+    stored = await store.put({ key, metadata, pages });
+  } catch {
+    // Staging is an optimization. Stage-size, quota or storage refusals keep the
+    // buffered frame, as a host without the capability would; ingestion still
+    // enforces the workspace quota on the rows themselves.
+    return frame;
+  }
   return { ...frame, rows: new Map(), stage: { id: stored.id, parts } };
 }
 class ReportDownloadError extends Error {
@@ -568,7 +576,6 @@ export async function syncPlayReports(
   const roster = hash(frame.apps);
   if (
     !state.task ||
-    state.stageId !== frame.stage?.id ||
     state.roster !== roster ||
     !state.app ||
     !frame.apps.includes(state.app)
@@ -579,6 +586,18 @@ export async function syncPlayReports(
       stageId: frame.stage?.id,
       roster,
       app: frame.apps[0]!,
+      offset: 0,
+      previous: null,
+      refresh: randomUUID(),
+      digest: null,
+    };
+  else if (state.stageId !== frame.stage?.id)
+    // A rebuilt or expired stage restarts only the pending app partition, so one
+    // refresh never mixes pages (and collection times) from two stages. Apps
+    // already completed in this task are not emitted again.
+    state = {
+      ...state,
+      stageId: frame.stage?.id,
       offset: 0,
       previous: null,
       refresh: randomUUID(),
