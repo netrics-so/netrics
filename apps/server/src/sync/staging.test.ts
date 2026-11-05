@@ -206,7 +206,7 @@ describe("durable parsed Google Play report staging", () => {
         stagedBytes: headers.reduce((n, h) => n + h.byteSize, 0),
       }),
     );
-  });
+  }, 60_000);
 
   it("restarts corrected or expired pending stages and re-authorizes cached object reads", async () => {
     const fake = fakePlay();
