@@ -959,4 +959,65 @@ describe("windowed measure validation and edge cases", () => {
       ),
     ).not.toThrow();
   });
+
+  it("keeps the undated group for measures without a window", () => {
+    const rows = [
+      ...baseRows,
+      { ...baseRows[0]!, date: null, units: 7, app: "z" },
+      { ...baseRows[0]!, date: null, units: 3, app: "z" },
+    ];
+    const table = sales(rows);
+    const undated = new Map([
+      [
+        "sales",
+        {
+          ...table,
+          fields: table.fields.map((f) =>
+            f.id === "date" ? { ...f, nullable: true } : f,
+          ),
+        },
+      ],
+    ]);
+    const extra = [
+      formula("double", call("add", field("units"), field("units"))),
+      formula("withRolling", call("add", field("units"), field("units7"))),
+    ];
+    const query = (measureIds: string[]) =>
+      querySemanticModel(model(extra), undated, {
+        now: NOW,
+        measureIds,
+        groupBy: ["date"],
+      });
+    const plain = query(["units", "double"]),
+      mixed = query(["units", "double", "units7", "withRolling"]);
+    expect(mixed.totalRows).toBe(plain.totalRows);
+    expect(mixed.rows.map((row) => row.dimensions)).toEqual(
+      plain.rows.map((row) => row.dimensions),
+    );
+    for (const [index, row] of mixed.rows.entries()) {
+      expect(row.measures.units).toEqual(plain.rows[index]!.measures.units);
+      expect(row.measures.double).toEqual(plain.rows[index]!.measures.double);
+    }
+    const last = mixed.rows.at(-1)!;
+    expect(last.dimensions.date).toBeNull();
+    expect(last.measures.units).toMatchObject({ value: "10", status: "ok" });
+    expect(last.measures.units7).toMatchObject({
+      value: null,
+      type: "decimal",
+      status: "missing",
+    });
+    expect(last.measures.withRolling).toMatchObject({
+      value: null,
+      status: "missing",
+    });
+    // A date bound excludes undated rows for every measure alike.
+    expect(
+      querySemanticModel(model(extra), undated, {
+        now: NOW,
+        measureIds: ["units", "units7"],
+        groupBy: ["date"],
+        filter: call("gte", field("date"), day("2026-10-01")),
+      }).rows.some((row) => row.dimensions.date === null),
+    ).toBe(false);
+  });
 });

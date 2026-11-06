@@ -556,6 +556,7 @@ export function querySemanticModel(
   // Windowed queries: dataset → partition → date → rows, and each dataset's
   // earliest retained date (before any filter).
   const buckets = new Map<string, Map<string, Map<string, DataRow[]>>>(),
+    undated = new Map<string, Map<string, DataRow[]>>(),
     earliest = new Map<string, string>();
   if (!query.groupBy.length) groupValues.set("[]", {});
   for (const datasetId of neededDatasets) {
@@ -604,27 +605,38 @@ export function querySemanticModel(
           windowPlan.residual.evaluate(values, budget).value !== true
         )
           continue;
-        if (
-          date === null ||
-          (windowPlan.lowest !== null && date < windowPlan.lowest) ||
-          (windowPlan.to !== null && date > windowPlan.to)
-        )
-          continue;
         const partition = dataKey(
           dimensionFields,
           values,
           windowPlan.partitionBy,
         );
-        const datasetBuckets =
-          buckets.get(datasetId) ?? new Map<string, Map<string, DataRow[]>>();
-        buckets.set(datasetId, datasetBuckets);
-        const dates = datasetBuckets.get(partition) ?? new Map();
-        datasetBuckets.set(partition, dates);
-        const rows = dates.get(date) ?? [];
-        rows.push(row);
-        dates.set(date, rows);
-        // Lookback rows feed windows only; they never form output groups.
-        if (windowPlan.from !== null && date < windowPlan.from) continue;
+        if (date === null) {
+          // Without a date bound the query keeps undated rows, as it would
+          // without windowed measures; windows are only missing there.
+          if (windowPlan.from !== null || windowPlan.to !== null) continue;
+          const datasetUndated =
+            undated.get(datasetId) ?? new Map<string, DataRow[]>();
+          undated.set(datasetId, datasetUndated);
+          const rows = datasetUndated.get(partition) ?? [];
+          rows.push(row);
+          datasetUndated.set(partition, rows);
+        } else {
+          if (
+            (windowPlan.lowest !== null && date < windowPlan.lowest) ||
+            (windowPlan.to !== null && date > windowPlan.to)
+          )
+            continue;
+          const datasetBuckets =
+            buckets.get(datasetId) ?? new Map<string, Map<string, DataRow[]>>();
+          buckets.set(datasetId, datasetBuckets);
+          const dates = datasetBuckets.get(partition) ?? new Map();
+          datasetBuckets.set(partition, dates);
+          const rows = dates.get(date) ?? [];
+          rows.push(row);
+          dates.set(date, rows);
+          // Lookback rows feed windows only; they never form output groups.
+          if (windowPlan.from !== null && date < windowPlan.from) continue;
+        }
       } else if (filter && filter.evaluate(values, budget).value !== true)
         continue;
       const group = dataKey(dimensionFields, values, query.groupBy);
@@ -815,9 +827,60 @@ export function querySemanticModel(
     windowCache.set(cacheKey, result);
     return result;
   };
+  // The undated group of an unbounded query: measures without a window
+  // aggregate its rows, windowed ones are missing.
+  let typeProbe: Map<string, DataCell> | undefined;
+  const undatedCache = new Map<string, ModelMeasureResult>();
+  const evaluateUndated = (
+    partition: string,
+    id: string,
+  ): ModelMeasureResult => {
+    const cacheKey = JSON.stringify([partition, id]);
+    const cached = undatedCache.get(cacheKey);
+    if (cached) return cached;
+    const m = measures.get(id)!;
+    budget.tick();
+    let cell: DataCell,
+      partial = false;
+    if (m.kind === "aggregate") {
+      const { partial: waiting, ...aggregated } = aggregateData(
+        {
+          ...table(m.datasetId),
+          rows: undated.get(m.datasetId)?.get(partition) ?? [],
+          pendingSources: [...(pendingByDataset.get(m.datasetId) ?? [])],
+        },
+        m.aggregate,
+        budget,
+      );
+      cell = aggregated;
+      partial = !!waiting;
+    } else if (m.kind === "formula") {
+      const dependencies = [...references(m.expression)].map(
+        (ref) => [ref, evaluateUndated(partition, ref)] as const,
+      );
+      cell = formulaCell(m.expression, dependencies);
+      partial = dependencies.some(([, result]) => result.status !== "ok");
+    } else {
+      typeProbe ??= measureTypeProbe(model, sources, query.measureIds, budget);
+      cell = { ...typeProbe.get(id)!, value: null };
+    }
+    const result: ModelMeasureResult = {
+      ...cell,
+      status: cell.value === null ? "missing" : partial ? "partial" : "ok",
+    };
+    undatedCache.set(cacheKey, result);
+    return result;
+  };
   const windowedMeasure = (values: DataRow, id: string): ModelMeasureResult => {
     const w = windowPlan!;
-    const date = w.grouped ? (values[w.dimensionId] as string) : undefined;
+    const date = w.grouped
+      ? (values[w.dimensionId] as string | null)
+      : undefined;
+    if (date === null)
+      return evaluateUndated(
+        dataKey(dimensionFields, values, w.partitionBy),
+        id,
+      );
     const { incomplete: _incomplete, ...result } = evaluateWindowed(
       dataKey(dimensionFields, values, w.partitionBy),
       id,
