@@ -74,6 +74,19 @@ function page(overrides: Partial<DatasetPage> = {}): DatasetPage {
 }
 
 describe("typed source datasets", () => {
+  it("requires a complete staged-page provenance reference", () => {
+    const stagingId = "00000000-0000-4000-8000-000000000000";
+    expect(() =>
+      validateDatasetPage(definition, page({ stagingId })),
+    ).toThrow();
+    expect(() =>
+      validateDatasetPage(definition, page({ stagingPageKey: "0" })),
+    ).toThrow();
+    expect(
+      validateDatasetPage(definition, page({ stagingId, stagingPageKey: "0" }))
+        .stagingId,
+    ).toBe(stagingId);
+  });
   it("preserves exact decimals and booleans without numeric coercion", () => {
     expect(validateDatasetPage(definition, page()).records[0]?.values).toEqual(
       values,

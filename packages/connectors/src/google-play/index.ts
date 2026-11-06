@@ -76,7 +76,7 @@ const de: ManifestTranslation = {
 export const googlePlayManifest: ConnectorManifest = {
   id: "google-play",
   version: "0.1.0",
-  sdkVersion: "^0.2.9",
+  sdkVersion: "^0.2.10",
   category: "apps",
   brandColor: "#34a853",
   name: "Google Play",

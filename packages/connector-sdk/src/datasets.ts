@@ -161,26 +161,35 @@ export const datasetRecordSchema = z.strictObject({
   values: z.record(z.string(), jsonValue),
   deleted: z.boolean().optional(),
 });
-export const datasetPageSchema = z.strictObject({
-  datasetKey: id,
-  schemaVersion: z.number().int().positive(),
-  /** Stable across retries, scoped to the connection and dataset. */
-  refreshKey: z.string().min(1).max(200),
-  pageKey: z.string().min(1).max(200),
-  previousPageKey: z.string().min(1).max(200).nullable(),
-  records: z.array(datasetRecordSchema).max(DATASET_LIMITS.pageRows),
-  complete: z.boolean(),
-  /** Half-open reporting interval; partition predicates narrow replacement. */
-  window: z
-    .strictObject({
-      from: z.string().min(1).max(40),
-      toExclusive: z.string().min(1).max(40),
-      partition: z
-        .record(id, z.union([z.string(), z.number().finite(), z.boolean()]))
-        .default({}),
-    })
-    .optional(),
-});
+export const datasetPageSchema = z
+  .strictObject({
+    datasetKey: id,
+    schemaVersion: z.number().int().positive(),
+    /** Stable across retries, scoped to the connection and dataset. */
+    refreshKey: z.string().min(1).max(200),
+    pageKey: z.string().min(1).max(200),
+    previousPageKey: z.string().min(1).max(200).nullable(),
+    /** Host verifies this identity and preserves its original retention deadline. */
+    stagingId: z.uuid().optional(),
+    stagingPageKey: z.string().min(1).max(200).optional(),
+    records: z.array(datasetRecordSchema).max(DATASET_LIMITS.pageRows),
+    complete: z.boolean(),
+    /** Half-open reporting interval; partition predicates narrow replacement. */
+    window: z
+      .strictObject({
+        from: z.string().min(1).max(40),
+        toExclusive: z.string().min(1).max(40),
+        partition: z
+          .record(id, z.union([z.string(), z.number().finite(), z.boolean()]))
+          .default({}),
+      })
+      .optional(),
+  })
+  .refine(
+    (page) =>
+      (page.stagingId === undefined) === (page.stagingPageKey === undefined),
+    { message: "Staged pages require both a stage identity and page key" },
+  );
 export type DatasetPage = z.infer<typeof datasetPageSchema>;
 
 export function datasetRetentionDays(

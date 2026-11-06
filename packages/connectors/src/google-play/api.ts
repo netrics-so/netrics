@@ -146,6 +146,21 @@ export function createPlayReportsClient(
       }
       return [...unique.values()].sort((a, b) => a.name.localeCompare(b.name));
     },
+    /** Re-authorize a cached generation without transferring its report body. */
+    async validate(object: ReportObject): Promise<void> {
+      const url = new URL(base + "/" + encodeURIComponent(object.name));
+      url.searchParams.set("generation", object.generation);
+      url.searchParams.set("fields", "name,generation,updated,size");
+      const current = objectSchema.parse((await get(url)).json());
+      if (
+        current.name !== object.name ||
+        current.generation !== object.generation ||
+        current.size !== object.size
+      )
+        throw new Error(
+          "Google Play report changed while it was read. Retry sync.",
+        );
+    },
     async bytes(object: ReportObject): Promise<Uint8Array> {
       const url = new URL(base + "/" + encodeURIComponent(object.name));
       url.searchParams.set("alt", "media");

@@ -162,6 +162,9 @@ implementation work; this plan does not create or complete issue records.
   - Representative workload checks and resolved legacy catalog ceiling:
     [#466](https://github.com/netrics-so/netrics/issues/466). See the measured
     boundaries; broader retained-history/concurrency acceptance remains open.
+  - Durable parsed Google report staging for worker/app/page continuations:
+    [#472](https://github.com/netrics-so/netrics/issues/472). Initial buffered
+    provider parsing and the wider scale acceptance remain open.
 - 11C: [#442](https://github.com/netrics-so/netrics/issues/442)
   - Existing-step editing, explicit append matching and typed reference authoring:
     [#464](https://github.com/netrics-so/netrics/issues/464).

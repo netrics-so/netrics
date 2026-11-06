@@ -21,9 +21,11 @@ import {
 } from "@netrics/connector-sdk";
 import {
   connectionResourcesDiscoveredAt,
+  connectorStageProvenance,
   ingestAppReviews,
   ingestDatasetPage,
   DatasetStoreError,
+  DatasetStageUnavailableError,
   resolveDataPolicy,
   schema,
   upsertConnectionResources,
@@ -66,6 +68,8 @@ import {
   createSignedKeyTokenStore,
   type SignedKeyTokenStore,
 } from "../signed-keys/token-store.js";
+
+import { createDatasetStaging } from "./staging.js";
 
 /** First-ever incremental sync with no cursor and no last success. */
 const INITIAL_INCREMENTAL_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -246,7 +250,8 @@ async function runSync(
     );
   }
   const attempt = job.attempts + 1;
-  const now = deps.now?.() ?? new Date();
+  const clock = deps.now ?? (() => new Date());
+  const now = clock();
   const log = logger.child({ connectionId, mode, attempt });
 
   // Step 1: load connection + state under the job's tenant context.
@@ -729,10 +734,36 @@ async function runSync(
             page,
             now,
             policyDefaults: deps.dataPolicy,
+            clock,
+            ...(page.stagingId || page.stagingPageKey
+              ? {
+                  retainedSource: await connectorStageProvenance(
+                    tx,
+                    {
+                      workspaceId,
+                      connectionId,
+                      connectorId: manifest.id,
+                      clock,
+                      policyDefaults: deps.dataPolicy,
+                    },
+                    page,
+                  ),
+                }
+              : {}),
           });
         } catch (error) {
-          if (error instanceof DatasetStoreError)
+          if (error instanceof DatasetStageUnavailableError) throw error;
+          if (error instanceof DatasetStoreError) {
+            // Source retention can expire after provenance was checked, while
+            // waiting on ingestion's lock. Rebuild from the durable checkpoint.
+            if (
+              page.stagingId &&
+              (error.code === "dataset_replay_unavailable" ||
+                error.code === "dataset_refresh_expired")
+            )
+              throw new DatasetStageUnavailableError();
             throw new ContractViolationError(error.code);
+          }
           throw error;
         }
       }
@@ -776,7 +807,19 @@ async function runSync(
           ...(selectedResources ? { resources: selectedResources } : {}),
         };
         const result = await callConnector((callContext, options) =>
-          executeSync(connector, callContext, request, options),
+          executeSync(connector, callContext, request, {
+            ...options,
+            datasetStaging: (signal) =>
+              createDatasetStaging({
+                db: appDb,
+                workspaceId,
+                connectionId,
+                manifest,
+                clock,
+                policyDefaults: deps.dataPolicy,
+                signal,
+              }),
+          }),
         );
         if (result.done) {
           finalObservations = result.observations;

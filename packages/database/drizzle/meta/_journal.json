@@ -407,6 +407,13 @@
       "when": 1793891841427,
       "tag": "0057_store_template_installs",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1793907712298,
+      "tag": "0058_connector_report_staging",
+      "breakpoints": true
     }
   ]
 }

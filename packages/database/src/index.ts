@@ -477,3 +477,11 @@ export {
 export { registerSourceDataset } from "./datasets.js";
 export type { IngestDatasetPageInput } from "./datasets.js";
 export { resolveDataPolicy, adminSetDataPolicy } from "./data-policy.js";
+
+export {
+  DatasetStageUnavailableError,
+  findConnectorStage,
+  readConnectorStagePage,
+  storeConnectorStage,
+  connectorStageProvenance,
+} from "./connector-staging.js";

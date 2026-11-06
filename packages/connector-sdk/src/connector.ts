@@ -1,3 +1,4 @@
+import type { DatasetPage } from "./datasets.js";
 import type { ConnectorManifest } from "./manifest.js";
 import type {
   CheckResult,
@@ -60,8 +61,34 @@ export interface ConnectorRuntime {
    * bounds response size and duration. Violations throw EgressDeniedError.
    */
   fetch(url: string, init?: ConnectorFetchInit): Promise<ConnectorResponse>;
-  /** Aborted when the host's time budget for this call runs out. */
+  /** Aborted when the call ends or the host's time budget runs out. */
   signal: AbortSignal;
+  /** Optional SDK 0.2.10 durable, connection-scoped parsed dataset staging. */
+  datasetStaging?: ConnectorDatasetStaging;
+}
+
+/** Host-assigned identity; metadata must contain no credentials or raw records. */
+export interface StagedDataset {
+  id: string;
+  key: string;
+  metadata: unknown;
+}
+
+/**
+ * Immutable, schema-validated pages persisted before returning a checkpoint.
+ * The host scopes every operation to this connection/connector, limits bytes,
+ * enforces source/tier retention and expires disposable staging within one day.
+ * A stage's lifetime never extends when read or written again. A missing stage
+ * can be rebuilt from the provider; restart an incomplete refresh in that case.
+ */
+export interface ConnectorDatasetStaging {
+  get(key: string): Promise<StagedDataset | null>;
+  getPage(id: string, pageKey: string): Promise<DatasetPage>;
+  put(input: {
+    key: string;
+    metadata: unknown;
+    pages: DatasetPage[];
+  }): Promise<StagedDataset>;
 }
 
 export interface ConnectorFetchInit {

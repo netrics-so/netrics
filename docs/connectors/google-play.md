@@ -81,13 +81,45 @@ authorization pauses future ingestion; it does not remove workspace history.
 ## Current implementation boundaries
 
 There is no fixed app or retained-history count. Account discovery and dataset
-pages resume through host execution budgets. The current parser downloads and
-parses whole provider files; SDK HTTP response limits and a 64 MiB archive
-inflation safeguard still apply. ZIP64 archives are rejected explicitly.
-Monthly files may be downloaded again while paging. Large-report streaming and
-warehouse-scale load acceptance remain open; uncapped storage policy does not
-imply unbounded file or query processing. Raw generation publication currently
-copies retained records.
+pages resume through host execution budgets. The first read downloads and parses whole provider files; the normal 10 MiB
+buffered HTTP limit and a 64 MiB archive inflation safeguard still apply. ZIP64
+archives are rejected explicitly.
+
+The worker durably stages parsed report sets as per-app transport pages. A
+continuation reads only its required page, including after a worker/connector
+restart, while the pinned stage remains available. Earnings archives are shared
+across the selected apps in that report task. Every continuation still lists
+current metadata and re-authorizes exact object generations through metadata-only
+GETs; it does not reuse cached private data after object access is withdrawn.
+Changed generations, app/configuration scope or parser versions use a new stage
+and restart the pending app partition.
+
+Staging lasts at most 24 hours, shortened by source/workspace retention, and reads
+never renew it. Missing or expired staging causes a real provider re-read and
+restarts the incomplete partition. Resumed publication keeps the original source
+collection time and retention deadline. Atomic staging publication, digest checks,
+forced RLS and connection-scoped access apply; temporary bytes count toward the
+workspace data quota until the stage expires. If the host refuses a stage (size,
+quota or storage error), the turn continues from the buffered report without
+staging. A rebuilt stage restarts only the pending app partition; apps already
+completed in the task are not emitted again. A stage is bounded to 128 MiB of serialized JSONB and
+metadata to 1 MiB, with the normal per-page/record transport limits. The scheduler
+prunes expired pages in batches. See [ADR 0023](../decisions/0023-connector-dataset-staging.md).
+
+The persisted fixture in `apps/server/src/sync/staging.test.ts` covers 20,001
+install rows from a 1,698,034-byte UTF-16 provider report, two selected apps and
+earnings/adjustment archives. Fresh connector instances on every turn return 24
+parsed pages with exactly four media downloads, one per provider object. The
+local run on 2026-11-05 took about 2.1 seconds and retained 10,197,736 staged JSONB
+bytes. RSS samples rose from about 209 MiB to 410 MiB; these are process samples,
+not isolated peak allocation measurements. This verifies bounded restart/reuse
+behavior, not production capacity or concurrent customer load. The test also
+covers corrections, cache expiry, object permission loss, quota, cancellation,
+retention, tenant isolation and cleanup.
+
+Large-report streaming and warehouse-scale load acceptance remain open; uncapped
+storage policy does not imply unbounded file or query processing. Raw generation
+publication currently copies retained records.
 
 Editable portfolio templates, confirmed Apple/Google identity mappings and
 provider status beside every dependent dashboard widget are separate 11E work;

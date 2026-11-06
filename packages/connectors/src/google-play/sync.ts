@@ -52,6 +52,7 @@ const stateSchema = z.object({
   previous: z.string().nullable(),
   refresh: z.uuid(),
   digest: z.string().nullable(),
+  stageId: z.uuid().optional(),
 });
 type State = z.infer<typeof stateSchema>;
 interface Catalog {
@@ -183,6 +184,167 @@ interface Frame {
     "available" | "not_published" | "permission_missing" | "invalid_report";
   objects: ReportObject[];
   unmapped: number;
+  stage?: { id: string; parts: StagedFrame["parts"] };
+}
+const stagedFrameSchema = z.object({
+  version: z.literal(1),
+  apps: z.array(z.string()),
+  unmapped: z.number().int().nonnegative(),
+  parts: z.array(
+    z.object({
+      app: z.string(),
+      totalRows: z.number().int().nonnegative(),
+      digest: z.string().regex(/^[0-9a-f]{64}$/),
+      pages: z.array(
+        z.object({
+          key: z.string(),
+          offset: z.number().int().nonnegative(),
+          count: z.number().int().nonnegative(),
+        }),
+      ),
+    }),
+  ),
+});
+type StagedFrame = z.infer<typeof stagedFrameSchema>;
+function frameObjects(task: Task, catalog: Catalog): ReportObject[] {
+  return (
+    task.kind === "installs" ? catalog.installs : catalog.earnings
+  ).filter((object) => {
+    const match =
+      task.kind === "installs"
+        ? INSTALL_FILE.exec(object.name)
+        : EARNING_FILE.exec(object.name);
+    return !!(
+      match &&
+      nameMonth(match[match.length - 1]!) === task.month &&
+      (task.kind !== "installs" || match[1] === task.appId)
+    );
+  });
+}
+function recordPage(rows: DatasetRecord[], offset: number): DatasetRecord[] {
+  const records: DatasetRecord[] = [];
+  let bytes = 4096;
+  for (
+    let index = offset;
+    index < Math.min(rows.length, offset + DATASET_LIMITS.pageRows);
+    index++
+  ) {
+    const row = rows[index]!;
+    const size = Buffer.byteLength(JSON.stringify(row));
+    if (size > DATASET_LIMITS.rowBytes)
+      throw new Error(
+        "Google Play report row exceeds the transport record budget",
+      );
+    if (bytes + size + 1 > DATASET_LIMITS.pageBytes) break;
+    records.push(row);
+    bytes += size + 1;
+  }
+  return records;
+}
+async function reusableFrame(
+  task: Task,
+  apps: string[],
+  selected: boolean,
+  catalog: Catalog,
+  client: PlayReportsClient,
+  runtime: ConnectorRuntime,
+  signature: string,
+): Promise<Frame> {
+  const store = runtime.datasetStaging;
+  if (!store) return readFrame(task, apps, selected, catalog, client);
+  const objects = frameObjects(task, catalog);
+  const permitted =
+    task.kind === "installs"
+      ? catalog.installPermission
+      : catalog.earningsPermission;
+  const key =
+    "play-v1:" + hash([signature, task, apps, selected, permitted, objects]);
+  const stage = permitted && objects.length ? await store.get(key) : null;
+  if (stage) {
+    // Listing permission does not imply object permission; verify the exact pinned
+    // object generation before reusing retained private rows.
+    try {
+      for (const object of objects) await client.validate(object);
+    } catch (error) {
+      if (error instanceof PlayReportError && [403, 404].includes(error.status))
+        return {
+          definition:
+            task.kind === "installs" ? installDataset : earningsDataset,
+          rows: new Map(),
+          apps: task.kind === "installs" ? [task.appId!] : [...apps],
+          availability:
+            error.status === 403 ? "permission_missing" : "not_published",
+          objects,
+          unmapped: 0,
+        };
+      throw error;
+    }
+    const metadata = stagedFrameSchema.parse(stage.metadata);
+    return {
+      definition: task.kind === "installs" ? installDataset : earningsDataset,
+      rows: new Map(),
+      apps: metadata.apps,
+      availability: "available",
+      objects,
+      unmapped: metadata.unmapped,
+      stage: { id: stage.id, parts: metadata.parts },
+    };
+  }
+  const frame = await readFrame(task, apps, selected, catalog, client);
+  if (frame.availability !== "available") return frame;
+  const pages: DatasetPage[] = [];
+  const parts: StagedFrame["parts"] = [];
+  for (let index = 0; index < frame.apps.length; index++) {
+    const app = frame.apps[index]!;
+    const rows = frame.rows.get(app) ?? [];
+    const part: StagedFrame["parts"][number] = {
+      app,
+      totalRows: rows.length,
+      digest: hash([
+        rows,
+        objects.map((object) => [object.name, object.generation]),
+      ]),
+      pages: [],
+    };
+    let offset = 0;
+    do {
+      const records = recordPage(rows, offset);
+      const pageKey = `${index}-${offset}`;
+      part.pages.push({ key: pageKey, offset, count: records.length });
+      pages.push({
+        datasetKey: frame.definition.key,
+        schemaVersion: frame.definition.version,
+        refreshKey: "staging",
+        pageKey,
+        previousPageKey: null,
+        complete: offset + records.length === rows.length,
+        records,
+        window: {
+          from: task.month,
+          toExclusive: nextMonth(task.month),
+          partition: { app_id: app },
+        },
+      });
+      offset += records.length;
+    } while (offset < rows.length);
+    parts.push(part);
+  }
+  const metadata: StagedFrame = {
+    version: 1,
+    apps: frame.apps,
+    unmapped: frame.unmapped,
+    parts,
+  };
+  let stored: { id: string };
+  try {
+    stored = await store.put({ key, metadata, pages });
+  } catch {
+    // Staging is an optimization. Stage-size, quota or storage refusals keep the
+    // buffered frame, as a host without the capability would; ingestion still
+    // enforces the workspace quota on the rows themselves.
+    return frame;
+  }
+  return { ...frame, rows: new Map(), stage: { id: stored.id, parts } };
 }
 class ReportDownloadError extends Error {
   constructor(readonly original: unknown) {
@@ -196,19 +358,7 @@ async function readFrame(
   catalog: Catalog,
   client: PlayReportsClient,
 ): Promise<Frame> {
-  const objects = (
-    task.kind === "installs" ? catalog.installs : catalog.earnings
-  ).filter((object) => {
-    const match =
-      task.kind === "installs"
-        ? INSTALL_FILE.exec(object.name)
-        : EARNING_FILE.exec(object.name);
-    return (
-      match &&
-      nameMonth(match[match.length - 1]!) === task.month &&
-      (task.kind !== "installs" || match[1] === task.appId)
-    );
-  });
+  const objects = frameObjects(task, catalog);
   const frame: Frame = {
     definition: task.kind === "installs" ? installDataset : earningsDataset,
     rows: new Map(),
@@ -414,12 +564,14 @@ export async function syncPlayReports(
     );
   if (!task || apps.length === 0)
     return { observations: [], nextCursor: state.to, done: true };
-  const frame = await readFrame(
+  const frame = await reusableFrame(
     task,
     apps,
     request.resources !== undefined,
     catalog,
     options.client,
+    runtime,
+    options.signature,
   );
   const roster = hash(frame.apps);
   if (
@@ -431,6 +583,7 @@ export async function syncPlayReports(
     state = {
       ...state,
       task,
+      stageId: frame.stage?.id,
       roster,
       app: frame.apps[0]!,
       offset: 0,
@@ -438,12 +591,29 @@ export async function syncPlayReports(
       refresh: randomUUID(),
       digest: null,
     };
+  else if (state.stageId !== frame.stage?.id)
+    // A rebuilt or expired stage restarts only the pending app partition, so one
+    // refresh never mixes pages (and collection times) from two stages. Apps
+    // already completed in this task are not emitted again.
+    state = {
+      ...state,
+      stageId: frame.stage?.id,
+      offset: 0,
+      previous: null,
+      refresh: randomUUID(),
+      digest: null,
+    };
   const app = state.app!;
   const rows = frame.rows.get(app) ?? [];
-  const digest = hash([
-    rows,
-    frame.objects.map((object) => [object.name, object.generation]),
-  ]);
+  const part = frame.stage?.parts.find((part) => part.app === app);
+  if (frame.stage && !part)
+    throw new Error("Invalid Google Play staged report index");
+  const digest =
+    part?.digest ??
+    hash([
+      rows,
+      frame.objects.map((object) => [object.name, object.generation]),
+    ]);
   if (state.digest !== null && state.digest !== digest)
     state = {
       ...state,
@@ -452,26 +622,21 @@ export async function syncPlayReports(
       refresh: randomUUID(),
       digest: null,
     };
-  if (state.offset > rows.length)
+  const totalRows = part?.totalRows ?? rows.length;
+  if (state.offset > totalRows)
     throw new Error("Invalid Google Play report checkpoint");
-  const records: DatasetRecord[] = [];
-  let bytes = 4096;
-  if (frame.availability === "available")
-    for (const row of rows.slice(
-      state.offset,
-      state.offset + DATASET_LIMITS.pageRows,
-    )) {
-      const size = Buffer.byteLength(JSON.stringify(row));
-      if (size > DATASET_LIMITS.rowBytes)
-        throw new Error(
-          "Google Play report row exceeds the transport record budget",
-        );
-      if (bytes + size + 1 > DATASET_LIMITS.pageBytes) break;
-      records.push(row);
-      bytes += size + 1;
-    }
+  const stagedPage = part?.pages.find((page) => page.offset === state.offset);
+  if (part && !stagedPage)
+    throw new Error("Invalid Google Play staged report checkpoint");
+  const staged = stagedPage
+    ? await runtime.datasetStaging!.getPage(frame.stage!.id, stagedPage.key)
+    : null;
+  const records =
+    frame.availability === "available"
+      ? (staged?.records ?? recordPage(rows, state.offset))
+      : [];
   const end = state.offset + records.length;
-  const complete = frame.availability !== "available" || end === rows.length;
+  const complete = frame.availability !== "available" || end === totalRows;
   const pages: DatasetPage[] =
     frame.availability === "available"
       ? [
@@ -483,6 +648,9 @@ export async function syncPlayReports(
             previousPageKey: state.previous,
             records,
             complete,
+            ...(frame.stage && stagedPage
+              ? { stagingId: frame.stage.id, stagingPageKey: stagedPage.key }
+              : {}),
             window: {
               from: task.month,
               toExclusive: nextMonth(task.month),
@@ -511,6 +679,7 @@ export async function syncPlayReports(
           task: undefined,
           app: undefined,
           roster: undefined,
+          stageId: undefined,
           afterTask: task.key,
           offset: 0,
           previous: null,

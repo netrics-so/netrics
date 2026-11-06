@@ -163,6 +163,10 @@ export function fakePlay(
       const object = objects.get(name);
       if (!object || object.generation !== url.searchParams.get("generation"))
         return jsonResponse(404, {});
+      if (url.searchParams.get("alt") !== "media") {
+        const { bytes: _bytes, ...metadata } = object;
+        return jsonResponse(200, metadata);
+      }
       return byteResponse(200, object.bytes, "application/octet-stream", {
         "x-goog-generation": object.generation,
       });
