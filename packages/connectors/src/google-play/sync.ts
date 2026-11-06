@@ -18,13 +18,14 @@ import {
 } from "./api.js";
 import {
   earningsDataset,
-  earningsRows,
   installDataset,
-  installRows,
   listingRatingDataset,
   reportStatusDataset,
+  streamEarningsRows,
+  streamInstallRows,
 } from "./datasets.js";
 import { listingSnapshot, type ListingSnapshot } from "./ratings.js";
+import type { ReportSource } from "./tabular.js";
 
 const PREFIX = "google-play-data:";
 const taskSchema = z.object({
@@ -63,6 +64,28 @@ interface Catalog {
 }
 function hash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+/**
+ * hash([rows, objects as [name, generation]]) without building the whole JSON
+ * text: the same bytes are fed to the digest one row at a time.
+ */
+export function rowsDigest(
+  rows: DatasetRecord[],
+  objects: ReportObject[],
+): string {
+  const digest = createHash("sha256").update("[[");
+  rows.forEach((row, index) =>
+    digest.update((index ? "," : "") + JSON.stringify(row)),
+  );
+  return digest
+    .update(
+      "]," +
+        JSON.stringify(
+          objects.map((object) => [object.name, object.generation]),
+        ) +
+        "]",
+    )
+    .digest("hex");
 }
 function encode(state: State): string {
   return PREFIX + Buffer.from(JSON.stringify(state)).toString("base64url");
@@ -299,10 +322,7 @@ async function reusableFrame(
     const part: StagedFrame["parts"][number] = {
       app,
       totalRows: rows.length,
-      digest: hash([
-        rows,
-        objects.map((object) => [object.name, object.generation]),
-      ]),
+      digest: rowsDigest(rows, objects),
       pages: [],
     };
     let offset = 0;
@@ -374,12 +394,20 @@ async function readFrame(
     frame.availability = "permission_missing";
   else if (objects.length === 0) frame.availability = "not_published";
   if (frame.availability !== "available") return frame;
-  const download = async (object: ReportObject) => {
-    try {
-      return await client.bytes(object);
-    } catch (error) {
-      throw new ReportDownloadError(error);
-    }
+  // Report bodies are read in bounded ranges while they are parsed; a failed
+  // provider read keeps its own meaning instead of reading as a bad report.
+  const download = (object: ReportObject): ReportSource => {
+    const source = client.source(object);
+    return {
+      size: source.size,
+      async read(offset, length) {
+        try {
+          return await source.read(offset, length);
+        } catch (error) {
+          throw new ReportDownloadError(error);
+        }
+      },
+    };
   };
   try {
     if (task.kind === "installs") {
@@ -390,8 +418,8 @@ async function readFrame(
       const object = objects[0]!;
       frame.rows.set(
         task.appId!,
-        installRows(
-          await download(object),
+        await streamInstallRows(
+          download(object),
           task.appId!,
           task.month,
           object.name,
@@ -400,16 +428,19 @@ async function readFrame(
       );
     } else {
       for (const object of objects) {
-        const parsed = earningsRows(
-          await download(object),
+        const parsed = await streamEarningsRows(
+          download(object),
           task.month,
           object.name,
           object.generation,
           selected ? new Set(apps) : undefined,
         );
         frame.unmapped += parsed.unmapped;
-        for (const [appId, rows] of parsed.records)
-          frame.rows.set(appId, [...(frame.rows.get(appId) ?? []), ...rows]);
+        for (const [appId, rows] of parsed.records) {
+          const list = frame.rows.get(appId);
+          if (list) for (const row of rows) list.push(row);
+          else frame.rows.set(appId, rows);
+        }
       }
       if (!selected)
         frame.apps = [
@@ -610,12 +641,7 @@ export async function syncPlayReports(
   const part = frame.stage?.parts.find((part) => part.app === app);
   if (frame.stage && !part)
     throw new Error("Invalid Google Play staged report index");
-  const digest =
-    part?.digest ??
-    hash([
-      rows,
-      frame.objects.map((object) => [object.name, object.generation]),
-    ]);
+  const digest = part?.digest ?? rowsDigest(rows, frame.objects);
   if (state.digest !== null && state.digest !== digest)
     state = {
       ...state,

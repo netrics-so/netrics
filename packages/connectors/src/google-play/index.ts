@@ -230,7 +230,9 @@ export function createGooglePlayConnector(
       const probe = async (prefix: string) => {
         try {
           const object = await client.sample(prefix);
-          if (object) await client.bytes(object);
+          // Reading the first range proves object access without transferring
+          // a large report whole.
+          if (object) await client.source(object).read(0, 0);
           return true;
         } catch (error) {
           if (error instanceof PlayReportError && error.status === 403)
