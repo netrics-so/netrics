@@ -7,7 +7,15 @@ import type {
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
-import { csvTable, reportDecimal, reportText, reportZip } from "./tabular.js";
+import {
+  REPORT_MAX_BYTES,
+  reportCsv,
+  reportDecimal,
+  reportZip,
+  reportZipStream,
+  type ByteSink,
+  type ReportSource,
+} from "./tabular.js";
 
 function field(
   id: string,
@@ -187,6 +195,50 @@ function rowIdentity(
   return `${hash}-${ordinal}`;
 }
 
+/** Typed install rows from one country install report, pushed as bytes. */
+function installSink(
+  appId: string,
+  reportMonth: string,
+  name: string,
+  generation: string,
+  rows: DatasetRecord[],
+): ByteSink {
+  const duplicates = new Map<string, number>();
+  return reportCsv(
+    (headers) =>
+      requiredColumns(headers, [
+        "Date",
+        "Package Name",
+        "Country",
+        "Daily User Installs",
+        "Daily Device Installs",
+      ]),
+    (original) => {
+      const day = date(original.Date!);
+      if (
+        original["Package Name"]?.trim() !== appId ||
+        day.slice(0, 7) !== reportMonth.slice(0, 7)
+      )
+        throw new Error(
+          "Google Play install report has a row outside its app/month scope",
+        );
+      rows.push({
+        values: {
+          app_id: appId,
+          day,
+          row_id: rowIdentity(original, duplicates),
+          country: original.Country!.trim().toUpperCase(),
+          daily_user_installs: integer(original["Daily User Installs"]!),
+          daily_device_installs: integer(original["Daily Device Installs"]!),
+          report_file: name,
+          object_generation: generation,
+          provider_fields: original,
+        },
+      });
+    },
+  );
+}
+
 export function installRows(
   bytes: Uint8Array,
   appId: string,
@@ -194,38 +246,50 @@ export function installRows(
   name: string,
   generation: string,
 ): DatasetRecord[] {
-  const { headers, records: rows } = csvTable(reportText(bytes));
-  requiredColumns(headers, [
-    "Date",
-    "Package Name",
-    "Country",
-    "Daily User Installs",
-    "Daily Device Installs",
-  ]);
-  const duplicates = new Map<string, number>();
-  return rows.map((original) => {
-    const day = date(original.Date!);
-    if (
-      original["Package Name"]?.trim() !== appId ||
-      day.slice(0, 7) !== reportMonth.slice(0, 7)
-    )
-      throw new Error(
-        "Google Play install report has a row outside its app/month scope",
-      );
-    return {
-      values: {
-        app_id: appId,
-        day,
-        row_id: rowIdentity(original, duplicates),
-        country: original.Country!.trim().toUpperCase(),
-        daily_user_installs: integer(original["Daily User Installs"]!),
-        daily_device_installs: integer(original["Daily Device Installs"]!),
-        report_file: name,
-        object_generation: generation,
-        provider_fields: original,
-      },
-    };
-  });
+  const rows: DatasetRecord[] = [];
+  const sink = installSink(appId, reportMonth, name, generation, rows);
+  sink.push(bytes);
+  sink.end();
+  return rows;
+}
+
+/**
+ * installRows over a ranged source: bytes are decoded and parsed piece by
+ * piece, so only the typed rows are retained.
+ */
+export async function streamInstallRows(
+  source: ReportSource,
+  appId: string,
+  reportMonth: string,
+  name: string,
+  generation: string,
+): Promise<DatasetRecord[]> {
+  reportSize(source);
+  const rows: DatasetRecord[] = [];
+  const sink = installSink(appId, reportMonth, name, generation, rows);
+  // Even an empty object is requested, so access and generation still verify.
+  let at = 0;
+  do {
+    const length = Math.min(REPORT_READ_BYTES, source.size - at);
+    sink.push(await source.read(at, length));
+    at += length;
+  } while (at < source.size);
+  sink.end();
+  return rows;
+}
+
+/** Largest piece of a plain report pushed through the parser at once. */
+export const REPORT_READ_BYTES = 1024 * 1024;
+export class ReportTooLargeError extends Error {
+  constructor() {
+    super(
+      `Google Play report exceeds the ${REPORT_MAX_BYTES / 1024 / 1024} MiB read limit`,
+    );
+  }
+}
+/** Refuse an oversized object before any of its body is transferred. */
+function reportSize(source: ReportSource): void {
+  if (source.size > REPORT_MAX_BYTES) throw new ReportTooLargeError();
 }
 
 const MONTHS = [
@@ -259,29 +323,32 @@ function transactionDay(raw: string): string {
   );
 }
 
-export function earningsRows(
-  bytes: Uint8Array,
+interface EarningsRows {
+  records: Map<string, DatasetRecord[]>;
+  unmapped: number;
+}
+/** One earnings archive member's CSV, typed into `result` as it is parsed. */
+function earningsSink(
+  result: EarningsRows,
   reportMonth: string,
-  name: string,
+  file: string,
   generation: string,
-  selected?: Set<string>,
-): { records: Map<string, DatasetRecord[]>; unmapped: number } {
-  const records = new Map<string, DatasetRecord[]>();
-  let unmapped = 0;
-  for (const file of reportZip(bytes)) {
-    const { headers, records: rows } = csvTable(reportText(file.bytes));
-    requiredColumns(headers, [
-      "Transaction Date",
-      "Transaction Type",
-      "Package ID",
-      "Merchant Currency",
-      "Amount (Merchant Currency)",
-    ]);
-    const duplicates = new Map<string, number>();
-    for (const original of rows) {
+  selected: Set<string> | undefined,
+): ByteSink {
+  const duplicates = new Map<string, number>();
+  return reportCsv(
+    (headers) =>
+      requiredColumns(headers, [
+        "Transaction Date",
+        "Transaction Type",
+        "Package ID",
+        "Merchant Currency",
+        "Amount (Merchant Currency)",
+      ]),
+    (original) => {
       const appId = original["Package ID"]!.trim() || "__unmapped";
-      if (appId === "__unmapped") unmapped++;
-      if (selected && !selected.has(appId)) continue;
+      if (appId === "__unmapped") result.unmapped++;
+      if (selected && !selected.has(appId)) return;
       const currency = original["Merchant Currency"]!.trim().toUpperCase();
       if (!/^[A-Z]{3}$/.test(currency))
         throw new Error(
@@ -299,15 +366,62 @@ export function earningsRows(
             original["Amount (Merchant Currency)"]!,
           ),
           currency,
-          report_file: `${name}/${file.name}`,
+          report_file: file,
           object_generation: generation,
           provider_fields: original,
         },
       };
-      const list = records.get(appId) ?? [];
-      list.push(row);
-      records.set(appId, list);
-    }
+      const list = result.records.get(appId);
+      if (list) list.push(row);
+      else result.records.set(appId, [row]);
+    },
+  );
+}
+
+export function earningsRows(
+  bytes: Uint8Array,
+  reportMonth: string,
+  name: string,
+  generation: string,
+  selected?: Set<string>,
+): EarningsRows {
+  const result: EarningsRows = { records: new Map(), unmapped: 0 };
+  for (const file of reportZip(bytes)) {
+    const sink = earningsSink(
+      result,
+      reportMonth,
+      `${name}/${file.name}`,
+      generation,
+      selected,
+    );
+    sink.push(file.bytes);
+    sink.end();
   }
-  return { records, unmapped };
+  return result;
+}
+
+/**
+ * earningsRows over a ranged source: members are inflated, decoded and parsed
+ * incrementally, and rows outside `selected` are never retained. All archive
+ * checks still apply; a failure discards every row read so far.
+ */
+export async function streamEarningsRows(
+  source: ReportSource,
+  reportMonth: string,
+  name: string,
+  generation: string,
+  selected?: Set<string>,
+): Promise<EarningsRows> {
+  reportSize(source);
+  const result: EarningsRows = { records: new Map(), unmapped: 0 };
+  await reportZipStream(source, (member) =>
+    earningsSink(
+      result,
+      reportMonth,
+      `${name}/${member}`,
+      generation,
+      selected,
+    ),
+  );
+  return result;
 }

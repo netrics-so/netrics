@@ -165,6 +165,11 @@ implementation work; this plan does not create or complete issue records.
   - Durable parsed Google report staging for worker/app/page continuations:
     [#472](https://github.com/netrics-so/netrics/issues/472). Initial buffered
     provider parsing and the wider scale acceptance remain open.
+  - Incremental, range-bounded Google Play report parsing:
+    [#488](https://github.com/netrics-so/netrics/issues/488). Reports above the
+    fetch limit are read as pinned byte ranges and parsed row by row; typed rows
+    of one report task are still collected before staging, and the wider scale
+    acceptance remains open.
   - Rolling-window and period-offset measures:
     [#486](https://github.com/netrics-so/netrics/issues/486). Date-only
     anchors, windows recomputed from rows, capped month/year offsets, lookback
