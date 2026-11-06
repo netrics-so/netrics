@@ -165,6 +165,11 @@ implementation work; this plan does not create or complete issue records.
   - Durable parsed Google report staging for worker/app/page continuations:
     [#472](https://github.com/netrics-so/netrics/issues/472). Initial buffered
     provider parsing and the wider scale acceptance remain open.
+  - Incremental, range-bounded Google Play report parsing:
+    [#488](https://github.com/netrics-so/netrics/issues/488). Reports above the
+    fetch limit are read as pinned byte ranges and parsed row by row; typed rows
+    of one report task are still collected before staging, and the wider scale
+    acceptance remains open.
   - Rolling-window and period-offset measures:
     [#486](https://github.com/netrics-so/netrics/issues/486). Date-only
     anchors, windows recomputed from rows, capped month/year offsets, lookback
@@ -180,7 +185,12 @@ implementation work; this plan does not create or complete issue records.
 - 11D: [#443](https://github.com/netrics-so/netrics/issues/443)
   - Immutable semantic result continuation across corrections/publication:
     [#471](https://github.com/netrics-so/netrics/issues/471). Opt-in API sessions
-    pin retained inputs; chart interactions and other 11D acceptance remain open.
+    pin retained inputs.
+  - Declared chart-to-filter interactions:
+    [#490](https://github.com/netrics-so/netrics/issues/490). Table, bar and line
+    widgets set one shared filter from a clicked value, validated at save and in
+    Studio; browser-only, device payloads unchanged. Compare-to-measure, device
+    scope controls and the rest of the 11D gate remain open.
 - 11E: [#444](https://github.com/netrics-so/netrics/issues/444)
   - Apple storefront rating snapshots: [#452](https://github.com/netrics-so/netrics/issues/452).
     Implements the scoped raw rating/count source, not the complete portfolio

@@ -1171,6 +1171,129 @@ describe("published dashboard measure bindings", () => {
     );
     expect(denied.slides).toEqual([]);
   });
+  it("validates declared chart-to-filter interactions at save and evaluates clicks as viewer choices", async () => {
+    const chart = (
+      interaction: unknown,
+      view = "bar",
+      groupBy = ["country"],
+      exclusions: unknown[] = [],
+    ) => ({
+      ...widget("income"),
+      w: 6,
+      binding: {
+        ...widget("income").binding,
+        groupBy,
+        exclusions,
+        interaction,
+      },
+      options: { view, limit: 20 },
+    });
+    const created = await dataCall("POST", "", editor, {
+      name: "Clickable",
+      settings: { dataFilters: [filter()] },
+      slides: [
+        {
+          widgets: [
+            chart({ filterId: "country" }),
+            { ...widget("spend", 6), w: 6 },
+          ],
+        },
+      ],
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const clickable = created.json().dashboard;
+    expect(clickable.slides[0].widgets[0].binding.interaction).toEqual({
+      filterId: "country",
+    });
+    // A click sends an ordinary filter choice; every widget mapped to the
+    // filter follows it, evaluated under the viewer's own authorization.
+    const clicked = await dataCall("POST", `/${clickable.id}/data`, viewer, {
+      values: { country: { kind: "values", values: ["FR"] } },
+    });
+    expect(clicked.statusCode, clicked.body).toBe(200);
+    expect(
+      clicked.json().widgets.map(
+        (widget: {
+          result: {
+            rows: Array<{
+              dimensions: Record<string, unknown>;
+              measures: Record<string, { value: unknown }>;
+            }>;
+          };
+        }) =>
+          widget.result.rows.map((row) => [
+            row.dimensions.country ?? null,
+            Object.values(row.measures)[0]!.value,
+          ]),
+      ),
+    ).toEqual([[["FR", "25"]], [[null, "10"]]]);
+    expect(
+      (
+        await dataCall("POST", `/${clickable.id}/data`, stranger, {
+          values: { country: { kind: "values", values: ["FR"] } },
+        })
+      ).statusCode,
+    ).toBe(404);
+    // Paired screens get no interaction: the binding never reaches devices.
+    const payload = await withWorkspace(
+      db,
+      { workspaceId },
+      (tx) =>
+        buildDeviceDashboardV3(tx, workspaceId, clickable.id, {
+          now: new Date(),
+        }),
+      { isolationLevel: "repeatable read" },
+    );
+    expect(payload.slides[0]!.widgets).toHaveLength(2);
+    expect(JSON.stringify(payload)).not.toContain("interaction");
+    for (const [invalid, error] of [
+      [
+        chart({ filterId: "country" }, "value", []),
+        "dashboard_interaction_view_unsupported",
+      ],
+      [chart({ filterId: "missing" }), "dashboard_interaction_filter_unknown"],
+      [
+        chart(
+          { filterId: "country" },
+          "bar",
+          ["country"],
+          [{ filterId: "country", reason: "All markets" }],
+        ),
+        "dashboard_interaction_filter_excluded",
+      ],
+      [
+        chart({ filterId: "country" }, "table", []),
+        "dashboard_interaction_dimension_not_grouped",
+      ],
+    ] as const) {
+      const result = await dataCall("POST", "", editor, {
+        name: "Invalid interaction",
+        settings: { dataFilters: [filter()] },
+        slides: [{ widgets: [invalid] }],
+      });
+      expect(result.statusCode, result.body).toBe(400);
+      expect(result.json()).toEqual({ error });
+    }
+    // Removing the declared filter re-validates the unchanged widget.
+    const removed = await dataCall("PUT", `/${clickable.id}`, editor, {
+      name: clickable.name,
+      version: clickable.version,
+      projectId: clickable.projectId,
+      slides: clickable.slides.map(
+        (slide: {
+          widgets: Array<{ binding?: { exclusions: unknown[] } }>;
+        }) => ({
+          ...slide,
+          widgets: slide.widgets.slice(0, 1),
+        }),
+      ),
+      settings: { ...clickable.settings, dataFilters: [] },
+    });
+    expect(removed.statusCode, removed.body).toBe(400);
+    expect(removed.json()).toEqual({
+      error: "dashboard_interaction_filter_unknown",
+    });
+  });
   it("allows a multi-currency model while refusing mixed totals and incomparable charts", async () => {
     const sourceId = await source(
       "multiple-currencies",

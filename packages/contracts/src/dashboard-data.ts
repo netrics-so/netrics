@@ -57,6 +57,9 @@ export const measureWidgetBindingSchema: z.ZodType<MeasureWidgetBinding> =
     groupBy: z.array(id).max(3),
     filter: dataExpressionSchema.optional(),
     exclusions: z.array(dashboardFilterExclusionSchema).max(30).default([]),
+    /** Selecting a category, point or row value sets this shared filter.
+     * Browser-only; device payloads never include it. */
+    interaction: z.strictObject({ filterId: id }).optional(),
   });
 export const measureWidgetOptionsSchema = z.object({
   view: z.enum(DASHBOARD_MEASURE_VIEWS).default("value"),

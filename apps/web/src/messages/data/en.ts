@@ -80,6 +80,16 @@ export const dataEn = {
       allValues: "All values",
       fixedScopeActive: "A fixed scope also applies.",
       resetFilters: "Reset filters",
+      interaction: "Clicking a value sets",
+      interactionNone: "Nothing (not interactive)",
+      interactionHelp:
+        "Viewers in the browser can click a bar, point or row value to set this shared filter. Only filters this widget follows on one of its groupings are listed. Paired screens stay non-interactive.",
+      interactionUnavailable:
+        "No shared filter maps to a grouping of this widget. Group by a filtered dimension or add a shared filter first.",
+      interactionProblem:
+        "{name}: clicking cannot set the {filter} filter. Group the chart or table by the dimension the filter maps to, stop excluding the filter, or turn the interaction off.",
+      interactionHint: "Select a value to filter by {filter}.",
+      interactionChoice: "Filter by {filter}: {value}",
       catalogFailed: "Published models could not be loaded.",
       retry: "Try again",
       staleModel:
@@ -490,6 +500,8 @@ export const dataEn = {
       invalid: "Check the entered values and required fields.",
       cycle:
         "These dependencies form a loop. Remove the relationship or step that points back to itself.",
+      interaction:
+        "Clicking this widget cannot set the chosen filter. Use a table or chart grouped by the dimension that filter maps to, or turn the interaction off.",
       filter:
         "This measure cannot use the selected dimension or filter. Add a compatible relationship or choose another dimension.",
     },

@@ -848,4 +848,59 @@ describe("shared filter document state", () => {
     expect(result.type === "measure" && result.binding.exclusions).toEqual([]);
     expect(reduce(changed, { type: "undo" }).draft).toEqual(initial.draft);
   });
+  it("lists an inapplicable chart interaction as a problem and drops it with its filter", () => {
+    const chart = (
+      view: "value" | "bar" | "table",
+      groupBy: string[],
+    ): DashboardWidget => ({
+      id: ID(82),
+      type: "measure",
+      x: 0,
+      y: 0,
+      w: 6,
+      h: 4,
+      title: "Income",
+      binding: {
+        modelId: ID(80),
+        measureIds: ["income"],
+        groupBy,
+        exclusions: [],
+        interaction: { filterId: "country" },
+      },
+      options: { view, limit: 20 },
+    });
+    const withFilters = (widget: DashboardWidget) =>
+      initialStudioState(
+        {
+          ...dashboard([widget]),
+          settings: { ...dashboard([]).settings, dataFilters: filters },
+        },
+        "en",
+      );
+    const messages = (widget: DashboardWidget, locale: "en" | "de" = "en") =>
+      documentProblems(withFilters(widget).draft, locale)
+        .filter((problem) => problem.widgetId === ID(82))
+        .map((problem) => problem.message);
+    expect(messages(chart("bar", ["country"]))).toEqual([]);
+    for (const invalid of [chart("table", []), chart("value", [])]) {
+      expect(messages(invalid)).toEqual([
+        expect.stringContaining("clicking cannot set the Country filter"),
+      ]);
+      expect(messages(invalid, "de")).toEqual([
+        expect.stringContaining("kann den Filter Country nicht setzen"),
+      ]);
+    }
+    const reduce = createStudioReducer(() => ID(90));
+    const removed = reduce(withFilters(chart("bar", ["country"])), {
+      type: "updateSettings",
+      patch: { dataFilters: [] },
+    });
+    const result = removed.draft.slides[0]!.widgets[0]!;
+    expect(result.type === "measure" && result.binding.interaction).toBe(
+      undefined,
+    );
+    expect(JSON.stringify(toReplaceRequest(removed))).not.toContain(
+      "interaction",
+    );
+  });
 });

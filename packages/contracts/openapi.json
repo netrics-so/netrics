@@ -12446,6 +12446,19 @@
                                 ],
                                 "additionalProperties": false
                               }
+                            },
+                            "interaction": {
+                              "type": "object",
+                              "properties": {
+                                "filterId": {
+                                  "type": "string",
+                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                }
+                              },
+                              "required": [
+                                "filterId"
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
@@ -14897,6 +14910,19 @@
                                           ],
                                           "additionalProperties": false
                                         }
+                                      },
+                                      "interaction": {
+                                        "type": "object",
+                                        "properties": {
+                                          "filterId": {
+                                            "type": "string",
+                                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                          }
+                                        },
+                                        "required": [
+                                          "filterId"
+                                        ],
+                                        "additionalProperties": false
                                       }
                                     },
                                     "required": [
@@ -17338,6 +17364,19 @@
                                                 ],
                                                 "additionalProperties": false
                                               }
+                                            },
+                                            "interaction": {
+                                              "type": "object",
+                                              "properties": {
+                                                "filterId": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "filterId"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [
@@ -20118,6 +20157,19 @@
                                                 ],
                                                 "additionalProperties": false
                                               }
+                                            },
+                                            "interaction": {
+                                              "type": "object",
+                                              "properties": {
+                                                "filterId": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "filterId"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [
@@ -22846,6 +22898,19 @@
                                           ],
                                           "additionalProperties": false
                                         }
+                                      },
+                                      "interaction": {
+                                        "type": "object",
+                                        "properties": {
+                                          "filterId": {
+                                            "type": "string",
+                                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                          }
+                                        },
+                                        "required": [
+                                          "filterId"
+                                        ],
+                                        "additionalProperties": false
                                       }
                                     },
                                     "required": [
@@ -25297,6 +25362,19 @@
                                                 ],
                                                 "additionalProperties": false
                                               }
+                                            },
+                                            "interaction": {
+                                              "type": "object",
+                                              "properties": {
+                                                "filterId": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "filterId"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [
@@ -28212,6 +28290,19 @@
                                                 ],
                                                 "additionalProperties": false
                                               }
+                                            },
+                                            "interaction": {
+                                              "type": "object",
+                                              "properties": {
+                                                "filterId": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "filterId"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [
@@ -71162,6 +71253,19 @@
                                                 ],
                                                 "additionalProperties": false
                                               }
+                                            },
+                                            "interaction": {
+                                              "type": "object",
+                                              "properties": {
+                                                "filterId": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "filterId"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [

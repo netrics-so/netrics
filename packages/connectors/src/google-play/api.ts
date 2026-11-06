@@ -4,6 +4,8 @@ import type {
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
+import type { ReportSource } from "./tabular.js";
+
 export const STORAGE_HOST = "storage.googleapis.com";
 export const STORAGE_SCOPE =
   "https://www.googleapis.com/auth/devstorage.read_only";
@@ -21,6 +23,13 @@ const listSchema = z.object({
   items: z.array(objectSchema).optional(),
   nextPageToken: z.string().min(1).optional(),
 });
+
+/**
+ * Largest report body requested at once. runtime.fetch buffers each response
+ * under the host limit (10 MiB by default), so larger objects are read as
+ * generation-pinned byte ranges of this size.
+ */
+export const REPORT_RANGE_BYTES = 8 * 1024 * 1024;
 
 export class PlayReportError extends Error {
   constructor(readonly status: number) {
@@ -85,13 +94,56 @@ export function createPlayReportsClient(
   if (typeof token !== "string" || !token.trim())
     throw new Error("Connect your Google account to read Play reports.");
   const base = `https://${STORAGE_HOST}/storage/v1/b/${encodeURIComponent(bucket)}/o`;
-  const get = async (url: URL, accept = "application/json") => {
+  const get = async (url: URL, accept = "application/json", range?: string) => {
     const response = await runtime.fetch(url.toString(), {
       method: "GET",
-      headers: { authorization: `Bearer ${token}`, accept },
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept,
+        ...(range ? { range } : {}),
+      },
     });
-    if (response.status !== 200) throw new PlayReportError(response.status);
+    if (response.status !== (range ? 206 : 200))
+      throw new PlayReportError(response.status);
     return response;
+  };
+  const media = (object: ReportObject) => {
+    const url = new URL(base + "/" + encodeURIComponent(object.name));
+    url.searchParams.set("alt", "media");
+    url.searchParams.set("generation", object.generation);
+    return url;
+  };
+  const changed = () =>
+    new Error("Google Play report changed while it was read. Retry sync.");
+  const resized = () =>
+    new Error("Google Play report size changed while it was read. Retry sync.");
+  const pinned = (
+    object: ReportObject,
+    response: Awaited<ReturnType<typeof get>>,
+  ) => {
+    const generation = response.headers["x-goog-generation"];
+    if (generation !== undefined && generation !== object.generation)
+      throw changed();
+  };
+  /** One byte range [start, end] of the pinned generation. */
+  const range = async (object: ReportObject, start: number, end: number) => {
+    const response = await get(media(object), "*/*", `bytes=${start}-${end}`);
+    pinned(object, response);
+    const bytes = response.bytes();
+    if (
+      response.headers["content-range"] !==
+        `bytes ${start}-${end}/${object.size}` ||
+      bytes.byteLength !== end - start + 1
+    )
+      throw resized();
+    return bytes;
+  };
+  const whole = async (object: ReportObject): Promise<Uint8Array> => {
+    const response = await get(media(object), "*/*");
+    pinned(object, response);
+    const bytes = response.bytes();
+    if (BigInt(bytes.byteLength) !== BigInt(object.size)) throw resized();
+    return bytes;
   };
   return {
     async sample(prefix: string): Promise<ReportObject | undefined> {
@@ -161,22 +213,61 @@ export function createPlayReportsClient(
           "Google Play report changed while it was read. Retry sync.",
         );
     },
-    async bytes(object: ReportObject): Promise<Uint8Array> {
-      const url = new URL(base + "/" + encodeURIComponent(object.name));
-      url.searchParams.set("alt", "media");
-      url.searchParams.set("generation", object.generation);
-      const response = await get(url, "*/*");
-      const generation = response.headers["x-goog-generation"];
-      if (generation !== undefined && generation !== object.generation)
-        throw new Error(
-          "Google Play report changed while it was read. Retry sync.",
-        );
-      const bytes = response.bytes();
-      if (BigInt(bytes.byteLength) !== BigInt(object.size))
-        throw new Error(
-          "Google Play report size changed while it was read. Retry sync.",
-        );
-      return bytes;
+    bytes: whole,
+    /**
+     * Random access to the pinned generation. An object of at most one range
+     * is fetched whole, as `bytes` does; a larger one is read in aligned
+     * ranges, and only the most recently fetched range is kept.
+     */
+    source(object: ReportObject): ReportSource {
+      const size = Number(object.size);
+      let block: { start: number; bytes: Uint8Array } | undefined;
+      const load = async (index: number) => {
+        const start = index * REPORT_RANGE_BYTES;
+        if (block?.start === start) return block.bytes;
+        block = undefined;
+        const bytes =
+          size <= REPORT_RANGE_BYTES
+            ? await whole(object)
+            : await range(
+                object,
+                start,
+                Math.min(size, start + REPORT_RANGE_BYTES) - 1,
+              );
+        block = { start, bytes };
+        return bytes;
+      };
+      return {
+        size,
+        async read(offset, length) {
+          if (
+            !Number.isSafeInteger(offset) ||
+            !Number.isSafeInteger(length) ||
+            offset < 0 ||
+            length < 0 ||
+            offset + length > size
+          )
+            throw new Error("Google Play report read is outside the object");
+          const first = Math.floor(offset / REPORT_RANGE_BYTES);
+          const last = Math.floor(
+            (offset + Math.max(length, 1) - 1) / REPORT_RANGE_BYTES,
+          );
+          if (length === 0 || first === last) {
+            const bytes = await load(first);
+            const at = offset - first * REPORT_RANGE_BYTES;
+            return bytes.slice(at, at + length);
+          }
+          const out = new Uint8Array(length);
+          for (let index = first; index <= last; index++) {
+            const bytes = await load(index),
+              start = index * REPORT_RANGE_BYTES;
+            const from = Math.max(offset, start),
+              to = Math.min(offset + length, start + bytes.byteLength);
+            out.set(bytes.subarray(from - start, to - start), from - offset);
+          }
+          return out;
+        },
+      };
     },
   };
 }

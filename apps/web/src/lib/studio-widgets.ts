@@ -183,6 +183,13 @@ export interface StudioConnection {
 export interface StudioEnv {
   dataFilters?: import("@netrics/domain").DashboardDataFilter[];
   filterValues?: Record<string, import("@netrics/domain").DashboardFilterValue>;
+  /** Interactive viewers only: a declared chart interaction sets a shared
+   * filter (undefined restores its default). Absent on screens, kiosks and
+   * the Studio canvas, where widgets stay non-interactive. */
+  onFilterValue?: (
+    filterId: string,
+    value: import("@netrics/domain").DashboardFilterValue | undefined,
+  ) => void;
   workspaceId: string;
   /** The workspace's time zone: clocks and chart labels. */
   timeZone: string;

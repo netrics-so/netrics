@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
+import { deflateRawSync } from "node:zlib";
 
 import type {
   ConnectorFetchInit,
   ConnectorResponse,
   ConnectorRuntime,
 } from "@netrics/connector-sdk";
+
+import { crc32, type ReportSource } from "./tabular.js";
 
 export const TEST_BUCKET = "pubsite_prod_rev_0000000000";
 export const ALPHA = "com.example.alpha",
@@ -47,8 +50,11 @@ export function fakePlay(
   options: {
     acceptToken?: (token: string) => boolean | Promise<boolean>;
     pageSize?: number;
+    /** Refuse larger bodies, as the host's buffered runtime.fetch does. */
+    maxResponseBytes?: number;
   } = {},
 ) {
+  const mediaBytes: number[] = [];
   const objects = new Map<string, FakeReportObject>();
   const calls: Array<{ url: URL; init?: ConnectorFetchInit }> = [];
   const apps = new Map([
@@ -167,8 +173,26 @@ export function fakePlay(
         const { bytes: _bytes, ...metadata } = object;
         return jsonResponse(200, metadata);
       }
-      return byteResponse(200, object.bytes, "application/octet-stream", {
+      const range = init?.headers?.range;
+      const match = range ? /^bytes=(\d+)-(\d+)$/.exec(range) : null;
+      if (range && !match) return jsonResponse(400, {});
+      const start = match ? Number(match[1]) : 0,
+        end = match
+          ? Math.min(Number(match[2]), object.bytes.byteLength - 1)
+          : object.bytes.byteLength - 1;
+      if (match && (start > end || start >= object.bytes.byteLength))
+        return jsonResponse(416, {});
+      const body = object.bytes.subarray(start, end + 1);
+      if (body.byteLength > (options.maxResponseBytes ?? Infinity))
+        throw new Error("egress denied: response exceeds the fetch limit");
+      mediaBytes.push(body.byteLength);
+      return byteResponse(match ? 206 : 200, body, "application/octet-stream", {
         "x-goog-generation": object.generation,
+        ...(match
+          ? {
+              "content-range": `bytes ${start}-${end}/${object.bytes.byteLength}`,
+            }
+          : {}),
       });
     }
     if (authorization !== undefined)
@@ -216,6 +240,7 @@ export function fakePlay(
     runtime,
     fetch,
     calls,
+    mediaBytes,
     objects,
     put,
     apps,
@@ -226,5 +251,65 @@ export function fakePlay(
     reject(count: number) {
       rejectNext = count;
     },
+  };
+}
+
+/** A minimal ZIP writer for synthetic archives (deflated unless `store`). */
+export function zipArchive(
+  members: Array<{ name: string; bytes: Uint8Array; store?: boolean }>,
+): Uint8Array {
+  const locals: Buffer[] = [],
+    central: Buffer[] = [];
+  let offset = 0;
+  for (const member of members) {
+    const name = Buffer.from(member.name, "utf8");
+    const data = member.store
+      ? Buffer.from(member.bytes)
+      : deflateRawSync(member.bytes);
+    const crc = crc32(member.bytes);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(member.store ? 0 : 8, 8);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.byteLength, 18);
+    local.writeUInt32LE(member.bytes.byteLength, 22);
+    local.writeUInt16LE(name.byteLength, 26);
+    const entry = Buffer.alloc(46);
+    entry.writeUInt32LE(0x02014b50, 0);
+    entry.writeUInt16LE(20, 4);
+    entry.writeUInt16LE(20, 6);
+    entry.writeUInt16LE(member.store ? 0 : 8, 10);
+    entry.writeUInt32LE(crc, 16);
+    entry.writeUInt32LE(data.byteLength, 20);
+    entry.writeUInt32LE(member.bytes.byteLength, 24);
+    entry.writeUInt16LE(name.byteLength, 28);
+    entry.writeUInt32LE(offset, 42);
+    locals.push(local, name, data);
+    central.push(entry, name);
+    offset += 30 + name.byteLength + data.byteLength;
+  }
+  const directory = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(members.length, 8);
+  end.writeUInt16LE(members.length, 10);
+  end.writeUInt32LE(directory.byteLength, 12);
+  end.writeUInt32LE(offset, 16);
+  return new Uint8Array(Buffer.concat([...locals, directory, end]));
+}
+
+/** An in-memory ReportSource that records the largest single read. */
+export function memorySource(bytes: Uint8Array) {
+  const reads: number[] = [];
+  return {
+    reads,
+    source: {
+      size: bytes.byteLength,
+      async read(offset: number, length: number) {
+        reads.push(length);
+        return bytes.slice(offset, offset + length);
+      },
+    } satisfies ReportSource,
   };
 }

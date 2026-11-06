@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { compileRowExpression } from "./data-expression.js";
 import {
   dashboardModelQuery,
+  measureInteractionDimension,
+  measureInteractionSelected,
+  measureInteractionValue,
   measureViewWindow,
   validateMeasureView,
   type DashboardDataFilter,
@@ -178,6 +181,171 @@ describe("large selectable dimensions", () => {
       matches(
         { country: { kind: "values", values: countries } },
         { territory: "elsewhere" },
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("declared chart-to-filter interactions", () => {
+  const grouped: MeasureWidgetBinding = {
+    ...binding,
+    groupBy: ["territory"],
+    interaction: { filterId: "country" },
+  };
+  it("reads the value from the grouping the filter maps to", () => {
+    expect(measureInteractionDimension(filters, grouped, "bar")).toBe(
+      "territory",
+    );
+    expect(
+      measureInteractionDimension(
+        filters,
+        { ...grouped, groupBy: ["day", "territory"] },
+        "table",
+      ),
+    ).toBe("territory");
+    expect(
+      measureInteractionDimension(
+        filters,
+        { ...grouped, groupBy: ["day"], interaction: { filterId: "day" } },
+        "line",
+      ),
+    ).toBe("day");
+  });
+  it("rejects every unsupported combination with its own code", () => {
+    const fail =
+      (b: MeasureWidgetBinding, view: "value" | "bar" = "bar") =>
+      () =>
+        measureInteractionDimension(filters, b, view);
+    expect(fail({ ...grouped, groupBy: [] }, "value")).toThrow(
+      "dashboard_interaction_view_unsupported",
+    );
+    expect(fail({ ...grouped, interaction: { filterId: "gone" } })).toThrow(
+      "dashboard_interaction_filter_unknown",
+    );
+    expect(
+      fail({
+        ...grouped,
+        exclusions: [{ filterId: "country", reason: "Global total" }],
+      }),
+    ).toThrow("dashboard_interaction_filter_excluded");
+    expect(fail({ ...grouped, groupBy: ["day"] })).toThrow(
+      "dashboard_interaction_dimension_not_grouped",
+    );
+    expect(fail({ ...grouped, modelId: "other" })).toThrow(
+      "dashboard_interaction_dimension_not_grouped",
+    );
+    expect(fail({ ...grouped, interaction: undefined })).toThrow(
+      "dashboard_interaction_missing",
+    );
+  });
+  it("sets a values filter to the value and a range filter to that one value", () => {
+    const [country, day] = filters as [
+      DashboardDataFilter,
+      DashboardDataFilter,
+    ];
+    expect(measureInteractionValue(country, "FR")).toEqual({
+      kind: "values",
+      values: ["FR"],
+    });
+    expect(measureInteractionValue(country, null)).toEqual({
+      kind: "values",
+      values: [null],
+    });
+    expect(measureInteractionValue(day, "2026-01-02")).toEqual({
+      kind: "range",
+      from: "2026-01-02",
+      to: "2026-01-02",
+    });
+    expect(measureInteractionValue(day, null)).toBeNull();
+    // The resulting choice is an ordinary, validated filter value.
+    expect(
+      matches(
+        { day: measureInteractionValue(day, "2026-01-02") },
+        { territory: "DE", day: "2026-01-03" },
+      ),
+    ).toBe(false);
+    expect(
+      matches(
+        { day: measureInteractionValue(day, "2026-01-02") },
+        { territory: "DE", day: "2026-01-02" },
+      ),
+    ).toBe(true);
+    expect(
+      measureInteractionSelected(
+        country,
+        { kind: "values", values: ["FR"] },
+        "FR",
+      ),
+    ).toBe(true);
+    expect(
+      measureInteractionSelected(
+        country,
+        { kind: "values", values: ["FR", "DE"] },
+        "FR",
+      ),
+    ).toBe(false);
+    expect(measureInteractionSelected(country, null, "FR")).toBe(false);
+  });
+  it("compares the current choice by the filter's type, as filters evaluate it", () => {
+    const amount: DashboardDataFilter = {
+      id: "amount",
+      name: "Amount",
+      type: "decimal",
+      mode: "values",
+      mappings: [{ modelId: "store", dimensionId: "amount" }],
+      defaultValue: { kind: "values", values: ["1.0"] },
+    };
+    expect(
+      measureInteractionSelected(amount, amount.defaultValue, "1.00"),
+    ).toBe(true);
+    expect(
+      measureInteractionSelected(amount, amount.defaultValue, "1.01"),
+    ).toBe(false);
+    expect(
+      measureInteractionSelected(
+        { ...amount, mode: "range" },
+        { kind: "range", from: "2.50", to: "2.5" },
+        "2.500",
+      ),
+    ).toBe(true);
+    const at: DashboardDataFilter = {
+      ...amount,
+      id: "at",
+      type: "timestamp",
+      mode: "range",
+      defaultValue: null,
+    };
+    expect(
+      measureInteractionSelected(
+        at,
+        {
+          kind: "range",
+          from: "2026-10-01T10:00:00Z",
+          to: "2026-10-01T10:00:00.000Z",
+        },
+        "2026-10-01T10:00:00.000000Z",
+      ),
+    ).toBe(true);
+    expect(
+      measureInteractionSelected(
+        at,
+        { kind: "range", from: "2026-10-01T10:00:00Z", to: null },
+        "2026-10-01T10:00:00Z",
+      ),
+    ).toBe(false);
+    // Missing values only match a missing value.
+    expect(
+      measureInteractionSelected(
+        amount,
+        { kind: "values", values: [null] },
+        null,
+      ),
+    ).toBe(true);
+    expect(
+      measureInteractionSelected(
+        amount,
+        { kind: "values", values: [null] },
+        "0",
       ),
     ).toBe(false);
   });

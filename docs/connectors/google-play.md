@@ -89,9 +89,29 @@ workspace history.
 ## Current implementation boundaries
 
 There is no fixed app or retained-history count. Account discovery and dataset
-pages resume through host execution budgets. The first read downloads and parses whole provider files; the normal 10 MiB
-buffered HTTP limit and a 64 MiB archive inflation safeguard still apply. ZIP64
-archives are rejected explicitly.
+pages resume through host execution budgets.
+
+The first read of a report parses it incrementally. `runtime.fetch` buffers each
+response under the host limit (10 MiB by default), so an object above 8 MiB is
+read as generation-pinned byte ranges of at most 8 MiB, checked against the
+object's size and generation; smaller objects are one request, as before. Bytes
+then pass through incremental raw-deflate per ZIP member (the whole central
+directory is checked first), fatal streaming text decoding with the same
+UTF-8/UTF-16 detection, and an incremental CSV parser, one typed row at a time.
+The raw object, inflated members, decoded text and an intermediate CSV table are
+never held whole, and rows of unselected apps in a shared earnings archive are
+dropped as they are read. A report object above 64 MiB is refused before any of
+its body is transferred and recorded as `invalid_report`; the 64 MiB inflation
+budget per archive, CRC/size checks and explicit ZIP64 rejection still apply.
+
+Typed rows of one report task are still collected in memory before they are
+sorted and staged, because `datasetStaging.put` takes a complete page set; that
+set, not the provider file, now bounds a first read. Measured locally on
+2026-11-06 with Node 24 for a synthetic 40 MiB earnings archive (3.7 MiB
+deflated, 626,205 lines): peak RSS for one selected app holding a tenth of the
+lines fell from 1.19 GB to 321 MB, and for all apps from 2.19 GB to 1.30 GB.
+`stream.test.ts` checks that streaming 48 MiB of report text or inflated
+archive retains under 8 MiB of live memory.
 
 The worker durably stages parsed report sets as per-app transport pages. A
 continuation reads only its required page, including after a worker/connector

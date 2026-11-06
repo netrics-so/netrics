@@ -12,10 +12,24 @@ import { formatPercentChange } from "@/lib/format-metric";
 import {
   currencyExponent,
   displayMeasureAmount,
+  measureInteractionDimension,
+  measureInteractionSelected,
+  measureInteractionValue,
   type DataField,
 } from "@netrics/domain";
 
 export type MeasureWidget = Extract<DashboardWidget, { type: "measure" }>;
+/** A declared chart-to-filter interaction, ready for the viewer to click. */
+export interface MeasureInteraction {
+  /** The grouping dimension whose values are clickable. */
+  dimensionId: string;
+  filterName: string;
+  /** Whether clicking `value` can set the filter (a range has no "missing"). */
+  selectable: (value: unknown) => boolean;
+  selected: (value: unknown) => boolean;
+  /** Sets the filter to `value`, or restores its default when already set. */
+  toggle: (value: unknown) => void;
+}
 type ModelCell = NonNullable<
   DashboardWidgetData["result"]
 >["rows"][number]["measures"][string];
@@ -72,7 +86,7 @@ export function MeasureWidgetView({
   widget,
   data,
   loading = false,
-  onFilter,
+  interaction,
   fontScale = 1,
   workspaceId,
 }: {
@@ -83,7 +97,7 @@ export function MeasureWidgetView({
   workspaceId?: string;
   data: DashboardWidgetData | null;
   loading?: boolean;
-  onFilter?: (dimensionId: string, value: unknown) => void;
+  interaction?: MeasureInteraction;
 }) {
   const t = useT("data"),
     locale = useLocale();
@@ -149,6 +163,25 @@ export function MeasureWidgetView({
           cell?.currency,
           cell?.unit,
         );
+  /** A dimension value as a filter button when the widget declares it. */
+  const choice = (dimensionId: string, value: unknown, text: string) =>
+    interaction && interaction.dimensionId === dimensionId ? (
+      <button
+        type="button"
+        className="sw-measure-choice"
+        disabled={!interaction.selectable(value)}
+        aria-pressed={interaction.selected(value)}
+        title={t("dashboard.interactionChoice", {
+          filter: interaction.filterName,
+          value: text,
+        })}
+        onClick={() => interaction.toggle(value)}
+      >
+        {text}
+      </button>
+    ) : (
+      text
+    );
   const error = expired
     ? t("errors.expired")
     : data?.error
@@ -246,6 +279,13 @@ export function MeasureWidgetView({
       aria-busy={loading}
     >
       <h3 className="sw-measure-title">{label}</h3>
+      {interaction && rows.length > 0 && widget.options.view !== "value" ? (
+        <p className="sw-measure-scope">
+          {t("dashboard.interactionHint", {
+            filter: interaction.filterName,
+          })}
+        </p>
+      ) : null}
       {error ? (
         <p className="sw-notice" role="status">
           {error}
@@ -272,7 +312,13 @@ export function MeasureWidgetView({
               {tableRows.map((row, index) => (
                 <tr key={index}>
                   {fields.map((field) => (
-                    <td key={field.id}>{format(row[field.id], field.type)}</td>
+                    <td key={field.id}>
+                      {choice(
+                        field.id,
+                        rows[index]!.dimensions[field.id] ?? null,
+                        format(row[field.id], field.type),
+                      )}
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -283,15 +329,13 @@ export function MeasureWidgetView({
         <div className="sw-measure-bars">
           {chartRows.map(({ dimension, label, cell }, index) => (
             <div className="sw-measure-bar" key={index}>
-              <button
-                type="button"
-                disabled={!onFilter}
-                onClick={() =>
-                  onFilter?.(widget.binding.groupBy[0]!, dimension)
-                }
-              >
-                {label ?? String(dimension ?? "—")}
-              </button>
+              <span>
+                {choice(
+                  widget.binding.groupBy[0]!,
+                  dimension ?? null,
+                  label ?? String(dimension ?? "—"),
+                )}
+              </span>
               <div className="sw-measure-track">
                 <span
                   style={{
@@ -323,15 +367,13 @@ export function MeasureWidgetView({
           <ol>
             {chartRows.map(({ dimension, cell }, index) => (
               <li key={index}>
-                <button
-                  type="button"
-                  disabled={!onFilter}
-                  onClick={() =>
-                    onFilter?.(widget.binding.groupBy[0]!, dimension)
-                  }
-                >
-                  {String(dimension ?? "—")}
-                </button>
+                <span>
+                  {choice(
+                    widget.binding.groupBy[0]!,
+                    dimension ?? null,
+                    String(dimension ?? "—"),
+                  )}
+                </span>
                 <span>{cellText(widget.binding.measureIds[0]!, cell)}</span>
               </li>
             ))}
@@ -467,10 +509,57 @@ export function LiveMeasureWidget({
   return (
     <MeasureWidgetView
       widget={widget}
+      interaction={liveInteraction(widget, env)}
       workspaceId={env.workspaceId}
       fontScale={env.fontScale}
       data={batch ? (batch.widgets.get(widget.id) ?? null) : data}
       loading={batch ? batch.loading : loading}
     />
   );
+}
+
+/** The viewer side of a declared interaction; none where the environment is
+ * not interactive or the declaration does not apply (Studio lists that). */
+export function liveInteraction(
+  widget: MeasureWidget,
+  env: StudioEnv,
+): MeasureInteraction | undefined {
+  const filterId = widget.binding.interaction?.filterId,
+    onFilterValue = env.onFilterValue;
+  const filter = env.dataFilters?.find((filter) => filter.id === filterId);
+  if (!filter || !onFilterValue) return undefined;
+  let dimensionId: string;
+  try {
+    dimensionId = measureInteractionDimension(
+      env.dataFilters!,
+      widget.binding,
+      widget.options.view,
+    );
+  } catch {
+    return undefined;
+  }
+  const current = () =>
+    Object.hasOwn(env.filterValues ?? {}, filter.id)
+      ? env.filterValues![filter.id]!
+      : filter.defaultValue;
+  return {
+    dimensionId,
+    filterName: filter.name,
+    selectable: (value) => measureInteractionValue(filter, value) !== null,
+    selected: (value) => measureInteractionSelected(filter, current(), value),
+    toggle: (value) => {
+      const next = measureInteractionValue(filter, value);
+      if (!next) return;
+      // Clicking the selected value again clears it: back to the saved
+      // default, or to all values when the default is that same value.
+      onFilterValue(
+        filter.id,
+        !measureInteractionSelected(filter, current(), value)
+          ? next
+          : measureInteractionSelected(filter, filter.defaultValue, value)
+            ? null
+            : undefined,
+      );
+    },
+  };
 }

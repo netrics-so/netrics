@@ -216,7 +216,8 @@ credentials, which need `APP_ENCRYPTION_KEY`.
 
 The images are signed and carry an SPDX SBOM attestation, made by the
 release workflow on `main`. Check an image with
-[cosign](https://docs.sigstore.dev/cosign/system_config/installation/):
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 3 or
+later (cosign 2 needs `--new-bundle-format` for releases after 0.1.0):
 
 ```sh
 cosign verify-attestation --type spdxjson \

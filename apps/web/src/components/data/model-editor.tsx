@@ -2,7 +2,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import {
   formatDataFormula,
-  measureIsPercentChange,
   parseDataFormula,
   type SemanticModelDefinition,
   type ModelMeasure,
@@ -19,8 +18,7 @@ import {
   type ModelResult,
 } from "@/lib/data-api";
 import { dataErrorKey, newDataId } from "@/lib/data-editing";
-import { useLocale, useT } from "@/lib/i18n/client";
-import { formatPercentChange } from "@/lib/format-metric";
+import { useT } from "@/lib/i18n/client";
 import {
   AggregateFields,
   ColumnChecks,
@@ -36,7 +34,10 @@ import {
   toWindowedMeasure,
   windowBaseCandidates,
 } from "@/lib/model-measures";
-import { DataTable } from "./data-table";
+import {
+  ModelPreviewTable,
+  type ModelPreviewQuery,
+} from "./model-preview-table";
 import { PreviewNotes } from "./preview-notes";
 import { DefinitionHistory } from "./definition-history";
 import { useDraftSources } from "@/lib/data-source-metadata";
@@ -102,12 +103,8 @@ export function ModelEditor({
     [filterText, setFilterText] = useState("");
   const [result, setResult] = useState<ModelResult | null>(null),
     [previewState, setPreviewState] = useState("");
-  const [outputFields, setOutputFields] = useState<DataField[]>([]);
-  // Percent-change measures of the previewed draft, shown as percentages.
-  const [percentIds, setPercentIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const locale = useLocale();
+  // The draft and query the shown preview ran with.
+  const [previewed, setPreviewed] = useState<ModelPreviewQuery | null>(null);
   const [busy, setBusy] = useState<
     "preview" | "save" | "publish" | "history" | null
   >(null);
@@ -175,31 +172,7 @@ export function ModelEditor({
         record ? { id: record.id, version: record.version } : undefined,
       );
       setResult(next);
-      const percents = new Set(
-        model.measures
-          .filter((m) => measureIsPercentChange(model, m.id))
-          .map((m) => m.id),
-      );
-      setPercentIds(percents);
-      setOutputFields([
-        ...groupBy.map((id): DataField => {
-          const dimension = model.dimensions.find((d) => d.id === id)!;
-          const source = fieldsFor(dimension.datasetId).find(
-            (f) => f.id === dimension.fieldId,
-          )!;
-          return { ...source, id: "d." + id, name: dimension.name };
-        }),
-        ...measureIds.map((id): DataField => {
-          const cell = next.rows[0]?.measures[id];
-          return {
-            id: "m." + id,
-            name: model.measures.find((m) => m.id === id)!.name,
-            type: percents.has(id) ? "string" : (cell?.type ?? "decimal"),
-            nullable: true,
-            ...(cell?.unit ? { unit: cell.unit } : {}),
-          };
-        }),
-      ]);
+      setPreviewed({ model, measureIds, groupBy });
       setPreviewState(current + queryState);
     } catch (failure) {
       setPreviewError(t(`errors.${dataErrorKey(failure)}`));
@@ -359,25 +332,6 @@ export function ModelEditor({
     type: "decimal",
     nullable: true,
   }));
-  const rows =
-    result?.rows.map((row) =>
-      Object.fromEntries([
-        ...Object.entries(row.dimensions).map(([id, value]) => [
-          "d." + id,
-          row.dimensionLabels?.[id] ?? value,
-        ]),
-        ...Object.entries(row.measures).map(([id, cell]) => [
-          "m." + id,
-          cell.value === null
-            ? null
-            : percentIds.has(id)
-              ? formatPercentChange(cell.value, locale)
-              : cell.currency
-                ? String(cell.value) + " " + cell.currency
-                : cell.value,
-        ]),
-      ]),
-    ) ?? [];
   const sourceSelect = (
     label: string,
     value: string,
@@ -1131,10 +1085,11 @@ export function ModelEditor({
         ) : null}
         {result?.stale ? <p className="notice">{t("stale")}</p> : null}
         {result ? <PreviewNotes warnings={result.warnings} /> : null}
-        {result ? (
-          <DataTable
-            fields={outputFields}
-            rows={rows}
+        {result && previewed ? (
+          <ModelPreviewTable
+            query={previewed}
+            result={result}
+            sources={sources}
             loading={busy === "preview"}
           />
         ) : null}

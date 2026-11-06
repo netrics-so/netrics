@@ -99,6 +99,11 @@ export function DashboardView({
       workspaceId,
       dataFilters: dashboard.settings.dataFilters ?? [],
       filterValues,
+      onFilterValue: (filterId, value) =>
+        setFilterValues((values) => {
+          const { [filterId]: _previous, ...rest } = values;
+          return value === undefined ? rest : { ...rest, [filterId]: value };
+        }),
       timeZone,
       fontScale: theme.tokens.fontScale,
       showHeader: dashboard.settings.showHeader,

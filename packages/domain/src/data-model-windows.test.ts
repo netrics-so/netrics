@@ -743,6 +743,63 @@ describe("rolling and period-offset measures", () => {
     expect(gap.warnings).not.toContain("model_window_history_incomplete");
   });
 
+  it("reads retained history per dataset, whatever the grouping or filter", () => {
+    // App c's first row is 2026-10-03, years after the dataset's first. A
+    // later first row is not missing history: rows record activity, not
+    // coverage, so the window is complete however the query slices it.
+    const status = (query: Omit<ModelQuery, "now">) => {
+      const result = run(query);
+      return {
+        cells: result.rows.map((row) => [
+          row.measures.units7!.value,
+          row.measures.units7!.status,
+        ]),
+        warned: result.warnings.includes("model_window_history_incomplete"),
+      };
+    };
+    const expected = {
+      cells: [[sumUnits("2026-09-27", "2026-10-03", "c"), "ok"]],
+      warned: false,
+    };
+    const onDate = call("eq", field("date"), day("2026-10-03"));
+    expect(
+      status({
+        measureIds: ["units7"],
+        groupBy: ["app", "date"],
+        filter: call("and", onDate, appIs("c")),
+      }),
+    ).toEqual(expected);
+    expect(
+      status({
+        measureIds: ["units7"],
+        groupBy: ["date"],
+        filter: call("and", onDate, appIs("c")),
+      }),
+    ).toEqual(expected);
+  });
+
+  it("outputs only dates with rows, so windows never add rows or pages", () => {
+    // App b reports every other day; its empty days get no row, as without
+    // the rolling measure, although a 7-day sum is defined there.
+    const query = (measureIds: string[]) =>
+      run({
+        measureIds,
+        groupBy: ["date"],
+        filter: call("and", between("2026-10-01", "2026-10-06"), appIs("b")),
+      });
+    const plain = query(["units"]),
+      windowed = query(["units", "units7"]);
+    expect(windowed.rows.map((row) => row.dimensions.date)).toEqual([
+      "2026-10-02",
+      "2026-10-04",
+      "2026-10-06",
+    ]);
+    expect(windowed.totalRows).toBe(plain.totalRows);
+    expect(windowed.rows.map((row) => row.measures.units)).toEqual(
+      plain.rows.map((row) => row.measures.units),
+    );
+  });
+
   it("10. picks up late corrections dated before the range", () => {
     const query = {
       measureIds: ["units7"],

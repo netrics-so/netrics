@@ -274,3 +274,88 @@ jobs:
         if: failure()
         working-directory: deploy/compose
         run: docker compose logs --tail 100
+
+  # Release signing only runs on main (release.yml, promote.yml), so a cosign
+  # or cosign-installer update would otherwise first meet it in a release.
+  # This job runs the same cosign commands against a throwaway multi-arch
+  # image in a registry local to the job: sign --recursive, attest an SPDX
+  # SBOM per platform and on the index, then verify the way promote.yml and
+  # docs/release.md do. Keyless (GitHub OIDC, public Fulcio and Rekor) when
+  # the run gets an ID token; pull requests from forks and Dependabot do not,
+  # and fall back to a throwaway key without the transparency log.
+  signing:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write # keyless signing, as in release.yml
+    services:
+      registry:
+        image: registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+        ports:
+          - 5000:5000
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Same cosign-installer as the release workflows
+        run: |
+          pins=$(grep -hoE 'sigstore/cosign-installer@[0-9a-f]{40}' .github/workflows/release.yml .github/workflows/promote.yml .github/workflows/ci.yml | sort -u)
+          echo "$pins"
+          test "$(echo "$pins" | wc -l)" -eq 1 || { echo "::error::cosign-installer pins differ between workflows"; exit 1; }
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: network=host
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign, attest and verify a throwaway image
+        run: |
+          set -euo pipefail
+          cosign version
+          repo=localhost:5000/netrics-ci/signing
+          tmp=$(mktemp -d)
+          printf 'FROM scratch\nCOPY run-id /run-id\n' > "$tmp/Dockerfile"
+          echo "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" > "$tmp/run-id"
+          docker buildx build --platform linux/amd64,linux/arm64 --provenance=false \
+            --output "type=image,name=$repo:ci,push=true,registry.insecure=true" "$tmp"
+          index=$(curl -fsS -o /dev/null -D - -H 'Accept: application/vnd.oci.image.index.v1+json' \
+            "http://localhost:5000/v2/netrics-ci/signing/manifests/ci" | tr -d '\r' | sed -n 's/^docker-content-digest: *//Ip')
+          echo "index: $index"
+
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "mode: keyless"
+            sign=()
+            check=(--certificate-identity "$GITHUB_SERVER_URL/$GITHUB_WORKFLOW_REF"
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com)
+          else
+            echo "mode: throwaway key, no transparency log (no ID token for this run)"
+            COSIGN_PASSWORD="" cosign generate-key-pair --output-key-prefix "$tmp/cosign"
+            export COSIGN_PASSWORD=""
+            sign=(--key "$tmp/cosign.key" --tlog-upload=false --use-signing-config=false)
+            check=(--key "$tmp/cosign.pub" --insecure-ignore-tlog)
+          fi
+
+          # As release.yml.
+          cosign sign --yes --recursive "${sign[@]}" "$repo@$index"
+          curl -fsS -H 'Accept: application/vnd.oci.image.index.v1+json' \
+            "http://localhost:5000/v2/netrics-ci/signing/manifests/$index" |
+            jq -r '.manifests[] | "\(.platform.architecture) \(.digest)"' > "$tmp/platforms"
+          test "$(cut -d' ' -f1 "$tmp/platforms" | sort | tr '\n' ' ')" = "amd64 arm64 "
+          while read -r arch platform_digest <&3; do
+            sbom="$tmp/$arch.spdx.json"
+            jq -n --arg arch "$arch" '{spdxVersion: "SPDX-2.3", dataLicense: "CC0-1.0", SPDXID: "SPDXRef-DOCUMENT",
+              name: "ci-\($arch)", documentNamespace: "https://example.invalid/ci/\($arch)",
+              creationInfo: {created: "2026-01-01T00:00:00Z", creators: ["Tool: ci"]}, packages: []}' > "$sbom"
+            cosign attest --yes "${sign[@]}" --type spdxjson --predicate "$sbom" "$repo@$platform_digest"
+            cosign attest --yes "${sign[@]}" --type spdxjson --predicate "$sbom" "$repo@$index"
+          done 3< "$tmp/platforms"
+
+          # As promote.yml, on the index and on each platform manifest.
+          while read -r arch digest; do
+            cosign verify "${check[@]}" "$repo@$digest" > /dev/null
+            cosign verify-attestation --type spdxjson "${check[@]}" "$repo@$digest" > /dev/null
+          done < <(echo "index $index"; cat "$tmp/platforms")
+
+          # As docs/release.md: by tag, reading the predicate back.
+          names=$(cosign verify-attestation --type spdxjson "${check[@]}" "$repo:ci" |
+            jq -r .payload | base64 -d | jq -r .predicate.name | sort | tr '\n' ' ')
+          echo "index attestations: $names"
+          test "$names" = "ci-amd64 ci-arm64 "
