@@ -436,6 +436,9 @@ requests do not allocate page sessions. The caller-bound key namespace requires
 older unowned tokens to restart, without a SQL schema migration. See [the API,
 capacity and upgrade rules](./data-query-pagination.md).
 Multi-select filters use typed list membership without growing a deep expression tree.
+Line charts and date-grouped bar charts show the most recent `limit` points,
+still in ascending order; `offset` and `totalRows` in the result say how many
+earlier points were left out. Tables and other charts show the first groups.
 
 Device schemas 2/3 include server-computed measure results. The shared native
 and browser renderers support values, tables and charts without calculating

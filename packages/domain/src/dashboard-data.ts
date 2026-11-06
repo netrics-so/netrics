@@ -127,6 +127,7 @@ export function dashboardModelQuery(
   values: Readonly<Record<string, DashboardFilterValue>>,
   binding: MeasureWidgetBinding,
   limit = 1000,
+  window: ModelQuery["window"] = "first",
 ): Omit<ModelQuery, "now"> {
   const ids = new Set(filters.map((filter) => filter.id));
   if (ids.size !== filters.length) dataFail("dashboard_filter_ids_not_unique");
@@ -173,8 +174,21 @@ export function dashboardModelQuery(
     measureIds: binding.measureIds,
     groupBy: binding.groupBy,
     limit,
+    ...(window === "last" ? { window } : {}),
     ...(filter ? { filter } : {}),
   };
+}
+
+/** Time-ordered charts show the most recent `limit` points (still ascending);
+ * tables and categorical charts show the first page of the ordered groups. */
+export function measureViewWindow(
+  view: DashboardMeasureView,
+  groupByType: DataType | undefined,
+): NonNullable<ModelQuery["window"]> {
+  return (view === "line" || view === "bar") &&
+    (groupByType === "date" || groupByType === "timestamp")
+    ? "last"
+    : "first";
 }
 
 export function validateMeasureView(

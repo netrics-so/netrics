@@ -1258,4 +1258,114 @@ describe("published dashboard measure bindings", () => {
       "aggregate_currency_mixed",
     );
   });
+  it("shows the most recent points of time-ordered charts on dashboards and devices", async () => {
+    const days = Array.from(
+      { length: 30 },
+      (_, index) => `2026-01-${String(index + 1).padStart(2, "0")}`,
+    );
+    const sourceId = await source(
+      "daily-units",
+      [
+        { id: "id", type: "string" },
+        { id: "day", type: "date" },
+        { id: "units", type: "integer" },
+      ],
+      days.map((day, index) => ({ id: day, day, units: index + 1 })),
+    );
+    const created = await call("POST", "/models", editor, {
+      name: "Daily units",
+      definition: {
+        version: 1,
+        datasets: [sourceId],
+        relationships: [],
+        dimensions: [
+          {
+            id: "day",
+            name: "Day",
+            datasetId: sourceId,
+            fieldId: "day",
+            timeAlignment: "reporting_date",
+          },
+        ],
+        measures: [
+          {
+            id: "units",
+            name: "Units",
+            kind: "aggregate",
+            datasetId: sourceId,
+            aggregate: {
+              id: "units",
+              name: "Units",
+              op: "sum",
+              fieldId: "units",
+            },
+          },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const id = created.json().model.id as string;
+    const published = await call("POST", `/models/${id}/publish`, editor, {
+      version: 1,
+    });
+    expect(published.statusCode, published.body).toBe(200);
+    const measure = (view: string, x: number) => ({
+      type: "measure",
+      x,
+      y: 0,
+      w: 4,
+      h: 3,
+      binding: {
+        modelId: id,
+        measureIds: ["units"],
+        groupBy: ["day"],
+        exclusions: [],
+      },
+      options: { view, limit: 5 },
+    });
+    const dashboard = await dataCall("POST", "", editor, {
+      name: "Daily",
+      slides: [
+        {
+          widgets: [measure("line", 0), measure("bar", 4), measure("table", 8)],
+        },
+      ],
+    });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    const daily = dashboard.json().dashboard.id as string;
+    type Result = {
+      totalRows: number;
+      offset: number;
+      rows: Array<{ dimensions: Record<string, unknown> }>;
+    };
+    const shown = (result: Result) => ({
+      days: result.rows.map((row) => row.dimensions.day),
+      totalRows: result.totalRows,
+      offset: result.offset,
+    });
+    const latest = { days: days.slice(25), totalRows: 30, offset: 25 };
+    const first = { days: days.slice(0, 5), totalRows: 30, offset: 0 };
+    const query = await dataCall("POST", `/${daily}/data`, viewer, {
+      values: {},
+    });
+    expect(query.statusCode, query.body).toBe(200);
+    expect(
+      query
+        .json()
+        .widgets.map((widget: { result: Result }) => shown(widget.result)),
+    ).toEqual([latest, latest, first]);
+    const payload = await withWorkspace(
+      db,
+      { workspaceId },
+      (tx) =>
+        buildDeviceDashboardV3(tx, workspaceId, daily, { now: new Date() }),
+      { isolationLevel: "repeatable read" },
+    );
+    expect(
+      payload.slides[0]!.widgets.map(
+        (widget) =>
+          widget.type === "measure" && shown(widget.data.result as Result),
+      ),
+    ).toEqual([latest, latest, first]);
+  });
 });

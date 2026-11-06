@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compileRowExpression } from "./data-expression.js";
 import {
   dashboardModelQuery,
+  measureViewWindow,
   validateMeasureView,
   type DashboardDataFilter,
   type MeasureWidgetBinding,
@@ -147,6 +148,20 @@ describe("shared dashboard filters", () => {
   });
 });
 
+describe("measure view windows", () => {
+  it("shows the most recent points of time-ordered charts and the first rows otherwise", () => {
+    expect(measureViewWindow("line", "date")).toBe("last");
+    expect(measureViewWindow("bar", "timestamp")).toBe("last");
+    expect(measureViewWindow("bar", "string")).toBe("first");
+    expect(measureViewWindow("table", "date")).toBe("first");
+    const timed = { ...binding, groupBy: ["day"] };
+    expect(dashboardModelQuery([], {}, timed, 20, "last")).toMatchObject({
+      limit: 20,
+      window: "last",
+    });
+    expect(dashboardModelQuery([], {}, timed, 20)).not.toHaveProperty("window");
+  });
+});
 describe("large selectable dimensions", () => {
   it("keeps a hundred selections in a bounded expression rather than a deep OR tree", () => {
     const countries = Array.from(
