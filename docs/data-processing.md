@@ -358,7 +358,10 @@ before the range are read as lookback and never appear as result rows. Month
 and year offsets cap the day at the month end (2024-03-31 minus one month is
 2024-02-29). Windows recompute from rows, so averages and distinct counts stay
 exact. History that starts after a window's first day yields `partial` with
-`model_window_history_incomplete`. Lookback across nested measures is at most
+`model_window_history_incomplete`; history starts at the dataset's earliest
+retained row, not per app or other partition, so an app added to a connection
+later reads as complete from its first window. Grouped results only have
+dates with rows in the range; empty dates get no rolling value. Lookback across nested measures is at most
 800 days. Invalid definitions fail publication, and unsupported queries or
 dashboard bindings fail, with a `model_window_*` code, for example `model_window_base_aggregate_required`,
 `model_window_date_dimension_required`, `model_window_time_grouping_required`,
