@@ -165,6 +165,11 @@ implementation work; this plan does not create or complete issue records.
   - Durable parsed Google report staging for worker/app/page continuations:
     [#472](https://github.com/netrics-so/netrics/issues/472). Initial buffered
     provider parsing and the wider scale acceptance remain open.
+  - Rolling-window and period-offset measures:
+    [#486](https://github.com/netrics-so/netrics/issues/486). Date-only
+    anchors, windows recomputed from rows, capped month/year offsets, lookback
+    that never adds result rows, and partial results for incomplete history
+    (ADR 0022 addendum). Late corrections change the windows that contain them.
 - 11C: [#442](https://github.com/netrics-so/netrics/issues/442)
   - Existing-step editing, explicit append matching and typed reference authoring:
     [#464](https://github.com/netrics-so/netrics/issues/464).

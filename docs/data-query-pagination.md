@@ -29,7 +29,10 @@ repeated. Treat tokens as opaque strings.
 
 Continuations evaluate the original model release, pinned preparation definitions
 and source generations. A later correction or model publication cannot insert,
-remove or change groups halfway through that session. Repeating a token returns
+remove or change groups halfway through that session. This includes the
+lookback rows of rolling and period-offset measures: a correction dated before
+the requested range changes new queries, not an open session. Lookback rows
+never add result rows, so they do not change `totalRows` or the page count. Repeating a token returns
 the same page while its inputs remain available. The last page has no
 `nextPageToken`. `totalRows` and `offset` retain their ordinary meanings.
 

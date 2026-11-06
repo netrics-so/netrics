@@ -399,3 +399,54 @@ Source transport/schema validators live in the standalone connector SDK. API
 contracts reuse that portable lower layer; database code imports it through
 contracts. The package dependency rule now allows contracts to depend on both
 domain and connector SDK. No external dependency is added.
+
+## Addendum: rolling and period-offset measures
+
+Recorded 2026-11-06 for [#486](https://github.com/netrics-so/netrics/issues/486).
+It settles the "bounded rolling/previous-period calculations" of §4.
+
+Two further measure kinds reference a base measure and a model time dimension:
+
+- `rolling` re-aggregates the base measure's rows over a window ending on each
+  date: day N covers `d − (N − 1)` to `d`, week N covers `d − (7N − 1)` to `d`,
+  and month N starts the day after the same day N months earlier. The base
+  must be an aggregate. The window is recomputed from the rows, never by
+  adding daily results, so averages, distinct counts, minimum, maximum and
+  latest snapshot stay exact. A rolling ratio is a formula over two rolling
+  measures.
+- `period_offset` evaluates any base measure (aggregate, formula, rolling or
+  another offset) over a shifted interval and returns its `value`, the
+  `change` from it, or the `percent_change` (`(current − previous) / |previous|`,
+  null when the previous value is zero or missing). Each result cell reports
+  the compared interval as `comparedTo`. A `range` offset shifts by the length
+  of the query's closed date range, as compare widgets do.
+
+Decisions:
+
+- Anchors are date-only. The time dimension must be a `date` field with
+  `reporting_date` alignment; timestamps are refused rather than shifted
+  between timezones. Arithmetic uses civil dates.
+- Month and year offsets keep the same day and cap it at the month end, using
+  the same rule as previous-period line charts: 2024-03-31 minus one month is
+  2024-02-29, and 2024-02-29 minus one year is 2023-02-28. Several dates can
+  therefore compare with the same earlier date.
+- The query's date range is read from top-level conjunctive bounds on the time
+  dimension. Rows before the range are admitted only as lookback for windows
+  and offsets; they never become result rows, `totalRows` or pages. Other
+  uses of the time dimension in the filter are refused. Total lookback is at
+  most 800 days.
+- Rolling and dated offsets need the time dimension in the grouping; other
+  grouped dimensions partition the windows. All windowed measures of one query
+  share one time dimension.
+- A window or compared interval that starts before the dataset's earliest
+  retained date is `partial` with a warning, never zero or missing. Pending
+  inputs propagate `partial` as for other measures.
+- Currency follows the base measure. A change between different currencies
+  is refused; rolling across currencies fails like any mixed total.
+- Late corrections need no extra invalidation: windows are evaluated from the
+  pinned generations of each query, so a corrected row changes exactly the
+  windows that contain it. Page sessions and last-valid fallbacks keep their
+  own generation vector, lookback rows included.
+
+The executor still loads whole published generations in memory. A future SQL
+push-down of date filters must widen the lower bound by the measure lookback.

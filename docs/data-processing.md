@@ -325,8 +325,46 @@ Workspace editors can use the data API under `/v1/workspaces/:id/data`:
   are supported. `preview` evaluates without publishing; `publish` validates
   outputs and records an immutable version.
 - `models` stores shared dimensions, directed relationships, aggregate
-  measures and formulas over measures. `preview` uses the draft; `publish`
-  creates an immutable release; `query` evaluates the active release.
+  measures, formulas over measures, and rolling and period-offset measures.
+  `preview` uses the draft; `publish` creates an immutable release; `query`
+  evaluates the active release.
+
+### Rolling and period-offset measures
+
+A `rolling` measure re-aggregates an aggregate base measure over a window that
+ends on each date (`day` 1–366, `week` 1–53 or `month` 1–12). A
+`period_offset` measure evaluates any base measure over an earlier interval
+(`day`, `week`, `month`, one `year`, or one `range`, the length of the query's
+date range) and returns its `value`, the `change` or the `percent_change`. Its
+result cells carry `comparedTo` with the inclusive dates that were compared.
+
+```json
+{
+  "id": "revenue_7d",
+  "name": "Revenue, 7 days",
+  "kind": "rolling",
+  "baseMeasureId": "revenue",
+  "timeDimensionId": "day",
+  "window": { "unit": "day", "length": 7 }
+}
+```
+
+Both reference a date dimension with `reporting_date` alignment; timestamps
+are refused. Rolling measures and dated offsets require that dimension in
+`groupBy`; ungrouped `range`, `month` and `year` offsets require a closed date
+range instead. Write the date range as top-level `and` bounds on the time
+dimension (`gte`, `gt`, `lte`, `lt`, `eq`); dashboard date filters do this. Rows
+before the range are read as lookback and never appear as result rows. Month
+and year offsets cap the day at the month end (2024-03-31 minus one month is
+2024-02-29). Windows recompute from rows, so averages and distinct counts stay
+exact. History that starts after a window's first day yields `partial` with
+`model_window_history_incomplete`. Lookback across nested measures is at most
+800 days. Invalid definitions fail publication, and unsupported queries or
+dashboard bindings fail, with a `model_window_*` code, for example `model_window_base_aggregate_required`,
+`model_window_date_dimension_required`, `model_window_time_grouping_required`,
+`model_window_time_filter_unsupported`, `model_window_currency_mismatch` or
+`model_window_lookback_limit`. See ADR 0022, "Addendum: rolling and
+period-offset measures".
 
 Each query pins source generations in one serializable transaction. Independent
 facts aggregate before their results combine, preventing join fanout. Typed
@@ -499,9 +537,8 @@ The current executor evaluates typed JSONB rows in memory and materializes
 prepared outputs in JSONB. Removing policy ceilings does not yet provide a
 streaming or SQL execution path. Representative-volume checks and a scalable
 execution/storage path remain release work; this implementation does not claim
-a tested unbounded workload. Rolling/previous-period calculations, lifecycle
-controls, advanced authoring and dashboard interactions remain tracked in
-milestone 11.
+a tested unbounded workload. Lifecycle controls, advanced authoring and
+dashboard interactions remain tracked in milestone 11.
 
 ## Editable app portfolio templates
 
