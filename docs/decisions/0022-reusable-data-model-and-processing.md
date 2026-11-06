@@ -451,6 +451,29 @@ Decisions:
 - A window or compared interval that starts before the dataset's earliest
   retained date is `partial` with a warning, never zero or missing. Pending
   inputs propagate `partial` as for other measures.
+- The earliest retained date is the dataset's earliest reporting date among
+  all rows loaded for the query, before any filter, and the same for every
+  partition ([#489](https://github.com/netrics-so/netrics/issues/489)). It is
+  not taken per partition: rows record activity, not coverage, so a later
+  first row (a new country, an app launched this year, a first refund) looks
+  exactly like missing history. Per partition, such windows would turn
+  `partial` although they are complete, a partition without rows in a dataset
+  could never become complete, and the same cell's status would change with
+  the grouping or filter. The accurate scope is the source scope whose import
+  began later, such as an app added to a connection. Records carry neither
+  their scope nor a coverage start, and a generation replaces a dataset as a
+  whole, so that needs connectors to declare per-scope coverage on each
+  refresh, mapped to model dimensions: a connector SDK capability and its own
+  decision. Until then, the first windows of an app added later read as
+  complete although its history before the import start is absent.
+- Grouped windowed queries output the dates that have rows in the range, per
+  partition, like every grouping; empty dates get no row although a rolling
+  value would be defined there (#489). Emitting them would give the query
+  rows that the same query without windowed measures lacks, change
+  `totalRows` and paging, leave every other measure missing on those rows,
+  and grow results to partitions × days. A dense date axis, if needed, should
+  be an explicit query option that applies to all measures alike, not a side
+  effect of a rolling measure.
 - Currency follows the base measure. A change between different currencies
   is refused; rolling across currencies fails like any mixed total.
 - Late corrections need no extra invalidation: windows are evaluated from the
