@@ -12,7 +12,8 @@ export type PreparationEditProblem =
   | "branchMove"
   | "noNeighbour"
   | "cycle"
-  | "identityChanged";
+  | "identityChanged"
+  | "appendDuplicate";
 export class PreparationEditError extends Error {
   constructor(public readonly problem: PreparationEditProblem) {
     super(problem);
@@ -33,12 +34,9 @@ function rewire(
   to: string,
 ): PreparationNode {
   if (node.type === "append") {
-    if (
-      node.inputs.includes(from) &&
-      node.inputs.includes(to) &&
-      (node.columnMappings?.[from] || node.columnMappings?.[to])
-    )
-      fail("branchMove");
+    // Appending one step to itself would duplicate its rows.
+    if (node.inputs.includes(from) && node.inputs.includes(to))
+      fail("appendDuplicate");
     return {
       ...node,
       inputs: node.inputs.map((id) => (id === from ? to : id)),

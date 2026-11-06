@@ -15,6 +15,7 @@ import {
   removePreparationStep,
   movePreparationStep,
   preparationMoveProblem,
+  preparationRemovalProblem,
 } from "./preparation-editing";
 
 const source: DataTable = {
@@ -204,6 +205,24 @@ describe("preparation graph editing", () => {
         "output",
       ),
     ).toThrow("outputIdentity");
+  });
+  it("refuses a removal that would append the same step twice", () => {
+    const appended: PreparationGraph = {
+      version: 1,
+      nodes: [
+        { id: "rows", type: "source", datasetId: "rows" },
+        { id: "only-a", type: "select", input: "rows", fields: ["id"] },
+        { id: "combined", type: "append", inputs: ["rows", "only-a"] },
+        { id: "output", type: "select", input: "combined", fields: ["id"] },
+      ],
+      outputs: ["output"],
+    };
+    expect(() => removePreparationStep(appended, "only-a")).toThrow(
+      "appendDuplicate",
+    );
+    expect(preparationRemovalProblem(appended, "only-a")).toBe(
+      "appendDuplicate",
+    );
   });
   it("requires an explicit surviving merge input and retains the other branch nodes", () => {
     const merged: PreparationGraph = {

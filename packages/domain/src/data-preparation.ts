@@ -430,6 +430,9 @@ export function executePreparation(
     } else if (node.type === "append") {
       if (node.inputs.length < 2 || node.inputs.length > 20)
         dataFail("preparation_append_inputs_invalid");
+      // Reading one input twice silently doubles its rows.
+      if (new Set(node.inputs).size !== node.inputs.length)
+        dataFail("preparation_append_inputs_duplicate");
       if (
         Object.keys(node.columnMappings ?? {}).some(
           (id) => !node.inputs.includes(id),

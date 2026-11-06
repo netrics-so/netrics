@@ -349,7 +349,9 @@ Append can explicitly match independently authored columns with different field
 IDs. `columnMappings` maps each input node's source-field IDs to output-field IDs;
 a mapped input projects only the confirmed columns, including required currency
 companions. The form proposes matches by name and requires an explicit matching
-choice. Omitted mappings keep the existing union-by-ID behavior. Missing values
+choice. Omitted mappings keep the existing union-by-ID behavior. An append cannot read the
+same step twice (that would duplicate its rows); the editor refuses a removal
+that would produce one. Missing values
 remain null; schema/unit/currency incompatibilities still fail validation.
 [#470](https://github.com/netrics-so/netrics/issues/470) adds paged published
 definition history for preparations and models. **Restore as draft** creates a

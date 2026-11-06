@@ -248,6 +248,13 @@ describe("explicit append column mappings", () => {
     ).toThrow("preparation_append_schema_mismatch");
   });
   it("rejects unknown inputs or fields, duplicate targets and empty projections", () => {
+    const twice = graph();
+    const append = twice.nodes[2]!;
+    if (append.type !== "append") throw new Error("fixture");
+    append.inputs = ["left", "left"];
+    expect(() => executePreparation(twice, sources())).toThrow(
+      "preparation_append_inputs_duplicate",
+    );
     expect(() =>
       executePreparation(graph({ missing: { left_id: "id" } }), sources()),
     ).toThrow("preparation_append_mapping_input_invalid");

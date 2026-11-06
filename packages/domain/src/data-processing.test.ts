@@ -403,7 +403,9 @@ describe("reusable preparation graphs", () => {
   });
   it("appends compatible sources and deduplicates exact normalized keys", () => {
     const result = run([
-      { id: "twice", type: "append", inputs: ["source", "source"] },
+      // Two explicit source steps; one step cannot be appended to itself.
+      { id: "again", type: "source", datasetId: "orders" },
+      { id: "twice", type: "append", inputs: ["source", "again"] },
       {
         id: "dedup",
         type: "deduplicate",
