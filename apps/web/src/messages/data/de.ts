@@ -461,6 +461,10 @@ export const dataDe: Catalog<typeof dataEn> = {
         "Prüfe die gleitenden und vergleichenden Kennzahlen. Jede braucht eine Ausgangskennzahl, eine Datumsdimension mit dem Berichtsdatum des Anbieters und eine Länge im erlaubten Bereich.",
       windowGrouping:
         "Gleitende und vergleichende Kennzahlen haben einen Wert pro Datum. Zeige sie nach ihrer Datumsdimension, zum Beispiel als Liniendiagramm oder Tabelle. Nur Vergleiche mit dem Vormonat, Vorjahr oder gleich langen Vorzeitraum können einen einzelnen Wert zeigen, und nur für einen geschlossenen Zeitraum.",
+      windowRange:
+        "Dieser Vergleich braucht einen vollständigen Zeitraum. Wähle ein Start- und ein Enddatum.",
+      windowFilterMode:
+        "Gleitende und vergleichende Kennzahlen können nur einem Datumsfilter folgen, der einen Zeitraum auswählt. Stelle den Filter auf einen Zeitraum um oder nimm dieses Widget davon aus.",
       windowFilter:
         "Filtere das Datum gleitender und vergleichender Kennzahlen nur mit Von- und Bis-Bedingungen, verbunden mit AND, und nutze für alle dieselbe Datumsdimension.",
       history:

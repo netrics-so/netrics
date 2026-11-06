@@ -1860,4 +1860,119 @@ describe("rolling and period-offset model measures", () => {
       error: "model_window_time_grouping_required",
     });
   });
+
+  it("keeps dashboard date filters on windowed bindings to supported ranges", async () => {
+    const previousPeriod = {
+      id: "units_previous_period",
+      name: "Units, previous period",
+      kind: "period_offset",
+      baseMeasureId: "units",
+      timeDimensionId: "day",
+      offset: { unit: "range", length: 1 },
+      output: "value",
+    };
+    const model = await create("Windowed filters", [rolling, previousPeriod]);
+    expect((await publish(model)).statusCode).toBe(200);
+    const filter = (mode: "values" | "range", defaultValue: unknown) => ({
+      id: "day",
+      name: "Day",
+      type: "date",
+      mode,
+      mappings: [{ modelId: model.id, dimensionId: "day" }],
+      defaultValue,
+    });
+    const widget = (measureId: string, view: string, groupBy: string[]) => ({
+      type: "measure",
+      x: 0,
+      y: 0,
+      w: 6,
+      h: 3,
+      binding: {
+        modelId: model.id,
+        measureIds: [measureId],
+        groupBy,
+        exclusions: [],
+      },
+      options: { view, limit: 20 },
+    });
+
+    // A list of dates can become several dates or "no date", which no
+    // window can read: refused when saving, not at every viewer's query.
+    const listed = await dashboards("POST", "", editor, {
+      name: "Listed days",
+      settings: { dataFilters: [filter("values", null)] },
+      slides: [{ widgets: [widget("units_7d", "line", ["day"])] }],
+    });
+    expect(listed.statusCode, listed.body).toBe(400);
+    expect(listed.json()).toEqual({
+      error: "dashboard_filter_window_unsupported",
+    });
+    // Excluding the widget from that filter is fine.
+    const excluded = await dashboards("POST", "", editor, {
+      name: "Listed days, excluded",
+      settings: { dataFilters: [filter("values", null)] },
+      slides: [
+        {
+          widgets: [
+            {
+              ...widget("units_7d", "line", ["day"]),
+              binding: {
+                ...widget("units_7d", "line", ["day"]).binding,
+                exclusions: [{ filterId: "day", reason: "Rolling" }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(excluded.statusCode, excluded.body).toBe(200);
+
+    // A cleared range leaves a comparison without its period: the widget
+    // explains that instead of reporting an outage.
+    const ranged = await dashboards("POST", "", editor, {
+      name: "Previous period",
+      settings: {
+        dataFilters: [
+          filter("range", {
+            kind: "range",
+            from: "2026-10-04",
+            to: "2026-10-05",
+          }),
+        ],
+      },
+      slides: [{ widgets: [widget("units_previous_period", "value", [])] }],
+    });
+    expect(ranged.statusCode, ranged.body).toBe(200);
+    const read = (values: unknown) =>
+      dashboards(
+        "POST",
+        `/${ranged.json().dashboard.id as string}/data`,
+        viewer,
+        { values },
+      );
+    const chosen = await read({});
+    expect(chosen.statusCode, chosen.body).toBe(200);
+    expect(chosen.json().widgets[0]).toMatchObject({
+      status: "ok",
+      error: null,
+    });
+    expect(chosen.json().widgets[0].result.rows[0].measures).toMatchObject({
+      units_previous_period: {
+        value: "2",
+        comparedTo: { from: "2026-10-02", to: "2026-10-03" },
+      },
+    });
+    for (const value of [
+      { kind: "range", from: null, to: null },
+      { kind: "range", from: "2026-10-01", to: null },
+    ]) {
+      const cleared = await read({ day: value });
+      expect(cleared.statusCode, cleared.body).toBe(200);
+      expect(cleared.json().widgets[0]).toMatchObject({
+        status: "no_data",
+        error: "model_window_time_range_required",
+        result: null,
+      });
+    }
+  });
 });

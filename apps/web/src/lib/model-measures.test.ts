@@ -291,7 +291,10 @@ describe("windowed measure editing", () => {
       "windowGrouping",
     );
     expect(dataErrorCodeKey("model_window_time_range_required")).toBe(
-      "windowGrouping",
+      "windowRange",
+    );
+    expect(dataErrorCodeKey("dashboard_filter_window_unsupported")).toBe(
+      "windowFilterMode",
     );
     expect(dataErrorCodeKey("model_window_time_filter_unsupported")).toBe(
       "windowFilter",

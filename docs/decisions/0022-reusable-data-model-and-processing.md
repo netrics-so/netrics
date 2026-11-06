@@ -448,5 +448,16 @@ Decisions:
   windows that contain it. Page sessions and last-valid fallbacks keep their
   own generation vector, lookback rows included.
 
+- Dashboards: a widget showing rolling or offset measures follows only date
+  filters in range mode on the window's time dimension. Saving refuses a
+  list-mode date filter mapped there (`dashboard_filter_window_unsupported`),
+  since a viewer could pick several dates or "no date", which no window can
+  read; the widget may be excluded from that filter instead. A range filter
+  always yields a supported shape. When a viewer clears or half-opens the
+  range for a comparison that needs a closed one, that widget reports
+  `no_data` with `model_window_time_range_required` and asks for a complete
+  range; it is not an outage, and the dashboard's other widgets are
+  unaffected. Multi-date selections are never widened to a covering range.
+
 The executor still loads whole published generations in memory. A future SQL
 push-down of date filters must widen the lower bound by the measure lookback.

@@ -7,8 +7,9 @@ export function dataErrorCodeKey(code: string) {
   if (code === "version_conflict") return "conflict";
   if (/cardinality|not_unique|identity_conflict/.test(code))
     return "cardinality";
-  if (/model_window_time_(grouping|range)_required/.test(code))
-    return "windowGrouping";
+  if (code === "model_window_time_range_required") return "windowRange";
+  if (code === "dashboard_filter_window_unsupported") return "windowFilterMode";
+  if (code === "model_window_time_grouping_required") return "windowGrouping";
   if (/model_window_time_(filter_unsupported|dimension_conflict)/.test(code))
     return "windowFilter";
   if (/model_window_/.test(code)) return "window";

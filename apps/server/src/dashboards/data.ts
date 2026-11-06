@@ -12,6 +12,7 @@ import {
   compareDataValues,
   dimensionValueLabels,
   dataKey,
+  measureLookbackDays,
   measureRequiredDimensions,
   querySemanticModel,
   validateMeasureView,
@@ -245,6 +246,29 @@ export async function validateDashboardMeasure(
     )
       throw new DataServiceError("dashboard_filter_type_changed");
   }
+  // Windows read one date range. A list filter on their date can select
+  // several dates or "no date", which no window can read, so refuse it here
+  // rather than on every viewer's query. Range filters always give a range;
+  // a viewer clearing one is a per-widget state (see queryDashboardMeasure).
+  const windowDimensions = new Set(
+    measureLookbackDays(model.definition, binding.measureIds).keys(),
+  );
+  if (
+    windowDimensions.size &&
+    filters.some(
+      (filter) =>
+        filter.mode === "values" &&
+        !binding.exclusions.some(
+          (exclusion) => exclusion.filterId === filter.id,
+        ) &&
+        filter.mappings.some(
+          (mapping) =>
+            mapping.modelId === binding.modelId &&
+            windowDimensions.has(mapping.dimensionId),
+        ),
+    )
+  )
+    throw new DataServiceError("dashboard_filter_window_unsupported");
   const query = dashboardModelQuery(filters, {}, binding, options.limit);
   // Validate the shape and filter paths using the published schema, even with no current rows.
   const tables = new Map(
@@ -431,13 +455,18 @@ export async function queryDashboardMeasure(
       };
     });
   } catch (error) {
+    const code = safeDataError(error);
     return {
       ...(sourceHealth ? { sourceHealth } : {}),
-      status: "outage",
+      // A comparison over the selected period has nothing to compare while
+      // the viewer's date range is open: no data for this filter, not an
+      // outage of its sources.
+      status:
+        code === "model_window_time_range_required" ? "no_data" : "outage",
       widgetId: input.id,
       metadata: null,
       result: null,
-      error: safeDataError(error),
+      error: code,
       exclusions,
     };
   }
