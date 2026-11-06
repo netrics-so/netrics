@@ -334,17 +334,6 @@ async function runSync(
   const startCursor = fresh ? null : (state?.cursor ?? null);
   const backfillMarker = mode === "backfill" ? { backfillJobId: job.id } : {};
 
-  // Optional resource subset chosen at creation time (stored in config under
-  // a reserved key so it cannot clash with manifest config properties, whose
-  // validation rejects additionalProperties before this merge happens).
-  const rawSelection = connection.config.resourceSelection;
-  const selectedResources =
-    Array.isArray(rawSelection) &&
-    rawSelection.length > 0 &&
-    rawSelection.every((entry) => typeof entry === "string" && entry !== "")
-      ? (rawSelection as string[])
-      : undefined;
-
   let window = computeWindow(
     mode,
     state,
@@ -461,6 +450,22 @@ async function runSync(
     throw new NonRetryableJobError(error.message);
   }
   const { connector, manifest } = registered;
+
+  // Optional resource subset (stored in config under a reserved key so it
+  // cannot clash with manifest config properties, whose validation rejects
+  // additionalProperties before this merge happens). Never configured means
+  // every resource. For a connector that honors a selection, an explicit
+  // empty one means collection is paused: the connector receives
+  // `resources: []` and collects no resource-scoped data, while the
+  // credential check still runs and the run succeeds (the connection stays
+  // healthy; the dashboard shows it as paused).
+  const rawSelection = connection.config.resourceSelection;
+  const selectedResources =
+    Array.isArray(rawSelection) &&
+    (rawSelection.length > 0 || manifest.supportsResourceSelection === true) &&
+    rawSelection.every((entry) => typeof entry === "string" && entry !== "")
+      ? (rawSelection as string[])
+      : undefined;
 
   if (mode === "backfill" && !manifest.supportsBackfill) {
     const error = new Error(

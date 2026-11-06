@@ -445,6 +445,63 @@ describe("Google Play through OAuth, worker, datasets and models", () => {
       )?.rowCount,
     ).toBe(7);
   });
+  it("an empty app selection pauses collection: the run succeeds without reading reports or listings", async () => {
+    const setSelection = (selection: string[]) =>
+      withWorkspace(appDb, { workspaceId: actor.workspaceId }, (tx) =>
+        tx
+          .update(schema.connections)
+          .set({
+            config: {
+              reportBucket: TEST_BUCKET,
+              ratingStorefront: "DE",
+              ratingLanguage: "de",
+              resourceSelection: selection,
+            },
+          })
+          .where(eq(schema.connections.id, connectionId)),
+      );
+    await setSelection([]);
+    const before = (await service.preview(actor, installsId)).rows;
+    const csv = Buffer.from(fixtureBytes("installs-alpha.csv"))
+      .toString("utf16le")
+      .replace(",10,12,", ",13,15,");
+    fake.put(
+      `stats/installs/installs_${ALPHA}_202610_country.csv`,
+      new Uint8Array(Buffer.from(csv, "utf16le")),
+      "3",
+    );
+    const callsBefore = fake.calls.length;
+    clockMs += 60_000;
+    try {
+      expect(await runJob("connection.sync")).toMatchObject({
+        status: "succeeded",
+        attempts: 0,
+      });
+      // The credential check still probes one report per prefix; the
+      // collection itself reads no listing and imports no changed report.
+      const calls = fake.calls.slice(callsBefore);
+      expect(
+        calls.filter(({ url }) => url.hostname === "play.google.com"),
+      ).toEqual([]);
+      expect(
+        calls.filter(({ url }) => url.searchParams.get("alt") === "media")
+          .length,
+      ).toBeLessThanOrEqual(2);
+      expect((await service.preview(actor, installsId)).rows).toEqual(before);
+      const [state] = await withWorkspace(
+        appDb,
+        { workspaceId: actor.workspaceId },
+        (tx) =>
+          tx
+            .select()
+            .from(schema.connectionState)
+            .where(eq(schema.connectionState.connectionId, connectionId)),
+      );
+      expect(state).toMatchObject({ authState: "ok", consecutiveFailures: 0 });
+    } finally {
+      await setSelection([ALPHA, BETA]);
+    }
+  });
   it("pauses revoked authorization without deleting retained history or logging credentials", async () => {
     provider.revokeAccount(ACCOUNT_SUB);
     clockMs += 60_000;
