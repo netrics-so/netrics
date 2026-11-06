@@ -558,7 +558,14 @@ export function querySemanticModel(
   const buckets = new Map<string, Map<string, Map<string, DataRow[]>>>(),
     undated = new Map<string, Map<string, DataRow[]>>(),
     earliest = new Map<string, string>();
-  if (!query.groupBy.length) groupValues.set("[]", {});
+  // A reversed closed range selects no dates: a windowed query then has no
+  // rows at all, ungrouped too, rather than comparing a reversed interval.
+  const emptyRange =
+    windowPlan !== undefined &&
+    windowPlan.from !== null &&
+    windowPlan.to !== null &&
+    windowPlan.from > windowPlan.to;
+  if (!query.groupBy.length && !emptyRange) groupValues.set("[]", {});
   for (const datasetId of neededDatasets) {
     const source = useData(datasetId);
     const pending = new Set(source.pendingSources ?? []);

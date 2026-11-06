@@ -1020,4 +1020,18 @@ describe("windowed measure validation and edge cases", () => {
       }).rows.some((row) => row.dimensions.date === null),
     ).toBe(false);
   });
+
+  it("returns no rows for a reversed date range", () => {
+    const reversed = between("2026-10-31", "2026-10-01");
+    for (const query of [
+      { measureIds: ["prevRange", "units"], groupBy: [] },
+      { measureIds: ["prevMonth"], groupBy: [] },
+      { measureIds: ["units7", "prevRange"], groupBy: ["date"] },
+      { measureIds: ["units7"], groupBy: ["date", "app"] },
+    ]) {
+      const result = run({ ...query, filter: reversed });
+      expect(result.rows).toEqual([]);
+      expect(result.totalRows).toBe(0);
+    }
+  });
 });
