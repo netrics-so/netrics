@@ -92,7 +92,48 @@ describe("editable store portfolio definitions", () => {
         measureIds: ["proceeds"],
         groupBy: [],
       }),
-    ).toThrow("aggregate_currency_mixed");
+    ).toThrow("model_measure_scope_required");
+    // Even a single-currency selection must declare its currency scope.
+    const euros = {
+      kind: "call" as const,
+      fn: "eq" as const,
+      args: [
+        { kind: "field" as const, fieldId: "app" },
+        {
+          kind: "literal" as const,
+          type: "string" as const,
+          value: google.id + ":com.example.beta",
+        },
+      ],
+    };
+    expect(() =>
+      querySemanticModel(model, tables, {
+        measureIds: ["proceeds"],
+        groupBy: [],
+        filter: euros,
+      }),
+    ).toThrow("model_measure_scope_required");
+    expect(
+      querySemanticModel(model, tables, {
+        measureIds: ["proceeds"],
+        groupBy: [],
+        filter: {
+          kind: "call",
+          fn: "and",
+          args: [
+            euros,
+            {
+              kind: "call",
+              fn: "eq",
+              args: [
+                { kind: "field", fieldId: "currency" },
+                { kind: "literal", type: "string", value: "EUR" },
+              ],
+            },
+          ],
+        },
+      }).rows[0]?.measures.proceeds?.value,
+    ).toBe("70");
   });
   it("keeps ratings per underlying listing even when the customer confirms one shared product", () => {
     const data = prepared("ratings"),

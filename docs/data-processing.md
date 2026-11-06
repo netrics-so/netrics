@@ -491,7 +491,9 @@ generations rather than failing once apps are added or renamed. It is excluded f
 report freshness timestamps; retained report/reference generations determine those.
 
 Apple first-download units and Google daily user installs stay separated by store.
-Proceeds include signed refunds, fees and adjustments, with currencies kept apart.
+Proceeds include signed refunds, fees and adjustments, with currencies kept apart:
+new installations declare currency as a required dimension of proceeds, as
+downloads require store.
 Ratings use the latest snapshot per listing and rating country; linking products
 never combines listing scores. Measures can declare required dimensions: group by
 those dimensions or fix each to a single value in a conjunctive filter. Formula
