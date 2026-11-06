@@ -376,6 +376,8 @@ export const dataEn = {
     noTimeDimension:
       "Add a dimension on a date column first. Timestamps cannot anchor a window.",
     windowLength: "Window length",
+    windowLengthLimit: "Up to {max} {unit}.",
+    windowLengthInvalid: "Enter 1 to {max} {unit}.",
     windowUnit: "Unit",
     windowUnits: {
       day: "{count, plural, one {day} other {days}}",

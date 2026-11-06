@@ -191,13 +191,25 @@ export function WindowedMeasureFields({
   const custom = measure.kind === "period_offset" && (customOffset || !preset);
   const span = measure.kind === "rolling" ? measure.window : measure.offset;
   const setSpan = (unit: ModelWindowUnit, length: number) => {
-    const next = { unit, length: Math.min(length, windowLengthMax(unit)) };
+    // Keep what was typed; an out-of-range length is flagged, not clamped.
+    const next = { unit, length };
     onChange(
       measure.kind === "rolling"
         ? { ...measure, window: next }
         : { ...measure, offset: next },
     );
   };
+  const lengthMax = windowLengthMax(span.unit),
+    lengthInvalid = span.length > lengthMax,
+    lengthLimit = {
+      max: lengthMax,
+      // Year and range offsets are presets without a length input.
+      unit: ["day", "week", "month"].includes(span.unit)
+        ? t(`windowUnits.${span.unit as ModelWindowUnit}`, {
+            count: lengthMax,
+          })
+        : "",
+    };
   return (
     <div className="data-form-grid">
       <div className="field">
@@ -286,8 +298,10 @@ export function WindowedMeasureFields({
               inputMode="numeric"
               required
               min={1}
-              max={windowLengthMax(span.unit)}
+              max={lengthMax}
               step={1}
+              aria-invalid={lengthInvalid || undefined}
+              aria-describedby={lengthId + "-limit"}
               value={span.length}
               onChange={(e) =>
                 setSpan(
@@ -296,6 +310,15 @@ export function WindowedMeasureFields({
                 )
               }
             />
+            {lengthInvalid ? (
+              <p className="error" id={lengthId + "-limit"} role="alert">
+                {t("windowLengthInvalid", lengthLimit)}
+              </p>
+            ) : (
+              <p className="help" id={lengthId + "-limit"}>
+                {t("windowLengthLimit", lengthLimit)}
+              </p>
+            )}
           </div>
           <div className="field">
             <label htmlFor={unitId}>{t("windowUnit")}</label>

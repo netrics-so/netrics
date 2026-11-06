@@ -296,6 +296,33 @@ describe("model editor windowed measures", () => {
     expect(row.match(/aria-describedby="day-in-use"/g)?.length).toBe(3);
   });
 
+  it("shows the length limit and flags lengths beyond it", () => {
+    const html = render([
+      revenue,
+      { ...rolling, window: { unit: "day", length: 400 } },
+    ]);
+    const rollingCard = card(html, rolling.name);
+    // The typed length is kept, not clamped, and explained.
+    expect(rollingCard).toContain('value="400"');
+    expect(rollingCard).toContain('aria-invalid="true"');
+    expect(rollingCard).toContain("Enter 1 to 366 days.");
+    expect(rollingCard).toMatch(
+      /<p class="error"[^>]*>Enter 1 to 366 days\.<\/p>/,
+    );
+    const valid = card(render([revenue, rolling]), rolling.name);
+    expect(valid).toContain("Up to 53 weeks.");
+    expect(valid).not.toContain('aria-invalid="true"');
+    expect(
+      card(
+        render(
+          [revenue, { ...rolling, window: { unit: "month", length: 13 } }],
+          "de",
+        ),
+        rolling.name,
+      ),
+    ).toContain("Gib 1 bis 12 Monate ein.");
+  });
+
   it("disables the change helper once both siblings exist", () => {
     const html = render([
       revenue,

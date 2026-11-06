@@ -385,6 +385,8 @@ export const dataDe: Catalog<typeof dataEn> = {
     noTimeDimension:
       "Lege zuerst eine Dimension auf einer Datumsspalte an. Zeitstempel eignen sich nicht als Bezug für ein Zeitfenster.",
     windowLength: "Fensterlänge",
+    windowLengthLimit: "Bis zu {max} {unit}.",
+    windowLengthInvalid: "Gib 1 bis {max} {unit} ein.",
     windowUnit: "Einheit",
     windowUnits: {
       day: "{count, plural, one {Tag} other {Tage}}",
