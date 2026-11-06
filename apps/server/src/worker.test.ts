@@ -12,7 +12,11 @@ import {
   type Sql,
 } from "@netrics/database";
 
-import { NonRetryableJobError, type JobHandler } from "./jobs/handlers.js";
+import {
+  ContinueJobError,
+  NonRetryableJobError,
+  type JobHandler,
+} from "./jobs/handlers.js";
 import { createTestDatabase, type TestDatabase } from "./test-db.js";
 import { createWorker, type WorkerHandle } from "./worker.js";
 
@@ -97,6 +101,41 @@ afterAll(async () => {
 });
 
 describe("worker", () => {
+  it("continues the same job repeatedly without exhausting a one-attempt policy", async () => {
+    const jobId = await withWorkspace(
+      appDb,
+      { workspaceId: workspaceA },
+      (tx) =>
+        enqueueJob(tx, {
+          kind: "test.continue",
+          workspaceId: workspaceA,
+          maxAttempts: 1,
+        }),
+    );
+    const seen: Array<{ id: string; attempts: number; step: number }> = [];
+    const worker = await startWorker({
+      "test.continue": async ({ job }) => {
+        const step =
+          (job.payload as { continuation?: { step?: number } }).continuation
+            ?.step ?? 0;
+        seen.push({ id: job.id, attempts: job.attempts, step });
+        if (step < 2) throw new ContinueJobError({ step: step + 1 });
+      },
+    });
+    try {
+      await waitFor(async () => (await jobRow(jobId))?.status === "succeeded");
+      expect(seen).toEqual(
+        [0, 1, 2].map((step) => ({ id: jobId, attempts: 0, step })),
+      );
+      expect(await jobRow(jobId)).toMatchObject({
+        status: "succeeded",
+        attempts: 0,
+        last_error: null,
+      });
+    } finally {
+      await worker.stop();
+    }
+  });
   it("executes a netrics.noop job to completion", async () => {
     const jobId = await withWorkspace(
       appDb,

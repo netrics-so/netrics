@@ -31,6 +31,7 @@ export type {
 export {
   claimJobs,
   completeJob,
+  deferJob,
   enqueueJob,
   enqueueSyncJob,
   failJob,

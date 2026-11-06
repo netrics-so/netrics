@@ -173,6 +173,18 @@ record, 1 KiB per key, and 100 rows per preview. Paged ingestion can exceed one
 page; expression depth and permitted functions stay bounded. These safeguards
 protect transport and execution rather than defining customer data quotas.
 
+The connector-page budget is a scheduling quantum. After that many committed
+pages, the worker records a `continued` segment and requeues the same durable
+job with its checkpoint and original reporting window. This releases its lease
+for other work without increasing failed attempts or marking the connection
+as an outage. The next worker turn resumes that job; a large finite backfill
+can span any number of such turns. Only the final page advances last-success
+time. Genuine provider failures still use the retry policy, and malformed or
+non-advancing connector results still fail as contract errors. A connector that
+keeps advancing forever keeps using its configured execution share until an
+operator cancels it; the page budget does not infer that the account is too
+large.
+
 Source retention defaults to 30 days after collection. A source can request
 any positive retention period or explicitly use `retentionDays: null` to retain
 until deleted. Personal fields require an explicit retention choice; no fixed

@@ -605,7 +605,7 @@ export const syncRuns = pgTable(
     ),
     check(
       "sync_runs_status_valid",
-      sql`${table.status} in ('running', 'succeeded', 'failed')`,
+      sql`${table.status} in ('running', 'succeeded', 'failed', 'continued')`,
     ),
     check(
       "sync_runs_error_class_valid",
@@ -674,11 +674,11 @@ export const jobs = pgTable(
     unique().on(table.idempotencyKey),
     check(
       "jobs_status_valid",
-      sql`${table.status} in ('pending', 'running', 'succeeded', 'failed', 'dead')`,
+      sql`${table.status} in ('pending', 'running', 'continuing', 'succeeded', 'failed', 'dead')`,
     ),
     index("jobs_claim_idx")
       .on(table.status, table.runAt)
-      .where(sql`${table.status} = 'pending'`),
+      .where(sql`${table.status} in ('pending', 'continuing')`),
     // At most one waiting sync per connection: scheduler ticks and manual
     // "sync now" requests coalesce instead of piling up behind an outage.
     uniqueIndex("jobs_one_pending_sync")

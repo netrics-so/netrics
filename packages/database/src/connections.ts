@@ -279,7 +279,7 @@ export async function deleteConnection(
       and(
         eq(schema.jobs.workspaceId, workspaceId),
         eq(schema.jobs.connectionId, connectionId),
-        eq(schema.jobs.status, "pending"),
+        inArray(schema.jobs.status, ["pending", "continuing"]),
       ),
     );
   await tx
@@ -304,7 +304,7 @@ export async function findBackfillingConnectionIds(
       and(
         eq(schema.jobs.workspaceId, workspaceId),
         eq(schema.jobs.kind, "connection.backfill"),
-        inArray(schema.jobs.status, ["pending", "running"]),
+        inArray(schema.jobs.status, ["pending", "running", "continuing"]),
       ),
     );
   return new Set(

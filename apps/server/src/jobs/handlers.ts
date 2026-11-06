@@ -47,6 +47,14 @@ export class NonRetryableJobError extends Error {
   }
 }
 
+/** Expected scheduling handoff after durable progress, not a failed attempt. */
+export class ContinueJobError extends Error {
+  constructor(readonly continuation?: Record<string, unknown>) {
+    super("Continue from the committed checkpoint");
+    this.name = "ContinueJobError";
+  }
+}
+
 /**
  * Throw from a handler for terminal domain failures that must neither retry
  * nor pollute the dead-letter queue (e.g. rejected credentials: only a user

@@ -4,12 +4,18 @@ import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createWorkspace, withWorkspace } from "./context.js";
+import {
+  deleteConnection,
+  findBackfillingConnectionIds,
+} from "./connections.js";
 import * as authSchema from "./auth-schema.js";
 import {
   claimJobs,
   completeJob,
+  deferJob,
   enqueueJob,
   enqueueSyncJob,
+  requestConnectionBackfill,
   failJob,
   heartbeat,
   renewJobLease,
@@ -490,6 +496,156 @@ describe("claim_jobs", () => {
 const WORKER = "w-jobs";
 
 describe("completeJob / failJob", () => {
+  it("supersedes waiting backfill continuations and cancels them when their connection is deleted", async () => {
+    const [connection] = await withWorkspace(
+      db,
+      { workspaceId: workspaceA },
+      (tx) =>
+        tx
+          .insert(schema.connections)
+          .values({
+            workspaceId: workspaceA,
+            connectorId: "demo",
+            name: "Cancelled continuation",
+          })
+          .returning({ id: schema.connections.id }),
+    );
+    const id = connection!.id;
+    const oldJob = await seedJob({
+      workspaceId: workspaceA,
+      connectionId: id,
+      kind: "connection.backfill",
+    });
+    await schedulerClient`update jobs set status='continuing' where id=${oldJob}`;
+    const fresh = await withWorkspace(
+      db,
+      { workspaceId: workspaceA },
+      async (tx) => {
+        expect(
+          (await findBackfillingConnectionIds(tx, workspaceA)).has(id),
+        ).toBe(true);
+        return requestConnectionBackfill(tx, {
+          workspaceId: workspaceA,
+          connectionId: id,
+        });
+      },
+    );
+    expect(fresh).not.toBe(oldJob);
+    const [superseded] =
+      await schedulerClient`select status from jobs where id=${oldJob}`;
+    expect(superseded!.status).toBe("failed");
+    await schedulerClient`update jobs set status='continuing' where id=${fresh}`;
+    await withWorkspace(db, { workspaceId: workspaceA }, (tx) =>
+      deleteConnection(tx, workspaceA, id),
+    );
+    const [cancelled] =
+      await schedulerClient`select status, connection_id, last_error from jobs where id=${fresh}`;
+    expect(cancelled).toMatchObject({
+      status: "failed",
+      connection_id: null,
+      last_error: "connection deleted",
+    });
+    expect(
+      (await claimJobs(schedulerDb, "w-deleted", 100, 3600)).some(
+        (job) => job.id === fresh,
+      ),
+    ).toBe(false);
+  });
+  it("keeps a pending sync behind an active continuation without violating pending-job uniqueness", async () => {
+    const [connection] = await withWorkspace(
+      db,
+      { workspaceId: workspaceA },
+      (tx) =>
+        tx
+          .insert(schema.connections)
+          .values({
+            workspaceId: workspaceA,
+            connectorId: "demo",
+            name: "Continuation",
+          })
+          .returning({ id: schema.connections.id }),
+    );
+    const first = await seedJob({
+      workspaceId: workspaceA,
+      connectionId: connection!.id,
+      kind: "connection.sync",
+    });
+    await claimJobs(schedulerDb, "w-initial", 100, 3600);
+    const waiting = await seedJob({
+      workspaceId: workspaceA,
+      connectionId: connection!.id,
+      kind: "connection.sync",
+    });
+    expect(await deferJob(schedulerDb, first, "w-initial")).toBe(true);
+    await schedulerClient`update jobs set run_at=now() + interval '10 minutes' where id=${first}`;
+    expect(
+      (await claimJobs(schedulerDb, "w-too-early", 100, 3600)).some(
+        (job) => job.connectionId === connection!.id,
+      ),
+    ).toBe(false);
+    await schedulerClient`update jobs set run_at=now() - interval '1 second' where id=${first}`;
+    const next = await claimJobs(schedulerDb, "w-continue", 100, 3600);
+    expect(
+      next
+        .filter((job) => job.connectionId === connection!.id)
+        .map((job) => job.id),
+    ).toEqual([first]);
+    expect(
+      await failJob(schedulerDb, first, "w-continue", "transient", {
+        retryable: true,
+      }),
+    ).toMatchObject({ status: "continuing", attempts: 1 });
+    await schedulerClient`update jobs set run_at=now() - interval '1 second' where id=${first}`;
+    expect(
+      (await claimJobs(schedulerDb, "w-retry", 100, 3600)).some(
+        (job) => job.id === first,
+      ),
+    ).toBe(true);
+    expect(await completeJob(schedulerDb, first, "w-retry")).toBe(true);
+    expect(
+      (await claimJobs(schedulerDb, "w-waiting", 100, 3600)).some(
+        (job) => job.id === waiting,
+      ),
+    ).toBe(true);
+    expect(await completeJob(schedulerDb, waiting, "w-waiting")).toBe(true);
+  });
+  it("defers a checkpoint only under its current lease without consuming attempts or changing identity", async () => {
+    const id = await seedJob({ workspaceId: workspaceA });
+    await claimJobs(schedulerDb, "w-defer", 5, 3600);
+    expect(
+      await deferJob(schedulerDb, id, "other-worker", { cursor: "wrong" }),
+    ).toBe(false);
+    const beforeDefer = Date.now();
+    expect(
+      await deferJob(schedulerDb, id, "w-defer", { cursor: "safe-checkpoint" }),
+    ).toBe(true);
+    expect(await completeJob(schedulerDb, id, "w-defer")).toBe(false);
+    expect(await deferJob(schedulerDb, id, "w-defer")).toBe(false);
+    const [row] =
+      await schedulerClient`select status, attempts, locked_by, locked_at, last_error, run_at, payload from jobs where id=${id}`;
+    expect(row).toMatchObject({
+      status: "continuing",
+      attempts: 0,
+      locked_by: null,
+      locked_at: null,
+      last_error: null,
+      payload: {
+        workspace_id: workspaceA,
+        connection_id: null,
+        continuation: { cursor: "safe-checkpoint" },
+      },
+    });
+    expect(new Date(row!.run_at as string).getTime()).toBeGreaterThan(
+      beforeDefer,
+    );
+    await schedulerClient`update jobs set run_at=now() - interval '1 second' where id=${id}`;
+    const reclaimed = await claimJobs(schedulerDb, "w-next", 100, 3600);
+    expect(reclaimed.some((job) => job.id === id && job.attempts === 0)).toBe(
+      true,
+    );
+    expect(await deferJob(schedulerDb, id, "w-defer")).toBe(false);
+    expect(await completeJob(schedulerDb, id, "w-next")).toBe(true);
+  });
   it("completes a running job exactly once", async () => {
     const id = await seedJob({ workspaceId: workspaceA });
     await claimJobs(schedulerDb, "w-complete", 5, 3600);

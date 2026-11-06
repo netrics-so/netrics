@@ -41,6 +41,7 @@ import { decryptCredentials, type CredentialKeyring } from "../credentials.js";
 import { refreshConnectionIcons } from "../images/resource-icons.js";
 import {
   NonRetryableJobError,
+  ContinueJobError,
   TerminalJobError,
   type JobHandler,
   type JobHandlerContext,
@@ -339,12 +340,36 @@ async function runSync(
       ? (rawSelection as string[])
       : undefined;
 
-  const window = computeWindow(
+  let window = computeWindow(
     mode,
     state,
     now,
     deps.registry.get(connection.connectorId)?.manifest.backfillDays ?? 0,
   );
+  const continuation = (
+    job.payload as { continuation?: { syncWindow?: unknown } } | null
+  )?.continuation?.syncWindow;
+  if (continuation !== undefined) {
+    const saved = continuation as {
+      mode?: unknown;
+      from?: unknown;
+      to?: unknown;
+    } | null;
+    if (
+      !saved ||
+      saved.mode !== mode ||
+      typeof saved.from !== "string" ||
+      typeof saved.to !== "string" ||
+      !Number.isFinite(Date.parse(saved.from)) ||
+      !Number.isFinite(Date.parse(saved.to)) ||
+      Date.parse(saved.from) >= Date.parse(saved.to)
+    ) {
+      throw new NonRetryableJobError(
+        "contract: invalid sync continuation window",
+      );
+    }
+    window = { from: new Date(saved.from), to: new Date(saved.to) };
+  }
   const pollIntervalSeconds =
     state?.pollIntervalSeconds ??
     deps.registry.get(connection.connectorId)?.manifest
@@ -723,9 +748,25 @@ async function runSync(
           loaded.policy.syncPagesPerRun !== null &&
           page > loaded.policy.syncPagesPerRun
         ) {
-          throw new ContractViolationError(
-            `connector "${manifest.id}" exceeded the configured sync page budget`,
-          );
+          await withWorkspace(appDb, { workspaceId }, async (tx) => {
+            await tx.insert(schema.syncRuns).values({
+              workspaceId,
+              connectionId,
+              mode,
+              requestedFrom: window.from,
+              requestedTo: window.to,
+              cursorBefore: startCursor,
+              cursorAfter: progress.cursor,
+              attempt,
+              status: "continued",
+              startedAt: now,
+              finishedAt: new Date(),
+              observationsWritten: progress.observationsWritten,
+            });
+          });
+          throw new ContinueJobError({
+            syncWindow: { mode, from: iso(window.from), to: iso(window.to) },
+          });
         }
         const request: SyncRequest = {
           mode,
@@ -838,6 +879,7 @@ async function runSync(
       });
     });
   } catch (error) {
+    if (error instanceof ContinueJobError) throw error;
     const authError = await authFailure(error);
     if (authError) {
       throw authError;

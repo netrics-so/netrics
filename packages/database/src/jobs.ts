@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
 
 import type { Db, Transaction } from "./context.js";
 import * as schema from "./schema.js";
@@ -140,6 +140,22 @@ export async function completeJob(
   return rows.length === 1;
 }
 
+/** Cooperatively release a committed checkpoint without consuming a retry. */
+export async function deferJob(
+  schedulerDb: Db | Transaction,
+  jobId: string,
+  workerId: string,
+  continuation?: Record<string, unknown>,
+): Promise<boolean> {
+  const rows = await schedulerDb.execute(sql`update jobs
+    set status = 'continuing', run_at = now() + interval '1 second',
+        locked_by = null, locked_at = null, last_error = null,
+        payload = jsonb_set(payload, '{continuation}', ${continuation === undefined ? sql`coalesce(payload->'continuation', '{}'::jsonb)` : sql`${JSON.stringify(continuation)}::jsonb`})
+    where id = ${jobId}::uuid and status = 'running' and locked_by = ${workerId}
+    returning id`);
+  return rows.length === 1;
+}
+
 /**
  * Extends the lease of a running job held by `workerId`. Workers call this
  * periodically while a handler runs so long jobs are not reclaimed as stale.
@@ -190,7 +206,7 @@ export async function failJob(
         set attempts = attempts + 1,
             status = case
               when ${options.retryable} and attempts + 1 < max_attempts
-                then 'pending'
+                then case when payload ? 'continuation' then 'continuing' else 'pending' end
               when not ${deadLetter}
                 then 'failed'
               else 'dead'
@@ -309,7 +325,7 @@ export async function requestConnectionBackfill(
     eq(schema.jobs.workspaceId, input.workspaceId),
     eq(schema.jobs.connectionId, input.connectionId),
     eq(schema.jobs.kind, "connection.backfill"),
-    eq(schema.jobs.status, "pending"),
+    inArray(schema.jobs.status, ["pending", "continuing"]),
   );
   await tx
     .update(schema.jobs)
