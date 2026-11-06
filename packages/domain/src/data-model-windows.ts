@@ -102,6 +102,29 @@ export function validateWindowDefinition(measure: WindowedMeasure): void {
     dataFail("model_window_output_invalid", measure.id);
 }
 
+/**
+ * Whether a measure's values are change ratios, (current − previous) /
+ * |previous|, that clients show as percentages: a percent_change offset, or
+ * a value offset (of a value offset …) of one.
+ */
+export function measureIsPercentChange(
+  model: SemanticModelDefinition,
+  id: string,
+): boolean {
+  const measures = new Map(model.measures.map((m) => [m.id, m]));
+  let measure = measures.get(id);
+  for (
+    let steps = 0;
+    measure?.kind === "period_offset" && steps < model.measures.length;
+    steps++
+  ) {
+    if (measure.output === "percent_change") return true;
+    if (measure.output !== "value") return false;
+    measure = measures.get(measure.baseMeasureId);
+  }
+  return false;
+}
+
 /** Whether the measure can only be evaluated at a single date. */
 export function windowNeedsTimeGrouping(measure: WindowedMeasure): boolean {
   return (

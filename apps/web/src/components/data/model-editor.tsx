@@ -2,6 +2,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import {
   formatDataFormula,
+  measureIsPercentChange,
   parseDataFormula,
   type SemanticModelDefinition,
   type ModelMeasure,
@@ -176,9 +177,7 @@ export function ModelEditor({
       setResult(next);
       const percents = new Set(
         model.measures
-          .filter(
-            (m) => m.kind === "period_offset" && m.output === "percent_change",
-          )
+          .filter((m) => measureIsPercentChange(model, m.id))
           .map((m) => m.id),
       );
       setPercentIds(percents);

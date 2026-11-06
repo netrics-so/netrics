@@ -9,6 +9,7 @@ import {
 } from "./data-model.js";
 import {
   addCivilDays,
+  measureIsPercentChange,
   measureLookbackDays,
   modelQueryTimeRange,
   offsetInterval,
@@ -793,6 +794,24 @@ describe("rolling and period-offset measures", () => {
     expect(() =>
       semanticModelFieldReferences(model([offset("bad", "missing", "day")])),
     ).toThrow("model_measure_not_found");
+  });
+
+  it("marks change ratios through value offsets of them", () => {
+    const chained = model([
+      offset("pctLastYear", "pctDay", "year"),
+      offset("pctTwoYears", "pctLastYear", "year"),
+      offset("pctChangeDay", "pctDay", "day", "change"),
+      offset("loop", "loop", "year"),
+    ]);
+    const percent = (id: string) => measureIsPercentChange(chained, id);
+    expect(percent("pctDay")).toBe(true);
+    expect(percent("pctLastYear")).toBe(true);
+    expect(percent("pctTwoYears")).toBe(true);
+    // The difference of two ratios is in points, not a ratio itself.
+    expect(percent("pctChangeDay")).toBe(false);
+    for (const id of ["units", "prevYear", "changeDay", "units7", "loop"])
+      expect(percent(id)).toBe(false);
+    expect(percent("missing")).toBe(false);
   });
 
   it("splits the time range from the residual filter", () => {

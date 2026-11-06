@@ -12,6 +12,7 @@ import {
   compareDataValues,
   dimensionValueLabels,
   dataKey,
+  measureIsPercentChange,
   measureLookbackDays,
   measureRequiredDimensions,
   measureTypeProbe,
@@ -90,8 +91,7 @@ export async function publishedModel(
           id,
           name,
           ...(requiredDimensions.length ? { requiredDimensions } : {}),
-          ...(measure.kind === "period_offset" &&
-          measure.output === "percent_change"
+          ...(measureIsPercentChange(definition, id)
             ? { percentChange: true as const }
             : {}),
         };

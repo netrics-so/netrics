@@ -2065,6 +2065,19 @@ describe("rolling and period-offset model measures", () => {
             baseMeasureId: "kg",
             output: "percent_change",
           },
+          // Last week's change, and the week before: still ratios.
+          {
+            ...weekChange,
+            id: "kg_pct_prior",
+            baseMeasureId: "kg_pct",
+            output: "value",
+          },
+          {
+            ...weekChange,
+            id: "kg_pct_prior_2",
+            baseMeasureId: "kg_pct_prior",
+            output: "value",
+          },
           {
             id: "share",
             name: "Share",
@@ -2132,5 +2145,10 @@ describe("rolling and period-offset model measures", () => {
       value: "2.75",
       status: "ok",
     });
+    expect(
+      line.metadata.measures
+        .filter((measure: { percentChange?: true }) => measure.percentChange)
+        .map((measure: { id: string }) => measure.id),
+    ).toEqual(["kg_pct", "kg_pct_prior", "kg_pct_prior_2"]);
   });
 });

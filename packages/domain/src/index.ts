@@ -22,6 +22,7 @@ export * from "./data-model.js";
 export {
   MODEL_WINDOW_LIMITS,
   measureDependencies,
+  measureIsPercentChange,
   measureLookbackDays,
   modelQueryTimeRange,
   type ModelDateInterval,
