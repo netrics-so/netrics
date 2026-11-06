@@ -22,6 +22,8 @@ import {
   type DashboardDataFilter,
   type DashboardFilterValue,
   type MeasureWidgetBinding,
+  type ModelMeasure,
+  type SemanticModelDefinition,
 } from "@netrics/domain";
 import {
   schema,
@@ -190,6 +192,38 @@ async function modelSourceHealth(
     };
   });
 }
+/**
+ * Type probe without grain: windowed measures need a time grouping or a closed
+ * range, so the probe reads each one's non-windowed base, whose numeric type
+ * the windowed output shares (percent_change requires a numeric base).
+ */
+function ungroupedTypeProbe(
+  definition: SemanticModelDefinition,
+): SemanticModelDefinition {
+  const byId = new Map(definition.measures.map((m) => [m.id, m]));
+  const base = (measure: ModelMeasure): ModelMeasure => {
+    let current = measure;
+    for (
+      let steps = 0;
+      (current.kind === "rolling" || current.kind === "period_offset") &&
+      steps < definition.measures.length;
+      steps++
+    )
+      current = byId.get(current.baseMeasureId) ?? current;
+    return current;
+  };
+  return {
+    ...definition,
+    measures: definition.measures.map((measure) => {
+      const { requiredDimensions: _grain, ...probe } = {
+        ...base(measure),
+        id: measure.id,
+        name: measure.name,
+      };
+      return probe;
+    }),
+  };
+}
 export async function validateDashboardMeasure(
   tx: Transaction,
   workspaceId: string,
@@ -222,12 +256,7 @@ export async function validateDashboardMeasure(
   querySemanticModel(model.definition, tables, query);
   if (options.view === "bar" || options.view === "line") {
     const ungrouped = querySemanticModel(
-      {
-        ...model.definition,
-        measures: model.definition.measures.map(
-          ({ requiredDimensions: _grain, ...measure }) => measure,
-        ),
-      },
+      ungroupedTypeProbe(model.definition),
       tables,
       {
         ...query,
