@@ -375,6 +375,44 @@ describe("choosing a connection's retention", () => {
     );
   });
 
+  it("waits for an in-flight ingestion so its records get the new deadline", async () => {
+    const connectionId = await connection(a);
+    const definition = personalDataset();
+    expect(await choose(a, connectionId, { earnings: null })).toBe(true);
+    const collected = new Date();
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let ingested!: () => void;
+    const pageIngested = new Promise<void>((resolve) => (ingested = resolve));
+    // A sync page that has read "until deleted" and written its records,
+    // but not committed yet.
+    const sync = withWorkspace(db, { workspaceId: a }, async (tx) => {
+      await ingestDatasetPage(tx, {
+        workspaceId: a,
+        connectionId,
+        definition,
+        page: page(definition, "r1", ["x"]),
+        now: collected,
+      });
+      ingested();
+      await released;
+    });
+    await pageIngested;
+    const shortened = choose(a, connectionId, { earnings: 1 });
+    // The update must not finish (and miss the page) while the page is open.
+    const finishedFirst = await Promise.race([
+      shortened.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500)),
+    ]);
+    release();
+    await sync;
+    expect(await shortened).toBe(true);
+    expect((await deadlines(admin, connectionId)).x!.expiresAt).toEqual(
+      new Date(collected.getTime() + DAY),
+    );
+    expect(finishedFirst).toBe(false);
+  });
+
   it("cannot read or change another workspace's connection", async () => {
     const connectionId = await connection(a);
     const definition = personalDataset();

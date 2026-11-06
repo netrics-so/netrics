@@ -292,6 +292,7 @@ async function ingestPage(
   );
   const now = input.clock?.() ?? input.now ?? new Date();
   // The connection's choice (#492) replaces the connector's declaration.
+  // Read under the workspace lock above, which retention updates also take.
   const requestedRetention =
     connectionId !== null && (input.kind ?? "source") === "source"
       ? await connectionDatasetRetentionDays(

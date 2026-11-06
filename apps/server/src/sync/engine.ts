@@ -887,8 +887,11 @@ async function runSync(
           { workspaceId },
           async (tx) => {
             const count = await ingestPage(tx, result.observations);
-            await ingestReviews(tx, result);
+            // Datasets first: they take the workspace ingestion lock, and
+            // retention updates take that lock before the connection row
+            // that ingestReviews share-locks. Same order, no deadlock.
             await ingestDatasets(tx, result);
+            await ingestReviews(tx, result);
             await tx
               .insert(schema.connectionState)
               .values({
@@ -916,8 +919,9 @@ async function runSync(
       const observationsWritten =
         progress.observationsWritten +
         (await ingestPage(tx, finalObservations));
-      await ingestReviews(tx, finalReviews);
+      // Datasets before reviews: lock order as in the page transaction.
       await ingestDatasets(tx, finalDatasetPages);
+      await ingestReviews(tx, finalReviews);
 
       // Cursor advancement commits in this same transaction as the
       // observation inserts — never without them.

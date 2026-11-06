@@ -103,6 +103,14 @@ export async function setConnectionRetention(
   tx: Transaction,
   input: SetConnectionRetentionInput,
 ): Promise<boolean> {
+  // Serialize with dataset ingestion and connector staging, which read the
+  // choice under this workspace lock (440): an in-flight page either commits
+  // before this and is then shortened below, or waits and reads the new
+  // choice. Lock order is always this lock, then the connection row; sync
+  // pages ingest datasets before taking their review row lock (sync/engine.ts).
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${input.workspaceId}, 440))`,
+  );
   const now = input.now ?? new Date();
   const updated = await tx
     .update(connections)
