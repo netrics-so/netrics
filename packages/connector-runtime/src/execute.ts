@@ -1,5 +1,11 @@
+import { validateDatasetPage } from "@netrics/connector-sdk";
 import {
+  CURRENCY_DIMENSION,
+  CURRENCY_MINOR_UNIT,
+  RESOURCE_ICON_MAX_BYTES,
   checkResultSchema,
+  resourceIconsRequestSchema,
+  resourceIconsResultSchema,
   resourceSchema,
   syncRequestSchema,
   syncResultSchema,
@@ -8,18 +14,38 @@ import {
   type Connector,
   type ConnectorManifest,
   type ConnectorRuntime,
+  type ConnectorDatasetStaging,
   type Resource,
+  type ResourceIconsRequest,
   type SyncRequest,
   type SyncResult,
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
-import { EgressDeniedError, createEgressFetch } from "./egress.js";
+import {
+  EgressDeniedError,
+  createEgressFetch,
+  type EgressOptions,
+} from "./egress.js";
 import { redactConnectorError, redactCredentialValues } from "./redact.js";
 
 /** Time budget per connector call (one check, discover, or sync page). */
 export interface ExecuteOptions {
+  /** Host-owned, already connection-scoped durable dataset staging. */
+  datasetStaging?: (signal: AbortSignal) => ConnectorDatasetStaging;
   timeoutMs?: number;
+  /**
+   * Observes the status of every response connector code receives through
+   * runtime.fetch (after redirects). The host uses it to notice a provider
+   * 401 on an OAuth connection and refresh the access token (ADR 0012); it
+   * sees no bodies or headers.
+   */
+  onResponse?: (status: number) => void;
+  /** Tests only: reach a local fixture provider (see EgressOptions). */
+  egress?: Pick<
+    EgressOptions,
+    "lookup" | "allowPrivateAddresses" | "allowInsecureHttp"
+  >;
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -42,6 +68,12 @@ function classifyConnectorError(
   error: unknown,
   context: ConnectionContext,
 ): Error {
+  // Host capability validation errors remain permanent across the credential
+  // boundary. Only the trusted class qualifies; names/messages are not tags.
+  if (error instanceof ContractViolationError)
+    return new ContractViolationError(
+      redactCredentialValues(error.message, context.credentials),
+    );
   if (error instanceof EgressDeniedError) {
     return new ContractViolationError(
       `connector "${connector.manifest.id}": ${error.message}`,
@@ -62,12 +94,24 @@ async function withRuntime<T>(
 ): Promise<T> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
-  const runtime: ConnectorRuntime = {
-    fetch: createEgressFetch({
-      allowedDomains: connector.manifest.outboundDomains,
-      signal: controller.signal,
-    }),
+  const egressFetch = createEgressFetch({
+    ...options.egress,
+    allowedDomains: connector.manifest.outboundDomains,
     signal: controller.signal,
+  });
+  const onResponse = options.onResponse;
+  const runtime: ConnectorRuntime = {
+    fetch: onResponse
+      ? async (url, init) => {
+          const response = await egressFetch(url, init);
+          onResponse(response.status);
+          return response;
+        }
+      : egressFetch,
+    signal: controller.signal,
+    ...(options.datasetStaging
+      ? { datasetStaging: options.datasetStaging(controller.signal) }
+      : {}),
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -80,6 +124,8 @@ async function withRuntime<T>(
     return await Promise.race([call(runtime), timeout]);
   } finally {
     clearTimeout(timer);
+    // Revoke durable storage access even if connector code retains the runtime.
+    controller.abort();
   }
 }
 
@@ -144,9 +190,25 @@ function validateSyncResult(
     );
   }
   const result = parsed.data;
+  if (result.done && result.datasetPages?.some((page) => !page.complete))
+    throw new ContractViolationError(
+      "Final sync page contains an incomplete dataset refresh",
+    );
   const metrics = new Map(
     manifest.metrics.map((metric) => [metric.key, metric]),
   );
+  for (const page of result.datasetPages ?? []) {
+    const definition = manifest.datasets?.find(
+      (dataset) => dataset.key === page.datasetKey,
+    );
+    if (!definition)
+      throw new ContractViolationError("Undeclared source dataset");
+    try {
+      validateDatasetPage(definition, page);
+    } catch (error) {
+      throw new ContractViolationError((error as Error).message);
+    }
+  }
   for (const observation of result.observations) {
     const metric = metrics.get(observation.metricKey);
     if (!metric) {
@@ -158,6 +220,21 @@ function validateSyncResult(
       if (!metric.dimensions.includes(dimension)) {
         throw new ContractViolationError(
           `connector "${manifest.id}" returned undeclared dimension "${dimension}" for metric "${observation.metricKey}"`,
+        );
+      }
+    }
+    if (metric.unit === CURRENCY_MINOR_UNIT) {
+      // Amounts are added up per currency only, so each one names its
+      // currency (ISO 4217) and is a whole number of minor units.
+      const currency = observation.dimensions[CURRENCY_DIMENSION];
+      if (currency === undefined || !/^[A-Z]{3}$/.test(currency)) {
+        throw new ContractViolationError(
+          `connector "${manifest.id}" returned a "${observation.metricKey}" amount without an ISO 4217 "${CURRENCY_DIMENSION}" dimension`,
+        );
+      }
+      if (!Number.isInteger(observation.value)) {
+        throw new ContractViolationError(
+          `connector "${manifest.id}" returned a "${observation.metricKey}" amount that is not in integer minor units`,
         );
       }
     }
@@ -265,4 +342,79 @@ export async function executeDiscover(
     );
   }
   return parsed.data;
+}
+
+/** An icon a connector returned, decoded; the host still validates it. */
+export interface FetchedResourceIcon {
+  resourceId: string;
+  contentType: "image/png" | "image/jpeg" | "image/webp";
+  bytes: Buffer;
+}
+
+/** Whether the connector implements the optional icon capability. */
+export function supportsResourceIcons(connector: Connector): boolean {
+  return typeof connector.resourceIcons === "function";
+}
+
+/**
+ * Runs the optional resourceIcons capability (SDK 0.2.5, #226) inside the
+ * same boundary as sync: egress-controlled fetch, time budget, redacted
+ * errors. An icon for a resource that was not asked for, a malformed
+ * result or an icon above RESOURCE_ICON_MAX_BYTES is a contract
+ * violation. A connector without the capability returns no icons.
+ */
+export async function executeResourceIcons(
+  connector: Connector,
+  context: ConnectionContext,
+  request: ResourceIconsRequest,
+  options: ExecuteOptions = {},
+): Promise<FetchedResourceIcon[]> {
+  const resourceIcons = connector.resourceIcons?.bind(connector);
+  if (!resourceIcons) {
+    return [];
+  }
+  const parsedRequest = resourceIconsRequestSchema.safeParse(request);
+  if (!parsedRequest.success) {
+    throw new ContractViolationError(
+      `invalid resource icons request: ${formatIssues(parsedRequest.error.issues)}`,
+    );
+  }
+  assertContextIsPlain(context);
+  let raw: unknown;
+  try {
+    raw = await withRuntime(
+      connector,
+      { timeoutMs: 30_000, ...options },
+      (runtime) => resourceIcons(context, parsedRequest.data, runtime),
+    );
+  } catch (error) {
+    throw classifyConnectorError(connector, error, context);
+  }
+  const parsed = resourceIconsResultSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new ContractViolationError(
+      `connector "${connector.manifest.id}" returned invalid resource icons: ${formatIssues(parsed.error.issues)}`,
+    );
+  }
+  const asked = new Set(parsedRequest.data.resources.map((entry) => entry.id));
+  const icons = new Map<string, FetchedResourceIcon>();
+  for (const icon of parsed.data.icons) {
+    if (!asked.has(icon.resourceId)) {
+      throw new ContractViolationError(
+        `connector "${connector.manifest.id}" returned an icon for a resource it was not asked for`,
+      );
+    }
+    const bytes = Buffer.from(icon.data, "base64");
+    if (bytes.length === 0 || bytes.length > RESOURCE_ICON_MAX_BYTES) {
+      throw new ContractViolationError(
+        `connector "${connector.manifest.id}" returned an icon of ${bytes.length} bytes (at most ${RESOURCE_ICON_MAX_BYTES})`,
+      );
+    }
+    icons.set(icon.resourceId, {
+      resourceId: icon.resourceId,
+      contentType: icon.contentType,
+      bytes,
+    });
+  }
+  return [...icons.values()];
 }

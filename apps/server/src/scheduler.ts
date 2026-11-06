@@ -2,18 +2,37 @@ import { hostname } from "node:os";
 
 import pino, { type Logger } from "pino";
 
+import { logSerializers } from "./log-serializers.js";
+
 import { sql } from "drizzle-orm";
 
 import {
+  APP_REVIEW_RETENTION,
   createDatabase,
+  DEFAULT_RETENTION,
   enqueueSyncJob,
   heartbeat,
   listDueConnections,
+  pruneAppReviews,
+  pruneHistory,
+  pruneDatasetHistory,
+  pruneOAuthAuthorizations,
+  prunePendingKeys,
+  pruneSecurityRecords,
+  SECURITY_RETENTION,
   setConnectionNextDue,
+  type AppReviewRetentionPolicy,
   type Database,
+  type RetentionPolicy,
+  type SecurityRetentionPolicy,
 } from "@netrics/database";
 
 import type { Config } from "./env.js";
+import { ecbHttp, type RatesHttp } from "./exchange-rates/ecb.js";
+import {
+  createExchangeRateJob,
+  type ExchangeRateJob,
+} from "./exchange-rates/job.js";
 
 /**
  * Advisory lock taken for the duration of each planning tick. It is
@@ -33,6 +52,8 @@ export interface SchedulerTickResult {
   enqueued: number;
   /** Due rows skipped because the connection's auth failed. */
   skippedAuthFailed: number;
+  /** Due rows skipped because an OAuth grant needs reauthorization. */
+  skippedNeedsReauthorization: number;
 }
 
 /**
@@ -45,8 +66,9 @@ export interface SchedulerTickResult {
  *   re-plans the same slot and dedupes to a no-op.
  * - At most one sync waits per connection (jobs_one_pending_sync), so an
  *   outage of the workers never builds a backlog of identical syncs.
- * next_due_at advances even when the enqueue dedupes. auth_failed
- * connections are skipped entirely: credential repair flows through the API.
+ * next_due_at advances even when the enqueue dedupes. auth_failed and
+ * needs_reauthorization connections are skipped entirely: credential repair
+ * and reauthorization (ADR 0012) flow through the API.
  *
  * Runs as netrics_scheduler and reads ONLY connection_state (the scheduler
  * role has no grant on connections; poll_interval_seconds is denormalized
@@ -61,14 +83,25 @@ export async function runSchedulerTick(
       sql`select pg_try_advisory_xact_lock(hashtext(${SCHEDULER_LOCK_NAME})) as acquired`,
     );
     if (!lock?.acquired) {
-      return { ran: false, scanned: 0, enqueued: 0, skippedAuthFailed: 0 };
+      return {
+        ran: false,
+        scanned: 0,
+        enqueued: 0,
+        skippedAuthFailed: 0,
+        skippedNeedsReauthorization: 0,
+      };
     }
     const due = await listDueConnections(tx, now);
     let enqueued = 0;
     let skippedAuthFailed = 0;
+    let skippedNeedsReauthorization = 0;
     for (const connection of due) {
       if (connection.authState === "auth_failed") {
         skippedAuthFailed += 1;
+        continue;
+      }
+      if (connection.authState === "needs_reauthorization") {
+        skippedNeedsReauthorization += 1;
         continue;
       }
       const id = await enqueueSyncJob(tx, {
@@ -87,15 +120,43 @@ export async function runSchedulerTick(
         new Date(now.getTime() + connection.pollIntervalSeconds * 1000),
       );
     }
-    return { ran: true, scanned: due.length, enqueued, skippedAuthFailed };
+    return {
+      ran: true,
+      scanned: due.length,
+      enqueued,
+      skippedAuthFailed,
+      skippedNeedsReauthorization,
+    };
   });
 }
 
 export interface SchedulerDeps {
   schedulerDb: Database;
   pollMs?: number;
+  /** How often to prune finished jobs and sync runs (default: hourly). */
+  maintenanceEveryMs?: number;
+  retention?: RetentionPolicy;
+  /** Retention of audit events, sessions and rate-limit rows (IPs). */
+  securityRetention?: SecurityRetentionPolicy;
+  /** Retention of App Store review text (ADR 0019 §11). */
+  appReviewRetention?: AppReviewRetentionPolicy;
+  /**
+   * Wall-clock budget of one dataset-history drain (default 10 s). While a
+   * drain ends with work left, the next tick drains again instead of waiting
+   * for the next maintenance window, so released storage (which the quota
+   * no longer counts) is reclaimed at a bounded rate per tick but without a
+   * standing backlog.
+   */
+  datasetPruneBudgetMs?: number;
+  /** Clock for security-record and review retention (tests pin it). */
+  now?: () => Date;
   schedulerId?: string;
   logger?: Logger;
+  /**
+   * The ECB rate job (#191); absent with NETRICS_EXCHANGE_RATES=off, and
+   * then the scheduler makes no request to the ECB.
+   */
+  exchangeRates?: ExchangeRateJob;
 }
 
 export interface SchedulerHandle {
@@ -111,8 +172,102 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
     deps.schedulerId ?? `scheduler:${hostname()}:${process.pid}`;
   const { schedulerDb } = deps;
 
+  const maintenanceEveryMs = deps.maintenanceEveryMs ?? 60 * 60 * 1000;
+  const now = deps.now ?? (() => new Date());
+
   let running = false;
   let loopPromise: Promise<void> | null = null;
+  let lastMaintenance = 0;
+
+  // History retention (DEFAULT_RETENTION in @netrics/database). Deletes are
+  // bounded per call and idempotent, so a second scheduler doing the same is
+  // harmless.
+  const datasetPruneBudgetMs = deps.datasetPruneBudgetMs ?? 10_000;
+  let datasetBacklog = false;
+
+  // Storage accounting excludes released superseded generations and raw
+  // pages (datasetWorkspaceBytes), so their deletion must keep up with
+  // ingestion: one bounded batch an hour would let them pile up unseen.
+  // Each call is one bounded batch; repeat until a batch comes back short
+  // (nothing left) or the budget is spent, and resume on the next tick.
+  async function drainDatasetHistory(): Promise<void> {
+    const batch = (deps.retention ?? DEFAULT_RETENTION).batch;
+    const deadline = Date.now() + datasetPruneBudgetMs;
+    let deleted = 0;
+    for (;;) {
+      const n = await pruneDatasetHistory(schedulerDb, now(), batch);
+      deleted += n;
+      if (n < batch) {
+        datasetBacklog = false;
+        break;
+      }
+      if (Date.now() >= deadline) {
+        datasetBacklog = true;
+        break;
+      }
+    }
+    if (deleted > 0) {
+      logger.info(
+        { datasetRowsDeleted: deleted, backlog: datasetBacklog },
+        "pruned dataset history",
+      );
+    }
+  }
+
+  async function maintain(): Promise<void> {
+    if (Date.now() - lastMaintenance < maintenanceEveryMs) {
+      if (datasetBacklog) {
+        await drainDatasetHistory();
+      }
+      return;
+    }
+    lastMaintenance = Date.now();
+    await drainDatasetHistory();
+    const result = await pruneHistory(schedulerDb, deps.retention);
+    if (result.jobsDeleted > 0 || result.syncRunsDeleted > 0) {
+      logger.info(result, "pruned finished history");
+    }
+    // OAuth authorizations live 10 minutes and work once (ADR 0012).
+    const oauthAuthorizationsDeleted = await pruneOAuthAuthorizations(
+      schedulerDb,
+      (deps.retention ?? DEFAULT_RETENTION).batch,
+    );
+    if (oauthAuthorizationsDeleted > 0) {
+      logger.info(
+        { oauthAuthorizationsDeleted },
+        "pruned finished oauth authorizations",
+      );
+    }
+    // Generated private keys never used for a connection, 24 hours after
+    // they were generated (ADR 0020 §3).
+    const pendingKeysDeleted = await prunePendingKeys(
+      schedulerDb,
+      (deps.retention ?? DEFAULT_RETENTION).batch,
+    );
+    if (pendingKeysDeleted > 0) {
+      logger.info({ pendingKeysDeleted }, "pruned expired pending signed keys");
+    }
+    // Audit events after 12 months; expired sessions, rate-limit counters and
+    // pairings soon after (privacy policy; SECURITY_RETENTION).
+    const security = await pruneSecurityRecords(
+      schedulerDb,
+      now(),
+      deps.securityRetention ?? SECURITY_RETENTION,
+    );
+    if (Object.values(security).some((count) => count > 0)) {
+      logger.info(security, "pruned security records");
+    }
+    // Review text (ADR 0019 §11): per app the newest 50, none older than
+    // 90 days (APP_REVIEW_RETENTION). Counts only in the log.
+    const reviews = await pruneAppReviews(
+      schedulerDb,
+      now(),
+      deps.appReviewRetention ?? APP_REVIEW_RETENTION,
+    );
+    if (Object.values(reviews).some((count) => count > 0)) {
+      logger.info(reviews, "pruned app review text");
+    }
+  }
 
   async function loop(): Promise<void> {
     while (running) {
@@ -122,6 +277,9 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
         if (result.enqueued > 0) {
           logger.info(result, "scheduler tick");
         }
+        await maintain();
+        // Starts a fetch in the background when one is due.
+        deps.exchangeRates?.tick();
       } catch (error) {
         logger.error(
           { err: error instanceof Error ? error.message : String(error) },
@@ -144,13 +302,32 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
     async stop() {
       running = false;
       await loopPromise;
+      await deps.exchangeRates?.idle();
     },
   };
+}
+
+/**
+ * The rate job for this configuration: none with
+ * NETRICS_EXCHANGE_RATES=off, so the scheduler never contacts the ECB.
+ */
+export function exchangeRateJobFor(
+  config: Pick<Config, "exchangeRates">,
+  schedulerDb: Database,
+  logger: Logger,
+  http: RatesHttp = ecbHttp,
+): { exchangeRates?: ExchangeRateJob } {
+  return config.exchangeRates
+    ? {
+        exchangeRates: createExchangeRateJob({ db: schedulerDb, http, logger }),
+      }
+    : {};
 }
 
 /** Process entry for NETRICS_ROLE=scheduler (called from src/index.ts). */
 export async function startScheduler(config: Config): Promise<void> {
   const logger = pino({
+    serializers: logSerializers,
     level: config.logLevel,
     base: { service: "netrics-server", role: config.role },
   });
@@ -159,12 +336,14 @@ export async function startScheduler(config: Config): Promise<void> {
     schedulerDb,
     pollMs: config.schedulerPollMs,
     logger,
+    ...exchangeRateJobFor(config, schedulerDb, logger),
   });
   scheduler.start();
   logger.info(
     {
       schedulerId: scheduler.schedulerId,
       pollMs: config.schedulerPollMs,
+      exchangeRates: config.exchangeRates ? "ecb" : "off",
       version: config.version,
       commit: config.commit,
     },

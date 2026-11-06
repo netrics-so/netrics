@@ -1,0 +1,187 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+
+import type {
+  ConnectionStateView,
+  DashboardTile,
+  MetricQueryResponse,
+  WorkspaceMetric,
+} from "@netrics/contracts";
+import { tileLabel } from "@netrics/domain";
+
+import { TileNotice, TileView } from "@/components/tile-view";
+import { apiErrorMessage, queryMetric } from "@/lib/api";
+import { displayUnit } from "@/lib/format-metric";
+import { useLocale, useT } from "@/lib/i18n/client";
+import { conversionNote } from "@/lib/tile-currency";
+import { connectionNotice } from "@/lib/tile-status";
+
+export interface TileConnection {
+  name: string;
+  state: ConnectionStateView;
+}
+
+export function MetricTile({
+  workspaceId,
+  tile,
+  metric,
+  connection,
+  refreshMs = 60_000,
+  variant = "default",
+}: {
+  workspaceId: string;
+  tile: DashboardTile;
+  metric: WorkspaceMetric | undefined;
+  connection: TileConnection | undefined;
+  refreshMs?: number;
+  /** "tv": sized by its grid cell for reading at a distance (#52). */
+  variant?: "default" | "tv";
+}) {
+  const locale = useLocale();
+  const t = useT("screen.widget");
+  const screen = useT("screen.kiosk");
+  const dashboardText = useT("dashboard");
+  const common = useT("common");
+  const [data, setData] = useState<MetricQueryResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      const result = await queryMetric(workspaceId, {
+        connectionId: tile.connectionId,
+        metricKey: tile.metricKey,
+        period: tile.period,
+        aggregation: tile.aggregation,
+        ...(Object.keys(tile.dimensions).length > 0
+          ? { dimensions: tile.dimensions }
+          : {}),
+        ...(tile.displayCurrency
+          ? { displayCurrency: tile.displayCurrency }
+          : {}),
+      });
+      setData(result);
+      setError(null);
+    } catch (cause) {
+      // Keep showing the last good numbers; the error explains why they
+      // did not update.
+      setError(apiErrorMessage(cause, locale));
+    } finally {
+      setLoading(false);
+    }
+  }, [workspaceId, tile]);
+
+  useEffect(() => {
+    void load();
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void load();
+      }
+    }, refreshMs);
+    return () => clearInterval(timer);
+  }, [load, refreshMs]);
+
+  // "Downloads · Wurfel" for a tile of one resource (#194), "Downloads ·
+  // All apps" for one that adds up several (#208).
+  const label = tileLabel({
+    title: tile.title,
+    metricName: metric?.name ?? tile.metricKey,
+    dimensions: tile.dimensions,
+    resourceName: tile.resourceName,
+    allResourcesName: tile.allResourcesName,
+  });
+  // A per-currency amount formats in the currency the tile shows.
+  const unit = displayUnit(
+    data?.metric.unit ?? metric?.unit ?? "",
+    data?.currency ?? tile.dimensions.currency,
+  );
+  const stale = connectionNotice(connection, Date.now(), locale);
+  // Converted amounts are approximate and cite the ECB (#191); amounts
+  // without a rate are listed apart, never dropped.
+  const conversion = data?.conversion
+    ? conversionNote(data.conversion, locale)
+    : null;
+
+  return (
+    <TileView
+      variant={variant}
+      label={label}
+      period={tile.period}
+      aggregation={tile.aggregation}
+      metric={data?.metric ?? metric ?? null}
+      busy={loading}
+      reading={
+        data
+          ? {
+              value: data.value,
+              unit,
+              delta: data.delta,
+              ratio: data.ratio,
+              series: data.series,
+              timeZone: data.timeZone,
+              approximate: data.conversion !== null,
+            }
+          : null
+      }
+      note={
+        conversion && data?.conversion ? (
+          <p className="tile-conversion" title={conversion.title}>
+            {conversion.text} (
+            <a
+              href={data.conversion.source.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {dashboardText("source")}
+            </a>
+            )
+            {conversion.unconverted.map((line) => (
+              <span key={line} className="tile-unconverted">
+                + {line}
+              </span>
+            ))}
+          </p>
+        ) : null
+      }
+      fallback={
+        loading ? (
+          <div className="tile-value tile-placeholder" aria-hidden="true">
+            …
+          </div>
+        ) : (
+          <div className="tile-error" role="alert">
+            <p>{screen("tileFailed")}</p>
+            {error ? <p className="muted">{error}</p> : null}
+            <button type="button" onClick={() => void load()}>
+              {common("retry")}
+            </button>
+          </div>
+        )
+      }
+      footer={
+        <>
+          <span className="muted">{connection?.name ?? "—"}</span>
+          {stale ? (
+            connection && variant === "default" ? (
+              // Leads to the connection page, where the problem can be fixed.
+              <Link
+                className="tile-stale"
+                title={t("mayBeOutdated")}
+                href={`/workspaces/${workspaceId}/connections/${tile.connectionId}`}
+              >
+                <span aria-hidden="true">⚠</span> {stale}
+              </Link>
+            ) : (
+              <TileNotice>{stale}</TileNotice>
+            )
+          ) : null}
+          {data && error ? (
+            <TileNotice title={error}>{t("refreshFailed")}</TileNotice>
+          ) : null}
+        </>
+      }
+    />
+  );
+}

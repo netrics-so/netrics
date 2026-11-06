@@ -3,6 +3,7 @@ export {
   createEgressFetch,
   hostAllowed,
   isBlockedAddress,
+  type EgressOptions,
 } from "./egress.js";
 export {
   assertContextIsPlain,
@@ -10,16 +11,15 @@ export {
   ContractViolationError,
   executeCheck,
   executeDiscover,
+  executeResourceIcons,
   executeSync,
+  supportsResourceIcons,
   type ExecuteOptions,
+  type FetchedResourceIcon,
 } from "./execute.js";
 export {
   redactConnectorError,
   redactCredentialValues,
   redactSecrets,
 } from "./redact.js";
-export {
-  ConnectorRegistry,
-  createDefaultRegistry,
-  type RegisteredConnector,
-} from "./registry.js";
+export { ConnectorRegistry, type RegisteredConnector } from "./registry.js";

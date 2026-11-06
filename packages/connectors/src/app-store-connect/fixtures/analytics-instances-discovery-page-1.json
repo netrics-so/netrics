@@ -1,0 +1,47 @@
+{
+  "data": [
+    {
+      "type": "analyticsReportInstances",
+      "id": "i-disc-0929",
+      "attributes": {
+        "granularity": "DAILY",
+        "processingDate": "2026-09-29"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/analyticsReportInstances/i-disc-0929"
+      }
+    },
+    {
+      "type": "analyticsReportInstances",
+      "id": "i-disc-0928",
+      "attributes": {
+        "granularity": "DAILY",
+        "processingDate": "2026-09-28"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/analyticsReportInstances/i-disc-0928"
+      }
+    },
+    {
+      "type": "analyticsReportInstances",
+      "id": "i-disc-week",
+      "attributes": {
+        "granularity": "WEEKLY",
+        "processingDate": "2026-09-28"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/analyticsReportInstances/i-disc-week"
+      }
+    }
+  ],
+  "links": {
+    "self": "https://api.appstoreconnect.apple.com/v1/analyticsReports/r3-0001/instances?filter%5Bgranularity%5D=DAILY&limit=200",
+    "next": "https://api.appstoreconnect.apple.com/v1/analyticsReports/r3-0001/instances?cursor=MQ&limit=200"
+  },
+  "meta": {
+    "paging": {
+      "total": 4,
+      "limit": 200
+    }
+  }
+}

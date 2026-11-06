@@ -34,7 +34,7 @@ owner safely.
 
 ## Scope notes (recorded at implementation)
 
-- Members are added directly by email; invitations land in milestone 14.
+- Members are added directly by email; invitations land in milestone 15.
   Because user accounts are installation-level, this makes account existence
   probeable by any workspace admin (`404 user_not_found` vs success when
   adding by email). This is a deliberate, documented trade-off (see ADR 0005)
@@ -94,6 +94,6 @@ leaks.
   API and database suites green (101 tests). Production deploy still pending
   milestone 01's live exit gate.
 - Material deviations: members are added directly by email until invitations
-  land in milestone 14 — this exposes an installation-level user-existence
+  land in milestone 15 — this exposes an installation-level user-existence
   oracle, recorded in [ADR 0005](../decisions/0005-authentication-integration.md);
   worker-path cross-tenant tests land with the worker in milestone 03.

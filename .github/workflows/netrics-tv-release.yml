@@ -1,0 +1,226 @@
+name: netrics-tv-release
+
+# Publishing a GitHub Release tagged netrics-tv/vX.Y.Z ships netrics TV
+# (#434): both apps (tvOS and iOS, one App Store app, bundle ID tv.netrics)
+# are archived with MARKETING_VERSION X.Y.Z, signed with cloud-managed
+# certificates through an App Store Connect API key and uploaded. A full
+# release then submits both platforms' version X.Y.Z for App Review, with the
+# release body as "What's New"; a pre-release stops once the builds are
+# processed, in TestFlight. workflow_dispatch runs the same on a tag ref,
+# uploading only unless `submit` is set. Server releases (vX.Y.Z, promote.yml)
+# do not match and skip every job. See docs/release.md, "netrics TV releases".
+#
+# Everything account-specific comes from the `app-store` environment, which
+# only admits netrics-tv/v* tags: ASC_API_KEY (the .p8 content), ASC_KEY_ID,
+# ASC_ISSUER_ID and APPLE_TEAM_ID. The app is found by its bundle ID.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag netrics-tv/vX.Y.Z; empty for the ref chosen above, which must be that tag"
+        required: false
+        type: string
+      submit:
+        description: Submit both platforms for App Review (otherwise upload to TestFlight only)
+        required: false
+        type: boolean
+        default: false
+
+# One release at a time, never cancelled half-way: two runs would race for
+# the same App Store version and review submission.
+concurrency:
+  group: netrics-tv-release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  prepare:
+    # Expressions have no regular expressions; the step below checks the tag
+    # strictly. On a release event github.ref is the release's tag.
+    if: startsWith(github.ref, 'refs/tags/netrics-tv/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+      build: ${{ steps.tag.outputs.build }}
+      submit: ${{ steps.tag.outputs.submit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Check the tag, choose the build number
+        id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_SUBMIT: ${{ inputs.submit }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if [ "$EVENT" = release ]; then
+            if [ "$PRERELEASE" = true ]; then submit=false; else submit=true; fi
+          else
+            if [ -n "$INPUT_TAG" ] && [ "$INPUT_TAG" != "$tag" ]; then
+              echo "::error::Run the workflow on the tag itself: gh workflow run netrics-tv-release.yml --ref $INPUT_TAG"
+              exit 1
+            fi
+            submit="$INPUT_SUBMIT"
+          fi
+          script=apps/netrics-tv/scripts/asc-submit.ts
+          version=$(node "$script" version "$tag")
+          build=$(node "$script" build-number)
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "build=$build"
+            echo "submit=$submit"
+          } >> "$GITHUB_OUTPUT"
+          echo "netrics TV $version, build $build, submit for review: $submit" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: build (${{ matrix.platform }})
+    needs: prepare
+    # Xcode 27 is on the xcode-27 image; DEVELOPER_DIR pins the version, as
+    # in ci.yml's netrics-tv job.
+    runs-on: xcode-27
+    environment: app-store
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      # One platform's failure keeps the other's upload; "Re-run failed
+      # jobs" then rebuilds only the failed one, with the same build number.
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: iOS, scheme: NetricsTVTouch }
+          - { platform: tvOS, scheme: NetricsTV }
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD: ${{ needs.prepare.outputs.build }}
+      SCHEME: ${{ matrix.scheme }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: xcodebuild -version
+      - name: Write the App Store Connect API key
+        env:
+          ASC_API_KEY: ${{ secrets.ASC_API_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$ASC_API_KEY" > "$RUNNER_TEMP/asc/AuthKey.p8"
+          chmod 600 "$RUNNER_TEMP/asc/AuthKey.p8"
+      - name: Archive
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project apps/netrics-tv/NetricsTV.xcodeproj \
+            -scheme "$SCHEME" -configuration Release \
+            -destination "generic/platform=$PLATFORM" \
+            -archivePath "$RUNNER_TEMP/$SCHEME.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD"
+      - name: Upload to App Store Connect
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          options="$RUNNER_TEMP/ExportOptions.plist"
+          cp apps/netrics-tv/Config/ExportOptions.plist "$options"
+          /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_TEAM_ID" "$options"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/$SCHEME.xcarchive" \
+            -exportOptionsPlist "$options" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          echo "$PLATFORM: uploaded $VERSION ($BUILD)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove the API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/ExportOptions.plist"
+
+  app-store-connect:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    environment: app-store
+    # Processing usually takes minutes; the script gives up after 60.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD: ${{ needs.prepare.outputs.build }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      SUBMIT: ${{ needs.prepare.outputs.submit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Release notes
+        env:
+          EVENT: ${{ github.event_name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/release-notes.md"
+          if [ "$EVENT" = release ]; then
+            printf '%s' "$RELEASE_BODY" > "$notes"
+          else
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes" \
+              || { echo "::warning::No GitHub Release for $TAG; What's New stays as it is."; : > "$notes"; }
+          fi
+      - name: Write the App Store Connect API key
+        env:
+          ASC_API_KEY: ${{ secrets.ASC_API_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$ASC_API_KEY" > "$RUNNER_TEMP/asc/AuthKey.p8"
+          chmod 600 "$RUNNER_TEMP/asc/AuthKey.p8"
+      - name: Wait for processing${{ needs.prepare.outputs.submit == 'true' && ', submit for App Review' || '' }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          submit=()
+          if [ "$SUBMIT" = true ]; then submit=(--submit); fi
+          ASC_KEY_PATH="$RUNNER_TEMP/asc/AuthKey.p8" node apps/netrics-tv/scripts/asc-submit.ts run \
+            --version "$VERSION" --build "$BUILD" --platforms IOS,TV_OS \
+            --notes-file "$RUNNER_TEMP/release-notes.md" "${submit[@]}"
+      - name: Remove the API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"

@@ -30,9 +30,13 @@ const uuidSchema = z.uuid();
  * set_config(..., true) keeps transaction-local.
  */
 export async function withWorkspace<T>(
-  db: Db,
+  db: Pick<Db, "transaction">,
   ctx: WorkspaceContext,
   fn: (tx: Transaction) => Promise<T>,
+  options?: {
+    isolationLevel?: "read committed" | "repeatable read" | "serializable";
+    accessMode?: "read only" | "read write";
+  },
 ): Promise<T> {
   const workspaceId = uuidSchema.parse(ctx.workspaceId);
   const userId = ctx.userId ? uuidSchema.parse(ctx.userId) : undefined;
@@ -44,7 +48,7 @@ export async function withWorkspace<T>(
       await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
     }
     return fn(tx);
-  });
+  }, options);
 }
 
 /**
@@ -74,12 +78,16 @@ export async function withUserContext<T>(
  */
 export async function createWorkspaceInTransaction(
   tx: Transaction,
-  input: { name: string; ownerUserId: string },
+  input: { name: string; ownerUserId: string; timeZone?: string },
 ): Promise<string> {
   const name = z.string().min(1).parse(input.name);
   const ownerUserId = uuidSchema.parse(input.ownerUserId);
+  const timeZone = z
+    .string()
+    .min(1)
+    .parse(input.timeZone ?? "UTC");
   const rows = await tx.execute<{ id: string }>(
-    sql`select create_workspace(${name}, ${ownerUserId}::uuid) as id`,
+    sql`select create_workspace(${name}, ${ownerUserId}::uuid, ${timeZone}) as id`,
   );
   const row = rows[0];
   if (!row) {
@@ -167,5 +175,23 @@ export function isDuplicateMembershipError(error: unknown): boolean {
     (code, message) =>
       code === "23505" &&
       message.includes("memberships_workspace_id_user_id_unique"),
+  );
+}
+
+/** Unique violation on a workspace's goal names (#335). */
+export function isDuplicateGoalNameError(error: unknown): boolean {
+  return findPgError(
+    error,
+    (code, message) =>
+      code === "23505" && message.includes("goals_name_unique"),
+  );
+}
+
+/** Unique violation on a workspace's theme names (#216). */
+export function isDuplicateThemeNameError(error: unknown): boolean {
+  return findPgError(
+    error,
+    (code, message) =>
+      code === "23505" && message.includes("workspace_themes_name_unique"),
   );
 }

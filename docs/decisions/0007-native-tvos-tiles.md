@@ -33,6 +33,18 @@ For the MVP, the tvOS app renders dashboards natively:
 - The same endpoint powers a browser kiosk for non-Apple screens.
 - Pairing and device credentials follow the milestone 06 security invariants.
 
+**Payload** (#57). `GET /v1/device/dashboard` returns `version`,
+`refreshAfterSec` (60), the workspace `timeZone`, `dashboard` (`{id, name}`,
+or null with no tiles when none is assigned) and `tiles`. A tile has `label`,
+`period`, `aggregation`, a raw `value` with its `unit` (currency in
+`<ISO 4217>_minor`, ADR 0008), `change` (`previousValue`, `delta`, `ratio`),
+`spark` (one value per bucket, null for a gap), `status` (`ok`, `stale`,
+`auth_failed`, `outage`, `no_data`) and `updatedAt` (the connection's last
+successful sync). The client formats the numbers. `version` is a hash of the
+content and doubles as the `ETag`. A tile that fails to compute reports
+`no_data`; it never fails the dashboard. Devices report `appVersion`,
+`uptimeSeconds` and `lastError` with `POST /v1/device/heartbeat`.
+
 Server-rendered snapshots are deferred. They return only if customers need
 arbitrary layouts on devices that cannot render natively.
 

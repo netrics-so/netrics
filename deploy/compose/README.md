@@ -1,7 +1,7 @@
 # Self-hosting netrics with Docker Compose
 
-This runs the same images as the hosted service: web, api, worker, scheduler,
-PostgreSQL and Caddy (automatic HTTPS). Every product feature is included; no
+This runs the signed release images, built from the same commits as the hosted
+service (ADR 0013): web, api, worker, scheduler, PostgreSQL and Caddy (automatic HTTPS). Every product feature is included; no
 license key is needed.
 
 ## Requirements
@@ -56,6 +56,103 @@ SMTP_URL=smtps://user:password@smtp.example.com:465
 MAIL_FROM=netrics <no-reply@netrics.example.com>
 ```
 
+### Google connectors
+
+Connectors that sign in with Google (Search Console) need a Google OAuth app
+registered for this instance, in a Google Cloud project of its own. Without
+one they are listed as unavailable. [Google OAuth app](google-oauth.md)
+walks through it: project, Search Console API, consent screen, client,
+testing versus publishing, and troubleshooting. In short, register the
+redirect URI `<NETRICS_PUBLIC_URL>/oauth/google/callback`, then add both
+values to `.env` and run `docker compose up -d`:
+
+```sh
+NETRICS_OAUTH_GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
+NETRICS_OAUTH_GOOGLE_CLIENT_SECRET=...
+```
+
+Set both or neither; the API refuses to start with only one. Its startup log
+(`oauth providers configured`) names the configured providers and their
+redirect URIs. While the app is External and in Testing, Google expires
+refresh tokens after 7 days; publish it or use an Internal app.
+
+### Web app and API on separate hosts
+
+Not needed for this install: here the web app reaches the API over the
+Compose network, and the API trusts that hop's forwarded client address.
+If you run the web app somewhere the API sees as a public address (another
+host or platform), the API would see that address for every visitor, and its
+sign-in and pairing rate limits would apply to everyone together. Set the
+same `NETRICS_PROXY_SECRET` on both (32 characters or more, for example
+`openssl rand -base64 32`):
+
+```sh
+NETRICS_PROXY_SECRET=...
+```
+
+The web app then marks its requests with the secret, and the API believes the
+client address they carry. Requests without the secret are still served and
+authenticated by session or token, but the API accepts session cookies only
+on requests carrying it (browsers always come through the web app), and it
+answers 404 to `/api/auth/*` without it. Keep `NETRICS_PUBLIC_URL` (which
+sets `BETTER_AUTH_URL` and `WEB_ORIGIN`) on the web app's address. To
+rotate, set `new,old` on the API, then `new` on the web app, then `new` on
+the API.
+
+The same setup gives token clients (service accounts, `Authorization:
+Bearer nt_…`) their own API host, as netrics cloud does with
+`https://api.netrics.so`: point a DNS record at the API's published port
+(behind TLS) and call `https://<api host>/v1/…`. Without one, token clients
+use `<NETRICS_PUBLIC_URL>/v1/…` through the web app.
+
+### Exchange rates (display currency)
+
+Amounts in several currencies (App Store proceeds, Apple Ads) are shown per
+currency by default. A workspace or a tile can instead convert them into one
+display currency, approximately, with the
+[ECB euro reference rates](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html)
+of each day. For that, the `scheduler` fetches
+`https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml` every six
+hours (the 90-day file once to backfill), through the same guarded egress as
+connectors. This is on by default (`NETRICS_EXCHANGE_RATES=ecb`).
+
+To run without it, for example offline, set `NETRICS_EXCHANGE_RATES=off` in
+`.env` (it applies to the `api` and the `scheduler`): no request goes to the
+ECB, the option is hidden, and tiles show amounts per currency. Stored rates
+are kept; turning it back on resumes the daily fetch.
+
+### Language
+
+netrics speaks English and German. Each person picks a language under
+Account, and each workspace a language for its TVs and kiosks. For people
+and workspaces that have not chosen one, `NETRICS_DEFAULT_LOCALE=de` in
+`.env` makes German the default (unset: English; it applies to the `api`
+and the `web` app).
+
+### Image quota
+
+Dashboards can show uploaded images (PNG, JPEG or WebP, at most 1 MiB and
+4096 px per side). They are stored in PostgreSQL, so backups include them.
+Each workspace may keep 100 images and 50 MiB by default. To change that,
+set `NETRICS_IMAGE_QUOTA_COUNT` and `NETRICS_IMAGE_QUOTA_MIB` in `.env` and
+restart the `api`. Images above a lowered quota stay; only new uploads are
+refused.
+
+### Data volume and retention
+
+`NETRICS_DATA_POLICY` in `.env` configures data storage, retention and execution
+budgets for both the API and worker. For example:
+
+```dotenv
+NETRICS_DATA_POLICY='{"maxWorkspaceBytes":null,"queryRows":1000000,"queryOperations":50000000}'
+```
+
+Storage and source counts have no default quota. Any policy ceiling can be
+removed with `null`. Restart the API and worker after changing defaults.
+Instance administrators can also set workspace overrides through the
+installation API. See [data processing](../../docs/data-processing.md) for
+all settings and retention/deletion behavior.
+
 ### Another port
 
 If the host already serves 443, install with `--https-port 8443`. This sets
@@ -71,7 +168,7 @@ Caddy's DNS challenge or your own proxy in front.
 | `migrate`   | Runs on every `up`: migrations, role passwords, connector catalog, then exits                       |
 | `api`       | REST API as the RLS-enforced `netrics_app` role; refuses privileged database roles                  |
 | `worker`    | Connector syncs                                                                                     |
-| `scheduler` | Plans due syncs                                                                                     |
+| `scheduler` | Plans due syncs; fetches ECB exchange rates unless `NETRICS_EXCHANGE_RATES=off`                     |
 | `web`       | Web app; proxies the API                                                                            |
 | `caddy`     | HTTPS termination; the only published ports                                                         |
 | `backup`    | Optional nightly `pg_dump` into `./backups`, 14 days kept (`docker compose --profile backup up -d`) |
@@ -135,3 +232,8 @@ cosign verify-attestation --type spdxjson \
   `docker compose run --rm migrate node dist/admin-cli.js create-service-token --name ops --scope installation:workspaces:read`
 - Rotating the encryption key: see the main README, "Rotating the encryption
   key". Run `reencrypt-credentials` the same way.
+- Reading a connection's whole history again (for example after an upgrade
+  whose release notes say a connector now writes values it skipped before):
+  `docker compose run --rm migrate node dist/admin-cli.js backfill-connection --workspace <workspace id> --connection <connection id>`.
+  Both ids are in the connection's URL in the web app. Stored values stay
+  until the backfill overwrites them.

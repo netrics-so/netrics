@@ -6,9 +6,16 @@ import { useMemo, useState } from "react";
 import type {
   ConnectionPreviewResponse,
   ConnectorCatalogEntry,
+  SignedKeyPairResponse,
 } from "@netrics/contracts";
 
+import { AppleAdsSetup } from "./apple-ads-setup";
+import { AppPicker } from "../app-picker";
 import { ConfigFields } from "../config-fields";
+import { ConnectOAuthButton } from "../connect-oauth-button";
+import { SignedKeyFields } from "../signed-key-fields";
+import { TokenField } from "../token-field";
+import { ConnectorCatalogue } from "@/components/sources/connector-catalogue";
 import {
   apiErrorMessage,
   createConnection,
@@ -19,28 +26,74 @@ import {
   initialConfigValues,
   parseConfigSchema,
 } from "@/lib/config-schema";
+import {
+  oauthProviderOf,
+  providerName,
+  unavailableCopy,
+} from "@/lib/oauth-connection";
+import type { ConnectorStanding } from "@/lib/sources";
+import {
+  APP_STORE_CONNECT_DOCS_URL,
+  APP_STORE_CONNECT_PROVIDER,
+  APPLE_ADS_PROVIDER,
+  emptyKeyValues,
+  fieldOfMessage,
+  keyPayload,
+  localizedFieldLabel,
+  missingKeyFieldWith,
+  signedKeyStrategyOf,
+} from "@/lib/signed-key";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 interface NewConnectionWizardProps {
   workspaceId: string;
   connectors: ConnectorCatalogEntry[];
+  /** How each connector stands in the workspace (catalogue CTAs, #306). */
+  standings?: Readonly<Record<string, ConnectorStanding>>;
+  /** The connector chosen in the catalogue (`?connector=`), if any. */
+  initialConnectorId?: string | null;
 }
 
 export function NewConnectionWizard({
   workspaceId,
   connectors,
+  standings = {},
+  initialConnectorId = null,
 }: NewConnectionWizardProps) {
+  const locale = useLocale();
+  const t = useT("connections.wizard");
+  const common = useT("common");
   const router = useRouter();
-  const [connector, setConnector] = useState<ConnectorCatalogEntry | null>(
-    null,
+  const [initial] = useState(
+    () => connectors.find((entry) => entry.id === initialConnectorId) ?? null,
   );
-  const [name, setName] = useState("");
-  const [configValues, setConfigValues] = useState<Record<string, string>>({});
+  const [connector, setConnector] = useState<ConnectorCatalogEntry | null>(
+    initial,
+  );
+  const [name, setName] = useState(initial?.name ?? "");
+  const [configValues, setConfigValues] = useState<Record<string, string>>(
+    () =>
+      initial
+        ? initialConfigValues(parseConfigSchema(initial.configSchema))
+        : {},
+  );
   const [token, setToken] = useState("");
+  const [keyValues, setKeyValues] = useState<Record<string, string>>(() => {
+    const strategy = initial ? signedKeyStrategyOf(initial) : null;
+    return strategy ? emptyKeyValues(strategy) : {};
+  });
+  // A key pair netrics generated (ADR 0020 §3): its public key is shown,
+  // its private key stays on the server.
+  const [keyPair, setKeyPair] = useState<SignedKeyPairResponse | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<
+    Record<string, string | undefined>
+  >({});
   const [preview, setPreview] = useState<ConnectionPreviewResponse | null>(
     null,
   );
   const [selectedResources, setSelectedResources] =
     useState<Set<string> | null>(null);
+  const [appSelection, setAppSelection] = useState<string[] | null>(null);
   const [pending, setPending] = useState<"preview" | "create" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,18 +101,55 @@ export function NewConnectionWizard({
     () => (connector ? parseConfigSchema(connector.configSchema) : []),
     [connector],
   );
-  const wantsToken = connector?.authStrategies.some(
+  const tokenStrategy = connector?.authStrategies.find(
     (strategy) => strategy.strategy === "token",
   );
+  // A signed-key provider (ADR 0014) asks for its key fields instead.
+  const keyStrategy = signedKeyStrategyOf(connector ?? undefined);
+  const wantsToken = tokenStrategy !== undefined && keyStrategy === null;
+  const appStore = keyStrategy?.provider === APP_STORE_CONNECT_PROVIDER;
+  // Apple Ads has its own guided setup (#375).
+  const appleAds = keyStrategy?.provider === APPLE_ADS_PROVIDER;
+  // OAuth-only connectors connect at the provider; the callback creates the
+  // connection and setup continues on the return (ADR 0012).
+  const oauthProvider =
+    connector && !connector.authStrategies.some((s) => s.strategy !== "oauth2")
+      ? oauthProviderOf(connector)
+      : null;
+
+  // Check failures show in the form they are about; create failures below.
+  const errorInConfigure =
+    connector !== null &&
+    connector.available &&
+    !oauthProvider &&
+    !preview?.check.ok;
 
   function selectConnector(entry: ConnectorCatalogEntry) {
     setConnector(entry);
     setName(entry.name);
     setConfigValues(initialConfigValues(parseConfigSchema(entry.configSchema)));
     setToken("");
+    const strategy = signedKeyStrategyOf(entry);
+    setKeyValues(strategy ? emptyKeyValues(strategy) : {});
+    setKeyPair(null);
+    setFieldErrors({});
     setPreview(null);
     setSelectedResources(null);
     setError(null);
+  }
+
+  /** Shows a server message next to its field, or for the whole form. */
+  function showFailure(message: string) {
+    const field = keyStrategy
+      ? fieldOfMessage(message, keyStrategy.fields, fields)
+      : null;
+    if (field) {
+      setFieldErrors({ [field]: message });
+      setError(null);
+    } else {
+      setFieldErrors({});
+      setError(message);
+    }
   }
 
   function invalidatePreview() {
@@ -69,6 +159,12 @@ export function NewConnectionWizard({
 
   function buildPayload() {
     const config = coerceConfigValues(fields, configValues);
+    if (keyStrategy) {
+      return {
+        config,
+        ...keyPayload(keyStrategy, keyValues, keyPair?.pendingKeyId ?? null),
+      };
+    }
     const credentials = wantsToken && token !== "" ? { token } : undefined;
     return { config, ...(credentials ? { credentials } : {}) };
   }
@@ -78,6 +174,23 @@ export function NewConnectionWizard({
       return;
     }
     setError(null);
+    setFieldErrors({});
+    const missing = keyStrategy
+      ? missingKeyFieldWith(keyStrategy, keyValues, keyPair !== null)
+      : null;
+    if (missing) {
+      setFieldErrors({
+        [missing.key]:
+          missing.input === "file"
+            ? keyStrategy?.generatedKeyPair
+              ? t("generateOrPaste")
+              : t("chooseFile")
+            : t("fieldRequired", {
+                field: localizedFieldLabel(keyStrategy!, missing, locale),
+              }),
+      });
+      return;
+    }
     setPending("preview");
     try {
       const result = await previewConnection(workspaceId, {
@@ -86,12 +199,13 @@ export function NewConnectionWizard({
       });
       setPreview(result);
       setSelectedResources(new Set(result.resources.map((r) => r.id)));
+      setAppSelection(null);
       if (!result.check.ok) {
-        setError(result.check.message ?? "The connection check failed.");
+        showFailure(result.check.message ?? t("checkFailed"));
       }
     } catch (cause) {
       setPreview(null);
-      setError(apiErrorMessage(cause));
+      showFailure(apiErrorMessage(cause, locale));
     } finally {
       setPending(null);
     }
@@ -106,9 +220,11 @@ export function NewConnectionWizard({
     try {
       const payload = buildPayload();
       let resources: string[] | undefined;
-      if (preview && preview.resources.length > 0 && selectedResources) {
+      if (appStore) {
+        resources = appSelection ?? undefined;
+      } else if (preview && preview.resources.length > 0 && selectedResources) {
         if (selectedResources.size === 0) {
-          setError("Select at least one discovered resource.");
+          setError(appStore ? t("selectApp") : t("selectResource"));
           setPending(null);
           return;
         }
@@ -124,7 +240,7 @@ export function NewConnectionWizard({
       });
       router.push(`/workspaces/${workspaceId}/connections/${connection.id}`);
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
       setPending(null);
     }
   }
@@ -147,32 +263,74 @@ export function NewConnectionWizard({
   return (
     <>
       <div className="card">
-        <h2>1. Choose a connector</h2>
-        <div className="connector-cards">
-          {connectors.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              className={`connector-card ${connector?.id === entry.id ? "selected" : ""}`}
-              onClick={() => selectConnector(entry)}
-            >
-              <h3>{entry.name}</h3>
-              <p>{entry.description}</p>
-              <p className="meta">
-                v{entry.version} · {entry.metricsCount} metrics
-                {entry.supportsBackfill ? " · backfill" : ""}
-              </p>
-            </button>
-          ))}
-        </div>
+        <h2>{t("chooseConnector")}</h2>
+        <ConnectorCatalogue
+          workspaceId={workspaceId}
+          connectors={connectors}
+          standings={standings}
+          mode={{
+            kind: "pick",
+            selectedId: connector?.id ?? null,
+            onPick: selectConnector,
+          }}
+        />
       </div>
 
-      {connector ? (
+      {connector && connector.unavailable ? (
+        <UnavailableConnector connector={connector} />
+      ) : null}
+
+      {connector && connector.available && oauthProvider ? (
         <div className="card">
-          <h2>2. Configure</h2>
+          <h2>{t("connectWith", { provider: providerName(oauthProvider) })}</h2>
+          <p>
+            {t("oauthIntro", {
+              provider: providerName(oauthProvider),
+              connector: connector.name,
+            })}
+          </p>
+          <ConnectOAuthButton
+            workspaceId={workspaceId}
+            connectorId={connector.id}
+            provider={oauthProvider}
+            returnPath={`/workspaces/${workspaceId}/connections/new`}
+          />
+        </div>
+      ) : null}
+
+      {connector && connector.available && appleAds && keyStrategy ? (
+        <AppleAdsSetup
+          key={connector.id}
+          workspaceId={workspaceId}
+          connector={connector}
+          strategy={keyStrategy}
+        />
+      ) : null}
+
+      {connector && connector.available && !oauthProvider && !appleAds ? (
+        <div className="card">
+          <h2>
+            {keyStrategy
+              ? t("addKey", {
+                  name: keyStrategy.providerName ?? connector.name,
+                })
+              : t("configure")}
+          </h2>
+          {appStore ? (
+            <p className="muted">
+              {t("appStoreIntro")}{" "}
+              <a
+                href={APP_STORE_CONNECT_DOCS_URL}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("moreAboutConnector")}
+              </a>
+            </p>
+          ) : null}
           <form className="stack" onSubmit={(event) => event.preventDefault()}>
             <div className="field">
-              <label htmlFor="connection-name">Name</label>
+              <label htmlFor="connection-name">{t("name")}</label>
               <input
                 id="connection-name"
                 type="text"
@@ -184,56 +342,102 @@ export function NewConnectionWizard({
                 }}
               />
             </div>
+            {wantsToken ? (
+              <TokenField
+                id="connection-token"
+                strategy={tokenStrategy}
+                value={token}
+                disabled={pending !== null}
+                guideOpen
+                onChange={(value) => {
+                  setToken(value);
+                  invalidatePreview();
+                }}
+              />
+            ) : null}
+            {keyStrategy ? (
+              <SignedKeyFields
+                strategy={keyStrategy}
+                values={keyValues}
+                errors={fieldErrors}
+                disabled={pending !== null}
+                guideOpen
+                keyPair={{
+                  workspaceId,
+                  value: keyPair,
+                  onChange: (value) => {
+                    setKeyPair(value);
+                    setFieldErrors({});
+                    invalidatePreview();
+                  },
+                }}
+                onChange={(key, value) => {
+                  setKeyValues((current) => ({ ...current, [key]: value }));
+                  setFieldErrors((current) => ({
+                    ...current,
+                    [key]: undefined,
+                  }));
+                  invalidatePreview();
+                }}
+              />
+            ) : null}
             <ConfigFields
               fields={fields}
               values={configValues}
+              errors={fieldErrors}
               disabled={pending !== null}
               onChange={(key, value) => {
                 setConfigValues((current) => ({ ...current, [key]: value }));
+                setFieldErrors((current) => ({ ...current, [key]: undefined }));
                 invalidatePreview();
               }}
             />
-            {wantsToken ? (
-              <div className="field">
-                <label htmlFor="connection-token">Access token</label>
-                <input
-                  id="connection-token"
-                  type="password"
-                  value={token}
-                  autoComplete="off"
-                  disabled={pending !== null}
-                  onChange={(event) => {
-                    setToken(event.target.value);
-                    invalidatePreview();
-                  }}
-                />
-              </div>
-            ) : null}
             <div className="actions">
               <button
                 type="button"
+                className={keyStrategy ? "primary" : undefined}
                 disabled={pending !== null}
                 onClick={onTest}
               >
-                {pending === "preview" ? "Testing…" : "Test connection"}
+                {pending === "preview"
+                  ? keyStrategy
+                    ? t("checkingWithApple")
+                    : t("testing")
+                  : keyStrategy
+                    ? t("checkKey")
+                    : t("test")}
               </button>
             </div>
+            {error && errorInConfigure ? (
+              <div className="error" role="alert">
+                {error}
+              </div>
+            ) : null}
           </form>
         </div>
       ) : null}
 
       {preview && preview.check.ok ? (
         <div className="card">
-          <h2>3. Review and create</h2>
+          <h2>{appStore ? t("chooseApps") : t("review")}</h2>
           <div className="notice">
-            Connection check passed
-            {preview.check.message ? `: ${preview.check.message}` : "."}
+            {preview.check.message
+              ? t("checkPassedWith", { message: preview.check.message })
+              : t("checkPassed")}
           </div>
-          {preview.resources.length > 0 ? (
+          {appStore ? (
+            <AppPicker
+              resources={preview.resources}
+              value={appSelection}
+              onChange={setAppSelection}
+              disabled={pending !== null}
+            />
+          ) : preview.resources.length > 0 ? (
             <>
               <p className="muted">
-                Discovered {preview.resources.length} resources — uncheck any
-                you do not want to sync.
+                {t(appStore ? "foundApps" : "foundResources", {
+                  count: preview.resources.length,
+                })}
               </p>
               <ul className="workspace-list">
                 {preview.resources.map((resource) => (
@@ -259,13 +463,37 @@ export function NewConnectionWizard({
               disabled={pending !== null}
               onClick={onCreate}
             >
-              {pending === "create" ? "Creating…" : "Create connection"}
+              {pending === "create" ? common("creating") : t("create")}
             </button>
           </div>
         </div>
       ) : null}
 
-      {error ? <div className="error">{error}</div> : null}
+      {error && !errorInConfigure ? <div className="error">{error}</div> : null}
     </>
+  );
+}
+
+function UnavailableConnector({
+  connector,
+}: {
+  connector: ConnectorCatalogEntry;
+}) {
+  const locale = useLocale();
+  const t = useT("connections.wizard");
+  const copy = unavailableCopy(connector.unavailable!, locale);
+  return (
+    <div className="card">
+      <h2>{t("unavailableTitle", { name: connector.name })}</h2>
+      <p className="break-anywhere">{copy.detail}</p>
+      {copy.guideUrl ? (
+        <p className="muted">
+          {t("selfHosting")}{" "}
+          <a href={copy.guideUrl} target="_blank" rel="noreferrer">
+            {t("setupGuide")}
+          </a>
+        </p>
+      ) : null}
+    </div>
   );
 }

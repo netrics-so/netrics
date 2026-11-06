@@ -59,3 +59,25 @@ or Apple-specific signed credentials.
 Connect a real Vercel project in the hosted sandbox, backfill analytics, display
 visitors and page views on a dashboard, revoke the token, and observe the
 connection enter a recoverable authentication state.
+
+## Decisions
+
+- **Tokens, not OAuth.** Vercel's OAuth integrations have no Web Analytics
+  scope: a test integration could list projects but got 404 "Web Analytics
+  not found" for a project a personal token reads. Users create a token
+  scoped to one project or team ([setup guide](../connectors/vercel.md)).
+  Generic OAuth stays in the connector framework's backlog for providers
+  that support it.
+- **Monthly pages, monthly top 10.** Vercel ranks routes, countries and
+  events over the queried range, so every query spans a whole calendar
+  month (up to today) and only the requested days are kept. A day's values
+  are the same whichever sync asks for them. While a month is open, a route
+  that falls out of the top 10 keeps its earlier values.
+- **Backfill.** Up to 366 days (the Pro plan), clamped to a shorter plan
+  window when Vercel reports one. Incremental syncs re-read yesterday and
+  today.
+- **Credential failures.** A rejected token, a missing project or disabled
+  Web Analytics fail the connection check (`auth_failed`, syncing paused
+  until a new token is saved). Rate limits and outages are retried.
+
+Exit gate passed on the hosted service on 2026-09-28 (#53).

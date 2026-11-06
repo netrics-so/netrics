@@ -3,6 +3,7 @@ import type {
   ConnectionContext,
   Connector,
   ConnectorManifest,
+  ManifestTranslation,
   Observation,
   Resource,
   SyncRequest,
@@ -13,11 +14,40 @@ const DEFAULT_SEED = 1;
 const DEFAULT_RESOURCE_COUNT = 3;
 const MAX_RESOURCE_COUNT = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * The earliest civil time zone, UTC+14 (Pacific/Kiritimati). A reporting date
+ * has begun somewhere on Earth once `to` is at most this far before its UTC
+ * midnight (#148).
+ */
+const EARLIEST_ZONE_OFFSET_MS = 14 * 60 * 60 * 1000;
+
+/**
+ * German texts of the manifest (ADR 0016, #257): "du" where the text
+ * addresses the reader; product names and stored values stay as they are.
+ */
+const demoDe: ManifestTranslation = {
+  name: "Demo-Connector",
+  description:
+    "Deterministischer Demo-Connector für das Onboarding und für Tests. Erzeugt plausible Tageswerte lokal, ohne Netzwerkzugriff.",
+  resourceNoun: { singular: "Website", plural: "Websites" },
+  metrics: {
+    "demo.visitors": {
+      name: "Besucher",
+      description: "Eindeutige Besucher pro Tag und Demo-Website.",
+    },
+    "demo.signups": {
+      name: "Registrierungen",
+      description: "Neue Registrierungen pro Tag und Demo-Website.",
+    },
+  },
+  dimensions: { resource: "Website" },
+};
 
 export const demoManifest: ConnectorManifest = {
   id: "demo",
-  version: "0.1.0",
-  sdkVersion: "^0.2.0",
+  version: "0.1.1",
+  sdkVersion: "^0.2.7",
+  category: "other",
   name: "Demo Connector",
   description:
     "Deterministic demo connector for onboarding and tests. Generates plausible daily metrics locally without network access.",
@@ -62,6 +92,8 @@ export const demoManifest: ConnectorManifest = {
   supportsBackfill: true,
   backfillDays: 90,
   outboundDomains: [],
+  resourceNoun: { singular: "site", plural: "sites" },
+  translations: { de: demoDe },
 };
 
 type Simulation = "outage" | "bad-credentials";
@@ -119,8 +151,15 @@ function dayStartUtc(timestampMs: number): number {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
 
+/**
+ * Reporting dates (as their UTC midnight) from the day containing `fromMs`
+ * up to the latest date that has begun anywhere at `toMs`. Daily values stay
+ * keyed to their reporting date (ADR 0008); going up to UTC+14 means the
+ * workspace-local "today" has data in every time zone at any hour (#148).
+ */
 function* daysInWindow(fromMs: number, toMs: number): Generator<number> {
-  for (let day = dayStartUtc(fromMs); day < toMs; day += DAY_MS) {
+  const end = toMs + EARLIEST_ZONE_OFFSET_MS;
+  for (let day = dayStartUtc(fromMs); day <= end; day += DAY_MS) {
     yield day;
   }
 }
@@ -212,10 +251,16 @@ export function createDemoConnector(): Connector {
           }
         }
       }
+      // The cursor never passes the UTC day containing `to`: the next
+      // incremental window starts there and re-emits the dates ahead of UTC
+      // (identical values, so the upsert writes nothing).
       const last = observations[observations.length - 1];
+      const cursorMs = last
+        ? Math.min(Date.parse(last.sourceTimestamp), dayStartUtc(toMs))
+        : undefined;
       return {
         observations,
-        ...(last ? { nextCursor: last.sourceTimestamp } : {}),
+        ...(cursorMs !== undefined ? { nextCursor: isoOf(cursorMs) } : {}),
         done: true,
       };
     },

@@ -15,19 +15,37 @@ import {
   recordSetupOwner,
   type Database,
 } from "@netrics/database";
+import {
+  localeFromAcceptLanguage,
+  resolveLocale,
+  type Locale,
+} from "@netrics/domain";
 
 import type { Config } from "../env.js";
 import { SETUP_TOKEN_HEADER, hashSetupToken } from "../setup.js";
 import { hashToken } from "../tokens.js";
+import {
+  AUTH_RATE_LIMIT_RULES,
+  CLIENT_IP_HEADER,
+  DEFAULT_AUTH_RATE_LIMIT,
+} from "./rate-limit.js";
 
 /** Header carrying an invitation token on sign-up (see routes/invitations.ts). */
 export const INVITATION_TOKEN_HEADER = "x-netrics-invitation-token";
+import { PASSWORD_RESET_TTL_SECONDS } from "../link-lifetimes.js";
+import { recipientEmailLocale } from "../mail/locale.js";
 import { createMailer, type Mailer } from "../mail/mailer.js";
 
 export interface SessionIdentity {
   authUserId: string;
   email: string;
   domainUserId: string;
+  /**
+   * The language to answer in (ADR 0016 section 3, web signed in): the
+   * user's setting, else the instance default, else the request's
+   * Accept-Language, else English.
+   */
+  locale: Locale;
 }
 
 /**
@@ -55,11 +73,34 @@ export function createAuthService(
   const logger = deps.logger.child({ module: "auth" });
   const mailer = deps.mailer ?? createMailer(config, logger);
 
+  // The recipient's language for an auth email (ADR 0016 section 3); the
+  // domain user may not exist yet in the middle of sign-up.
+  const emailLocaleFor = async (authUserId: string) =>
+    recipientEmailLocale({
+      recipientLocale: (await findUserByAuthUserId(db, authUserId))?.locale,
+      defaultLocale: config.defaultLocale,
+    });
+
   const auth = betterAuth({
     baseURL: config.betterAuthUrl,
     secret: config.betterAuthSecret,
     trustedOrigins: [config.webOrigin],
     logger: { disabled: config.logLevel === "silent" },
+    rateLimit: {
+      enabled: config.authRateLimit,
+      storage: "database",
+      ...DEFAULT_AUTH_RATE_LIMIT,
+      customRules: AUTH_RATE_LIMIT_RULES,
+    },
+    advanced: {
+      // better-auth skips its origin and callback URL checks when NODE_ENV
+      // is "test"; keep them on so the test suite exercises what production
+      // runs (a reset link may only lead back to WEB_ORIGIN, for instance).
+      disableOriginCheck: false,
+      // Only the IP the bridge below resolved (see ./rate-limit.ts); also
+      // what session.ipAddress and the auth.login audit event record.
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
+    },
     database: drizzleAdapter(db, {
       provider: "pg",
       schemaName: "auth",
@@ -70,14 +111,26 @@ export function createAuthService(
       // Verification cannot gate sign-in until invitations require verified
       // addresses (#27); verification emails are still sent when SMTP exists.
       requireEmailVerification: false,
+      // Stated as "1 hour" in the reset email and on the web pages, and the
+      // same minimum the web forms enforce; keep them in step.
+      minPasswordLength: 8,
+      resetPasswordTokenExpiresIn: PASSWORD_RESET_TTL_SECONDS,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => {
-        await mailer.sendPasswordResetEmail({ to: user.email, url });
+        await mailer.sendPasswordResetEmail({
+          to: user.email,
+          url,
+          locale: await emailLocaleFor(user.id),
+        });
       },
     },
     emailVerification: {
       sendVerificationEmail: async ({ user, url }) => {
-        await mailer.sendVerificationEmail({ to: user.email, url });
+        await mailer.sendVerificationEmail({
+          to: user.email,
+          url,
+          locale: await emailLocaleFor(user.id),
+        });
       },
     },
     databaseHooks: {
@@ -130,11 +183,19 @@ export function createAuthService(
           },
           // Mirror every auth user into the installation-level domain users
           // table (the row tenants reference via memberships).
-          after: async (user) => {
+          // The account keeps the language its sign-up page was shown in:
+          // the instance default, else the browser's (ADR 0016).
+          after: async (user, context) => {
             const domainUser = await provisionDomainUser(db, {
               authUserId: user.id,
               email: user.email,
               name: user.name,
+              locale: resolveLocale([
+                config.defaultLocale,
+                localeFromAcceptLanguage(
+                  context?.headers?.get("accept-language"),
+                ),
+              ]),
             });
             if (config.signup === "closed") {
               await recordSetupOwner(db, domainUser.id);
@@ -187,9 +248,14 @@ export function createAuthService(
     async handle(request, reply) {
       // Never derive the URL from the client-controlled Host header.
       const url = new URL(request.url, config.betterAuthUrl);
+      const headers = fromNodeHeaders(request.headers);
+      // request.clientIp honours only trusted proxy hops and, with a valid
+      // proxy secret, the frontend's forwarded address (client-address.ts);
+      // a client-sent value of this header is replaced.
+      headers.set(CLIENT_IP_HEADER, request.clientIp);
       const req = new Request(url.toString(), {
         method: request.method,
-        headers: fromNodeHeaders(request.headers),
+        headers,
         ...(request.body ? { body: JSON.stringify(request.body) } : {}),
       });
       const response = await auth.handler(req);
@@ -219,10 +285,20 @@ export function createAuthService(
           name: session.user.name,
         });
       }
+      const acceptLanguage = headers["accept-language"];
       return {
         authUserId: session.user.id,
         email: domainUser.email,
         domainUserId: domainUser.id,
+        locale: resolveLocale([
+          domainUser.locale,
+          config.defaultLocale,
+          localeFromAcceptLanguage(
+            Array.isArray(acceptLanguage)
+              ? acceptLanguage.join(",")
+              : acceptLanguage,
+          ),
+        ]),
       };
     },
   };

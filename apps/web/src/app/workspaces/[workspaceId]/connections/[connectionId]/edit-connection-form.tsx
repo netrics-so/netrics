@@ -9,12 +9,15 @@ import type {
 } from "@netrics/contracts";
 
 import { ConfigFields } from "../config-fields";
+import { TokenField } from "../token-field";
 import { apiErrorMessage, updateConnection } from "@/lib/api";
 import {
   coerceConfigValues,
   initialConfigValues,
   parseConfigSchema,
 } from "@/lib/config-schema";
+import { APPLE_ADS_CONNECTOR_ID, signedKeyStrategyOf } from "@/lib/signed-key";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 interface EditConnectionFormProps {
   workspaceId: string;
@@ -27,10 +30,19 @@ export function EditConnectionForm({
   connection,
   connector,
 }: EditConnectionFormProps) {
+  const locale = useLocale();
+  const t = useT("connections.edit");
+  const common = useT("common");
   const router = useRouter();
+  // An Apple Ads connection's config is its ad account as Apple named it
+  // (#375): shown on the page, chosen in the setup, never typed here.
+  const fixedConfig = connection.connectorId === APPLE_ADS_CONNECTOR_ID;
   const fields = useMemo(
-    () => (connector ? parseConfigSchema(connector.configSchema) : []),
-    [connector],
+    () =>
+      connector && !fixedConfig
+        ? parseConfigSchema(connector.configSchema)
+        : [],
+    [connector, fixedConfig],
   );
   const [name, setName] = useState(connection.name);
   const [configValues, setConfigValues] = useState<Record<string, string>>(() =>
@@ -41,10 +53,17 @@ export function EditConnectionForm({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const tokenStrategy = connector?.authStrategies.find(
+    (strategy) => strategy.strategy === "token",
+  );
+  // An OAuth connection's credentials are its grant: renewed by reconnecting
+  // at the provider, never by pasting a token (ADR 0012).
+  // A signed key (ADR 0014) is replaced in its own panel, never here.
   const wantsToken =
-    connector?.authStrategies.some(
-      (strategy) => strategy.strategy === "token",
-    ) || connection.hasCredentials;
+    connection.oauth === null &&
+    signedKeyStrategyOf(connector) === null &&
+    (tokenStrategy !== undefined || connection.hasCredentials);
+  const needsToken = connection.state.authState === "auth_failed";
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -54,14 +73,16 @@ export function EditConnectionForm({
     try {
       await updateConnection(workspaceId, connection.id, {
         ...(name.trim() !== connection.name ? { name: name.trim() } : {}),
-        config: coerceConfigValues(fields, configValues),
+        ...(fixedConfig
+          ? {}
+          : { config: coerceConfigValues(fields, configValues) }),
         ...(token !== "" ? { credentials: { token } } : {}),
       });
       setToken("");
-      setNotice("Connection updated.");
+      setNotice(t("updated"));
       router.refresh();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }
@@ -70,7 +91,7 @@ export function EditConnectionForm({
   return (
     <form className="stack" onSubmit={onSubmit}>
       <div className="field">
-        <label htmlFor="edit-name">Name</label>
+        <label htmlFor="edit-name">{t("name")}</label>
         <input
           id="edit-name"
           type="text"
@@ -81,7 +102,18 @@ export function EditConnectionForm({
           onChange={(event) => setName(event.target.value)}
         />
       </div>
-      {connector ? (
+      {wantsToken ? (
+        <TokenField
+          id="edit-token"
+          strategy={tokenStrategy}
+          value={token}
+          disabled={pending}
+          replacing
+          guideOpen={needsToken}
+          onChange={setToken}
+        />
+      ) : null}
+      {fixedConfig ? null : connector ? (
         <ConfigFields
           fields={fields}
           values={configValues}
@@ -92,28 +124,12 @@ export function EditConnectionForm({
         />
       ) : (
         <p className="muted">
-          Connector {connection.connectorId} is not in the deployed bundle;
-          config editing is unavailable.
+          {t("connectorMissing", { connector: connection.connectorId })}
         </p>
       )}
-      {wantsToken ? (
-        <div className="field">
-          <label htmlFor="edit-token">
-            Access token (leave empty to keep the current one)
-          </label>
-          <input
-            id="edit-token"
-            type="password"
-            value={token}
-            autoComplete="new-password"
-            disabled={pending}
-            onChange={(event) => setToken(event.target.value)}
-          />
-        </div>
-      ) : null}
       <div className="actions">
         <button type="submit" className="primary" disabled={pending}>
-          {pending ? "Saving…" : "Save changes"}
+          {pending ? common("saving") : t("saveChanges")}
         </button>
       </div>
       {notice ? <div className="notice">{notice}</div> : null}

@@ -1,0 +1,118 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/post-campaigns-query), checked 2026-10-29; IDs and names are synthetic. TO BE CONFIRMED by #370: deleted campaigns are left out without a filter.",
+  "result": [
+    {
+      "id": 5100000001,
+      "name": "Wurfel – Brand",
+      "adAccountId": 4100000001,
+      "promotedObjectType": "APPSTORE_APP",
+      "promotedObjectId": "1000000001",
+      "status": "ENABLED",
+      "billingEvent": "TAPS",
+      "startTime": "2026-01-01T00:00:00.000",
+      "dailyBudget": {
+        "value": {
+          "amount": "50.00",
+          "currency": "USD"
+        }
+      },
+      "targeting": {
+        "countryOrRegion": {
+          "include": ["US", "CA"]
+        },
+        "supplyPlacement": {
+          "include": ["APPSTORE_SEARCH_RESULTS"]
+        }
+      },
+      "bidStrategy": {
+        "bidStrategyType": "MANUAL_CPT",
+        "bidStrategyGoal": "TAP"
+      },
+      "creationTime": "2026-01-01T08:00:00.000",
+      "modificationTime": "2026-02-01T08:00:00.000",
+      "deleted": false,
+      "paymentModel": "PAYG",
+      "systemStatus": "RUNNING",
+      "systemStatusReasons": [],
+      "systemStatusLimitingReasons": [],
+      "displayStatus": "RUNNING"
+    },
+    {
+      "id": 5100000002,
+      "name": "Wurfel – Discovery",
+      "adAccountId": 4100000001,
+      "promotedObjectType": "APPSTORE_APP",
+      "promotedObjectId": "1000000001",
+      "status": "PAUSED",
+      "billingEvent": "TAPS",
+      "startTime": "2026-01-01T00:00:00.000",
+      "dailyBudget": {
+        "value": {
+          "amount": "50.00",
+          "currency": "USD"
+        }
+      },
+      "targeting": {
+        "countryOrRegion": {
+          "include": ["US", "CA"]
+        },
+        "supplyPlacement": {
+          "include": ["APPSTORE_SEARCH_RESULTS"]
+        }
+      },
+      "bidStrategy": {
+        "bidStrategyType": "MANUAL_CPT",
+        "bidStrategyGoal": "TAP"
+      },
+      "creationTime": "2026-01-01T08:00:00.000",
+      "modificationTime": "2026-02-01T08:00:00.000",
+      "deleted": false,
+      "paymentModel": "PAYG",
+      "systemStatus": "RUNNING",
+      "systemStatusReasons": [],
+      "systemStatusLimitingReasons": [],
+      "displayStatus": "PAUSED"
+    },
+    {
+      "id": 5100000003,
+      "name": "Dicey – Category",
+      "adAccountId": 4100000001,
+      "promotedObjectType": "APPSTORE_APP",
+      "promotedObjectId": "1000000002",
+      "status": "ENABLED",
+      "billingEvent": "TAPS",
+      "startTime": "2026-01-01T00:00:00.000",
+      "dailyBudget": {
+        "value": {
+          "amount": "50.00",
+          "currency": "USD"
+        }
+      },
+      "targeting": {
+        "countryOrRegion": {
+          "include": ["US", "CA"]
+        },
+        "supplyPlacement": {
+          "include": ["APPSTORE_SEARCH_RESULTS"]
+        }
+      },
+      "bidStrategy": {
+        "bidStrategyType": "MANUAL_CPT",
+        "bidStrategyGoal": "TAP"
+      },
+      "creationTime": "2026-01-01T08:00:00.000",
+      "modificationTime": "2026-02-01T08:00:00.000",
+      "deleted": false,
+      "paymentModel": "PAYG",
+      "systemStatus": "RUNNING",
+      "systemStatusReasons": [],
+      "systemStatusLimitingReasons": [],
+      "displayStatus": "RUNNING"
+    }
+  ],
+  "pagination": {
+    "totalCount": 3,
+    "offset": 0,
+    "pageSize": 1000
+  }
+}

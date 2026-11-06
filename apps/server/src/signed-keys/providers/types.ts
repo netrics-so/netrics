@@ -1,0 +1,210 @@
+import type {
+  ConnectorFetchInit,
+  ConnectorResponse,
+} from "@netrics/connector-sdk";
+import type { z } from "zod";
+
+/**
+ * A signed-key provider definition (ADR 0014): trusted host code that knows
+ * how a provider's uploaded key is validated and signed into short-lived
+ * tokens. Connectors only name the provider; they never see the key, the
+ * claims or the lifetime, and receive `credentials: { accessToken }`.
+ * Community connectors may name a provider but never define one.
+ */
+export interface SignedKeyProviderDefinition {
+  /** Stable id, used in manifests ("app-store-connect"). */
+  readonly id: string;
+  /** Display name ("Upload a new App Store Connect key"). */
+  readonly name: string;
+  /**
+   * The credential fields the wizard asks for, in order. Exactly one is the
+   * private key (`privateKey: true`); its value is a PEM PKCS#8 EC P-256
+   * key, which the host parses and checks before anything else.
+   */
+  readonly fields: readonly SignedKeyField[];
+  /**
+   * The JWT `kid` header and claims besides `iat` and `exp`. With
+   * `exchange`, this JWT is the client secret of the token exchange and is
+   * never handed to a connector.
+   */
+  token(credentials: SignedKeyFieldValues): {
+    kid: string;
+    claims: Readonly<Record<string, string>>;
+  };
+  /**
+   * Token lifetime: `iat` is now − issuedBeforeSeconds (clock skew), `exp`
+   * is now + expiresInSeconds.
+   */
+  readonly lifetime: {
+    readonly issuedBeforeSeconds: number;
+    readonly expiresInSeconds: number;
+  };
+  /**
+   * Whether netrics can generate the key pair (ADR 0020 §3, #371): the
+   * provider asks the user for a public key (Apple Ads) rather than handing
+   * out a private key (App Store Connect). The host then generates an EC
+   * P-256 pair, keeps the private key as a pending key and shows the public
+   * key to paste; pasting an existing private key stays possible.
+   */
+  readonly generatedKeyPair?: true;
+  /**
+   * Optional token exchange (ADR 0020 §2, Apple Ads): the signed JWT is the
+   * `client_secret` of an OAuth 2 client-credentials grant, and connectors
+   * receive the access token it is exchanged for. Without it (App Store
+   * Connect) the signed JWT itself is the access token, signed per call.
+   */
+  readonly exchange?: SignedKeyTokenExchange;
+  /**
+   * Hosts the validation probes (and the token exchange) may reach: the
+   * egress allowlist of host-side calls. Connector calls use the
+   * connector's own outboundDomains.
+   */
+  readonly serverDomains: readonly string[];
+  /**
+   * The wizard's setup copy: steps to create the key, the keys page, and
+   * deep links shown with a step (`step` indexes `steps`).
+   */
+  readonly setup: {
+    readonly steps: readonly string[];
+    readonly url: string;
+    readonly links?: readonly {
+      readonly step: number;
+      readonly label: string;
+      readonly url: string;
+    }[];
+  };
+  /**
+   * Checks with a freshly signed token before the credentials are stored
+   * (create, preview, rotation, config change). They run in order after the
+   * field and key checks; the first failure is the answer.
+   */
+  readonly probes: readonly SignedKeyProbe[];
+  /**
+   * What the user reads when the provider refuses a freshly signed token
+   * during a connector call: 401 (key revoked or invalid) and 403 (role
+   * missing). Both put the connection in auth_failed.
+   */
+  readonly authFailure: {
+    readonly unauthorized: string;
+    readonly forbidden: string;
+  };
+  /**
+   * Optional further keys of the same connection (#190: App Store Connect's
+   * reviews key), stored in the same envelope under their `id`. Each is
+   * validated with its own probes, signed into its own token and handed to
+   * the connector as `credentials[tokenField]`. A refusal of such a token
+   * never puts the connection in auth_failed: the connector pauses what
+   * the key reads.
+   */
+  readonly additionalKeys?: readonly SignedKeyAdditionalKey[];
+}
+
+/**
+ * How a signed-key provider exchanges its signed client secret for an
+ * access token (OAuth 2 client credentials, RFC 6749 §4.4). The host signs
+ * a fresh client secret per exchange (`lifetime`), posts the form to
+ * `tokenEndpoint` (its host must be in `serverDomains`) and caches the
+ * token per connection (ADR 0020 §2).
+ */
+export interface SignedKeyTokenExchange {
+  /** HTTPS token endpoint ("https://appleid.apple.com/auth/oauth2/token"). */
+  readonly tokenEndpoint: string;
+  /**
+   * The form body besides `client_secret` (which the host adds): e.g.
+   * `grant_type=client_credentials`, the client ID from the fields, and
+   * the scope.
+   */
+  form(fields: SignedKeyFieldValues): Readonly<Record<string, string>>;
+  /** The 200 response: an access token and its lifetime in seconds. */
+  readonly response: z.ZodType<{ access_token: string; expires_in: number }>;
+  /**
+   * What the user reads when the token endpoint answers `invalid_client`
+   * (key removed at the provider, or the IDs do not match the key).
+   */
+  readonly invalidClient: string;
+}
+
+/**
+ * An optional additional key of a signed-key provider. Its fields replace
+ * the main key's fields of the same name (key ID, private key); the main
+ * key's other fields (the team-wide issuer ID) are shared, and the
+ * provider's `token()` signs it with the merged values.
+ */
+export interface SignedKeyAdditionalKey {
+  /** Envelope and request member ("reviews"). */
+  readonly id: string;
+  /** Display name ("Customer Support key"). */
+  readonly name: string;
+  /** The connector's credential field for its token ("reviewsAccessToken"). */
+  readonly tokenField: string;
+  /** Its own fields, in order; exactly one is the private key. */
+  readonly fields: readonly SignedKeyField[];
+  /**
+   * Checks with a freshly signed token of this key (and the connection's
+   * config) before it is stored; the first failure answers.
+   */
+  readonly probes: readonly SignedKeyProbe[];
+}
+
+/** One credential field of a signed-key provider. */
+export interface SignedKeyField {
+  /** The key in `credentials` (and in the stored envelope). */
+  readonly key: string;
+  readonly label: string;
+  readonly description: string;
+  /** "file": chosen with a file picker, or pasted. */
+  readonly input: "text" | "file";
+  /** Whether the value is secret (never shown again after upload). */
+  readonly secret: boolean;
+  readonly placeholder?: string;
+  /** Upper bound in UTF-8 bytes, checked before anything else. */
+  readonly maxBytes: number;
+  /** The private key field (exactly one per provider). */
+  readonly privateKey?: true;
+  /**
+   * Format check of the trimmed value: null when valid, otherwise a message
+   * for the user. It must not quote the value.
+   */
+  validate?(value: string): string | null;
+}
+
+/** Trimmed credential values by field key. */
+export type SignedKeyFieldValues = Readonly<Record<string, string>>;
+
+/** What a probe may use: the candidate key's tokens and guarded egress. */
+export interface SignedKeyProbeContext {
+  /** The connection config being validated with the key (vendor number). */
+  readonly config: Readonly<Record<string, unknown>>;
+  /** The non-secret credential fields (issuer ID, key ID). */
+  readonly fields: SignedKeyFieldValues;
+  /**
+   * A freshly signed token for the candidate key, per call; with a token
+   * exchange, the access token exchanged for this probe run (never cached).
+   */
+  accessToken(): string;
+  /**
+   * HTTPS to the provider's serverDomains only (public addresses, no
+   * redirects, short timeout, bounded body).
+   */
+  fetch(url: string, init?: ConnectorFetchInit): Promise<ConnectorResponse>;
+}
+
+export type SignedKeyProbeResult =
+  | { ok: true }
+  | {
+      ok: false;
+      /** Shown to the user; credential values are redacted from it. */
+      message: string;
+    };
+
+/**
+ * A validation probe (ADR 0014, "Validation before anything is stored"),
+ * e.g. App Store Connect's `GET /v1/apps?limit=1` and the sales report
+ * probe (#171). A thrown error counts as a failed validation with a generic
+ * message; it is never retried here.
+ */
+export interface SignedKeyProbe {
+  /** Short name for logs ("apps", "sales-report"). */
+  readonly name: string;
+  run(context: SignedKeyProbeContext): Promise<SignedKeyProbeResult>;
+}

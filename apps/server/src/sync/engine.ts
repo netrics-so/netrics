@@ -1,43 +1,148 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import type { DataPolicy } from "@netrics/domain";
 
 import {
   ContractViolationError,
   executeCheck,
+  executeDiscover,
   executeSync,
   redactSecrets,
+  supportsResourceIcons,
   type ConnectorRegistry,
+  type ExecuteOptions,
 } from "@netrics/connector-runtime";
 import {
   observationKey,
+  type ConnectionContext,
   type Observation,
   type SyncMode,
   type SyncRequest,
   type SyncResult,
 } from "@netrics/connector-sdk";
-import { schema, withWorkspace, type Transaction } from "@netrics/database";
+import {
+  connectionResourcesDiscoveredAt,
+  connectorStageProvenance,
+  ingestAppReviews,
+  ingestDatasetPage,
+  DatasetStoreError,
+  DatasetStageUnavailableError,
+  resolveDataPolicy,
+  schema,
+  upsertConnectionResources,
+  withWorkspace,
+  type ImageQuota,
+  type OAuthAuthReason,
+  type Transaction,
+} from "@netrics/database";
+import {
+  IMAGE_QUOTA_DEFAULT_BYTES,
+  IMAGE_QUOTA_DEFAULT_COUNT,
+} from "@netrics/contracts";
 
 import { decryptCredentials, type CredentialKeyring } from "../credentials.js";
+import { refreshConnectionIcons } from "../images/resource-icons.js";
 import {
   NonRetryableJobError,
+  ContinueJobError,
   TerminalJobError,
   type JobHandler,
   type JobHandlerContext,
 } from "../jobs/handlers.js";
+import {
+  callWithAccessToken,
+  NeedsReauthorizationError,
+  oauthStrategyFor,
+} from "../oauth/connector-auth.js";
+import { OAuthTokenError, type OAuthTokenService } from "../oauth/tokens.js";
+import {
+  callWithSignedKey,
+  SignedKeyRejectedError,
+} from "../signed-keys/connector-auth.js";
+import {
+  createSignedKeyProviders,
+  SignedKeyExchangeError,
+  type SignedKey,
+  type SignedKeyProviders,
+} from "../signed-keys/registry.js";
+import {
+  createSignedKeyTokenStore,
+  type SignedKeyTokenStore,
+} from "../signed-keys/token-store.js";
+
+import { createDatasetStaging } from "./staging.js";
 
 /** First-ever incremental sync with no cursor and no last success. */
 const INITIAL_INCREMENTAL_WINDOW_MS = 24 * 60 * 60 * 1000;
-/** Pagination bound: a connector paging forever is a contract violation. */
-const MAX_PAGES = 100;
+/**
+ * Rows per observation INSERT: PostgreSQL binds at most 65,535 parameters in
+ * one statement and a row binds six.
+ */
+const INSERT_BATCH_ROWS = 5_000;
+/** How often a successful sync refreshes the resource names (#194). */
+const RESOURCE_NAMES_REFRESH_MS = 24 * 60 * 60 * 1000;
+/** The image quota when the host passes none (the contract's defaults). */
+const DEFAULT_IMAGE_QUOTA: ImageQuota = {
+  maxCount: IMAGE_QUOTA_DEFAULT_COUNT,
+  maxBytes: IMAGE_QUOTA_DEFAULT_BYTES,
+};
 
 export interface SyncEngineDeps {
+  dataPolicy?: DataPolicy;
   registry: ConnectorRegistry;
   credentialKeyring: CredentialKeyring;
+  /** Clock for sync windows and state timestamps; defaults to the wall clock. */
+  now?: () => Date;
+  /** Access tokens for OAuth connections (ADR 0012). */
+  oauthTokens?: OAuthTokenService;
+  /** Default: the signed-key providers of this server (ADR 0014). */
+  signedKeys?: SignedKeyProviders;
+  /**
+   * Default: the cached exchanged tokens of signed-key connections over the
+   * job's database (ADR 0020 §2).
+   */
+  signedKeyTokens?: SignedKeyTokenStore;
+  /** Tests only: options for every connector call (e.g. local egress). */
+  executeOptions?: ExecuteOptions;
+  /** The workspace image quota icons count against (#226). */
+  imageQuota?: ImageQuota;
 }
 
-type ErrorClass = "auth" | "transient" | "contract";
+type ErrorClass = "auth" | "transient" | "contract" | "budget";
+
+/**
+ * Dataset store failures that are not the connector's fault. Storage
+ * failures (the store redacts every database error, including
+ * serialization failures, deadlocks, timeouts and lost connections, to
+ * dataset_storage_failed) and a refresh superseded by a concurrent newer one
+ * are retried like an outage.
+ */
+const TRANSIENT_DATASET_ERRORS = new Set([
+  "dataset_storage_failed",
+  "dataset_refresh_superseded",
+]);
+/**
+ * Quotas and size limits of the data policy: the job ends without retries
+ * until space is freed or the policy changes (the next scheduled sync tries
+ * again), recorded as "budget" rather than a connector contract failure.
+ */
+const BUDGET_DATASET_ERRORS = new Set([
+  "dataset_workspace_quota",
+  "dataset_source_quota",
+  "dataset_refresh_limit",
+  "dataset_generation_limit",
+]);
+
+/** A dataset page that does not fit the workspace's data policy. */
+class DatasetBudgetError extends Error {
+  constructor(code: string) {
+    super(`Data storage limit reached (${code})`);
+    this.name = "DatasetBudgetError";
+  }
+}
 
 interface StateRow {
   cursor: string | null;
+  backfillJobId: string | null;
   lastSuccessAt: Date | null;
   pollIntervalSeconds: number;
 }
@@ -74,11 +179,7 @@ function computeWindow(
 }
 
 /**
- * Inserts observations with (connection_id, source_identity) idempotency and
- * returns how many rows were actually written (duplicates are skipped).
- */
-/**
- * Upserts a run's observations. Identity is (connection, metric, series,
+ * Upserts one page's observations. Identity is (connection, metric, series,
  * timestamp) with the series derived by the database from the dimensions
  * (ADR 0008): a changed value for an existing key is a provider revision and
  * replaces the stored one; an unchanged value is a no-op. Returns the number
@@ -94,7 +195,7 @@ async function ingestObservations(
   },
 ): Promise<number> {
   // One statement may not touch a key twice (ON CONFLICT DO UPDATE); when a
-  // run repeats a key across pages, the later value wins.
+  // page repeats a key, the later value wins (as a later page's would).
   const latest = new Map<string, Observation>();
   for (const observation of input.observations) {
     latest.set(observationKey(observation), observation);
@@ -122,21 +223,27 @@ async function ingestObservations(
       dimensions: observation.dimensions,
     };
   });
-  const written = await tx
-    .insert(schema.observations)
-    .values(rows)
-    .onConflictDoUpdate({
-      target: [
-        schema.observations.connectionId,
-        schema.observations.metricDefinitionId,
-        schema.observations.seriesKey,
-        schema.observations.sourceTimestamp,
-      ],
-      set: { value: sql`excluded.value`, ingestedAt: sql`now()` },
-      setWhere: sql`${schema.observations.value} is distinct from excluded.value`,
-    })
-    .returning({ connectionId: schema.observations.connectionId });
-  return written.length;
+  // A large page (a week of Search Console breakdowns) exceeds what one
+  // statement may bind; batches share the page's transaction.
+  let written = 0;
+  for (let start = 0; start < rows.length; start += INSERT_BATCH_ROWS) {
+    const batch = await tx
+      .insert(schema.observations)
+      .values(rows.slice(start, start + INSERT_BATCH_ROWS))
+      .onConflictDoUpdate({
+        target: [
+          schema.observations.connectionId,
+          schema.observations.metricDefinitionId,
+          schema.observations.seriesKey,
+          schema.observations.sourceTimestamp,
+        ],
+        set: { value: sql`excluded.value`, ingestedAt: sql`now()` },
+        setWhere: sql`${schema.observations.value} is distinct from excluded.value`,
+      })
+      .returning({ connectionId: schema.observations.connectionId });
+    written += batch.length;
+  }
+  return written;
 }
 
 /**
@@ -147,11 +254,18 @@ async function ingestObservations(
  *     id decides the registry lookup; a missing row under RLS means a
  *     cross-workspace job and is rejected as a contract error).
  *  2. The credential check runs outside any transaction.
- *  3. Connector sync, ingestion, cursor advancement, state update, and the
- *     sync_run success all commit in ONE tenant transaction. Any failure
- *     rolls the whole attempt back — zero observations, untouched cursor.
+ *  3. Pages are fetched one at a time outside any transaction. Each non-final
+ *     page commits in its own short tenant transaction together with its
+ *     nextCursor as the checkpoint (#145): the run holds one page in memory,
+ *     never the whole window, and the cursor never passes data that is not
+ *     committed. The final page commits with the run's cursor, the success
+ *     state and the succeeded sync_run in one transaction.
  *  4. Failures are then recorded in a fresh tenant transaction (failed
- *     sync_run + connection_state) before the job error propagates.
+ *     sync_run with what earlier pages committed + connection_state) before
+ *     the job error propagates. A retry (or the next run) starts at the
+ *     checkpoint; re-sent observations are idempotent upserts. A new
+ *     backfill job ignores the stored cursor and reads the whole window;
+ *     once it has checkpointed, its retries resume from there (#153).
  */
 async function runSync(
   ctx: JobHandlerContext,
@@ -167,7 +281,8 @@ async function runSync(
     );
   }
   const attempt = job.attempts + 1;
-  const now = new Date();
+  const clock = deps.now ?? (() => new Date());
+  const now = clock();
   const log = logger.child({ connectionId, mode, attempt });
 
   // Step 1: load connection + state under the job's tenant context.
@@ -179,9 +294,23 @@ async function runSync(
         connectorId: schema.connections.connectorId,
         config: schema.connections.config,
         credentialsEncrypted: schema.connections.credentialsEncrypted,
+        setupPending: schema.connections.setupPending,
+        oauthProvider: schema.connectionOAuth.provider,
       })
       .from(schema.connections)
-      .where(eq(schema.connections.id, connectionId))
+      .leftJoin(
+        schema.connectionOAuth,
+        and(
+          eq(schema.connectionOAuth.connectionId, schema.connections.id),
+          eq(schema.connectionOAuth.workspaceId, workspaceId),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.connections.id, connectionId),
+          eq(schema.connections.workspaceId, workspaceId),
+        ),
+      )
       .limit(1);
     if (!connection) {
       return null;
@@ -189,13 +318,19 @@ async function runSync(
     const [state] = await tx
       .select({
         cursor: schema.connectionState.cursor,
+        backfillJobId: schema.connectionState.backfillJobId,
         lastSuccessAt: schema.connectionState.lastSuccessAt,
         pollIntervalSeconds: schema.connectionState.pollIntervalSeconds,
       })
       .from(schema.connectionState)
       .where(eq(schema.connectionState.connectionId, connectionId))
       .limit(1);
-    return { connection, state: state ?? null };
+    const { policy } = await resolveDataPolicy(
+      tx,
+      workspaceId,
+      deps.dataPolicy,
+    );
+    return { connection, state: state ?? null, policy };
   });
 
   // Belt-and-braces: RLS already hides cross-workspace rows (a tampered job
@@ -205,39 +340,82 @@ async function runSync(
       "contract: connection not found in the job's workspace",
     );
   }
+  // A connection whose setup is pending (ADR 0012: created by an OAuth
+  // callback, no config yet) is never synced: the scheduler does not see it
+  // (no next_due_at) and the API refuses manual syncs; a job that still
+  // reaches it ends here without a run or a state change.
+  if (loaded.connection.setupPending) {
+    log.info("sync skipped: connection setup is pending");
+    return;
+  }
   const connection = {
     ...loaded.connection,
     config: loaded.connection.config as Record<string, unknown>,
   };
   const state = loaded.state;
+  /**
+   * Where this run starts (#153). An incremental run continues from the
+   * stored cursor. A backfill reads the connector's whole window: fresh, it
+   * ignores the stored cursor (a later incremental sync's position, or the
+   * checkpoint of an earlier backfill); a retried or reclaimed attempt of
+   * the same job finds its own id next to the cursor and resumes from its
+   * checkpoint (#145). Every checkpoint of a backfill records the job's id.
+   */
+  const fresh = mode === "backfill" && state?.backfillJobId !== job.id;
+  const startCursor = fresh ? null : (state?.cursor ?? null);
+  const backfillMarker = mode === "backfill" ? { backfillJobId: job.id } : {};
 
-  // Optional resource subset chosen at creation time (stored in config under
-  // a reserved key so it cannot clash with manifest config properties, whose
-  // validation rejects additionalProperties before this merge happens).
-  const rawSelection = connection.config.resourceSelection;
-  const selectedResources =
-    Array.isArray(rawSelection) &&
-    rawSelection.length > 0 &&
-    rawSelection.every((entry) => typeof entry === "string" && entry !== "")
-      ? (rawSelection as string[])
-      : undefined;
-
-  const window = computeWindow(
+  let window = computeWindow(
     mode,
     state,
     now,
     deps.registry.get(connection.connectorId)?.manifest.backfillDays ?? 0,
   );
+  const continuation = (
+    job.payload as { continuation?: { syncWindow?: unknown } } | null
+  )?.continuation?.syncWindow;
+  if (continuation !== undefined) {
+    const saved = continuation as {
+      mode?: unknown;
+      from?: unknown;
+      to?: unknown;
+    } | null;
+    if (
+      !saved ||
+      saved.mode !== mode ||
+      typeof saved.from !== "string" ||
+      typeof saved.to !== "string" ||
+      !Number.isFinite(Date.parse(saved.from)) ||
+      !Number.isFinite(Date.parse(saved.to)) ||
+      Date.parse(saved.from) >= Date.parse(saved.to)
+    ) {
+      throw new NonRetryableJobError(
+        "contract: invalid sync continuation window",
+      );
+    }
+    window = { from: new Date(saved.from), to: new Date(saved.to) };
+  }
   const pollIntervalSeconds =
     state?.pollIntervalSeconds ??
     deps.registry.get(connection.connectorId)?.manifest
       .minRefreshIntervalSeconds ??
     300;
 
+  /**
+   * What this attempt has committed so far: pages before the final one are
+   * checkpointed as they complete, so a failed run reports them.
+   */
+  const progress = {
+    pagesCommitted: 0,
+    observationsWritten: 0,
+    cursor: startCursor,
+  };
+
   /** Records a failed sync_run + connection_state in a fresh transaction. */
   const recordFailure = async (
     errorClass: ErrorClass,
     error: unknown,
+    authReason?: OAuthAuthReason,
   ): Promise<void> => {
     const message = safeMessage(error);
     try {
@@ -248,20 +426,24 @@ async function runSync(
           mode,
           requestedFrom: window.from,
           requestedTo: window.to,
-          cursorBefore: state?.cursor ?? null,
+          cursorBefore: startCursor,
+          // The checkpoint the next attempt resumes from, when pages
+          // committed before the failure.
+          cursorAfter: progress.pagesCommitted > 0 ? progress.cursor : null,
           attempt,
           status: "failed",
           startedAt: now,
           finishedAt: new Date(),
           errorClass,
           errorMessage: message,
-          observationsWritten: 0,
+          observationsWritten: progress.observationsWritten,
         });
-        const statePatch =
-          errorClass === "auth"
-            ? { authState: "auth_failed" }
+        const statePatch = authReason
+          ? { authState: "needs_reauthorization", authReason }
+          : errorClass === "auth"
+            ? { authState: "auth_failed", authReason: null }
             : errorClass === "transient"
-              ? { authState: "outage" }
+              ? { authState: "outage", authReason: null }
               : {};
         await tx
           .insert(schema.connectionState)
@@ -300,9 +482,39 @@ async function runSync(
   }
   const { connector, manifest } = registered;
 
+  // Optional resource subset (stored in config under a reserved key so it
+  // cannot clash with manifest config properties, whose validation rejects
+  // additionalProperties before this merge happens). Never configured means
+  // every resource. For a connector that honors a selection, an explicit
+  // empty one means collection is paused: the connector receives
+  // `resources: []` and collects no resource-scoped data, while the
+  // credential check still runs and the run succeeds (the connection stays
+  // healthy; the dashboard shows it as paused).
+  const rawSelection = connection.config.resourceSelection;
+  const selectedResources =
+    Array.isArray(rawSelection) &&
+    (rawSelection.length > 0 || manifest.supportsResourceSelection === true) &&
+    rawSelection.every((entry) => typeof entry === "string" && entry !== "")
+      ? (rawSelection as string[])
+      : undefined;
+
   if (mode === "backfill" && !manifest.supportsBackfill) {
     const error = new Error(
       `contract: connector "${manifest.id}" does not support backfill`,
+    );
+    await recordFailure("contract", error);
+    throw new NonRetryableJobError(error.message);
+  }
+
+  // OAuth connections (ADR 0012): the connector receives a short-lived
+  // access token per call; the refresh token never leaves the host.
+  const oauthProvider = connection.oauthProvider;
+  const oauthStrategy = oauthProvider
+    ? oauthStrategyFor(manifest, oauthProvider)
+    : undefined;
+  if (oauthProvider && !oauthStrategy) {
+    const error = new Error(
+      `contract: connector "${manifest.id}" has no oauth2 strategy for provider "${oauthProvider}"`,
     );
     await recordFailure("contract", error);
     throw new NonRetryableJobError(error.message);
@@ -312,24 +524,130 @@ async function runSync(
   // retry loop — classified as contract.
   let credentials: Record<string, unknown>;
   try {
-    credentials = connection.credentialsEncrypted
-      ? (JSON.parse(
-          decryptCredentials(
-            connection.credentialsEncrypted.toString("utf8"),
-            deps.credentialKeyring,
-            { workspaceId: connection.workspaceId, connectionId },
-          ),
-        ) as Record<string, unknown>)
-      : {};
+    credentials = oauthStrategy
+      ? {}
+      : connection.credentialsEncrypted
+        ? (JSON.parse(
+            decryptCredentials(
+              connection.credentialsEncrypted.toString("utf8"),
+              deps.credentialKeyring,
+              { workspaceId: connection.workspaceId, connectionId },
+            ),
+          ) as Record<string, unknown>)
+        : {};
   } catch (error) {
     await recordFailure("contract", error);
     throw new NonRetryableJobError(safeMessage(error));
+  }
+
+  // Signed-key connections (ADR 0014): the stored key is read here and
+  // each connector call gets a freshly signed token; the key never reaches
+  // the connector. A stored key that no longer parses needs a new upload.
+  let signedKey: SignedKey | undefined;
+  const signedKeys = deps.signedKeys ?? createSignedKeyProviders();
+  const signedKeyProvider = oauthStrategy
+    ? undefined
+    : signedKeys.providerFor(manifest, credentials);
+  if (signedKeyProvider) {
+    const parsed = signedKeys.parse(signedKeyProvider, credentials);
+    if (!parsed.ok) {
+      const error = new Error(
+        `The stored ${signedKeyProvider.name} key cannot be used: ${parsed.message}`,
+      );
+      await recordFailure("auth", error);
+      throw new TerminalJobError(safeMessage(error));
+    }
+    signedKey = parsed.value;
+    credentials = {};
   }
 
   const context = {
     connectionId,
     config: connection.config,
     credentials,
+  };
+  const binding = { workspaceId, connectionId };
+  // Providers with a token exchange cache the exchanged token per
+  // connection; others sign per call and never touch the store.
+  const signedKeyCache = signedKey?.exchanges
+    ? (
+        deps.signedKeyTokens ??
+        createSignedKeyTokenStore({
+          db: appDb,
+          credentialKeyring: deps.credentialKeyring,
+          logger: log,
+        })
+      ).forConnection(binding)
+    : undefined;
+
+  /**
+   * Runs one connector call with this connection's credentials: stored
+   * credentials, for OAuth a valid access token (one retry with a refreshed
+   * token after a provider 401), or for a signed key a freshly signed token
+   * (no retry: a refusal means the key must be replaced).
+   */
+  const callConnector = <T>(
+    call: (context: ConnectionContext, options: ExecuteOptions) => Promise<T>,
+    rejected?: (value: T) => boolean,
+  ): Promise<T> =>
+    signedKey
+      ? callWithSignedKey({
+          key: signedKey,
+          ...(signedKeyCache ? { cache: signedKeyCache } : {}),
+          ...(deps.executeOptions ? { options: deps.executeOptions } : {}),
+          call: (tokenCredentials, options) =>
+            call({ ...context, credentials: { ...tokenCredentials } }, options),
+          ...(rejected ? { rejected } : {}),
+        })
+      : oauthStrategy
+        ? callWithAccessToken({
+            tokens: deps.oauthTokens,
+            binding,
+            requiredScopes: oauthStrategy.scopes,
+            ...(deps.executeOptions ? { options: deps.executeOptions } : {}),
+            call: (oauthCredentials, options) =>
+              call(
+                { ...context, credentials: { ...oauthCredentials } },
+                options,
+              ),
+            ...(rejected ? { rejected } : {}),
+          })
+        : call(context, deps.executeOptions ?? {});
+
+  /**
+   * Records an OAuth token failure or a refused signed key; returns the
+   * error to throw, or null when the error is not one.
+   */
+  const authFailure = async (error: unknown): Promise<Error | null> => {
+    if (error instanceof SignedKeyRejectedError) {
+      // auth_failed with the provider's "upload a new key" message; the
+      // scheduler skips the connection until new credentials arrive.
+      await recordFailure("auth", error);
+      return new TerminalJobError(error.message);
+    }
+    if (error instanceof SignedKeyExchangeError) {
+      // rejected never gets here (callWithSignedKey makes it a refused
+      // key); the message names status and error code only.
+      if (error.kind === "configuration") {
+        await recordFailure("contract", error);
+        return new NonRetryableJobError(safeMessage(error));
+      }
+      await recordFailure("transient", error);
+      return error;
+    }
+    if (error instanceof NeedsReauthorizationError) {
+      await recordFailure("auth", error, error.reason);
+      return new TerminalJobError(error.message);
+    }
+    if (error instanceof OAuthTokenError) {
+      if (error.kind === "configuration") {
+        await recordFailure("contract", error);
+        return new NonRetryableJobError(safeMessage(error));
+      }
+      await recordFailure("transient", error);
+      return error;
+    }
+    return null;
   };
 
   // Step 2: credential check. ok:false is terminal until the user repairs
@@ -338,8 +656,15 @@ async function runSync(
   // provider failure.
   let check;
   try {
-    check = await executeCheck(connector, context);
+    check = await callConnector(
+      (callContext, options) => executeCheck(connector, callContext, options),
+      (result) => !result.ok,
+    );
   } catch (error) {
+    const authError = await authFailure(error);
+    if (authError) {
+      throw authError;
+    }
     await recordFailure("transient", error);
     throw error;
   }
@@ -349,21 +674,171 @@ async function runSync(
     throw new TerminalJobError(safeMessage(error));
   }
 
-  // Step 3: fetch every page from the provider OUTSIDE any transaction (no
-  // database connection waits on external I/O), bounded by MAX_PAGES. Then
-  // step 4 commits ingest + cursor advance + success in ONE short tenant
-  // transaction: all or nothing, as before.
+  // Step 3: fetch pages from the provider OUTSIDE any transaction (no
+  // database connection waits on external I/O), bounded by the configured sync page budget, and
+  // commit each one as it arrives (see the run's doc comment).
   try {
-    const pages: SyncResult[] = [];
-    let finalCursor = state?.cursor ?? null;
+    let metricDefinitionIds: Map<string, string> | null = null;
+    /** Upserts one page's observations in the given tenant transaction. */
+    const ingestPage = async (
+      tx: Transaction,
+      observations: Observation[],
+    ): Promise<number> => {
+      if (observations.length === 0) {
+        return 0;
+      }
+      // Catalog rows come from the deploy-time migrate step (read-only for
+      // the app role); no row lock on the shared connector row here.
+      metricDefinitionIds ??= new Map(
+        (
+          await tx
+            .select({
+              id: schema.metricDefinitions.id,
+              key: schema.metricDefinitions.key,
+            })
+            .from(schema.metricDefinitions)
+            .where(eq(schema.metricDefinitions.connectorId, manifest.id))
+        ).map((row) => [row.key, row.id]),
+      );
+      return ingestObservations(tx, {
+        workspaceId,
+        connectionId,
+        metricDefinitionIds,
+        observations,
+      });
+    };
+
+    /**
+     * Stores the review text of one page (ADR 0019 §11) in the page's
+     * transaction. Only while the connection's credentials are the ones
+     * this run started with: a reviews key removed (and its reviews
+     * deleted) during the run must not bring them back. The row lock
+     * orders this against that removal.
+     */
+    const ingestReviews = async (
+      tx: Transaction,
+      result: Pick<SyncResult, "reviews" | "reviewWindows">,
+    ): Promise<void> => {
+      const reviews = result.reviews ?? [];
+      const windows = result.reviewWindows ?? [];
+      if (reviews.length === 0 && windows.length === 0) {
+        return;
+      }
+      const [current] = await tx
+        .select({ credentials: schema.connections.credentialsEncrypted })
+        .from(schema.connections)
+        .where(
+          and(
+            eq(schema.connections.id, connectionId),
+            eq(schema.connections.workspaceId, workspaceId),
+          ),
+        )
+        .for("share");
+      const started = connection.credentialsEncrypted;
+      const unchanged =
+        current?.credentials != null &&
+        started != null &&
+        current.credentials.equals(started);
+      if (!unchanged) {
+        log.info("review text not stored: the connection's keys changed");
+        return;
+      }
+      await ingestAppReviews(tx, {
+        workspaceId,
+        connectionId,
+        reviews,
+        windows,
+        now,
+      });
+    };
+
+    const ingestDatasets = async (
+      tx: Transaction,
+      result: Pick<SyncResult, "datasetPages">,
+    ) => {
+      for (const page of result.datasetPages ?? []) {
+        const definition = manifest.datasets?.find(
+          (item) => item.key === page.datasetKey,
+        );
+        if (!definition)
+          throw new ContractViolationError("Undeclared source dataset");
+        try {
+          await ingestDatasetPage(tx, {
+            workspaceId,
+            connectionId,
+            definition,
+            page,
+            now,
+            policyDefaults: deps.dataPolicy,
+            clock,
+            ...(page.stagingId || page.stagingPageKey
+              ? {
+                  retainedSource: await connectorStageProvenance(
+                    tx,
+                    {
+                      workspaceId,
+                      connectionId,
+                      connectorId: manifest.id,
+                      clock,
+                      policyDefaults: deps.dataPolicy,
+                    },
+                    page,
+                  ),
+                }
+              : {}),
+          });
+        } catch (error) {
+          if (error instanceof DatasetStageUnavailableError) throw error;
+          if (error instanceof DatasetStoreError) {
+            // Source retention can expire after provenance was checked, while
+            // waiting on ingestion's lock. Rebuild from the durable checkpoint.
+            if (
+              page.stagingId &&
+              (error.code === "dataset_replay_unavailable" ||
+                error.code === "dataset_refresh_expired")
+            )
+              throw new DatasetStageUnavailableError();
+            // The store's error carries only its code: nothing of the
+            // database error reaches logs or sync_runs.
+            if (TRANSIENT_DATASET_ERRORS.has(error.code)) throw error;
+            if (BUDGET_DATASET_ERRORS.has(error.code))
+              throw new DatasetBudgetError(error.code);
+            throw new ContractViolationError(error.code);
+          }
+          throw error;
+        }
+      }
+    };
+    let finalDatasetPages: Pick<SyncResult, "datasetPages"> = {};
+    let finalObservations: Observation[] = [];
+    let finalReviews: Pick<SyncResult, "reviews" | "reviewWindows"> = {};
+    let finalCursor = startCursor;
     if (window.from < window.to) {
-      let cursor = state?.cursor ?? undefined;
-      let done = false;
-      for (let page = 1; !done; page += 1) {
-        if (page > MAX_PAGES) {
-          throw new ContractViolationError(
-            `connector "${manifest.id}" paged more than ${MAX_PAGES} times without finishing`,
-          );
+      let cursor = startCursor ?? undefined;
+      for (let page = 1; ; page += 1) {
+        if (
+          loaded.policy.syncPagesPerRun !== null &&
+          page > loaded.policy.syncPagesPerRun
+        ) {
+          await withWorkspace(appDb, { workspaceId }, async (tx) => {
+            await tx.insert(schema.syncRuns).values({
+              workspaceId,
+              connectionId,
+              mode,
+              requestedFrom: window.from,
+              requestedTo: window.to,
+              cursorBefore: startCursor,
+              cursorAfter: progress.cursor,
+              attempt,
+              status: "continued",
+              startedAt: now,
+              finishedAt: new Date(),
+              observationsWritten: progress.observationsWritten,
+            });
+          });
+          throw new ContinueJobError({
+            syncWindow: { mode, from: iso(window.from), to: iso(window.to) },
+          });
         }
         const request: SyncRequest = {
           mode,
@@ -372,47 +847,77 @@ async function runSync(
           ...(cursor ? { cursor } : {}),
           ...(selectedResources ? { resources: selectedResources } : {}),
         };
-        const result = await executeSync(connector, context, request);
-        if (!result.done && !result.nextCursor) {
+        const result = await callConnector((callContext, options) =>
+          executeSync(connector, callContext, request, {
+            ...options,
+            datasetStaging: (signal) =>
+              createDatasetStaging({
+                db: appDb,
+                workspaceId,
+                connectionId,
+                manifest,
+                clock,
+                policyDefaults: deps.dataPolicy,
+                signal,
+              }),
+          }),
+        );
+        if (result.done) {
+          finalObservations = result.observations;
+          finalDatasetPages = result;
+          finalReviews = result;
+          finalCursor = result.nextCursor ?? iso(window.to);
+          break;
+        }
+        const nextCursor = result.nextCursor;
+        if (!nextCursor) {
           throw new ContractViolationError(
             `connector "${manifest.id}" returned done=false without a nextCursor`,
           );
         }
-        if (!result.done && result.nextCursor === cursor) {
+        if (nextCursor === cursor) {
           throw new ContractViolationError(
             `connector "${manifest.id}" returned a non-advancing cursor`,
           );
         }
-        pages.push(result);
-        cursor = result.nextCursor;
-        done = result.done;
+        // Checkpoint: the page's observations and the cursor after them
+        // commit together, so the cursor never passes uncommitted data.
+        const written = await withWorkspace(
+          appDb,
+          { workspaceId },
+          async (tx) => {
+            const count = await ingestPage(tx, result.observations);
+            await ingestReviews(tx, result);
+            await ingestDatasets(tx, result);
+            await tx
+              .insert(schema.connectionState)
+              .values({
+                connectionId,
+                workspaceId,
+                pollIntervalSeconds,
+                cursor: nextCursor,
+                ...backfillMarker,
+              })
+              .onConflictDoUpdate({
+                target: schema.connectionState.connectionId,
+                set: { cursor: nextCursor, ...backfillMarker },
+              });
+            return count;
+          },
+        );
+        progress.pagesCommitted += 1;
+        progress.observationsWritten += written;
+        progress.cursor = nextCursor;
+        cursor = nextCursor;
       }
-      finalCursor = cursor ?? iso(window.to);
     }
 
     await withWorkspace(appDb, { workspaceId }, async (tx) => {
-      // Catalog rows come from the deploy-time migrate step (read-only for
-      // the app role); no row lock on the shared connector row here.
-      const definitions = await tx
-        .select({
-          id: schema.metricDefinitions.id,
-          key: schema.metricDefinitions.key,
-        })
-        .from(schema.metricDefinitions)
-        .where(eq(schema.metricDefinitions.connectorId, manifest.id));
-      const metricDefinitionIds = new Map(
-        definitions.map((row) => [row.key, row.id]),
-      );
-
-      let observationsWritten = 0;
-      for (const result of pages) {
-        observationsWritten += await ingestObservations(tx, {
-          workspaceId,
-          connectionId,
-          metricDefinitionIds,
-          observations: result.observations,
-        });
-      }
+      const observationsWritten =
+        progress.observationsWritten +
+        (await ingestPage(tx, finalObservations));
+      await ingestReviews(tx, finalReviews);
+      await ingestDatasets(tx, finalDatasetPages);
 
       // Cursor advancement commits in this same transaction as the
       // observation inserts — never without them.
@@ -425,7 +930,9 @@ async function runSync(
           lastSuccessAt: now,
           nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
           cursor: finalCursor,
+          ...backfillMarker,
           authState: "ok",
+          authReason: null,
           consecutiveFailures: 0,
         })
         .onConflictDoUpdate({
@@ -434,7 +941,9 @@ async function runSync(
             lastSuccessAt: now,
             nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
             cursor: finalCursor,
+            ...backfillMarker,
             authState: "ok",
+            authReason: null,
             consecutiveFailures: 0,
           },
         });
@@ -444,7 +953,7 @@ async function runSync(
         mode,
         requestedFrom: window.from,
         requestedTo: window.to,
-        cursorBefore: state?.cursor ?? null,
+        cursorBefore: startCursor,
         cursorAfter: finalCursor,
         attempt,
         status: "succeeded",
@@ -454,6 +963,15 @@ async function runSync(
       });
     });
   } catch (error) {
+    if (error instanceof ContinueJobError) throw error;
+    const authError = await authFailure(error);
+    if (authError) {
+      throw authError;
+    }
+    if (error instanceof DatasetBudgetError) {
+      await recordFailure("budget", error);
+      throw new TerminalJobError(safeMessage(error));
+    }
     const errorClass: ErrorClass =
       error instanceof ContractViolationError ? "contract" : "transient";
     await recordFailure(errorClass, error);
@@ -467,6 +985,55 @@ async function runSync(
     { mode, window: { from: iso(window.from), to: iso(window.to) } },
     "sync run succeeded",
   );
+
+  // Step 4 (#194): the names of the connection's resources (apps,
+  // projects, properties), so a tile of one resource can show its name.
+  // At most daily, after the data is committed, and best effort: a failed
+  // discover is logged and never fails the run.
+  let refreshIcons = false;
+  try {
+    const discoveredAt = await withWorkspace(appDb, { workspaceId }, (tx) =>
+      connectionResourcesDiscoveredAt(tx, workspaceId, connectionId),
+    );
+    if (
+      !discoveredAt ||
+      now.getTime() - discoveredAt.getTime() >= RESOURCE_NAMES_REFRESH_MS
+    ) {
+      const resources = await callConnector((callContext, options) =>
+        executeDiscover(connector, callContext, options),
+      );
+      await withWorkspace(appDb, { workspaceId }, (tx) =>
+        upsertConnectionResources(tx, {
+          workspaceId,
+          connectionId,
+          resources,
+          now,
+        }),
+      );
+      refreshIcons = true;
+    }
+  } catch (error) {
+    log.warn({ err: safeMessage(error) }, "resource names not refreshed");
+  }
+
+  // Step 5 (#226): the resource icons the workspace uses (app icons), with
+  // the names, so at most daily. Best effort as well.
+  if (refreshIcons && supportsResourceIcons(connector)) {
+    try {
+      await refreshConnectionIcons({
+        db: appDb,
+        quota: deps.imageQuota ?? DEFAULT_IMAGE_QUOTA,
+        workspaceId,
+        connectionId,
+        connector,
+        run: (call) => callConnector(call),
+        now,
+        log: (message) => log.warn(message),
+      });
+    } catch (error) {
+      log.warn({ err: safeMessage(error) }, "resource icons not refreshed");
+    }
+  }
 }
 
 /** Registers both connection sync job kinds against the same engine. */

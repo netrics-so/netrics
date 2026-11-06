@@ -234,17 +234,33 @@ export function createEgressFetch(options: EgressOptions) {
         }
         chunks.push(chunk as Uint8Array);
       }
-      const text = Buffer.concat(chunks).toString("utf8");
       const headers: Record<string, string> = {};
       response.headers.forEach((value, key) => {
         headers[key] = value;
       });
-      return {
-        status: response.status,
-        headers,
-        text: () => text,
-        json: () => JSON.parse(text) as unknown,
-      };
+      return bufferedResponse(response.status, headers, Buffer.concat(chunks));
     }
+  };
+}
+
+/**
+ * A ConnectorResponse over a body that was read within the size limit. The
+ * body is decoded as UTF-8 only when text() or json() asks for it, and
+ * bytes() hands out a copy so connector code cannot alter what the next
+ * call sees.
+ */
+function bufferedResponse(
+  status: number,
+  headers: Record<string, string>,
+  body: Buffer,
+): ConnectorResponse {
+  let text: string | undefined;
+  const decoded = () => (text ??= body.toString("utf8"));
+  return {
+    status,
+    headers,
+    text: decoded,
+    json: () => JSON.parse(decoded()) as unknown,
+    bytes: () => new Uint8Array(body),
   };
 }

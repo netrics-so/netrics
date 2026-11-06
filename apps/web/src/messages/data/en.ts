@@ -1,0 +1,507 @@
+export const dataEn = {
+  data: {
+    dashboard: {
+      sourceReconnect: "Reconnect {name} to resume imports.",
+      sourceAccess: "Update access for {name} to resume imports.",
+      sourcePaused:
+        "App collection is paused for {name}. Retained history remains available.",
+      sourcePending: "Waiting for the first complete import from {name}.",
+      sourceOutage:
+        "Imports from {name} are interrupted. Check the connection.",
+
+      perDateMeasure:
+        "{name} has one value per date. Show it as a table or chart grouped by {dimensions}.",
+      requiresScope: "Keep separate, or filter to one value: {dimensions}.",
+      pendingResult:
+        "Some source reports have not arrived yet. Known values are shown as partial; missing values are not zero.",
+      partialResult:
+        "Some source data is missing. Check the model before using this result.",
+      done: "Done",
+      applyBeforeSave:
+        "Apply or discard the pending widget filter before saving the dashboard.",
+      discardFilter: "Discard filter changes",
+      filterProblem:
+        "{name}: map the {filter} filter to this model, or explain why it does not apply.",
+      receivedAt: "Oldest source refresh: {at}",
+      browseValues: "Browse values",
+      searchValues: "Search available values",
+      loadingValues: "Loading values…",
+      choicesFailed: "Available values could not be loaded.",
+      noValues: "No matching values.",
+      previousValues: "Previous values",
+      nextValues: "More values",
+
+      shownRows: "Showing {shown} of {total} groups.",
+      binding: "Published measure",
+      model: "Model",
+      missingModel: "Model unavailable",
+      publishedOnly:
+        "Uses the published definition. Draft changes stay private until publication.",
+      editModels: "Edit models",
+      view: "Show as",
+      measures: "Measures",
+      groupBy: "Group by",
+      limit: "Maximum rows",
+      widgetFilter: "Additional widget filter",
+      formulaPlaceholder: '[Country] = "DE"',
+      applyFilter: "Apply filter",
+      applicability: "Shared filter applicability",
+      applicabilityHint:
+        "Turn a filter off only for an independent result and explain why. Fixed scopes always apply.",
+      independentTotal: "Independent total; this filter does not apply.",
+      exclusionReason: "Why {name} does not apply",
+      sharedFilters: "Shared filters",
+      sharedFiltersHint:
+        "Map each filter to a compatible dimension in every model. Widgets share these choices.",
+      filterNumber: "Filter {number}",
+      name: "Name",
+      type: "Value type",
+      control: "Control",
+      values: "Choose values",
+      range: "Range",
+      mapModels: "Dimensions in each model",
+      notMapped: "Not mapped",
+      defaultValue: "Default selection",
+      fixedScope: "Fixed scope",
+      fixedScopeHint:
+        "Always applied alongside viewer choices, including on paired screens.",
+      removeFilter: "Remove filter",
+      addFilter: "Add shared filter",
+      from: "From",
+      to: "To (inclusive)",
+      invalidValue: "Enter a valid value for this filter.",
+      removeValue: "Remove {value}",
+      unmatched: "Unmatched / missing",
+      yes: "True",
+      no: "False",
+      chooseValue: "Choose a value",
+      enterValue: "Enter a value",
+      addValue: "Add",
+      allValues: "All values",
+      fixedScopeActive: "A fixed scope also applies.",
+      resetFilters: "Reset filters",
+      catalogFailed: "Published models could not be loaded.",
+      retry: "Try again",
+      staleModel:
+        "Showing the last valid data. Check the model and its sources.",
+      resultWarnings:
+        "{count, plural, one {# data warning. Check the model preview.} other {# data warnings. Check the model preview.}}",
+      views: {
+        value: "Value",
+        table: "Table",
+        bar: "Bar chart",
+        line: "Line chart",
+      },
+      types: {
+        string: "Text",
+        boolean: "True / false",
+        date: "Reporting date",
+        timestamp: "UTC timestamp",
+        integer: "Whole number",
+        decimal: "Exact decimal",
+        number: "Number",
+      },
+    },
+    loadingInputVersions: "Loading the draft’s input versions…",
+    versionHistory: "Published version history",
+    historyHint:
+      "Restore published steps or model definitions as a new saved draft, replacing the saved draft. The current name, source data and live dashboards stay as they are. Preview the restored draft, then publish when ready.",
+    historyUnsaved:
+      "Save your changes before restoring a version or changing input versions.",
+    historyLoading: "Loading published versions…",
+    historyEmpty: "Publish this draft to begin its version history.",
+    historyVersion: "Version {version}",
+    historyActive: "Currently published",
+    historyNewest: "Newest versions",
+    historyOlder: "Older versions",
+    restoreDraft: "Restore as draft",
+    restoredNotice:
+      "Published definition restored as a draft. Preview it before publishing. Live dashboards still use the current publication.",
+    restoredInputs:
+      "Based on published version {version}. Its preparation input versions stay pinned; source-data corrections still apply.",
+    adoptLatestInputs: "Use latest published inputs",
+    latestInputsNotice:
+      "The draft now uses the latest published inputs. Preview it before publishing.",
+    title: "Data & measures",
+    subtitle: "Prepare your data and define measures you can reuse.",
+    datasets: "Datasets",
+    preparations: "Preparations",
+    models: "Models",
+    search: "Find a dataset",
+    newPreparation: "New preparation",
+    newModel: "New model",
+    editReference: "Edit table",
+    referenceEditHint:
+      "Saving replaces this table after every page is accepted. Measures and dashboards using it then read the new data. A concurrent edit requires reloading before saving.",
+    referenceCellHint:
+      'An empty nullable cell means missing. Enter "" for empty text. Text beginning with a quote can use JSON string notation to preserve its quotes.',
+    referenceLoadProgress: "Loading table: {loaded} of {total} rows.",
+    referenceSaveProgress: "Saving table: {saved} of {total} rows.",
+    newReference: "Enter reference data",
+    connectSource: "Connect a source",
+    back: "Back to data",
+    source: "Source",
+    name: "Name",
+    field: "Column",
+    type: "Type",
+    rows: "Rows",
+    columns: "Columns",
+    choose: "Choose…",
+    chooseSource: "Choose a dataset",
+    sourceName: "Dataset",
+    prepare: "Prepare this data",
+    raw: "Source records",
+    resources: "Connection resource names",
+    observations: "Already aggregated",
+    prepared: "Prepared",
+    manual: "Reference table",
+    sample: "Data preview",
+    sampleHint:
+      "Preview of up to 100 rows. Preparation steps use all available rows.",
+    aggregatedHint:
+      "This dataset includes already aggregated values. Review its grain before grouping or calculating totals.",
+    emptyDatasets: "Start with your data",
+    emptyDatasetsHint:
+      "Connect a service, or enter a reference table to map apps, campaigns or other shared entities.",
+    emptyPreparations: "Prepare data once",
+    emptyPreparationsHint:
+      "Choose a dataset, then clean, calculate or combine its columns. Preview each step before publishing.",
+    emptyModels: "Bring your data together",
+    emptyModelsHint:
+      "A model connects datasets through shared dimensions and defines the measures your dashboards use.",
+    noMatch: "No datasets match your search.",
+    noRows: "No rows in this preview.",
+    loading: "Loading preview…",
+    retry: "Try again",
+    refresh: "Refresh data",
+    previous: "Previous",
+    next: "Next",
+    rowRange: "Rows {from}–{to} of {count}",
+    draft: "Draft",
+    published: "Published v{version}",
+    unpublished: "Not published",
+    changed: "Unpublished changes",
+    save: "Save draft",
+    saving: "Saving…",
+    saved: "Draft saved",
+    publish: "Publish",
+    publishing: "Publishing…",
+    publishedNotice:
+      "Published. The validated version is now available for use.",
+    preview: "Preview",
+    previewing: "Preparing preview…",
+    undo: "Undo",
+    close: "Close",
+    cancel: "Cancel",
+    remove: "Remove",
+    unsaved: "You have unsaved changes. Save your draft before leaving.",
+    discard: "Discard changes",
+    stay: "Keep editing",
+    preparationName: "Preparation name",
+    modelName: "Model name",
+    defaultPreparation: "Untitled preparation",
+    defaultModel: "Untitled model",
+    steps: "Applied steps",
+    editStep: "Edit step",
+    applyStepChanges: "Preview and apply changes",
+    moveStepUp: "Move step earlier",
+    moveStepDown: "Move step later",
+    removeStep: "Remove step",
+    outputRemovalHint:
+      "The output keeps its published identity. Removing this final operation promotes the preceding step and checks all dependent outputs.",
+    stepMoveHint:
+      "Move steps within a single pipeline. Each change checks every output; branches keep their existing inputs.",
+    finishStep:
+      "Apply or cancel this step before selecting another step or saving.",
+    removeStepHint:
+      "Remove this operation and keep the other steps. Their previews are checked before the change is applied. Undo restores this operation.",
+    continueInput: "Continue with data from",
+    stepInput: "Step {number}: {name}",
+    datasetInput: "Dataset: {name}",
+    appendInput: "Input {number}",
+    matchAppendColumns: "Match columns before appending",
+    appendMatchHint:
+      "Review suggested matches by name. Only matched columns are kept. Columns missing from an input appear as null when another input supplies them. Match currency columns alongside monetary amounts. Each input needs at least one match.",
+    noMatchingColumn: "No matching column",
+    addInput: "Add input",
+    addJoinKey: "Add matching columns",
+    addRename: "Rename another column",
+    mergedNamePrefix: "Prefix for merged column names (optional)",
+    aggregateFilter: "Filter before aggregation (optional)",
+    preparationAdoptionHint:
+      "Published models keep their chosen preparation version. After publishing these changes, preview and publish updated inputs in each model that should adopt them.",
+    republish: "Publish updated inputs",
+    unit: "Unit",
+    unitHint:
+      "Optional unit, such as visits or currency. Use a currency column for monetary amounts.",
+    currencyColumn: "Currency column",
+    noCurrencyColumn: "Not a monetary amount",
+    decimalScale: "Decimal places (optional)",
+    typeMetadataHint:
+      "Clear currency or decimal precision in Column options before choosing another type.",
+    currencyTypeHint:
+      "This column identifies currencies. Unlink it from amounts before changing its type.",
+    fieldOptions: "Column options",
+    removeColumn: "Remove column",
+    allowMissing: "Allow missing values",
+    editErrors: {
+      missingStep:
+        "This step or one of its inputs is missing. Reload the preparation.",
+      outputIdentity:
+        "Published output identities stay fixed. Edit this output’s options; removing or moving an output could break models that use it.",
+      sourceInUse:
+        "Other steps use this source. Edit its dataset or remove the dependent operations first.",
+      chooseInput:
+        "Choose which input should continue after removing this merge or append.",
+      branchMove:
+        "This move crosses a source, merge or shared branch. Move only adjacent steps in a single pipeline.",
+      noNeighbour: "There is no adjacent step in this direction.",
+      cycle:
+        "This input would create a loop. Choose an earlier or independent step.",
+      identityChanged:
+        "Keep existing step, calculated-column and merged-column identities when editing.",
+      appendDuplicate:
+        "This would append the same step twice and duplicate its rows. Change or remove the append first.",
+    },
+    addStep: "Add a step",
+    applyStep: "Apply step",
+    operation: "What should this step do?",
+    select: "Choose columns",
+    rename: "Rename a column",
+    cast: "Change column type",
+    replace: "Replace values",
+    filter: "Filter rows",
+    calculate: "Calculate a column",
+    deduplicate: "Remove duplicates",
+    append: "Append rows",
+    join: "Merge columns",
+    group: "Group and aggregate",
+    newName: "New name",
+    formula: "Formula",
+    formulaHelp:
+      "Use column names in brackets, for example [Revenue] / [Downloads]. IF, AND, OR and COALESCE are supported.",
+    insertColumn: "Insert a column",
+    formulaPlaceholder: "Enter a formula…",
+    keep: "Keep",
+    first: "First row",
+    last: "Last row",
+    keys: "Key columns",
+    groupKeys: "Group by",
+    aggregate: "Aggregation",
+    aggregateName: "Result name",
+    addAggregate: "Add aggregation",
+    from: "Find value",
+    to: "Replace with",
+    nullValue: "Empty (null)",
+    onError: "If conversion fails",
+    reject: "Stop and show an error",
+    useNull: "Use an empty value",
+    otherDataset: "Other dataset",
+    leftKey: "Column in this data",
+    rightKey: "Matching column",
+    joinMode: "Rows to keep",
+    leftJoin: "All rows in this data",
+    innerJoin: "Only matching rows",
+    cardinality: "Expected matches",
+    manyToOne: "One match per source row",
+    oneToOne: "Unique keys on both sides",
+    output: "Output",
+    prefix: "Prefix for merged columns",
+    joinHint:
+      "Duplicate matching keys stop the merge so totals cannot be multiplied accidentally.",
+    outputHint:
+      "Publishing makes this output available to models and other preparations.",
+    warnings: "Preview notes",
+    warningLabels: {
+      data_source_pending:
+        "Schema checked. This source’s first complete import is still pending, so this preview contains no calculated values.",
+      aggregate_missing_inputs:
+        "An aggregate contains missing input values. The result uses the reported values and may be incomplete.",
+      decimal_rounded:
+        "Some decimal results were rounded to 18 decimal places.",
+      division_by_zero: "Division by zero produces an empty value.",
+      retained_source_history_incomplete:
+        "Some older source records are no longer retained.",
+      model_window_history_incomplete:
+        "Some windows or earlier periods start before the oldest retained data, so their values are partial.",
+      prepared_cache_capacity_reached:
+        "The preparation was evaluated without caching because its storage policy was reached.",
+      using_last_valid_source_snapshot:
+        "The latest refresh could not be processed. This is the last valid retained data.",
+      generic: "Review this preview before publishing.",
+    },
+    sourcePending: "No completed data refresh yet",
+    sum: "Sum",
+    count: "Count",
+    distinct_count: "Distinct count",
+    avg: "Average",
+    min: "Minimum",
+    max: "Maximum",
+    lastAggregate: "Latest value",
+    any: "Any true",
+    all: "All true",
+    orderBy: "Snapshot date",
+    relationships: "Relationships",
+    dimensions: "Dimensions",
+    measures: "Measures",
+    addRelationship: "Add relationship",
+    addDimension: "Add dimension",
+    addMeasure: "Add measure",
+    modelHint:
+      "Relate shared entities, then define measures. Each fact is aggregated separately before results are combined.",
+    factDataset: "Data with repeated keys",
+    dimensionDataset: "Data with unique keys",
+    dimensionLabel: "Display name column (optional)",
+    dimensionLabelNone: "Use the value itself",
+    dimensionName: "Dimension name",
+    requiredScope: "Keep these dimensions separate",
+    requiredScopeHelp:
+      "This measure requires grouping by each chosen dimension, or filtering it to one value. Useful for ratings, snapshots and other values that cannot be combined.",
+    measureName: "Measure name",
+    measureKind: "Calculation",
+    aggregateMeasure: "Aggregate a column",
+    formulaMeasure: "Calculate from measures",
+    measureFormulaHelp:
+      "Reference measures by name, for example [Income] - [Spend]. All operands use the same filters.",
+    rollingMeasure: "Rolling",
+    offsetMeasure: "Compared with earlier period",
+    baseMeasure: "Based on measure",
+    rollingHelp:
+      "Each window is recalculated from the underlying rows, so averages and distinct counts stay exact. Only measures that aggregate a column can roll.",
+    offsetHelp:
+      "Month and year comparisons keep the day of the month. When the earlier month is shorter, its last day is used, so 31 March compares with 28 or 29 February.",
+    timeDimension: "Date dimension",
+    timeDimensionHelp:
+      "Results are grouped by this date. Only date dimensions using the provider reporting date are listed.",
+    noTimeDimension:
+      "Add a dimension on a date column first. Timestamps cannot anchor a window.",
+    windowLength: "Window length",
+    windowLengthLimit: "Up to {max} {unit}.",
+    windowLengthInvalid: "Enter 1 to {max} {unit}.",
+    windowUnit: "Unit",
+    windowUnits: {
+      day: "{count, plural, one {day} other {days}}",
+      week: "{count, plural, one {week} other {weeks}}",
+      month: "{count, plural, one {month} other {months}}",
+    },
+    compareWith: "Compare with",
+    offsetPresets: {
+      previousDay: "Previous day",
+      previousWeek: "Previous week",
+      previousMonth: "Previous month",
+      lastYear: "Same period last year",
+      previousPeriod: "Previous period of equal length",
+      custom: "Custom shift",
+    },
+    offsetLength: "Shift back by",
+    offsetOutput: "Show",
+    offsetOutputs: {
+      value: "Earlier value",
+      change: "Change",
+      percent_change: "Change in %",
+    },
+    addChangeMeasures: "Add change measures",
+    changeMeasureName: "{name} (change)",
+    percentChangeMeasureName: "{name} (change in %)",
+    measureInUse:
+      "Used as the base of {names}. Remove or change those measures first.",
+    dimensionInUse:
+      "Used as the date of {names}. Remove or change those measures first.",
+    sharedFilter: "Shared filter",
+    sharedFilterHelp:
+      "Reference dimension names in brackets. This filter applies to every requested measure.",
+    groupBy: "Show results by",
+    queryMeasures: "Measures to preview",
+    noMeasures: "Add at least one measure to preview this model.",
+    noDimensions: "Add dimensions to filter and group your measures.",
+    dateAlignment: "Date interpretation",
+    reportingDate: "Provider reporting date",
+    instant: "Exact timestamp",
+    stale:
+      "Showing the last valid data because the latest refresh could not be processed.",
+    missing: "Missing",
+    partial: "Partial",
+    true: "True",
+    false: "False",
+    referenceName: "Reference table name",
+    referenceHint:
+      "Map shared entities such as apps or campaigns. Paste a table with column headers, or enter rows below.",
+    pasteTable: "Paste CSV or a tab-separated table",
+    importTable: "Use pasted table",
+    addColumn: "Add column",
+    addRow: "Add row",
+    keyColumn: "Unique key column",
+    retention: "Keep data",
+    forever: "Until deleted",
+    days: "For a number of days",
+    retentionDays: "Days",
+    retentionHint:
+      "Your workspace’s retention policy also applies. Shortening retention cannot be undone to restore expired data.",
+    saveReference: "Save reference table",
+    referenceSaved: "Reference table saved",
+    columnName: "Column name",
+    tableRequired: "Enter a table with headers and at least one row.",
+    value: "Value",
+    previewCurrent: "Preview the saved draft",
+    freshPreview: "Preview reflects your current draft.",
+    previewInitial: "Choose measures and preview this draft before publishing.",
+    previewOutdated: "The draft changed. Preview it again before publishing.",
+    errors: {
+      window:
+        "Check the rolling and comparison measures. Each needs a base measure, a date dimension on the provider reporting date and a length within the allowed range.",
+      windowGrouping:
+        "Rolling and comparison measures have one value per date. Show them by their date dimension, for example as a line chart or table. Only comparisons with the previous month, year or period of equal length can show a single value, and only for one closed date range.",
+      windowRange:
+        "This comparison needs a complete date range. Choose both a start and an end date.",
+      windowRangeDefault:
+        "This comparison needs a date range. Add a shared date filter set to Range on its date, with a default start and end date, or show the measure grouped by that date.",
+      windowFilterMode:
+        "Rolling and comparison measures can only follow a date filter that selects a range. Set its control to Range, or exclude this widget from it.",
+      windowFilter:
+        "Filter the date of rolling and comparison measures only with from and to conditions joined by AND, and use the same date dimension for all of them.",
+      history:
+        "This published version is unavailable. Reload its history and choose another version.",
+      unavailable:
+        "A required source or input version is unavailable. Check its connection and published preparations before restoring or publishing.",
+      pinConflict:
+        "These inputs depend on different published versions of the same preparation. Use latest published inputs, or remove the input that needs a newer version.",
+      scope:
+        "Group by the required dimensions, or select one value for each, before using this measure.",
+      label:
+        "Choose a text column for display names. Each identity needs one consistent name.",
+      pending:
+        "Waiting for this source’s first complete import. Check the connection’s sync status; data will appear when the provider report arrives.",
+      generic: "This operation could not finish. Try again.",
+      conflict:
+        "Someone changed this data. Reload the page before saving again.",
+      formula:
+        "Check the formula’s names, functions and brackets, then try again.",
+      field:
+        "A referenced column is unavailable. Review the selected dataset and columns.",
+      cardinality:
+        "The matching side contains duplicate keys. Choose a unique key or remove duplicates before merging.",
+      units:
+        "These values have incompatible types, units or currencies. Align them explicitly before calculating.",
+      limit:
+        "This operation exceeds your workspace’s processing or storage policy. Narrow the data or ask your administrator to adjust it.",
+      expired:
+        "This source’s retained data has expired. Refresh the source or choose another dataset.",
+      unpublished: "Publish the referenced preparation before using it here.",
+      invalid: "Check the entered values and required fields.",
+      cycle:
+        "These dependencies form a loop. Remove the relationship or step that points back to itself.",
+      filter:
+        "This measure cannot use the selected dimension or filter. Add a compatible relationship or choose another dimension.",
+    },
+    types: {
+      string: "Text",
+      boolean: "True / false",
+      integer: "Whole number",
+      number: "Floating-point number",
+      decimal: "Exact decimal",
+      date: "Date",
+      timestamp: "Timestamp",
+      json: "Structured data",
+    },
+  },
+} as const;

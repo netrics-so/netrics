@@ -69,8 +69,8 @@ netrics/
   apps/
     web/                    Next.js product application
     server/                 API, worker, scheduler entry points
-    renderer/               Playwright snapshot worker
-    tvos/                   Native SwiftUI Apple TV application
+    renderer/               Playwright snapshot worker (not yet; see ADR 0007)
+    netrics-tv/             Native SwiftUI app for Apple TV (netrics TV)
   packages/
     domain/                 Domain rules independent of transport/storage
     database/               PostgreSQL access and migrations
@@ -178,7 +178,9 @@ toolchain versions.
   notification delivery; horizontally scalable
 - **scheduler** — claims due connections and scheduled rules; exactly one
   active replica initially
-- **renderer** — Playwright screenshot jobs; optional in self-hosted Compose
+- **renderer** — Playwright screenshot jobs; optional in self-hosted Compose.
+  Parked until snapshots are scheduled (ADR 0007): no app, image or service
+  exists today.
 
 The API, worker, and scheduler may use one server image with different commands.
 This reduces build and release coordination while preserving independent
@@ -255,6 +257,9 @@ The manifest declares:
 - Minimum refresh interval and backfill support
 - Declared outbound domains
 - Expected quota and rate-limit behavior
+- Optionally, translations of its texts (SDK 0.2.6, see below)
+- Optionally, a catalogue `category` (`seo`, `web`, `apps`, `ads`, `revenue`
+  or `other`) and a `brandColor` (`#rrggbb`) for its icon tile (SDK 0.2.7)
 
 `sync` receives a time range or cursor and returns normalized observations plus
 the next cursor. Connectors receive no direct database, queue, or internal API
@@ -262,6 +267,94 @@ access.
 
 Use JSON-compatible transport objects even inside TypeScript. A future isolated
 runner can then use the same contract over JSON-RPC or another process boundary.
+
+Connector code reaches the network only through `runtime.fetch`. It allows
+https hosts from `outboundDomains`, refuses private and metadata addresses,
+re-checks redirects and buffers the whole body within a size cap (10 MiB by
+default) before the connector sees it. A `ConnectorResponse` offers the body
+three ways:
+
+- `text()`: decoded as UTF-8;
+- `json()`: parsed as JSON;
+- `bytes()`: the exact bytes as a `Uint8Array`, a fresh copy per call, for
+  binary payloads such as gzip report files (since SDK 0.2.2). Over a future
+  process boundary they travel as base64.
+
+The cap bounds the compressed bytes, not what a connector inflates from them,
+so a connector that decompresses sets its own bound. Use `node:zlib`
+`gunzipSync` with `maxOutputLength` and turn the overflow into an error, which
+fails the call as a retryable provider error (ADR 0014 uses 64 MiB):
+
+```ts
+import { gunzipSync } from "node:zlib";
+
+const MAX_REPORT_BYTES = 64 * 1024 * 1024;
+
+function inflateReport(bytes: Uint8Array): string {
+  try {
+    return gunzipSync(bytes, { maxOutputLength: MAX_REPORT_BYTES }).toString(
+      "utf8",
+    );
+  } catch (error) {
+    if ((error as { code?: string }).code === "ERR_BUFFER_TOO_LARGE") {
+      throw new Error(`report exceeds ${MAX_REPORT_BYTES} bytes inflated`);
+    }
+    throw error;
+  }
+}
+
+const report = inflateReport((await runtime.fetch(url)).bytes());
+```
+
+The testing kit (`@netrics/connector-sdk/testing`) builds fixture responses:
+`fixtureResponse(status, body, headers)` for text or bytes and
+`gzipFixtureResponse(status, content, headers)` for a gzip file of `content`.
+
+SDK versions are additive within 0.2: a connector that declares `^0.2.0`
+keeps loading on every 0.2.x runtime.
+
+| SDK   | Adds                                                              |
+| ----- | ----------------------------------------------------------------- |
+| 0.2.0 | The contract above; `token` and `none` auth strategies            |
+| 0.2.1 | The `oauth2` auth strategy (ADR 0012)                             |
+| 0.2.2 | The `signed-key` auth strategy and `bytes()` (ADR 0014)           |
+| 0.2.3 | The `currency_minor` unit with a `currency` dimension (ADR 0014)  |
+| 0.2.4 | `resourceNoun`: what the connector calls its resources (#208)     |
+| 0.2.5 | Optional `resourceIcons` capability (resource icons, #226)        |
+| 0.2.6 | Optional `translations` of the manifest's texts (ADR 0016, #257)  |
+| 0.2.7 | Optional `category` and `brandColor` for the catalogue (#306)     |
+| 0.2.8 | Optional `reviews` and `reviewWindows` in `SyncResult` (ADR 0019) |
+
+### Connector translations
+
+A manifest is written in English. Since SDK 0.2.6 it may carry
+`translations`, keyed by language subtag (`"de"`; not `"en"`, which is the
+manifest itself). Every field is optional and falls back on its own to the
+English value, so a partial translation still shows:
+
+```ts
+translations: {
+  de: {
+    name: "Acme Analytics",            // product names stay as they are
+    description: "Besucher und Seitenaufrufe aus Acme, pro Website.",
+    resourceNoun: { singular: "Website", plural: "Websites" },
+    metrics: { "acme.visitors": { name: "Besucher", description: "…" } },
+    dimensions: { territory: "Land" }, // a dimension of some metric
+    config: { teamId: { title: "Team-ID", description: "…" } },
+    credentials: { token: { title: "Zugriffstoken", description: "…" } },
+    setupSteps: ["…", "…"],            // one per English setup step
+  },
+},
+```
+
+The schema rejects unknown fields and keys that name nothing in the manifest
+(a metric, dimension, config or credential field it does not have, or a
+different number of setup steps). The catalog stores translations with the
+manifest; the API answers in the caller's language (a user's setting, a
+screen's workspace language), through `localizedManifest`,
+`localizedMetric`, `localizedResourceNoun` and `localizedDimensionName` in
+`@netrics/domain`. Units are not translated; hosts format them. German copy
+addresses the reader with "du".
 
 ### Authentication strategies
 
@@ -272,6 +365,42 @@ The runtime must support at least:
 - OAuth 2.0 client credentials
 - Signed JWT client credentials
 - Uploaded private key material
+
+A manifest declares one or more of these strategies:
+
+- `{ strategy: "token", credentialsSchema?, setup? }` or
+  `{ strategy: "none" }`: the user pastes a token (or nothing), and the
+  connector receives the stored credentials.
+- `{ strategy: "oauth2", provider, scopes }` (ADR 0012): the user authorizes
+  at the provider, and the connector receives `credentials: { accessToken }`
+  and never the refresh token.
+- `{ strategy: "signed-key", provider }` (ADR 0014, SDK 0.2.2): the user
+  uploads key material, such as an App Store Connect API key, and the host
+  signs a short-lived token with it for each call. The connector receives
+  `credentials: { accessToken }` (`AccessTokenCredentials`) and never the key.
+  The strategy takes no other fields: the credential fields, token claims
+  and lifetime belong to the provider, which is trusted host code. A server
+  without that provider lists the connector as unavailable
+  (`signed_key_provider_unsupported`). The providers live in
+  `apps/server/src/signed-keys/providers/`. Before a key is stored (create,
+  preview, rotation through the credential update), the host checks the
+  fields, parses the key as PEM PKCS#8 EC P-256, runs the provider's probes
+  with a fresh token, and then the connector check. The catalog exposes the
+  provider's field labels and setup steps for the wizard. A 401 or 403 from
+  the provider during a connector call puts the connection in `auth_failed`
+  with the provider's "upload a new key" message; there is nothing to
+  refresh. A provider may also define optional additional keys (#190: App
+  Store Connect's reviews key, stored as `reviews: { keyId, privateKey }`
+  in the same envelope, issuer ID shared). Each is checked with its own
+  probes, signed into its own token per call and handed to the connector in
+  a provider-named credential field (`credentials.reviewsAccessToken`). A
+  refusal of that token is the connector's to handle: it pauses what the
+  key reads and never puts the connection in `auth_failed`. This needs no
+  SDK change: `credentials` is an opaque record, and a connector on a host
+  without the additional key simply gets no such field.
+
+A provider id is lowercase words joined by hyphens (`google`,
+`app-store-connect`). Connectors may name a provider but never define one.
 
 The credential service owns encrypted storage, standard OAuth callbacks, token
 refresh, and audit events. A connector receives only the credentials required
@@ -335,15 +464,89 @@ Use a deterministic series identity derived from metric definition and
 dimensions. Inserts are idempotent for a source identity or deterministic time
 bucket. Historical backfills and current syncs can overlap safely.
 
+A sync run ingests page by page: each page the connector returns commits in its
+own short transaction together with its `nextCursor` as the connection's
+checkpoint, so a run holds one page in memory and the cursor never passes data
+that is not committed. The last page commits with the run's success. A failed
+run keeps the pages it committed and reports them on its `sync_run`; the retry,
+or the next run, continues from the checkpoint. A connector's non-final cursor
+must therefore stay valid when sent back in a later run with a later `to`.
+
+A backfill job reads the connector's whole backfill window. A new backfill job
+ignores the stored cursor, which may be an incremental sync's position or the
+checkpoint of an earlier backfill. Each of its checkpoints records the job's
+id (`connection_state.backfill_job_id`), so a retried or reclaimed attempt of
+the same job resumes from its own checkpoint instead of starting over. A
+backfill is queued when a connection is created or its setup finished, and
+when a config change alters what the connection collects (any config
+property, compared with defaults applied). A newly requested backfill
+supersedes one that is still waiting; a running one finishes first. Renames,
+new credentials and reauthorization queue none: the next sync continues from
+the cursor. Observations collected under an earlier config stay (their series
+identity is their dimensions); they are not deleted.
+
 Partition observations by time when necessary. Index workspace, metric, series,
 and timestamp query paths. Retention and rollups run as ordinary maintenance
 jobs until TimescaleDB or another analytical store becomes justified.
 
+Retention defaults (`DEFAULT_RETENTION` in `packages/database/src/jobs.ts`,
+applied hourly by the scheduler through the owner-role `prune_history`
+function):
+
+| Data                             | Kept                                                      |
+| -------------------------------- | --------------------------------------------------------- |
+| Succeeded jobs                   | 7 days after creation                                     |
+| Failed and dead jobs             | 30 days (dead-letter inspection)                          |
+| Sync runs (with redacted errors) | 90 days after finishing; each connection's latest is kept |
+| Observations                     | Until the connection or workspace is deleted              |
+
+Observations stay unpruned until rollups exist: dashboards read raw values, and
+deleting them would change historical charts. Their retention is decided
+together with rollups.
+
+Security records hold IP addresses, browser user agents or hashes of them.
+Their retention follows the privacy policy and is fixed in code
+(`SECURITY_RETENTION` in `packages/database/src/security-retention.ts`), not
+configuration; the same hourly maintenance applies it through the owner-role
+`prune_security_records` function, at most one batch per table per run:
+
+| Data                                          | Kept                                                                        |
+| --------------------------------------------- | --------------------------------------------------------------------------- |
+| Audit events (workspace and `auth.login`)     | 12 months after creation                                                    |
+| Sign-in sessions                              | Until 24 hours after expiry; IP and browser cleared 12 months after sign-in |
+| Auth rate-limit counters (keyed by client IP) | 24 hours after the last request                                             |
+| Device pairings (hashed client IP)            | 24 hours after expiry                                                       |
+
+App Store review text (ADR 0019 §11) holds reviewer nicknames and text
+customers wrote. Its retention is fixed in code as well
+(`APP_REVIEW_RETENTION` in `packages/database/src/app-reviews.ts`) and
+applied by the same hourly maintenance through the owner-role
+`prune_app_reviews` function:
+
+| Data                                                         | Kept                                                                                                                     |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| App Store review text (`app_reviews`: nickname, title, text) | Newest 50 per connection and app, none older than 90 days; deleted with the reviews key, the connection or the workspace |
+
+Process logs go to stdout and are not stored in the database; their retention
+is set where they are collected (the hosting platform, or a self-hoster's log
+driver).
+
 ### Derived metrics
 
-Derived metrics use a restricted expression and query model rather than user
-code. Validation covers units, currencies, aggregation compatibility, missing
-values, time zones, and division by zero.
+The agreed product direction now includes reusable source datasets, data
+preparation, relationships across systems, named measures and dashboard-wide
+filtering. [ADR 0022](./decisions/0022-reusable-data-model-and-processing.md)
+proposes the logical schema, execution model and compatibility path. These
+capabilities are not implemented by the current observation model; the numeric
+observations and connector contract above describe the existing implementation.
+
+In the proposal, row calculations and aggregate measures share a typed,
+restricted expression engine. Prepared datasets and semantic models are
+independent of dashboards. Widgets use model measures and shared dimensions;
+the server resolves their filter context and validates units, currencies,
+grain, missing values, time semantics and relationship cardinality. Editable
+templates configure the same capabilities exposed to customers. Milestone 11
+contains the proposed implementation gates.
 
 ## Jobs, events, and alerts
 
@@ -399,7 +602,8 @@ authorization out of the core.
 > Update (2026-09): the MVP renders native SwiftUI tiles from a JSON device
 > endpoint instead of snapshots; see
 > [ADR 0007](./decisions/0007-native-tvos-tiles.md). The snapshot design below
-> is deferred, not removed.
+> is deferred, not removed. Slides, widgets, themes and images on devices
+> follow [ADR 0015](./decisions/0015-dashboard-studio.md).
 
 The initial tvOS application is a thin native client:
 
@@ -513,12 +717,12 @@ existence and stable identifiers.
 On a successful merge to the public `netrics` main branch:
 
 1. Run unit, integration, migration, connector-contract, and image smoke tests.
-2. Build server, web, and renderer images once.
+2. Build server and web images once (linux/amd64 and linux/arm64).
 3. Push immutable commit tags to `ghcr.io/netrics-so/*` and record digests.
 4. Sign images and generate software bills of materials.
 5. Trigger the private cloud release workflow with the candidate digests.
 6. Run database migrations with the exact candidate server image.
-7. Deploy API and web, then worker, scheduler, and renderer.
+7. Deploy API and web, then worker and scheduler.
 8. Require health checks and a small end-to-end smoke test.
 9. Record the deployed digests in `release/production.yaml`.
 
@@ -530,7 +734,6 @@ commit: abc1234
 images:
   server: ghcr.io/netrics-so/server@sha256:...
   web: ghcr.io/netrics-so/web@sha256:...
-  renderer: ghcr.io/netrics-so/renderer@sha256:...
 ```
 
 Terraform does not run for an ordinary application commit. The release workflow
@@ -580,25 +783,25 @@ and community decision.
 
 ## Deliberate trade-offs
 
-| Decision               | Chosen now                           | Revisit when                                            |
-| ---------------------- | ------------------------------------ | ------------------------------------------------------- |
-| Repository model       | Public monorepo + private cloud repo | Independent teams need independent ownership            |
-| Backend shape          | Modular monolith with process roles  | A module needs separate scaling, security, or ownership |
-| Queue                  | PostgreSQL-backed                    | Measured contention or latency requires Redis           |
-| Metrics store          | PostgreSQL                           | Volume or query cost exceeds practical partitioning     |
-| Connector distribution | Reviewed bundle                      | Release cadence or connector count becomes limiting     |
-| Community execution    | Reviewed code only in SaaS           | Arbitrary tenant code becomes a validated market need   |
-| TV rendering           | Native tiles from JSON (ADR 0007)    | Customers need arbitrary layouts on devices             |
-| Self-host deployment   | Docker Compose                       | Sustained customer demand justifies Helm/Kubernetes     |
-| Authentication         | Embedded                             | External identity operation becomes simpler overall     |
+| Decision               | Chosen now                                           | Revisit when                                            |
+| ---------------------- | ---------------------------------------------------- | ------------------------------------------------------- |
+| Repository model       | Public monorepo + private cloud repo                 | Independent teams need independent ownership            |
+| Backend shape          | Modular monolith with process roles                  | A module needs separate scaling, security, or ownership |
+| Queue                  | PostgreSQL-backed                                    | Measured contention or latency requires Redis           |
+| Metrics store          | PostgreSQL                                           | Volume or query cost exceeds practical partitioning     |
+| Connector distribution | Reviewed bundle                                      | Release cadence or connector count becomes limiting     |
+| Community execution    | Reviewed code only in SaaS                           | Arbitrary tenant code becomes a validated market need   |
+| TV rendering           | Native slides and widgets from JSON (ADR 0007, 0015) | Customers need layouts the widget set cannot express    |
+| Self-host deployment   | Docker Compose                                       | Sustained customer demand justifies Helm/Kubernetes     |
+| Authentication         | Embedded                                             | External identity operation becomes simpler overall     |
 
 ## Implementation decisions still to make
 
 - Select and validate the PostgreSQL job library.
 - Select database query and migration tooling with first-class SQL and RLS
   support.
-- Choose the initial SaaS S3-compatible storage provider.
-- Define initial observation retention and diagnostic payload retention.
+- Choose the initial SaaS S3-compatible storage provider (dashboard images
+  live in PostgreSQL, ADR 0015; object storage waits for snapshots or exports).
 - Define the first connector SDK compatibility and deprecation policy.
 - Validate the pinned Railway Terraform provider against a disposable project.
 - Decide whether production deploys immediately after every green main merge or

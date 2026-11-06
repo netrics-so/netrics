@@ -8,7 +8,7 @@ import {
   errorResponseSchema,
   workspaceListResponseSchema,
 } from "@netrics/contracts";
-import { createDefaultRegistry } from "@netrics/connector-runtime";
+import { createDefaultRegistry } from "./connectors.js";
 import { createDatabase, type Database } from "@netrics/database";
 
 import { buildApp } from "./app.js";

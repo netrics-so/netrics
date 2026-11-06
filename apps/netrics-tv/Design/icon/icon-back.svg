@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 768" width="100%" height="100%" preserveAspectRatio="none">
+  <!-- App icon, back layer: opaque background with a faint chart grid. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#151a22"/>
+      <stop offset="1" stop-color="#07090c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.72" cy="0.22" r="0.6">
+      <stop offset="0" stop-color="#7aa2f7" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#7aa2f7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="768" fill="url(#bg)"/>
+  <rect width="1280" height="768" fill="url(#glow)"/>
+  <g stroke="#232934" stroke-width="3">
+    <path d="M0 184H1280M0 344H1280M0 504H1280"/>
+  </g>
+  <path d="M0 664H1280" stroke="#2a303a" stroke-width="4"/>
+</svg>

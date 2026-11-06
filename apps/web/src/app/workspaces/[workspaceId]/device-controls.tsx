@@ -1,0 +1,222 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
+
+import {
+  DEVICE_ROTATIONS,
+  DISPLAY_MODES,
+  type DevicePlatform,
+  type DeviceRotation,
+  type DisplayMode,
+} from "@netrics/contracts";
+
+import { apiErrorMessage, revokeDevice, updateDevice } from "@/lib/api";
+import { rotationKey } from "@/lib/device-heartbeat";
+import { hasRotationSetting } from "@/lib/device-platform";
+import { useLocale, useT } from "@/lib/i18n/client";
+
+interface DeviceControlsProps {
+  workspaceId: string;
+  device: {
+    id: string;
+    name: string;
+    dashboardId: string | null;
+    rotation: DeviceRotation;
+    displayMode: DisplayMode;
+    /** iPads and iPhones turn by themselves: no rotation setting (#406). */
+    platform: DevicePlatform | null;
+  };
+  /** The Apple TV app shows Screen view only: no mode to choose. */
+  appleTv: boolean;
+  dashboards: Array<{ id: string; name: string }>;
+}
+
+/**
+ * Rename, reassign, turn (rotation), choose the display mode of and revoke
+ * one active TV (owners and admins).
+ */
+export function DeviceControls({
+  workspaceId,
+  device,
+  appleTv,
+  dashboards,
+}: DeviceControlsProps) {
+  const locale = useLocale();
+  const t = useT("devices");
+  const common = useT("common");
+  const router = useRouter();
+  const [name, setName] = useState(device.name);
+  const [dashboardId, setDashboardId] = useState(device.dashboardId ?? "");
+  const [rotation, setRotation] = useState<DeviceRotation>(device.rotation);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>(
+    device.displayMode,
+  );
+  const [confirming, setConfirming] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const trimmed = name.trim();
+  const changed =
+    (trimmed !== "" && trimmed !== device.name) ||
+    dashboardId !== (device.dashboardId ?? "") ||
+    rotation !== device.rotation ||
+    displayMode !== device.displayMode;
+
+  async function run(action: () => Promise<unknown>) {
+    setError(null);
+    setPending(true);
+    try {
+      await action();
+      router.refresh();
+    } catch (cause) {
+      setError(apiErrorMessage(cause, locale));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function onSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    // Send only what changed, so a rename never reassigns and vice versa.
+    void run(() =>
+      updateDevice(workspaceId, device.id, {
+        ...(trimmed !== "" && trimmed !== device.name ? { name: trimmed } : {}),
+        ...(dashboardId !== (device.dashboardId ?? "")
+          ? { dashboardId: dashboardId || null }
+          : {}),
+        ...(rotation !== device.rotation ? { rotation } : {}),
+        ...(displayMode !== device.displayMode ? { displayMode } : {}),
+      }),
+    );
+  }
+
+  function onRevoke() {
+    setConfirming(false);
+    void run(() => revokeDevice(workspaceId, device.id));
+  }
+
+  return (
+    <>
+      <form className="inline" onSubmit={onSave}>
+        <div className="field">
+          <label htmlFor={`device-${device.id}-name`}>{t("name")}</label>
+          <input
+            id={`device-${device.id}-name`}
+            type="text"
+            value={name}
+            required
+            maxLength={100}
+            disabled={pending}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`device-${device.id}-dashboard`}>
+            {t("dashboard")}
+          </label>
+          <select
+            id={`device-${device.id}-dashboard`}
+            value={dashboardId}
+            disabled={pending}
+            onChange={(event) => setDashboardId(event.target.value)}
+          >
+            {dashboards.map((dashboard) => (
+              <option key={dashboard.id} value={dashboard.id}>
+                {dashboard.name}
+              </option>
+            ))}
+            <option value="">{t("noDashboard")}</option>
+          </select>
+        </div>
+        {hasRotationSetting(device.platform) ? (
+          <div className="field">
+            <label htmlFor={`device-${device.id}-rotation`}>
+              {t("orientation")}
+            </label>
+            <select
+              id={`device-${device.id}-rotation`}
+              value={rotation}
+              disabled={pending}
+              onChange={(event) =>
+                setRotation(Number(event.target.value) as DeviceRotation)
+              }
+            >
+              {DEVICE_ROTATIONS.map((degrees) => (
+                <option key={degrees} value={degrees}>
+                  {t(`rotations.${rotationKey(degrees)}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+        <div className="field">
+          <label htmlFor={`device-${device.id}-mode`}>{t("mode")}</label>
+          {appleTv ? (
+            <output
+              id={`device-${device.id}-mode`}
+              className="device-mode-fixed"
+              title={t("appleTvMode")}
+            >
+              {t("modes.screen")}
+            </output>
+          ) : (
+            <select
+              id={`device-${device.id}-mode`}
+              value={displayMode}
+              disabled={pending}
+              onChange={(event) =>
+                setDisplayMode(event.target.value as DisplayMode)
+              }
+            >
+              {DISPLAY_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {t(`modes.${mode}`)}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <button type="submit" disabled={pending || !changed}>
+          {common("save")}
+        </button>
+      </form>
+      {confirming ? (
+        <div className="actions">
+          <span>{t("confirmRevoke", { name: device.name })}</span>
+          <button
+            type="button"
+            className="danger"
+            disabled={pending}
+            onClick={onRevoke}
+          >
+            {t("confirm")}
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => setConfirming(false)}
+          >
+            {common("cancel")}
+          </button>
+        </div>
+      ) : (
+        <div className="actions">
+          <button
+            type="button"
+            className="danger"
+            disabled={pending}
+            onClick={() => setConfirming(true)}
+          >
+            {t("revoke")}
+          </button>
+        </div>
+      )}
+      {error ? (
+        <div className="error" role="alert">
+          {error}
+        </div>
+      ) : null}
+    </>
+  );
+}

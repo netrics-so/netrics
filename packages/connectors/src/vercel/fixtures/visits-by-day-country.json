@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "query": {
+    "since": "2026-09-25T00:00:00.000Z",
+    "until": "2026-09-28T00:00:00.000Z",
+    "groupBy": ["country"],
+    "limit": 3
+  },
+  "data": [
+    {
+      "timestamp": "2026-09-25T00:00:00.000Z",
+      "visitors": 74,
+      "pageviews": 170,
+      "country": "SG"
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00.000Z",
+      "visitors": 106,
+      "pageviews": 117,
+      "country": "SG"
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00.000Z",
+      "visitors": 77,
+      "pageviews": 101,
+      "country": "SG"
+    },
+    {
+      "timestamp": "2026-09-25T00:00:00.000Z",
+      "visitors": 34,
+      "pageviews": 147,
+      "country": "Others"
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00.000Z",
+      "visitors": 86,
+      "pageviews": 128,
+      "country": "Others"
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00.000Z",
+      "visitors": 85,
+      "pageviews": 86,
+      "country": "Others"
+    },
+    {
+      "timestamp": "2026-09-25T00:00:00.000Z",
+      "visitors": 187,
+      "pageviews": 211,
+      "country": "US"
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00.000Z",
+      "visitors": 159,
+      "pageviews": 218,
+      "country": "US"
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00.000Z",
+      "visitors": 96,
+      "pageviews": 144,
+      "country": "US"
+    },
+    {
+      "timestamp": "2026-09-25T00:00:00.000Z",
+      "visitors": 190,
+      "pageviews": 196,
+      "country": "DE"
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00.000Z",
+      "visitors": 74,
+      "pageviews": 111,
+      "country": "DE"
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00.000Z",
+      "visitors": 125,
+      "pageviews": 203,
+      "country": "DE"
+    }
+  ]
+}

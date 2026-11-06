@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { inspect } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -14,6 +15,81 @@ const productionUrls = {
 };
 
 describe("loadConfig", () => {
+  it("configures the connector staging admission budget independently of raw storage", () => {
+    expect(loadConfig({}).dataPolicy.maxConnectorStagingBytes).toBe(
+      134_217_728,
+    );
+    for (const budget of [0, 2_097_152, null])
+      expect(
+        loadConfig({
+          NETRICS_DATA_POLICY: JSON.stringify({
+            maxWorkspaceBytes: 4096,
+            maxConnectorStagingBytes: budget,
+          }),
+        }).dataPolicy,
+      ).toMatchObject({
+        maxWorkspaceBytes: 4096,
+        maxConnectorStagingBytes: budget,
+      });
+    expect(() =>
+      loadConfig({
+        NETRICS_DATA_POLICY: JSON.stringify({ maxConnectorStagingBytes: -1 }),
+      }),
+    ).toThrow("NETRICS_DATA_POLICY");
+  });
+
+  it("configures caller page-session limits independently of aggregate query snapshots", () => {
+    expect(loadConfig({}).dataPolicy.queryPageSessionsPerCaller).toBe(10);
+    for (const limit of [0, 3, null])
+      expect(
+        loadConfig({
+          NETRICS_DATA_POLICY: JSON.stringify({
+            querySnapshotCount: 100,
+            queryPageSessionsPerCaller: limit,
+          }),
+        }).dataPolicy,
+      ).toMatchObject({
+        querySnapshotCount: 100,
+        queryPageSessionsPerCaller: limit,
+      });
+    for (const invalid of [-1, 0.5])
+      expect(() =>
+        loadConfig({
+          NETRICS_DATA_POLICY: JSON.stringify({
+            queryPageSessionsPerCaller: invalid,
+          }),
+        }),
+      ).toThrow("NETRICS_DATA_POLICY");
+  });
+
+  it("allows self-hosters to raise or remove data and execution policy ceilings", () => {
+    const config = loadConfig({
+      NETRICS_DATA_POLICY: JSON.stringify({
+        maxGenerationRows: 10000000,
+        maxWorkspaceBytes: null,
+        queryRows: null,
+        queryOperations: null,
+        queryTimeoutMs: null,
+        syncPagesPerRun: null,
+      }),
+    });
+    expect(config.dataPolicy).toMatchObject({
+      maxGenerationRows: 10000000,
+      maxWorkspaceBytes: null,
+      queryRows: null,
+      queryOperations: null,
+      queryTimeoutMs: null,
+      syncPagesPerRun: null,
+    });
+    for (const input of [
+      '{"queryRows":-1}',
+      '{"unknownLimit":1}',
+      "invalid-json",
+    ])
+      expect(() => loadConfig({ NETRICS_DATA_POLICY: input })).toThrow(
+        "NETRICS_DATA_POLICY",
+      );
+  });
   it("applies defaults", () => {
     const config = loadConfig({});
     expect(config.port).toBe(3001);
@@ -28,6 +104,53 @@ describe("loadConfig", () => {
     expect(config.betterAuthSecret.length).toBeGreaterThanOrEqual(32);
     expect(config.version).toBe("0.0.0-dev");
     expect(config.commit).toBe("dev");
+  });
+
+  it("trusts private proxy hops by default", () => {
+    expect(loadConfig({}).trustedProxies).toEqual([
+      "loopback",
+      "linklocal",
+      "uniquelocal",
+    ]);
+  });
+
+  it("reads trusted proxies as IPs and CIDR ranges, or none", () => {
+    expect(
+      loadConfig({
+        NETRICS_TRUSTED_PROXIES: " 10.1.0.0/16, 192.0.2.4 ,fd12::/16",
+      }).trustedProxies,
+    ).toEqual(["10.1.0.0/16", "192.0.2.4", "fd12::/16"]);
+    expect(
+      loadConfig({ NETRICS_TRUSTED_PROXIES: "none" }).trustedProxies,
+    ).toEqual([]);
+  });
+
+  it.each(["10.0.0.0/33", "example.com", "10.0.0.1/8/1", "any", "::1/129"])(
+    "rejects the trusted proxy entry %s",
+    (entry) => {
+      expect(() => loadConfig({ NETRICS_TRUSTED_PROXIES: entry })).toThrow(
+        /NETRICS_TRUSTED_PROXIES/,
+      );
+    },
+  );
+
+  it("rate-limits auth in production unless switched off", () => {
+    expect(loadConfig({}).authRateLimit).toBe(false);
+    expect(loadConfig({ NETRICS_AUTH_RATE_LIMIT: "on" }).authRateLimit).toBe(
+      true,
+    );
+    const production = {
+      ...validEnv,
+      ...productionUrls,
+      NODE_ENV: "production",
+      BETTER_AUTH_SECRET: randomBytes(32).toString("hex"),
+      APP_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+    };
+    expect(loadConfig(production).authRateLimit).toBe(true);
+    expect(
+      loadConfig({ ...production, NETRICS_AUTH_RATE_LIMIT: "off" })
+        .authRateLimit,
+    ).toBe(false);
   });
 
   it("reads version and commit from the environment", () => {
@@ -312,5 +435,88 @@ describe("empty values", () => {
       loadMigrationConfig({ NETRICS_APP_DB_PASSWORD: "" }).rolePasswords
         .netrics_app,
     ).toBe("netrics_app");
+  });
+});
+
+describe("OAuth client configuration (ADR 0012)", () => {
+  const clientId = "1234-abc.apps.googleusercontent.com";
+  const clientSecret = "GOCSPX-super-secret-value";
+
+  it("leaves Google unconfigured when neither variable is set", () => {
+    expect(loadConfig({}).oauthClients.google).toBeNull();
+    // Empty values count as unset (Compose `${VAR:-}`).
+    expect(
+      loadConfig({
+        NETRICS_OAUTH_GOOGLE_CLIENT_ID: "",
+        NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: "",
+      }).oauthClients.google,
+    ).toBeNull();
+  });
+
+  it("configures Google when both variables are set", () => {
+    const google = loadConfig({
+      NETRICS_OAUTH_GOOGLE_CLIENT_ID: clientId,
+      NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: clientSecret,
+    }).oauthClients.google;
+    expect(google?.clientId).toBe(clientId);
+    expect(google?.clientSecret.reveal()).toBe(clientSecret);
+  });
+
+  it.each([
+    [
+      { NETRICS_OAUTH_GOOGLE_CLIENT_ID: clientId },
+      "NETRICS_OAUTH_GOOGLE_CLIENT_SECRET",
+    ],
+    [
+      { NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: clientSecret },
+      "NETRICS_OAUTH_GOOGLE_CLIENT_ID",
+    ],
+  ])("refuses half a client and names the missing variable", (env, missing) => {
+    let message = "";
+    try {
+      loadConfig(env);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigError);
+      message = (error as Error).message;
+    }
+    expect(message).toContain(`${missing}: ${missing} is required`);
+    expect(message).not.toContain(clientId);
+    expect(message).not.toContain(clientSecret);
+  });
+
+  it("never prints the client secret", () => {
+    const config = loadConfig({
+      NETRICS_OAUTH_GOOGLE_CLIENT_ID: clientId,
+      NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: clientSecret,
+    });
+    expect(JSON.stringify(config)).not.toContain(clientSecret);
+    expect(String(config.oauthClients.google?.clientSecret)).toBe("[redacted]");
+    expect(inspect(config, { depth: 10 })).not.toContain(clientSecret);
+  });
+});
+
+describe("image quota (#217)", () => {
+  it("defaults to 100 images and 50 MiB per workspace", () => {
+    expect(loadConfig({}).imageQuota).toEqual({
+      maxCount: 100,
+      maxBytes: 50 * 1_048_576,
+    });
+  });
+
+  it("reads the quota from the environment at runtime", () => {
+    expect(
+      loadConfig({
+        NETRICS_IMAGE_QUOTA_COUNT: "250",
+        NETRICS_IMAGE_QUOTA_MIB: "200",
+      }).imageQuota,
+    ).toEqual({ maxCount: 250, maxBytes: 200 * 1_048_576 });
+  });
+
+  it("refuses a quota that is not a whole, non-negative number", () => {
+    for (const value of ["-1", "1.5", "lots"]) {
+      expect(() => loadConfig({ NETRICS_IMAGE_QUOTA_COUNT: value })).toThrow(
+        ConfigError,
+      );
+    }
   });
 });

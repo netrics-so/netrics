@@ -16,6 +16,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/test-db.d.ts",
+      "default": "./dist/test-db.js"
     }
   },
   "scripts": {
@@ -24,12 +28,14 @@
     "migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "drizzle-orm": "0.45.2",
+    "@netrics/domain": "workspace:*",
+    "drizzle-orm": "0.45.4",
     "postgres": "3.4.9",
-    "zod": "4.6.5"
+    "zod": "4.6.7",
+    "@netrics/contracts": "workspace:*"
   },
   "devDependencies": {
-    "drizzle-kit": "0.31.10",
-    "typescript": "5.9.3"
+    "drizzle-kit": "0.31.11",
+    "typescript": "6.0.3"
   }
 }

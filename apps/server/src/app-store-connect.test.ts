@@ -1,0 +1,886 @@
+import { randomBytes, randomUUID } from "node:crypto";
+
+import type { FastifyInstance } from "fastify";
+import pino from "pino";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.setConfig({ testTimeout: 20_000 });
+
+import {
+  connectionListResponseSchema,
+  connectionResourcesResponseSchema,
+  connectionResponseSchema,
+  storedConnectionPreviewResponseSchema,
+  dataSourcesResponseSchema,
+  modelQueryResponseSchema,
+  modelResponseSchema,
+  preparationResponseSchema,
+  errorResponseSchema,
+  workspaceListResponseSchema,
+} from "@netrics/contracts";
+import { ConnectorRegistry } from "@netrics/connector-runtime";
+import type { Connector, ConnectorRuntime } from "@netrics/connector-sdk";
+import {
+  createAppStoreConnectConnector,
+  createDemoConnector,
+  vendorNumberMessage,
+} from "@netrics/connectors";
+import {
+  createDatabase,
+  createRawSqlClient,
+  type Database,
+  type Sql,
+} from "@netrics/database";
+
+import { buildApp } from "./app.js";
+import { createAuthService } from "./auth/index.js";
+import { createCredentialKeyring, decryptCredentials } from "./credentials.js";
+import { loadConfig } from "./env.js";
+import { createJobHandlers } from "./jobs/handlers.js";
+import { capturingLogger } from "./oauth/test-provider.js";
+import { SignedKeyProviders } from "./signed-keys/registry.js";
+import {
+  createFakeAsc,
+  type FakeAscTeam,
+} from "./signed-keys/test-app-store-connect.js";
+import { p256KeyPair, pemBody } from "./signed-keys/test-keys.js";
+import { syncCatalog } from "./sync/catalog.js";
+import { createTestDatabase } from "./test-db.js";
+
+// The App Store Connect connector in the API (#171): one connection holds
+// one team key and one vendor number, and connections of different teams
+// coexist in one workspace, each discovering its own team's apps with
+// tokens signed by its own key. The real connector and the real provider
+// probes run against an in-memory App Store Connect that verifies the
+// signatures.
+
+const ENCRYPTION_KEY = randomBytes(32).toString("base64");
+const KEYRING = createCredentialKeyring(ENCRYPTION_KEY);
+const CONNECTOR_ID = "app-store-connect";
+
+// 13:00 PDT on Oct 1: Sept 30 is the latest published reporting day.
+const NOW = Date.parse("2026-10-01T20:00:00.000Z");
+
+const REPORT_HEADER = [
+  "Provider",
+  "SKU",
+  "Title",
+  "Product Type Identifier",
+  "Units",
+  "Developer Proceeds",
+  "Country Code",
+  "Currency of Proceeds",
+  "Apple Identifier",
+  "Parent Identifier",
+  "Device",
+];
+
+/** A daily sales report of Alpha Notes: downloads and two currencies. */
+function alphaReport(downloads: number): string {
+  return [
+    REPORT_HEADER,
+    [
+      "APPLE",
+      "ALPHANOTES",
+      "Alpha Notes",
+      "1F",
+      String(downloads),
+      "0",
+      "US",
+      "USD",
+      "1000000001",
+      "",
+      "iPhone",
+    ],
+    [
+      "APPLE",
+      "ALPHANOTES.PRO",
+      "pro",
+      "IA1",
+      "2",
+      "0.70",
+      "US",
+      "USD",
+      "1100000001",
+      "ALPHANOTES",
+      "iPhone",
+    ],
+    [
+      "APPLE",
+      "ALPHANOTES.PRO",
+      "pro",
+      "IA1",
+      "1",
+      "84",
+      "JP",
+      "JPY",
+      "1100000001",
+      "ALPHANOTES",
+      "iPad",
+    ],
+    // Alpha Ledger is not selected.
+    [
+      "APPLE",
+      "ALPHALEDGER",
+      "Alpha Ledger",
+      "1F",
+      "7",
+      "0",
+      "US",
+      "USD",
+      "1000000002",
+      "",
+      "iPhone",
+    ],
+  ]
+    .map((row) => row.join("\t"))
+    .join("\n");
+}
+
+const TEAM_A: FakeAscTeam = {
+  issuerId: "57246542-96fe-1a63-e053-0824d011072a",
+  keyId: "2X9R4HXF34",
+  key: p256KeyPair(),
+  apps: [
+    { id: "1000000001", name: "Alpha Notes", bundleId: "com.alpha.notes" },
+    { id: "1000000002", name: "Alpha Ledger", bundleId: "com.alpha.ledger" },
+  ],
+  vendorNumbers: ["85012345"],
+  reports: { "2026-09-30": alphaReport(10) },
+};
+const TEAM_B: FakeAscTeam = {
+  issuerId: "69a6de7f-1c2d-47e3-e053-5b8c7c11a4d1",
+  keyId: "9KQ7ZP2M4L",
+  key: p256KeyPair(),
+  apps: [{ id: "2000000001", name: "Beta Atlas", bundleId: "org.beta.atlas" }],
+  vendorNumbers: ["86000001"],
+};
+
+// Team A's next key (#175 rotation): same team, a new key ID and key.
+const TEAM_A_ROTATED: FakeAscTeam = {
+  ...TEAM_A,
+  keyId: "7MZ3QW8N2D",
+  key: p256KeyPair(),
+};
+
+const teams = [TEAM_A, TEAM_B];
+const asc = createFakeAsc(teams);
+let publicRating = 4.25;
+const ratingRequests: Array<{
+  url: string;
+  headers: Record<string, string> | undefined;
+}> = [];
+
+/** The real connector, its runtime.fetch pointed at the fake API. */
+function towardsFake(connector: Connector): Connector {
+  const rewrite = (runtime: ConnectorRuntime): ConnectorRuntime => ({
+    signal: runtime.signal,
+    fetch: async (url, init) => {
+      if (new URL(url).hostname !== "itunes.apple.com")
+        return asc.fetch(url, init);
+      ratingRequests.push({ url, headers: init?.headers });
+      const body = JSON.stringify({
+        results: (new URL(url).searchParams.get("id") ?? "")
+          .split(",")
+          .map((id) => ({
+            trackId: Number(id),
+            averageUserRating: publicRating,
+            userRatingCount: 123,
+          })),
+      });
+      return {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        text: () => body,
+        json: () => JSON.parse(body) as unknown,
+        bytes: () => new TextEncoder().encode(body),
+      };
+    },
+  });
+  return {
+    manifest: connector.manifest,
+    check: (context, runtime) => connector.check(context, rewrite(runtime)),
+    discover: (context, runtime) =>
+      connector.discover(context, rewrite(runtime)),
+    sync: (context, request, runtime) =>
+      connector.sync(context, request, rewrite(runtime)),
+  };
+}
+
+function registry(): ConnectorRegistry {
+  const registry = new ConnectorRegistry();
+  registry.register(createDemoConnector());
+  registry.register(
+    towardsFake(
+      createAppStoreConnectConnector({
+        now: () => NOW,
+        log: () => {},
+      }),
+    ),
+  );
+  return registry;
+}
+
+const signedKeys = new SignedKeyProviders({
+  http: () => (url, init) => asc.fetch(url, init),
+});
+
+let app: FastifyInstance;
+let db: Database;
+let admin: Sql;
+let cookie: string;
+let workspaceId: string;
+const logs: string[] = [];
+const bodies: string[] = [];
+
+beforeAll(async () => {
+  const testDb = await createTestDatabase();
+  const owner = createDatabase(testDb.adminUrl, { max: 1 });
+  await syncCatalog(owner, registry());
+  await owner.$client.end({ timeout: 5 });
+  const config = loadConfig({
+    DATABASE_URL: testDb.appUrl,
+    LOG_LEVEL: "debug",
+    BETTER_AUTH_URL: "http://localhost:3001",
+    WEB_ORIGIN: "http://localhost:3000",
+    APP_ENCRYPTION_KEY: ENCRYPTION_KEY,
+  });
+  db = createDatabase(testDb.appUrl);
+  app = await buildApp(config, {
+    db,
+    authService: createAuthService(config, db, {
+      logger: pino({ level: "silent" }),
+    }),
+    registry: registry(),
+    signedKeys,
+    checkDb: async () => true,
+    logger: capturingLogger(logs),
+  });
+  admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+
+  const signUp = await app.inject({
+    method: "POST",
+    url: "/api/auth/sign-up/email",
+    payload: {
+      name: "Owner",
+      email: "asc-owner@example.com",
+      password: "password-12345",
+    },
+  });
+  expect(signUp.statusCode).toBe(200);
+  const header = signUp.headers["set-cookie"];
+  cookie = (Array.isArray(header) ? header : [header])
+    .find((value) => value?.startsWith("better-auth.session_token="))!
+    .split(";")[0]!;
+  await app.inject({
+    method: "POST",
+    url: "/v1/bootstrap",
+    headers: { cookie },
+    payload: { workspaceName: "App Store" },
+  });
+  workspaceId = workspaceListResponseSchema.parse(
+    (
+      await app.inject({
+        method: "GET",
+        url: "/v1/workspaces",
+        headers: { cookie },
+      })
+    ).json(),
+  ).workspaces[0]!.id;
+}, 60_000);
+
+afterAll(async () => {
+  await app?.close();
+  await db?.$client.end({ timeout: 5 }).catch(() => undefined);
+  await admin?.end({ timeout: 5 }).catch(() => undefined);
+});
+
+async function call(
+  method: "GET" | "POST" | "PATCH",
+  path: string,
+  payload?: Record<string, unknown>,
+) {
+  const response = await app.inject({
+    method,
+    url: `/v1/workspaces/${workspaceId}${path}`,
+    headers: { cookie },
+    ...(payload ? { payload } : {}),
+  });
+  bodies.push(response.body);
+  return response;
+}
+
+function credentialsOf(team: FakeAscTeam) {
+  return {
+    issuerId: team.issuerId,
+    keyId: team.keyId,
+    privateKey: team.key.privateKeyPem,
+  };
+}
+
+async function connectionCount(): Promise<number> {
+  const [row] = await admin`select count(*)::int as count from connections`;
+  return row!.count as number;
+}
+
+async function runSync(connectionId: string) {
+  const handlers = createJobHandlers({
+    registry: registry(),
+    credentialKeyring: KEYRING,
+    signedKeys,
+    now: () => new Date(NOW),
+  });
+  return handlers["connection.sync"]!({
+    job: {
+      id: randomUUID(),
+      kind: "connection.sync",
+      workspaceId,
+      connectionId,
+      payload: {},
+      runAt: new Date(),
+      attempts: 0,
+      maxAttempts: 8,
+      status: "running",
+      lockedBy: "test",
+      lockedAt: new Date(),
+      lastError: null,
+      idempotencyKey: null,
+      createdAt: new Date(),
+    },
+    appDb: db,
+    schedulerDb: db,
+    logger: capturingLogger(logs),
+  });
+}
+
+describe("App Store Connect connections", () => {
+  const ids: Record<"a" | "b", string> = { a: "", b: "" };
+
+  it("refuses a vendor number of another team before anything is stored", async () => {
+    const before = await connectionCount();
+    const response = await call("POST", "/connections", {
+      connectorId: CONNECTOR_ID,
+      name: "Alpha",
+      config: { vendorNumber: TEAM_B.vendorNumbers[0] },
+      credentials: credentialsOf(TEAM_A),
+    });
+    expect(response.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(response.json()).error).toBe(
+      vendorNumberMessage(TEAM_B.vendorNumbers[0]!),
+    );
+    expect(await connectionCount()).toBe(before);
+  });
+
+  it("holds connections of two teams in one workspace, each with its own key and vendor number", async () => {
+    for (const [slot, team] of [
+      ["a", TEAM_A],
+      ["b", TEAM_B],
+    ] as const) {
+      const response = await call("POST", "/connections", {
+        connectorId: CONNECTOR_ID,
+        name: `Team ${slot.toUpperCase()}`,
+        config: { vendorNumber: team.vendorNumbers[0] },
+        credentials: credentialsOf(team),
+        resources: [team.apps[0]!.id],
+      });
+      expect(response.statusCode).toBe(200);
+      ids[slot] = connectionResponseSchema.parse(response.json()).connection.id;
+    }
+    expect(ids.a).not.toBe(ids.b);
+
+    const list = connectionListResponseSchema
+      .parse((await call("GET", "/connections")).json())
+      .connections.filter(
+        (connection) => connection.connectorId === CONNECTOR_ID,
+      );
+    expect(list.map((connection) => connection.id).sort()).toEqual(
+      [ids.a, ids.b].sort(),
+    );
+    // Each envelope holds its own team's key, bound to its connection.
+    for (const [slot, team] of [
+      ["a", TEAM_A],
+      ["b", TEAM_B],
+    ] as const) {
+      const [row] = await admin`
+        select credentials_encrypted, config from connections
+        where id = ${ids[slot]}
+      `;
+      const stored = JSON.parse(
+        decryptCredentials(
+          (row!.credentials_encrypted as Buffer).toString("utf8"),
+          KEYRING,
+          { workspaceId, connectionId: ids[slot] },
+        ),
+      ) as Record<string, string>;
+      expect(stored).toEqual(credentialsOf(team));
+      expect(row!.config).toEqual({
+        vendorNumber: team.vendorNumbers[0],
+        ratingStorefront: "US",
+        resourceSelection: [team.apps[0]!.id],
+      });
+    }
+  });
+
+  it("discovers each team's apps with tokens signed by that team's key", async () => {
+    const seen = asc.requests.length;
+    const discovered = async (id: string) =>
+      connectionResourcesResponseSchema
+        .parse((await call("GET", `/connections/${id}/resources`)).json())
+        .resources.map((resource) => resource.id);
+    expect(await discovered(ids.a)).toEqual(["1000000002", "1000000001"]);
+    expect(await discovered(ids.b)).toEqual(["2000000001"]);
+    const issuers = asc.requests.slice(seen).map((request) => request.issuerId);
+    expect(issuers).toEqual([TEAM_A.issuerId, TEAM_B.issuerId]);
+  });
+
+  it("previews draft settings with the stored team key without saving or importing", async () => {
+    const before =
+      await admin`select config from connections where id = ${ids.a}`;
+    const jobsBefore =
+      await admin`select id, status from jobs where connection_id = ${ids.a} order by id`;
+    const response = await call("POST", `/connections/${ids.a}/preview`, {
+      config: { vendorNumber: TEAM_A.vendorNumbers[0], ratingStorefront: "DE" },
+    });
+    expect(response.statusCode).toBe(200);
+    const preview = storedConnectionPreviewResponseSchema.parse(
+      response.json(),
+    );
+    expect(preview.check.ok).toBe(true);
+    expect(preview.resources.map((resource) => resource.id)).toEqual([
+      "1000000002",
+      "1000000001",
+    ]);
+    expect(preview.selection).toEqual(["1000000001"]);
+    expect(
+      await admin`select config from connections where id = ${ids.a}`,
+    ).toEqual(before);
+    expect(
+      await admin`select id, status from jobs where connection_id = ${ids.a} order by id`,
+    ).toEqual(jobsBefore);
+    expect(response.body).not.toContain(TEAM_A.key.privateKeyPem);
+    const invalid = await call("POST", `/connections/${ids.a}/preview`, {
+      config: { vendorNumber: TEAM_B.vendorNumbers[0] },
+    });
+    expect(
+      storedConnectionPreviewResponseSchema.parse(invalid.json()).check.ok,
+    ).toBe(false);
+    expect(
+      (
+        await call("POST", `/connections/${randomUUID()}/preview`, {
+          config: { vendorNumber: TEAM_A.vendorNumbers[0] },
+        })
+      ).statusCode,
+    ).toBe(404);
+  });
+
+  it("changes the app scope using the stored key, preserving history and rejecting foreign app IDs", async () => {
+    const before =
+      await admin`select config from connections where id = ${ids.a}`;
+    expect(
+      (
+        await call("PATCH", `/connections/${ids.a}`, {
+          resources: [TEAM_B.apps[0]!.id],
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      await admin`select config from connections where id = ${ids.a}`,
+    ).toEqual(before);
+    expect(
+      (
+        await call("PATCH", `/connections/${ids.a}`, {
+          resources: ["1000000002", "1000000001", "1000000002"],
+        })
+      ).statusCode,
+    ).toBe(200);
+    const scope = async () =>
+      (await call("GET", `/connections/${ids.a}/resources`)).json().selection;
+    expect(await scope()).toEqual(["1000000001", "1000000002"]);
+    const waiting =
+      await admin`select id from jobs where connection_id = ${ids.a} and status in ('pending', 'continuing') order by id`;
+    expect(
+      (
+        await call("PATCH", `/connections/${ids.a}`, {
+          resources: ["1000000002", "1000000001"],
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      await admin`select id from jobs where connection_id = ${ids.a} and status in ('pending', 'continuing') order by id`,
+    ).toEqual(waiting);
+    // An ordinary settings save keeps the app scope.
+    expect(
+      (
+        await call("PATCH", `/connections/${ids.a}`, {
+          config: {
+            vendorNumber: TEAM_A.vendorNumbers[0],
+            ratingStorefront: "US",
+          },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(await scope()).toEqual(["1000000001", "1000000002"]);
+    expect(
+      (await call("PATCH", `/connections/${ids.a}`, { resources: null }))
+        .statusCode,
+    ).toBe(200);
+    expect(await scope()).toBeNull();
+    expect(
+      (await call("PATCH", `/connections/${ids.a}`, { resources: [] }))
+        .statusCode,
+    ).toBe(200);
+    expect(await scope()).toEqual([]);
+    expect(
+      (
+        await call("PATCH", `/connections/${ids.a}`, {
+          resources: ["1000000001"],
+          credentials: credentialsOf(TEAM_A),
+        })
+      ).statusCode,
+    ).toBe(400);
+    // Restore the selected app for the following correction/retention tests.
+    expect(
+      (
+        await call("PATCH", `/connections/${ids.a}`, {
+          resources: ["1000000001"],
+        })
+      ).statusCode,
+    ).toBe(200);
+  });
+
+  it("syncs each team's sales through the engine; a replay adds nothing and a revision updates", async () => {
+    for (const id of [ids.a, ids.b]) {
+      await runSync(id);
+      const [state] = await admin`
+        select auth_state, consecutive_failures from connection_state
+        where connection_id = ${id}
+      `;
+      expect(state).toMatchObject({
+        auth_state: "ok",
+        consecutive_failures: 0,
+      });
+    }
+    const sept30 = async () =>
+      (
+        await admin`
+          select d.key as metric_key, o.dimensions, o.value
+          from observations o
+          join metric_definitions d on d.id = o.metric_definition_id
+          where o.connection_id = ${ids.a}
+            and o.source_timestamp = '2026-09-30T00:00:00Z'
+          order by d.key, o.dimensions::text
+        `
+      ).map((row) => ({
+        metric: row.metric_key as string,
+        dimensions: row.dimensions as Record<string, string>,
+        value: row.value as number,
+      }));
+    const first = await sept30();
+    const value = (metric: string, extra: Record<string, string> = {}) =>
+      first.find(
+        (row) =>
+          row.metric === `app_store_connect.${metric}` &&
+          JSON.stringify(Object.entries(row.dimensions).sort()) ===
+            JSON.stringify(
+              Object.entries({ resource: "1000000001", ...extra }).sort(),
+            ),
+      )?.value;
+    expect(value("downloads")).toBe(10);
+    expect(value("iap_units")).toBe(3);
+    // Proceeds of two currencies stay separate series.
+    expect(value("proceeds", { currency: "USD" })).toBe(140);
+    expect(value("proceeds", { currency: "JPY" })).toBe(84);
+    expect(first.every((row) => row.dimensions.resource === "1000000001")).toBe(
+      true,
+    );
+
+    // The next sync re-reads Sept 30: nothing is added.
+    await runSync(ids.a);
+    expect(await sept30()).toEqual(first);
+
+    // Apple revises the day: the stored values change in place.
+    TEAM_A.reports!["2026-09-30"] = alphaReport(12);
+    await runSync(ids.a);
+    const revised = await sept30();
+    expect(revised).toHaveLength(first.length);
+    expect(
+      revised.find(
+        (row) =>
+          row.metric === "app_store_connect.downloads" &&
+          row.dimensions.resource === "1000000001",
+      )?.value,
+    ).toBe(12);
+  });
+
+  it("publishes selected apps' raw ratings for model queries and replaces same-day corrections", async () => {
+    const sources = await call("GET", "/data/sources");
+    expect(sources.statusCode, sources.body).toBe(200);
+    const source = dataSourcesResponseSchema
+      .parse(sources.json())
+      .sources.find(
+        (item) =>
+          item.connectionId === ids.a &&
+          item.name === "App Store rating snapshots",
+      );
+    expect(source).toMatchObject({
+      rowCount: 1,
+      aggregated: false,
+      expiresAt: null,
+    });
+    const datasetId = source!.id;
+    const model = await call("POST", "/data/models", {
+      name: "Store ratings",
+      definition: {
+        version: 1,
+        datasets: [datasetId],
+        relationships: [],
+        dimensions: [
+          { id: "app", name: "App", datasetId, fieldId: "app_id" },
+          {
+            id: "storefront",
+            name: "Storefront",
+            datasetId,
+            fieldId: "storefront",
+          },
+        ],
+        measures: ["rating", "rating_count"].map((fieldId) => ({
+          id: fieldId,
+          name: fieldId,
+          kind: "aggregate",
+          datasetId,
+          aggregate: {
+            id: fieldId,
+            name: fieldId,
+            op: "last",
+            fieldId,
+            orderBy: "captured_at",
+          },
+        })),
+      },
+    });
+    expect(model.statusCode, model.body).toBe(200);
+    const modelId = modelResponseSchema.parse(model.json()).model.id;
+    const published = await call("POST", `/data/models/${modelId}/publish`, {
+      version: 1,
+    });
+    expect(published.statusCode, published.body).toBe(200);
+    const query = async () => {
+      const response = await call("POST", `/data/models/${modelId}/query`, {
+        measureIds: ["rating", "rating_count"],
+        groupBy: ["app", "storefront"],
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      return modelQueryResponseSchema.parse(response.json());
+    };
+    const first = await query();
+    expect(first.rows).toHaveLength(1);
+    expect(first.rows[0]).toMatchObject({
+      dimensions: { app: "1000000001", storefront: "US" },
+      measures: {
+        rating: { value: "4.25", unit: "stars", status: "ok" },
+        rating_count: { value: 123, status: "ok" },
+      },
+    });
+    publicRating = 4.75;
+    await runSync(ids.a);
+    const second = await query();
+    expect(second.rows[0]?.measures.rating).toMatchObject({
+      value: "4.75",
+      status: "ok",
+    });
+    expect(second.provenance).not.toEqual(first.provenance);
+    const current = dataSourcesResponseSchema
+      .parse((await call("GET", "/data/sources")).json())
+      .sources.find((item) => item.id === datasetId);
+    expect(current?.rowCount).toBe(1);
+    expect(ratingRequests.length).toBeGreaterThan(0);
+    expect(
+      ratingRequests.every((item) => item.headers?.authorization === undefined),
+    ).toBe(true);
+    expect(
+      ratingRequests.every(
+        (item) => new URL(item.url).searchParams.get("country") === "us",
+      ),
+    ).toBe(true);
+  });
+
+  it("prepares exact proceeds from raw report rows and removes rows deleted by a correction", async () => {
+    const source = dataSourcesResponseSchema
+      .parse((await call("GET", "/data/sources")).json())
+      .sources.find(
+        (item) =>
+          item.connectionId === ids.a &&
+          item.name === "App Store sales report rows",
+      );
+    expect(source).toMatchObject({
+      aggregated: false,
+      rowCount: 3,
+      expiresAt: null,
+    });
+    const preparation = await call("POST", "/data/preparations", {
+      name: "Exact proceeds",
+      graph: {
+        version: 1,
+        nodes: [
+          { id: "raw", type: "source", datasetId: source!.id },
+          {
+            id: "amounts",
+            type: "calculate",
+            input: "raw",
+            fieldId: "proceeds",
+            name: "Developer proceeds",
+            expression: {
+              kind: "call",
+              fn: "multiply",
+              args: [
+                { kind: "field", fieldId: "units" },
+                { kind: "field", fieldId: "developer_proceeds_per_unit" },
+              ],
+            },
+          },
+        ],
+        outputs: ["amounts"],
+      },
+    });
+    expect(preparation.statusCode, preparation.body).toBe(200);
+    const preparationId = preparationResponseSchema.parse(preparation.json())
+      .preparation.id;
+    const publishedPreparation = await call(
+      "POST",
+      `/data/preparations/${preparationId}/publish`,
+      { version: 1 },
+    );
+    expect(publishedPreparation.statusCode, publishedPreparation.body).toBe(
+      200,
+    );
+    const datasetId = `prepared:${preparationId}:amounts`;
+    const model = await call("POST", "/data/models", {
+      name: "Calculated store proceeds",
+      definition: {
+        version: 1,
+        datasets: [datasetId],
+        relationships: [],
+        dimensions: [
+          { id: "currency", name: "Currency", datasetId, fieldId: "currency" },
+        ],
+        measures: [
+          {
+            id: "proceeds",
+            name: "Developer proceeds",
+            kind: "aggregate",
+            datasetId,
+            aggregate: {
+              id: "proceeds",
+              name: "Developer proceeds",
+              op: "sum",
+              fieldId: "proceeds",
+            },
+          },
+        ],
+      },
+    });
+    expect(model.statusCode, model.body).toBe(200);
+    const modelId = modelResponseSchema.parse(model.json()).model.id;
+    const publication = await call("POST", `/data/models/${modelId}/publish`, {
+      version: 1,
+    });
+    expect(publication.statusCode, publication.body).toBe(200);
+    const query = async () => {
+      const response = await call("POST", `/data/models/${modelId}/query`, {
+        measureIds: ["proceeds"],
+        groupBy: ["currency"],
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      return modelQueryResponseSchema.parse(response.json());
+    };
+    const first = await query();
+    expect(
+      first.rows.map((row) => [
+        row.dimensions.currency,
+        row.measures.proceeds?.value,
+      ]),
+    ).toEqual([
+      ["JPY", "84"],
+      ["USD", "1.4"],
+    ]);
+    TEAM_A.reports!["2026-09-30"] = alphaReport(5)
+      .split("\n")
+      .filter((_, index) => index !== 3)
+      .map((line, index) => {
+        if (index !== 2) return line;
+        const fields = line.split("\t");
+        fields[REPORT_HEADER.indexOf("Units")] = "-1";
+        return fields.join("\t");
+      })
+      .join("\n");
+    await runSync(ids.a);
+    const second = await query();
+    expect(second.rows).toHaveLength(1);
+    expect(second.rows[0]).toMatchObject({
+      dimensions: { currency: "USD" },
+      measures: { proceeds: { value: "-0.7", currency: "USD", status: "ok" } },
+    });
+    expect(second.provenance).not.toEqual(first.provenance);
+    const corrected = dataSourcesResponseSchema
+      .parse((await call("GET", "/data/sources")).json())
+      .sources.find((item) => item.id === source!.id);
+    expect(corrected?.rowCount).toBe(2);
+  });
+
+  it("shows the stored key's issuer ID and key ID, never the private key", async () => {
+    const response = await call("GET", `/connections/${ids.a}`);
+    expect(response.statusCode).toBe(200);
+    expect(
+      connectionResponseSchema.parse(response.json()).connection.signedKey,
+    ).toEqual({
+      provider: "app-store-connect",
+      fields: [
+        { key: "issuerId", label: "Issuer ID", value: TEAM_A.issuerId },
+        { key: "keyId", label: "Key ID", value: TEAM_A.keyId },
+      ],
+      sharedWith: [],
+    });
+    expect(response.body).not.toContain("privateKey");
+    expect(response.body).not.toContain("PRIVATE KEY");
+  });
+
+  it("keeps the stored key when a replacement fails, and shows the new key ID after rotating", async () => {
+    const keyIdOf = async () =>
+      connectionResponseSchema
+        .parse((await call("GET", `/connections/${ids.a}`)).json())
+        .connection.signedKey?.fields.find((field) => field.key === "keyId")
+        ?.value;
+
+    // A key Apple does not know: refused, the old envelope stays.
+    const unknown = await call("PATCH", `/connections/${ids.a}`, {
+      credentials: credentialsOf({ ...TEAM_A_ROTATED, keyId: "0000000000" }),
+    });
+    expect(unknown.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(unknown.json()).error).toMatch(
+      /do not belong together, or the key was revoked/,
+    );
+    expect(await keyIdOf()).toBe(TEAM_A.keyId);
+
+    // The team's new key: validated, stored, and shown by its key ID.
+    teams.push(TEAM_A_ROTATED);
+    const rotated = await call("PATCH", `/connections/${ids.a}`, {
+      credentials: credentialsOf(TEAM_A_ROTATED),
+    });
+    expect(rotated.statusCode).toBe(200);
+    expect(
+      connectionResponseSchema
+        .parse(rotated.json())
+        .connection.signedKey?.fields.map((field) => field.value),
+    ).toEqual([TEAM_A_ROTATED.issuerId, TEAM_A_ROTATED.keyId]);
+    expect(await keyIdOf()).toBe(TEAM_A_ROTATED.keyId);
+    expect(rotated.body).not.toContain("PRIVATE KEY");
+  });
+
+  it("puts no key material or token in responses or logs", () => {
+    const text = [...bodies, ...logs].join("\n");
+    for (const team of [TEAM_A, TEAM_B, TEAM_A_ROTATED]) {
+      expect(text).not.toContain(pemBody(team.key.privateKeyPem).slice(0, 24));
+    }
+    expect(text).not.toMatch(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./);
+  });
+});

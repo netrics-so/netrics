@@ -1,16 +1,101 @@
+import { dataErrorCodeKey } from "./data-errors";
 import { ZodError, type ZodType } from "zod";
 
 import {
+  IMAGE_NAME_HEADER,
+  storeTemplateOptionsSchema,
+  storeTemplateRequestSchema,
+  storeTemplateResultSchema,
+  type StoreTemplateRequest,
+  type StoreTemplateOptions,
+  type StoreTemplateResult,
+  createDashboardFromTemplateRequestSchema,
+  dashboardTemplateOptionsResponseSchema,
+  resourceIconListResponseSchema,
+  useResourceIconRequestSchema,
+  type CreateDashboardFromTemplateRequest,
+  type DashboardTemplateOptionsResponse,
+  type ResourceIconListResponse,
+  imageListResponseSchema,
+  imageResponseSchema,
+  type ImageContentType,
+  type ImageListResponse,
+  type ImageResponse,
+  createWorkspaceResponseSchema,
+  type CreateWorkspaceResponse,
+  addDemoContentResponseSchema,
+  type AddDemoContentResponse,
+  createDashboardRequestSchema,
+  dashboardListResponseSchema,
+  approveDeviceRequestSchema,
+  lookupPairingRequestSchema,
+  lookupPairingResponseSchema,
+  dashboardResponseSchema,
+  deviceListResponseSchema,
+  deviceResponseSchema,
+  duplicateDashboardRequestSchema,
+  metricCurrenciesRequestSchema,
+  metricCurrenciesResponseSchema,
+  metricResourcesRequestSchema,
+  metricResourcesResponseSchema,
+  latestReviewRequestSchema,
+  latestReviewResponseSchema,
+  metricBreakdownRequestSchema,
+  metricBreakdownResponseSchema,
+  metricQueryRequestSchema,
+  metricQueryResponseSchema,
+  replaceDashboardRequestSchema,
+  updateDeviceRequestSchema,
+  workspaceMetricListResponseSchema,
+  type CreateDashboardRequest,
+  type DashboardListResponse,
+  type ApproveDeviceRequest,
+  type LookupPairingResponse,
+  type DashboardResponse,
+  type DeviceListResponse,
+  type DeviceResponse,
+  type CurrencyConversionOptionsResponse,
+  currencyConversionOptionsResponseSchema,
+  type MetricCurrenciesRequest,
+  type MetricCurrenciesResponse,
+  type MetricResourcesRequest,
+  type MetricResourcesResponse,
+  type LatestReviewRequest,
+  type LatestReviewResponse,
+  type MetricBreakdownRequest,
+  type MetricBreakdownResponse,
+  type MetricQueryRequest,
+  type MetricQueryResponse,
+  type ReplaceDashboardRequest,
+  type UpdateDeviceRequest,
+  type WorkspaceMetricListResponse,
   acceptInvitationResponseSchema,
+  appStoreAnalyticsStatusResponseSchema,
+  enableAppStoreAnalyticsRequestSchema,
+  enableAppStoreAnalyticsResponseSchema,
+  type AppStoreAnalyticsStatusResponse,
+  appStoreReviewsStatusResponseSchema,
+  type AppStoreReviewsStatusResponse,
+  type EnableAppStoreAnalyticsRequest,
+  type EnableAppStoreAnalyticsResponse,
   connectionDetailResponseSchema,
   connectionListResponseSchema,
   connectionPreviewResponseSchema,
+  storedConnectionPreviewRequestSchema,
+  storedConnectionPreviewResponseSchema,
+  type StoredConnectionPreviewRequest,
+  type StoredConnectionPreviewResponse,
+  connectionResourcesResponseSchema,
   connectionResponseSchema,
   connectorListResponseSchema,
+  connectionsResponseSchema,
   createConnectionRequestSchema,
+  createConnectionsRequestSchema,
+  createSharedKeyConnectionsRequestSchema,
   createInvitationRequestSchema,
   createProjectRequestSchema,
   createWorkspaceRequestSchema,
+  deleteConnectionResponseSchema,
   enqueueSyncResponseSchema,
   errorResponseSchema,
   healthLiveResponseSchema,
@@ -23,10 +108,16 @@ import {
   memberResponseSchema,
   observationListResponseSchema,
   previewConnectionRequestSchema,
+  sharedKeyResourcesResponseSchema,
+  signedKeyPairResponseSchema,
   projectListResponseSchema,
   projectResponseSchema,
   renameWorkspaceRequestSchema,
+  updateMeRequestSchema,
   setupStatusResponseSchema,
+  startOAuthAuthorizationRequestSchema,
+  startOAuthAuthorizationResponseSchema,
+  timeZoneSchema,
   updateConnectionRequestSchema,
   updateMemberRoleRequestSchema,
   workspaceListResponseSchema,
@@ -34,9 +125,15 @@ import {
   type ConnectionDetailResponse,
   type ConnectionListResponse,
   type ConnectionPreviewResponse,
+  type CreateSharedKeyConnectionsRequest,
+  type SharedKeyResourcesResponse,
+  type ConnectionResourcesResponse,
   type ConnectionResponse,
   type ConnectorListResponse,
+  type ConnectionsResponse,
   type CreateConnectionRequest,
+  type CreateConnectionsRequest,
+  type DeleteConnectionResponse,
   type EnqueueSyncResponse,
   type HealthLiveResponse,
   type HealthReadyResponse,
@@ -48,16 +145,43 @@ import {
   type MeResponse,
   type ObservationListResponse,
   type PreviewConnectionRequest,
+  type SignedKeyPairResponse,
   type ProjectListResponse,
   type ProjectResponse,
   type SetupStatusResponse,
+  type StartOAuthAuthorizationRequest,
+  type StartOAuthAuthorizationResponse,
   type UpdateConnectionRequest,
   type WorkspaceListResponse,
   type WorkspaceResponse,
   type WorkspaceRole,
+  createGoalRequestSchema,
+  deleteGoalResponseSchema,
+  goalListResponseSchema,
+  goalResponseSchema,
+  updateGoalRequestSchema,
+  type CreateGoalRequest,
+  type DeleteGoalResponse,
+  type Goal,
+  type GoalListResponse,
+  type GoalResponse,
+  type UpdateGoalRequest,
+  createThemeRequestSchema,
+  themeErrorResponseSchema,
+  themeListResponseSchema,
+  themeResponseSchema,
+  updateThemeRequestSchema,
+  type CreateThemeRequest,
+  type ThemeErrorResponse,
+  type ThemeListResponse,
+  type ThemeResponse,
+  type UpdateThemeRequest,
 } from "@netrics/contracts";
+import type { Locale, MessageKey } from "@netrics/domain";
 
-import { apiBaseUrl } from "./api-proxy";
+import { apiFetch } from "./api-fetch";
+import { webTranslator, type WebMessages } from "./i18n/catalogs";
+import { toStudioImage, type StudioImage } from "./studio-widgets";
 
 /**
  * API failures carry a machine-readable code in the response body
@@ -68,56 +192,59 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly code: string,
+    /** Extra fields some errors carry (theme contrast, dashboards in use). */
+    public readonly details: Omit<ThemeErrorResponse, "error"> = {},
   ) {
     super(code);
     this.name = "ApiError";
   }
 }
 
-export function apiErrorMessage(error: unknown): string {
+/** API error codes that share one message. */
+const API_ERROR_ALIASES: Readonly<Record<string, ApiErrorKey>> = {
+  workspace_not_found: "record_not_found",
+  member_not_found: "record_not_found",
+  project_not_found: "record_not_found",
+  connection_not_found: "record_not_found",
+  review_not_found: "record_not_found",
+  image_type_mismatch: "image_invalid",
+  unsupported_media_type: "image_invalid",
+  tile_metric_not_found: "metric_not_found",
+};
+
+type ApiErrorKey = MessageKey<WebMessages["apiErrors"]>;
+
+/**
+ * An error for the user, in their language: API error codes are worded
+ * from the catalog (ADR 0016 section 5; the API returns codes, not prose).
+ */
+export function apiErrorMessage(error: unknown, locale: Locale): string {
+  const t = webTranslator(locale, "apiErrors");
   if (error instanceof ApiError) {
-    switch (error.code) {
-      case "last_owner":
-        return "The last owner of a workspace cannot be demoted or removed.";
-      case "membership_exists":
-        return "That person is already a member of this workspace.";
-      case "email_delivery_failed":
-        return "The invitation email could not be sent. Try again later.";
-      case "invitation_not_found":
-        return "This invitation link is not valid.";
-      case "invitation_revoked":
-        return "This invitation was withdrawn. Ask for a new one.";
-      case "invitation_used":
-        return "This invitation has already been used.";
-      case "invitation_expired":
-        return "This invitation has expired. Ask for a new one.";
-      case "invitation_email_mismatch":
-        return "This invitation is for a different email address.";
-      case "workspace_already_exists":
-        return "A workspace already exists for this installation.";
-      case "forbidden":
-        return "Your role does not allow this action.";
-      case "unauthorized":
-        return "Your session has expired — sign in again.";
-      case "workspace_not_found":
-      case "member_not_found":
-      case "project_not_found":
-      case "connection_not_found":
-        return "That record no longer exists.";
-      case "invalid_request":
-        return "The request was invalid — check your input.";
-      default:
-        // Connector check/preview failures arrive as human-readable,
-        // already-redacted messages rather than snake_case codes.
-        return /^[a-z_]+$/.test(error.code)
-          ? `Request failed (${error.code}).`
-          : error.code;
+    if (/^(dashboard_(?:filter|measure)|data_|model_)/.test(error.code))
+      return webTranslator(locale, "data.errors")(dataErrorCodeKey(error.code));
+    const code = API_ERROR_ALIASES[error.code] ?? error.code;
+    if (code === "theme_in_use" || code === "image_in_use") {
+      const names = error.details.dashboards?.map((d) => d.name) ?? [];
+      if (names.length > 0) {
+        return t(`${code}_by`, {
+          names: new Intl.ListFormat(locale, { type: "conjunction" }).format(
+            names,
+          ),
+        });
+      }
     }
+    if (/^[a-z_]+$/.test(code)) {
+      return t.has(code) ? t(code) : t("requestFailed", { code });
+    }
+    // Connector check/preview failures arrive as human-readable,
+    // already-redacted messages rather than snake_case codes.
+    return error.code;
   }
   if (error instanceof ZodError) {
-    return "Check your input — a field is missing or invalid.";
+    return t("invalidInput");
   }
-  return error instanceof Error ? error.message : "Something went wrong.";
+  return error instanceof Error ? error.message : t("generic");
 }
 
 async function readErrorCode(response: Response): Promise<string> {
@@ -129,12 +256,23 @@ async function readErrorCode(response: Response): Promise<string> {
   }
 }
 
+async function readError(response: Response): Promise<ApiError> {
+  try {
+    const { error, ...details } = themeErrorResponseSchema.parse(
+      await response.json(),
+    );
+    return new ApiError(response.status, error, details);
+  } catch {
+    return new ApiError(response.status, "request_failed");
+  }
+}
+
 async function parseResponse<T>(
   schema: ZodType<T>,
   response: Response,
 ): Promise<T> {
   if (!response.ok) {
-    throw new ApiError(response.status, await readErrorCode(response));
+    throw await readError(response);
   }
   return schema.parse(await response.json());
 }
@@ -150,10 +288,9 @@ function serverGet<T>(
   cookieHeader: string,
   path: string,
 ): Promise<T> {
-  return fetch(`${apiBaseUrl()}${path}`, {
-    headers: { cookie: cookieHeader },
-    cache: "no-store",
-  }).then((response) => parseResponse(schema, response));
+  return apiFetch(path, { headers: { cookie: cookieHeader } }).then(
+    (response) => parseResponse(schema, response),
+  );
 }
 
 export function listInvitations(
@@ -171,9 +308,8 @@ export function listInvitations(
 export async function getInvitationPreview(
   token: string,
 ): Promise<InvitationPreviewResponse | null> {
-  const response = await fetch(
-    `${apiBaseUrl()}/v1/invitations/${encodeURIComponent(token)}`,
-    { cache: "no-store" },
+  const response = await apiFetch(
+    `/v1/invitations/${encodeURIComponent(token)}`,
   );
   if (response.status === 404) {
     return null;
@@ -183,17 +319,14 @@ export async function getInvitationPreview(
 
 /** Public: whether first-run setup is pending and whether sign-up is open. */
 export async function getSetupStatus(): Promise<SetupStatusResponse> {
-  const response = await fetch(`${apiBaseUrl()}/v1/setup-status`, {
-    cache: "no-store",
-  });
+  const response = await apiFetch("/v1/setup-status");
   return parseResponse(setupStatusResponseSchema, response);
 }
 
 /** Returns null on 401 so pages can redirect to /login themselves. */
 export async function getMe(cookieHeader: string): Promise<MeResponse | null> {
-  const response = await fetch(`${apiBaseUrl()}/v1/me`, {
+  const response = await apiFetch("/v1/me", {
     headers: { cookie: cookieHeader },
-    cache: "no-store",
   });
   if (response.status === 401) {
     return null;
@@ -212,14 +345,25 @@ export async function getWorkspace(
   cookieHeader: string,
   workspaceId: string,
 ): Promise<WorkspaceResponse | null> {
-  const response = await fetch(`${apiBaseUrl()}/v1/workspaces/${workspaceId}`, {
+  const response = await apiFetch(`/v1/workspaces/${workspaceId}`, {
     headers: { cookie: cookieHeader },
-    cache: "no-store",
   });
   if (response.status === 404) {
     return null;
   }
   return parseResponse(workspaceResponseSchema, response);
+}
+
+/** Whether amounts can be converted, and into which currencies (#191). */
+export function getCurrencyConversion(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<CurrencyConversionOptionsResponse> {
+  return serverGet(
+    currencyConversionOptionsResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/currency-conversion`,
+  );
 }
 
 export function listMembers(
@@ -267,9 +411,9 @@ export async function getConnection(
   workspaceId: string,
   connectionId: string,
 ): Promise<ConnectionDetailResponse | null> {
-  const response = await fetch(
-    `${apiBaseUrl()}/v1/workspaces/${workspaceId}/connections/${connectionId}`,
-    { headers: { cookie: cookieHeader }, cache: "no-store" },
+  const response = await apiFetch(
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}`,
+    { headers: { cookie: cookieHeader } },
   );
   if (response.status === 404) {
     return null;
@@ -307,8 +451,8 @@ export interface ApiHealth {
 export async function fetchApiHealth(): Promise<ApiHealth> {
   try {
     const [liveResponse, readyResponse] = await Promise.all([
-      fetch(`${apiBaseUrl()}/health/live`, { cache: "no-store" }),
-      fetch(`${apiBaseUrl()}/health/ready`, { cache: "no-store" }),
+      apiFetch("/health/live"),
+      apiFetch("/health/ready"),
     ]);
 
     const live = liveResponse.ok
@@ -329,16 +473,19 @@ export async function fetchApiHealth(): Promise<ApiHealth> {
 
 // ---------------------------------------------------------------------------
 // Browser-side mutations: same-origin relative URLs, proxied to the API by
-// the Next rewrites; the session cookie is attached automatically.
+// the /v1 route handler (lib/api-proxy); the session cookie is attached
+// automatically.
 // ---------------------------------------------------------------------------
 
-async function browserSend<T>(
+export async function browserSend<T>(
   schema: ZodType<T>,
   method: string,
   path: string,
   body?: unknown,
+  options?: { signal?: AbortSignal },
 ): Promise<T> {
   const response = await fetch(path, {
+    ...(options?.signal ? { signal: options.signal } : {}),
     method,
     headers: body === undefined ? {} : { "content-type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -346,12 +493,93 @@ async function browserSend<T>(
   return parseResponse(schema, response);
 }
 
-export function createWorkspace(name: string): Promise<WorkspaceResponse> {
+/** The browser's IANA time zone, if the API accepts it. */
+function browserTimeZone(): string | undefined {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return timeZoneSchema.safeParse(timeZone).success ? timeZone : undefined;
+}
+
+/**
+ * New workspaces count "today" in the creator's time zone. With `withDemo`,
+ * the API also adds the demo connection and a sample dashboard (#51).
+ */
+export function createWorkspace(
+  name: string,
+  withDemo = false,
+): Promise<CreateWorkspaceResponse> {
+  const timeZone = browserTimeZone();
   return browserSend(
-    workspaceResponseSchema,
+    createWorkspaceResponseSchema,
     "POST",
     "/v1/workspaces",
-    createWorkspaceRequestSchema.parse({ name }),
+    createWorkspaceRequestSchema.parse({
+      name,
+      withDemo,
+      ...(timeZone ? { timeZone } : {}),
+    }),
+  );
+}
+
+/**
+ * The demo connection and a sample dashboard for an existing workspace
+ * (onboarding's "Skip, use demo data", #308). `demoDashboardId` is null
+ * when they could not be added.
+ */
+export function addDemoContent(
+  workspaceId: string,
+): Promise<AddDemoContentResponse> {
+  return browserSend(
+    addDemoContentResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/demo`,
+  );
+}
+
+/** null: the screens follow the instance default (ADR 0016). */
+export function setWorkspaceScreenLocale(
+  workspaceId: string,
+  screenLocale: Locale | null,
+): Promise<WorkspaceResponse> {
+  return browserSend(
+    workspaceResponseSchema,
+    "PATCH",
+    `/v1/workspaces/${workspaceId}`,
+    renameWorkspaceRequestSchema.parse({ screenLocale }),
+  );
+}
+
+/** The signed-in user's language; null follows the instance and browser. */
+export function setMyLocale(locale: Locale | null): Promise<MeResponse> {
+  return browserSend(
+    meResponseSchema,
+    "PATCH",
+    "/v1/me",
+    updateMeRequestSchema.parse({ locale }),
+  );
+}
+
+export function setWorkspaceTimeZone(
+  workspaceId: string,
+  timeZone: string,
+): Promise<WorkspaceResponse> {
+  return browserSend(
+    workspaceResponseSchema,
+    "PATCH",
+    `/v1/workspaces/${workspaceId}`,
+    renameWorkspaceRequestSchema.parse({ timeZone }),
+  );
+}
+
+/** null: amounts per currency, exact (#191). */
+export function setWorkspaceDisplayCurrency(
+  workspaceId: string,
+  displayCurrency: string | null,
+): Promise<WorkspaceResponse> {
+  return browserSend(
+    workspaceResponseSchema,
+    "PATCH",
+    `/v1/workspaces/${workspaceId}`,
+    renameWorkspaceRequestSchema.parse({ displayCurrency }),
   );
 }
 
@@ -453,6 +681,36 @@ export function previewConnection(
   );
 }
 
+export function previewStoredConnection(
+  workspaceId: string,
+  connectionId: string,
+  input: StoredConnectionPreviewRequest,
+): Promise<StoredConnectionPreviewResponse> {
+  return browserSend(
+    storedConnectionPreviewResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/preview`,
+    storedConnectionPreviewRequestSchema.parse(input),
+  );
+}
+
+/**
+ * Generates a key pair for a signed-key provider with `generatedKeyPair`
+ * (ADR 0020 §3): the answer has the public key to paste at the provider and
+ * the pending key's id; the private key stays on the server.
+ */
+export function generateKeyPair(
+  workspaceId: string,
+  provider: string,
+): Promise<SignedKeyPairResponse> {
+  return browserSend(
+    signedKeyPairResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/signed-keys/${encodeURIComponent(provider)}/key-pairs`,
+    {},
+  );
+}
+
 export function createConnection(
   workspaceId: string,
   input: CreateConnectionRequest,
@@ -462,6 +720,22 @@ export function createConnection(
     "POST",
     `/v1/workspaces/${workspaceId}/connections`,
     createConnectionRequestSchema.parse(input),
+  );
+}
+
+/**
+ * Several connections with one credential, all or none (#375): one Apple
+ * Ads key for several ad accounts.
+ */
+export function createConnections(
+  workspaceId: string,
+  input: CreateConnectionsRequest,
+): Promise<ConnectionsResponse> {
+  return browserSend(
+    connectionsResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/batch`,
+    createConnectionsRequestSchema.parse(input),
   );
 }
 
@@ -478,17 +752,123 @@ export function updateConnection(
   );
 }
 
-export async function deleteConnection(
+/**
+ * Deletes a connection. For an OAuth connection the answer says what
+ * happened to the access at the provider (ADR 0012).
+ */
+export function deleteConnection(
   workspaceId: string,
   connectionId: string,
-): Promise<void> {
-  const response = await fetch(
+): Promise<DeleteConnectionResponse> {
+  return browserSend(
+    deleteConnectionResponseSchema,
+    "DELETE",
     `/v1/workspaces/${workspaceId}/connections/${connectionId}`,
-    { method: "DELETE" },
   );
-  if (!response.ok && response.status !== 204) {
-    throw new ApiError(response.status, await readErrorCode(response));
-  }
+}
+
+/**
+ * Starts an OAuth authorization; the caller sends the browser to the
+ * returned URL with window.location (a form post would hit the CSP's
+ * form-action, ADR 0012).
+ */
+export function startOAuthAuthorization(
+  workspaceId: string,
+  input: StartOAuthAuthorizationRequest,
+): Promise<StartOAuthAuthorizationResponse> {
+  return browserSend(
+    startOAuthAuthorizationResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/oauth/authorizations`,
+    startOAuthAuthorizationRequestSchema.parse(input),
+  );
+}
+
+/** What an OAuth connection's account can read (e.g. its properties). */
+export function listConnectionResources(
+  workspaceId: string,
+  connectionId: string,
+): Promise<ConnectionResourcesResponse> {
+  return browserSend(
+    connectionResourcesResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/resources`,
+  );
+}
+
+/**
+ * What the stored key of a connection reads (#395): e.g. the Apple Ads
+ * API user's ad accounts, and which of them this workspace has connected.
+ * The key stays on the server.
+ */
+export function listSharedKeyResources(
+  workspaceId: string,
+  connectionId: string,
+): Promise<SharedKeyResourcesResponse> {
+  return browserSend(
+    sharedKeyResourcesResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/shared-key/resources`,
+  );
+}
+
+/** New connections with the stored key of a connection (#395), all or none. */
+export function createSharedKeyConnections(
+  workspaceId: string,
+  connectionId: string,
+  input: CreateSharedKeyConnectionsRequest,
+): Promise<ConnectionsResponse> {
+  return browserSend(
+    connectionsResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/shared-key/connections`,
+    createSharedKeyConnectionsRequestSchema.parse(input),
+  );
+}
+
+/** App Store analytics per app (#174), read with the stored key. */
+export function getAppStoreAnalytics(
+  workspaceId: string,
+  connectionId: string,
+): Promise<AppStoreAnalyticsStatusResponse> {
+  return browserSend(
+    appStoreAnalyticsStatusResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/app-store-analytics`,
+  );
+}
+
+/**
+ * The optional App Store reviews key (#190): stored or not, and whether
+ * Apple still accepts it. Added, replaced and removed with updateConnection
+ * (`credentials: { reviews }`).
+ */
+export function getAppStoreReviews(
+  workspaceId: string,
+  connectionId: string,
+): Promise<AppStoreReviewsStatusResponse> {
+  return browserSend(
+    appStoreReviewsStatusResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/app-store-reviews`,
+  );
+}
+
+/**
+ * Enables App Store analytics with a temporary Admin key, which the API
+ * uses once in memory and never stores (ADR 0014, #174).
+ */
+export function enableAppStoreAnalytics(
+  workspaceId: string,
+  connectionId: string,
+  input: EnableAppStoreAnalyticsRequest,
+): Promise<EnableAppStoreAnalyticsResponse> {
+  return browserSend(
+    enableAppStoreAnalyticsResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/app-store-analytics`,
+    enableAppStoreAnalyticsRequestSchema.parse(input),
+  );
 }
 
 export function triggerConnectionSync(
@@ -499,5 +879,554 @@ export function triggerConnectionSync(
     enqueueSyncResponseSchema,
     "POST",
     `/v1/workspaces/${workspaceId}/connections/${connectionId}/sync`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dashboards and metrics (#48, #49)
+// ---------------------------------------------------------------------------
+
+export function listDashboards(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<DashboardListResponse> {
+  return serverGet(
+    dashboardListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/dashboards`,
+  );
+}
+
+/** Returns null on 404. */
+export async function getDashboard(
+  cookieHeader: string,
+  workspaceId: string,
+  dashboardId: string,
+): Promise<DashboardResponse | null> {
+  const response = await apiFetch(
+    `/v1/workspaces/${workspaceId}/dashboards/${dashboardId}`,
+    { headers: { cookie: cookieHeader } },
+  );
+  if (response.status === 404) {
+    return null;
+  }
+  return parseResponse(dashboardResponseSchema, response);
+}
+
+export function listWorkspaceMetrics(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<WorkspaceMetricListResponse> {
+  return serverGet(
+    workspaceMetricListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/metrics`,
+  );
+}
+
+export function createDashboard(
+  workspaceId: string,
+  body: CreateDashboardRequest,
+): Promise<DashboardResponse> {
+  return browserSend(
+    dashboardResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/dashboards`,
+    createDashboardRequestSchema.parse(body),
+  );
+}
+
+/** Throws ApiError "version_conflict" (409) when someone saved first. */
+export function saveDashboard(
+  workspaceId: string,
+  dashboardId: string,
+  body: ReplaceDashboardRequest,
+): Promise<DashboardResponse> {
+  return browserSend(
+    dashboardResponseSchema,
+    "PUT",
+    `/v1/workspaces/${workspaceId}/dashboards/${dashboardId}`,
+    replaceDashboardRequestSchema.parse(body),
+  );
+}
+
+/** The saved copy, from the browser (the Studio's reload after a conflict). */
+export async function loadDashboard(
+  workspaceId: string,
+  dashboardId: string,
+): Promise<DashboardResponse> {
+  const response = await fetch(
+    `/v1/workspaces/${workspaceId}/dashboards/${dashboardId}`,
+    { cache: "no-store" },
+  );
+  return parseResponse(dashboardResponseSchema, response);
+}
+
+export function duplicateDashboard(
+  workspaceId: string,
+  dashboardId: string,
+): Promise<DashboardResponse> {
+  return browserSend(
+    dashboardResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/dashboards/${dashboardId}/duplicate`,
+    duplicateDashboardRequestSchema.parse({}),
+  );
+}
+
+export async function deleteDashboard(
+  workspaceId: string,
+  dashboardId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/v1/workspaces/${workspaceId}/dashboards/${dashboardId}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw new ApiError(response.status, await readErrorCode(response));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard themes (#216)
+// ---------------------------------------------------------------------------
+
+export function listThemes(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<ThemeListResponse> {
+  return serverGet(
+    themeListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/themes`,
+  );
+}
+
+/** Returns null on 404. */
+export async function getTheme(
+  cookieHeader: string,
+  workspaceId: string,
+  themeId: string,
+): Promise<ThemeResponse | null> {
+  const response = await apiFetch(
+    `/v1/workspaces/${workspaceId}/themes/${themeId}`,
+    { headers: { cookie: cookieHeader } },
+  );
+  if (response.status === 404) {
+    return null;
+  }
+  return parseResponse(themeResponseSchema, response);
+}
+
+export function createTheme(
+  workspaceId: string,
+  body: CreateThemeRequest,
+): Promise<ThemeResponse> {
+  return browserSend(
+    themeResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/themes`,
+    createThemeRequestSchema.parse(body),
+  );
+}
+
+/** Throws ApiError "version_conflict" (409) when someone saved first. */
+export function updateTheme(
+  workspaceId: string,
+  themeId: string,
+  body: UpdateThemeRequest,
+): Promise<ThemeResponse> {
+  return browserSend(
+    themeResponseSchema,
+    "PUT",
+    `/v1/workspaces/${workspaceId}/themes/${themeId}`,
+    updateThemeRequestSchema.parse(body),
+  );
+}
+
+/** Throws ApiError "theme_in_use" (409) with the dashboards that use it. */
+export async function deleteTheme(
+  workspaceId: string,
+  themeId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/v1/workspaces/${workspaceId}/themes/${themeId}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw await readError(response);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Goals (ADR 0019 section 4, #335)
+// ---------------------------------------------------------------------------
+
+/** The workspace's goals with their current progress. */
+export function listGoals(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<GoalListResponse> {
+  return serverGet(
+    goalListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/goals`,
+  );
+}
+
+/**
+ * One goal with its current progress, from the browser (a goal widget in
+ * the Studio and signed-in views, ADR 0019 section 5); null when it was
+ * deleted.
+ */
+export async function fetchGoal(
+  workspaceId: string,
+  goalId: string,
+): Promise<Goal | null> {
+  try {
+    const { goal } = await browserSend(
+      goalResponseSchema,
+      "GET",
+      `/v1/workspaces/${workspaceId}/goals/${goalId}`,
+    );
+    return goal;
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.status === 404) return null;
+    throw cause;
+  }
+}
+
+/** The workspace's goals with their progress, from the browser. */
+export function fetchGoals(workspaceId: string): Promise<GoalListResponse> {
+  return browserSend(
+    goalListResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/goals`,
+  );
+}
+
+export function createGoal(
+  workspaceId: string,
+  body: CreateGoalRequest,
+): Promise<GoalResponse> {
+  return browserSend(
+    goalResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/goals`,
+    createGoalRequestSchema.parse(body),
+  );
+}
+
+/** Throws ApiError "version_conflict" (409) when someone saved first. */
+export function updateGoal(
+  workspaceId: string,
+  goalId: string,
+  body: UpdateGoalRequest,
+): Promise<GoalResponse> {
+  return browserSend(
+    goalResponseSchema,
+    "PUT",
+    `/v1/workspaces/${workspaceId}/goals/${goalId}`,
+    updateGoalRequestSchema.parse(body),
+  );
+}
+
+/** Deletes a goal; answers the dashboards whose gauges used it. */
+export function deleteGoal(
+  workspaceId: string,
+  goalId: string,
+): Promise<DeleteGoalResponse> {
+  return browserSend(
+    deleteGoalResponseSchema,
+    "DELETE",
+    `/v1/workspaces/${workspaceId}/goals/${goalId}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Workspace images (ADR 0015, section 5; #217)
+// ---------------------------------------------------------------------------
+
+/** The workspace's images with their quota (metadata, never bytes). */
+export function listImages(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<ImageListResponse> {
+  return serverGet(
+    imageListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/images`,
+  );
+}
+
+/** The workspace's images for logos, backgrounds and image widgets. */
+export async function listStudioImages(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<StudioImage[]> {
+  const { images } = await listImages(cookieHeader, workspaceId);
+  return images.map((image) => toStudioImage(workspaceId, image));
+}
+
+/**
+ * Uploads an image as its raw bytes (no multipart, ADR 0015 section 5);
+ * the display name travels percent-encoded in a header. Throws ApiError
+ * image_too_large, image_invalid, image_animated, image_quota_exceeded …
+ */
+export function uploadImage(
+  workspaceId: string,
+  file: { name: string; type: ImageContentType; body: Blob },
+): Promise<ImageResponse> {
+  return fetch(`/v1/workspaces/${workspaceId}/images`, {
+    method: "POST",
+    headers: {
+      "content-type": file.type,
+      [IMAGE_NAME_HEADER]: encodeURIComponent(file.name.slice(0, 100)),
+    },
+    body: file.body,
+  }).then((response) => parseResponse(imageResponseSchema, response));
+}
+
+/** Resources whose icon can be used as an image (#226), from the browser. */
+export function listResourceIcons(
+  workspaceId: string,
+): Promise<ResourceIconListResponse> {
+  return browserSend(
+    resourceIconListResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/resource-icons`,
+  );
+}
+
+/**
+ * A resource's icon as a workspace image: fetched by the server through
+ * the connector (never by the browser), or the stored one while fresh.
+ * Throws ApiError resource_icon_not_found, resource_icon_unavailable …
+ */
+export function fetchResourceIcon(
+  workspaceId: string,
+  connectionId: string,
+  resourceId: string,
+): Promise<ImageResponse> {
+  return browserSend(
+    imageResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/resource-icons`,
+    useResourceIconRequestSchema.parse({ connectionId, resourceId }),
+  );
+}
+
+/** What the dashboard templates can be built from (#226). */
+export function getDashboardTemplates(
+  workspaceId: string,
+): Promise<DashboardTemplateOptionsResponse> {
+  return browserSend(
+    dashboardTemplateOptionsResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/dashboard-templates`,
+  );
+}
+
+/** A new dashboard from the Overview or Brand template. */
+export function createDashboardFromTemplate(
+  workspaceId: string,
+  body: CreateDashboardFromTemplateRequest,
+): Promise<DashboardResponse> {
+  return browserSend(
+    dashboardResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/dashboard-templates`,
+    createDashboardFromTemplateRequestSchema.parse(body),
+  );
+}
+
+/**
+ * Deletes an unused image. Throws ApiError image_in_use (with the
+ * dashboards that use it in `details.dashboards`) while one still does.
+ */
+export async function deleteImage(
+  workspaceId: string,
+  imageId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/v1/workspaces/${workspaceId}/images/${imageId}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw await readError(response);
+  }
+}
+
+/** One tile's numbers (browser; tiles refresh themselves). */
+export function queryMetric(
+  workspaceId: string,
+  body: MetricQueryRequest,
+): Promise<MetricQueryResponse> {
+  return browserSend(
+    metricQueryResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/metrics/query`,
+    metricQueryRequestSchema.parse(body),
+  );
+}
+
+/** A metric by one of its dimensions: a bar widget's groups (ADR 0015). */
+export function queryMetricBreakdown(
+  workspaceId: string,
+  body: MetricBreakdownRequest,
+): Promise<MetricBreakdownResponse> {
+  return browserSend(
+    metricBreakdownResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/metrics/breakdown`,
+    metricBreakdownRequestSchema.parse(body),
+  );
+}
+
+/**
+ * A latest-review widget's review (ADR 0019 section 12, browser): the
+ * newest that matches and is not hidden, with its id for "Hide this
+ * review". One review; there is no list.
+ */
+export function queryLatestReview(
+  workspaceId: string,
+  connectionId: string,
+  body: LatestReviewRequest,
+): Promise<LatestReviewResponse> {
+  return browserSend(
+    latestReviewResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/reviews/latest`,
+    latestReviewRequestSchema.parse(body),
+  );
+}
+
+/** "Hide this review": no widget shows it again (dashboards:update). */
+export async function hideReview(
+  workspaceId: string,
+  connectionId: string,
+  reviewId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/reviews/${encodeURIComponent(reviewId)}/hide`,
+    { method: "POST" },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw await readError(response);
+  }
+}
+
+/** A per-currency metric's currencies, largest total first (ADR 0014). */
+export function listMetricCurrencies(
+  workspaceId: string,
+  body: MetricCurrenciesRequest,
+): Promise<MetricCurrenciesResponse> {
+  return browserSend(
+    metricCurrenciesResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/metrics/currencies`,
+    metricCurrenciesRequestSchema.parse(body),
+  );
+}
+
+/** The resources a tile of a metric can show (#194), named first. */
+export function listMetricResources(
+  workspaceId: string,
+  body: MetricResourcesRequest,
+): Promise<MetricResourcesResponse> {
+  return browserSend(
+    metricResourcesResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/metrics/resources`,
+    metricResourcesRequestSchema.parse(body),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Devices (ADR 0011)
+// ---------------------------------------------------------------------------
+
+/** Throws ApiError "pairing_not_found" or "too_many_attempts". */
+export function approveDevice(
+  workspaceId: string,
+  body: ApproveDeviceRequest,
+): Promise<DeviceResponse> {
+  return browserSend(
+    deviceResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/devices/approve`,
+    approveDeviceRequestSchema.parse(body),
+  );
+}
+
+/**
+ * The platform a pending code's device reported (#406), to suggest a name.
+ * Throws ApiError "pairing_not_found" (counted as a failed approval) or
+ * "too_many_attempts".
+ */
+export function lookupPairing(code: string): Promise<LookupPairingResponse> {
+  return browserSend(
+    lookupPairingResponseSchema,
+    "POST",
+    "/v1/device-pairings/lookup",
+    lookupPairingRequestSchema.parse({ code }),
+  );
+}
+
+export function listDevices(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<DeviceListResponse> {
+  return serverGet(
+    deviceListResponseSchema,
+    cookieHeader,
+    `/v1/workspaces/${workspaceId}/devices`,
+  );
+}
+
+/** Rename a TV or change the dashboard it shows. */
+export function updateDevice(
+  workspaceId: string,
+  deviceId: string,
+  body: UpdateDeviceRequest,
+): Promise<DeviceResponse> {
+  return browserSend(
+    deviceResponseSchema,
+    "PATCH",
+    `/v1/workspaces/${workspaceId}/devices/${deviceId}`,
+    updateDeviceRequestSchema.parse(body),
+  );
+}
+
+/** The TV loses access at once; revoking cannot be undone. */
+export function revokeDevice(
+  workspaceId: string,
+  deviceId: string,
+): Promise<DeviceResponse> {
+  return browserSend(
+    deviceResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/devices/${deviceId}/revoke`,
+  );
+}
+
+export function listStoreTemplateOptions(
+  workspaceId: string,
+): Promise<StoreTemplateOptions> {
+  return browserSend(
+    storeTemplateOptionsSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/dashboard-templates/stores`,
+  );
+}
+export function installStoreTemplate(
+  workspaceId: string,
+  input: StoreTemplateRequest,
+): Promise<StoreTemplateResult> {
+  return browserSend(
+    storeTemplateResultSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/dashboard-templates/stores`,
+    storeTemplateRequestSchema.parse(input),
   );
 }

@@ -1,0 +1,829 @@
+/**
+ * Workspace overview, projects, connections and devices (#252). Top-level
+ * groups here must not collide with other areas' (the aggregate catalog
+ * test checks).
+ */
+export const workspaceEn = {
+  health: {
+    states: {
+      ok: "Healthy",
+      auth_failed: "Auth failed",
+      needs_reauthorization: "Needs reconnect",
+      outage: "Outage",
+      pending: "Pending",
+    },
+    authStates: {
+      ok: "OK",
+      auth_failed: "Auth failed",
+      needs_reauthorization: "Needs reconnect",
+      outage: "Outage",
+    },
+  },
+  workspace: {
+    connectTv: "Connect a TV",
+    keyRemoved:
+      "Connection deleted, together with netrics’ copy of its {name} key. The key itself stays valid until you revoke it.",
+    keyRemovedUnnamed:
+      "Connection deleted, together with netrics’ copy of its provider key. The key itself stays valid until you revoke it.",
+    keyRemovedAppleAds:
+      "Connection deleted, together with netrics’ copy of its private key. Now remove the public key under Account Settings → API in Apple Ads, unless another connection uses the same key.",
+    keyRemovedShared:
+      "Connection deleted. Other connections still use its key, so keep the public key in Apple Ads until the last of them is deleted.",
+    revokeIn: "Revoke it in {name}",
+    revokeAtProvider: "Revoke it at the provider",
+    yourRole: "Your role:",
+    workspaces: "Workspaces",
+    current: "{name} (current, {role})",
+    settings: "Workspace settings",
+    dashboards: "Dashboards",
+    openInStudio: "Open {name} in Studio",
+    studio: "Studio",
+    tvs: "TVs",
+    noTvs: "No TVs yet.",
+    revoked: "Revoked",
+    noDashboard: "No dashboard",
+    lastSeen: "last seen {time}",
+    heartbeat: "{version}, heartbeat {time}",
+    lastError: "Last error: {error}",
+    screenSize: "{width} × {height}",
+    connections: "Connections",
+    noConnections: "No connections yet.",
+    table: {
+      name: "Name",
+      connector: "Connector",
+      health: "Health",
+      lastSuccess: "Last success",
+      nextSync: "Next sync",
+    },
+    finishSetup: "Finish setup",
+    addConnection: "Add connection",
+    cannotCreateConnections:
+      "Your role cannot create connections in this workspace.",
+    projects: "Projects",
+    noProjects: "No projects yet.",
+    cannotCreateProjects: "Your role cannot create projects in this workspace.",
+    pages: {
+      dashboards: "Dashboards",
+      screens: "Screens",
+      sources: "Sources",
+      team: "Team",
+    },
+    dashboardCount:
+      "{count, plural, =0 {No dashboards yet} one {# dashboard} other {# dashboards}}",
+    screenCount:
+      "{total, plural, =0 {No screens yet} one {# screen · {online} online} other {# screens · {online} online}}",
+    sourceCount:
+      "{count, plural, =0 {No sources yet} one {# source} other {# sources}}",
+    projectsHint:
+      "Projects group the apps and sites your connections report on.",
+    home: {
+      metaTitle: "Home · netrics",
+      dashboards: "Dashboards",
+      screens: "Screens",
+      sources: "Sources",
+      allDashboards: "All dashboards",
+      allScreens: "All screens",
+      allSources: "All sources",
+      online: "{online} of {total} online",
+      noScreens: "No screens yet",
+      allFresh: "All sources fresh",
+      attention:
+        "{count, plural, one {# needs attention} other {# need attention}}",
+      quickActions: "Quick actions",
+      newDashboard: "New dashboard",
+      addSource: "Add source",
+    },
+    newDashboard: {
+      legend: "New dashboard",
+      format: "Screen format",
+      formatHelp:
+        "The format you design in. Every other format is laid out from it automatically, and you can change it later in the Studio.",
+      templateFormat:
+        "Templates are designed for TV (16:9) and laid out automatically for every other format.",
+      choices: {
+        blank: { title: "Blank", text: "One empty slide to fill yourself." },
+        overview: {
+          title: "Overview",
+          text: "Downloads, proceeds, reviews and web numbers of all connections.",
+        },
+        brand: {
+          title: "Brand",
+          text: "One app or site with its icon, colour and own numbers.",
+        },
+      },
+      overviewEmpty:
+        "Connect a source first: the Overview shows the numbers of your connections.",
+      overviewFrom: "From {sources}. Only what is connected is shown.",
+      brandEmpty:
+        "No apps or sites yet: they appear once a connection has synced.",
+      appOrSite: "App or site",
+      chooseOne: "Choose one",
+      accent: "Accent colour",
+      fetchingIcon: "Fetching the app icon…",
+      noIcon: "No icon available; you can upload a logo in the Studio.",
+      readingColour: "Reading the icon’s colour…",
+      tooLowContrast:
+        "This colour is too hard to read on a TV ({ratio}:1, at least 3:1).",
+      accentFromIcon: "Accent {accent} from the icon, {ratio}:1 on the theme.",
+      themeAccent: "The theme’s accent colour is used.",
+      name: "Name",
+      placeholderOverview: "Overview",
+      placeholderBrand: "The app’s name",
+      placeholderBlank: "Sales",
+      createFromTemplate: "Create from template",
+    },
+    newProject: {
+      label: "New project",
+      create: "Create project",
+    },
+  },
+  devices: {
+    name: "Name",
+    dashboard: "Dashboard",
+    noDashboard: "No dashboard",
+    confirmRevoke: "Revoke {name}? It stops showing data immediately.",
+    confirm: "Confirm",
+    revoke: "Revoke",
+    orientation: "Orientation",
+    rotations: {
+      r0: "Landscape",
+      r90: "Portrait 90°",
+      r180: "Upside down",
+      r270: "Portrait 270°",
+    },
+    mode: "Mode",
+    modes: {
+      screen: "Screen view",
+      scroll: "Scroll view",
+    },
+    appleTvMode: "Apple TV always uses Screen view.",
+    platforms: {
+      tvos: "Apple TV",
+      ipados: "iPad",
+      ios: "iPhone",
+      web: "Browser",
+    },
+  },
+  deviceApproval: {
+    pageTitle: "Connect a TV · netrics",
+    title: "Connect a TV",
+    subtitle: "Enter the code shown on the TV and choose what it should show.",
+    notAllowed:
+      "Only workspace owners and admins can connect TVs. Ask one of them to enter the code, or to make you an admin.",
+    connected: "{name} is connected.",
+    showsSoon: "The TV shows the dashboard in a few seconds.",
+    code: "Code on the TV",
+    workspace: "Workspace",
+    dashboard: "Dashboard",
+    noDashboard: "None yet",
+    name: "Name of the TV",
+    nameExample: "For example “Office lobby”.",
+    names: {
+      tvos: "Apple TV",
+      ipados: "iPad",
+      ios: "iPhone",
+      web: "Browser",
+    },
+    connecting: "Connecting…",
+    connect: "Connect TV",
+  },
+  connections: {
+    apps: {
+      unsaved:
+        "Your connection settings or app selection have not been saved. Leave this page?",
+      title: "Apps to collect",
+      all: "All current and future apps",
+      allHelp:
+        "New apps available to this account will be included automatically.",
+      choose: "Choose apps",
+      search: "Search apps by name or ID",
+      selectResults: "Select results ({count})",
+      clear: "Clear selection",
+      selected: "{count, plural, one {# app selected} other {# apps selected}}",
+      unlisted: "Not currently listed",
+      unlistedHelp:
+        "Previously selected apps stay selected when the provider temporarily stops listing them. Their collected history is kept.",
+      empty:
+        "No apps found. Check the account permissions or add package names in Advanced settings.",
+      noResults: "No matching apps.",
+      noneHelp:
+        "No apps selected: new app data will not be imported. Existing history stays available.",
+      pages: "App list pages",
+      previous: "Previous",
+      next: "Next",
+      page: "Page {page} of {pages}",
+      intro:
+        "Check access, choose your apps, then save. All selected apps use this connection’s credentials.",
+      name: "Connection name",
+      reportGuide: "Find your report URI and permissions",
+      advanced: "Advanced settings",
+      scopeHelp:
+        "Ratings refer to the selected store country. Revenue stays in its original currencies; currencies are never combined into a misleading total.",
+      check: "Check access and find apps",
+      checking: "Checking access…",
+      accessOk: "Access checked. Choose the apps to collect.",
+      accessFailed: "Access could not be verified.",
+      save: "Save settings and app selection",
+      start: "Save and start importing",
+      saved:
+        "Saved. The selected data is queued for import; existing history is kept.",
+    },
+    newPage: {
+      pageTitle: "Add connection · netrics",
+      title: "Add connection",
+      roleCannot:
+        "Your role ({role}) cannot create connections in this workspace.",
+      back: "Back to sources",
+      finishSetup: "Finish setup",
+    },
+    detail: {
+      dataTables: "Data tables",
+      dataTablesHelp:
+        "Explore raw reports, prepare data and create reusable measures for your dashboards.",
+      openData: "Open Data & measures",
+      back: "Back to sources",
+      setupFinished:
+        "Setup finished. The first import is queued for the configured history; new data then arrives on this connection’s schedule.",
+      pausedCredentials:
+        "Syncing is paused: this connection needs new credentials.",
+      uploadNewKey: "Upload a new {name} key.",
+      uploadNewKeyDetail:
+        "netrics checks it first; saving it restarts syncing right away, and the data collected so far is kept.",
+      askUploadKey:
+        "Ask a workspace owner, admin or editor to upload a new {name} key.",
+      restoreSearchConsole:
+        "Restore the account’s permission for the property in Search Console, or choose another property below.",
+      checkProviderPermissions:
+        "Check the account’s permissions at the provider, or change the settings below.",
+      enterToken: "Enter a new token below.",
+      enterTokenDetail:
+        "Saving it restarts syncing right away; the data collected so far is kept.",
+      askUpdateCredentials:
+        "Ask a workspace owner or admin to update the credentials.",
+      health: "Health",
+      authState: "Auth state",
+      consecutiveFailures: "Consecutive failures",
+      lastSuccess: "Last success",
+      nextSync: "Next sync due",
+      pollInterval: "Poll interval",
+      providerAccount: "{provider} account",
+      connectedAs: "Connected as {email}",
+      connected: "Connected",
+      credentials: "Credentials",
+      credentialsStored: "stored",
+      credentialsNone: "none",
+      appStoreAbout: "About App Store Connect data",
+      latestReportingDay: "Latest reporting day",
+      noneYet: "None yet",
+      appStoreTiming:
+        "Sales arrive the next morning, Pacific Time (Apple publishes a day’s report by about 8 a.m. PT); App Store analytics follow about two days later. Reporting days are Pacific Time days, not your workspace’s time zone. Proceeds are kept in each currency Apple reports.",
+      moreAboutConnector: "More about the connector",
+      searchConsoleAbout: "About Search Console data",
+      searchConsoleTiming:
+        "Search Console data appears with a 2–3 day delay; the newest days are filled in once Google finalises them, so today and yesterday are usually empty. Click-through rate and average position are daily values: over several days they are not added up.",
+      searchConsolePrivacy:
+        "Search Console leaves out rare queries to protect searchers’ privacy (anonymized queries), and a breakdown keeps only its top rows per day, so breakdowns add up to less than the totals.",
+      editConnection: "Edit connection",
+      syncRuns: "Sync runs",
+      nothingSyncs: "Nothing syncs until the setup is finished.",
+      noRuns: "No sync runs yet — the initial backfill is queued.",
+      runs: {
+        status: "Status",
+        mode: "Mode",
+        window: "Window",
+        observations: "Observations",
+        attempt: "Attempt",
+        error: "Error",
+        started: "Started",
+        finished: "Finished",
+      },
+      runStatus: {
+        running: "running",
+        continued: "continuing",
+        succeeded: "succeeded",
+        failed: "failed",
+      },
+      runMode: {
+        backfill: "backfill",
+        incremental: "incremental",
+      },
+      latestObservations: "Latest observations",
+      noObservations: "No observations ingested yet.",
+      observations: {
+        metric: "Metric",
+        resource: "Resource",
+        breakdown: "Breakdown",
+        day: "Day",
+        value: "Value",
+      },
+    },
+    oauth: {
+      unavailable: {
+        summary: "Not available on this instance",
+        signedKeyUnsupported:
+          "This netrics server cannot use {name} keys yet. An administrator has to update netrics.",
+        oauthUnsupported:
+          "This netrics server cannot sign in with {name}. An administrator has to update netrics.",
+        notConfiguredSummary: "Needs {name} sign-in set up by an administrator",
+        notConfiguredDetail:
+          "Connecting with {name} is not set up on this instance yet. An administrator registers a {name} OAuth app for it and sets {env}_CLIENT_ID and {env}_CLIENT_SECRET; then this connector becomes available.",
+      },
+      outcome: {
+        reauthorized:
+          "{name} is reconnected. Syncing resumes right away; the data collected so far is kept.",
+        denied:
+          "You cancelled at {name}, so nothing was changed. Start again whenever you are ready.",
+        invalid_state:
+          "That {name} sign-in expired or was already used. Sign-ins are valid for 10 minutes; start again.",
+        forbidden:
+          "This {name} sign-in was started by a different netrics user, or your role no longer allows it. Nothing was connected.",
+        scope_missing:
+          "netrics needs every permission it asked for. Start again and leave all boxes ticked on the {name} consent screen.",
+        account_mismatch:
+          "You signed in with a different {name} account than the one this connection uses, so nothing was changed. Reconnect with the same account, or choose “Use a different {name} account”.",
+        failed:
+          "{name} could not complete the connection, and nothing was stored. Try again in a moment.",
+      },
+      reauthorize: {
+        scopeTitle:
+          "Syncing is paused: netrics needs one more {name} permission.",
+        scopeDetail:
+          "This connector now reads data the earlier authorization did not cover. Reconnect {name} and allow the access it asks for.",
+        title: "Syncing is paused: the {name} authorization stopped working.",
+        detail:
+          "Access was removed in the {name} account, its password changed, or the authorization expired (while an instance’s {name} app is in testing, {name} ends authorizations after 7 days). Reconnect {name} to continue; the data collected so far is kept.",
+      },
+      openPermissions: "Open your {name} account permissions",
+      askToReconnect: "Ask a workspace owner, admin or editor to reconnect it.",
+      revocation: {
+        revoked:
+          "Disconnected. netrics no longer has access to your {name} account.",
+        kept: "Disconnected. {name} access stays listed in your {name} account while other netrics connections use it; removing it there would stop those connections too.",
+        failed:
+          "Disconnected, but {name} did not confirm that access was removed. To be sure, remove netrics from the apps with access to your {name} account.",
+      },
+    },
+    searchConsole: {
+      chooseProperty: "Choose a Search Console property.",
+      rowLimitInvalid: "Rows per day must be a whole number from 1 to {max}.",
+      savedRefetch:
+        "Settings saved. The last 16 months are read again with the new settings.",
+      saved: "Settings saved.",
+      name: "Name",
+      property: "Property",
+      loading: "Loading the properties of this account…",
+      reconnect:
+        "Google no longer accepts this connection’s authorization. Reconnect Google above, then choose the property.",
+      noProperties:
+        "This Google account has no verified Search Console property. Ask an owner of the property to add the account in Search Console (Settings → Users and permissions), or reconnect with a different Google account.",
+      noLongerListed: "No longer listed for this Google account",
+      propertyHelp:
+        "Domain properties cover every protocol and subdomain; URL-prefix properties only the addresses under that prefix.",
+      breakdown: "Breakdown (optional)",
+      breakdownHelp:
+        "Daily totals are always collected. Up to {max} of these add clicks and impressions per page, query, country or device.",
+      rowsPerDay: "Rows per day",
+      rowsHelp:
+        "The top rows by clicks, at most {max}. Search Console leaves out rare queries to protect privacy, so a breakdown adds up to less than the totals.",
+      finishNote:
+        "Search Console data appears with a 2–3 day delay; the newest days are filled in once Google finalises them. The first sync reads the last 16 months, as far back as Search Console keeps data.",
+      editNote:
+        "Changing the property, breakdown or rows per day reads the last 16 months again with the new settings. Data collected with the earlier settings stays: a breakdown you remove keeps its past values but is no longer updated.",
+      saveAndSync: "Save and start syncing",
+      saveChanges: "Save changes",
+      dimensions: {
+        page: "Page",
+        query: "Query",
+        country: "Country",
+        device: "Device",
+      },
+      domainProperty: "Domain property",
+      urlPrefixProperty: "URL-prefix property",
+      permissions: {
+        siteOwner: "Owner",
+        siteFullUser: "Full user",
+        siteRestrictedUser: "Restricted user",
+      },
+    },
+    signedKey: {
+      openKeys: "Open App Store Connect API keys",
+      theProvider: "the provider",
+      howToCreate: "How to create the {name} key",
+      fileTooLarge:
+        "{file} is larger than {kib} KiB, so it is not an API key. Choose the AuthKey_<Key ID>.p8 file.",
+      fileUnreadable: "{file} could not be read. Choose the file again.",
+      chooseFile: "Choose the .p8 file…",
+      chooseAnotherFile: "Choose another file…",
+      fileRead: "{file} read ({bytes} bytes, not shown)",
+      pasteInstead: "Paste the key instead",
+      pasteHelp:
+        "Paste the whole content of the .p8 file, including the BEGIN and END lines.",
+      fileInstead: "Choose the file instead",
+      keyPair: {
+        publicKey: "Public key",
+        intro:
+          "netrics generates the key pair for you. You paste the public key at {name}; the private key stays encrypted in netrics and is never shown.",
+        generate: "Generate key pair",
+        generating: "Generating…",
+        copy: "Copy public key",
+        copied: "Copied.",
+        copyFailed: "Could not copy. Select the key and copy it yourself.",
+        pasteAt:
+          "Paste this public key at {name}, then enter the IDs it shows.",
+        privateKeyStays:
+          "netrics keeps the private key. Finish the setup before {expires}; after that, generate a new pair.",
+        haveKey: "I already have a private key",
+        generateInstead: "Let netrics generate the key pair instead",
+      },
+      appStoreConnect: {
+        labels: {
+          issuerId: "Issuer ID",
+          keyId: "Key ID",
+          privateKey: "Private key",
+        },
+        descriptions: {
+          issuerId:
+            "Shown above the list of team keys under Users and Access → Integrations → App Store Connect API.",
+          keyId: "The 10-character Key ID in the row of your team key.",
+          privateKey:
+            "The AuthKey_<Key ID>.p8 file you downloaded when you created the key. Apple lets you download it only once.",
+        },
+        steps: {
+          "1": "Sign in to App Store Connect as the Account Holder or an Admin and open Users and Access → Integrations → App Store Connect API. The first time, the Account Holder has to request API access there.",
+          "2": "Under Team Keys, generate a key named “netrics” with the Sales role. Finance also works; Admin works too, but grants far more than netrics needs. Individual keys cannot read sales reports.",
+          "3": "Download the .p8 file right away (Apple offers it only once). Copy the Key ID from the key’s row and the Issuer ID shown above the list.",
+          "4": "Find your vendor number in Payments and Financial Reports, under your legal entity name.",
+          "5": "Enter the values below. netrics checks the key with Apple before it stores anything.",
+        },
+        links: {
+          keys: "Open App Store Connect API keys",
+          payments: "Open Payments and Financial Reports",
+        },
+      },
+      appleAds: {
+        labels: {
+          clientId: "Client ID",
+          teamId: "Team ID",
+          keyId: "Key ID",
+          privateKey: "Private key",
+        },
+        descriptions: {
+          clientId:
+            "The clientId shown under Account Settings → API in Apple Ads after you saved the public key.",
+          teamId:
+            "The teamId shown under Account Settings → API in Apple Ads after you saved the public key.",
+          keyId:
+            "The keyId shown under Account Settings → API in Apple Ads after you saved the public key.",
+          privateKey:
+            "The EC P-256 private key whose public key you saved under Account Settings → API (PEM).",
+        },
+        steps: {
+          "1": "An Account Admin invites an API user under Account Settings → User Management in Apple Ads, with the API Account Read Only role (or Limited Access: API Read Only for some campaign groups). The API user accepts the invitation and signs in to Apple Ads.",
+          "2": "As the API user, open Account Settings → API, paste the public key and save.",
+          "3": "Copy the clientId, teamId and keyId Apple Ads shows above the public key.",
+          "4": "Enter the values below. netrics checks the key with Apple before it stores anything.",
+        },
+        links: {
+          invite: "How to invite an API user",
+          open: "Open Apple Ads",
+        },
+      },
+      hints: {
+        issuerId:
+          "The issuer ID is a UUID with dashes, like 57246542-96fe-1a63-e053-0824d011072a. It is shown above the list of team keys.",
+        keyId:
+          "The key ID has 10 letters and digits, like 2X9R4HXF34. It is in the key’s row, and in the file name AuthKey_<Key ID>.p8.",
+        tooLarge:
+          "This is larger than {kib} KiB, so it is not an API key. Choose the AuthKey_<Key ID>.p8 file.",
+        certificate:
+          "This is a certificate, not a private key. Choose the AuthKey_<Key ID>.p8 file you downloaded with the API key.",
+        rsaKey:
+          "This is an RSA private key. The API key is an EC key in the AuthKey_<Key ID>.p8 file.",
+        publicKey:
+          "This is a public key. Choose the AuthKey_<Key ID>.p8 file, which holds the private key.",
+        notPem:
+          "This does not look like a .p8 private key: it should start with -----BEGIN PRIVATE KEY-----.",
+        appleAdsClientId:
+          "The client ID starts with SEARCHADS. followed by an ID, like SEARCHADS.27478e71-3bb0-4588-998c-182e2b405577. Apple Ads shows it as clientId above the public key.",
+        appleAdsTeamId:
+          "The team ID starts with SEARCHADS. followed by an ID, like SEARCHADS.27478e71-3bb0-4588-998c-182e2b405577. Apple Ads shows it as teamId above the public key.",
+        appleAdsKeyId:
+          "The key ID is an ID with dashes, like a273d0d3-4d9e-458c-a173-0db8619ca7d7. Apple Ads shows it as keyId above the public key.",
+        appleAdsKeyIdSearchAds:
+          "This looks like a client ID or team ID. The key ID has no SEARCHADS. prefix, like a273d0d3-4d9e-458c-a173-0db8619ca7d7.",
+      },
+    },
+    finishSetup: {
+      title: "Choose what to read",
+      connectedAs: "Connected as {email}. Nothing is synced until you save.",
+      nothingSynced: "Nothing is synced until you save.",
+      roleCannot:
+        "Your role cannot change connections. Ask a workspace owner, admin or editor to finish the setup.",
+    },
+    token: {
+      accessToken: "Access token",
+      howTo: "How to create the token",
+      openPage: "Open the token page",
+      newLabel: "New {label}",
+      keepCurrent: "Leave empty to keep the current token.",
+    },
+    wizard: {
+      chooseFile: "Choose the .p8 file, or paste the key.",
+      generateOrPaste: "Generate a key pair, or paste your private key.",
+      fieldRequired: "{field} is required.",
+      checkFailed: "The connection check failed.",
+      selectApp: "Select at least one of the discovered apps.",
+      selectResource: "Select at least one of the discovered resources.",
+      chooseConnector: "1. Choose a connector",
+      connectWith: "2. Connect with {provider}",
+      oauthIntro:
+        "You sign in at {provider} and allow netrics read-only access to your {connector} data. netrics never sees your {provider} password. Afterwards you choose what this connection reads.",
+      addKey: "2. Add your {name} key",
+      configure: "2. Configure",
+      appStoreIntro:
+        "App Store Connect has no “Sign in with Apple” for its data, so netrics reads it with a team API key that you create once. It takes about two minutes; netrics stores the key encrypted and checks it with Apple before saving.",
+      moreAboutConnector: "More about the connector",
+      name: "Name",
+      checkingWithApple: "Checking with Apple…",
+      testing: "Testing…",
+      checkKey: "Check key and find apps",
+      test: "Test connection",
+      chooseApps: "3. Choose apps and create",
+      review: "3. Review and create",
+      checkPassed: "Connection check passed.",
+      checkPassedWith: "Connection check passed: {message}",
+      foundApps:
+        "{count, plural, one {Found # app} other {Found # apps}} — uncheck any you do not want to sync.",
+      foundResources:
+        "{count, plural, one {Found # resource} other {Found # resources}} — uncheck any you do not want to sync.",
+      create: "Create connection",
+      unavailableTitle: "{name} is not available here",
+      selfHosting: "Running netrics yourself?",
+      setupGuide: "Read the setup guide.",
+    },
+    config: {
+      none: "This connector has no configuration.",
+      optionalLabel: "{label} (optional)",
+      yes: "Yes",
+      no: "No",
+    },
+    oauthButton: {
+      otherAccount: "Use a different {name} account",
+      otherAccountHint:
+        "— the connection then reads with that account; choose it at {name}.",
+      opening: "Opening {name}…",
+      reconnect: "Reconnect {name}",
+      connect: "Connect with {name}",
+    },
+    actions: {
+      syncQueued: "Sync queued — it will run on the next worker pass.",
+      syncNow: "Sync now",
+      disconnect: "Disconnect",
+      deleteConnection: "Delete connection",
+      confirmDisconnect: "Disconnect “{name}”?",
+      confirmDelete: "Delete “{name}”?",
+      removesData:
+        "Its state, observations and sync history are removed. Dashboard tiles that use it show that the connection is gone.",
+      removesAccess:
+        "netrics also removes its access to your {name} account, unless other netrics connections still use that account; then the access stays until the last one is disconnected.",
+      deletesKeyCopy:
+        "netrics deletes its copy of the {name} key. The key itself stays valid at {name} until you revoke it there.",
+      deletesKeyCopyId:
+        "netrics deletes its copy of the {name} key {keyId}. The key itself stays valid at {name} until you revoke it there.",
+      apiKeys: "API keys",
+    },
+    edit: {
+      updated: "Connection updated.",
+      name: "Name",
+      connectorMissing:
+        "Connector {connector} is not in the deployed bundle; config editing is unavailable.",
+      saveChanges: "Save changes",
+    },
+    appleAds: {
+      title: "2. Connect Apple Ads",
+      intro:
+        "netrics reads Apple Ads as an API user of your own Apple Ads account, with a key pair netrics generates for you. It takes a few minutes, and nothing is stored until Apple has accepted the key.",
+      step1Title: "Use an API user",
+      step1Body:
+        "An Account Admin invites a user under Account Settings → User Management with the role API Account Read Only, or Limited Access: API Read Only to share only some campaign groups. That user accepts the invitation and signs in to Apple Ads. An existing API user works too.",
+      openUserManagement: "Open Apple Ads (Account Settings → User Management)",
+      inviteHelp: "How to invite users",
+      step2Title: "Paste the public key in Apple Ads",
+      step2Body:
+        "Signed in as the API user, open Account Settings → API. Paste this public key under Public key, then save.",
+      openApi: "Open Apple Ads (Account Settings → API)",
+      oneKeyNote:
+        "If this API user already has a public key that another netrics connection uses, replacing it in Apple Ads stops that connection. Choose all the ad accounts you need below, in one go.",
+      step3Title: "Enter the IDs Apple Ads shows",
+      step3Body:
+        "Apple Ads shows clientId, teamId and keyId above the public key. Copy them here; pasting the whole block fills in all three.",
+      blockFilled:
+        "Filled in the client ID, team ID and key ID from the pasted text.",
+      step4Title: "Choose the ad accounts",
+      checkKey: "Check key and find ad accounts",
+      checking: "Checking with Apple…",
+      generateFirst: "Generate the key pair first, or paste your private key.",
+      fieldRequired: "{field} is required.",
+      checkFailed: "Apple Ads did not accept the key.",
+      found:
+        "{count, plural, one {The key reads # ad account.} other {The key reads # ad accounts.}} Each one you choose becomes its own connection, with its own currency and time zone.",
+      addAnother: "To add another ad account with the same key, tick it too.",
+      accountMeta: "{currency} · days in {timeZone}",
+      accountId: "ID {id}",
+      notSelectableMaps: "Apple Maps ads are not supported yet.",
+      notSelectableRole: "The API user has no API role in this ad account.",
+      notSelectableOther: "This ad account runs no App Store campaigns.",
+      noneSelectable:
+        "None of these ad accounts can be connected. Ask an Account Admin to give the API user the API Account Read Only role in an App Store ad account.",
+      selectAccount: "Choose at least one ad account.",
+      create:
+        "{count, plural, one {Create connection} other {Create # connections}}",
+      creating: "Creating…",
+      connectionName: "Apple Ads · {account}",
+      moreAboutConnector: "More about the connector",
+      accountTitle: "Apple Ads ad account",
+      adAccount: "Ad account",
+      currency: "Currency",
+      timeZone: "Time zone",
+      unknown: "Not known yet",
+      daysLabel: "Days in {timeZone}, as in Apple Ads.",
+      currencyNote:
+        "Spend stays in {currency}; nothing is converted when it is stored.",
+      timing:
+        "Apple Ads reports a day in the ad account’s time zone. netrics reads the last 12 months first, then every 6 hours, and reads the last 3 days again each time because installs are attributed late.",
+      sharedWith:
+        "The same key also reads {names}. Replacing it here replaces it there too, after the new key is checked for each of them.",
+      setUpNewKey: "Set up a new key",
+      setUpNewKeyDetail:
+        "Generate a new key pair, paste the public key in Apple Ads and enter the new IDs. The data collected so far is kept.",
+      replacedShared: "The new key replaced the old one in {names} too.",
+      removeOldKey:
+        "If Apple Ads still lists the old public key under Account Settings → API, remove it there: netrics cannot do that for you.",
+      deleteHint:
+        "netrics deletes its copy of the private key. Afterwards, remove the public key under Account Settings → API in Apple Ads.",
+      deleteHintShared:
+        "netrics deletes this connection’s copy of the private key. The same key still serves {names}: keep the public key in Apple Ads until you delete the last connection that uses it.",
+      addAccountTitle: "More ad accounts with this key",
+      addAccountIntro:
+        "The API user of this connection may read more ad accounts. Each one you add becomes its own connection with this key, which stays on the server. Nothing changes in Apple Ads.",
+      addAccountButton: "Add another ad account",
+      addAccountLoading: "Asking Apple Ads…",
+      addAccountFound:
+        "{count, plural, one {This key reads # ad account.} other {This key reads # ad accounts.}}",
+      addAccountConnected: "Connected already as {name}",
+      addAccountNone:
+        "Every ad account this key can connect is connected already. To read another one, an Account Admin gives this API user a role in it.",
+      addAccountCreate:
+        "{count, plural, one {Add # connection} other {Add # connections}}",
+      addAccountAdded:
+        "{count, plural, one {Added # connection with this key:} other {Added # connections with this key:}}",
+    },
+    keyPanel: {
+      provider: "provider",
+      title: "{name} key",
+      privateKey: "Private key",
+      stored: "Stored, encrypted (never shown)",
+      chooseFile: "Choose the .p8 file, or paste the key.",
+      generateOrPaste: "Generate a key pair, or paste your private key.",
+      fieldRequired: "{field} is required.",
+      replaced:
+        "Key replaced. Syncing continues with the new key; the data collected so far is kept.",
+      replacedKey:
+        "Key replaced — netrics now uses key {keyId}. Syncing continues with the new key; the data collected so far is kept.",
+      revokeOld:
+        "Now revoke the old key in {name}: netrics cannot do that for you.",
+      revokeOldKey:
+        "Now revoke the old key {keyId} in {name}: netrics cannot do that for you.",
+      openKeys: "Open {name} API keys",
+      askToReplace:
+        "Ask a workspace owner, admin or editor to replace the key.",
+      uploadNew: "Upload a new {name} key",
+      replace: "Replace key",
+      checksFirst:
+        "netrics checks the new key with {name} first. If the check fails, the stored key stays as it is.",
+      checking: "Checking with {name}…",
+      checkAndReplace: "Check and replace key",
+      notChanged: "The stored key was not changed.",
+    },
+    appStoreAnalytics: {
+      title: "App Store analytics",
+      intro:
+        "Impressions, product page views and downloads by source come from Apple’s analytics reports. Apple only generates them after an Admin has requested them once per app. The first reports arrive 1–2 days after that, and each day is complete about two days later. netrics then reads them with the Sales key it stores; sales keep syncing either way.",
+      askToEnable:
+        "Ask a workspace owner, admin or editor to enable App Store analytics.",
+      uploadKeyFirst:
+        "Upload a new App Store Connect key first: the status is read with it.",
+      pausedTitle: "App Store analytics paused — enable again.",
+      pausedDetail:
+        "Apple stopped the report request of {apps} because its reports were not read for a long time. Enabling again creates a new request; sales are not affected.",
+      requested:
+        "App Store analytics requested. The first reports arrive in 1–2 days.",
+      nothingNew: "Nothing new to request.",
+      outcomes: {
+        created: "Requested now",
+        existing: "Already requested",
+        failed: "Not requested",
+      },
+      revokeNow: "Now revoke the temporary Admin key in App Store Connect.",
+      revokeNowKey:
+        "Now revoke the temporary Admin key {keyId} in App Store Connect.",
+      notStored: "netrics did not store it, and nothing needs it any more.",
+      openKeys: "Open App Store Connect API keys",
+      asking: "Asking App Store Connect…",
+      app: "App",
+      analytics: "Analytics",
+      noApps: "This connection reads no apps yet.",
+      enable: "Enable App Store analytics",
+      enableIntro:
+        "Requesting analytics reports needs a team key with the Admin role, once. Use a temporary one: netrics uses it in memory for this request only and never stores it. Revoke it right after.",
+      chooseAdminFile: "Choose the .p8 file of the Admin key, or paste it.",
+      fieldRequired: "{field} is required.",
+      requesting: "Requesting with App Store Connect…",
+      request: "Request analytics reports",
+      nothingStored: "Nothing was stored.",
+      checking: "Checking…",
+      checkAgain: "Check again",
+      status: {
+        not_enabled: "Not enabled",
+        stopped: "App Store analytics paused — enable again",
+        requested: "Requested — data pending (the first reports take 1–2 days)",
+        available: "Available",
+        availableThrough: "Available through {day}",
+        unknown: "Status unknown right now",
+      },
+      guide: {
+        summary: "How to create the temporary Admin key",
+        step1:
+          "Sign in to App Store Connect as the Account Holder or an Admin and open Users and Access → Integrations → App Store Connect API.",
+        step2:
+          "Under Team Keys, generate a key named “netrics analytics (temporary)” with the Admin role. Download the .p8 file and copy its Key ID.",
+        step3:
+          "Upload it below. netrics uses it once, in memory, to request the analytics reports of this connection’s apps. It is not stored, queued or logged.",
+        step4:
+          "Revoke the key right afterwards. The Sales key netrics stores keeps reading the reports.",
+      },
+    },
+    appStoreReviews: {
+      title: "App Store ratings and reviews",
+      intro:
+        "Optional. Reviews per day, their star ratings and where they come from need a second team key with the Customer Support role, because the Sales key cannot read reviews. netrics keeps only counts and stars, never review text or nicknames. The API returns the reviews customers wrote, as Apple lists them; it has no aggregate star rating, so these numbers are not the rating shown on the App Store. Sales never depend on this key.",
+      askToAdd:
+        "Ask a workspace owner, admin or editor to add a Customer Support key.",
+      pausedFallback: "App Store reviews paused — upload a new reviews key.",
+      salesKeepSyncing: "Sales and analytics keep syncing.",
+      stored:
+        "Customer Support key stored. Reviews of the last year are read with the next sync.",
+      storedKey:
+        "Customer Support key {keyId} stored. Reviews of the last year are read with the next sync.",
+      revokePrevious:
+        "Now revoke the previous key {keyId} in App Store Connect.",
+      removed:
+        "Reviews key removed. Review metrics stop updating; the data already read stays.",
+      revokeRemoved:
+        "Revoke the key in App Store Connect if nothing else uses it.",
+      revokeRemovedKey:
+        "Revoke key {keyId} in App Store Connect if nothing else uses it.",
+      reviewsKey: "Reviews key",
+      replaceTitle: "Replace the Customer Support key",
+      addOptional: "Add a Customer Support key (optional)",
+      formIntro:
+        "Use a team key of the same App Store Connect team with the Customer Support role. It can also edit App Store details and answer reviews, which netrics never does; netrics only reads reviews with it. Admin keys are refused.",
+      chooseFile:
+        "Choose the .p8 file of the Customer Support key, or paste it.",
+      checkingKey: "Checking with App Store Connect…",
+      checkAndStore: "Check and store the key",
+      confirmRemove:
+        "Remove the Customer Support key? Review metrics stop updating; sales are not affected.",
+      confirmRemoveKey:
+        "Remove the Customer Support key {keyId}? Review metrics stop updating; sales are not affected.",
+      remove: "Remove reviews key",
+      uploadNew: "Upload a new reviews key",
+      replace: "Replace reviews key",
+      status: {
+        not_configured: "Not set up. Ratings and reviews are optional.",
+        active: "Reading ratings and reviews{key}.",
+        paused: "App Store reviews paused — upload a new reviews key{key}.",
+        unknown: "Status unknown right now{key}.",
+        keySuffix: " (key {keyId})",
+      },
+      guide: {
+        summary: "How to create the Customer Support key",
+        step1:
+          "Sign in to App Store Connect as the Account Holder or an Admin and open Users and Access → Integrations → App Store Connect API.",
+        step2:
+          "Under Team Keys, generate a key named “netrics reviews” with the Customer Support role. Developer or Marketing also work but grant more; Sales and Finance cannot read reviews, and netrics refuses Admin keys.",
+        step3:
+          "Download the .p8 file right away (Apple offers it only once) and copy the Key ID from the key’s row.",
+        step4:
+          "Upload it below. netrics checks with Apple that it reads reviews and cannot read sales reports before it stores anything.",
+      },
+      fields: {
+        providerName: "Customer Support",
+        keyId:
+          "The 10-character Key ID in the row of the Customer Support key.",
+        privateKey:
+          "The AuthKey_<Key ID>.p8 file of the Customer Support key. Apple lets you download it only once.",
+      },
+    },
+  },
+} as const;

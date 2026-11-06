@@ -1,0 +1,40 @@
+{
+  "rows": [
+    {
+      "keys": ["example", "MOBILE"],
+      "clicks": 96,
+      "impressions": 802,
+      "ctr": 0.11970074812967581,
+      "position": 1.4127182
+    },
+    {
+      "keys": ["example", "DESKTOP"],
+      "clicks": 71,
+      "impressions": 655,
+      "ctr": 0.10839694656488549,
+      "position": 1.2564885
+    },
+    {
+      "keys": ["example login", "DESKTOP"],
+      "clicks": 22,
+      "impressions": 140,
+      "ctr": 0.15714285714285714,
+      "position": 1.0857143
+    },
+    {
+      "keys": ["example pricing", "MOBILE"],
+      "clicks": 9,
+      "impressions": 318,
+      "ctr": 0.02830188679245283,
+      "position": 6.427673
+    },
+    {
+      "keys": ["example api docs", "TABLET"],
+      "clicks": 1,
+      "impressions": 12,
+      "ctr": 0.08333333333333333,
+      "position": 3.5
+    }
+  ],
+  "responseAggregationType": "byProperty"
+}

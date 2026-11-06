@@ -6,6 +6,10 @@ import {
 
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig } from "./env.js";
+import {
+  createOAuthProviders,
+  describeOAuthProviders,
+} from "./oauth/config.js";
 import { startScheduler } from "./scheduler.js";
 import { prepareInstallationSetup } from "./setup.js";
 import { startWorker } from "./worker.js";
@@ -62,7 +66,8 @@ if (config.role === "worker") {
   await startScheduler(config);
 } else {
   const db = createDatabase(config.databaseUrl);
-  const app = await buildApp(config, { db });
+  const oauthProviders = createOAuthProviders(config);
+  const app = await buildApp(config, { db, oauthProviders });
   await prepareInstallationSetup(config, db, app.log);
 
   try {
@@ -74,6 +79,12 @@ if (config.role === "worker") {
         commit: config.commit,
       },
       "api started",
+    );
+    // Which OAuth providers are configured and the redirect URI each one's
+    // app must register (ADR 0012). Never the client secret.
+    app.log.info(
+      describeOAuthProviders(oauthProviders),
+      "oauth providers configured",
     );
   } catch (error) {
     app.log.error(error);

@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "type": "analyticsReportInstances",
+      "id": "i-dl-0928",
+      "attributes": {
+        "granularity": "DAILY",
+        "processingDate": "2026-09-28"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/analyticsReportInstances/i-dl-0928"
+      }
+    }
+  ],
+  "links": {
+    "self": "https://api.appstoreconnect.apple.com/v1/analyticsReports/r5-0001/instances"
+  },
+  "meta": {
+    "paging": {
+      "total": 1,
+      "limit": 200
+    }
+  }
+}

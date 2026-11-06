@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   bootstrapRequestSchema,
+  dashboardTileInputSchema,
+  deviceTileStatusSchema,
+  metricPeriodSchema,
+  metricQueryRequestSchema,
   healthLiveResponseSchema,
   healthReadyResponseSchema,
   meResponseSchema,
@@ -123,6 +127,8 @@ describe("session contracts", () => {
       ],
     });
     expect(parsed.memberships).toHaveLength(1);
+    // An API from before #250 sends no language: read as unset.
+    expect(parsed.user.locale).toBeNull();
   });
 
   it("rejects a membership with an unknown role", () => {
@@ -142,5 +148,44 @@ describe("session contracts", () => {
         ],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("metric periods (#212)", () => {
+  it("accepts the longer periods for queries and tiles", () => {
+    for (const period of [
+      "last_90_days",
+      "last_12_months",
+      // Periods to date (#331, ADR 0019 §3).
+      "this_week",
+      "this_quarter",
+      "this_year",
+    ]) {
+      expect(metricPeriodSchema.parse(period)).toBe(period);
+      const query = {
+        connectionId: "00000000-0000-4000-8000-000000000000",
+        metricKey: "demo.signups",
+        period,
+      };
+      expect(metricQueryRequestSchema.parse(query).period).toBe(period);
+      expect(dashboardTileInputSchema.parse(query).period).toBe(period);
+    }
+  });
+
+  it("rejects periods the server does not know", () => {
+    expect(metricPeriodSchema.safeParse("last_year").success).toBe(false);
+  });
+});
+
+describe("deviceTileStatusSchema", () => {
+  it("knows backfilling besides the first statuses (#311)", () => {
+    expect(deviceTileStatusSchema.options).toEqual([
+      "ok",
+      "stale",
+      "auth_failed",
+      "outage",
+      "no_data",
+      "backfilling",
+    ]);
   });
 });

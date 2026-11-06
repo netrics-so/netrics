@@ -86,6 +86,19 @@ NETRICS_SIGNUP=closed
 # Optional email (invitations, password reset), e.g.
 # SMTP_URL=smtps://user:password@smtp.example.com:465
 # MAIL_FROM=netrics <no-reply@${domain}>
+
+# Optional Google OAuth app (Google connectors; both or neither). Register
+# the redirect URI ${public_url}/oauth/google/callback; see google-oauth.md.
+# NETRICS_OAUTH_GOOGLE_CLIENT_ID=
+# NETRICS_OAUTH_GOOGLE_CLIENT_SECRET=
+
+# Display currency: the scheduler fetches the ECB euro reference rates daily
+# from www.ecb.europa.eu. "off" makes no request and keeps amounts per
+# currency.
+# NETRICS_EXCHANGE_RATES=off
+
+# Default language for people and screens without their own: en or de.
+# NETRICS_DEFAULT_LOCALE=de
 ENV
 chmod 600 .env
 

@@ -1,3 +1,4 @@
+import { sourceDatasetSchema } from "@netrics/connector-sdk";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import { eq, sql } from "drizzle-orm";
@@ -12,7 +13,10 @@ import type {
   ConnectorManifest,
   SyncRequest,
 } from "@netrics/connector-sdk";
-import { createDefaultRegistry } from "@netrics/connector-runtime";
+import type { ConnectorRegistry } from "@netrics/connector-runtime";
+import pino from "pino";
+
+import { createDefaultRegistry } from "../connectors.js";
 import {
   createDatabase,
   createRawSqlClient,
@@ -21,11 +25,17 @@ import {
   schema,
   withWorkspace,
   type Database,
+  type Job,
   type Sql,
 } from "@netrics/database";
 
 import { createCredentialKeyring, encryptCredentials } from "../credentials.js";
-import { createJobHandlers } from "../jobs/handlers.js";
+import {
+  createJobHandlers,
+  NonRetryableJobError,
+  TerminalJobError,
+} from "../jobs/handlers.js";
+import { DEFAULT_DATA_POLICY, type DataPolicy } from "@netrics/domain";
 import { syncCatalog } from "./catalog.js";
 import { createTestDatabase, type TestDatabase } from "../test-db.js";
 import { createWorker, type WorkerHandle } from "../worker.js";
@@ -74,8 +84,37 @@ function flakyObservation(identity: string) {
 
 /** Fails mid-pagination on the first run, then recovers (crash simulation). */
 let flakyShouldFail = true;
+/** Requests for page 1 (no cursor). */
+let flakyFirstPageCalls = 0;
+const flakyDataset = sourceDatasetSchema.parse({
+  key: "events",
+  name: "Events",
+  version: 1,
+  keyFields: ["id"],
+  grain: "one event",
+  mode: "upsert",
+  fields: [
+    {
+      id: "id",
+      name: "ID",
+      type: "string",
+      nullable: false,
+      classification: "internal",
+    },
+    {
+      id: "amount",
+      name: "Amount",
+      type: "decimal",
+      nullable: false,
+      classification: "internal",
+    },
+  ],
+});
 const flakyConnector: Connector = {
-  manifest: testManifest("flaky-pages", "flaky.hits"),
+  manifest: {
+    ...testManifest("flaky-pages", "flaky.hits"),
+    datasets: [flakyDataset],
+  },
   async check() {
     return { ok: true };
   },
@@ -84,10 +123,22 @@ const flakyConnector: Connector = {
   },
   async sync(_context: ConnectionContext, request: SyncRequest) {
     if (!request.cursor) {
+      flakyFirstPageCalls += 1;
       return {
         observations: [
           flakyObservation("flaky:p1:a"),
           flakyObservation("flaky:p1:b"),
+        ],
+        datasetPages: [
+          {
+            datasetKey: "events",
+            schemaVersion: 1,
+            refreshKey: "fixture-refresh",
+            pageKey: "p1",
+            previousPageKey: null,
+            complete: false,
+            records: [{ values: { id: "one", amount: "10.25" } }],
+          },
         ],
         nextCursor: "page-2",
         done: false,
@@ -100,6 +151,53 @@ const flakyConnector: Connector = {
       observations: [
         flakyObservation("flaky:p2:a"),
         flakyObservation("flaky:p2:b"),
+      ],
+      datasetPages: [
+        {
+          datasetKey: "events",
+          schemaVersion: 1,
+          refreshKey: "fixture-refresh",
+          pageKey: "p2",
+          previousPageKey: "p1",
+          complete: true,
+          records: [{ values: { id: "two", amount: "20.00" } }],
+        },
+      ],
+      done: true,
+    };
+  },
+};
+
+/**
+ * Emits one dataset page whose record the database refuses (a NUL byte in a
+ * string field): a storage failure the engine sees only as the redacted
+ * dataset_storage_failed.
+ */
+let datasetFaultRecord = "a\u0000b";
+const datasetFaultConnector: Connector = {
+  manifest: {
+    ...testManifest("dataset-faults", "dataset-faults.hits"),
+    datasets: [flakyDataset],
+  },
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    return [];
+  },
+  async sync() {
+    return {
+      observations: [],
+      datasetPages: [
+        {
+          datasetKey: "events",
+          schemaVersion: 1,
+          refreshKey: randomUUID(),
+          pageKey: "p1",
+          previousPageKey: null,
+          complete: true,
+          records: [{ values: { id: datasetFaultRecord, amount: "1.00" } }],
+        },
       ],
       done: true,
     };
@@ -131,6 +229,40 @@ const probeConnector: Connector = {
     return request.cursor
       ? { observations: [], done: true }
       : { observations: [], nextCursor: "page-2", done: false };
+  },
+};
+
+/** Names its resources (#194); counts discovers, may fail them. */
+let namingDiscovers = 0;
+let namingName = "Wurfel";
+let namingFails = false;
+const namingConnector: Connector = {
+  manifest: testManifest("naming", "naming.downloads"),
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    namingDiscovers += 1;
+    if (namingFails) {
+      throw new Error("provider cannot list apps right now");
+    }
+    return [
+      { id: "app-1", name: namingName, kind: "app" },
+      { id: "app-2", name: "Dicey", kind: "app" },
+    ];
+  },
+  async sync() {
+    return {
+      observations: [
+        {
+          metricKey: "naming.downloads",
+          sourceTimestamp: "2026-09-20T00:00:00.000Z",
+          value: 1,
+          dimensions: { resource: "app-1" },
+        },
+      ],
+      done: true,
+    };
   },
 };
 
@@ -197,6 +329,130 @@ const leakyConnector: Connector = {
   },
 };
 
+/**
+ * A paged provider shaped like Search Console (#145): one page per week of
+ * the window, the cursor is the first day of the next page, and every page
+ * holds `resources` observations per day. `onPage` runs before a page is
+ * produced and may probe the database, throw, or never return.
+ */
+interface PagerControl {
+  resources: number;
+  requests: SyncRequest[];
+  onPage?: (request: SyncRequest) => Promise<void> | void;
+}
+
+function pagerConnector(
+  id: string,
+  backfillDays: number,
+  control: () => PagerControl,
+): Connector {
+  return {
+    manifest: { ...testManifest(id, `${id}.hits`), backfillDays },
+    async check() {
+      return { ok: true };
+    },
+    async discover() {
+      return [];
+    },
+    async sync(_context: ConnectionContext, request: SyncRequest) {
+      const pager = control();
+      pager.requests.push(request);
+      const toMs = Date.parse(request.to);
+      const startMs = dayStartUtc(Date.parse(request.cursor ?? request.from));
+      const endMs = Math.min(startMs + 7 * DAY_MS, toMs);
+      await pager.onPage?.(request);
+      const observations = [];
+      for (let day = startMs; day < endMs; day += DAY_MS) {
+        for (let resource = 0; resource < pager.resources; resource += 1) {
+          observations.push({
+            metricKey: `${id}.hits`,
+            sourceTimestamp: new Date(day).toISOString(),
+            value: (day / DAY_MS + resource) % 97,
+            dimensions: { resource: `r${resource}` },
+          });
+        }
+      }
+      return {
+        observations,
+        nextCursor: new Date(endMs).toISOString(),
+        done: endMs >= toMs,
+      };
+    },
+  };
+}
+
+let largePager: PagerControl = { resources: 0, requests: [] };
+const largePagerConnector = pagerConnector(
+  "pager-large",
+  490,
+  () => largePager,
+);
+let resumePager: PagerControl = { resources: 0, requests: [] };
+let freshPager: PagerControl = { resources: 0, requests: [] };
+const freshPagerConnector = pagerConnector("pager-fresh", 70, () => freshPager);
+const resumePagerConnector = pagerConnector(
+  "pager-resume",
+  70,
+  () => resumePager,
+);
+
+/** Never finishes: every page advances an opaque cursor. */
+let endlessPages = 0;
+let endlessRequests: SyncRequest[] = [];
+const endlessConnector: Connector = {
+  manifest: testManifest("endless", "endless.hits"),
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    return [];
+  },
+  async sync(context, request) {
+    endlessPages += 1;
+    endlessRequests.push(request);
+    const done =
+      typeof context.config.finishAfter === "number" &&
+      endlessPages >= context.config.finishAfter;
+    return {
+      observations: [
+        {
+          metricKey: "endless.hits",
+          sourceTimestamp: "2026-09-20T00:00:00.000Z",
+          value: 1,
+          dimensions: { resource: `page-${endlessPages}` },
+        },
+      ],
+      nextCursor: done
+        ? request.to
+        : `page-${String(endlessPages + 1).padStart(4, "0")}`,
+      done,
+    };
+  },
+};
+
+/** One page wider than a single INSERT may bind (65,535 parameters). */
+const WIDE_PAGE_ROWS = 12_000;
+const widePageConnector: Connector = {
+  manifest: testManifest("wide-page", "wide.hits"),
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    return [];
+  },
+  async sync() {
+    return {
+      observations: Array.from({ length: WIDE_PAGE_ROWS }, (_, index) => ({
+        metricKey: "wide.hits",
+        sourceTimestamp: "2026-09-20T00:00:00.000Z",
+        value: index,
+        dimensions: { resource: `r${index}` },
+      })),
+      done: true,
+    };
+  },
+};
+
 function schedulerUrlOf(testDb: TestDatabase): string {
   const url = new URL(testDb.adminUrl);
   url.username = "netrics_scheduler";
@@ -221,6 +477,7 @@ async function waitFor(
 }
 
 let testDb: TestDatabase;
+let registry: ConnectorRegistry;
 let appDb: Database;
 let schedulerDb: Database;
 let schedulerRaw: Sql;
@@ -318,12 +575,19 @@ beforeAll(async () => {
   schedulerDb = createDatabase(schedulerUrlOf(testDb));
   schedulerRaw = createRawSqlClient(schedulerUrlOf(testDb), { max: 2 });
 
-  const registry = createDefaultRegistry();
+  registry = createDefaultRegistry();
   registry.register(flakyConnector);
+  registry.register(largePagerConnector);
+  registry.register(resumePagerConnector);
+  registry.register(freshPagerConnector);
+  registry.register(endlessConnector);
+  registry.register(widePageConnector);
   registry.register(brokenConnector);
   registry.register(leakyConnector);
   registry.register(probeConnector);
   registry.register(revisingConnector);
+  registry.register(namingConnector);
+  registry.register(datasetFaultConnector);
   activityProbe = createRawSqlClient(testDb.adminUrl, { max: 1 });
 
   // Explicit catalog sync (production does this at process startup).
@@ -369,18 +633,35 @@ describe("catalog sync", () => {
   it("upserts connectors and metric definitions from manifests", async () => {
     const connectors = await appDb.select().from(schema.connectors);
     expect(connectors.map((row) => row.id).sort()).toEqual([
+      "app-store-connect",
+      "apple-ads",
       "broken",
+      "dataset-faults",
       "demo",
+      "endless",
       "flaky-pages",
+      "google-play",
+      "google-search-console",
       "leaky",
+      "naming",
+      "pager-fresh",
+      "pager-large",
+      "pager-resume",
       "probe",
       "revising",
+      "vercel",
+      "wide-page",
     ]);
     const metrics = await appDb.select().from(schema.metricDefinitions);
     const keys = metrics.map((row) => `${row.connectorId}/${row.key}`).sort();
     expect(keys).toContain("demo/demo.visitors");
     expect(keys).toContain("demo/demo.signups");
     expect(keys).toContain("flaky-pages/flaky.hits");
+    expect(keys).toContain("vercel/vercel.pageviews");
+    expect(keys).toContain(
+      "google-search-console/google-search-console.clicks",
+    );
+    expect(keys).toContain("app-store-connect/app_store_connect.downloads");
     // Idempotent re-sync: exactly one row per (connector, key).
     expect(new Set(keys).size).toBe(keys.length);
   });
@@ -449,12 +730,19 @@ describe("sync engine", () => {
     expect(run.status).toBe("succeeded");
     expect(run.mode).toBe("backfill");
     expect(run.error_class).toBeNull();
-    expect(run.cursor_after).toBeTypeOf("string");
+    // The cursor stops at the UTC day containing `to`, never ahead of it.
+    expect(run.cursor_after).toBe(
+      new Date(
+        dayStartUtc(new Date(run.requested_to as string).getTime()),
+      ).toISOString(),
+    );
 
-    // Expected observations: days in [dayStart(from), dayStart(to)] × 3
+    // Expected observations: days in [dayStart(from), dayStart(to + 14h)]
+    // (the demo reports up to the latest date anywhere, UTC+14) × 3
     // resources × 2 metrics (demo connector determinism).
+    const requestedTo = new Date(run.requested_to as string).getTime();
     const from = dayStartUtc(new Date(run.requested_from as string).getTime());
-    const to = dayStartUtc(new Date(run.requested_to as string).getTime());
+    const to = dayStartUtc(requestedTo + 14 * 60 * 60 * 1000);
     const expectedDays = (to - from) / DAY_MS + 1;
     expect(expectedDays).toBeGreaterThanOrEqual(90);
     const count = await connectionObservationCount(workspaceA, connectionId);
@@ -535,8 +823,9 @@ describe("sync engine", () => {
     );
   });
 
-  it("rolls back everything when the connector dies mid-pagination", async () => {
+  it("keeps the pages committed before a mid-pagination failure and resumes after them", async () => {
     flakyShouldFail = true;
+    flakyFirstPageCalls = 0;
     const connectionId = await seedConnection(workspaceA, "flaky-pages");
     const jobId = await enqueue(
       workspaceA,
@@ -549,25 +838,34 @@ describe("sync engine", () => {
       return row?.status === "pending" && row?.attempts === 1;
     });
 
-    // Crash idempotency: page 1's observations must NOT have committed.
-    expect(await connectionObservationCount(workspaceA, connectionId)).toBe(0);
+    // Page 1 committed with its cursor as the checkpoint (#145); page 2's
+    // failure is recorded with what the run did write.
+    expect(await connectionObservationCount(workspaceA, connectionId)).toBe(2);
     let runs = await syncRunsFor(workspaceA, connectionId);
     expect(runs).toHaveLength(1);
     expect(runs[0]!.status).toBe("failed");
     expect(runs[0]!.error_class).toBe("transient");
-    expect(runs[0]!.observations_written).toBe(0);
+    expect(runs[0]!.observations_written).toBe(2);
+    expect(runs[0]!.cursor_before).toBeNull();
+    expect(runs[0]!.cursor_after).toBe("page-2");
     const state = await stateFor(workspaceA, connectionId);
-    expect(state!.cursor).toBeNull();
+    expect(state!.cursor).toBe("page-2");
+    expect(state!.lastSuccessAt).toBeNull();
     expect(state!.authState).toBe("outage");
     expect(state!.consecutiveFailures).toBe(1);
 
-    // The provider recovers; the retry re-runs the whole window idempotently.
+    // The provider recovers; the retry starts at the checkpoint and never
+    // fetches page 1 again.
     flakyShouldFail = false;
     await schedulerRaw`update jobs set run_at = now() where id = ${jobId}`;
     await waitFor(async () => (await jobRow(jobId))?.status === "succeeded");
+    expect(flakyFirstPageCalls).toBe(1);
     expect(await connectionObservationCount(workspaceA, connectionId)).toBe(4);
     runs = await syncRunsFor(workspaceA, connectionId);
-    expect(runs.filter((row) => row.status === "succeeded")).toHaveLength(1);
+    const succeeded = runs.filter((row) => row.status === "succeeded");
+    expect(succeeded).toHaveLength(1);
+    expect(succeeded[0]!.cursor_before).toBe("page-2");
+    expect(succeeded[0]!.observations_written).toBe(2);
     expect((await stateFor(workspaceA, connectionId))!.authState).toBe("ok");
   });
 
@@ -661,7 +959,538 @@ describe("sync engine", () => {
   });
 });
 
+/**
+ * Runs one attempt of a sync job in-process, the way the worker would after
+ * claiming it, so a test can abandon an attempt mid-run (a crashed worker).
+ * Attempts of the same job share its id; without one, it is a new job.
+ */
+function runAttempt(
+  kind: "connection.sync" | "connection.backfill",
+  workspaceId: string,
+  connectionId: string,
+  attempts: number,
+  jobId: string = randomUUID(),
+  dataPolicy?: DataPolicy,
+): Promise<void> {
+  const handler = createJobHandlers({
+    registry,
+    credentialKeyring: KEYRING,
+    ...(dataPolicy ? { dataPolicy } : {}),
+  })[kind]!;
+  const job = {
+    id: jobId,
+    kind,
+    workspaceId,
+    connectionId,
+    attempts,
+    payload: { workspace_id: workspaceId, connection_id: connectionId },
+  } as unknown as Job;
+  return handler({
+    job,
+    appDb,
+    schedulerDb,
+    logger: pino({ level: "silent" }),
+  });
+}
+
+/** What the database holds for a connection, read past RLS by the owner. */
+async function committed(connectionId: string) {
+  const [row] = await activityProbe!<
+    { observations: number; days: number; cursor: string | null }[]
+  >`
+    select
+      (select count(*)::int from observations
+        where connection_id = ${connectionId}) as observations,
+      (select count(distinct source_timestamp)::int from observations
+        where connection_id = ${connectionId}) as days,
+      (select cursor from connection_state
+        where connection_id = ${connectionId}) as cursor
+  `;
+  return row!;
+}
+
+describe("dataset storage failures", () => {
+  it("a storage failure is a retryable outage with a redacted message, not a contract failure", async () => {
+    datasetFaultRecord = "a\u0000b";
+    const connectionId = await seedConnection(workspaceA, "dataset-faults");
+    const error = await runAttempt(
+      "connection.sync",
+      workspaceA,
+      connectionId,
+      1,
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(NonRetryableJobError);
+    expect(error).not.toBeInstanceOf(TerminalJobError);
+    expect((error as Error).message).toBe("dataset_storage_failed");
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs[0]).toMatchObject({
+      status: "failed",
+      error_class: "transient",
+      error_message: "dataset_storage_failed",
+    });
+    expect((await stateFor(workspaceA, connectionId))?.authState).toBe(
+      "outage",
+    );
+  });
+
+  it("a full storage quota fails as budget, without retries or dead-lettering", async () => {
+    datasetFaultRecord = "fits";
+    const connectionId = await seedConnection(workspaceA, "dataset-faults");
+    const error = await runAttempt(
+      "connection.sync",
+      workspaceA,
+      connectionId,
+      1,
+      randomUUID(),
+      { ...DEFAULT_DATA_POLICY, maxWorkspaceBytes: 1 },
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(TerminalJobError);
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs[0]).toMatchObject({
+      status: "failed",
+      error_class: "budget",
+    });
+    expect(String(runs[0]!.error_message)).toContain("dataset_workspace_quota");
+  });
+});
+
+describe("page-wise ingest (#145)", () => {
+  it("commits a large backfill page by page, checkpointing the cursor", async () => {
+    const connectionId = await seedConnection(workspaceA, "pager-large");
+    const resources = 50;
+    const perPage = 7 * resources;
+    // Before producing each page, the provider looks at what the engine has
+    // committed: every earlier page, and the cursor it is asked to resume.
+    const seen: {
+      cursor: string | undefined;
+      observations: number;
+      stateCursor: string | null;
+    }[] = [];
+    largePager = {
+      resources,
+      requests: [],
+      onPage: async (request) => {
+        const now = await committed(connectionId);
+        seen.push({
+          cursor: request.cursor,
+          observations: now.observations,
+          stateCursor: now.cursor,
+        });
+      },
+    };
+    const jobId = await enqueue(
+      workspaceA,
+      connectionId,
+      "connection.backfill",
+    );
+    await waitFor(async () => (await jobRow(jobId))?.status === "succeeded");
+
+    // 490 days of weekly pages.
+    expect(seen.length).toBeGreaterThanOrEqual(70);
+    seen.forEach((page, index) => {
+      // Page n is fetched only after pages 1..n-1 committed, and the
+      // persisted cursor is the one page n continues from.
+      expect(page.observations).toBe(index * perPage);
+      expect(page.stateCursor).toBe(index === 0 ? null : page.cursor);
+    });
+
+    const [run] = await syncRunsFor(workspaceA, connectionId);
+    expect(run!.status).toBe("succeeded");
+    const from = dayStartUtc(Date.parse(String(largePager.requests[0]!.from)));
+    const to = dayStartUtc(new Date(run!.requested_to as string).getTime());
+    const days = (to - from) / DAY_MS + 1;
+    const final = await committed(connectionId);
+    expect(final.days).toBe(days);
+    expect(final.observations).toBe(days * resources);
+    expect(run!.observations_written).toBe(final.observations);
+    expect(final.cursor).toBe(run!.cursor_after);
+  });
+
+  it("resumes a crashed run at the last committed page, without gaps or duplicates", async () => {
+    const connectionId = await seedConnection(workspaceA, "pager-resume");
+    const resources = 3;
+    const perPage = 7 * resources;
+
+    // Attempt 1: the worker dies while fetching page 4 (the call never
+    // returns; nothing records a failure).
+    let releaseZombie: (error: Error) => void = () => {};
+    let reachedPage4: () => void = () => {};
+    const atPage4 = new Promise<void>((resolve) => {
+      reachedPage4 = resolve;
+    });
+    resumePager = {
+      resources,
+      requests: [],
+      onPage: () => {
+        if (resumePager.requests.length === 4) {
+          reachedPage4();
+          return new Promise<void>((_, reject) => {
+            releaseZombie = reject;
+          });
+        }
+      },
+    };
+    const jobId = randomUUID();
+    const zombie = runAttempt(
+      "connection.backfill",
+      workspaceA,
+      connectionId,
+      0,
+      jobId,
+    );
+    await atPage4;
+    const crashed = await committed(connectionId);
+    expect(crashed.observations).toBe(3 * perPage);
+    const checkpoint = resumePager.requests[3]!.cursor!;
+    expect(crashed.cursor).toBe(checkpoint);
+    expect(await syncRunsFor(workspaceA, connectionId)).toHaveLength(0);
+    const firstFrom = resumePager.requests[0]!.from;
+
+    // Attempt 2 (the reclaimed job) continues from the checkpoint.
+    resumePager = { resources, requests: [] };
+    await runAttempt("connection.backfill", workspaceA, connectionId, 1, jobId);
+    expect(resumePager.requests[0]!.cursor).toBe(checkpoint);
+    expect(
+      resumePager.requests.every(
+        (request) => !request.cursor || request.cursor >= checkpoint,
+      ),
+    ).toBe(true);
+
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.status).toBe("succeeded");
+    expect(runs[0]!.cursor_before).toBe(checkpoint);
+    const from = dayStartUtc(Date.parse(firstFrom));
+    const to = dayStartUtc(new Date(runs[0]!.requested_to as string).getTime());
+    const days = (to - from) / DAY_MS + 1;
+    const final = await committed(connectionId);
+    // No gaps: every day of the window; no duplicates: the resumed run wrote
+    // only the pages the crashed one had not.
+    expect(final.days).toBe(days);
+    expect(final.observations).toBe(days * resources);
+    expect(runs[0]!.observations_written).toBe(
+      final.observations - crashed.observations,
+    );
+    expect(final.cursor).toBe(runs[0]!.cursor_after);
+
+    // The abandoned attempt finally fails: its failure is recorded, and it
+    // does not move the cursor the successful run left.
+    releaseZombie(new Error("worker gone"));
+    await expect(zombie).rejects.toThrow("worker gone");
+    expect((await committed(connectionId)).cursor).toBe(final.cursor);
+    const after = await syncRunsFor(workspaceA, connectionId);
+    expect(after.map((row) => row.status).sort()).toEqual([
+      "failed",
+      "succeeded",
+    ]);
+    expect(
+      after.find((row) => row.status === "failed")!.observations_written,
+    ).toBe(3 * perPage);
+  });
+
+  it("yields at the configured page budget, keeping progress without reporting an outage", async () => {
+    endlessPages = 0;
+    const connectionId = await seedConnection(workspaceA, "endless");
+    await expect(
+      runAttempt("connection.backfill", workspaceA, connectionId, 0),
+    ).rejects.toThrow(/Continue from the committed checkpoint/);
+
+    const state = await committed(connectionId);
+    expect(endlessPages).toBe(100);
+    expect(state.observations).toBe(100);
+    expect(state.cursor).toBe("page-0101");
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.status).toBe("continued");
+    expect(runs[0]!.error_class).toBeNull();
+    expect(runs[0]!.observations_written).toBe(100);
+    expect(runs[0]!.cursor_after).toBe("page-0101");
+    const row = await stateFor(workspaceA, connectionId);
+    expect(row!.lastSuccessAt).toBeNull();
+    expect(row!.consecutiveFailures).toBe(0);
+  });
+
+  it("finishes a large backfill across worker budgets with one job identity and no lost pages", async () => {
+    endlessPages = 0;
+    endlessRequests = [];
+    const connectionId = await seedConnection(workspaceA, "endless", {
+      finishAfter: 205,
+    });
+    const jobId = await withWorkspace(
+      appDb,
+      { workspaceId: workspaceA },
+      (tx) =>
+        enqueueJob(tx, {
+          kind: "connection.backfill",
+          workspaceId: workspaceA,
+          connectionId,
+          maxAttempts: 1,
+        }),
+    );
+    await waitFor(
+      async () => (await jobRow(jobId))?.status === "succeeded",
+      15_000,
+    );
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs.map((run) => run.status).sort()).toEqual([
+      "continued",
+      "continued",
+      "succeeded",
+    ]);
+    expect(
+      runs.every((run) => run.attempt === 1 && run.error_class === null),
+    ).toBe(true);
+    expect(
+      runs.reduce((total, run) => total + Number(run.observations_written), 0),
+    ).toBe(205);
+    expect((await committed(connectionId)).observations).toBe(205);
+    expect(
+      new Set(
+        endlessRequests.map((request) =>
+          JSON.stringify([request.from, request.to]),
+        ),
+      ).size,
+    ).toBe(1);
+    expect(endlessRequests[100]?.cursor).toBe("page-0101");
+    expect(endlessRequests[200]?.cursor).toBe("page-0201");
+    expect(await jobRow(jobId)).toMatchObject({
+      status: "succeeded",
+      attempts: 0,
+    });
+    expect(await stateFor(workspaceA, connectionId)).toMatchObject({
+      authState: "ok",
+      consecutiveFailures: 0,
+      backfillJobId: jobId,
+    });
+  });
+
+  it("ingests a page wider than one INSERT can bind", async () => {
+    const connectionId = await seedConnection(workspaceA, "wide-page");
+    await runAttempt("connection.backfill", workspaceA, connectionId, 0);
+    expect((await committed(connectionId)).observations).toBe(WIDE_PAGE_ROWS);
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs[0]!.observations_written).toBe(WIDE_PAGE_ROWS);
+  });
+});
+
+describe("fresh and resumed backfills (#153)", () => {
+  it("a new backfill after a successful sync reads the whole window; its retry resumes from its checkpoint", async () => {
+    const connectionId = await seedConnection(workspaceA, "pager-fresh");
+    const resources = 2;
+    freshPager = { resources, requests: [] };
+    await runAttempt("connection.backfill", workspaceA, connectionId, 0);
+    const windowDays = freshPager.requests.length;
+    expect(windowDays).toBeGreaterThanOrEqual(10);
+
+    // An incremental sync succeeds: the cursor now sits near "now".
+    freshPager = { resources, requests: [] };
+    await runAttempt("connection.sync", workspaceA, connectionId, 0);
+    const incrementalCursor = (await committed(connectionId)).cursor!;
+    expect(Date.parse(incrementalCursor)).toBeGreaterThan(
+      Date.now() - 2 * DAY_MS,
+    );
+
+    // A new backfill (e.g. after a config change) starts at the window
+    // start, not at the stored cursor; its worker dies on page 4.
+    const jobId = randomUUID();
+    let releaseZombie: (error: Error) => void = () => {};
+    let reachedPage4: () => void = () => {};
+    const atPage4 = new Promise<void>((resolve) => {
+      reachedPage4 = resolve;
+    });
+    freshPager = {
+      resources,
+      requests: [],
+      onPage: () => {
+        if (freshPager.requests.length === 4) {
+          reachedPage4();
+          return new Promise<void>((_, reject) => {
+            releaseZombie = reject;
+          });
+        }
+      },
+    };
+    const zombie = runAttempt(
+      "connection.backfill",
+      workspaceA,
+      connectionId,
+      0,
+      jobId,
+    );
+    await atPage4;
+    const first = freshPager.requests[0]!;
+    expect(first.cursor).toBeUndefined();
+    expect(Date.parse(first.from)).toBeLessThan(Date.now() - 69 * DAY_MS);
+    const checkpoint = freshPager.requests[3]!.cursor!;
+    expect((await committed(connectionId)).cursor).toBe(checkpoint);
+
+    // The reclaimed attempt of the same job resumes from the checkpoint and
+    // fetches none of the pages that committed.
+    freshPager = { resources, requests: [] };
+    await runAttempt("connection.backfill", workspaceA, connectionId, 1, jobId);
+    expect(freshPager.requests[0]!.cursor).toBe(checkpoint);
+    expect(
+      freshPager.requests.every(
+        (request) =>
+          request.cursor !== undefined && request.cursor >= checkpoint,
+      ),
+    ).toBe(true);
+    expect(freshPager.requests.length).toBe(windowDays - 3);
+    releaseZombie(new Error("worker gone"));
+    await expect(zombie).rejects.toThrow("worker gone");
+
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    const resumed = runs.find(
+      (row) => row.mode === "backfill" && row.attempt === 2,
+    )!;
+    expect(resumed.status).toBe("succeeded");
+    expect(resumed.cursor_before).toBe(checkpoint);
+    // One row per day and resource: re-read days were idempotent upserts.
+    const final = await committed(connectionId);
+    expect(final.observations).toBe(final.days * resources);
+
+    // Yet another backfill is a new job again: whole window.
+    freshPager = { resources, requests: [] };
+    await runAttempt("connection.backfill", workspaceA, connectionId, 0);
+    expect(freshPager.requests[0]!.cursor).toBeUndefined();
+    expect(freshPager.requests.length).toBe(windowDays);
+    const last = (await syncRunsFor(workspaceA, connectionId)).at(-1)!;
+    expect(last.cursor_before).toBeNull();
+  });
+
+  it("an incremental sync continues from a backfill's checkpoint", async () => {
+    const connectionId = await seedConnection(workspaceA, "pager-fresh");
+    freshPager = {
+      resources: 1,
+      requests: [],
+      onPage: () => {
+        if (freshPager.requests.length === 3) {
+          throw new Error("provider exploded mid-stream");
+        }
+      },
+    };
+    await expect(
+      runAttempt("connection.backfill", workspaceA, connectionId, 0),
+    ).rejects.toThrow("provider exploded");
+    const checkpoint = (await committed(connectionId)).cursor!;
+    expect(checkpoint).toBe(freshPager.requests[2]!.cursor);
+
+    // E.g. the job died for good and the connection was reauthorized: the
+    // next scheduled sync finishes the window from the checkpoint.
+    freshPager = { resources: 1, requests: [] };
+    await runAttempt("connection.sync", workspaceA, connectionId, 0);
+    expect(freshPager.requests[0]!.cursor).toBe(checkpoint);
+    expect(freshPager.requests[0]!.from).toBe(checkpoint);
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs.at(-1)).toMatchObject({
+      mode: "incremental",
+      status: "succeeded",
+      cursor_before: checkpoint,
+    });
+  });
+});
+
 function dayStartUtc(timestampMs: number): number {
   const date = new Date(timestampMs);
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
+
+describe("resource names (#194)", () => {
+  /** One sync attempt at the given time. */
+  const syncAt = (connectionId: string, at: Date) =>
+    createJobHandlers({
+      registry,
+      credentialKeyring: KEYRING,
+      now: () => at,
+    })["connection.sync"]!({
+      job: {
+        id: randomUUID(),
+        kind: "connection.sync",
+        workspaceId: workspaceA,
+        connectionId,
+        attempts: 0,
+        payload: {},
+      } as unknown as Job,
+      appDb,
+      schedulerDb,
+      logger: pino({ level: "silent" }),
+    });
+
+  const names = (connectionId: string) =>
+    withWorkspace(appDb, { workspaceId: workspaceA }, (tx) =>
+      tx
+        .select({
+          id: schema.connectionResources.resourceId,
+          name: schema.connectionResources.name,
+        })
+        .from(schema.connectionResources)
+        .where(eq(schema.connectionResources.connectionId, connectionId))
+        .orderBy(schema.connectionResources.resourceId),
+    );
+
+  it("are discovered after a successful sync and refreshed at most daily", async () => {
+    const connectionId = await seedConnection(workspaceA, "naming");
+    const start = new Date("2026-09-21T08:00:00Z");
+    namingDiscovers = 0;
+    namingName = "Wurfel";
+
+    await syncAt(connectionId, start);
+    expect(namingDiscovers).toBe(1);
+    expect(await names(connectionId)).toEqual([
+      { id: "app-1", name: "Wurfel" },
+      { id: "app-2", name: "Dicey" },
+    ]);
+
+    // An hour later: the names are fresh, no discover.
+    namingName = "Wurfel 2";
+    await syncAt(connectionId, new Date(start.getTime() + 60 * 60 * 1000));
+    expect(namingDiscovers).toBe(1);
+
+    // A day later: refreshed.
+    await syncAt(connectionId, new Date(start.getTime() + DAY_MS));
+    expect(namingDiscovers).toBe(2);
+    expect((await names(connectionId))[0]).toEqual({
+      id: "app-1",
+      name: "Wurfel 2",
+    });
+  });
+
+  it("never fail the sync when discover fails", async () => {
+    const connectionId = await seedConnection(workspaceA, "naming");
+    namingFails = true;
+    try {
+      await syncAt(connectionId, new Date("2026-09-21T08:00:00Z"));
+    } finally {
+      namingFails = false;
+    }
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs.map((run) => run.status)).toEqual(["succeeded"]);
+    expect(await connectionObservationCount(workspaceA, connectionId)).toBe(1);
+    expect(await names(connectionId)).toEqual([]);
+  });
+});
+
+describe("dataset checkpoint integration (#440)", () => {
+  it("resumes durable dataset pages with the connection cursor and publishes only at completion", async () => {
+    const connectionId = await seedConnection(workspaceA, "flaky-pages");
+    flakyShouldFail = true;
+    const jobId = randomUUID();
+    await expect(
+      runAttempt("connection.sync", workspaceA, connectionId, 1, jobId),
+    ).rejects.toThrow("provider exploded");
+    const staged =
+      await activityProbe!`select (select count(*)::int from data_pages p join data_refreshes r on p.refresh_id=r.id join data_datasets d on d.id=r.dataset_id where d.connection_id=${connectionId}) as pages,(select count(*)::int from data_generations g join data_datasets d on d.id=g.dataset_id where d.connection_id=${connectionId}) as generations`;
+    expect(staged[0]?.pages).toBe(1);
+    expect(staged[0]?.generations).toBe(0);
+    expect((await stateFor(workspaceA, connectionId))?.cursor).toBe("page-2");
+    flakyShouldFail = false;
+    await runAttempt("connection.sync", workspaceA, connectionId, 2, jobId);
+    const rows =
+      await activityProbe!`select r.values from data_records r join data_generations g on g.id=r.generation_id join data_datasets d on d.id=g.dataset_id where d.connection_id=${connectionId} order by r.record_key`;
+    expect(rows.map((r) => r.values)).toEqual([
+      { id: "one", amount: "10.25" },
+      { id: "two", amount: "20.00" },
+    ]);
+  });
+});

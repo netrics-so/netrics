@@ -1,0 +1,643 @@
+import {
+  dashboardWidgetInputSchema,
+  type DashboardWidget,
+  type WorkspaceMetric,
+} from "@netrics/contracts";
+import {
+  CURRENCY_DIMENSION,
+  RESOURCE_DIMENSION,
+  SUPPORTED_LOCALES,
+  STUDIO_LABEL_MAX_LINES,
+  allResourcesName,
+  countdownLabel,
+  isDataWidgetType,
+  labelFit,
+  reviewWidgetLabel,
+  tileLabel,
+  type Locale,
+  type ResourceNoun,
+  type StudioLabelFit,
+  type WidgetType,
+} from "@netrics/domain";
+
+import type { NewWidget, WidgetPatch } from "./studio-document";
+import { pickableMetrics } from "./format-metric";
+import { webTranslator } from "./i18n/catalogs";
+import { gaugeLabel } from "./studio-gauge";
+import { newWidget } from "./studio-new-widget";
+import { needsCurrency, type CurrencyChoice } from "./tile-currency";
+import type { DataWidget } from "./studio-widgets";
+
+// The Studio inspector's rules (ADR 0015 sections 2 and 9; #225): which
+// metrics, dimensions and types a widget can use, what a change keeps, and
+// how its label reads on a TV. Pure, so the inspector is tested without a
+// browser; the components only render these choices.
+
+/** A widget of any type without its id and placement. */
+type WidgetFields = NewWidget;
+
+export function metricIdOf(metric: {
+  connectionId: string;
+  key: string;
+}): string {
+  return `${metric.connectionId}|${metric.key}`;
+}
+
+export function findMetric(
+  metrics: readonly WorkspaceMetric[],
+  widget: { connectionId: string; metricKey: string },
+): WorkspaceMetric | undefined {
+  return metrics.find(
+    (metric) =>
+      metric.connectionId === widget.connectionId &&
+      metric.key === widget.metricKey,
+  );
+}
+
+/**
+ * Dimensions a bar can group by: the metric's own, resources first, never
+ * the currency (amounts are grouped within one currency or converted).
+ */
+export function groupByOptions(metric: {
+  dimensions: readonly string[];
+}): string[] {
+  const options = metric.dimensions.filter(
+    (dimension) => dimension !== CURRENCY_DIMENSION,
+  );
+  return options.sort((a, b) =>
+    a === RESOURCE_DIMENSION ? -1 : b === RESOURCE_DIMENSION ? 1 : 0,
+  );
+}
+
+/** A widget that groups its metric by a dimension: a bar or a table. */
+export type GroupedWidget = Extract<DataWidget, { type: "bar" | "table" }>;
+
+export function isGroupedType(type: string): type is "bar" | "table" {
+  return type === "bar" || type === "table";
+}
+
+/** Metrics a data widget of `type` can show: bars and tables need a dimension. */
+export function metricsForType(
+  metrics: readonly WorkspaceMetric[],
+  type: WidgetType,
+): WorkspaceMetric[] {
+  const pickable = pickableMetrics(metrics);
+  return isGroupedType(type)
+    ? pickable.filter((metric) => groupByOptions(metric).length > 0)
+    : pickable;
+}
+
+/** Connections with at least one metric the widget type can show. */
+export function connectionsForType(
+  metrics: readonly WorkspaceMetric[],
+  type: WidgetType,
+): Array<{ id: string; name: string }> {
+  const seen = new Map<string, string>();
+  for (const metric of metricsForType(metrics, type)) {
+    if (!seen.has(metric.connectionId)) {
+      seen.set(metric.connectionId, metric.connectionName);
+    }
+  }
+  return [...seen].map(([id, name]) => ({ id, name }));
+}
+
+/**
+ * Dimensions a widget can filter on besides the resource and the currency
+ * (which have their own choices): "territory", "device", … A bar does not
+ * filter on what it groups by.
+ */
+export function filterDimensions(
+  metric: { dimensions: readonly string[] },
+  widget: DataWidget,
+): string[] {
+  const groupBy = isGroupedType(widget.type)
+    ? (widget as GroupedWidget).options.groupBy
+    : null;
+  return metric.dimensions.filter(
+    (dimension) =>
+      dimension !== RESOURCE_DIMENSION &&
+      dimension !== CURRENCY_DIMENSION &&
+      dimension !== groupBy,
+  );
+}
+
+/** "territory" → "Territory". */
+export function dimensionLabel(dimension: string): string {
+  const words = dimension.replace(/[_-]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** The groupBy a bar of `metric` starts with: one it does not filter on. */
+function startingGroupBy(
+  metric: WorkspaceMetric,
+  dimensions: Readonly<Record<string, string>>,
+  current: string | null,
+): { groupBy: string; dimensions: Record<string, string> } | null {
+  const options = groupByOptions(metric);
+  if (options.length === 0) return null;
+  const preferred =
+    (current && options.includes(current) ? current : null) ??
+    options.find((option) => dimensions[option] === undefined) ??
+    options[0]!;
+  // Grouping by a dimension the widget filters on would show one bar.
+  const { [preferred]: _grouped, ...rest } = dimensions;
+  return { groupBy: preferred, dimensions: rest };
+}
+
+/**
+ * The patch that binds a data widget to another metric: the aggregation
+ * when the metric offers it (else its default), filters on dimensions the
+ * metric still has, the currency choice only for amounts, and for a bar a
+ * dimension of the new metric to group by. Null when a bar cannot show
+ * the metric.
+ */
+export function bindMetricPatch(
+  widget: DataWidget,
+  metric: WorkspaceMetric,
+): WidgetPatch | null {
+  const sameResources =
+    widget.connectionId === metric.connectionId &&
+    metric.dimensions.includes(RESOURCE_DIMENSION);
+  const dimensions = Object.fromEntries(
+    Object.entries(widget.dimensions).filter(
+      ([dimension]) =>
+        metric.dimensions.includes(dimension) &&
+        (dimension !== RESOURCE_DIMENSION || sameResources) &&
+        (dimension !== CURRENCY_DIMENSION || needsCurrency(metric)),
+    ),
+  );
+  const aggregation = metric.aggregations.includes(widget.aggregation)
+    ? widget.aggregation
+    : metric.aggregations[0]!;
+  const base: WidgetPatch = {
+    connectionId: metric.connectionId,
+    metricKey: metric.key,
+    aggregation,
+    dimensions,
+    displayCurrency: needsCurrency(metric) ? widget.displayCurrency : null,
+    resourceName:
+      dimensions[RESOURCE_DIMENSION] !== undefined ? widget.resourceName : null,
+    allResourcesName:
+      dimensions[RESOURCE_DIMENSION] === undefined && sameResources
+        ? widget.allResourcesName
+        : null,
+  };
+  if (widget.type !== "bar" && widget.type !== "table") {
+    return base;
+  }
+  const grouped = startingGroupBy(metric, dimensions, widget.options.groupBy);
+  if (!grouped) return null;
+  return {
+    ...base,
+    dimensions: grouped.dimensions,
+    options: { ...widget.options, groupBy: grouped.groupBy },
+  } as WidgetPatch;
+}
+
+/** A bar's or table's patch for another groupBy: no filter on it. */
+export function groupByPatch(
+  widget: GroupedWidget,
+  groupBy: string,
+): WidgetPatch {
+  const { [groupBy]: _grouped, ...dimensions } = widget.dimensions;
+  return {
+    dimensions,
+    ...(groupBy === RESOURCE_DIMENSION ? { resourceName: null } : {}),
+    options: { ...widget.options, groupBy },
+  } as WidgetPatch;
+}
+
+/** The patch that shows one resource, or all of them added up. */
+export function resourcePatch(
+  widget: DataWidget,
+  resource: { id: string; name: string | null } | null,
+  allResourcesName: string | null,
+): WidgetPatch {
+  const { [RESOURCE_DIMENSION]: _resource, ...rest } = widget.dimensions;
+  return resource
+    ? {
+        dimensions: { ...rest, [RESOURCE_DIMENSION]: resource.id },
+        resourceName: resource.name,
+        allResourcesName: null,
+      }
+    : { dimensions: rest, resourceName: null, allResourcesName };
+}
+
+/**
+ * The scope a widget of all resources is named by ("All apps", #208),
+ * once its resources are known: a patch when the draft's name differs
+ * (a new widget has none until the server names it), else null.
+ */
+export function scopePatch(
+  widget: DataWidget,
+  resourceCount: number | null,
+  noun: ResourceNoun | null,
+  locale: Locale = "en",
+): WidgetPatch | null {
+  if (resourceCount === null || widget.dimensions[RESOURCE_DIMENSION]) {
+    return null;
+  }
+  // A name already saved in any language stays: opening the Studio in
+  // another language must not change the draft (names are content in the
+  // creator's language, ADR 0016 section 5; screens rebuild their labels).
+  if (
+    widget.allResourcesName !== null &&
+    SUPPORTED_LOCALES.some(
+      (other) =>
+        allResourcesName(noun, resourceCount, other) ===
+        widget.allResourcesName,
+    )
+  ) {
+    return null;
+  }
+  const scope = allResourcesName(noun, resourceCount, locale);
+  return scope === widget.allResourcesName ? null : { allResourcesName: scope };
+}
+
+/** The patch that filters on one value of a dimension, or none. */
+export function dimensionPatch(
+  widget: DataWidget,
+  dimension: string,
+  value: string | null,
+): WidgetPatch {
+  const { [dimension]: _old, ...rest } = widget.dimensions;
+  return {
+    dimensions: value === null ? rest : { ...rest, [dimension]: value },
+  };
+}
+
+/** The widget's currency choice (#191), as the tile editor named it. */
+export function currencyChoiceOf(
+  widget: Pick<DataWidget, "dimensions" | "displayCurrency">,
+): CurrencyChoice {
+  const only = widget.dimensions[CURRENCY_DIMENSION];
+  if (only) return { kind: "only", currency: only };
+  if (widget.displayCurrency) {
+    return { kind: "convert", currency: widget.displayCurrency };
+  }
+  return { kind: "workspace" };
+}
+
+/** The patch for a currency choice; other filters stay. */
+export function currencyPatch(
+  widget: DataWidget,
+  choice: CurrencyChoice,
+): WidgetPatch {
+  const { [CURRENCY_DIMENSION]: _old, ...rest } = widget.dimensions;
+  switch (choice.kind) {
+    case "workspace":
+      return { dimensions: rest, displayCurrency: null };
+    case "convert":
+      return { dimensions: rest, displayCurrency: choice.currency };
+    case "only":
+      return {
+        dimensions: { ...rest, [CURRENCY_DIMENSION]: choice.currency },
+        displayCurrency: null,
+      };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Compare: the denominator's binding block (ADR 0019 section 10)
+
+export type CompareWidget = Extract<DataWidget, { type: "compare" }>;
+
+/**
+ * The compare widget with its denominator as its binding, so the
+ * inspector's binding fields (metric, aggregation, resource, filters,
+ * currency) edit the denominator as they edit the numerator. The period
+ * and display currency stay the widget's: both sides share them.
+ */
+export function denominatorView(widget: CompareWidget): CompareWidget {
+  const { denominator } = widget;
+  return {
+    ...widget,
+    connectionId: denominator.connectionId,
+    metricKey: denominator.metricKey,
+    aggregation: denominator.aggregation,
+    dimensions: denominator.dimensions,
+    resourceName: denominator.resourceName,
+    allResourcesName: denominator.allResourcesName,
+  };
+}
+
+const DENOMINATOR_KEYS = [
+  "connectionId",
+  "metricKey",
+  "aggregation",
+  "dimensions",
+  "resourceName",
+  "allResourcesName",
+] as const;
+
+/**
+ * A patch made on `denominatorView` as a patch of the widget: binding
+ * fields go to `denominator`; the period and display currency are shared
+ * and stay top-level. Binding another metric never clears the shared
+ * display currency (only a currency choice changes it).
+ */
+export function denominatorPatch(
+  widget: CompareWidget,
+  patch: WidgetPatch,
+): WidgetPatch {
+  const fields = patch as Record<string, unknown>;
+  const denominator: Record<string, unknown> = { ...widget.denominator };
+  let changed = false;
+  for (const key of DENOMINATOR_KEYS) {
+    if (fields[key] !== undefined) {
+      denominator[key] = fields[key];
+      changed = true;
+    }
+  }
+  const shared: Record<string, unknown> = {};
+  if (fields.period !== undefined) shared.period = fields.period;
+  if (fields.displayCurrency !== undefined && fields.metricKey === undefined) {
+    shared.displayCurrency = fields.displayCurrency;
+  }
+  return {
+    ...shared,
+    ...(changed ? { denominator } : {}),
+  } as WidgetPatch;
+}
+
+// ---------------------------------------------------------------------------
+// Changing the type
+
+const BINDING_KEYS = [
+  "connectionId",
+  "metricKey",
+  "aggregation",
+  "period",
+  "dimensions",
+  "displayCurrency",
+  "resourceName",
+  "allResourcesName",
+] as const;
+
+/**
+ * The widget as another type, keeping what fits: the title always, the
+ * data binding between metric, line and bar, the alignment between text
+ * and image. A type that cannot be made says why (no metric to show, no
+ * image uploaded, a metric that cannot be broken down).
+ */
+export function convertWidget(
+  widget: DashboardWidget,
+  to: WidgetType,
+  context: {
+    models?: import("@netrics/contracts").PublishedModelCatalog["models"];
+    metrics: readonly WorkspaceMetric[];
+    imageIds: readonly string[];
+    locale: Locale;
+    /** The workspace's goals: a goal widget shows the first. */
+    goals?: ReadonlyArray<{ id: string; name: string }>;
+    /** Connections that keep review text (a latest review). */
+    reviewConnectionIds?: readonly string[];
+  },
+): { widget: WidgetFields } | { reason: string } {
+  const made = newWidget(to, context);
+  const { id: _id, x: _x, y: _y, w: _w, h: _h, ...current } = widget;
+  if (current.type === to) {
+    return { widget: current };
+  }
+  if (isDataWidgetType(to) && isDataWidgetType(widget.type)) {
+    const data = widget as DataWidget;
+    const binding = Object.fromEntries(
+      BINDING_KEYS.map((key) => [key, data[key]]),
+    );
+    const fields = {
+      type: to,
+      title: widget.title,
+      ...binding,
+    } as Record<string, unknown>;
+    if (to === "metric") {
+      return {
+        widget: {
+          ...fields,
+          options: { showSparkline: true, showChange: true },
+        } as WidgetFields,
+      };
+    }
+    if (to === "line") {
+      return {
+        widget: {
+          ...fields,
+          options: { showPrevious: true, showAxis: true },
+        } as WidgetFields,
+      };
+    }
+    if (to === "compare") {
+      // The binding becomes the numerator; the denominator is a new
+      // widget's (ADR 0019 section 10).
+      if ("reason" in made || made.widget.type !== "compare") {
+        return "reason" in made
+          ? made
+          : {
+              reason: webTranslator(
+                context.locale,
+                "studio.newWidget",
+              )("noMetrics"),
+            };
+      }
+      return {
+        widget: {
+          ...fields,
+          denominator: made.widget.denominator,
+          options: made.widget.options,
+        } as WidgetFields,
+      };
+    }
+    const metric = findMetric(context.metrics, data);
+    const previous = isGroupedType(widget.type)
+      ? (widget as GroupedWidget).options
+      : null;
+    const grouped = metric
+      ? startingGroupBy(metric, data.dimensions, previous?.groupBy ?? null)
+      : null;
+    if (!grouped) {
+      return {
+        reason: webTranslator(
+          context.locale,
+          "studio.newWidget",
+        )("notBreakable"),
+      };
+    }
+    return {
+      widget: {
+        ...fields,
+        dimensions: grouped.dimensions,
+        ...(grouped.groupBy === RESOURCE_DIMENSION
+          ? { resourceName: null }
+          : {}),
+        options:
+          to === "table"
+            ? {
+                groupBy: grouped.groupBy,
+                limit: previous?.limit ?? 5,
+                showChange: true,
+                showOthers: false,
+              }
+            : { groupBy: grouped.groupBy, limit: previous?.limit ?? 5 },
+      } as WidgetFields,
+    };
+  }
+  if ("reason" in made) {
+    return made;
+  }
+  const next = { ...made.widget, title: widget.title } as WidgetFields;
+  // Alignment carries over between text and image.
+  if (
+    (next.type === "text" || next.type === "image") &&
+    (widget.type === "text" || widget.type === "image")
+  ) {
+    (next.options as { align: string }).align = widget.options.align;
+  }
+  if (next.type === "text" && widget.title) {
+    next.text = widget.title;
+  }
+  return { widget: next };
+}
+
+// ---------------------------------------------------------------------------
+// Label and validation
+
+export interface LabelPreview {
+  /** What the widget shows as its label. */
+  label: string;
+  /** The default label, without a title override. */
+  defaultLabel: string;
+  fit: StudioLabelFit;
+  /** Set when the label would be cut on a TV at the widget's size. */
+  warning: string | null;
+}
+
+/**
+ * The effective label of a data widget ("Downloads · All apps", the title
+ * when it has one) and whether it fits at its size on a 1080p TV; null for
+ * widgets without a label.
+ */
+export function labelPreview(
+  widget: DashboardWidget,
+  metric: { name: string } | undefined,
+  locale: Locale,
+  fontScale = 1,
+): LabelPreview | null {
+  if (widget.type === "review") {
+    const resourceName = widget.dimensions[RESOURCE_DIMENSION]
+      ? widget.resourceName
+      : null;
+    const label = reviewWidgetLabel(
+      { title: widget.title?.trim() || null, resourceName },
+      locale,
+    );
+    const fit = labelFit(label, widget, { fontScale });
+    return {
+      label,
+      defaultLabel: reviewWidgetLabel({ title: null, resourceName }, locale),
+      fit,
+      warning: fit.fits
+        ? null
+        : webTranslator(locale, "studio.readability")("labelWarning", {
+            lines: Math.max(fit.titleLines, fit.resourceLines),
+            max: STUDIO_LABEL_MAX_LINES,
+          }),
+    };
+  }
+  if (widget.type === "gauge") {
+    // The title, else the goal's name (ADR 0019 section 2).
+    const defaultLabel = gaugeLabel(
+      { title: null, goalName: widget.goalName },
+      locale,
+    );
+    const label = gaugeLabel(widget, locale);
+    const fit = labelFit(label, widget, { fontScale });
+    return {
+      label,
+      defaultLabel,
+      fit,
+      warning: fit.fits
+        ? null
+        : webTranslator(locale, "studio.readability")("labelWarning", {
+            lines: Math.max(fit.titleLines, fit.resourceLines),
+            max: STUDIO_LABEL_MAX_LINES,
+          }),
+    };
+  }
+  if (widget.type === "countdown") {
+    // Its title, else "Countdown" (ADR 0019 section 8).
+    const label = countdownLabel(widget.title, locale);
+    const fit = labelFit(label, widget, { fontScale });
+    return {
+      label,
+      defaultLabel: countdownLabel(null, locale),
+      fit,
+      warning: fit.fits
+        ? null
+        : webTranslator(locale, "studio.readability")("labelWarning", {
+            lines: Math.max(fit.titleLines, fit.resourceLines),
+            max: STUDIO_LABEL_MAX_LINES,
+          }),
+    };
+  }
+  if (!isDataWidgetType(widget.type)) {
+    return null;
+  }
+  const data = widget as DataWidget;
+  const parts = {
+    metricName: metric?.name ?? data.metricKey,
+    dimensions: data.dimensions,
+    resourceName: data.resourceName,
+    allResourcesName: data.allResourcesName,
+  };
+  const title = data.title?.trim() || null;
+  const label = tileLabel({ title, ...parts });
+  const fit = labelFit(label, widget, { fontScale });
+  const lines = Math.max(fit.titleLines, fit.resourceLines);
+  return {
+    label,
+    defaultLabel: tileLabel({ title: null, ...parts }),
+    fit,
+    warning: fit.fits
+      ? null
+      : webTranslator(locale, "studio.readability")("labelWarning", {
+          lines,
+          max: STUDIO_LABEL_MAX_LINES,
+        }),
+  };
+}
+
+/**
+ * What the API would refuse in the widget's fields (options per type, the
+ * text, the title), as one message, or null. Placement is checked
+ * separately (documentProblems).
+ */
+export function widgetInputProblem(widget: DashboardWidget): string | null {
+  const {
+    resourceName: _resourceName,
+    allResourcesName: _allResourcesName,
+    ...input
+  } = widget as DashboardWidget & {
+    resourceName?: unknown;
+    allResourcesName?: unknown;
+  };
+  const result = dashboardWidgetInputSchema.safeParse({
+    ...input,
+    title: widget.title?.trim() || null,
+  });
+  if (result.success) {
+    return null;
+  }
+  const issue = result.error.issues[0]!;
+  const path = issue.path.join(".");
+  return path ? `${path}: ${issue.message}` : issue.message;
+}
+
+/** The time zones a clock can show (IANA), workspace's first. */
+export function clockTimeZones(workspaceTimeZone: string): string[] {
+  let zones: string[];
+  try {
+    zones = Intl.supportedValuesOf("timeZone");
+  } catch {
+    zones = [];
+  }
+  return [workspaceTimeZone, ...zones.filter((z) => z !== workspaceTimeZone)];
+}

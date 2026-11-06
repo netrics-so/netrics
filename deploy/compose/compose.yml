@@ -14,7 +14,7 @@ x-server: &server
 
 services:
   postgres:
-    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
     restart: unless-stopped
     environment:
       POSTGRES_USER: netrics
@@ -58,6 +58,19 @@ services:
       NETRICS_SETUP_TOKEN: ${NETRICS_SETUP_TOKEN:-}
       SMTP_URL: ${SMTP_URL:-}
       MAIL_FROM: ${MAIL_FROM:-}
+      NETRICS_OAUTH_GOOGLE_CLIENT_ID: ${NETRICS_OAUTH_GOOGLE_CLIENT_ID:-}
+      NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: ${NETRICS_OAUTH_GOOGLE_CLIENT_SECRET:-}
+      NETRICS_PROXY_SECRET: ${NETRICS_PROXY_SECRET:-}
+      # Display currency (#191): "ecb" (default) or "off". Set the same on
+      # the scheduler.
+      NETRICS_EXCHANGE_RATES: ${NETRICS_EXCHANGE_RATES:-ecb}
+      # Default language (ADR 0016): "en" (unset) or "de". Set the same on
+      # the web app.
+      NETRICS_DEFAULT_LOCALE: ${NETRICS_DEFAULT_LOCALE:-}
+      # Workspace image quota (#217): images and MiB per workspace.
+      NETRICS_IMAGE_QUOTA_COUNT: ${NETRICS_IMAGE_QUOTA_COUNT:-100}
+      NETRICS_IMAGE_QUOTA_MIB: ${NETRICS_IMAGE_QUOTA_MIB:-50}
+      NETRICS_DATA_POLICY: ${NETRICS_DATA_POLICY:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   worker:
@@ -68,6 +81,10 @@ services:
       DATABASE_SCHEDULER_URL: postgres://netrics_scheduler:${NETRICS_SCHEDULER_DB_PASSWORD}@postgres:5432/netrics
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
       APP_ENCRYPTION_KEYS_PREVIOUS: ${APP_ENCRYPTION_KEYS_PREVIOUS:-}
+      # The worker refreshes OAuth access tokens, so it needs the clients too.
+      NETRICS_DATA_POLICY: ${NETRICS_DATA_POLICY:-}
+      NETRICS_OAUTH_GOOGLE_CLIENT_ID: ${NETRICS_OAUTH_GOOGLE_CLIENT_ID:-}
+      NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: ${NETRICS_OAUTH_GOOGLE_CLIENT_SECRET:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   scheduler:
@@ -75,6 +92,9 @@ services:
     environment:
       NETRICS_ROLE: scheduler
       DATABASE_SCHEDULER_URL: postgres://netrics_scheduler:${NETRICS_SCHEDULER_DB_PASSWORD}@postgres:5432/netrics
+      # Fetches the ECB reference rates daily unless "off" (no request to
+      # the ECB then).
+      NETRICS_EXCHANGE_RATES: ${NETRICS_EXCHANGE_RATES:-ecb}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   web:
@@ -82,6 +102,8 @@ services:
     restart: unless-stopped
     environment:
       NETRICS_API_URL: http://api:3001
+      NETRICS_PROXY_SECRET: ${NETRICS_PROXY_SECRET:-}
+      NETRICS_DEFAULT_LOCALE: ${NETRICS_DEFAULT_LOCALE:-}
     depends_on:
       - api
 
@@ -107,7 +129,7 @@ services:
   #   docker compose --profile backup up -d
   backup:
     profiles: ["backup"]
-    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
     restart: unless-stopped
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}

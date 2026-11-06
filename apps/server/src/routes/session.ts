@@ -5,6 +5,7 @@ import {
   bootstrapResponseSchema,
   errorResponseSchema,
   meResponseSchema,
+  updateMeRequestSchema,
 } from "@netrics/contracts";
 import {
   BOOTSTRAP_CONFLICT_SQLSTATE,
@@ -12,10 +13,14 @@ import {
   findUserById,
   hasSqlstate,
   listMembershipsForUser,
+  setUserLocale,
   type Database,
+  type DomainUser,
 } from "@netrics/database";
+import { isLocale } from "@netrics/domain";
 
 import type { AuthService, SessionIdentity } from "../auth/index.js";
+import { parseBody } from "./access.js";
 import { routeSchema } from "./openapi.js";
 
 declare module "fastify" {
@@ -49,6 +54,20 @@ export function createRequireSession(authService: AuthService) {
   };
 }
 
+async function meResponse(db: Database, user: DomainUser) {
+  const memberships = await listMembershipsForUser(db, user.id);
+  return meResponseSchema.parse({
+    user: {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      // A language this version no longer speaks reads as unset.
+      locale: isLocale(user.locale) ? user.locale : null,
+    },
+    memberships,
+  });
+}
+
 /**
  * Session-protected routes under /v1. The plugin scope encapsulates the
  * requireSession preHandler so public routes (health, /api/auth/*) are
@@ -80,15 +99,36 @@ export function registerSessionRoutes(
           if (!user) {
             return unauthorized(reply);
           }
-          const memberships = await listMembershipsForUser(deps.db, user.id);
-          return meResponseSchema.parse({
-            user: {
-              id: user.id,
-              email: user.email,
-              displayName: user.displayName,
-            },
-            memberships,
-          });
+          return meResponse(deps.db, user);
+        },
+      );
+
+      scope.patch(
+        "/me",
+        {
+          schema: routeSchema({
+            summary: "Change the current user's language",
+            tags: ["session"],
+            body: updateMeRequestSchema,
+            response: meResponseSchema,
+          }),
+        },
+        async (request, reply) => {
+          const identity = request.sessionIdentity!;
+          const body = parseBody(updateMeRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          // Only the caller's own row: the id comes from the session.
+          const user = await setUserLocale(
+            deps.db,
+            identity.domainUserId,
+            body.locale,
+          );
+          if (!user) {
+            return unauthorized(reply);
+          }
+          return meResponse(deps.db, user);
         },
       );
 

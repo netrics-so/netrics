@@ -1,12 +1,18 @@
+import { sourceDatasetSchema } from "@netrics/connector-sdk";
 import type {
   CheckResult,
   ConnectionContext,
   Connector,
   ConnectorManifest,
+  ConnectorDatasetStaging,
   Observation,
   SyncRequest,
   SyncResult,
 } from "@netrics/connector-sdk";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { gunzipSync, gzipSync } from "node:zlib";
+
 import { describe, expect, it } from "vitest";
 
 import { demoManifest } from "@netrics/connectors";
@@ -15,7 +21,9 @@ import {
   ContractViolationError,
   executeCheck,
   executeDiscover,
+  executeResourceIcons,
   executeSync,
+  supportsResourceIcons,
 } from "./execute.js";
 
 const baseContext: ConnectionContext = {
@@ -96,6 +104,52 @@ describe("executeSync", () => {
     );
   });
 
+  describe("review text (SDK 0.2.8)", () => {
+    const review = {
+      id: "r1",
+      resource: "demo-site-1",
+      rating: 5,
+      title: "Private title text",
+      body: "Private body text",
+      author: "private-nickname",
+      territory: "DE",
+      createdAt: "2026-10-01T10:00:00.000Z",
+    };
+
+    it("passes reviews and review windows through", async () => {
+      const window = {
+        resource: "demo-site-1",
+        from: "2026-09-01T00:00:00.000Z",
+        to: "2026-10-02T00:00:00.000Z",
+      };
+      const connector = connectorWith(demoManifest, () => ({
+        observations: [],
+        reviews: [review],
+        reviewWindows: [window],
+        done: true,
+      }));
+      const result = await executeSync(connector, baseContext, request);
+      expect(result.reviews).toEqual([review]);
+      expect(result.reviewWindows).toEqual([window]);
+    });
+
+    it("rejects a malformed review without repeating its text", async () => {
+      const connector = connectorWith(demoManifest, () => ({
+        observations: [],
+        reviews: [{ ...review, rating: 6, territory: "Germany" }],
+        done: true,
+      }));
+      const error = await executeSync(connector, baseContext, request).then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(ContractViolationError);
+      const message = (error as Error).message;
+      expect(message).toMatch(/reviews\.0\.rating/);
+      expect(message).not.toMatch(/Private|private-nickname|Germany/);
+    });
+  });
+
   it("rejects observations with undeclared dimensions", async () => {
     const connector = connectorWith(demoManifest, () => ({
       observations: [
@@ -106,6 +160,56 @@ describe("executeSync", () => {
     await expect(executeSync(connector, baseContext, request)).rejects.toThrow(
       /undeclared dimension "country"/,
     );
+  });
+
+  describe("currency_minor amounts", () => {
+    const manifest: ConnectorManifest = {
+      ...demoManifest,
+      metrics: [
+        {
+          key: "demo.proceeds",
+          name: "Proceeds",
+          description: "Proceeds per currency.",
+          kind: "delta",
+          unit: "currency_minor",
+          granularity: "day",
+          dimensions: ["resource", "currency"],
+          aggregations: ["sum"],
+        },
+      ],
+    };
+    const amount = (dimensions: Record<string, string>, value = 1234) =>
+      observation({ metricKey: "demo.proceeds", dimensions, value });
+    const run = (observations: Observation[]) =>
+      executeSync(
+        connectorWith(manifest, () => ({ observations, done: true })),
+        baseContext,
+        request,
+      );
+
+    it("accepts integer minor units with an ISO 4217 currency", async () => {
+      const result = await run([
+        amount({ resource: "app-1", currency: "EUR" }),
+        amount({ resource: "app-1", currency: "JPY" }, 500),
+      ]);
+      expect(result.observations).toHaveLength(2);
+    });
+
+    it.each([
+      ["no currency", { resource: "app-1" }],
+      ["a lowercase code", { resource: "app-1", currency: "eur" }],
+      ["a name", { resource: "app-1", currency: "Euro" }],
+    ])("rejects an amount with %s", async (_label, dimensions) => {
+      await expect(run([amount(dimensions)])).rejects.toThrow(
+        /without an ISO 4217 "currency" dimension/,
+      );
+    });
+
+    it("rejects fractional minor units", async () => {
+      await expect(
+        run([amount({ resource: "app-1", currency: "EUR" }, 12.5)]),
+      ).rejects.toThrow(/not in integer minor units/);
+    });
   });
 
   it("rejects malformed transport objects", async () => {
@@ -236,6 +340,144 @@ describe("executeDiscover", () => {
 });
 
 describe("runtime capabilities", () => {
+  it.each(["get", "getPage"] as const)(
+    "preserves trusted host %s contract failures while dropping credential-bearing details",
+    async (operation) => {
+      const secret = "private-credential-value";
+      const context = { ...baseContext, credentials: { token: secret } };
+      const original = Object.assign(
+        new ContractViolationError(`invalid staged input ${secret}`, {
+          cause: new Error(`storage detail ${secret}`),
+        }),
+        { code: "dataset_stage_integrity", details: { credential: secret } },
+      );
+      const connector: Connector = {
+        ...connectorWith(demoManifest),
+        async sync(_context, _request, runtime) {
+          if (operation === "get") await runtime.datasetStaging!.get("report");
+          else
+            await runtime.datasetStaging!.getPage(
+              "e859be5d-03b1-432c-83d0-b46ef045c142",
+              "page-1",
+            );
+          return { observations: [], done: true };
+        },
+      };
+      const failure: unknown = await executeSync(connector, context, request, {
+        datasetStaging: () => ({
+          async get() {
+            throw original;
+          },
+          async getPage() {
+            throw original;
+          },
+          async put() {
+            throw new Error("unused");
+          },
+        }),
+      }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(ContractViolationError);
+      expect(failure).not.toBe(original);
+      expect((failure as Error).message).toBe(
+        "invalid staged input [redacted]",
+      );
+      expect((failure as Error).stack).not.toContain(secret);
+      expect(failure).not.toHaveProperty("cause");
+      expect(failure).not.toHaveProperty("code");
+      expect(failure).not.toHaveProperty("details");
+    },
+  );
+
+  it.each(["name", "code", "message"] as const)(
+    "keeps a generic capability failure retryable when its %s impersonates a contract error",
+    async (identifier) => {
+      const secret = "private-credential-value";
+      const context = { ...baseContext, credentials: { token: secret } };
+      const message =
+        identifier === "message"
+          ? `ContractViolationError dataset_stage_integrity ${secret}`
+          : `storage failed ${secret}`;
+      const original = Object.assign(
+        new Error(message, { cause: new Error(`private cause ${secret}`) }),
+        { details: { credential: secret } },
+        identifier === "code" ? { code: "dataset_stage_integrity" } : {},
+      );
+      if (identifier === "name") original.name = "ContractViolationError";
+      const connector: Connector = {
+        ...connectorWith(demoManifest),
+        async sync(_context, _request, runtime) {
+          await runtime.datasetStaging!.getPage(
+            "e859be5d-03b1-432c-83d0-b46ef045c142",
+            "page-1",
+          );
+          return { observations: [], done: true };
+        },
+      };
+      const failure: unknown = await executeSync(connector, context, request, {
+        datasetStaging: () => ({
+          async get() {
+            return null;
+          },
+          async getPage() {
+            throw original;
+          },
+          async put() {
+            throw new Error("unused");
+          },
+        }),
+      }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure).not.toBeInstanceOf(ContractViolationError);
+      expect(failure).not.toBe(original);
+      expect((failure as Error).message).toBe(
+        message.replace(secret, "[redacted]"),
+      );
+      expect((failure as Error).stack).not.toContain(secret);
+      expect(failure).not.toHaveProperty("cause");
+      expect(failure).not.toHaveProperty("code");
+      expect(failure).not.toHaveProperty("details");
+    },
+  );
+
+  it("passes optional connection staging the call signal and revokes it after completion", async () => {
+    let staged: ConnectorDatasetStaging | undefined;
+    let calls = 0;
+    const connector: Connector = {
+      ...connectorWith(demoManifest),
+      async sync(_context, _request, runtime) {
+        expect(runtime.datasetStaging).toBeDefined();
+        staged = runtime.datasetStaging;
+        expect(await staged!.get("report")).toBeNull();
+        return { observations: [], done: true };
+      },
+    };
+    await executeSync(connector, baseContext, request, {
+      datasetStaging: (signal) => ({
+        async get() {
+          signal.throwIfAborted();
+          calls++;
+          return null;
+        },
+        async getPage() {
+          signal.throwIfAborted();
+          throw new Error("unused");
+        },
+        async put() {
+          signal.throwIfAborted();
+          throw new Error("unused");
+        },
+      }),
+    });
+    await expect(staged!.get("report")).rejects.toThrow();
+    expect(calls).toBe(1);
+  });
+
   it("times out a connector call even when the connector ignores the signal", async () => {
     const hanging: Connector = {
       ...connectorWith(demoManifest),
@@ -280,4 +522,313 @@ describe("runtime capabilities", () => {
       /not in the connector's outboundDomains/,
     );
   });
+
+  it("reports response statuses to the host, without bodies", async () => {
+    // ADR 0012: the host notices a provider 401 to refresh the token.
+    const server = createServer((req, res) => {
+      res.writeHead(req.url === "/denied" ? 401 : 200);
+      res.end("body");
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    try {
+      const statuses: number[] = [];
+      const caller: Connector = {
+        ...connectorWith({ ...demoManifest, outboundDomains: ["127.0.0.1"] }),
+        sync: async (_context, _request, runtime) => {
+          await runtime.fetch(`http://127.0.0.1:${port}/ok`);
+          await runtime.fetch(`http://127.0.0.1:${port}/denied`);
+          return { observations: [], done: true };
+        },
+      };
+      await executeSync(caller, baseContext, request, {
+        onResponse: (status) => statuses.push(status),
+        egress: { allowInsecureHttp: true, allowPrivateAddresses: true },
+      });
+      expect(statuses).toEqual([200, 401]);
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe("binary bodies (SDK 0.2.2)", () => {
+  // The bounded-gunzip pattern from the connector docs: the response cap
+  // bounds the compressed bytes, and maxOutputLength bounds what they
+  // inflate to.
+  const MAX_INFLATED_BYTES = 1024 * 1024;
+  function inflate(bytes: Uint8Array): string {
+    try {
+      return gunzipSync(bytes, {
+        maxOutputLength: MAX_INFLATED_BYTES,
+      }).toString("utf8");
+    } catch (error) {
+      if ((error as { code?: string }).code === "ERR_BUFFER_TOO_LARGE") {
+        throw new Error(
+          `report exceeds ${MAX_INFLATED_BYTES} bytes when decompressed`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+  }
+
+  async function withGzipServer(
+    bodies: Record<string, Buffer>,
+    run: (port: number) => Promise<void>,
+  ) {
+    const server = createServer((req, res) => {
+      const body = bodies[req.url ?? ""];
+      res.writeHead(body ? 200 : 404, { "content-type": "application/a-gzip" });
+      res.end(body);
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    try {
+      await run((server.address() as AddressInfo).port);
+    } finally {
+      server.close();
+    }
+  }
+
+  function gzipReader(port: number, path: string): Connector {
+    return {
+      ...connectorWith({ ...demoManifest, outboundDomains: ["127.0.0.1"] }),
+      sync: async (_context, _request, runtime) => {
+        const response = await runtime.fetch(`http://127.0.0.1:${port}${path}`);
+        const units = Number(inflate(response.bytes()).split("\t")[1]);
+        return {
+          observations: [observation({ value: units })],
+          done: true,
+        };
+      },
+    };
+  }
+
+  const egress = { allowInsecureHttp: true, allowPrivateAddresses: true };
+
+  it("lets a connector inflate a gzip report it fetched", async () => {
+    await withGzipServer(
+      { "/report.gz": gzipSync("units\t42\n") },
+      async (port) => {
+        const result = await executeSync(
+          gzipReader(port, "/report.gz"),
+          baseContext,
+          request,
+          { egress },
+        );
+        expect(result.observations[0]?.value).toBe(42);
+      },
+    );
+  });
+
+  it("fails a gzip bomb as a provider error, not a crash or contract violation", async () => {
+    // About 16 KiB on the wire, well under the response cap, but 16 MiB
+    // once inflated.
+    const bomb = gzipSync(Buffer.alloc(16 * 1024 * 1024));
+    expect(bomb.byteLength).toBeLessThan(64 * 1024);
+    await withGzipServer({ "/bomb.gz": bomb }, async (port) => {
+      const failure = await executeSync(
+        gzipReader(port, "/bomb.gz"),
+        baseContext,
+        request,
+        { egress },
+      ).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure).not.toBeInstanceOf(ContractViolationError);
+      expect((failure as Error).message).toMatch(
+        /exceeds 1048576 bytes when decompressed/,
+      );
+    });
+  });
+});
+
+describe("executeResourceIcons (SDK 0.2.5)", () => {
+  const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+  const iconsRequest = { resources: [{ id: "app-1" }, { id: "app-2" }] };
+
+  function withIcons(icons: unknown): Connector {
+    return {
+      ...connectorWith(demoManifest),
+      resourceIcons: async () => icons as never,
+    };
+  }
+
+  it("returns no icons for a connector without the capability", async () => {
+    const plain = connectorWith(demoManifest);
+    expect(supportsResourceIcons(plain)).toBe(false);
+    await expect(
+      executeResourceIcons(plain, baseContext, iconsRequest),
+    ).resolves.toEqual([]);
+  });
+
+  it("decodes the icons a connector returns", async () => {
+    const connector = withIcons({
+      icons: [
+        {
+          resourceId: "app-2",
+          contentType: "image/png",
+          data: png.toString("base64"),
+        },
+      ],
+    });
+    expect(supportsResourceIcons(connector)).toBe(true);
+    const icons = await executeResourceIcons(
+      connector,
+      baseContext,
+      iconsRequest,
+    );
+    expect(icons).toHaveLength(1);
+    expect(icons[0]!.resourceId).toBe("app-2");
+    expect(icons[0]!.contentType).toBe("image/png");
+    expect(Buffer.compare(icons[0]!.bytes, png)).toBe(0);
+  });
+
+  it("refuses icons for resources it did not ask for", async () => {
+    const connector = withIcons({
+      icons: [
+        {
+          resourceId: "someone-else",
+          contentType: "image/png",
+          data: png.toString("base64"),
+        },
+      ],
+    });
+    await expect(
+      executeResourceIcons(connector, baseContext, iconsRequest),
+    ).rejects.toThrow(ContractViolationError);
+  });
+
+  it("refuses non-raster types, invalid base64 and oversized icons", async () => {
+    for (const icon of [
+      { resourceId: "app-1", contentType: "image/svg+xml", data: "PHN2Zz4=" },
+      { resourceId: "app-1", contentType: "image/png", data: "not base64!" },
+      {
+        resourceId: "app-1",
+        contentType: "image/png",
+        data: Buffer.alloc(1_048_577, 1).toString("base64"),
+      },
+    ]) {
+      await expect(
+        executeResourceIcons(withIcons({ icons: [icon] }), baseContext, {
+          resources: [{ id: "app-1" }],
+        }),
+      ).rejects.toThrow(ContractViolationError);
+    }
+  });
+
+  it("refuses an invalid request before calling the connector", async () => {
+    let called = false;
+    const connector: Connector = {
+      ...connectorWith(demoManifest),
+      resourceIcons: async () => {
+        called = true;
+        return { icons: [] };
+      },
+    };
+    await expect(
+      executeResourceIcons(connector, baseContext, { resources: [] }),
+    ).rejects.toThrow(ContractViolationError);
+    await expect(
+      executeResourceIcons(connector, baseContext, {
+        resources: [{ id: "app-1", territories: ["usa"] }],
+      }),
+    ).rejects.toThrow(ContractViolationError);
+    expect(called).toBe(false);
+  });
+
+  it("keeps the egress allowlist: an undeclared host is a broken connector", async () => {
+    const sneaky: Connector = {
+      ...connectorWith(demoManifest),
+      resourceIcons: async (_context, _request, runtime) => {
+        await runtime.fetch("https://is6-ssl.mzstatic.com/icon.png");
+        return { icons: [] };
+      },
+    };
+    await expect(
+      executeResourceIcons(sneaky, baseContext, iconsRequest),
+    ).rejects.toThrow(/not in the connector's outboundDomains/);
+  });
+});
+
+describe("dataset transport validation (#440)", () => {
+  it("rejects undeclared and incorrectly typed pages without echoing source values", async () => {
+    const definition = sourceDatasetSchema.parse({
+      key: "events",
+      name: "Events",
+      version: 1,
+      keyFields: ["id"],
+      grain: "one event",
+      mode: "upsert",
+      fields: [
+        {
+          id: "id",
+          name: "ID",
+          type: "string",
+          nullable: false,
+          classification: "internal",
+        },
+      ],
+    });
+    const page = {
+      datasetKey: "events",
+      schemaVersion: 1,
+      refreshKey: "r",
+      pageKey: "p",
+      previousPageKey: null,
+      complete: true,
+      records: [{ values: { id: 123456789 } }],
+    };
+    await expect(
+      executeSync(
+        connectorWith(demoManifest, () => ({
+          observations: [],
+          datasetPages: [page],
+          done: true,
+        })),
+        baseContext,
+        request,
+      ),
+    ).rejects.toThrow("Undeclared source dataset");
+    await expect(
+      executeSync(
+        connectorWith({ ...demoManifest, datasets: [definition] }, () => ({
+          observations: [],
+          datasetPages: [page],
+          done: true,
+        })),
+        baseContext,
+        request,
+      ),
+    ).rejects.toThrow("Invalid dataset field type: id");
+  });
+});
+
+it("does not accept a successful final sync with an incomplete dataset page", async () => {
+  const p = {
+    datasetKey: "events",
+    schemaVersion: 1,
+    refreshKey: "r",
+    pageKey: "p",
+    previousPageKey: null,
+    complete: false,
+    records: [],
+  };
+  await expect(
+    executeSync(
+      connectorWith(demoManifest, () => ({
+        observations: [],
+        datasetPages: [p],
+        done: true,
+      })),
+      baseContext,
+      request,
+    ),
+  ).rejects.toThrow("Final sync page contains an incomplete dataset refresh");
 });

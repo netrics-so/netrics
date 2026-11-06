@@ -1,0 +1,58 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/post-keywords-query), checked 2026-10-29; IDs and texts are synthetic. The keywords of the ad groups in adgroups-4100000001.json, by ID ascending; the fake answers the adGroupId IN filter from them. 7100000002 is deleted (left out of the names; its stored name stays). TO BE CONFIRMED by #370: IDs arrive as JSON numbers, the query takes adGroupId IN with numbers, pages like /v1/adgroups/query, and needs the ad account's X-AP-Context.",
+  "result": [
+    {
+      "id": 7100000001,
+      "adAccountId": 4100000001,
+      "campaignId": 5100000001,
+      "adGroupId": 6100000001,
+      "text": "wurfel",
+      "matchType": "EXACT",
+      "bid": {
+        "amount": "1.50",
+        "currency": "USD"
+      },
+      "status": "ACTIVE",
+      "deleted": false,
+      "creationTime": "2026-01-01T08:05:00.000",
+      "modificationTime": "2026-02-01T08:05:00.000"
+    },
+    {
+      "id": 7100000002,
+      "adAccountId": 4100000001,
+      "campaignId": 5100000001,
+      "adGroupId": 6100000001,
+      "text": "dice game",
+      "matchType": "EXACT",
+      "bid": {
+        "amount": "1.50",
+        "currency": "USD"
+      },
+      "status": "PAUSED",
+      "deleted": true,
+      "creationTime": "2026-01-01T08:05:00.000",
+      "modificationTime": "2026-02-01T08:05:00.000"
+    },
+    {
+      "id": 7100000004,
+      "adAccountId": 4100000001,
+      "campaignId": 5100000003,
+      "adGroupId": 6100000004,
+      "text": "board game dice",
+      "matchType": "BROAD",
+      "bid": {
+        "amount": "1.50",
+        "currency": "USD"
+      },
+      "status": "ACTIVE",
+      "deleted": false,
+      "creationTime": "2026-01-01T08:05:00.000",
+      "modificationTime": "2026-02-01T08:05:00.000"
+    }
+  ],
+  "pagination": {
+    "totalCount": 3,
+    "offset": 0,
+    "pageSize": 1000
+  }
+}

@@ -1,0 +1,7 @@
+// Copy to Signing.local.xcconfig (git-ignored) and set your Apple team ID,
+// shown in Xcode > Settings > Accounts or on developer.apple.com > Membership.
+
+DEVELOPMENT_TEAM = YOURTEAMID
+
+// Forks: tv.netrics is registered to the netrics team, so pick your own.
+// PRODUCT_BUNDLE_IDENTIFIER = com.example.netrics

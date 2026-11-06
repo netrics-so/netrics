@@ -106,6 +106,328 @@
       "when": 1790543968486,
       "tag": "0014_principals",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790573738465,
+      "tag": "0015_auth_rate_limit",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790588542080,
+      "tag": "0016_jobs_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790599507894,
+      "tag": "0017_workspace_time_zone",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790602303663,
+      "tag": "0018_dashboards",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790627990767,
+      "tag": "0019_devices",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790629585399,
+      "tag": "0020_device_refresh_rotation",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790658939765,
+      "tag": "0021_device_heartbeat",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790977145070,
+      "tag": "0022_oauth_platform",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790978237224,
+      "tag": "0023_oauth_release_grant",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790986106751,
+      "tag": "0024_oauth_flow",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790990223708,
+      "tag": "0025_metric_better",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790991896707,
+      "tag": "0026_fresh_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1791017612117,
+      "tag": "0027_gsc_zero_impressions",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791019920891,
+      "tag": "0028_metric_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791021918709,
+      "tag": "0029_audit_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791039782230,
+      "tag": "0030_connection_resources",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791060521872,
+      "tag": "0031_display_currency",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791066303185,
+      "tag": "0032_longer_periods",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791068100186,
+      "tag": "0033_dashboard_studio",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791070562884,
+      "tag": "0034_studio_themes",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1791072912239,
+      "tag": "0035_workspace_images",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791086902051,
+      "tag": "0036_i18n_locales",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791101084379,
+      "tag": "0037_format_layouts",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791102978247,
+      "tag": "0038_device_screen",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791127280686,
+      "tag": "0039_periods_to_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791128148742,
+      "tag": "0040_app_reviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791129644821,
+      "tag": "0041_table_widget",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791134233369,
+      "tag": "0042_goals",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791135689650,
+      "tag": "0043_status_widget",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791136323296,
+      "tag": "0044_compare_widget",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1791137090285,
+      "tag": "0045_countdown_widget",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1791137937845,
+      "tag": "0046_gauge_widget",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791138931983,
+      "tag": "0047_review_widget",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793263670337,
+      "tag": "0048_signed_key_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1793289527290,
+      "tag": "0049_signed_key_pending_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793304686972,
+      "tag": "0050_connection_resources_kind_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1793341627444,
+      "tag": "0051_device_platform",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1793859719830,
+      "tag": "0052_source_datasets",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1793863960604,
+      "tag": "0053_data_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1793873124592,
+      "tag": "0054_dashboard_measures",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1793879741117,
+      "tag": "0055_sync_continuations",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1793886693004,
+      "tag": "0056_dataset_publication_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1793891841427,
+      "tag": "0057_store_template_installs",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1793907712298,
+      "tag": "0058_connector_report_staging",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1793907712299,
+      "tag": "0059_definition_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1793970677551,
+      "tag": "0060_superseded_generation_release",
+      "breakpoints": true
     }
   ]
 }

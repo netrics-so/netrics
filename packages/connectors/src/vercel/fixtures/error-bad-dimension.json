@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "bad_request",
+    "message": "`by` items should be equal to one of the allowed values \"hour, day, week, month, year, country, deviceType, environment, requestPath, referrerHostname, osName, browserName, route, utmSource, utmMedium, utmCampaign, utmContent, utmTerm, flags\", or a JSON dimension key such as \"flags/<name>\"",
+    "meta": {}
+  }
+}

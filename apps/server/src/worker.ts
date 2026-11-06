@@ -2,10 +2,13 @@ import { hostname } from "node:os";
 
 import pino, { type Logger } from "pino";
 
-import { createDefaultRegistry } from "@netrics/connector-runtime";
+import { logSerializers } from "./log-serializers.js";
+
+import { createDefaultRegistry } from "./connectors.js";
 import {
   claimJobs,
   completeJob,
+  deferJob,
   createDatabase,
   failJob,
   heartbeat,
@@ -16,8 +19,11 @@ import {
 
 import { createCredentialKeyring, redactSecrets } from "./credentials.js";
 import type { Config } from "./env.js";
+import { createOAuthProviders } from "./oauth/config.js";
+import { createOAuthTokenService } from "./oauth/tokens.js";
 import {
   createJobHandlers,
+  ContinueJobError,
   NonRetryableJobError,
   TerminalJobError,
   type JobHandler,
@@ -168,6 +174,30 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
         jobLogger.warn("job finished after its lease was lost; not completed");
       }
     } catch (error) {
+      if (error instanceof ContinueJobError) {
+        stopRenewing();
+        try {
+          const deferred = await deferJob(
+            schedulerDb,
+            job.id,
+            workerId,
+            error.continuation,
+          );
+          if (deferred) jobLogger.info("job continues from checkpoint");
+          else
+            jobLogger.warn(
+              "job lease lost before continuation; not rescheduled",
+            );
+        } catch (deferError) {
+          // Leave the running lease for normal crash recovery. An expected
+          // handoff must never become a provider failure or consume a retry.
+          jobLogger.error(
+            { err: safeErrorMessage(deferError) },
+            "failed to schedule continuation",
+          );
+        }
+        return;
+      }
       // NonRetryable → dead-letter; Terminal → 'failed' (no retries, no
       // dead-letter, e.g. rejected credentials); anything else retries.
       const terminal = error instanceof TerminalJobError;
@@ -272,6 +302,7 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
 /** Process entry for NETRICS_ROLE=worker (called from src/index.ts). */
 export async function startWorker(config: Config): Promise<void> {
   const logger = pino({
+    serializers: logSerializers,
     level: config.logLevel,
     base: { service: "netrics-server", role: config.role },
   });
@@ -287,16 +318,25 @@ export async function startWorker(config: Config): Promise<void> {
   const appDb = createDatabase(config.databaseUrl, {
     max: config.workerConcurrency + 2,
   });
-  const registry = createDefaultRegistry();
+  const registry = createDefaultRegistry({ nodeEnv: config.nodeEnv });
+  const credentialKeyring = createCredentialKeyring(
+    config.appEncryptionKey,
+    config.appEncryptionKeysPrevious,
+  );
   const worker = createWorker({
     schedulerDb,
     appDb,
     handlers: createJobHandlers({
       registry,
-      credentialKeyring: createCredentialKeyring(
-        config.appEncryptionKey,
-        config.appEncryptionKeysPrevious,
-      ),
+      credentialKeyring,
+      imageQuota: config.imageQuota,
+      dataPolicy: config.dataPolicy,
+      oauthTokens: createOAuthTokenService({
+        db: appDb,
+        credentialKeyring,
+        providers: createOAuthProviders(config),
+        logger,
+      }),
     }),
     concurrency: config.workerConcurrency,
     pollMs: config.workerPollMs,

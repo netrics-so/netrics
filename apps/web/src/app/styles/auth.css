@@ -1,0 +1,471 @@
+/* ─── Sign-in, sign-up and first-run onboarding (#308, design 1e) ────────
+
+   Auth pages: the brand above one centred 360 px card on paper. Onboarding:
+   a 260 px step rail on paper beside the step's content on white. */
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: max(40px, 10vh) 16px 40px;
+}
+
+.auth-column {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.auth-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+  font-size: var(--size-20);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.auth-card h1 {
+  margin: 0;
+  font-size: var(--size-22);
+}
+
+.auth-card .subtitle {
+  margin: 4px 0 0;
+  font-size: var(--size-14);
+}
+
+.auth-card input:not([type="checkbox"]):not([type="radio"]) {
+  width: 100%;
+  padding: 11px 14px;
+  font-size: var(--size-14);
+  border-color: var(--border);
+}
+
+.auth-card .field {
+  gap: 6px;
+}
+
+/* The full-width primary action. */
+.auth-card .stack > button {
+  width: 100%;
+  padding: 12px;
+  font-size: var(--size-14);
+  font-weight: 700;
+}
+
+.auth-card .stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-card .notice,
+.auth-card .error {
+  line-height: 1.45;
+}
+
+/* A label with a link at its end ("Password … Forgot password?"). */
+.auth-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auth-label-row a {
+  font-size: var(--size-12);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-label-row a:hover,
+.auth-links a:hover {
+  text-decoration: underline;
+}
+
+.auth-links {
+  margin: 0;
+  font-size: var(--size-13);
+  color: var(--muted);
+  text-align: center;
+}
+
+.auth-links a {
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-links + .auth-links {
+  margin-top: -10px;
+}
+
+.auth-note {
+  margin: 0;
+  font-size: var(--size-12);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+@media (max-width: 420px) {
+  .auth-page {
+    padding-top: 32px;
+  }
+
+  .auth-card {
+    padding: 22px 18px;
+  }
+}
+
+/* ─── Onboarding ──────────────────────────────────────────────────────── */
+
+.onboarding {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  background: var(--surface);
+}
+
+.onboarding-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 32px 28px;
+  background: var(--paper);
+  border-right: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.onboarding-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--size-15);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.onboarding-tagline {
+  margin: 0;
+  font-size: var(--size-13);
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.onboarding-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: var(--size-14);
+  font-weight: 600;
+}
+
+.onboarding-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+}
+
+.onboarding-step-mark {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: var(--size-11);
+  font-weight: 700;
+  border: 2px solid var(--border-strong);
+  color: var(--muted);
+}
+
+.onboarding-step.done {
+  color: var(--accent-text);
+}
+
+.onboarding-step.done .onboarding-step-mark {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: #fff;
+}
+
+.onboarding-step.current .onboarding-step-mark {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.onboarding-step.next {
+  color: var(--muted);
+}
+
+.onboarding-rail-note {
+  margin: auto 0 0;
+  font-size: var(--size-12);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.onboarding-main {
+  width: 100%;
+  max-width: 760px;
+  padding: 36px 36px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.onboarding-main h1 {
+  margin: 0;
+  font-size: var(--size-22);
+}
+
+.onboarding-main .subtitle {
+  margin: 4px 0 0;
+  font-size: var(--size-14);
+}
+
+.onboarding-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.onboarding-panel form {
+  max-width: 420px;
+}
+
+.onboarding-panel input[type="text"] {
+  width: 100%;
+  padding: 11px 14px;
+  font-size: var(--size-14);
+}
+
+.source-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.source-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  text-align: left;
+  font-weight: 400;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.source-choice:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--raised);
+}
+
+.source-choice[aria-pressed="true"],
+.source-choice[aria-pressed="true"]:hover:not(:disabled) {
+  border: var(--selection-border);
+  box-shadow: var(--selection-ring);
+  background: var(--accent-wash);
+}
+
+.source-choice-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--chip);
+  color: var(--text-2);
+  font-size: var(--size-15);
+  font-weight: 800;
+}
+
+.source-choice[aria-pressed="true"] .source-choice-icon {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+
+.source-choice-name {
+  display: block;
+  font-size: var(--size-14);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.source-choice-text {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--size-12);
+  color: var(--muted);
+  line-height: 1.4;
+  /* Catalogue descriptions can be long; the wizard shows them in full. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.onboarding-explainer {
+  display: flex;
+  gap: 12px;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--paper);
+  font-size: var(--size-13);
+  color: var(--text-2);
+  line-height: 1.45;
+}
+
+.onboarding-explainer-mark {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--accent-text);
+  font-size: var(--size-13);
+  font-weight: 800;
+}
+
+.onboarding-footer {
+  margin-top: 8px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.onboarding-footer button,
+.onboarding-footer .button {
+  padding: 12px 18px;
+  font-size: var(--size-14);
+  font-weight: 700;
+}
+
+.onboarding-screen-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: screen-step;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: var(--size-14);
+  color: var(--text-2);
+}
+
+.onboarding-screen-steps li {
+  counter-increment: screen-step;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.onboarding-screen-steps li::before {
+  content: counter(screen-step);
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-size: var(--size-11);
+  font-weight: 700;
+  background: var(--chip);
+  color: var(--text-2);
+}
+
+.onboarding-footer-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+@media (max-width: 760px) {
+  .onboarding {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .onboarding-rail {
+    gap: 14px;
+    padding: 18px 16px;
+    position: static;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .onboarding-tagline,
+  .onboarding-rail-note {
+    display: none;
+  }
+
+  .onboarding-steps {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    font-size: var(--size-13);
+  }
+
+  .onboarding-main {
+    padding: 24px 16px;
+  }
+
+  .source-choices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .onboarding-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .onboarding-footer-actions {
+    flex-direction: column;
+    margin-left: 0;
+  }
+
+  .onboarding-footer button,
+  .onboarding-footer .button {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+}

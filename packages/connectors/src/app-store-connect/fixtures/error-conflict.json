@@ -1,0 +1,11 @@
+{
+  "errors": [
+    {
+      "id": "00000000-0000-4000-8000-000000000409",
+      "status": "409",
+      "code": "ENTITY_ERROR",
+      "title": "The request entity is not valid.",
+      "detail": "You already have such an entity"
+    }
+  ]
+}

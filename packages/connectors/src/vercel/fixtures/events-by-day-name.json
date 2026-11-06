@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "query": {
+    "since": "2026-09-14T00:00:00.000Z",
+    "until": "2026-09-16T00:00:00.000Z",
+    "groupBy": ["eventName"],
+    "limit": 10
+  },
+  "data": [
+    {
+      "timestamp": "2026-09-14T00:00:00.000Z",
+      "eventName": "Signup",
+      "count": 12,
+      "visitors": 11
+    },
+    {
+      "timestamp": "2026-09-14T00:00:00.000Z",
+      "eventName": "Others",
+      "count": 3,
+      "visitors": 3
+    },
+    {
+      "timestamp": "2026-09-15T00:00:00.000Z",
+      "eventName": "Signup",
+      "count": 9,
+      "visitors": 9
+    }
+  ]
+}

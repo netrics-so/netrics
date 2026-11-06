@@ -1,0 +1,511 @@
+/*
+ * The dashboards page (ADR 0018, design 3a; #304). Admin colours come from
+ * the Signal tokens; the thumbnails are TV surfaces and take the dashboard
+ * theme's colours (--thumb-*), set per card.
+ */
+
+.dashboards-page .page-header {
+  margin-bottom: 18px;
+}
+
+.dashboards-filter select {
+  min-width: 160px;
+  padding: 8px 12px;
+  border-color: var(--border);
+  font-size: var(--size-13);
+  color: var(--text-2);
+}
+
+.dashboards-new {
+  font-size: var(--size-13);
+  font-weight: 700;
+  padding: 9px 14px;
+  white-space: nowrap;
+}
+
+/* Templates row */
+
+.dashboards-templates {
+  margin-bottom: 18px;
+}
+
+.dashboards-template-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboards-template {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+
+.dashboards-template:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+
+.dashboards-template[aria-pressed="true"] {
+  border: var(--selection-border);
+  box-shadow: var(--selection-ring);
+  background: var(--accent-wash);
+}
+
+.dashboards-template--blank {
+  border: 1.5px dashed var(--border-strong);
+  background: var(--raised);
+  color: var(--muted);
+}
+
+.dashboards-template--blank:hover:not(:disabled) {
+  background: var(--raised);
+  border-color: var(--faint);
+}
+
+.dashboards-template-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dashboards-template-text strong {
+  font-size: var(--size-13);
+  font-weight: 700;
+}
+
+.dashboards-template-text span {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* The template glyphs are small TV slides, so they stay dark. */
+.template-glyph {
+  flex: none;
+  width: 44px;
+  aspect-ratio: 16 / 9;
+  box-sizing: border-box;
+  border-radius: 5px;
+  background: var(--thumb-bg);
+}
+
+.template-glyph--overview {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  padding: 4px;
+}
+
+.template-glyph--overview span {
+  border-radius: 1px;
+  background: var(--thumb-surface);
+}
+
+.template-glyph-tall {
+  grid-row: span 2;
+}
+
+.template-glyph-wide {
+  grid-column: span 2;
+}
+
+.template-glyph--brand {
+  display: grid;
+  place-items: center;
+}
+
+.template-glyph-mark {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.template-glyph--blank {
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+}
+
+/* Create panel */
+
+.dashboards-create {
+  position: relative;
+  scroll-margin-top: 72px;
+}
+
+.dashboards-create:focus {
+  outline: none;
+}
+
+.dashboards-create .new-dashboard {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.dashboards-create-close {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+}
+
+/* Cards */
+
+.dashboards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+
+.dash-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.dash-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.dash-card:focus-within {
+  border: var(--selection-border);
+  box-shadow: var(--selection-ring);
+  padding: 11.5px;
+}
+
+.dash-thumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--thumb-bg);
+}
+
+.dash-thumb-frame {
+  position: relative;
+  box-sizing: border-box;
+}
+
+.dash-thumb-frame:not([data-format="16x9"]) {
+  outline: 1px dashed color-mix(in srgb, var(--thumb-border) 80%, transparent);
+}
+
+.dash-thumb-grid {
+  position: absolute;
+  inset: 5%;
+}
+
+.dash-thumb-stub {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 2px;
+}
+
+.dash-thumb-stub::before {
+  content: "";
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--thumb-border);
+  border-radius: 3px;
+  background: var(--thumb-surface);
+}
+
+/* A hint of what a stub is: a chart line, bars, text lines. */
+.dash-thumb-stub--line::after,
+.dash-thumb-stub--bar::after,
+.dash-thumb-stub--metric::after {
+  content: "";
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  border-radius: 1px;
+  background: var(--thumb-accent);
+  opacity: 0.55;
+}
+
+.dash-thumb-stub--metric::after {
+  top: 40%;
+  right: 50%;
+  height: 12%;
+  max-height: 6px;
+  opacity: 0.4;
+}
+
+.dash-thumb-stub--line::after {
+  bottom: 22%;
+  height: 2px;
+}
+
+.dash-thumb-stub--bar::after {
+  top: 30%;
+  bottom: 22%;
+  right: 30%;
+  background: repeating-linear-gradient(
+    180deg,
+    var(--thumb-accent) 0 4px,
+    transparent 4px 9px
+  );
+}
+
+.dash-thumb-stub--text::before,
+.dash-thumb-stub--image::before {
+  background: color-mix(in srgb, var(--thumb-surface) 60%, var(--thumb-bg));
+}
+
+.dash-thumb-pill {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: var(--size-11);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dash-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dash-card-accent {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.dash-card-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--size-14);
+  font-weight: 700;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The whole card opens the dashboard; the Studio link sits above it. */
+.dash-card-name::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.dash-card-name:focus-visible {
+  outline: none;
+}
+
+.dash-card-updated {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--size-12);
+}
+
+.dash-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dash-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.dash-chip {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.dash-chip--shown {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+
+.dash-chip--hidden {
+  background: var(--chip);
+  color: var(--muted);
+}
+
+.dash-chip--theme {
+  overflow: hidden;
+  max-width: 14em;
+  background: var(--chip);
+  color: var(--text-2);
+  text-overflow: ellipsis;
+}
+
+.dash-card-studio {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  margin-left: auto;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--size-12);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.dash-card-studio:hover {
+  border-color: var(--border-strong);
+  color: var(--accent-text);
+}
+
+/* Empty states */
+
+.dashboards-empty {
+  margin: 0 0 24px;
+  padding: 28px 24px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--raised);
+  color: var(--muted);
+  text-align: center;
+}
+
+.dashboards-empty h2 {
+  margin: 0 0 6px;
+  color: var(--text);
+}
+
+.dashboards-empty p {
+  margin: 0;
+}
+
+/* Projects: secondary, folded away */
+
+.dashboards-projects {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.dashboards-projects summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: var(--size-13);
+  font-weight: 700;
+  list-style-position: inside;
+}
+
+.dashboards-projects-count {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.dashboards-projects-body {
+  padding: 0 16px 16px;
+}
+
+.dashboards-projects-body > p:first-child {
+  margin-top: 0;
+}
+
+.dashboards-project-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboards-project-list li {
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--chip);
+  color: var(--text-2);
+  font-size: var(--size-12);
+  font-weight: 600;
+}
+
+@media (max-width: 1100px) {
+  .dashboards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboards-grid,
+  .dashboards-template-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboards-page .page-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .dashboards-filter {
+    flex: 1;
+  }
+
+  .dashboards-filter select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .dashboards-create-close {
+    position: static;
+    align-self: flex-end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-card {
+    transition: none;
+  }
+}

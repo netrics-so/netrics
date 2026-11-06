@@ -1,9 +1,11 @@
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   createDatabase,
   createRawSqlClient,
   createWorkspace,
+  DEFAULT_RETENTION,
   schema,
   withWorkspace,
   type Database,
@@ -112,6 +114,7 @@ describe("runSchedulerTick", () => {
       scanned: 2,
       enqueued: 1,
       skippedAuthFailed: 1,
+      skippedNeedsReauthorization: 0,
     });
 
     const jobs = await schedulerRaw`
@@ -165,6 +168,7 @@ describe("runSchedulerTick", () => {
       scanned: 1,
       enqueued: 0,
       skippedAuthFailed: 1,
+      skippedNeedsReauthorization: 0,
     });
 
     // Crash-window replay: the same due slot is planned again and dedupes.
@@ -178,10 +182,60 @@ describe("runSchedulerTick", () => {
       scanned: 2,
       enqueued: 0,
       skippedAuthFailed: 1,
+      skippedNeedsReauthorization: 0,
     });
 
     const jobs = await schedulerRaw`select id from jobs`;
     expect(jobs).toHaveLength(1);
+  });
+});
+
+describe("needs_reauthorization (ADR 0012)", () => {
+  it("skips a connection whose OAuth grant needs reauthorization", async () => {
+    const [conn] = await withWorkspace(appDb, { workspaceId }, (tx) =>
+      tx
+        .insert(schema.connections)
+        .values({ workspaceId, connectorId: "demo", name: "revoked grant" })
+        .returning({ id: schema.connections.id }),
+    );
+    await withWorkspace(appDb, { workspaceId }, (tx) =>
+      tx.insert(schema.connectionState).values({
+        connectionId: conn!.id,
+        workspaceId,
+        nextDueAt: PAST,
+        authState: "needs_reauthorization",
+        authReason: "invalid_grant",
+      }),
+    );
+
+    const result = await runSchedulerTick(
+      schedulerDb,
+      new Date("2026-09-26T12:40:00Z"),
+    );
+    expect(result.skippedNeedsReauthorization).toBe(1);
+    expect(
+      await schedulerRaw`select id from jobs where connection_id = ${conn!.id}`,
+    ).toHaveLength(0);
+    const [state] = await schedulerRaw`
+      select next_due_at from connection_state where connection_id = ${conn!.id}
+    `;
+    expect(Date.parse(state!.next_due_at as string)).toBe(PAST.getTime());
+
+    // Reauthorized: the connection is planned again.
+    await withWorkspace(appDb, { workspaceId }, (tx) =>
+      tx
+        .update(schema.connectionState)
+        .set({ authState: "ok", authReason: null })
+        .where(eq(schema.connectionState.connectionId, conn!.id)),
+    );
+    const after = await runSchedulerTick(
+      schedulerDb,
+      new Date("2026-09-26T12:41:00Z"),
+    );
+    expect(after.skippedNeedsReauthorization).toBe(0);
+    expect(
+      await schedulerRaw`select id from jobs where connection_id = ${conn!.id}`,
+    ).toHaveLength(1);
   });
 });
 
@@ -243,6 +297,7 @@ describe("scheduler mutual exclusion", () => {
           scanned: 0,
           enqueued: 0,
           skippedAuthFailed: 0,
+          skippedNeedsReauthorization: 0,
         });
       });
       // The lock ends with the other transaction; no process has to die.
@@ -270,6 +325,153 @@ describe("createScheduler loop", () => {
       });
     } finally {
       await scheduler.stop();
+    }
+  });
+
+  it("prunes finished history and OAuth authorizations", async () => {
+    const admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+    try {
+      const [old] = await admin`
+        insert into jobs (kind, status, created_at)
+        values ('maintenance.test', 'succeeded', now() - interval '30 days')
+        returning id`;
+      // An authorization nobody completed (ADR 0012: 10 minutes, then gone).
+      const [expired] = await admin`
+        insert into oauth_authorizations
+          (workspace_id, user_id, provider, connector_id, purpose,
+           return_path, state_hash, nonce, code_verifier_encrypted, expires_at)
+        select ${workspaceId}, id, 'google', 'demo', 'connect', '/', 'h', 'n',
+               '\\x00'::bytea, now() - interval '1 minute'
+        from users limit 1
+        returning id`;
+      const scheduler = createScheduler({
+        schedulerDb,
+        pollMs: 50,
+        schedulerId: "scheduler-prune-test",
+      });
+      scheduler.start();
+      try {
+        await waitFor(async () => {
+          const jobs = await admin`select 1 from jobs where id = ${old!.id}`;
+          const authorizations = await admin`
+            select 1 from oauth_authorizations where id = ${expired!.id}`;
+          return jobs.length === 0 && authorizations.length === 0;
+        });
+      } finally {
+        await scheduler.stop();
+      }
+    } finally {
+      await admin.end({ timeout: 5 }).catch(() => undefined);
+    }
+  });
+
+  it("drains dataset history beyond one batch per maintenance window", async () => {
+    // Released dataset storage no longer counts toward the workspace quota,
+    // so one bounded batch an hour would let it accumulate unseen.
+    const admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+    try {
+      const [stage] = await admin`
+        insert into data_connector_stages (workspace_id, connection_id,
+          connector_id, key, dataset_key, schema_version, metadata, digest,
+          byte_size, source_collected_at, expires_at)
+        values (${workspaceId}, ${connFuture}, 'demo', 'drain', 'orders', 1,
+          '{}'::jsonb, 'd', 0, now(), now() - interval '1 minute')
+        returning id`;
+      await admin`
+        insert into data_connector_stage_pages
+          (stage_id, workspace_id, page_key, payload, digest)
+        select ${stage!.id}, ${workspaceId}, 'p' || i, '{}'::jsonb, 'd'
+        from generate_series(1, 25) i`;
+      const scheduler = createScheduler({
+        schedulerDb,
+        pollMs: 50,
+        schedulerId: "scheduler-dataset-drain-test",
+        retention: { ...DEFAULT_RETENTION, batch: 2 },
+      });
+      scheduler.start();
+      try {
+        await waitFor(async () => {
+          const rows = await admin`
+            select 1 from data_connector_stages where id = ${stage!.id}`;
+          return rows.length === 0;
+        });
+      } finally {
+        await scheduler.stop();
+      }
+    } finally {
+      await admin.end({ timeout: 5 }).catch(() => undefined);
+    }
+  });
+
+  it("prunes audit events older than 12 months by its clock (#163)", async () => {
+    const now = new Date("2031-03-15T12:00:00.000Z");
+    const admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+    try {
+      const [old] = await admin`
+        insert into audit_events (workspace_id, action, created_at)
+        values (${workspaceId}, 'auth.login', '2030-03-01T00:00:00Z')
+        returning id`;
+      const [recent] = await admin`
+        insert into audit_events (workspace_id, action, created_at)
+        values (${workspaceId}, 'auth.login', '2030-04-01T00:00:00Z')
+        returning id`;
+      const scheduler = createScheduler({
+        schedulerDb,
+        pollMs: 50,
+        schedulerId: "scheduler-audit-prune-test",
+        now: () => now,
+      });
+      scheduler.start();
+      try {
+        await waitFor(async () => {
+          const rows = await admin`
+            select 1 from audit_events where id = ${old!.id}`;
+          return rows.length === 0;
+        });
+      } finally {
+        await scheduler.stop();
+      }
+      const kept = await admin`
+        select 1 from audit_events where id = ${recent!.id}`;
+      expect(kept).toHaveLength(1);
+    } finally {
+      await admin.end({ timeout: 5 }).catch(() => undefined);
+    }
+  });
+
+  it("prunes review text older than 90 days by its clock (ADR 0019 §11)", async () => {
+    const now = new Date("2031-03-15T12:00:00.000Z");
+    const admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+    try {
+      await admin`
+        insert into app_reviews (connection_id, workspace_id,
+          provider_review_id, resource_id, rating, body, created_at)
+        values
+          (${connFuture!}, ${workspaceId}, 'old', '1', 4, 'Old text',
+           '2030-12-01T00:00:00Z'),
+          (${connFuture!}, ${workspaceId}, 'recent', '1', 4, 'Recent text',
+           '2031-03-01T00:00:00Z')`;
+      const scheduler = createScheduler({
+        schedulerDb,
+        pollMs: 50,
+        schedulerId: "scheduler-review-prune-test",
+        now: () => now,
+      });
+      scheduler.start();
+      try {
+        await waitFor(async () => {
+          const rows = await admin`
+            select 1 from app_reviews where provider_review_id = 'old'`;
+          return rows.length === 0;
+        });
+      } finally {
+        await scheduler.stop();
+      }
+      const kept = await admin`
+        select 1 from app_reviews where provider_review_id = 'recent'`;
+      expect(kept).toHaveLength(1);
+    } finally {
+      await admin.end({ timeout: 5 }).catch(() => undefined);
     }
   });
 });

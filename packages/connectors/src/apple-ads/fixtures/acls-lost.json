@@ -1,0 +1,15 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/get-user-acls), checked 2026-10-29; IDs and names are synthetic. TO BE CONFIRMED by #370: the ACL after an account was taken from the API user.",
+  "result": {
+    "acls": [
+      {
+        "adAccount": {
+          "id": 4100000002,
+          "name": "Example Apps EU",
+          "orgId": 4000000002
+        },
+        "roles": ["Limited Access: API Read Only"]
+      }
+    ]
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "data": [
+    {
+      "type": "analyticsReports",
+      "id": "r1-0001",
+      "attributes": {
+        "name": "App Sessions Standard",
+        "category": "APP_USAGE"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/analyticsReports/r1-0001"
+      }
+    },
+    {
+      "type": "analyticsReports",
+      "id": "r2-0001",
+      "attributes": {
+        "name": "App Store Discovery and Engagement Detailed",
+        "category": "APP_STORE_ENGAGEMENT"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/analyticsReports/r2-0001"
+      }
+    },
+    {
+      "type": "analyticsReports",
+      "id": "r3-0001",
+      "attributes": {
+        "name": "App Store Discovery and Engagement Standard",
+        "category": "APP_STORE_ENGAGEMENT"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/analyticsReports/r3-0001"
+      }
+    },
+    {
+      "type": "analyticsReports",
+      "id": "r4-0001",
+      "attributes": {
+        "name": "App Downloads Detailed",
+        "category": "COMMERCE"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/analyticsReports/r4-0001"
+      }
+    },
+    {
+      "type": "analyticsReports",
+      "id": "r5-0001",
+      "attributes": {
+        "name": "App Downloads Standard",
+        "category": "COMMERCE"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/analyticsReports/r5-0001"
+      }
+    }
+  ],
+  "links": {
+    "self": "https://api.appstoreconnect.apple.com/v1/analyticsReportRequests/d48c69c5-9bcb-4592-abbd-000000000001/reports"
+  },
+  "meta": {
+    "paging": {
+      "total": 5,
+      "limit": 200
+    }
+  }
+}

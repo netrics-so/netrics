@@ -186,6 +186,8 @@ Definitions are private to the workspace by default and exportable as JSON.
 
 ### Dashboards
 
+- Dashboard Studio: slides with rotation, widgets on a TV-safe grid, themes,
+  brand logos and images (ADR 0015)
 - Widget library: big number, trend, line, bar, table, gauge, and status
 - Grid editor with drag and drop
 - Dark-theme-first TV layouts with strong distance readability

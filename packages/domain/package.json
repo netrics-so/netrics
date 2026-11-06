@@ -20,10 +20,7 @@
   "scripts": {
     "build": "tsc -b"
   },
-  "dependencies": {
-    "@netrics/contracts": "workspace:*"
-  },
   "devDependencies": {
-    "typescript": "5.9.3"
+    "typescript": "6.0.3"
   }
 }

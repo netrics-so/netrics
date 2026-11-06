@@ -1,0 +1,25 @@
+{
+  "data": [
+    {
+      "type": "analyticsReportSegments",
+      "id": "s-dl-0928",
+      "attributes": {
+        "checksum": "9273138755b88dcae72f14a6ee3f9b65",
+        "sizeInBytes": 311,
+        "url": "https://asp-us-west-2.s3.us-west-2.amazonaws.com/reports/1000000001/app_downloads_standard/daily/ongoing/20260928/1790000000003/0.csv.gz?X-Amz-Security-Token=FIXTURE-SESSION-TOKEN&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20260930T200000Z&X-Amz-SignedHeaders=host&X-Amz-Expires=300&X-Amz-Credential=FIXTURECREDENTIAL%2F20260930%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Signature=fixturesignature0000000000000000000000000000000000000000000000000"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/analyticsReportSegments/s-dl-0928"
+      }
+    }
+  ],
+  "links": {
+    "self": "https://api.appstoreconnect.apple.com/v1/analyticsReportInstances/i-dl-0928/segments"
+  },
+  "meta": {
+    "paging": {
+      "total": 1,
+      "limit": 50
+    }
+  }
+}

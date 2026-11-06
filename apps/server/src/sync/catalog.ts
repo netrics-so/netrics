@@ -41,6 +41,8 @@ export async function upsertConnectorCatalog(
         granularity: metric.granularity,
         dimensions: [...metric.dimensions],
         aggregations: [...metric.aggregations],
+        better: metric.better ?? "higher",
+        role: metric.role ?? "primary",
       })
       .onConflictDoUpdate({
         target: [
@@ -55,6 +57,8 @@ export async function upsertConnectorCatalog(
           granularity: metric.granularity,
           dimensions: [...metric.dimensions],
           aggregations: [...metric.aggregations],
+          better: metric.better ?? "higher",
+          role: metric.role ?? "primary",
         },
       });
   }

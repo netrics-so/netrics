@@ -6,9 +6,20 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../../packages/connector-runtime" },
-    { "path": "../../packages/contracts" },
-    { "path": "../../packages/database" },
-    { "path": "../../packages/domain" }
+    {
+      "path": "../../packages/connector-runtime"
+    },
+    {
+      "path": "../../packages/connectors"
+    },
+    {
+      "path": "../../packages/contracts"
+    },
+    {
+      "path": "../../packages/database"
+    },
+    {
+      "path": "../../packages/domain"
+    }
   ]
 }

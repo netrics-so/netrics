@@ -1,0 +1,128 @@
+{
+  "data": [
+    {
+      "type": "apps",
+      "id": "1000000001",
+      "attributes": {
+        "name": "Example Field Notes",
+        "bundleId": "com.example.fieldnotes",
+        "sku": "EXFIELDNOTES"
+      },
+      "relationships": {
+        "appStoreVersions": {
+          "meta": {
+            "paging": {
+              "total": 3,
+              "limit": 50
+            }
+          },
+          "data": [
+            {
+              "type": "appStoreVersions",
+              "id": "a1b2c3d4-0001-4000-8000-000000000001"
+            },
+            {
+              "type": "appStoreVersions",
+              "id": "a1b2c3d4-0001-4000-8000-000000000002"
+            },
+            {
+              "type": "appStoreVersions",
+              "id": "a1b2c3d4-0001-4000-8000-000000000003"
+            }
+          ],
+          "links": {
+            "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000001/relationships/appStoreVersions",
+            "related": "https://api.appstoreconnect.apple.com/v1/apps/1000000001/appStoreVersions"
+          }
+        }
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000001"
+      }
+    },
+    {
+      "type": "apps",
+      "id": "1000000002",
+      "attributes": {
+        "name": "Example Ledger",
+        "bundleId": "com.example.ledger",
+        "sku": "EXLEDGER"
+      },
+      "relationships": {
+        "appStoreVersions": {
+          "meta": {
+            "paging": {
+              "total": 1,
+              "limit": 50
+            }
+          },
+          "data": [
+            {
+              "type": "appStoreVersions",
+              "id": "a1b2c3d4-0002-4000-8000-000000000001"
+            }
+          ],
+          "links": {
+            "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000002/relationships/appStoreVersions",
+            "related": "https://api.appstoreconnect.apple.com/v1/apps/1000000002/appStoreVersions"
+          }
+        }
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/apps/1000000002"
+      }
+    }
+  ],
+  "included": [
+    {
+      "type": "appStoreVersions",
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "attributes": {
+        "platform": "IOS"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/appStoreVersions/a1b2c3d4-0001-4000-8000-000000000001"
+      }
+    },
+    {
+      "type": "appStoreVersions",
+      "id": "a1b2c3d4-0001-4000-8000-000000000002",
+      "attributes": {
+        "platform": "TV_OS"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/appStoreVersions/a1b2c3d4-0001-4000-8000-000000000002"
+      }
+    },
+    {
+      "type": "appStoreVersions",
+      "id": "a1b2c3d4-0001-4000-8000-000000000003",
+      "attributes": {
+        "platform": "IOS"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/appStoreVersions/a1b2c3d4-0001-4000-8000-000000000003"
+      }
+    },
+    {
+      "type": "appStoreVersions",
+      "id": "a1b2c3d4-0002-4000-8000-000000000001",
+      "attributes": {
+        "platform": "MAC_OS"
+      },
+      "links": {
+        "self": "https://api.appstoreconnect.apple.com/v1/appStoreVersions/a1b2c3d4-0002-4000-8000-000000000001"
+      }
+    }
+  ],
+  "links": {
+    "self": "https://api.appstoreconnect.apple.com/v1/apps?fields%5Bapps%5D=name%2CbundleId%2Csku%2CappStoreVersions&include=appStoreVersions&fields%5BappStoreVersions%5D=platform&limit%5BappStoreVersions%5D=50&limit=2",
+    "next": "https://api.appstoreconnect.apple.com/v1/apps?cursor=Ag.AAAAAg&fields%5Bapps%5D=name%2CbundleId%2Csku%2CappStoreVersions&include=appStoreVersions&fields%5BappStoreVersions%5D=platform&limit%5BappStoreVersions%5D=50&limit=2"
+  },
+  "meta": {
+    "paging": {
+      "total": 4,
+      "limit": 2
+    }
+  }
+}

@@ -1,6 +1,12 @@
+import { gzipSync } from "node:zlib";
+
 import { describe, expect, it } from "vitest";
 
-import type { Connector, ConnectorRuntime } from "../connector.js";
+import type {
+  Connector,
+  ConnectorResponse,
+  ConnectorRuntime,
+} from "../connector.js";
 import { connectorManifestSchema } from "../manifest.js";
 import type {
   ConnectionContext,
@@ -21,6 +27,11 @@ export interface ContractTestOptions {
   name?: string;
   /** Overrides for the connection context sent to every connector call. */
   context?: Partial<ConnectionContext>;
+  /**
+   * Runtime for every call. Defaults to offlineRuntime; connectors that talk
+   * to a provider pass a fixture-backed runtime (still no network).
+   */
+  runtime?: ConnectorRuntime;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -57,6 +68,46 @@ export const offlineRuntime: ConnectorRuntime = {
   signal: new AbortController().signal,
 };
 
+/**
+ * A buffered ConnectorResponse for fixture-backed runtimes, shaped like the
+ * host's: text() decodes the body as UTF-8, json() parses it, and bytes()
+ * returns a copy of the exact body bytes.
+ */
+export function fixtureResponse(
+  status: number,
+  body: string | Uint8Array,
+  headers: Record<string, string> = {},
+): ConnectorResponse {
+  const bytes =
+    typeof body === "string"
+      ? new TextEncoder().encode(body)
+      : new Uint8Array(body);
+  const text = new TextDecoder().decode(bytes);
+  return {
+    status,
+    headers: { ...headers },
+    text: () => text,
+    json: () => JSON.parse(text) as unknown,
+    bytes: () => new Uint8Array(bytes),
+  };
+}
+
+/**
+ * A fixture response whose body is a gzip file of `content` (a report as a
+ * provider such as App Store Connect serves it, `application/a-gzip`). The
+ * connector reads it with bytes() and inflates it itself, with a bound.
+ */
+export function gzipFixtureResponse(
+  status: number,
+  content: string | Uint8Array,
+  headers: Record<string, string> = {},
+): ConnectorResponse {
+  return fixtureResponse(status, gzipSync(content), {
+    "content-type": "application/a-gzip",
+    ...headers,
+  });
+}
+
 function indexByIdentity(observations: Observation[]) {
   return new Map(
     observations.map((observation) => [
@@ -81,6 +132,7 @@ export function runConnectorContractTests(
     credentials: {},
     ...options.context,
   };
+  const runtime = options.runtime ?? offlineRuntime;
   const fromMs = WINDOW_FROM;
   const toMs = WINDOW_FROM + WINDOW_DAYS * DAY_MS;
   const midMs = WINDOW_FROM + (WINDOW_DAYS / 2) * DAY_MS;
@@ -94,12 +146,12 @@ export function runConnectorContractTests(
     });
 
     it("check returns a valid CheckResult", async () => {
-      const result = await connector.check(context, offlineRuntime);
+      const result = await connector.check(context, runtime);
       expect(checkResultSchema.safeParse(result).success).toBe(true);
     });
 
     it("discover returns valid resources with unique ids", async () => {
-      const resources = await connector.discover(context, offlineRuntime);
+      const resources = await connector.discover(context, runtime);
       for (const resource of resources) {
         expect(resourceSchema.safeParse(resource).success).toBe(true);
       }
@@ -112,7 +164,7 @@ export function runConnectorContractTests(
         await connector.sync(
           context,
           makeRequest("backfill", fromMs, toMs),
-          offlineRuntime,
+          runtime,
         ),
       );
       expect(result.observations.length).toBeGreaterThan(0);
@@ -140,8 +192,8 @@ export function runConnectorContractTests(
 
     it("sync is deterministic across identical calls", async () => {
       const request = makeRequest("backfill", fromMs, toMs);
-      const first = await connector.sync(context, request, offlineRuntime);
-      const second = await connector.sync(context, request, offlineRuntime);
+      const first = await connector.sync(context, request, runtime);
+      const second = await connector.sync(context, request, runtime);
       expect(second).toEqual(first);
     });
 
@@ -149,12 +201,12 @@ export function runConnectorContractTests(
       const full = await connector.sync(
         context,
         makeRequest("backfill", fromMs, toMs),
-        offlineRuntime,
+        runtime,
       );
       const tail = await connector.sync(
         context,
         makeRequest("backfill", midMs, toMs),
-        offlineRuntime,
+        runtime,
       );
       const byIdentity = indexByIdentity(full.observations);
       expect(tail.observations.length).toBeGreaterThan(0);
@@ -176,7 +228,7 @@ export function runConnectorContractTests(
         await connector.sync(
           context,
           makeRequest("backfill", fromMs, toMs),
-          offlineRuntime,
+          runtime,
         ),
       );
       let pages = 1;
@@ -194,7 +246,7 @@ export function runConnectorContractTests(
           await connector.sync(
             context,
             makeRequest("backfill", fromMs, toMs, cursor),
-            offlineRuntime,
+            runtime,
           ),
         );
         pages += 1;
@@ -210,12 +262,12 @@ export function runConnectorContractTests(
       const backfill = await connector.sync(
         context,
         makeRequest("backfill", fromMs, toMs),
-        offlineRuntime,
+        runtime,
       );
       const incremental = await connector.sync(
         context,
         makeRequest("incremental", midMs, toMs),
-        offlineRuntime,
+        runtime,
       );
       const byIdentity = indexByIdentity(backfill.observations);
       expect(incremental.observations.length).toBeGreaterThan(0);

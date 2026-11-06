@@ -1,0 +1,63 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/get-app-ad-group-reports), checked 2026-10-29; IDs, names and numbers are synthetic. The answer for the deleted campaign 5100000002 of report-campaigns-4100000001.json. TO BE CONFIRMED by #370 captures: whether Apple still answers the ad-group report of a deleted campaign (this fixture) or with a 404 (error-not-found.json); netrics handles both.",
+  "result": {
+    "rows": [
+      {
+        "metadata": {
+          "id": 6100000003,
+          "campaignId": 5100000002,
+          "adAccountId": 4100000001,
+          "name": "Discovery – Search Match",
+          "status": "PAUSED",
+          "deleted": true,
+          "displayStatus": "DELETED",
+          "pricingModel": "CPT"
+        },
+        "totalMetrics": {
+          "localSpend": {
+            "amount": "5.00",
+            "currency": "USD"
+          },
+          "impressions": 500,
+          "taps": 20,
+          "ttr": 0.04,
+          "tapInstalls": 3,
+          "viewInstalls": 0,
+          "totalInstalls": 3,
+          "tapNewDownloads": 3,
+          "viewNewDownloads": 0,
+          "totalNewDownloads": 3,
+          "tapRedownloads": 0,
+          "viewRedownloads": 0,
+          "totalRedownloads": 0
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "localSpend": {
+              "amount": "5.00",
+              "currency": "USD"
+            },
+            "impressions": 500,
+            "taps": 20,
+            "ttr": 0.04,
+            "tapInstalls": 3,
+            "viewInstalls": 0,
+            "totalInstalls": 3,
+            "tapNewDownloads": 3,
+            "viewNewDownloads": 0,
+            "totalNewDownloads": 3,
+            "tapRedownloads": 0,
+            "viewRedownloads": 0,
+            "totalRedownloads": 0
+          }
+        ]
+      }
+    ]
+  },
+  "pagination": {
+    "totalCount": 1,
+    "offset": 0,
+    "pageSize": 1000
+  }
+}

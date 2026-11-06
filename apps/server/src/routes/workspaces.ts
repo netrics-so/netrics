@@ -3,9 +3,11 @@ import { z } from "zod";
 
 import {
   activeProjectResponseSchema,
+  addDemoContentResponseSchema,
   auditEventListResponseSchema,
   createProjectRequestSchema,
   createWorkspaceRequestSchema,
+  createWorkspaceResponseSchema,
   memberListResponseSchema,
   memberResponseSchema,
   projectListResponseSchema,
@@ -33,7 +35,7 @@ import {
   listMembershipsForUser,
   listProjects,
   renameProject,
-  renameWorkspace,
+  updateWorkspace,
   setActiveProject,
   updateMembershipRole,
   withWorkspace,
@@ -42,9 +44,11 @@ import {
   type Project,
   type Workspace,
 } from "@netrics/database";
-import { can, canManageMember } from "@netrics/domain";
+import { can, canManageMember, isLocale } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
+import { conversionOptions } from "../metrics/query.js";
+import type { AddDemoContent } from "../onboarding.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
@@ -52,6 +56,10 @@ import { createRequireSession } from "./session.js";
 export interface WorkspaceRouteDeps {
   authService: AuthService;
   db: Database;
+  /** Demo connection and dashboard for new workspaces (#51). */
+  addDemoContent?: AddDemoContent;
+  /** NETRICS_EXCHANGE_RATES: whether a display currency can be set (#191). */
+  exchangeRates?: boolean;
 }
 
 const memberParamsSchema = z.object({ userId: z.uuid() });
@@ -61,6 +69,11 @@ function toWorkspace(workspace: Workspace) {
   return {
     id: workspace.id,
     name: workspace.name,
+    timeZone: workspace.timeZone,
+    displayCurrency: workspace.displayCurrency,
+    screenLocale: isLocale(workspace.screenLocale)
+      ? workspace.screenLocale
+      : null,
     createdAt: workspace.createdAt.toISOString(),
   };
 }
@@ -102,7 +115,7 @@ export function registerWorkspaceRoutes(
             summary: "Create a workspace",
             tags: ["workspaces"],
             body: createWorkspaceRequestSchema,
-            response: workspaceResponseSchema,
+            response: createWorkspaceResponseSchema,
           }),
         },
         async (request, reply) => {
@@ -110,13 +123,74 @@ export function registerWorkspaceRoutes(
           if (!body) {
             return;
           }
+          const callerId = request.sessionIdentity!.domainUserId;
           const workspace = await createWorkspaceWithOwner(deps.db, {
             name: body.name,
-            ownerUserId: request.sessionIdentity!.domainUserId,
+            ownerUserId: callerId,
+            ...(body.timeZone ? { timeZone: body.timeZone } : {}),
           });
-          return workspaceResponseSchema.parse({
+          // The workspace exists either way; demo content is a bonus that
+          // must not fail its creation.
+          let demoDashboardId: string | null = null;
+          if (body.withDemo && deps.addDemoContent) {
+            try {
+              demoDashboardId = await deps.addDemoContent({
+                workspaceId: workspace.id,
+                callerId,
+              });
+            } catch (error) {
+              request.log.error(
+                { err: error, workspaceId: workspace.id },
+                "demo content failed",
+              );
+            }
+          }
+          return createWorkspaceResponseSchema.parse({
             workspace: toWorkspace(workspace),
+            demoDashboardId,
           });
+        },
+      );
+
+      // First-run onboarding (#308): "Skip, use demo data" on a workspace
+      // created without the demo. Same content and rules as `withDemo`; the
+      // services check the caller's membership again under RLS.
+      scope.post(
+        "/workspaces/:workspaceId/demo",
+        {
+          schema: routeSchema({
+            summary: "Add the demo connection and a sample dashboard",
+            tags: ["workspaces"],
+            response: addDemoContentResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (
+            !can(access.role, "connections:create") ||
+            !can(access.role, "dashboards:create")
+          ) {
+            return sendError(reply, 403, "forbidden");
+          }
+          let demoDashboardId: string | null = null;
+          if (deps.addDemoContent) {
+            try {
+              demoDashboardId = await deps.addDemoContent({
+                workspaceId: access.workspaceId,
+                callerId: access.callerId,
+              });
+            } catch (error) {
+              request.log.error(
+                { err: error, workspaceId: access.workspaceId },
+                "demo content failed",
+              );
+            }
+          }
+          return addDemoContentResponseSchema.parse({ demoDashboardId });
         },
       );
 
@@ -176,11 +250,12 @@ export function registerWorkspaceRoutes(
         "/workspaces/:workspaceId",
         {
           schema: routeSchema({
-            summary: "Rename a workspace",
+            summary:
+              "Rename a workspace, or change its time zone, display currency or screen language",
             tags: ["workspaces"],
             body: renameWorkspaceRequestSchema,
             response: workspaceResponseSchema,
-            errors: [403, 404],
+            errors: [400, 403, 404],
           }),
         },
         async (request, reply) => {
@@ -195,29 +270,102 @@ export function registerWorkspaceRoutes(
           if (!body) {
             return;
           }
-          const workspace = await withWorkspace(
+          const displayCurrency = body.displayCurrency;
+          const outcome = await withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            async (tx) => {
+            async (
+              tx,
+            ): Promise<{
+              error?: 404 | "currency_conversion_off" | "currency_not_covered";
+              workspace?: Workspace | null;
+            }> => {
               const current = await findWorkspace(tx, access.workspaceId);
               if (!current) {
-                return null;
+                return { error: 404 };
               }
-              const renamed = await renameWorkspace(
-                tx,
-                access.workspaceId,
-                body.name,
-              );
-              await insertAuditEvent(tx, {
-                workspaceId: access.workspaceId,
-                actorUserId: access.callerId,
-                action: "workspace.renamed",
-                target: access.workspaceId,
-                metadata: { oldName: current.name, newName: body.name },
+              // EUR or a currency with ECB rates, on an instance that
+              // fetches them (#191).
+              if (displayCurrency) {
+                if (!deps.exchangeRates) {
+                  return { error: "currency_conversion_off" };
+                }
+                const options = await conversionOptions(tx, true);
+                if (!options.currencies.includes(displayCurrency)) {
+                  return { error: "currency_not_covered" };
+                }
+              }
+              const updated = await updateWorkspace(tx, access.workspaceId, {
+                ...(body.name !== undefined ? { name: body.name } : {}),
+                ...(body.timeZone !== undefined
+                  ? { timeZone: body.timeZone }
+                  : {}),
+                ...(displayCurrency !== undefined ? { displayCurrency } : {}),
+                ...(body.screenLocale !== undefined
+                  ? { screenLocale: body.screenLocale }
+                  : {}),
               });
-              return renamed;
+              if (body.name !== undefined) {
+                await insertAuditEvent(tx, {
+                  workspaceId: access.workspaceId,
+                  actorUserId: access.callerId,
+                  action: "workspace.renamed",
+                  target: access.workspaceId,
+                  metadata: { oldName: current.name, newName: body.name },
+                });
+              }
+              if (body.timeZone !== undefined) {
+                await insertAuditEvent(tx, {
+                  workspaceId: access.workspaceId,
+                  actorUserId: access.callerId,
+                  action: "workspace.time_zone_changed",
+                  target: access.workspaceId,
+                  metadata: {
+                    oldTimeZone: current.timeZone,
+                    newTimeZone: body.timeZone,
+                  },
+                });
+              }
+              if (
+                displayCurrency !== undefined &&
+                displayCurrency !== current.displayCurrency
+              ) {
+                await insertAuditEvent(tx, {
+                  workspaceId: access.workspaceId,
+                  actorUserId: access.callerId,
+                  action: "workspace.display_currency_changed",
+                  target: access.workspaceId,
+                  metadata: {
+                    oldDisplayCurrency: current.displayCurrency,
+                    newDisplayCurrency: displayCurrency,
+                  },
+                });
+              }
+              if (
+                body.screenLocale !== undefined &&
+                body.screenLocale !== current.screenLocale
+              ) {
+                await insertAuditEvent(tx, {
+                  workspaceId: access.workspaceId,
+                  actorUserId: access.callerId,
+                  action: "workspace.screen_locale_changed",
+                  target: access.workspaceId,
+                  metadata: {
+                    oldScreenLocale: current.screenLocale,
+                    newScreenLocale: body.screenLocale,
+                  },
+                });
+              }
+              return { workspace: updated };
             },
           );
+          if (outcome.error === 404) {
+            return sendError(reply, 404, "workspace_not_found");
+          }
+          if (outcome.error) {
+            return sendError(reply, 400, outcome.error);
+          }
+          const { workspace } = outcome;
           if (!workspace) {
             return sendError(reply, 404, "workspace_not_found");
           }

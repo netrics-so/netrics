@@ -1,0 +1,11 @@
+{
+  "errors": [
+    {
+      "id": "00000000-0000-4000-8000-000000000040",
+      "status": "404",
+      "code": "NOT_FOUND",
+      "title": "The request expected results but none were found",
+      "detail": "There were no sales for the date specified."
+    }
+  ]
+}

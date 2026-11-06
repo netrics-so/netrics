@@ -1,8 +1,11 @@
+import type { DatasetPage } from "./datasets.js";
 import type { ConnectorManifest } from "./manifest.js";
 import type {
   CheckResult,
   ConnectionContext,
   Resource,
+  ResourceIconsRequest,
+  ResourceIconsResult,
   SyncRequest,
   SyncResult,
 } from "./transport.js";
@@ -30,6 +33,19 @@ export interface Connector {
     request: SyncRequest,
     runtime: ConnectorRuntime,
   ): Promise<SyncResult>;
+  /**
+   * Optional (SDK 0.2.5, #226): icons of the given resources, for example
+   * an app's App Store icon, fetched through runtime.fetch like everything
+   * else. Resources without an icon are left out of the result; a thrown
+   * error is a retryable provider failure. The host validates and stores
+   * the bytes (raster only, metadata stripped) and refreshes them at most
+   * daily, so implementations need no cache of their own.
+   */
+  resourceIcons?(
+    context: ConnectionContext,
+    request: ResourceIconsRequest,
+    runtime: ConnectorRuntime,
+  ): Promise<ResourceIconsResult>;
 }
 
 /**
@@ -45,8 +61,34 @@ export interface ConnectorRuntime {
    * bounds response size and duration. Violations throw EgressDeniedError.
    */
   fetch(url: string, init?: ConnectorFetchInit): Promise<ConnectorResponse>;
-  /** Aborted when the host's time budget for this call runs out. */
+  /** Aborted when the call ends or the host's time budget runs out. */
   signal: AbortSignal;
+  /** Optional SDK 0.2.10 durable, connection-scoped parsed dataset staging. */
+  datasetStaging?: ConnectorDatasetStaging;
+}
+
+/** Host-assigned identity; metadata must contain no credentials or raw records. */
+export interface StagedDataset {
+  id: string;
+  key: string;
+  metadata: unknown;
+}
+
+/**
+ * Immutable, schema-validated pages persisted before returning a checkpoint.
+ * The host scopes every operation to this connection/connector, limits bytes,
+ * enforces source/tier retention and expires disposable staging within one day.
+ * A stage's lifetime never extends when read or written again. A missing stage
+ * can be rebuilt from the provider; restart an incomplete refresh in that case.
+ */
+export interface ConnectorDatasetStaging {
+  get(key: string): Promise<StagedDataset | null>;
+  getPage(id: string, pageKey: string): Promise<DatasetPage>;
+  put(input: {
+    key: string;
+    metadata: unknown;
+    pages: DatasetPage[];
+  }): Promise<StagedDataset>;
 }
 
 export interface ConnectorFetchInit {
@@ -55,10 +97,25 @@ export interface ConnectorFetchInit {
   body?: string;
 }
 
-/** A fully buffered response (the body is read within the size limit). */
+/**
+ * A fully buffered response. The whole body is read within the host's size
+ * limit (10 MiB by default) before the connector sees it; a larger body
+ * fails the fetch.
+ */
 export interface ConnectorResponse {
   status: number;
   headers: Record<string, string>;
+  /** The body decoded as UTF-8. */
   text(): string;
+  /** The body parsed as JSON (throws on invalid JSON). */
   json(): unknown;
+  /**
+   * The exact body bytes, for binary payloads such as gzip report files.
+   * Each call returns a fresh copy. The size limit applies to these bytes,
+   * not to anything the connector inflates from them: decompress with a
+   * bound of your own, e.g. `gunzipSync(bytes, { maxOutputLength })` from
+   * `node:zlib`, so an oversized or hostile archive fails the call instead
+   * of exhausting memory. Since SDK 0.2.2.
+   */
+  bytes(): Uint8Array;
 }

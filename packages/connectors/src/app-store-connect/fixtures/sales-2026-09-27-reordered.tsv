@@ -1,0 +1,4 @@
+Order Type	Client	Preserved Pricing	Proceeds Reason	Supported Platforms	Device	CMB	Category	Period	Subscription	Parent Identifier	Promo Code	Customer Price	Apple Identifier	Currency of Proceeds	Country Code	Customer Currency	End Date	Begin Date	Developer Proceeds	Units	Product Type Identifier	Version	Title	Developer	SKU	Provider Country	Provider	Future Column
+				iOS	iPhone		Productivity					0	1000000001	USD	US	USD	09/27/2026	09/27/2026	0	6	1F	2.1	Example Field Notes	Example Developer	EXFIELDNOTES	US	APPLE	x
+				iOS	iPad		Productivity					0	1000000001	CAD	CA	CAD	09/27/2026	09/27/2026	0	1	1T	2.1	Example Field Notes	Example Developer	EXFIELDNOTES	US	APPLE	x
+				iOS	iPhone		Productivity			EXFIELDNOTES		1.39	1100000001	CAD	CA	CAD	09/27/2026	09/27/2026	1.05	1	IA1		com.example.fieldnotes.pro	Example Developer	EXFIELDNOTES.PRO	US	APPLE	x

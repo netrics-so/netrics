@@ -1,0 +1,94 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/post-adgroups-query), checked 2026-10-29; IDs and names are synthetic. The account-wide query without filters: every non-deleted ad group of every campaign in campaigns-4100000001.json, by ID ascending. TO BE CONFIRMED by #370: IDs arrive as JSON numbers, displayStatus is present (Apple's example shows only systemStatus), deleted ad groups are left out without a filter, and the query needs the ad account's X-AP-Context.",
+  "result": [
+    {
+      "id": 6100000001,
+      "name": "Brand – Exact",
+      "adAccountId": 4100000001,
+      "campaignId": 5100000001,
+      "pricingModel": "CPT",
+      "status": "ENABLED",
+      "systemStatus": "RUNNING",
+      "displayStatus": "RUNNING",
+      "startTime": "2026-01-01T00:00:00.000",
+      "targeting": {
+        "deviceClass": {
+          "include": ["IPHONE", "IPAD"]
+        }
+      },
+      "bidStrategy": {
+        "bidStrategyType": "MANUAL_CPT",
+        "bidStrategyGoal": "TAP",
+        "bid": {
+          "amount": "1.50",
+          "currency": "USD"
+        }
+      },
+      "automatedKeywordsOptIn": false,
+      "deleted": false,
+      "creationTime": "2026-01-01T08:00:00.000",
+      "modificationTime": "2026-02-01T08:00:00.000"
+    },
+    {
+      "id": 6100000003,
+      "name": "Discovery – Search Match",
+      "adAccountId": 4100000001,
+      "campaignId": 5100000002,
+      "pricingModel": "CPT",
+      "status": "PAUSED",
+      "systemStatus": "NOT_RUNNING",
+      "displayStatus": "PAUSED",
+      "startTime": "2026-01-01T00:00:00.000",
+      "targeting": {
+        "deviceClass": {
+          "include": ["IPHONE", "IPAD"]
+        }
+      },
+      "bidStrategy": {
+        "bidStrategyType": "MANUAL_CPT",
+        "bidStrategyGoal": "TAP",
+        "bid": {
+          "amount": "1.50",
+          "currency": "USD"
+        }
+      },
+      "automatedKeywordsOptIn": false,
+      "deleted": false,
+      "creationTime": "2026-01-01T08:00:00.000",
+      "modificationTime": "2026-02-01T08:00:00.000"
+    },
+    {
+      "id": 6100000004,
+      "name": "Dicey – Category Exact",
+      "adAccountId": 4100000001,
+      "campaignId": 5100000003,
+      "pricingModel": "CPT",
+      "status": "ENABLED",
+      "systemStatus": "RUNNING",
+      "displayStatus": "RUNNING",
+      "startTime": "2026-01-01T00:00:00.000",
+      "targeting": {
+        "deviceClass": {
+          "include": ["IPHONE", "IPAD"]
+        }
+      },
+      "bidStrategy": {
+        "bidStrategyType": "MANUAL_CPT",
+        "bidStrategyGoal": "TAP",
+        "bid": {
+          "amount": "1.50",
+          "currency": "USD"
+        }
+      },
+      "automatedKeywordsOptIn": false,
+      "deleted": false,
+      "creationTime": "2026-01-01T08:00:00.000",
+      "modificationTime": "2026-02-01T08:00:00.000"
+    }
+  ],
+  "pagination": {
+    "totalCount": 3,
+    "offset": 0,
+    "pageSize": 1000
+  }
+}

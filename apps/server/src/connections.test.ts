@@ -18,7 +18,7 @@ import {
   workspaceListResponseSchema,
   type WorkspaceRole,
 } from "@netrics/contracts";
-import { createDefaultRegistry } from "@netrics/connector-runtime";
+import { createDefaultRegistry } from "./connectors.js";
 import {
   createDatabase,
   createRawSqlClient,
@@ -276,6 +276,58 @@ describe("GET /v1/connectors", () => {
     expect(demo!.configSchema).toMatchObject({ type: "object" });
   });
 
+  it("files connectors by category with their tile colour and metrics (#306)", async () => {
+    const response = await call(world.app, {
+      method: "GET",
+      url: "/v1/connectors",
+      cookie: cookies.viewer,
+    });
+    const { connectors } = connectorListResponseSchema.parse(response.json());
+    const byId = new Map(connectors.map((entry) => [entry.id, entry]));
+    expect(byId.get("demo")).toMatchObject({
+      category: "other",
+      brandColor: null,
+      metrics: [
+        { key: "demo.visitors", name: "Visitors" },
+        { key: "demo.signups", name: "Signups" },
+      ],
+    });
+    expect(byId.get("google-search-console")).toMatchObject({
+      category: "seo",
+      brandColor: "#4285f4",
+    });
+    expect(byId.get("vercel")?.category).toBe("web");
+    expect(byId.get("app-store-connect")?.category).toBe("apps");
+    // Helper metrics (inputs for derived values) are not offered as chips.
+    const gsc = byId.get("google-search-console")!;
+    expect(gsc.metrics.length).toBeLessThan(gsc.metricsCount);
+  });
+
+  it("carries the token field's label, help and setup steps", async () => {
+    const response = await call(world.app, {
+      method: "GET",
+      url: "/v1/connectors",
+      cookie: cookies.viewer,
+    });
+    const { connectors } = connectorListResponseSchema.parse(response.json());
+    const vercel = connectors.find((c) => c.id === "vercel");
+    expect(vercel?.authStrategies).toEqual([
+      {
+        strategy: "token",
+        tokenLabel: "Vercel access token",
+        tokenDescription: expect.stringContaining("stored encrypted"),
+        setup: {
+          steps: expect.arrayContaining([
+            expect.stringContaining("Account Settings → Tokens"),
+          ]),
+          url: "https://vercel.com/account/settings/tokens",
+        },
+      },
+    ]);
+    // The credentials schema itself stays server-side.
+    expect(JSON.stringify(vercel)).not.toContain("credentialsSchema");
+  });
+
   it("requires a session", async () => {
     expectError(
       await call(world.app, { method: "GET", url: "/v1/connectors" }),
@@ -375,7 +427,7 @@ describe("connection lifecycle", () => {
       id: connectionId,
       name: "Demo Metrics Renamed",
       connectorName: "Demo Connector",
-      connectorVersion: "0.1.0",
+      connectorVersion: "0.1.1",
     });
   });
 
@@ -506,6 +558,10 @@ describe("engine run and observations", () => {
         observation.metricKey,
       );
       expect(observation.dimensions.resource).toMatch(/^demo-site-[12]$/);
+      // The name the connector's discover reported (#196).
+      expect(observation.resourceName).toBe(
+        `Demo Site ${observation.dimensions.resource!.slice(-1)}`,
+      );
     }
     const timestamps = observations.map((o) => Date.parse(o.sourceTimestamp));
     expect(timestamps).toEqual([...timestamps].sort((a, b) => b - a));
@@ -569,6 +625,49 @@ describe("engine run and observations", () => {
     expect(detail.syncRuns[0]!.observationsWritten).toBeGreaterThan(0);
   });
 
+  it("names only the resources the connector named, from this connection", async () => {
+    // demo-site-2 loses its name; another connection's name for the same id
+    // must not stand in for it.
+    const [other] = await world.admin<{ id: string; workspace_id: string }[]>`
+      select id, workspace_id from connections
+      where id <> ${connectionId}::uuid limit 1`;
+    await world.admin`
+      delete from connection_resources
+      where connection_id = ${connectionId}::uuid and resource_id = 'demo-site-2'`;
+    if (other) {
+      await world.admin`
+        insert into connection_resources (connection_id, workspace_id, resource_id, name, kind)
+        values (${other.id}::uuid, ${other.workspace_id}::uuid, 'demo-site-2', 'Not this one', 'site')
+        on conflict do nothing`;
+    }
+    try {
+      const { observations } = observationListResponseSchema.parse(
+        (
+          await call(world.app, {
+            method: "GET",
+            url: `/v1/workspaces/${w1Id}/connections/${connectionId}/observations`,
+            cookie: cookies.viewer,
+          })
+        ).json(),
+      );
+      const names = new Map(
+        observations.map((o) => [o.dimensions.resource, o.resourceName]),
+      );
+      expect(names.get("demo-site-1")).toBe("Demo Site 1");
+      expect(names.get("demo-site-2")).toBeNull();
+    } finally {
+      await world.admin`
+        insert into connection_resources (connection_id, workspace_id, resource_id, name, kind)
+        values (${connectionId}::uuid, ${w1Id}::uuid, 'demo-site-2', 'Demo Site 2', 'site')
+        on conflict do nothing`;
+      if (other) {
+        await world.admin`
+          delete from connection_resources
+          where connection_id = ${other.id}::uuid and name = 'Not this one'`;
+      }
+    }
+  });
+
   it("enqueues a manual sync", async () => {
     const response = await call(world.app, {
       method: "POST",
@@ -593,6 +692,28 @@ describe("engine run and observations", () => {
 });
 
 describe("credential recovery", () => {
+  it("shows a token rejected before the first successful sync as auth_failed", async () => {
+    await withWorkspace(world.db, { workspaceId: w1Id }, async (tx) => {
+      await tx
+        .update(schema.connectionState)
+        .set({ authState: "auth_failed", lastSuccessAt: null })
+        .where(eq(schema.connectionState.connectionId, connectionId));
+    });
+    const { connection } = connectionDetailResponseSchema.parse(
+      (
+        await call(world.app, {
+          method: "GET",
+          url: `/v1/workspaces/${w1Id}/connections/${connectionId}`,
+          cookie: cookies.owner,
+        })
+      ).json(),
+    );
+    expect(connection.state).toMatchObject({
+      health: "auth_failed",
+      lastSuccessAt: null,
+    });
+  });
+
   it("resets auth_failed state when new credentials are saved", async () => {
     // Seed an auth_failed state (as a failed engine run would).
     await withWorkspace(world.db, { workspaceId: w1Id }, async (tx) => {
@@ -688,6 +809,16 @@ describe("role matrix", () => {
         url: `/v1/workspaces/${w1Id}/connections/preview`,
         cookie: cookies.viewer,
         payload: { connectorId: "demo" },
+      }),
+      403,
+      "forbidden",
+    );
+    expectError(
+      await call(world.app, {
+        method: "POST",
+        url: `/v1/workspaces/${w1Id}/connections/${connectionId}/preview`,
+        cookie: cookies.viewer,
+        payload: { config: {} },
       }),
       403,
       "forbidden",
@@ -856,7 +987,9 @@ describe("delete", () => {
       url: `/v1/workspaces/${w1Id}/connections/${editorConnectionId}`,
       cookie: cookies.owner,
     });
-    expect(response.statusCode).toBe(204);
+    expect(response.statusCode).toBe(200);
+    // Not an OAuth connection: nothing to revoke.
+    expect(response.json()).toEqual({ revocation: null });
 
     const after = await world.admin`
       select
@@ -865,7 +998,7 @@ describe("delete", () => {
         (select count(*)::int from observations where connection_id = ${editorConnectionId}::uuid) as observations,
         (select count(*)::int from sync_runs where connection_id = ${editorConnectionId}::uuid) as sync_runs,
         (select count(*)::int from jobs where connection_id = ${editorConnectionId}::uuid and status in ('pending', 'running')) as live_jobs,
-        (select count(*)::int from jobs where connection_id = ${editorConnectionId}::uuid and status = 'failed' and last_error = 'connection deleted') as cancelled_jobs
+        (select count(*)::int from jobs where workspace_id = ${w1Id}::uuid and connection_id is null and status = 'failed' and last_error = 'connection deleted') as cancelled_jobs
     `;
     expect(after[0]).toMatchObject({
       connection: 0,

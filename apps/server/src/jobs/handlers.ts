@@ -2,7 +2,14 @@ import type { Database, Job } from "@netrics/database";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import type { Logger } from "pino";
 
+import type { ExecuteOptions } from "@netrics/connector-runtime";
+
 import type { CredentialKeyring } from "../credentials.js";
+import type { SignedKeyProviders } from "../signed-keys/registry.js";
+import type { OAuthTokenService } from "../oauth/tokens.js";
+
+import type { ImageQuota } from "@netrics/database";
+import type { DataPolicy } from "@netrics/domain";
 
 import { createSyncJobHandlers } from "../sync/engine.js";
 
@@ -40,6 +47,14 @@ export class NonRetryableJobError extends Error {
   }
 }
 
+/** Expected scheduling handoff after durable progress, not a failed attempt. */
+export class ContinueJobError extends Error {
+  constructor(readonly continuation?: Record<string, unknown>) {
+    super("Continue from the committed checkpoint");
+    this.name = "ContinueJobError";
+  }
+}
+
 /**
  * Throw from a handler for terminal domain failures that must neither retry
  * nor pollute the dead-letter queue (e.g. rejected credentials: only a user
@@ -57,10 +72,21 @@ export class TerminalJobError extends Error {
 const noopHandler: JobHandler = async () => {};
 
 export interface JobHandlerDeps {
+  dataPolicy?: DataPolicy;
   /** The reviewed connector bundle of this deployment. */
   registry: ConnectorRegistry;
   /** Instance keyring for decrypting connection credentials. */
   credentialKeyring: CredentialKeyring;
+  /** Clock for sync windows; tests pin it. */
+  now?: () => Date;
+  /** Access tokens for OAuth connections (ADR 0012). */
+  oauthTokens?: OAuthTokenService;
+  /** Default: the signed-key providers of this server (ADR 0014). */
+  signedKeys?: SignedKeyProviders;
+  /** Tests only: options for every connector call (e.g. local egress). */
+  executeOptions?: ExecuteOptions;
+  /** The workspace image quota icons count against (#226). */
+  imageQuota?: ImageQuota;
 }
 
 /**

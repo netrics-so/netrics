@@ -1,221 +1,80 @@
-import { randomUUID } from "node:crypto";
-
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 
 import {
+  appStoreAnalyticsStatusResponseSchema,
+  appStoreReviewsStatusResponseSchema,
   connectionDetailResponseSchema,
   connectionListResponseSchema,
   connectionPreviewResponseSchema,
+  storedConnectionPreviewRequestSchema,
+  storedConnectionPreviewResponseSchema,
+  connectionResourcesResponseSchema,
   connectionResponseSchema,
   connectorListResponseSchema,
   createConnectionRequestSchema,
+  createConnectionsRequestSchema,
+  createSharedKeyConnectionsRequestSchema,
+  connectionsResponseSchema,
+  deleteConnectionResponseSchema,
+  enableAppStoreAnalyticsRequestSchema,
+  enableAppStoreAnalyticsResponseSchema,
   enqueueSyncResponseSchema,
+  latestReviewRequestSchema,
+  latestReviewResponseSchema,
   observationListQuerySchema,
   observationListResponseSchema,
   previewConnectionRequestSchema,
+  sharedKeyResourcesResponseSchema,
+  signedKeyPairResponseSchema,
   updateConnectionRequestSchema,
-  type ConnectionAuthState,
-  type ConnectionHealth,
-  type ConnectionStateView,
 } from "@netrics/contracts";
-import {
-  executeCheck,
-  executeDiscover,
-  type ConnectorRegistry,
-} from "@netrics/connector-runtime";
-import type { ConnectorManifest } from "@netrics/connector-sdk";
-import {
-  enqueueJob,
-  requestConnectionSync,
-  findProject,
-  insertAuditEvent,
-  schema,
-  withWorkspace,
-  type Database,
-  type Transaction,
-} from "@netrics/database";
+import type { ConnectorRegistry } from "@netrics/connector-runtime";
+import type { Database } from "@netrics/database";
 import { can } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
-import { validateConnectionConfig } from "../config-schema.js";
 import {
-  decryptCredentials,
-  encryptCredentials,
-  redactSecrets,
-  type CredentialKeyring,
-} from "../credentials.js";
+  createConnectionService,
+  type Result,
+} from "../connections/service.js";
+import type { CredentialKeyring } from "../credentials.js";
+import type { OAuthProviders } from "../oauth/config.js";
+import type { OAuthTokenService } from "../oauth/tokens.js";
+import type { SignedKeyProviders } from "../signed-keys/registry.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
+
+// HTTP layer for connections: authentication, authorization, request parsing
+// and response shapes. The work happens in ../connections/service.ts.
 
 export interface ConnectionRouteDeps {
   authService: AuthService;
   db: Database;
   registry: ConnectorRegistry;
   credentialKeyring: CredentialKeyring;
+  oauthProviders: OAuthProviders;
+  oauthTokens?: OAuthTokenService;
+  signedKeys?: SignedKeyProviders;
 }
 
 const connectionParamsSchema = z.object({ connectionId: z.uuid() });
+const signedKeyProviderParamsSchema = z.object({
+  provider: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
+});
+const reviewParamsSchema = z.object({
+  connectionId: z.uuid(),
+  reviewId: z.string().min(1).max(200),
+});
 
-type ConnectionRow = typeof schema.connections.$inferSelect;
-type ConnectionStateRow = typeof schema.connectionState.$inferSelect;
-
-/** Redacted, bounded message for connector-facing errors. */
-function safeMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return String(redactSecrets(message)).slice(0, 500);
-}
-
-function toStateView(state: ConnectionStateRow | null): ConnectionStateView {
-  const authState: ConnectionAuthState = state
-    ? (state.authState as ConnectionAuthState)
-    : "ok";
-  const health: ConnectionHealth = !state?.lastSuccessAt
-    ? "pending"
-    : authState === "ok"
-      ? "ok"
-      : authState;
-  return {
-    health,
-    authState,
-    lastSuccessAt: state?.lastSuccessAt?.toISOString() ?? null,
-    nextDueAt: state?.nextDueAt?.toISOString() ?? null,
-    consecutiveFailures: state?.consecutiveFailures ?? 0,
-    pollIntervalSeconds:
-      state?.pollIntervalSeconds ?? DEFAULT_POLL_INTERVAL_SECONDS,
-  };
-}
-
-const DEFAULT_POLL_INTERVAL_SECONDS = 300;
-
-function toConnection(
-  registry: ConnectorRegistry,
-  row: ConnectionRow,
-  state: ConnectionStateRow | null,
-) {
-  const manifest = registry.get(row.connectorId)?.manifest;
-  return {
-    id: row.id,
-    name: row.name,
-    connectorId: row.connectorId,
-    connectorName: manifest?.name ?? row.connectorId,
-    connectorVersion: manifest?.version ?? "unknown",
-    projectId: row.projectId,
-    hasCredentials: row.credentialsEncrypted != null,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-    state: toStateView(state),
-  };
-}
-
-function toConnectionDetail(
-  registry: ConnectorRegistry,
-  row: ConnectionRow,
-  state: ConnectionStateRow | null,
-) {
-  // Strip the reserved resource-selection key from the echoed config; it is
-  // an engine concern, not a manifest config property.
-  const { resourceSelection: _resourceSelection, ...config } =
-    row.config as Record<string, unknown>;
-  return {
-    ...toConnection(registry, row, state),
-    config,
-  };
-}
-
-// Every query in this module names the workspace explicitly in addition to
-// the RLS context (defense in depth): isolation must not depend on the
-// database role being unprivileged.
-function connectionScope(workspaceId: string, connectionId: string) {
-  return and(
-    eq(schema.connections.workspaceId, workspaceId),
-    eq(schema.connections.id, connectionId),
-  );
-}
-
-async function loadConnection(
-  tx: Transaction,
-  workspaceId: string,
-  connectionId: string,
-): Promise<{ row: ConnectionRow; state: ConnectionStateRow | null } | null> {
-  const [row] = await tx
-    .select()
-    .from(schema.connections)
-    .where(connectionScope(workspaceId, connectionId))
-    .limit(1);
-  if (!row) {
+/** Sends the failure and returns null, or returns the value. */
+function unwrap<T>(result: Result<T>, reply: FastifyReply): T | null {
+  if (!result.ok) {
+    sendError(reply, result.status, result.error);
     return null;
   }
-  const [state] = await tx
-    .select()
-    .from(schema.connectionState)
-    .where(
-      and(
-        eq(schema.connectionState.workspaceId, workspaceId),
-        eq(schema.connectionState.connectionId, connectionId),
-      ),
-    )
-    .limit(1);
-  return { row, state: state ?? null };
-}
-
-interface ValidatedConfigOk {
-  ok: true;
-  config: Record<string, unknown>;
-}
-
-/** Validates config against the manifest subset; sends 400 on failure. */
-function validateConfigOrReply(
-  manifest: ConnectorManifest,
-  config: Record<string, unknown>,
-  reply: FastifyReply,
-): ValidatedConfigOk | null {
-  const validated = validateConnectionConfig(manifest.configSchema, config);
-  if (!validated.ok) {
-    sendError(reply, 400, validated.message);
-    return null;
-  }
-  return validated;
-}
-
-/**
- * Runs the connector check for a candidate config/credentials pair. Returns
- * null after sending the reply when the check fails (400 with the connector's
- * actionable, already-redacted message — nothing is persisted by callers in
- * that case).
- */
-async function runCheckOrReply(
-  deps: ConnectionRouteDeps,
-  connectorId: string,
-  connectionId: string,
-  config: Record<string, unknown>,
-  credentials: Record<string, unknown>,
-  reply: FastifyReply,
-) {
-  const registered = deps.registry.get(connectorId);
-  if (!registered) {
-    sendError(reply, 400, "invalid_request");
-    return null;
-  }
-  try {
-    const check = await executeCheck(registered.connector, {
-      connectionId,
-      config,
-      credentials,
-    });
-    if (!check.ok) {
-      sendError(reply, 400, check.message ?? "credential check failed");
-      return null;
-    }
-    return check;
-  } catch (error) {
-    // Thrown checks signal a provider-side failure (outage, rate limit); the
-    // message is redacted at the runtime boundary already.
-    sendError(reply, 400, safeMessage(error));
-    return null;
-  }
+  return result.value;
 }
 
 export function registerConnectionRoutes(
@@ -223,6 +82,7 @@ export function registerConnectionRoutes(
   deps: ConnectionRouteDeps,
 ): void {
   const requireSession = createRequireSession(deps.authService);
+  const connections = createConnectionService(deps);
 
   void app.register(
     (scope, _opts, done) => {
@@ -241,21 +101,11 @@ export function registerConnectionRoutes(
             response: connectorListResponseSchema,
           }),
         },
-        async () =>
+        async (request) =>
           connectorListResponseSchema.parse({
-            connectors: deps.registry.list().map(({ manifest }) => ({
-              id: manifest.id,
-              name: manifest.name,
-              version: manifest.version,
-              description: manifest.description,
-              metricsCount: manifest.metrics.length,
-              minRefreshIntervalSeconds: manifest.minRefreshIntervalSeconds,
-              supportsBackfill: manifest.supportsBackfill,
-              configSchema: { ...manifest.configSchema },
-              authStrategies: manifest.authStrategies.map((strategy) => ({
-                strategy: strategy.strategy,
-              })),
-            })),
+            connectors: connections.listConnectors(
+              request.sessionIdentity!.locale,
+            ),
           }),
       );
 
@@ -282,116 +132,55 @@ export function registerConnectionRoutes(
           if (!body) {
             return;
           }
-          const registered = deps.registry.get(body.connectorId);
-          if (!registered) {
-            return sendError(reply, 400, "invalid_request");
-          }
-          const validated = validateConfigOrReply(
-            registered.manifest,
-            body.config,
+          const connection = unwrap(
+            await connections.create(access, body),
             reply,
           );
-          if (!validated) {
+          if (!connection) {
             return;
           }
-          const config = { ...validated.config };
-          if (body.resources && body.resources.length > 0) {
-            config.resourceSelection = body.resources;
-          }
-          const credentials = body.credentials ?? {};
+          return connectionResponseSchema.parse({ connection });
+        },
+      );
 
-          // Check BEFORE anything is persisted: bad credentials are a 400 with
-          // the connector's actionable message and leave no rows behind.
-          const connectionId = randomUUID();
-          const check = await runCheckOrReply(
-            deps,
-            body.connectorId,
-            connectionId,
-            config,
-            credentials,
+      // ADR 0020 §5 (#375): several connections with one credential, e.g.
+      // one generated Apple Ads key for several ad accounts. All are checked
+      // first, then stored in one transaction with the pending key.
+      scope.post(
+        "/workspaces/:workspaceId/connections/batch",
+        {
+          schema: routeSchema({
+            summary: "Create several connections with one credential",
+            tags: ["connections"],
+            body: createConnectionsRequestSchema,
+            response: connectionsResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:create")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const body = parseBody(
+            createConnectionsRequestSchema,
+            request,
             reply,
           );
-          if (!check) {
+          if (!body) {
             return;
           }
-
-          const created = await withWorkspace(
-            deps.db,
-            { workspaceId: access.workspaceId, userId: access.callerId },
-            async (tx) => {
-              if (body.projectId) {
-                const project = await findProject(
-                  tx,
-                  access.workspaceId,
-                  body.projectId,
-                );
-                if (!project) {
-                  sendError(reply, 404, "project_not_found");
-                  return null;
-                }
-              }
-              const [row] = await tx
-                .insert(schema.connections)
-                .values({
-                  id: connectionId,
-                  workspaceId: access.workspaceId,
-                  connectorId: body.connectorId,
-                  name: body.name,
-                  config,
-                  credentialsEncrypted: body.credentials
-                    ? Buffer.from(
-                        encryptCredentials(
-                          JSON.stringify(body.credentials),
-                          deps.credentialKeyring,
-                          { workspaceId: access.workspaceId, connectionId },
-                        ),
-                        "utf8",
-                      )
-                    : null,
-                  projectId: body.projectId ?? null,
-                })
-                .returning();
-              if (!row) {
-                throw new Error("connection insert returned no row");
-              }
-              const [state] = await tx
-                .insert(schema.connectionState)
-                .values({
-                  connectionId,
-                  workspaceId: access.workspaceId,
-                  nextDueAt: new Date(),
-                  pollIntervalSeconds:
-                    registered.manifest.minRefreshIntervalSeconds,
-                })
-                .returning();
-              // Transactional enqueue invariant: the connection, its state, and
-              // the initial backfill job commit atomically.
-              await enqueueJob(tx, {
-                kind: "connection.backfill",
-                workspaceId: access.workspaceId,
-                connectionId,
-                idempotencyKey: `backfill:${connectionId}`,
-              });
-              await insertAuditEvent(tx, {
-                workspaceId: access.workspaceId,
-                actorUserId: access.callerId,
-                action: "connection.created",
-                target: connectionId,
-                metadata: { name: body.name, connectorId: body.connectorId },
-              });
-              return { row, state: state ?? null };
-            },
+          const created = unwrap(
+            await connections.createMany(access, body),
+            reply,
           );
           if (!created) {
             return;
           }
-          return connectionResponseSchema.parse({
-            connection: toConnectionDetail(
-              deps.registry,
-              created.row,
-              created.state,
-            ),
-          });
+          return connectionsResponseSchema.parse({ connections: created });
         },
       );
 
@@ -422,45 +211,56 @@ export function registerConnectionRoutes(
           if (!body) {
             return;
           }
-          const registered = deps.registry.get(body.connectorId);
-          if (!registered) {
-            return sendError(reply, 400, "invalid_request");
-          }
-          const validated = validateConfigOrReply(
-            registered.manifest,
-            body.config,
+          const preview = unwrap(
+            await connections.preview(access, body),
             reply,
           );
-          if (!validated) {
+          if (!preview) {
             return;
           }
-          const credentials = body.credentials ?? {};
-          const context = {
-            connectionId: "preview",
-            config: validated.config,
-            credentials,
-          };
-          let check;
-          try {
-            check = await executeCheck(registered.connector, context);
-          } catch (error) {
-            return sendError(reply, 400, safeMessage(error));
+          return connectionPreviewResponseSchema.parse(preview);
+        },
+      );
+
+      // ADR 0020 §3 (#371): a key pair generated by netrics. The private
+      // key stays on the server as the caller's pending key; the public
+      // key is for the user to paste at the provider.
+      scope.post(
+        "/workspaces/:workspaceId/signed-keys/:provider/key-pairs",
+        {
+          schema: routeSchema({
+            summary:
+              "Generate a key pair for a signed-key provider (public key to paste)",
+            tags: ["connections"],
+            response: signedKeyPairResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
           }
-          if (!check.ok) {
-            return connectionPreviewResponseSchema.parse({
-              check,
-              resources: [],
-            });
+          if (
+            !can(access.role, "connections:create") &&
+            !can(access.role, "connections:update")
+          ) {
+            return sendError(reply, 403, "forbidden");
           }
-          try {
-            const resources = await executeDiscover(
-              registered.connector,
-              context,
-            );
-            return connectionPreviewResponseSchema.parse({ check, resources });
-          } catch (error) {
-            return sendError(reply, 400, safeMessage(error));
+          const params = signedKeyProviderParamsSchema.safeParse(
+            request.params,
+          );
+          if (!params.success) {
+            return sendError(reply, 404, "signed_key_provider_not_found");
           }
+          const pair = unwrap(
+            await connections.generateKeyPair(access, params.data.provider),
+            reply,
+          );
+          if (!pair) {
+            return;
+          }
+          return signedKeyPairResponseSchema.parse(pair);
         },
       );
 
@@ -482,33 +282,8 @@ export function registerConnectionRoutes(
           if (!can(access.role, "connections:view")) {
             return sendError(reply, 403, "forbidden");
           }
-          const rows = await withWorkspace(
-            deps.db,
-            { workspaceId: access.workspaceId, userId: access.callerId },
-            (tx) =>
-              tx
-                .select({
-                  connection: schema.connections,
-                  state: schema.connectionState,
-                })
-                .from(schema.connections)
-                .leftJoin(
-                  schema.connectionState,
-                  and(
-                    eq(
-                      schema.connectionState.connectionId,
-                      schema.connections.id,
-                    ),
-                    eq(schema.connectionState.workspaceId, access.workspaceId),
-                  ),
-                )
-                .where(eq(schema.connections.workspaceId, access.workspaceId))
-                .orderBy(schema.connections.createdAt),
-          );
           return connectionListResponseSchema.parse({
-            connections: rows.map(({ connection, state }) =>
-              toConnection(deps.registry, connection, state),
-            ),
+            connections: await connections.list(access),
           });
         },
       );
@@ -535,57 +310,311 @@ export function registerConnectionRoutes(
           if (!params.success) {
             return sendError(reply, 404, "connection_not_found");
           }
-          const result = await withWorkspace(
-            deps.db,
-            { workspaceId: access.workspaceId, userId: access.callerId },
-            async (tx) => {
-              const loaded = await loadConnection(
-                tx,
-                access.workspaceId,
-                params.data.connectionId,
-              );
-              if (!loaded) {
-                return null;
-              }
-              const syncRuns = await tx
-                .select()
-                .from(schema.syncRuns)
-                .where(
-                  and(
-                    eq(schema.syncRuns.workspaceId, access.workspaceId),
-                    eq(schema.syncRuns.connectionId, params.data.connectionId),
-                  ),
-                )
-                .orderBy(desc(schema.syncRuns.startedAt))
-                .limit(20);
-              return { ...loaded, syncRuns };
-            },
+          const detail = unwrap(
+            await connections.get(access, params.data.connectionId),
+            reply,
           );
-          if (!result) {
+          if (!detail) {
+            return;
+          }
+          return connectionDetailResponseSchema.parse(detail);
+        },
+      );
+
+      // Discovery for an existing OAuth connection (ADR 0012): the
+      // connector lists what the linked account can read, with an access
+      // token from the token service. A signed-key connection (ADR 0014)
+      // gets a freshly signed token from its stored key. Needs
+      // connections:update, because it
+      // serves finishing setup and changing the chosen resource.
+      scope.post(
+        "/workspaces/:workspaceId/connections/:connectionId/preview",
+        {
+          schema: routeSchema({
+            summary:
+              "Check draft settings and discover resources using stored credentials",
+            tags: ["connections"],
+            body: storedConnectionPreviewRequestSchema,
+            response: storedConnectionPreviewResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) return;
+          if (!can(access.role, "connections:update"))
+            return sendError(reply, 403, "forbidden");
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success)
+            return sendError(reply, 404, "connection_not_found");
+          const body = parseBody(
+            storedConnectionPreviewRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) return;
+          const result = unwrap(
+            await connections.previewStored(
+              access,
+              params.data.connectionId,
+              body,
+            ),
+            reply,
+          );
+          if (!result) return;
+          reply.header("cache-control", "no-store");
+          return storedConnectionPreviewResponseSchema.parse(result);
+        },
+      );
+
+      scope.get(
+        "/workspaces/:workspaceId/connections/:connectionId/resources",
+        {
+          schema: routeSchema({
+            summary: "Discover resources of an OAuth or signed-key connection",
+            tags: ["connections"],
+            response: connectionResourcesResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:update")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
             return sendError(reply, 404, "connection_not_found");
           }
-          return connectionDetailResponseSchema.parse({
-            connection: toConnectionDetail(
-              deps.registry,
-              result.row,
-              result.state,
+          const resources = unwrap(
+            await connections.discoverResources(
+              access,
+              params.data.connectionId,
             ),
-            syncRuns: result.syncRuns.map((run) => ({
-              id: run.id,
-              mode: run.mode,
-              status: run.status,
-              requestedFrom: run.requestedFrom.toISOString(),
-              requestedTo: run.requestedTo.toISOString(),
-              cursorBefore: run.cursorBefore,
-              cursorAfter: run.cursorAfter,
-              attempt: run.attempt,
-              startedAt: run.startedAt.toISOString(),
-              finishedAt: run.finishedAt?.toISOString() ?? null,
-              errorClass: run.errorClass,
-              errorMessage: run.errorMessage,
-              observationsWritten: run.observationsWritten,
-            })),
-          });
+            reply,
+          );
+          if (!resources) {
+            return;
+          }
+          reply.header("cache-control", "no-store");
+          return connectionResourcesResponseSchema.parse(resources);
+        },
+      );
+
+      // #395: more connections with the stored key of this one, e.g.
+      // another ad account of the same Apple Ads API user. The list is a
+      // preview with the stored key (nothing is stored); the create is the
+      // batch path with that key. Only a connection of this workspace lends
+      // its key (404 otherwise), and the key never leaves the server.
+      scope.get(
+        "/workspaces/:workspaceId/connections/:connectionId/shared-key/resources",
+        {
+          schema: routeSchema({
+            summary:
+              "Accounts the stored key of a connection reads, and which are connected",
+            tags: ["connections"],
+            response: sharedKeyResourcesResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:create")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const resources = unwrap(
+            await connections.sharedKeyResources(
+              access,
+              params.data.connectionId,
+            ),
+            reply,
+          );
+          if (!resources) {
+            return;
+          }
+          reply.header("cache-control", "no-store");
+          return sharedKeyResourcesResponseSchema.parse(resources);
+        },
+      );
+
+      scope.post(
+        "/workspaces/:workspaceId/connections/:connectionId/shared-key/connections",
+        {
+          schema: routeSchema({
+            summary:
+              "Create connections with the stored key of a connection (all or none)",
+            tags: ["connections"],
+            body: createSharedKeyConnectionsRequestSchema,
+            response: connectionsResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:create")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const body = parseBody(
+            createSharedKeyConnectionsRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) {
+            return;
+          }
+          const created = unwrap(
+            await connections.createWithSharedKey(
+              access,
+              params.data.connectionId,
+              body,
+            ),
+            reply,
+          );
+          if (!created) {
+            return;
+          }
+          return connectionsResponseSchema.parse({ connections: created });
+        },
+      );
+
+      // App Store analytics (ADR 0014, #174): the status per app, read with
+      // the connection's stored key, and the one-time enablement with a
+      // temporary Admin key that is used in memory only. Both need
+      // connections:update; the body is never logged.
+      scope.get(
+        "/workspaces/:workspaceId/connections/:connectionId/app-store-analytics",
+        {
+          schema: routeSchema({
+            summary: "App Store analytics status per app",
+            tags: ["connections"],
+            response: appStoreAnalyticsStatusResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:update")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const status = unwrap(
+            await connections.appStoreAnalytics(
+              access,
+              params.data.connectionId,
+            ),
+            reply,
+          );
+          if (!status) {
+            return;
+          }
+          reply.header("cache-control", "no-store");
+          return appStoreAnalyticsStatusResponseSchema.parse(status);
+        },
+      );
+
+      scope.get(
+        "/workspaces/:workspaceId/connections/:connectionId/app-store-reviews",
+        {
+          schema: routeSchema({
+            summary:
+              "Status of the optional App Store reviews key (Customer Support role)",
+            tags: ["connections"],
+            response: appStoreReviewsStatusResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:update")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const status = unwrap(
+            await connections.appStoreReviews(access, params.data.connectionId),
+            reply,
+          );
+          if (!status) {
+            return;
+          }
+          reply.header("cache-control", "no-store");
+          return appStoreReviewsStatusResponseSchema.parse(status);
+        },
+      );
+
+      scope.post(
+        "/workspaces/:workspaceId/connections/:connectionId/app-store-analytics",
+        {
+          schema: routeSchema({
+            summary:
+              "Enable App Store analytics with a temporary Admin key (not stored)",
+            tags: ["connections"],
+            body: enableAppStoreAnalyticsRequestSchema,
+            response: enableAppStoreAnalyticsResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:update")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const body = parseBody(
+            enableAppStoreAnalyticsRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) {
+            return;
+          }
+          const enabled = unwrap(
+            await connections.enableAppStoreAnalytics(
+              access,
+              params.data.connectionId,
+              body,
+            ),
+            reply,
+          );
+          if (!enabled) {
+            return;
+          }
+          reply.header("cache-control", "no-store");
+          return enableAppStoreAnalyticsResponseSchema.parse(enabled);
         },
       );
 
@@ -616,189 +645,14 @@ export function registerConnectionRoutes(
           if (!body) {
             return;
           }
-          const existing = await withWorkspace(
-            deps.db,
-            { workspaceId: access.workspaceId, userId: access.callerId },
-            (tx) =>
-              loadConnection(tx, access.workspaceId, params.data.connectionId),
+          const connection = unwrap(
+            await connections.update(access, params.data.connectionId, body),
+            reply,
           );
-          if (!existing) {
-            return sendError(reply, 404, "connection_not_found");
-          }
-          const registered = deps.registry.get(existing.row.connectorId);
-          if (!registered) {
-            return sendError(reply, 400, "invalid_request");
-          }
-
-          const existingConfig = existing.row.config as Record<string, unknown>;
-          let nextConfig: Record<string, unknown> | undefined;
-          if (body.config !== undefined) {
-            const validated = validateConfigOrReply(
-              registered.manifest,
-              body.config,
-              reply,
-            );
-            if (!validated) {
-              return;
-            }
-            nextConfig = { ...validated.config };
-            // PATCH cannot change the resource selection; carry it over.
-            if (existingConfig.resourceSelection !== undefined) {
-              nextConfig.resourceSelection = existingConfig.resourceSelection;
-            }
-          }
-
-          if (body.projectId) {
-            const project = await withWorkspace(
-              deps.db,
-              { workspaceId: access.workspaceId, userId: access.callerId },
-              (tx) => findProject(tx, access.workspaceId, body.projectId!),
-            );
-            if (!project) {
-              return sendError(reply, 404, "project_not_found");
-            }
-          }
-
-          // Config or credential changes are re-checked against the connector
-          // before they persist (same rule as creation).
-          if (body.config !== undefined || body.credentials !== undefined) {
-            let credentials: Record<string, unknown>;
-            if (body.credentials !== undefined) {
-              credentials = body.credentials;
-            } else if (existing.row.credentialsEncrypted) {
-              try {
-                credentials = JSON.parse(
-                  decryptCredentials(
-                    existing.row.credentialsEncrypted.toString("utf8"),
-                    deps.credentialKeyring,
-                    {
-                      workspaceId: access.workspaceId,
-                      connectionId: existing.row.id,
-                    },
-                  ),
-                ) as Record<string, unknown>;
-              } catch (error) {
-                return sendError(reply, 400, safeMessage(error));
-              }
-            } else {
-              credentials = {};
-            }
-            const check = await runCheckOrReply(
-              deps,
-              existing.row.connectorId,
-              existing.row.id,
-              nextConfig ?? existingConfig,
-              credentials,
-              reply,
-            );
-            if (!check) {
-              return;
-            }
-          }
-
-          const updated = await withWorkspace(
-            deps.db,
-            { workspaceId: access.workspaceId, userId: access.callerId },
-            async (tx) => {
-              const [row] = await tx
-                .update(schema.connections)
-                .set({
-                  ...(body.name !== undefined ? { name: body.name } : {}),
-                  ...(nextConfig !== undefined ? { config: nextConfig } : {}),
-                  ...(body.credentials !== undefined
-                    ? {
-                        credentialsEncrypted: Buffer.from(
-                          encryptCredentials(
-                            JSON.stringify(body.credentials),
-                            deps.credentialKeyring,
-                            {
-                              workspaceId: access.workspaceId,
-                              connectionId: params.data.connectionId,
-                            },
-                          ),
-                          "utf8",
-                        ),
-                      }
-                    : {}),
-                  ...(body.projectId !== undefined
-                    ? { projectId: body.projectId }
-                    : {}),
-                  updatedAt: new Date(),
-                })
-                .where(
-                  connectionScope(access.workspaceId, params.data.connectionId),
-                )
-                .returning();
-              if (!row) {
-                sendError(reply, 404, "connection_not_found");
-                return null;
-              }
-              let state = existing.state;
-              if (body.credentials !== undefined) {
-                // Recovery path for auth_failed/outage: fresh credentials make
-                // the connection due immediately and reset the failure streak.
-                const [updatedState] = await tx
-                  .update(schema.connectionState)
-                  .set({
-                    authState: "ok",
-                    consecutiveFailures: 0,
-                    nextDueAt: new Date(),
-                  })
-                  .where(
-                    and(
-                      eq(
-                        schema.connectionState.workspaceId,
-                        access.workspaceId,
-                      ),
-                      eq(
-                        schema.connectionState.connectionId,
-                        params.data.connectionId,
-                      ),
-                    ),
-                  )
-                  .returning();
-                state = updatedState ?? state;
-                await insertAuditEvent(tx, {
-                  workspaceId: access.workspaceId,
-                  actorUserId: access.callerId,
-                  action: "connection.credentials_updated",
-                  target: params.data.connectionId,
-                  metadata: { connectorId: row.connectorId },
-                });
-              }
-              if (
-                body.name !== undefined ||
-                nextConfig !== undefined ||
-                body.projectId !== undefined
-              ) {
-                await insertAuditEvent(tx, {
-                  workspaceId: access.workspaceId,
-                  actorUserId: access.callerId,
-                  action: "connection.updated",
-                  target: params.data.connectionId,
-                  metadata: {
-                    connectorId: row.connectorId,
-                    changed: [
-                      ...(body.name !== undefined ? ["name"] : []),
-                      ...(nextConfig !== undefined ? ["config"] : []),
-                      ...(body.projectId !== undefined ? ["projectId"] : []),
-                    ],
-                  },
-                });
-              }
-              return { row, state };
-            },
-          );
-          if (!updated) {
+          if (!connection) {
             return;
           }
-          return connectionResponseSchema.parse({
-            connection: toConnectionDetail(
-              deps.registry,
-              updated.row,
-              updated.state,
-            ),
-          });
+          return connectionResponseSchema.parse({ connection });
         },
       );
 
@@ -808,6 +662,7 @@ export function registerConnectionRoutes(
           schema: routeSchema({
             summary: "Delete a connection",
             tags: ["connections"],
+            response: deleteConnectionResponseSchema,
             errors: [403, 404],
           }),
         },
@@ -823,55 +678,14 @@ export function registerConnectionRoutes(
           if (!params.success) {
             return sendError(reply, 404, "connection_not_found");
           }
-          const removed = await withWorkspace(
-            deps.db,
-            { workspaceId: access.workspaceId, userId: access.callerId },
-            async (tx) => {
-              const loaded = await loadConnection(
-                tx,
-                access.workspaceId,
-                params.data.connectionId,
-              );
-              if (!loaded) {
-                sendError(reply, 404, "connection_not_found");
-                return false;
-              }
-              // state/observations/sync_runs cascade with the row. Pending
-              // jobs for the connection are cancelled (the app role has no
-              // DELETE grant on jobs — migration 0005) so the worker never
-              // claims work for a gone connection.
-              await tx
-                .update(schema.jobs)
-                .set({ status: "failed", lastError: "connection deleted" })
-                .where(
-                  and(
-                    eq(schema.jobs.workspaceId, access.workspaceId),
-                    eq(schema.jobs.connectionId, params.data.connectionId),
-                    eq(schema.jobs.status, "pending"),
-                  ),
-                );
-              await tx
-                .delete(schema.connections)
-                .where(
-                  connectionScope(access.workspaceId, params.data.connectionId),
-                );
-              await insertAuditEvent(tx, {
-                workspaceId: access.workspaceId,
-                actorUserId: access.callerId,
-                action: "connection.deleted",
-                target: params.data.connectionId,
-                metadata: {
-                  name: loaded.row.name,
-                  connectorId: loaded.row.connectorId,
-                },
-              });
-              return true;
-            },
+          const result = await connections.remove(
+            access,
+            params.data.connectionId,
           );
-          if (!removed) {
-            return;
+          if (!result.ok) {
+            return sendError(reply, result.status, result.error);
           }
-          return reply.code(204).send();
+          return deleteConnectionResponseSchema.parse(result.value);
         },
       );
 
@@ -882,7 +696,7 @@ export function registerConnectionRoutes(
             summary: "Request a sync",
             tags: ["connections"],
             response: enqueueSyncResponseSchema,
-            errors: [403, 404],
+            errors: [400, 403, 404],
           }),
         },
         async (request, reply) => {
@@ -897,39 +711,93 @@ export function registerConnectionRoutes(
           if (!params.success) {
             return sendError(reply, 404, "connection_not_found");
           }
-          const jobId = await withWorkspace(
-            deps.db,
-            { workspaceId: access.workspaceId, userId: access.callerId },
-            async (tx) => {
-              const loaded = await loadConnection(
-                tx,
-                access.workspaceId,
-                params.data.connectionId,
-              );
-              if (!loaded) {
-                sendError(reply, 404, "connection_not_found");
-                return null;
-              }
-              // Reuses a sync that is already waiting instead of queueing
-              // another one behind it.
-              const id = await requestConnectionSync(tx, {
-                workspaceId: access.workspaceId,
-                connectionId: params.data.connectionId,
-              });
-              await insertAuditEvent(tx, {
-                workspaceId: access.workspaceId,
-                actorUserId: access.callerId,
-                action: "connection.sync_requested",
-                target: params.data.connectionId,
-                metadata: { jobId: id },
-              });
-              return id;
-            },
+          const jobId = unwrap(
+            await connections.requestSync(access, params.data.connectionId),
+            reply,
           );
           if (!jobId) {
             return;
           }
           return enqueueSyncResponseSchema.parse({ jobId });
+        },
+      );
+
+      // The latest-review widget's data for the Studio and the signed-in
+      // TV mode (ADR 0019 §12): one review, the newest matching and not
+      // hidden, with its id for "Hide this review". Like a metric query it
+      // needs connections:view; there is no list or export of reviews.
+      scope.post(
+        "/workspaces/:workspaceId/connections/:connectionId/reviews/latest",
+        {
+          schema: routeSchema({
+            summary: "The newest review a latest-review widget shows",
+            tags: ["connections"],
+            body: latestReviewRequestSchema,
+            response: latestReviewResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:view")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const body = parseBody(latestReviewRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const result = await connections.latestReview(
+            access,
+            params.data.connectionId,
+            body,
+          );
+          if (!result.ok) {
+            return sendError(reply, result.status, result.error);
+          }
+          return latestReviewResponseSchema.parse(result.value);
+        },
+      );
+
+      // "Hide this review" (ADR 0019 §11): a moderation action of the
+      // latest-review widget, so it needs dashboards:update. There is no
+      // list or export of reviews; they reach clients only as widget data.
+      scope.post(
+        "/workspaces/:workspaceId/connections/:connectionId/reviews/:reviewId/hide",
+        {
+          schema: routeSchema({
+            summary: "Hide a review from every widget",
+            tags: ["connections"],
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "dashboards:update")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = reviewParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "review_not_found");
+          }
+          const result = await connections.hideReview(
+            access,
+            params.data.connectionId,
+            params.data.reviewId,
+          );
+          if (!result.ok) {
+            return sendError(reply, result.status, result.error);
+          }
+          return reply.code(204).send();
         },
       );
 
@@ -960,77 +828,18 @@ export function registerConnectionRoutes(
           if (!query.success) {
             return sendError(reply, 400, "invalid_request");
           }
-          const result = await withWorkspace(
-            deps.db,
-            { workspaceId: access.workspaceId, userId: access.callerId },
-            async (tx) => {
-              const loaded = await loadConnection(
-                tx,
-                access.workspaceId,
-                params.data.connectionId,
-              );
-              if (!loaded) {
-                return null;
-              }
-              const rows = await tx
-                .select({
-                  metricKey: schema.metricDefinitions.key,
-                  seriesKey: schema.observations.seriesKey,
-                  sourceTimestamp: schema.observations.sourceTimestamp,
-                  value: schema.observations.value,
-                  dimensions: schema.observations.dimensions,
-                  ingestedAt: schema.observations.ingestedAt,
-                })
-                .from(schema.observations)
-                .innerJoin(
-                  schema.metricDefinitions,
-                  eq(
-                    schema.observations.metricDefinitionId,
-                    schema.metricDefinitions.id,
-                  ),
-                )
-                .where(
-                  and(
-                    eq(schema.observations.workspaceId, access.workspaceId),
-                    eq(
-                      schema.observations.connectionId,
-                      params.data.connectionId,
-                    ),
-                    query.data.metricKey
-                      ? eq(schema.metricDefinitions.key, query.data.metricKey)
-                      : undefined,
-                    query.data.from
-                      ? gte(
-                          schema.observations.sourceTimestamp,
-                          new Date(query.data.from),
-                        )
-                      : undefined,
-                    query.data.to
-                      ? lte(
-                          schema.observations.sourceTimestamp,
-                          new Date(query.data.to),
-                        )
-                      : undefined,
-                  ),
-                )
-                .orderBy(desc(schema.observations.sourceTimestamp))
-                .limit(query.data.limit);
-              return rows;
-            },
+          const observations = unwrap(
+            await connections.listObservations(
+              access,
+              params.data.connectionId,
+              query.data,
+            ),
+            reply,
           );
-          if (!result) {
-            return sendError(reply, 404, "connection_not_found");
+          if (!observations) {
+            return;
           }
-          return observationListResponseSchema.parse({
-            observations: result.map((row) => ({
-              metricKey: row.metricKey,
-              seriesKey: row.seriesKey,
-              sourceTimestamp: row.sourceTimestamp.toISOString(),
-              value: row.value,
-              dimensions: row.dimensions as Record<string, string>,
-              ingestedAt: row.ingestedAt.toISOString(),
-            })),
-          });
+          return observationListResponseSchema.parse({ observations });
         },
       );
 

@@ -1,0 +1,9 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/get-app-keyword-reports), checked 2026-10-29. The answer for the deleted campaign 5100000002 of report-campaigns-4100000001.json, whose only ad group is Search Match: no keyword rows (\"If no rows match the request, result is returned as an empty object\"), so its whole total is the keyword Others. TO BE CONFIRMED by #370 captures: Apple answers a deleted campaign's keyword report with empty rows rather than a 404.",
+  "result": {},
+  "pagination": {
+    "totalCount": 0,
+    "offset": 0,
+    "pageSize": 1000
+  }
+}

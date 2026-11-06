@@ -1,0 +1,299 @@
+{
+  "version": 1,
+  "query": {
+    "since": "2026-09-21T00:00:00.000Z",
+    "until": "2026-09-29T00:00:00.000Z",
+    "groupBy": ["route"],
+    "limit": 5
+  },
+  "data": [
+    {
+      "timestamp": "2026-09-21T00:00:00.000Z",
+      "visitors": 39,
+      "pageviews": 111,
+      "route": "Others"
+    },
+    {
+      "timestamp": "2026-09-22T00:00:00.000Z",
+      "visitors": 187,
+      "pageviews": 254,
+      "route": "Others"
+    },
+    {
+      "timestamp": "2026-09-23T00:00:00.000Z",
+      "visitors": 148,
+      "pageviews": 228,
+      "route": "Others"
+    },
+    {
+      "timestamp": "2026-09-24T00:00:00.000Z",
+      "visitors": 187,
+      "pageviews": 231,
+      "route": "Others"
+    },
+    {
+      "timestamp": "2026-09-25T00:00:00.000Z",
+      "visitors": 60,
+      "pageviews": 179,
+      "route": "Others"
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00.000Z",
+      "visitors": 184,
+      "pageviews": 220,
+      "route": "Others"
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00.000Z",
+      "visitors": 111,
+      "pageviews": 142,
+      "route": "Others"
+    },
+    {
+      "timestamp": "2026-09-28T00:00:00.000Z",
+      "visitors": 122,
+      "pageviews": 182,
+      "route": "Others"
+    },
+    {
+      "timestamp": "2026-09-21T00:00:00.000Z",
+      "visitors": 70,
+      "pageviews": 71,
+      "route": "/"
+    },
+    {
+      "timestamp": "2026-09-22T00:00:00.000Z",
+      "visitors": 158,
+      "pageviews": 160,
+      "route": "/"
+    },
+    {
+      "timestamp": "2026-09-23T00:00:00.000Z",
+      "visitors": 153,
+      "pageviews": 162,
+      "route": "/"
+    },
+    {
+      "timestamp": "2026-09-24T00:00:00.000Z",
+      "visitors": 78,
+      "pageviews": 187,
+      "route": "/"
+    },
+    {
+      "timestamp": "2026-09-25T00:00:00.000Z",
+      "visitors": 137,
+      "pageviews": 167,
+      "route": "/"
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00.000Z",
+      "visitors": 181,
+      "pageviews": 282,
+      "route": "/"
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00.000Z",
+      "visitors": 106,
+      "pageviews": 120,
+      "route": "/"
+    },
+    {
+      "timestamp": "2026-09-28T00:00:00.000Z",
+      "visitors": 55,
+      "pageviews": 60,
+      "route": "/"
+    },
+    {
+      "timestamp": "2026-09-21T00:00:00.000Z",
+      "visitors": 154,
+      "pageviews": 213,
+      "route": "/blog/[slug]"
+    },
+    {
+      "timestamp": "2026-09-22T00:00:00.000Z",
+      "visitors": 90,
+      "pageviews": 194,
+      "route": "/blog/[slug]"
+    },
+    {
+      "timestamp": "2026-09-23T00:00:00.000Z",
+      "visitors": 133,
+      "pageviews": 240,
+      "route": "/blog/[slug]"
+    },
+    {
+      "timestamp": "2026-09-24T00:00:00.000Z",
+      "visitors": 66,
+      "pageviews": 153,
+      "route": "/blog/[slug]"
+    },
+    {
+      "timestamp": "2026-09-25T00:00:00.000Z",
+      "visitors": 53,
+      "pageviews": 57,
+      "route": "/blog/[slug]"
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00.000Z",
+      "visitors": 77,
+      "pageviews": 116,
+      "route": "/blog/[slug]"
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00.000Z",
+      "visitors": 70,
+      "pageviews": 82,
+      "route": "/blog/[slug]"
+    },
+    {
+      "timestamp": "2026-09-28T00:00:00.000Z",
+      "visitors": 167,
+      "pageviews": 254,
+      "route": "/blog/[slug]"
+    },
+    {
+      "timestamp": "2026-09-21T00:00:00.000Z",
+      "visitors": 120,
+      "pageviews": 236,
+      "route": "/docs/[...slug]"
+    },
+    {
+      "timestamp": "2026-09-22T00:00:00.000Z",
+      "visitors": 184,
+      "pageviews": 255,
+      "route": "/docs/[...slug]"
+    },
+    {
+      "timestamp": "2026-09-23T00:00:00.000Z",
+      "visitors": 191,
+      "pageviews": 307,
+      "route": "/docs/[...slug]"
+    },
+    {
+      "timestamp": "2026-09-24T00:00:00.000Z",
+      "visitors": 72,
+      "pageviews": 144,
+      "route": "/docs/[...slug]"
+    },
+    {
+      "timestamp": "2026-09-25T00:00:00.000Z",
+      "visitors": 167,
+      "pageviews": 282,
+      "route": "/docs/[...slug]"
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00.000Z",
+      "visitors": 75,
+      "pageviews": 147,
+      "route": "/docs/[...slug]"
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00.000Z",
+      "visitors": 132,
+      "pageviews": 223,
+      "route": "/docs/[...slug]"
+    },
+    {
+      "timestamp": "2026-09-28T00:00:00.000Z",
+      "visitors": 165,
+      "pageviews": 189,
+      "route": "/docs/[...slug]"
+    },
+    {
+      "timestamp": "2026-09-21T00:00:00.000Z",
+      "visitors": 47,
+      "pageviews": 48,
+      "route": "/pricing"
+    },
+    {
+      "timestamp": "2026-09-22T00:00:00.000Z",
+      "visitors": 135,
+      "pageviews": 153,
+      "route": "/pricing"
+    },
+    {
+      "timestamp": "2026-09-23T00:00:00.000Z",
+      "visitors": 184,
+      "pageviews": 273,
+      "route": "/pricing"
+    },
+    {
+      "timestamp": "2026-09-24T00:00:00.000Z",
+      "visitors": 107,
+      "pageviews": 120,
+      "route": "/pricing"
+    },
+    {
+      "timestamp": "2026-09-25T00:00:00.000Z",
+      "visitors": 88,
+      "pageviews": 134,
+      "route": "/pricing"
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00.000Z",
+      "visitors": 132,
+      "pageviews": 233,
+      "route": "/pricing"
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00.000Z",
+      "visitors": 191,
+      "pageviews": 269,
+      "route": "/pricing"
+    },
+    {
+      "timestamp": "2026-09-28T00:00:00.000Z",
+      "visitors": 134,
+      "pageviews": 195,
+      "route": "/pricing"
+    },
+    {
+      "timestamp": "2026-09-21T00:00:00.000Z",
+      "visitors": 129,
+      "pageviews": 154,
+      "route": "/about"
+    },
+    {
+      "timestamp": "2026-09-22T00:00:00.000Z",
+      "visitors": 185,
+      "pageviews": 195,
+      "route": "/about"
+    },
+    {
+      "timestamp": "2026-09-23T00:00:00.000Z",
+      "visitors": 170,
+      "pageviews": 235,
+      "route": "/about"
+    },
+    {
+      "timestamp": "2026-09-24T00:00:00.000Z",
+      "visitors": 185,
+      "pageviews": 262,
+      "route": "/about"
+    },
+    {
+      "timestamp": "2026-09-25T00:00:00.000Z",
+      "visitors": 26,
+      "pageviews": 104,
+      "route": "/about"
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00.000Z",
+      "visitors": 30,
+      "pageviews": 123,
+      "route": "/about"
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00.000Z",
+      "visitors": 129,
+      "pageviews": 191,
+      "route": "/about"
+    },
+    {
+      "timestamp": "2026-09-28T00:00:00.000Z",
+      "visitors": 108,
+      "pageviews": 209,
+      "route": "/about"
+    }
+  ]
+}

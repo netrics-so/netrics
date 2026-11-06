@@ -1,0 +1,14 @@
+{
+  "errors": [
+    {
+      "id": "00000000-0000-4000-8000-000000000040",
+      "status": "400",
+      "code": "PARAMETER_ERROR.INVALID",
+      "title": "A parameter has an invalid value",
+      "detail": "Invalid vendor number specified. Try again.",
+      "source": {
+        "parameter": "filter[vendorNumber]"
+      }
+    }
+  ]
+}

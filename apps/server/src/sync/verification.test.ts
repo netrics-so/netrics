@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 // Verification tests wait on real worker loops claiming and executing jobs.
 vi.setConfig({ testTimeout: 30_000 });
 
-import { createDefaultRegistry } from "@netrics/connector-runtime";
+import { createDefaultRegistry } from "../connectors.js";
 import {
   claimJobs,
   createDatabase,

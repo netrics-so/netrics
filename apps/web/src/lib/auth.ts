@@ -8,4 +8,11 @@ import { createAuthClient } from "better-auth/react";
 // NEXT_PUBLIC_ variable is needed in the browser.
 export const authClient = createAuthClient();
 
-export const { signIn, signUp, signOut, changePassword } = authClient;
+export const {
+  signIn,
+  signUp,
+  signOut,
+  changePassword,
+  requestPasswordReset,
+  resetPassword,
+} = authClient;

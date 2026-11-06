@@ -1,7 +1,7 @@
 # netrics
 
 Metrics on every screen — a self-hosted dashboard platform. This repository is
-the public monorepo: product app, API, renderer, and shared packages.
+the public monorepo: product app, API, and shared packages.
 
 ## Prerequisites
 
@@ -154,6 +154,13 @@ Relevant environment variables (see `.env.example`):
   reset (`smtps://user:pass@host:465`). In local development, without SMTP,
   the links are logged. Anywhere else, without SMTP, the server refuses to
   send them and never logs them.
+- `NETRICS_OAUTH_GOOGLE_CLIENT_ID` and `NETRICS_OAUTH_GOOGLE_CLIENT_SECRET` —
+  the instance's Google OAuth app (ADR 0012), both or neither (startup fails
+  naming the missing one). Without them Google connectors are listed as
+  unavailable and cannot be connected. The redirect URI to register is
+  `<WEB_ORIGIN>/oauth/google/callback`; the api logs it at startup, never the
+  secret. The api and the worker read them. Registering the app:
+  [deploy/compose/google-oauth.md](deploy/compose/google-oauth.md).
 
 - `NETRICS_SIGNUP` — `closed` (default in production) or `open` (default
   otherwise; the hosted service sets it explicitly). With closed sign-up and no
@@ -162,6 +169,51 @@ Relevant environment variables (see `.env.example`):
   atomically. Every later account needs an invitation (#27).
   `NETRICS_SETUP_TOKEN` fixes the token instead of logging a generated one.
   `GET /v1/setup-status` (public) tells the web app whether setup is pending.
+- `NETRICS_EXCHANGE_RATES` — `ecb` (default) or `off`, read by the api and
+  the scheduler (#191). With `ecb` the scheduler fetches the ECB euro
+  reference rates (egress to `www.ecb.europa.eu` only) and workspaces or
+  tiles may show amounts converted into a display currency, marked
+  approximate. With `off` nothing is fetched and amounts stay per currency.
+- `NETRICS_DEFAULT_LOCALE` — `en` (default) or `de`, read at request time
+  by the api and the web app (ADR 0016). The language for people without
+  their own setting and for screens of workspaces without a screen
+  language; the api refuses other values.
+- `NETRICS_DATA_POLICY` — JSON defaults for retained data, source counts,
+  retention and execution budgets, read by the api and worker. Storage and
+  source counts are uncapped by default; `null` removes a policy ceiling.
+  Installation administrators can override policy per workspace for customer
+  tiers. See [data-processing.md](docs/data-processing.md).
+- `NETRICS_AUTH_RATE_LIMIT` — `on` (default in production) or `off`.
+  Sign-in, sign-up, password reset and verification mail are limited per
+  client IP (`apps/server/src/auth/rate-limit.ts`). The counters live in
+  `auth.rate_limit`, so they hold across api replicas.
+- `NETRICS_TRUSTED_PROXIES` — proxy hops whose `X-Forwarded-For` the api
+  believes when it resolves the client IP: IPs, CIDR ranges, or `loopback`,
+  `linklocal`, `uniquelocal` (default: those three, the private networks the
+  web app and platform proxies connect from). `none` trusts no hop. Narrow it
+  when untrusted clients share a private network with the api.
+- On the web app, `NETRICS_TRUSTED_PROXY_HOPS` (default `1`) is the number of
+  proxies in front of it (Caddy, a platform edge). The web forwards only the
+  client address that many entries from the right of `X-Forwarded-For` and
+  drops every client-supplied forwarding header. Alternatively,
+  `NETRICS_CLIENT_IP_HEADER` (for example `x-real-ip`) names one header in
+  which the edge states the client address.
+- `NETRICS_PROXY_SECRET` — unset by default. Set the same value (at least 32
+  characters) on the web app and the api when the api cannot tell the web
+  app's requests from others by network hop, for example a frontend on
+  another platform (ADR 0013). The web app sends it in
+  `x-netrics-proxy-secret` on every api call, with the client address in
+  `x-netrics-client-ip` when that is a single valid IP. On requests carrying
+  a valid secret (timing-safe comparison), the api keys its auth and pairing
+  rate limits on that address; on every other request it uses its own
+  trusted-proxy logic as before. The secret never gates access: requests
+  without it are served and authenticated by session or token, except that
+  the api then accepts session cookies only on requests carrying the secret.
+  The api takes two comma-separated values during a rotation (`new,old`); the
+  web app sends the first. It is never logged. With the secret set, the api
+  also serves the browser auth flow (`/api/auth/*`) only to requests carrying
+  it and answers 404 to the rest, so `BETTER_AUTH_URL` must then be the web
+  origin (emailed links lead there and pass the web proxy).
 
 In production, the api also rejects the public development values of
 `BETTER_AUTH_SECRET` and `APP_ENCRYPTION_KEY`. Session cookies have a 7-day
@@ -202,6 +254,21 @@ node dist/admin-cli.js revoke-token --id <token id>
 
 Clients send `Authorization: Bearer nt_…`. Tenant routes accept sessions
 only.
+
+Base URL for token clients (ADR 0013):
+
+- **netrics cloud:** `https://api.netrics.so/v1`, for example
+  `curl -H "Authorization: Bearer nt_…" https://api.netrics.so/v1/admin/workspaces`.
+  The browser app stays on `https://app.netrics.so`; session cookies are not
+  accepted on the API host, and `/api/auth/*` is not part of its surface.
+- **Self-hosted:** `<origin>/v1`, the same origin as the web app, which
+  proxies `/v1` to the api. A separate API host is optional: it needs a DNS
+  record, the api's port published (behind TLS), and the same
+  `NETRICS_PROXY_SECRET` on the web app and the api so that cookie sessions
+  and the auth flow stay with the web origin.
+
+The API answers credentialed CORS only for `WEB_ORIGIN`; other origins get no
+CORS headers. Token clients are expected to run server-side.
 
 Session-protected API routes live under `/v1`:
 
@@ -245,7 +312,8 @@ Session-protected API routes live under `/v1`:
 Non-members always get 404 for workspace routes (existence is never leaked),
 and every mutation writes an audit event in the same transaction. Sign-ins
 additionally write an installation-level `auth.login` audit row
-(`workspace_id` NULL) that tenants cannot see.
+(`workspace_id` NULL) that tenants cannot see. Audit events are kept for 12
+months (see "Retention defaults" in `docs/architecture.md`).
 
 ### Web app and the API proxy
 
@@ -290,13 +358,13 @@ Web environment variables:
 apps/
   web/        Next.js product application
   server/     Fastify API + job worker + scheduler (NETRICS_ROLE)
-  renderer/   Playwright snapshot worker (placeholder)
+  netrics-tv/ netrics TV for Apple TV, iPad and iPhone (Swift, Xcode)
 packages/
   domain/     Domain rules (role/permission matrix, pure functions)
   database/   Drizzle schema, migrations, PostgreSQL access
   contracts/  Shared zod schemas for HTTP contracts
   ui/         Shared product UI (placeholder)
-docs/         Architecture, milestones, decision records
+docs/         Architecture, milestones, decision records, guides
 deploy/       compose/: the supported self-hosted install (Docker Compose + Caddy)
 ```
 
@@ -325,6 +393,14 @@ HTTPS, backups, upgrades). Releases are published as signed multi-arch
 images (`linux/amd64`, `linux/arm64`) at `ghcr.io/netrics-so/{server,web}`,
 tagged `X.Y.Z` and `X.Y`; see [docs/release.md](docs/release.md).
 
+## netrics TV
+
+The native viewer for Apple TV, iPad and iPhone pairs by code and shows one
+workspace dashboard; see [apps/netrics-tv/README.md](apps/netrics-tv/README.md)
+to build it. To set up an iPad as a wall or desk screen (Guided Access,
+Single App Mode, power, mounting), follow
+[docs/guides/ipad-on-a-wall-or-desk.md](docs/guides/ipad-on-a-wall-or-desk.md).
+
 ## Docker
 
 Production images (multi-stage, `node:24-alpine`, no dev dependencies):
@@ -332,7 +408,6 @@ Production images (multi-stage, `node:24-alpine`, no dev dependencies):
 ```sh
 docker build -f apps/server/Dockerfile -t netrics-server .
 docker build -f apps/web/Dockerfile -t netrics-web .
-docker build -f apps/renderer/Dockerfile -t netrics-renderer .
 ```
 
 To run the app images together with PostgreSQL:
@@ -347,7 +422,7 @@ docker compose -f docker-compose.yml -f docker-compose.app.yml up --build
 
 `.github/workflows/ci.yml` runs format check, lint, type check, unit tests,
 build, a migration apply + idempotency check against a PostgreSQL service
-container, and Docker image builds for server, web, and renderer.
+container, and Docker image builds for server and web (amd64 and arm64).
 
 ## License
 

@@ -22,9 +22,11 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "zod": "4.6.5"
+    "@netrics/domain": "workspace:*",
+    "zod": "4.6.7",
+    "@netrics/connector-sdk": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "5.9.3"
+    "typescript": "6.0.3"
   }
 }

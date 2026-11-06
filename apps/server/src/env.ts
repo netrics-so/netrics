@@ -1,6 +1,17 @@
+import { isIP } from "node:net";
+
 import { z } from "zod";
 
-import { processRoleSchema } from "@netrics/contracts";
+import {
+  IMAGE_QUOTA_DEFAULT_BYTES,
+  IMAGE_QUOTA_DEFAULT_COUNT,
+  localeSchema,
+  processRoleSchema,
+  dataPolicyOverrideSchema,
+  parseDataPolicyDefaults,
+} from "@netrics/contracts";
+
+import { Secret } from "./secret.js";
 
 // Obviously insecure fixed fallback so local development and tests work with
 // zero configuration; production MUST set BETTER_AUTH_SECRET (enforced below).
@@ -20,6 +31,51 @@ function base64Key(name: string) {
     });
 }
 
+// Proxy hops whose X-Forwarded-For the API believes (Fastify trustProxy /
+// proxy-addr): IPs, CIDR ranges, or the proxy-addr names loopback, linklocal
+// and uniquelocal. The default trusts private networks, where the web app
+// and platform proxies (Docker Compose, Railway) reach the API from. "none"
+// trusts no hop: the socket address is the client.
+const PROXY_ADDR_NAMES = new Set(["loopback", "linklocal", "uniquelocal"]);
+const DEFAULT_TRUSTED_PROXIES = "loopback,linklocal,uniquelocal";
+
+function isTrustedProxyEntry(entry: string): boolean {
+  if (PROXY_ADDR_NAMES.has(entry)) {
+    return true;
+  }
+  const [address = "", prefix, ...rest] = entry.split("/");
+  const family = isIP(address);
+  if (family === 0 || rest.length > 0) {
+    return false;
+  }
+  if (prefix === undefined) {
+    return true;
+  }
+  const bits = Number(prefix);
+  return /^\d+$/.test(prefix) && bits <= (family === 4 ? 32 : 128);
+}
+
+const trustedProxies = z
+  .string()
+  .default(DEFAULT_TRUSTED_PROXIES)
+  .transform((value) =>
+    value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  )
+  .transform((entries) =>
+    entries.length === 1 && entries[0] === "none" ? [] : entries,
+  )
+  .pipe(
+    z.array(
+      z.string().refine(isTrustedProxyEntry, {
+        message:
+          "NETRICS_TRUSTED_PROXIES entries must be IPs, CIDR ranges, loopback, linklocal or uniquelocal (or the single value none)",
+      }),
+    ),
+  );
+
 // Retired keys (comma-separated, same format) that may still protect stored
 // credentials during a rotation; see README "Rotating the encryption key".
 const previousKeys = z
@@ -32,6 +88,43 @@ const previousKeys = z
       .filter((key) => key.length > 0),
   )
   .pipe(z.array(base64Key("APP_ENCRYPTION_KEYS_PREVIOUS entries")));
+
+// Shared secret marking requests from the web frontend (ADR 0013, #156; see
+// src/client-address.ts). Comma-separated, at most two values so the secret
+// can rotate without downtime. Messages never echo a value.
+const PROXY_SECRET_MIN_LENGTH = 32;
+const proxySecrets = z
+  .string()
+  .optional()
+  .transform((value) =>
+    (value ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  )
+  .pipe(
+    z
+      .array(
+        z.string().min(PROXY_SECRET_MIN_LENGTH, {
+          message: `NETRICS_PROXY_SECRET values must be at least ${PROXY_SECRET_MIN_LENGTH} characters`,
+        }),
+      )
+      .max(2, {
+        message:
+          "NETRICS_PROXY_SECRET takes at most two comma-separated values (current, previous)",
+      }),
+  );
+
+/** An instance's OAuth app at one provider (ADR 0012). */
+export interface OAuthClientConfig {
+  clientId: string;
+  clientSecret: Secret;
+}
+
+// Client id and secret variables per provider, set both or neither.
+const OAUTH_CLIENT_ENV = [
+  ["NETRICS_OAUTH_GOOGLE_CLIENT_ID", "NETRICS_OAUTH_GOOGLE_CLIENT_SECRET"],
+] as const;
 
 const envSchema = z
   .object({
@@ -66,6 +159,11 @@ const envSchema = z
     // Browser origin allowed to call the API with credentials (CORS +
     // better-auth trustedOrigins). Same production rule as BETTER_AUTH_URL.
     WEB_ORIGIN: z.url().optional(),
+    // Where TVs send people to approve a pairing code (ADR 0010). The hosted
+    // service uses its short domain (https://netrics.tv; the QR code then
+    // opens netrics.tv/<CODE>); default <WEB_ORIGIN>/devices/approve.
+    // Reported to TVs exactly as configured.
+    NETRICS_PAIRING_URL: z.url().optional(),
     // Outbound email for verification and password reset, e.g.
     // smtps://user:pass@smtp.example.com:465. Without it, production refuses
     // to send auth emails instead of logging their secret links.
@@ -87,6 +185,13 @@ const envSchema = z
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
       .default("info"),
+    NETRICS_TRUSTED_PROXIES: trustedProxies,
+    // Unset by default (self-hosting with one origin needs none).
+    NETRICS_PROXY_SECRET: proxySecrets,
+    // Per-client-IP limits on sign-in, sign-up and password reset (see
+    // src/auth/rate-limit.ts). Default: on in production, off otherwise so
+    // local development and tests are not throttled.
+    NETRICS_AUTH_RATE_LIMIT: z.enum(["on", "off"]).optional(),
     NETRICS_ROLE: processRoleSchema.default("api"),
     // Local-debugging escape hatch for the privileged-role startup guard.
     // Refused in production.
@@ -94,11 +199,71 @@ const envSchema = z
       .enum(["true", "false"])
       .default("false")
       .transform((value) => value === "true"),
+    // The instance's Google OAuth app (ADR 0012), both or neither. Without
+    // them Google connectors are listed as unavailable. The redirect URI to
+    // register is <WEB_ORIGIN>/oauth/google/callback.
+    NETRICS_OAUTH_GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+    NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+    // Display currency (#191): "ecb" lets the scheduler fetch the ECB euro
+    // reference rates daily (egress to www.ecb.europa.eu only) and offers
+    // converted amounts; "off" fetches nothing and keeps every amount per
+    // currency. Read at runtime by the scheduler and the API alike.
+    NETRICS_EXCHANGE_RATES: z.enum(["ecb", "off"]).default("ecb"),
+    NETRICS_DATA_POLICY: z
+      .string()
+      .default("{}")
+      .transform((value, ctx) => {
+        try {
+          return parseDataPolicyDefaults(
+            dataPolicyOverrideSchema.parse(JSON.parse(value.trim() || "{}")),
+          );
+        } catch {
+          ctx.addIssue({
+            code: "custom",
+            message:
+              "NETRICS_DATA_POLICY must be a valid data policy JSON object",
+          });
+          return z.NEVER;
+        }
+      }),
+    // The instance's default language (ADR 0016): "en" or "de"; unset is
+    // English. Read at runtime; the web app reads the same variable.
+    NETRICS_DEFAULT_LOCALE: localeSchema.optional(),
+    // Workspace image quota (ADR 0015, section 5): images and total size in
+    // MiB per workspace. Read at runtime; existing images above a lowered
+    // quota stay, only new uploads are refused.
+    NETRICS_IMAGE_QUOTA_COUNT: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(100_000)
+      .default(IMAGE_QUOTA_DEFAULT_COUNT),
+    NETRICS_IMAGE_QUOTA_MIB: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(100_000)
+      .default(IMAGE_QUOTA_DEFAULT_BYTES / 1_048_576),
     APP_VERSION: z.string().min(1).default("0.0.0-dev"),
     GIT_SHA: z.string().min(1).default("dev"),
   })
   .superRefine((env, ctx) => {
     const production = env.NODE_ENV === "production";
+    for (const [idKey, secretKey] of OAUTH_CLIENT_ENV) {
+      const hasId = env[idKey] !== undefined;
+      const hasSecret = env[secretKey] !== undefined;
+      if (hasId !== hasSecret) {
+        // Names the missing variable only; never echoes a value.
+        const [missing, present] = hasId
+          ? [secretKey, idKey]
+          : [idKey, secretKey];
+        ctx.addIssue({
+          code: "custom",
+          path: [missing],
+          message: `${missing} is required when ${present} is set (set both or neither)`,
+        });
+      }
+    }
     if (production && env.NETRICS_ROLE === "api") {
       for (const key of ["BETTER_AUTH_URL", "WEB_ORIGIN"] as const) {
         const value = env[key];
@@ -198,13 +363,42 @@ const envSchema = z
     setupToken: env.NETRICS_SETUP_TOKEN ?? null,
     betterAuthUrl: env.BETTER_AUTH_URL ?? "http://localhost:3001",
     webOrigin: env.WEB_ORIGIN ?? "http://localhost:3000",
+    pairingUrl:
+      env.NETRICS_PAIRING_URL ??
+      new URL(
+        "/devices/approve",
+        env.WEB_ORIGIN ?? "http://localhost:3000",
+      ).toString(),
     smtp:
       env.SMTP_URL && env.MAIL_FROM
         ? { url: env.SMTP_URL, from: env.MAIL_FROM }
         : null,
     logLevel: env.LOG_LEVEL,
+    trustedProxies: env.NETRICS_TRUSTED_PROXIES,
+    proxySecrets: env.NETRICS_PROXY_SECRET.map((value) => new Secret(value)),
+    authRateLimit:
+      (env.NETRICS_AUTH_RATE_LIMIT ??
+        (env.NODE_ENV === "production" ? "on" : "off")) === "on",
     role: env.NETRICS_ROLE,
     allowPrivilegedDb: env.NETRICS_ALLOW_PRIVILEGED_DB,
+    // OAuth clients by provider id; null when the provider is unconfigured.
+    oauthClients: {
+      google:
+        env.NETRICS_OAUTH_GOOGLE_CLIENT_ID &&
+        env.NETRICS_OAUTH_GOOGLE_CLIENT_SECRET
+          ? {
+              clientId: env.NETRICS_OAUTH_GOOGLE_CLIENT_ID,
+              clientSecret: new Secret(env.NETRICS_OAUTH_GOOGLE_CLIENT_SECRET),
+            }
+          : null,
+    } satisfies Record<string, OAuthClientConfig | null>,
+    exchangeRates: env.NETRICS_EXCHANGE_RATES === "ecb",
+    dataPolicy: env.NETRICS_DATA_POLICY,
+    defaultLocale: env.NETRICS_DEFAULT_LOCALE ?? null,
+    imageQuota: {
+      maxCount: env.NETRICS_IMAGE_QUOTA_COUNT,
+      maxBytes: env.NETRICS_IMAGE_QUOTA_MIB * 1_048_576,
+    },
     version: env.APP_VERSION,
     commit: env.GIT_SHA,
   }));

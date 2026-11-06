@@ -1,0 +1,12 @@
+{
+  "data": [],
+  "links": {
+    "self": "https://api.appstoreconnect.apple.com/v1/analyticsReportInstances/i-disc-0929/segments"
+  },
+  "meta": {
+    "paging": {
+      "total": 0,
+      "limit": 50
+    }
+  }
+}

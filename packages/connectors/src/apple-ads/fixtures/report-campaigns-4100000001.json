@@ -1,0 +1,123 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/get-app-campaign-reports and https://developer.apple.com/documentation/apple-ads-platform-api/appscampaignreportresponse), checked 2026-10-29; IDs, names and numbers are synthetic. TO BE CONFIRMED by #370 captures: every AppsMetrics count is present on each granularMetrics entry (Apple's examples show only some), promotedObjectId names the promoted app, and a paused or deleted campaign still has its rows.",
+  "result": {
+    "rows": [
+      {
+        "metadata": {
+          "id": 5100000001,
+          "name": "Wurfel – Brand",
+          "adAccountId": 4100000001,
+          "promotedObjectType": "APPSTORE_APP",
+          "promotedObjectId": "1000000001",
+          "promotedObject": { "name": "Wurfel" },
+          "status": "ENABLED",
+          "deleted": false,
+          "displayStatus": "RUNNING",
+          "adChannelType": "SEARCH"
+        },
+        "totalMetrics": {
+          "localSpend": { "amount": "60.75", "currency": "USD" },
+          "impressions": 6000,
+          "taps": 300,
+          "ttr": 0.05,
+          "tapInstalls": 70,
+          "viewInstalls": 10,
+          "totalInstalls": 80,
+          "tapNewDownloads": 60,
+          "viewNewDownloads": 8,
+          "totalNewDownloads": 68,
+          "tapRedownloads": 10,
+          "viewRedownloads": 2,
+          "totalRedownloads": 12
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "localSpend": { "amount": "40.50", "currency": "USD" },
+            "impressions": 4000,
+            "taps": 200,
+            "ttr": 0.05,
+            "cpt": { "amount": "0.20", "currency": "USD" },
+            "tapInstalls": 50,
+            "viewInstalls": 6,
+            "totalInstalls": 56,
+            "tapNewDownloads": 44,
+            "viewNewDownloads": 5,
+            "totalNewDownloads": 49,
+            "tapRedownloads": 6,
+            "viewRedownloads": 1,
+            "totalRedownloads": 7,
+            "totalAvgCPI": { "amount": "0.72", "currency": "USD" }
+          },
+          {
+            "date": "2026-10-27",
+            "localSpend": { "amount": "20.25", "currency": "USD" },
+            "impressions": 2000,
+            "taps": 100,
+            "ttr": 0.05,
+            "tapInstalls": 20,
+            "viewInstalls": 4,
+            "totalInstalls": 24,
+            "tapNewDownloads": 16,
+            "viewNewDownloads": 3,
+            "totalNewDownloads": 19,
+            "tapRedownloads": 4,
+            "viewRedownloads": 1,
+            "totalRedownloads": 5
+          }
+        ]
+      },
+      {
+        "metadata": {
+          "id": 5100000002,
+          "name": "Wurfel – Discovery",
+          "adAccountId": 4100000001,
+          "promotedObjectType": "APPSTORE_APP",
+          "promotedObjectId": "1000000001",
+          "status": "PAUSED",
+          "deleted": true,
+          "displayStatus": "DELETED"
+        },
+        "totalMetrics": {
+          "localSpend": { "amount": "5.00", "currency": "USD" },
+          "impressions": 500,
+          "taps": 20,
+          "tapInstalls": 3,
+          "viewInstalls": 0,
+          "totalInstalls": 3,
+          "tapNewDownloads": 3,
+          "viewNewDownloads": 0,
+          "totalNewDownloads": 3,
+          "tapRedownloads": 0,
+          "viewRedownloads": 0,
+          "totalRedownloads": 0
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "localSpend": { "amount": "5.00", "currency": "USD" },
+            "impressions": 500,
+            "taps": 20,
+            "tapInstalls": 3,
+            "viewInstalls": 0,
+            "totalInstalls": 3,
+            "tapNewDownloads": 3,
+            "viewNewDownloads": 0,
+            "totalNewDownloads": 3,
+            "tapRedownloads": 0,
+            "viewRedownloads": 0,
+            "totalRedownloads": 0
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "grandTotal": {
+        "localSpend": { "amount": "65.75", "currency": "USD" },
+        "impressions": 6500,
+        "taps": 320
+      }
+    }
+  },
+  "pagination": { "totalCount": 2, "offset": 0, "pageSize": 1000 }
+}

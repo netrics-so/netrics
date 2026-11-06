@@ -1,0 +1,23 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/adaccount), checked 2026-10-29; IDs and names are synthetic. TO BE CONFIRMED by #370 captures.",
+  "result": {
+    "id": 4100000003,
+    "name": "Example Cafés on Maps",
+    "orgId": 4000000001,
+    "timezone": "America/Los_Angeles",
+    "currency": "USD",
+    "paymentModel": "PAYG",
+    "systemStatus": "ACTIVE",
+    "systemStatusReasons": [],
+    "productFeatures": ["BUSINESS_BRAND_MANUAL"],
+    "delegations": [
+      {
+        "resourceId": "80000001",
+        "resourceType": "BUSINESS_BRAND",
+        "resourceName": "Example"
+      }
+    ],
+    "creationTime": "2025-01-10T08:00:00.000",
+    "modificationTime": "2025-01-10T08:00:00.000"
+  }
+}

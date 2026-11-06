@@ -31,12 +31,16 @@ export type {
 export {
   claimJobs,
   completeJob,
+  deferJob,
   enqueueJob,
   enqueueSyncJob,
   failJob,
   heartbeat,
+  DEFAULT_RETENTION,
   listDueConnections,
+  pruneHistory,
   renewJobLease,
+  requestConnectionBackfill,
   requestConnectionSync,
   setConnectionNextDue,
 } from "./jobs.js";
@@ -45,7 +49,36 @@ export type {
   EnqueueJobInput,
   FailJobResult,
   Job,
+  RetentionPolicy,
 } from "./jobs.js";
+export {
+  AUDIT_EVENT_RETENTION_MONTHS,
+  EXPIRED_AUTH_RECORD_HOURS,
+  pruneSecurityRecords,
+  SECURITY_RETENTION,
+} from "./security-retention.js";
+export type {
+  SecurityPruneResult,
+  SecurityRetentionPolicy,
+} from "./security-retention.js";
+export {
+  APP_REVIEW_LIMITS,
+  APP_REVIEW_RETENTION,
+  AppReviewStoreError,
+  capAppReviewText,
+  deleteConnectionAppReviews,
+  findLatestAppReview,
+  hideAppReview,
+  ingestAppReviews,
+  pruneAppReviews,
+} from "./app-reviews.js";
+export type {
+  AppReviewInput,
+  AppReviewPruneResult,
+  AppReviewRetentionPolicy,
+  AppReviewWindow,
+  LatestAppReview,
+} from "./app-reviews.js";
 export {
   AcceptInvitationFailure,
   acceptInvitation,
@@ -75,6 +108,32 @@ export type {
   TokenPrincipal,
 } from "./principals.js";
 export {
+  approvePairing,
+  claimPairing,
+  countPairingFailures,
+  countRecentPairings,
+  findDevice,
+  findPendingPairing,
+  insertDevice,
+  insertPairing,
+  issueDeviceTokens,
+  listDevices,
+  pruneStalePairings,
+  readPairing,
+  recordDeviceHeartbeat,
+  recordPairingFailure,
+  revokeDevice,
+  rotateDeviceRefreshToken,
+  touchDevice,
+  updateDevice,
+} from "./devices.js";
+export type {
+  DevicePlatformColumn,
+  DeviceRow,
+  PairingState,
+  RefreshOutcome,
+} from "./devices.js";
+export {
   consumeSetupToken,
   countUsers,
   findInstallationSetup,
@@ -97,11 +156,204 @@ export type {
   RolePrivileges,
 } from "./roles.js";
 export {
+  deleteDashboard,
+  findDashboard,
+  findDashboardVersion,
+  dashboardHasModelWidgets,
+  insertDashboard,
+  listDashboards,
+  metricWidgets,
+  replaceDashboard,
+  schema1Tiles,
+} from "./dashboards.js";
+export {
+  deleteTheme,
+  findDashboardsUsingTheme,
+  findTheme,
+  insertTheme,
+  listThemes,
+  updateTheme,
+} from "./themes.js";
+export {
+  deleteGoal,
+  findDashboardsUsingGoal,
+  findGoal,
+  findGoalsByIds,
+  insertGoal,
+  listGoals,
+  updateGoal,
+} from "./goals.js";
+export type {
+  DeleteGoalResult,
+  GoalInput,
+  GoalRow,
+  GoalUser,
+  InsertGoalResult,
+  UpdateGoalResult,
+} from "./goals.js";
+export type {
+  DeleteThemeResult,
+  InsertThemeResult,
+  ThemeInput,
+  ThemeUser,
+  UpdateThemeResult,
+  WorkspaceThemeRow,
+} from "./themes.js";
+export type {
+  Dashboard,
+  DashboardInput,
+  DashboardRow,
+  DashboardSettings,
+  DashboardSlide,
+  DashboardSlideRow,
+  DashboardSummary,
+  DashboardWidgetRow,
+  LayoutPlacement,
+  PreviewWidget,
+  ReplaceResult,
+  SlideInput,
+  SlideLayout,
+  SlideLayoutInput,
+  WidgetInput,
+} from "./dashboards.js";
+export {
+  deleteImage,
+  findDeviceImage,
+  findImage,
+  findImageIds,
+  findImageUsers,
+  findImages,
+  findResourceIcon,
+  imageUsage,
+  insertImageWithinQuota,
+  listImages,
+  listResourceIcons,
+  readImageContent,
+  replaceImageReferences,
+} from "./images.js";
+export type {
+  ImageInput,
+  ImageQuota,
+  ImageRow,
+  ImageUsage,
+  InsertImageResult,
+} from "./images.js";
+export {
+  BREAKDOWN_TIMEOUT_MS,
+  findConnectionMetric,
+  listWorkspaceMetrics,
+  queryMetricBuckets,
+  queryMetricGroupBuckets,
+  queryMetricCurrencyBuckets,
+  queryMetricCurrencyTotals,
+} from "./metrics.js";
+export {
+  findExchangeRates,
+  latestExchangeRateDate,
+  listRateCurrencies,
+  upsertExchangeRates,
+} from "./exchange-rates.js";
+export type { StoredExchangeRate } from "./exchange-rates.js";
+export type {
+  ConnectionMetric,
+  MetricBucket,
+  MetricBucketQuery,
+  MetricCurrencyBucket,
+  MetricCurrencyQuery,
+  MetricCurrencyTotal,
+  MetricGroupBucket,
+} from "./metrics.js";
+export {
+  deleteConnection,
+  findBackfillingConnectionIds,
+  findConnection,
+  finishConnectionSetup,
+  insertConnection,
+  listConnectionIds,
+  listConnections,
+  latestObservationByResource,
+  listObservations,
+  listRecentSyncRuns,
+  resetConnectionAuth,
+  updateConnection,
+} from "./connections.js";
+export {
+  connectionHasResource,
+  connectionResourcesDiscoveredAt,
+  findDimensionValueNames,
+  findResourceNames,
+  listMetricResources,
+  findConnectionResourceNoun,
+  listNamedResources,
+  resourceNameKey,
+  resourceTopTerritories,
+  upsertConnectionResources,
+} from "./resources.js";
+export type {
+  DiscoveredResourceName,
+  MetricResource,
+  NamedResource,
+} from "./resources.js";
+export {
+  consumeOAuthAuthorization,
+  findConnectionOAuth,
+  insertOAuthAuthorization,
+  lockConnectionOAuth,
+  markNeedsReauthorization,
+  releaseOAuthGrant,
+  updateConnectionOAuthTokens,
+  oauthAccountHasGrant,
+  pruneOAuthAuthorizations,
+  upsertConnectionOAuth,
+  withOAuthGrantLocks,
+} from "./oauth.js";
+export type {
+  ConnectionOAuthInput,
+  ConnectionOAuthRow,
+  ConsumedOAuthAuthorization,
+  NewOAuthAuthorization,
+  OAuthAuthReason,
+  OAuthGrantKey,
+  OAuthAuthorizationPurpose,
+  OAuthTokenUpdate,
+  OAuthAuthorizationRow,
+} from "./oauth.js";
+export {
+  deleteSignedKeyToken,
+  findSignedKeyToken,
+  lockSignedKeyToken,
+  storeSignedKeyToken,
+} from "./signed-key-tokens.js";
+export type { ConnectionSignedKeyTokenRow } from "./signed-key-tokens.js";
+export {
+  consumePendingKey,
+  countActivePendingKeys,
+  findPendingKey,
+  insertPendingKey,
+  prunePendingKeys,
+} from "./signed-key-pending-keys.js";
+export type {
+  PendingKeyOwner,
+  SignedKeyPendingKeyRow,
+} from "./signed-key-pending-keys.js";
+export type {
+  ConnectionChanges,
+  ConnectionOAuthAccount,
+  ConnectionRow,
+  ConnectionStateRow,
+  ConnectionWithState,
+  NewConnection,
+  ObservationFilter,
+  ObservationRow,
+  SyncRunRow,
+} from "./connections.js";
+export {
   findUserByAuthUserId,
   findUserByEmail,
   findUserById,
   listMembershipsForUser,
   provisionDomainUser,
+  setUserLocale,
 } from "./users.js";
 export type { DomainUser, MembershipInfo } from "./users.js";
 export {
@@ -119,7 +371,7 @@ export {
   listMembers,
   listProjects,
   renameProject,
-  renameWorkspace,
+  updateWorkspace,
   setActiveProject,
   updateMembershipRole,
 } from "./workspaces.js";
@@ -212,3 +464,25 @@ export async function checkDatabaseConnection(
     await client.end({ timeout: 0 }).catch(() => undefined);
   }
 }
+
+export {
+  ingestDatasetPage,
+  pruneDatasetHistory,
+  replayDatasetRefresh,
+  listObservationDatasets,
+  listObservationCatalog,
+  readObservationDataset,
+  previewDataset,
+  DatasetStoreError,
+} from "./datasets.js";
+export { registerSourceDataset } from "./datasets.js";
+export type { IngestDatasetPageInput } from "./datasets.js";
+export { resolveDataPolicy, adminSetDataPolicy } from "./data-policy.js";
+
+export {
+  DatasetStageUnavailableError,
+  findConnectorStage,
+  readConnectorStagePage,
+  storeConnectorStage,
+  connectorStageProvenance,
+} from "./connector-staging.js";

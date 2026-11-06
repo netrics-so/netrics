@@ -2,7 +2,10 @@ import type { FastifyInstance } from "fastify";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { adminWorkspaceListResponseSchema } from "@netrics/contracts";
+import {
+  adminWorkspaceListResponseSchema,
+  dataPolicyResponseSchema,
+} from "@netrics/contracts";
 import {
   createDatabase,
   createRawSqlClient,
@@ -134,6 +137,71 @@ afterAll(async () => {
 });
 
 describe("installation admin API", () => {
+  it("separates data-policy read and write scopes from workspace administration", async () => {
+    const ws = adminWorkspaceListResponseSchema.parse(
+      (await listWorkspaces({ cookie: instanceAdminCookie })).json(),
+    ).workspaces[0]!.id;
+    const url = `/v1/admin/workspaces/${ws}/data-policy`;
+    expect((await app.inject({ url })).statusCode).toBe(401);
+    expect(
+      (await app.inject({ url, headers: { cookie: memberCookie } })).statusCode,
+    ).toBe(403);
+    const readOnly = await serviceToken(["installation:data-policy:read"]);
+    expect(
+      (
+        await app.inject({
+          url,
+          headers: { authorization: `Bearer ${readOnly.token}` },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url,
+          headers: { authorization: `Bearer ${readOnly.token}` },
+          payload: {},
+        })
+      ).statusCode,
+    ).toBe(403);
+    const writer = await serviceToken(["installation:data-policy:write"]);
+    const put = await app.inject({
+      method: "PUT",
+      url,
+      headers: { authorization: `Bearer ${writer.token}` },
+      payload: {
+        maxGenerationRows: 1000000,
+        queryRows: null,
+        maxWorkspaceBytes: null,
+      },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().policy).toMatchObject({
+      maxGenerationRows: 1000000,
+      queryRows: null,
+      maxWorkspaceBytes: null,
+    });
+    expect(
+      (
+        await app.inject({ url, headers: { cookie: instanceAdminCookie } })
+      ).json().overrides,
+    ).toEqual({
+      maxGenerationRows: 1000000,
+      queryRows: null,
+      maxWorkspaceBytes: null,
+    });
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url,
+          headers: { cookie: instanceAdminCookie },
+          payload: { queryRows: 0 },
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
   it("serves the setup account (instance admin) across all workspaces", async () => {
     const response = await listWorkspaces({ cookie: instanceAdminCookie });
     expect(response.statusCode).toBe(200);
@@ -144,6 +212,114 @@ describe("installation admin API", () => {
       ["Root WS", 1],
       ["Member WS", 1],
     ]);
+  });
+
+  it("round-trips independent connector cache policy and restores its inherited default", async () => {
+    const ws = adminWorkspaceListResponseSchema.parse(
+      (await listWorkspaces({ cookie: instanceAdminCookie })).json(),
+    ).workspaces[0]!.id;
+    const url = `/v1/admin/workspaces/${ws}/data-policy`;
+    const headers = { cookie: instanceAdminCookie };
+    for (const budget of [0, 2_097_152, null]) {
+      const overrides = {
+        maxWorkspaceBytes: 4096,
+        maxConnectorStagingBytes: budget,
+      };
+      const response = await app.inject({
+        method: "PUT",
+        url,
+        headers,
+        payload: overrides,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(dataPolicyResponseSchema.parse(response.json())).toMatchObject({
+        policy: overrides,
+        overrides,
+      });
+      const read = await app.inject({ url, headers });
+      expect(read.statusCode, read.body).toBe(200);
+      expect(dataPolicyResponseSchema.parse(read.json()).overrides).toEqual(
+        overrides,
+      );
+    }
+    for (const invalid of [-1, 0.5])
+      expect(
+        (
+          await app.inject({
+            method: "PUT",
+            url,
+            headers,
+            payload: { maxConnectorStagingBytes: invalid },
+          })
+        ).statusCode,
+      ).toBe(400);
+    const reset = await app.inject({
+      method: "PUT",
+      url,
+      headers,
+      payload: {},
+    });
+    expect(reset.statusCode, reset.body).toBe(200);
+    const restored = dataPolicyResponseSchema.parse(reset.json());
+    expect(restored.policy).toMatchObject({
+      maxWorkspaceBytes: null,
+      maxConnectorStagingBytes: 134_217_728,
+    });
+    expect(restored.overrides).toEqual({});
+  });
+
+  it("round-trips caller page-session limits and preserves the aggregate snapshot policy", async () => {
+    const ws = adminWorkspaceListResponseSchema.parse(
+      (await listWorkspaces({ cookie: instanceAdminCookie })).json(),
+    ).workspaces[0]!.id;
+    const url = `/v1/admin/workspaces/${ws}/data-policy`;
+    const headers = { cookie: instanceAdminCookie };
+    for (const limit of [0, 3, null]) {
+      const overrides = {
+        querySnapshotCount: 100,
+        queryPageSessionsPerCaller: limit,
+      };
+      const response = await app.inject({
+        method: "PUT",
+        url,
+        headers,
+        payload: overrides,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(dataPolicyResponseSchema.parse(response.json())).toMatchObject({
+        policy: overrides,
+        overrides,
+      });
+      const read = await app.inject({ url, headers });
+      expect(read.statusCode, read.body).toBe(200);
+      expect(dataPolicyResponseSchema.parse(read.json()).overrides).toEqual(
+        overrides,
+      );
+    }
+    for (const invalid of [-1, 0.5])
+      expect(
+        (
+          await app.inject({
+            method: "PUT",
+            url,
+            headers,
+            payload: { queryPageSessionsPerCaller: invalid },
+          })
+        ).statusCode,
+      ).toBe(400);
+    const reset = await app.inject({
+      method: "PUT",
+      url,
+      headers,
+      payload: {},
+    });
+    expect(reset.statusCode, reset.body).toBe(200);
+    const restored = dataPolicyResponseSchema.parse(reset.json());
+    expect(restored.policy).toMatchObject({
+      querySnapshotCount: 100,
+      queryPageSessionsPerCaller: 10,
+    });
+    expect(restored.overrides).toEqual({});
   });
 
   it("refuses ordinary users and anonymous callers", async () => {

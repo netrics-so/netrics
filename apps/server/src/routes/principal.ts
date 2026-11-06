@@ -3,6 +3,8 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import {
   isInstanceAdmin,
   resolvePrincipalToken,
+  touchDevice,
+  withWorkspace,
   type Database,
   type TokenPrincipal,
 } from "@netrics/database";
@@ -85,5 +87,48 @@ export function createRequireInstallationAdmin(options: AdminAccessOptions) {
       return sendError(reply, 403, "forbidden");
     }
     request.principal = principal;
+  };
+}
+
+/** The device behind a request that passed createRequireDevice. */
+export interface DevicePrincipal {
+  deviceId: string;
+  workspaceId: string;
+}
+
+declare module "fastify" {
+  interface FastifyRequest {
+    device?: DevicePrincipal;
+  }
+}
+
+/**
+ * onRequest guard for the device API (ADR 0011): a device access token
+ * (scope device:read). Sessions, service tokens and refresh tokens are
+ * refused with 401. Records the device's last contact.
+ */
+export function createRequireDevice(options: { db: Database }) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const match = BEARER.exec(request.headers.authorization ?? "");
+    const token = match
+      ? await resolvePrincipalToken(options.db, hashToken(match[1]!))
+      : null;
+    if (
+      !token ||
+      token.kind !== "device" ||
+      !token.scopes.includes("device:read") ||
+      !token.workspaceId ||
+      !token.deviceId
+    ) {
+      return sendError(reply, 401, "unauthorized");
+    }
+    request.principal = { kind: "device", token };
+    request.device = {
+      deviceId: token.deviceId,
+      workspaceId: token.workspaceId,
+    };
+    await withWorkspace(options.db, { workspaceId: token.workspaceId }, (tx) =>
+      touchDevice(tx, token.workspaceId!, token.deviceId!),
+    );
   };
 }

@@ -1,4 +1,4 @@
-import { createDefaultRegistry } from "@netrics/connector-runtime";
+import { createDefaultRegistry } from "./connectors.js";
 import {
   createDatabase,
   findRolesWithDefaultPasswords,
@@ -30,7 +30,10 @@ try {
   // installation-level and read-only for the application roles (#36).
   const ownerDb = createDatabase(config.databaseMigrationUrl, { max: 1 });
   try {
-    await syncCatalog(ownerDb, createDefaultRegistry());
+    await syncCatalog(
+      ownerDb,
+      createDefaultRegistry({ nodeEnv: config.nodeEnv }),
+    );
   } finally {
     await ownerDb.$client.end({ timeout: 5 }).catch(() => undefined);
   }

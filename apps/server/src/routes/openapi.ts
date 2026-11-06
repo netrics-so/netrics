@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import {
   jsonSchemaTransform,
+  jsonSchemaTransformObject,
   serializerCompiler,
   validatorCompiler,
 } from "fastify-type-provider-zod";
@@ -11,16 +12,20 @@ import { errorResponseSchema } from "@netrics/contracts";
 
 // Error codes each route documents. Every session route can also answer 401
 // (added automatically), and workspace-scoped routes 404 for non-members.
-type ErrorStatus = 400 | 403 | 404 | 409 | 410 | 502;
+type ErrorStatus = 400 | 403 | 404 | 409 | 410 | 413 | 415 | 429 | 502 | 503;
 
 const ERROR_DESCRIPTIONS: Record<ErrorStatus | 401, string> = {
   400: "Invalid request",
-  401: "No valid session",
+  401: "No valid session or token",
   403: "Role does not allow this action",
   404: "Not found (also for workspaces the caller is not a member of)",
   409: "Conflict",
   410: "No longer valid",
+  413: "Request body too large",
+  415: "Unsupported media type",
+  429: "Too many requests; try again later",
   502: "Upstream failure",
+  503: "Took too long; try again later",
 };
 
 export interface RouteDoc {
@@ -31,13 +36,22 @@ export interface RouteDoc {
   /** Success response; omit for 204 No Content. */
   response?: z.ZodType;
   errors?: ErrorStatus[];
+  /** A richer error body for some statuses (it still has `error`). */
+  errorSchemas?: Partial<Record<ErrorStatus, z.ZodType>>;
   /** Public route (no session): no 401 documented. */
   public?: boolean;
   /** Admin API: instance-admin session or a scoped service bearer token. */
   admin?: boolean;
+  /** Device API: a device access token (ADR 0011), no session. */
+  device?: boolean;
+  /** Conditional GET: answers 304 when If-None-Match holds the ETag. */
+  notModified?: boolean;
 }
 
 function securityFor(doc: RouteDoc): Array<Record<string, string[]>> {
+  if (doc.device) {
+    return [{ bearer: [] }];
+  }
   return doc.admin ? [{ session: [] }, { bearer: [] }] : [{ session: [] }];
 }
 
@@ -58,8 +72,17 @@ export function routeSchema(doc: RouteDoc) {
   const response: Record<number, z.ZodType> = doc.response
     ? { 200: doc.response }
     : { 204: z.null().describe("No content") };
+  if (doc.notModified) {
+    response[304] = z
+      .null()
+      .describe("Not modified: If-None-Match holds the current ETag");
+  }
   for (const status of errors) {
-    response[status] = errorResponseSchema.describe(ERROR_DESCRIPTIONS[status]);
+    const schema =
+      status === 401 ? undefined : doc.errorSchemas?.[status as ErrorStatus];
+    response[status] = (schema ?? errorResponseSchema).describe(
+      ERROR_DESCRIPTIONS[status],
+    );
   }
   return {
     summary: doc.summary,
@@ -85,10 +108,32 @@ export async function registerOpenApi(
         title: "netrics API",
         version,
         description:
-          "REST API of a netrics installation. Browser clients authenticate " +
-          "with the session cookie issued by /api/auth; mutating requests " +
-          "from browsers must come from the configured web origin.",
+          "REST API of a netrics installation. Integrations and scripts " +
+          "authenticate with a service-account token in `Authorization: " +
+          "Bearer nt_…`; on netrics cloud they use https://api.netrics.so. " +
+          "Browser clients " +
+          "authenticate with the session cookie issued by /api/auth through " +
+          "the web origin; mutating requests from browsers must come from " +
+          "the configured web origin.",
       },
+      // Paths carry their /v1 prefix, so each server URL is an origin
+      // (ADR 0013, #158).
+      servers: [
+        { url: "https://api.netrics.so", description: "netrics cloud" },
+        {
+          url: "{scheme}://{host}",
+          description:
+            "Self-hosted: the installation's web origin, which proxies " +
+            "/v1 to the API, or a separate API host if one is set up.",
+          variables: {
+            scheme: { enum: ["https", "http"], default: "https" },
+            host: {
+              default: "netrics.example.com",
+              description: "Host (and port, if not the default) to reach.",
+            },
+          },
+        },
+      ],
       components: {
         securitySchemes: {
           session: {
@@ -107,5 +152,47 @@ export async function registerOpenApi(
       },
     },
     transform: jsonSchemaTransform,
+    transformObject: (document) =>
+      "openapiObject" in document
+        ? optionalNullableBodies(jsonSchemaTransformObject(document))
+        : document.swaggerObject,
   });
+}
+
+interface OpenApiOperation {
+  requestBody?: {
+    required?: boolean;
+    content?: Record<string, { schema?: { anyOf?: unknown[] } }>;
+  };
+}
+
+/**
+ * A route whose body schema is nullish (`schema.nullish()`) accepts a
+ * request without a body: Fastify hands its validator null then. The
+ * document says so as an optional body of the object schema, instead of a
+ * required body that may be JSON null.
+ */
+export function optionalNullableBodies<
+  T extends { paths?: Record<string, unknown> },
+>(document: T): T {
+  for (const path of Object.values(document.paths ?? {})) {
+    for (const operation of Object.values(
+      path as Record<string, OpenApiOperation>,
+    )) {
+      const body = operation.requestBody;
+      const media = body?.content?.["application/json"];
+      const variants = media?.schema?.anyOf;
+      if (!body || !media || !variants || variants.length !== 2) {
+        continue;
+      }
+      const isNull = (variant: unknown) =>
+        (variant as { type?: unknown }).type === "null";
+      const object = variants.find((variant) => !isNull(variant));
+      if (object && variants.some(isNull)) {
+        body.required = false;
+        media.schema = object as { anyOf?: unknown[] };
+      }
+    }
+  }
+  return document;
 }

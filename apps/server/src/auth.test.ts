@@ -181,7 +181,8 @@ describe("session revocation", () => {
     const signOut = await app.inject({
       method: "POST",
       url: "/api/auth/sign-out",
-      headers: { cookie: cookie! },
+      // A browser sends its origin; better-auth checks it on cookie requests.
+      headers: { cookie: cookie!, origin: "http://localhost:3000" },
     });
     expect(signOut.statusCode).toBe(200);
 
@@ -221,5 +222,131 @@ describe("auth emails (dev mailer)", () => {
       (m) => m.kind === "password-reset" && m.to === "frank@example.com",
     );
     expect(mail?.url).toContain("http://localhost:3001");
+  });
+});
+
+describe("password reset", () => {
+  const webOrigin = "http://localhost:3000";
+
+  function requestReset(
+    email: string,
+    redirectTo = `${webOrigin}/reset-password`,
+  ) {
+    return app.inject({
+      method: "POST",
+      url: "/api/auth/request-password-reset",
+      headers: { origin: webOrigin },
+      payload: { email, redirectTo },
+    });
+  }
+
+  function resetPassword(token: string, newPassword: string) {
+    return app.inject({
+      method: "POST",
+      url: "/api/auth/reset-password",
+      headers: { origin: webOrigin },
+      payload: { token, newPassword },
+    });
+  }
+
+  it("resets the password through the emailed link", async () => {
+    const cookie = await signUp("grace@example.com", "old-password-1", "Grace");
+
+    const requested = await requestReset("grace@example.com");
+    expect(requested.statusCode).toBe(200);
+    const mail = sentEmails.findLast(
+      (m) => m.kind === "password-reset" && m.to === "grace@example.com",
+    );
+    expect(mail).toBeDefined();
+
+    // The link points at BETTER_AUTH_URL and carries the web page as callback.
+    const link = new URL(mail!.url);
+    expect(link.origin).toBe("http://localhost:3001");
+    expect(link.pathname).toMatch(/^\/api\/auth\/reset-password\/[^/]+$/);
+    expect(link.searchParams.get("callbackURL")).toBe(
+      `${webOrigin}/reset-password`,
+    );
+
+    // Opening it redirects to the web page with the token in the query.
+    const opened = await app.inject({
+      method: "GET",
+      url: `${link.pathname}${link.search}`,
+    });
+    expect(opened.statusCode).toBe(302);
+    const target = new URL(String(opened.headers.location));
+    expect(`${target.origin}${target.pathname}`).toBe(
+      `${webOrigin}/reset-password`,
+    );
+    const token = target.searchParams.get("token");
+    expect(token).toBe(link.pathname.split("/").pop());
+
+    const reset = await resetPassword(token!, "new-password-2");
+    expect(reset.statusCode).toBe(200);
+
+    expect(
+      (await signIn("grace@example.com", "old-password-1")).statusCode,
+    ).toBe(401);
+    expect(
+      (await signIn("grace@example.com", "new-password-2")).statusCode,
+    ).toBe(200);
+
+    // Existing sessions end with the reset.
+    const me = await app.inject({
+      method: "GET",
+      url: "/v1/me",
+      headers: { cookie: cookie! },
+    });
+    expect(me.statusCode).toBe(401);
+
+    // The token works once.
+    const again = await resetPassword(token!, "third-password-3");
+    expect(again.statusCode).toBe(400);
+    expect(again.json()).toMatchObject({ code: "INVALID_TOKEN" });
+  });
+
+  it("sends the invalid-token marker to the page for an unknown link", async () => {
+    const callbackURL = encodeURIComponent(`${webOrigin}/reset-password`);
+    const opened = await app.inject({
+      method: "GET",
+      url: `/api/auth/reset-password/not-a-token?callbackURL=${callbackURL}`,
+    });
+    expect(opened.statusCode).toBe(302);
+    const target = new URL(String(opened.headers.location));
+    expect(target.pathname).toBe("/reset-password");
+    expect(target.searchParams.get("error")).toBe("INVALID_TOKEN");
+    expect(target.searchParams.get("token")).toBeNull();
+  });
+
+  it("answers the same for an unknown address and sends nothing", async () => {
+    const before = sentEmails.length;
+    const response = await requestReset("nobody@example.com");
+    expect(response.statusCode).toBe(200);
+    expect(sentEmails.length).toBe(before);
+  });
+
+  it("refuses a callback outside the trusted origins", async () => {
+    await signUp("heidi@example.com", "password-12345", "Heidi");
+    const before = sentEmails.length;
+    const response = await requestReset(
+      "heidi@example.com",
+      "https://evil.example.com/reset-password",
+    );
+    expect(response.statusCode).toBe(403);
+    expect(sentEmails.length).toBe(before);
+  });
+
+  it("rejects a new password shorter than 8 characters", async () => {
+    await signUp("ivan@example.com", "password-12345", "Ivan");
+    await requestReset("ivan@example.com");
+    const mail = sentEmails.findLast(
+      (m) => m.kind === "password-reset" && m.to === "ivan@example.com",
+    );
+    const token = new URL(mail!.url).pathname.split("/").pop()!;
+    const reset = await resetPassword(token, "short");
+    expect(reset.statusCode).toBe(400);
+    expect(reset.json()).toMatchObject({ code: "PASSWORD_TOO_SHORT" });
+    expect(
+      (await signIn("ivan@example.com", "password-12345")).statusCode,
+    ).toBe(200);
   });
 });

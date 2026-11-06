@@ -4,8 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { apiErrorMessage, createProject } from "@/lib/api";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
+  const locale = useLocale();
+  const t = useT("workspace.newProject");
+  const common = useT("common");
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -21,7 +25,7 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
       router.refresh();
       formEl.reset();
     } catch (cause) {
-      setError(apiErrorMessage(cause));
+      setError(apiErrorMessage(cause, locale));
     } finally {
       setPending(false);
     }
@@ -30,7 +34,7 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
   return (
     <form className="inline" onSubmit={onSubmit}>
       <div className="field">
-        <label htmlFor="project-name">New project</label>
+        <label htmlFor="project-name">{t("label")}</label>
         <input
           id="project-name"
           name="name"
@@ -41,7 +45,7 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
         />
       </div>
       <button type="submit" disabled={pending}>
-        {pending ? "Creating…" : "Create project"}
+        {pending ? common("creating") : t("create")}
       </button>
       {error ? <div className="error">{error}</div> : null}
     </form>

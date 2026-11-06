@@ -31,11 +31,11 @@ jobs:
       # databases on this server.
       NETRICS_TEST_ADMIN_URL: postgres://netrics:netrics@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -48,6 +48,67 @@ jobs:
       # The committed OpenAPI document must match the code (clients such as
       # the tvOS app are generated from it). Fix with `pnpm openapi`.
       - run: pnpm openapi:check
+
+  # One source, same commit (ADR 0013): the web build must not depend on its
+  # environment. Builds apps/web twice from a clean .next, with only the
+  # build identity and with sample NETRICS_* configuration, and fails if the
+  # output differs (apps/web/scripts/build-env-check.ts, #160).
+  web-build-env:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm web:build-check
+
+  # netrics TV (apps/netrics-tv) on Xcode 27 and the 27 SDKs: the package
+  # tests of NetricsKit and NetricsUI (they build for macOS too, including
+  # the vectors shared with packages/domain, #215), NetricsUI for iOS (#409)
+  # and unsigned builds of the tvOS and iOS apps (#410). GitHub's
+  # macos-26 image only carries Xcode 26; Xcode 27 is on the `xcode-27`
+  # image (actions/runner-images#14404, preview, macOS 27 based since
+  # 2026-09-16). DEVELOPER_DIR pins the Xcode version instead of the image
+  # default.
+  netrics-tv:
+    runs-on: xcode-27
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: xcodebuild -version && swift --version
+      - name: NetricsKit and NetricsUI tests
+        run: swift test
+        working-directory: apps/netrics-tv/NetricsKit
+      - name: Build NetricsUI for iOS
+        run: >-
+          xcodebuild -scheme NetricsUI
+          -destination 'generic/platform=iOS Simulator'
+          build CODE_SIGNING_ALLOWED=NO
+        working-directory: apps/netrics-tv/NetricsKit
+      - name: Build the tvOS app (unsigned)
+        run: >-
+          xcodebuild -project apps/netrics-tv/NetricsTV.xcodeproj
+          -scheme NetricsTV -configuration Debug
+          -destination 'generic/platform=tvOS Simulator'
+          build CODE_SIGNING_ALLOWED=NO
+      - name: Build the iOS app (unsigned)
+        run: >-
+          xcodebuild -project apps/netrics-tv/NetricsTV.xcodeproj
+          -scheme NetricsTVTouch -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          build CODE_SIGNING_ALLOWED=NO
 
   migrations:
     runs-on: ubuntu-24.04
@@ -70,11 +131,11 @@ jobs:
     env:
       DATABASE_MIGRATION_URL: postgres://netrics:netrics@localhost:5432/netrics
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -97,16 +158,40 @@ jobs:
           - { arch: amd64, runner: ubuntu-24.04 }
           - { arch: arm64, runner: ubuntu-24.04-arm }
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build server image
         run: docker build -f apps/server/Dockerfile -t netrics-server:ci .
+      # better-auth's optional peers once pulled Next.js into the server
+      # image (~590 MB, #81); .pnpmfile.cjs drops them. Keep it that way.
+      - name: Check server image size
+        run: |
+          size=$(docker image inspect netrics-server:ci --format '{{.Size}}')
+          echo "server image: $((size / 1000000)) MB"
+          test "$size" -lt 250000000 || { echo "::error::server image is over 250 MB"; exit 1; }
+          if docker run --rm --entrypoint sh netrics-server:ci -c 'ls node_modules/.pnpm | grep -E "^(next|drizzle-kit|vitest)@"'; then
+            echo "::error::server image contains web or build tooling"
+            exit 1
+          fi
       - name: Build web image
         run: docker build -f apps/web/Dockerfile -t netrics-web:ci .
-      - name: Build renderer image
-        run: docker build -f apps/renderer/Dockerfile -t netrics-renderer:ci .
+      # Proxies in front of the web server reuse idle connections for up to
+      # 60 s (Railway's edge) or 2 min (Caddy); the server must keep them
+      # open longer, or requests fail sporadically with 502/503 (#195). Node
+      # announces its keep-alive timeout in the Keep-Alive response header.
+      - name: Check web keep-alive timeout
+        run: |
+          docker run -d --name web-keepalive -p 127.0.0.1:3000:3000 netrics-web:ci
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://127.0.0.1:3000/healthz && break
+            sleep 1
+          done
+          timeout=$(curl -s -D - -o /dev/null http://127.0.0.1:3000/healthz | tr -d '\r' | sed -n 's/^keep-alive: *timeout=\([0-9]*\).*/\1/Ip')
+          echo "web keep-alive timeout: ${timeout:-none} s"
+          docker rm -f web-keepalive >/dev/null
+          test "${timeout:-0}" -gt 120 || { echo "::error::web server closes idle connections before the proxy does"; exit 1; }
 
   # The supported self-hosted install must keep working end to end: build the
   # images from this commit, run install.sh, start deploy/compose, and complete
@@ -117,7 +202,7 @@ jobs:
       contents: read
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Build images
@@ -153,6 +238,38 @@ jobs:
             -d '{"name":"CI"}' $url/v1/workspaces)" 200 workspace
           check "$(curl -sk -b jar -o /dev/null -w '%{http_code}' $url/v1/admin/workspaces)" 200 admin-api
           docker compose run --rm migrate node dist/admin-cli.js list-tokens
+          # Auth is rate-limited per client IP through Caddy, web and api:
+          # forged X-Forwarded-For values must not buy more attempts.
+          for i in $(seq 1 10); do
+            check "$(curl -sk -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -H "origin: $url" \
+              -H "x-forwarded-for: 198.51.100.$i" -H "x-real-ip: 198.51.100.$i" \
+              -d '{"email":"owner@example.com","password":"wrong-password-1"}' $url/api/auth/sign-in/email)" 401 "sign-in $i"
+          done
+          check "$(curl -sk -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -H "origin: $url" \
+            -H 'x-forwarded-for: 198.51.100.99' \
+            -d '{"email":"owner@example.com","password":"wrong-password-1"}' $url/api/auth/sign-in/email)" 429 rate-limit
+      - name: Google OAuth app configuration
+        working-directory: deploy/compose
+        run: |
+          set -euo pipefail
+          announced() { docker compose logs --no-color api | grep 'oauth providers configured' || true; }
+          # Unconfigured (the default): the api starts and lists no provider.
+          case "$(announced)" in *'"oauthProviders":[]'*) ;; *) echo "expected no oauth provider"; exit 1 ;; esac
+          # Configured as deploy/compose/google-oauth.md describes: api and
+          # worker start, and the api logs the redirect URI to register.
+          printf '%s\n' NETRICS_OAUTH_GOOGLE_CLIENT_ID=ci.apps.googleusercontent.com \
+            NETRICS_OAUTH_GOOGLE_CLIENT_SECRET=ci-oauth-secret >> .env
+          docker compose up -d
+          expected='"redirectUri":"https://localhost/oauth/google/callback"'
+          for i in $(seq 1 60); do
+            case "$(announced)" in *"$expected"*) break ;; esac
+            sleep 2
+          done
+          case "$(announced)" in *"$expected"*) ;; *) echo "expected $expected"; exit 1 ;; esac
+          if docker compose logs --no-color api worker | grep ci-oauth-secret >/dev/null; then
+            echo "client secret in logs"; exit 1
+          fi
+          test "$(docker compose ps --format '{{.Service}}={{.State}}' worker)" = worker=running
       - name: Logs on failure
         if: failure()
         working-directory: deploy/compose

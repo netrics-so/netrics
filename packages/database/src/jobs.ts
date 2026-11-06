@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
 
 import type { Db, Transaction } from "./context.js";
 import * as schema from "./schema.js";
@@ -140,6 +140,22 @@ export async function completeJob(
   return rows.length === 1;
 }
 
+/** Cooperatively release a committed checkpoint without consuming a retry. */
+export async function deferJob(
+  schedulerDb: Db | Transaction,
+  jobId: string,
+  workerId: string,
+  continuation?: Record<string, unknown>,
+): Promise<boolean> {
+  const rows = await schedulerDb.execute(sql`update jobs
+    set status = 'continuing', run_at = now() + interval '1 second',
+        locked_by = null, locked_at = null, last_error = null,
+        payload = jsonb_set(payload, '{continuation}', ${continuation === undefined ? sql`coalesce(payload->'continuation', '{}'::jsonb)` : sql`${JSON.stringify(continuation)}::jsonb`})
+    where id = ${jobId}::uuid and status = 'running' and locked_by = ${workerId}
+    returning id`);
+  return rows.length === 1;
+}
+
 /**
  * Extends the lease of a running job held by `workerId`. Workers call this
  * periodically while a handler runs so long jobs are not reclaimed as stale.
@@ -190,7 +206,7 @@ export async function failJob(
         set attempts = attempts + 1,
             status = case
               when ${options.retryable} and attempts + 1 < max_attempts
-                then 'pending'
+                then case when payload ? 'continuation' then 'continuing' else 'pending' end
               when not ${deadLetter}
                 then 'failed'
               else 'dead'
@@ -292,6 +308,58 @@ export async function requestConnectionSync(
   return waiting.id;
 }
 
+/**
+ * Requests a fresh backfill of the connector's whole window (#153), e.g.
+ * after a config change that affects the collected data. App role, inside
+ * the caller's tenant transaction. A backfill that is still waiting (never
+ * started, or waiting to retry) is superseded: it would resume its
+ * checkpoint, which belongs to the previous request. A running backfill is
+ * left alone; the new job runs after it (one connection job runs at a time).
+ * When a concurrent request queued one first, that job is returned instead.
+ */
+export async function requestConnectionBackfill(
+  tx: Transaction,
+  input: { workspaceId: string; connectionId: string },
+): Promise<string> {
+  const waiting = and(
+    eq(schema.jobs.workspaceId, input.workspaceId),
+    eq(schema.jobs.connectionId, input.connectionId),
+    eq(schema.jobs.kind, "connection.backfill"),
+    inArray(schema.jobs.status, ["pending", "continuing"]),
+  );
+  await tx
+    .update(schema.jobs)
+    .set({ status: "failed", lastError: "superseded by a newer backfill" })
+    .where(waiting);
+  const inserted = await tx
+    .insert(schema.jobs)
+    .values({
+      kind: "connection.backfill",
+      workspaceId: input.workspaceId,
+      connectionId: input.connectionId,
+      payload: {
+        workspace_id: input.workspaceId,
+        connection_id: input.connectionId,
+      },
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.jobs.id });
+  if (inserted[0]) {
+    return inserted[0].id;
+  }
+  const [queued] = await tx
+    .select({ id: schema.jobs.id })
+    .from(schema.jobs)
+    .where(waiting)
+    .limit(1);
+  if (!queued) {
+    throw new Error(
+      "requestConnectionBackfill: no job inserted and none waiting",
+    );
+  }
+  return queued.id;
+}
+
 export type DueConnection = Pick<
   typeof schema.connectionState.$inferSelect,
   | "connectionId"
@@ -360,4 +428,49 @@ export async function heartbeat(
       target: schema.workerHeartbeats.workerId,
       set: { role, lastHeartbeatAt: new Date(), metadata },
     });
+}
+
+/** How long finished history is kept. Defaults: see DEFAULT_RETENTION. */
+export interface RetentionPolicy {
+  /** Succeeded jobs, by creation time. */
+  succeededJobsDays: number;
+  /** Failed and dead jobs (dead-letter inspection), by creation time. */
+  failedJobsDays: number;
+  /** Finished sync runs, by finish time; each connection's latest is kept. */
+  syncRunsDays: number;
+  /** Maximum rows deleted per table per call. */
+  batch: number;
+}
+
+export const DEFAULT_RETENTION: RetentionPolicy = {
+  succeededJobsDays: 7,
+  failedJobsDays: 30,
+  syncRunsDays: 90,
+  batch: 10_000,
+};
+
+/**
+ * Deletes finished jobs and sync runs past their retention (scheduler role;
+ * prune_history is SECURITY DEFINER, migration 0016). Returns the number of
+ * rows deleted per table; a result equal to `batch` means more remain.
+ */
+export async function pruneHistory(
+  schedulerDb: Db | Transaction,
+  policy: RetentionPolicy = DEFAULT_RETENTION,
+): Promise<{ jobsDeleted: number; syncRunsDeleted: number }> {
+  const [row] = await schedulerDb.execute<{
+    jobs_deleted: number;
+    sync_runs_deleted: number;
+  }>(
+    sql`select * from prune_history(
+          make_interval(days => ${policy.succeededJobsDays}),
+          make_interval(days => ${policy.failedJobsDays}),
+          make_interval(days => ${policy.syncRunsDays}),
+          ${policy.batch}
+        )`,
+  );
+  return {
+    jobsDeleted: row?.jobs_deleted ?? 0,
+    syncRunsDeleted: row?.sync_runs_deleted ?? 0,
+  };
 }

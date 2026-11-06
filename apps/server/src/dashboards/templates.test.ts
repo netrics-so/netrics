@@ -1,0 +1,834 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  createDashboardRequestSchema,
+  dashboardWidgetInputSchema,
+} from "@netrics/contracts";
+import {
+  appStoreConnectManifest,
+  appleAdsManifest,
+  demoManifest,
+  searchConsoleManifest,
+  vercelManifest,
+} from "@netrics/connectors";
+import {
+  RESOURCE_DIMENSION,
+  STUDIO_LIMITS,
+  SUPPORTED_LOCALES,
+  allResourcesName,
+  compareCatalogs,
+  labelFits,
+  localizedMetric,
+  localizedResourceNoun,
+  SCREEN_FORMAT_KEYS,
+  slideFormatWarnings,
+  slideLayoutProblem,
+  tileLabel,
+  type Locale,
+  type WidgetType,
+} from "@netrics/domain";
+
+import { templateDe } from "./template-messages/de.js";
+import { templateEn } from "./template-messages/en.js";
+import {
+  brandSupported,
+  buildBrandTemplate,
+  buildOverviewTemplate,
+  splitWidths,
+  type TemplateDashboard,
+  type TemplateSource,
+} from "./templates.js";
+
+// The template builders (#226): every result must be a dashboard the API
+// accepts (contract schema, grid bounds, minimum sizes, no overlap) whose
+// labels fit at 1080p without truncation, for every mix of connections.
+
+const asc = (name = "Wurfel team", hasReviews = false): TemplateSource => ({
+  connectionId: crypto.randomUUID(),
+  connectionName: name,
+  connectorId: "app-store-connect",
+  hasReviews,
+});
+const gsc: TemplateSource = {
+  connectionId: crypto.randomUUID(),
+  connectionName: "wurfel.app",
+  connectorId: "google-search-console",
+};
+const vercel: TemplateSource = {
+  connectionId: crypto.randomUUID(),
+  connectionName: "Website",
+  connectorId: "vercel",
+};
+const demo: TemplateSource = {
+  connectionId: crypto.randomUUID(),
+  connectionName: "Demo data",
+  connectorId: "demo",
+};
+const ads = (
+  name = "Example Apps US",
+  currency: string | null = "USD",
+  timeZone: string | null = "America/Los_Angeles",
+): TemplateSource => ({
+  connectionId: crypto.randomUUID(),
+  connectionName: name,
+  connectorId: "apple-ads",
+  currency,
+  timeZone,
+});
+const unknown: TemplateSource = {
+  connectionId: crypto.randomUUID(),
+  connectionName: "Elsewhere",
+  connectorId: "acme-analytics",
+};
+
+const MANIFESTS = [
+  appStoreConnectManifest,
+  appleAdsManifest,
+  searchConsoleManifest,
+  vercelManifest,
+  demoManifest,
+];
+
+/**
+ * The automatic label of an untitled widget as screens show it (#256,
+ * #257): the metric's name and, for a widget of all resources, "All apps"
+ * (assuming several), both in the reader's language.
+ */
+function autoLabel(
+  widget: { metricKey: string; dimensions?: Record<string, string> },
+  locale: Locale,
+  resourceName = "Wurfel – Cube Solver",
+): string {
+  const manifest = MANIFESTS.find((candidate) =>
+    candidate.metrics.some((metric) => metric.key === widget.metricKey),
+  )!;
+  const metric = manifest.metrics.find(
+    (candidate) => candidate.key === widget.metricKey,
+  )!;
+  const dimensions = widget.dimensions ?? {};
+  return tileLabel({
+    title: null,
+    metricName: localizedMetric(manifest, metric, locale).name,
+    dimensions,
+    resourceName:
+      dimensions[RESOURCE_DIMENSION] === undefined ? null : resourceName,
+    allResourcesName: allResourcesName(
+      localizedResourceNoun(manifest, locale),
+      2,
+      locale,
+    ),
+  });
+}
+
+/**
+ * Parses like POST /dashboards and checks every slide's layout and labels:
+ * the title, else the automatic label in `locale`, fits at font scale 1
+ * and 1.3 (the largest a theme may set).
+ */
+function expectValid(
+  template: TemplateDashboard | null,
+  locale: Locale = "en",
+  options: { nameFitsHeader?: boolean } = {},
+) {
+  expect(template).not.toBeNull();
+  const parsed = createDashboardRequestSchema.parse(template);
+  expect(parsed.slides!.length).toBeGreaterThan(0);
+  expect(parsed.slides!.length).toBeLessThanOrEqual(STUDIO_LIMITS.slides);
+  for (const slide of parsed.slides!) {
+    expect(slide.name).toBeTruthy();
+    expect(slide.widgets.length).toBeGreaterThan(0);
+    expect(slideLayoutProblem(slide.widgets)).toBeNull();
+    for (const widget of slide.widgets) {
+      dashboardWidgetInputSchema.parse(widget);
+      if (
+        widget.type === "metric" ||
+        widget.type === "line" ||
+        widget.type === "bar" ||
+        widget.type === "table" ||
+        widget.type === "compare"
+      ) {
+        // Charts have no period line: their title names the period.
+        if (widget.type !== "metric") {
+          expect(widget.title, "charts carry a short title").toBeTruthy();
+        }
+        const label = widget.title ?? autoLabel(widget, locale);
+        for (const fontScale of [1, 1.3]) {
+          expect(
+            labelFits(
+              label,
+              widget as { type: WidgetType; w: number; h: number },
+              { fontScale },
+            ),
+            `"${label}" fits ${widget.w} × ${widget.h} at ${fontScale}`,
+          ).toBe(true);
+        }
+      }
+    }
+  }
+  expectNoFormatWarnings(parsed, locale, options.nameFitsHeader ?? true);
+  return parsed;
+}
+
+/**
+ * ADR 0017 section 6: a template produces no readability warnings in any
+ * format (labels, text, header), at font scale 1 and 1.3, with and without
+ * a logo. Continuation pages in narrow formats are information, not a
+ * warning: auto reflow never truncates.
+ */
+function expectNoFormatWarnings(
+  parsed: ReturnType<typeof createDashboardRequestSchema.parse>,
+  locale: Locale,
+  nameFitsHeader: boolean,
+) {
+  for (const slide of parsed.slides!) {
+    const widgets = slide.widgets.map((widget, index) => ({
+      id: `w${index}`,
+      type: widget.type,
+      x: widget.x,
+      y: widget.y,
+      w: widget.w,
+      h: widget.h,
+      label:
+        widget.type === "metric" ||
+        widget.type === "line" ||
+        widget.type === "bar" ||
+        widget.type === "table" ||
+        widget.type === "compare"
+          ? (widget.title ?? autoLabel(widget, locale))
+          : null,
+      text: widget.type === "text" ? widget.text : null,
+      textSize: widget.type === "text" ? widget.options.size : null,
+      rows: widget.type === "table" ? widget.options.limit : null,
+    }));
+    for (const fontScale of [1, 1.3]) {
+      const warnings = slideFormatWarnings(
+        { name: slide.name ?? null, widgets, layouts: {} },
+        {
+          primaryFormat: "16x9",
+          fontScale,
+          showHeader: parsed.settings?.showHeader ?? true,
+          dashboardName: parsed.name,
+          logoAspect: parsed.settings?.logoImageId ? 1 : null,
+        },
+      );
+      const attention = warnings
+        .filter((warning) => warning.severity === "attention")
+        .map((warning) => `${warning.format} ${warning.code}`);
+      expect(
+        attention,
+        `"${parsed.name}" / "${slide.name}" at ${fontScale}`,
+      ).toEqual(
+        nameFitsHeader
+          ? []
+          : SCREEN_FORMAT_KEYS.map((format) => `${format} header_name_cut`),
+      );
+      expect(
+        warnings.every(
+          (warning) =>
+            warning.severity === "attention" || warning.code === "continues",
+        ),
+      ).toBe(true);
+    }
+  }
+}
+
+function titles(template: { slides?: TemplateDashboard["slides"] }) {
+  return (template.slides ?? []).flatMap((slide) =>
+    slide.widgets.map((widget) => [
+      widget.type,
+      "title" in widget ? (widget.title ?? null) : null,
+    ]),
+  );
+}
+
+function metricKeys(template: TemplateDashboard | null): string[] {
+  return (template?.slides ?? []).flatMap((slide) =>
+    slide.widgets.flatMap((widget) =>
+      "metricKey" in widget ? [`${widget.type}:${widget.metricKey}`] : [],
+    ),
+  );
+}
+
+describe("Overview template", () => {
+  it("is null without any connection the templates know", () => {
+    expect(buildOverviewTemplate([])).toBeNull();
+    expect(buildOverviewTemplate([unknown])).toBeNull();
+  });
+
+  it("shows App Store downloads, proceeds and the trend; reviews only with a reviews key", () => {
+    const without = expectValid(buildOverviewTemplate([asc()]));
+    expect(without.slides!.map((slide) => slide.name)).toEqual(["App Store"]);
+    expect(metricKeys(without as TemplateDashboard)).toEqual([
+      "metric:app_store_connect.downloads",
+      "metric:app_store_connect.proceeds",
+      "line:app_store_connect.downloads",
+      "bar:app_store_connect.downloads",
+    ]);
+    const withReviews = expectValid(buildOverviewTemplate([asc("Team", true)]));
+    expect(metricKeys(withReviews as TemplateDashboard)).toContain(
+      "metric:app_store_connect.reviews",
+    );
+    // Proceeds follow the workspace's display currency (no fixed one).
+    const proceeds = without.slides![0]!.widgets.find(
+      (widget) =>
+        "metricKey" in widget &&
+        widget.metricKey === "app_store_connect.proceeds",
+    )!;
+    expect(
+      "displayCurrency" in proceeds && proceeds.displayCurrency,
+    ).toBeFalsy();
+  });
+
+  it("puts Search Console and Vercel on a second slide, only when connected", () => {
+    const all = expectValid(buildOverviewTemplate([vercel, asc(), gsc]));
+    expect(all.slides!.map((slide) => slide.name)).toEqual([
+      "App Store",
+      "Web",
+    ]);
+    expect(
+      metricKeys(all as TemplateDashboard).filter(
+        (key) => !key.includes("app_store"),
+      ),
+    ).toEqual([
+      "metric:google-search-console.clicks",
+      "metric:google-search-console.impressions",
+      "metric:vercel.visitors",
+      "line:google-search-console.clicks",
+      "line:vercel.visitors",
+    ]);
+    const noVercel = expectValid(buildOverviewTemplate([gsc]));
+    expect(JSON.stringify(noVercel)).not.toContain("vercel");
+    expect(noVercel.slides!.map((slide) => slide.name)).toEqual(["Web"]);
+    const onlyVercel = expectValid(buildOverviewTemplate([vercel]));
+    expect(JSON.stringify(onlyVercel)).not.toContain("google-search-console");
+  });
+
+  it("names the connection when several of one kind are connected, and overflows to more slides", () => {
+    const template = expectValid(
+      buildOverviewTemplate([asc("Studio A", true), asc("Studio B", true)]),
+    );
+    const titles = template.slides!.flatMap((slide) =>
+      slide.widgets.map((widget) => widget.title),
+    );
+    expect(titles).toContain("Downloads, 7 days · Studio A");
+    expect(titles).toContain("Reviews, 30 days · Studio B");
+    // Six metrics: four with the charts, two on a slide of their own.
+    expect(template.slides!.map((slide) => slide.widgets.length)).toEqual([
+      6, 2,
+    ]);
+  });
+
+  it("works with the demo connection of a new workspace", () => {
+    const template = expectValid(buildOverviewTemplate([demo]));
+    expect(metricKeys(template as TemplateDashboard)).toEqual([
+      "metric:demo.signups",
+      "metric:demo.visitors",
+      "line:demo.signups",
+    ]);
+  });
+});
+
+/** The slide's widgets as "type key title", for readable expectations. */
+function slideWidgets(slide: NonNullable<TemplateDashboard["slides"]>[number]) {
+  return slide.widgets.map((widget) =>
+    [
+      widget.type,
+      "metricKey" in widget ? widget.metricKey : "",
+      "title" in widget ? (widget.title ?? "") : "",
+    ].join(" "),
+  );
+}
+
+describe("Apple Ads in the Overview (#377)", () => {
+  it("gives an ad account a slide: spend in its currency, installs, CPI, campaigns, countries, tap or view, and its days", () => {
+    const source = ads();
+    const template = expectValid(buildOverviewTemplate([source]));
+    expect(template.slides!.map((slide) => slide.name)).toEqual(["Apple Ads"]);
+    const slide = template.slides![0]!;
+    expect(slideWidgets(slide)).toEqual([
+      "metric apple_ads.spend Ad spend, 30 days · USD",
+      "metric apple_ads.installs Ad installs, 30 days",
+      "compare apple_ads.spend Cost per install, 30 days",
+      "table apple_ads.spend Top campaigns",
+      "bar apple_ads.spend Spend by country",
+      "bar apple_ads.installs Installs: tap or view",
+      "text  ",
+    ]);
+    const [spend, installs, cpi, table, countries, attribution, note] =
+      slide.widgets;
+    // Spend reads the ad account's own currency: exact, never converted.
+    for (const widget of [spend, cpi, table, countries]) {
+      expect(widget).toMatchObject({
+        connectionId: source.connectionId,
+        period: "last_30_days",
+        dimensions: { currency: "USD" },
+      });
+      expect(
+        "displayCurrency" in widget! && widget.displayCurrency,
+      ).toBeFalsy();
+    }
+    // The headline installs are the total: no attribution filter.
+    expect(installs).not.toHaveProperty("dimensions");
+    expect(cpi).toMatchObject({
+      denominator: {
+        connectionId: source.connectionId,
+        metricKey: "apple_ads.installs",
+      },
+      options: { format: "ratio", ratioLabel: "per install" },
+    });
+    expect(table).toMatchObject({
+      options: { groupBy: "campaign", limit: 5, showChange: true },
+    });
+    expect(countries).toMatchObject({ options: { groupBy: "country" } });
+    expect(attribution).toMatchObject({
+      options: { groupBy: "attribution" },
+    });
+    expect(attribution).not.toHaveProperty("dimensions");
+    expect(note).toMatchObject({
+      type: "text",
+      text: "Days in America/Los_Angeles, as in Apple Ads.",
+    });
+    // No ad-group widget (#376 defines those keys).
+    expect(JSON.stringify(template)).not.toContain("ad_group");
+  });
+
+  it("shortens the time-zone note for a long zone name, never cutting it", () => {
+    const zone = "America/Argentina/ComodRivadavia";
+    for (const locale of ["en", "de"] as const) {
+      const template = expectValid(
+        buildOverviewTemplate([ads("Ads", "USD", zone)], { locale }),
+        locale,
+      );
+      const note = template.slides![0]!.widgets.at(-1)!;
+      expect(note.type).toBe("text");
+      expect("text" in note && note.text).toContain(zone);
+    }
+  });
+
+  it("labels an ad account without a known currency or zone plainly", () => {
+    const template = expectValid(
+      buildOverviewTemplate([ads("Ads", null, null)]),
+    );
+    const slide = template.slides![0]!;
+    expect(slideWidgets(slide)[0]).toBe(
+      "metric apple_ads.spend Ad spend, 30 days",
+    );
+    expect(JSON.stringify(slide)).not.toContain('"currency"');
+    expect(slide.widgets.at(-1)).toMatchObject({
+      text: "Days in the ad account's time zone.",
+    });
+    // A malformed currency is not used as a filter.
+    const odd = expectValid(buildOverviewTemplate([ads("Ads", "dollars")]));
+    expect(JSON.stringify(odd)).not.toContain("dollars");
+  });
+
+  it("sets App Store downloads, Apple Ads installs and Vercel visitors side by side", () => {
+    const store = asc();
+    const account = ads();
+    const template = expectValid(
+      buildOverviewTemplate([vercel, account, gsc, store]),
+    );
+    expect(template.slides!.map((slide) => slide.name)).toEqual([
+      "At a glance",
+      "App Store",
+      "Apple Ads",
+      "Web",
+    ]);
+    const glance = template.slides![0]!;
+    expect(slideWidgets(glance)).toEqual([
+      "metric app_store_connect.downloads ",
+      "metric apple_ads.installs ",
+      "metric vercel.visitors ",
+      "line apple_ads.installs Ad installs, 30 days",
+      "line app_store_connect.downloads Downloads, 30 days",
+    ]);
+    // One row: the three metrics side by side, the trends below.
+    expect(
+      glance.widgets.slice(0, 3).map((widget) => [widget.y, widget.h]),
+    ).toEqual([
+      [0, 3],
+      [0, 3],
+      [0, 3],
+    ]);
+    expect(glance.widgets[1]).toMatchObject({
+      connectionId: account.connectionId,
+      period: "last_7_days",
+    });
+    // Apple Ads beside Vercel alone, or App Store Connect alone.
+    expect(
+      expectValid(buildOverviewTemplate([account, vercel])).slides![0]!.name,
+    ).toBe("At a glance");
+    expect(
+      slideWidgets(
+        expectValid(buildOverviewTemplate([account, store])).slides![0]!,
+      ),
+    ).toEqual([
+      "metric app_store_connect.downloads ",
+      "metric apple_ads.installs ",
+      "line apple_ads.installs Ad installs, 30 days",
+      "line app_store_connect.downloads Downloads, 30 days",
+    ]);
+  });
+
+  it("has no Apple Ads slide or row without an Apple Ads connection", () => {
+    for (const sources of [[asc(), vercel, gsc], [asc()], [vercel], [demo]]) {
+      const template = expectValid(buildOverviewTemplate(sources));
+      expect(JSON.stringify(template)).not.toContain("apple_ads");
+      expect(template.slides!.map((slide) => slide.name)).not.toContain(
+        "At a glance",
+      );
+    }
+    // Apple Ads beside Search Console only: no row, the slide says it all.
+    const template = expectValid(buildOverviewTemplate([ads(), gsc]));
+    expect(template.slides!.map((slide) => slide.name)).toEqual([
+      "Apple Ads",
+      "Web",
+    ]);
+  });
+
+  it("gives each of several ad accounts its own slide, titled with its connection", () => {
+    const us = ads("US", "USD", "America/Los_Angeles");
+    const eu = ads("EU", "EUR", "Europe/Berlin");
+    const template = expectValid(buildOverviewTemplate([eu, us, asc()]));
+    expect(template.slides!.map((slide) => slide.name)).toEqual([
+      "At a glance",
+      "App Store",
+      "Apple Ads",
+      "Apple Ads",
+    ]);
+    const [, , euSlide, usSlide] = template.slides!;
+    expect(slideWidgets(euSlide!)[0]).toBe(
+      "metric apple_ads.spend Ad spend, 30 days · EUR · EU",
+    );
+    expect(slideWidgets(usSlide!)[0]).toBe(
+      "metric apple_ads.spend Ad spend, 30 days · USD · US",
+    );
+    expect(euSlide!.widgets.at(-1)).toMatchObject({
+      text: "Days in Europe/Berlin, as in Apple Ads.",
+    });
+    // The row names each ad account's installs.
+    expect(slideWidgets(template.slides![0]!).slice(0, 3)).toEqual([
+      "metric app_store_connect.downloads ",
+      "metric apple_ads.installs Ad installs, 7 days · EU",
+      "metric apple_ads.installs Ad installs, 7 days · US",
+    ]);
+  });
+
+  it("makes no Brand dashboard of an ad account", () => {
+    expect(brandSupported("apple-ads")).toBe(false);
+    expect(
+      buildBrandTemplate({
+        source: ads(),
+        resourceId: "1000000001",
+        resourceName: "Wurfel",
+        logoImageId: null,
+        accentColor: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("words the slide in German", () => {
+    const template = expectValid(
+      buildOverviewTemplate([ads("Konto", "EUR", "Europe/Berlin"), asc()], {
+        locale: "de",
+      }),
+      "de",
+    );
+    expect(template.slides!.map((slide) => slide.name)).toEqual([
+      "Auf einen Blick",
+      "App Store",
+      "Apple Ads",
+    ]);
+    expect(slideWidgets(template.slides![2]!)).toEqual([
+      "metric apple_ads.spend Werbeausgaben, 30 Tage · EUR",
+      "metric apple_ads.installs Anzeigen-Installationen, 30 Tage",
+      "compare apple_ads.spend Kosten pro Installation, 30 Tage",
+      "table apple_ads.spend Top-Kampagnen",
+      "bar apple_ads.spend Ausgaben nach Land",
+      "bar apple_ads.installs Installationen: Tap oder Ansicht",
+      "text  ",
+    ]);
+    expect(template.slides![2]!.widgets[2]).toMatchObject({
+      options: { ratioLabel: "pro Installation" },
+    });
+    expect(template.slides![2]!.widgets.at(-1)).toMatchObject({
+      text: "Tage in Europe/Berlin, wie in Apple Ads.",
+    });
+  });
+});
+
+describe("Brand template", () => {
+  const logo = crypto.randomUUID();
+
+  it("shows one app with its icon, accent and its own numbers on two slides", () => {
+    const source = asc("Team", true);
+    const template = expectValid(
+      buildBrandTemplate({
+        source,
+        resourceId: "6767935139",
+        resourceName: "Wurfel – Cube Solver",
+        logoImageId: logo,
+        accentColor: "#4f8cff",
+      }),
+    );
+    expect(template.name).toBe("Wurfel – Cube Solver");
+    expect(template.settings).toMatchObject({
+      logoImageId: logo,
+      accentColor: "#4f8cff",
+      showHeader: true,
+    });
+    expect(template.slides!.map((slide) => slide.name)).toEqual([
+      "Today",
+      "Trend",
+    ]);
+    const first = template.slides![0]!.widgets;
+    expect(first[0]).toMatchObject({
+      type: "image",
+      imageId: logo,
+      x: 0,
+      y: 0,
+    });
+    expect(first.map((widget) => widget.type)).toEqual([
+      "image",
+      "metric",
+      "metric",
+      "metric",
+      "line",
+      "bar",
+    ]);
+    expect(first.find((widget) => widget.type === "bar")).toMatchObject({
+      metricKey: "app_store_connect.downloads_by_territory",
+      options: { groupBy: "territory" },
+    });
+    for (const widget of template.slides!.flatMap((slide) => slide.widgets)) {
+      if ("metricKey" in widget) {
+        expect(widget.dimensions).toEqual({ resource: "6767935139" });
+        expect(widget.connectionId).toBe(source.connectionId);
+      }
+    }
+  });
+
+  it("leaves reviews out without a reviews key and spreads the band", () => {
+    const template = expectValid(
+      buildBrandTemplate({
+        source: asc(),
+        resourceId: "1",
+        resourceName: "Paperstand",
+        logoImageId: logo,
+        accentColor: null,
+      }),
+    );
+    expect(JSON.stringify(template)).not.toContain("reviews");
+    const metrics = template.slides![0]!.widgets.filter(
+      (widget) => widget.type === "metric",
+    );
+    expect(metrics.map((widget) => widget.w)).toEqual([5, 4]);
+    expect(template.settings?.accentColor).toBeNull();
+  });
+
+  it("starts without a logo when there is no icon", () => {
+    const template = expectValid(
+      buildBrandTemplate({
+        source: asc(),
+        resourceId: "1",
+        resourceName: "Paperstand",
+        logoImageId: null,
+        accentColor: null,
+      }),
+    );
+    expect(JSON.stringify(template)).not.toContain('"image"');
+    expect(template.settings?.logoImageId).toBeNull();
+  });
+
+  it("builds a Brand for a website and a Search Console property too", () => {
+    for (const source of [vercel, gsc, demo]) {
+      expectValid(
+        buildBrandTemplate({
+          source,
+          resourceId: "site-1",
+          resourceName: "wurfel.app",
+          logoImageId: null,
+          accentColor: null,
+        }),
+      );
+    }
+    expect(
+      buildBrandTemplate({
+        source: unknown,
+        resourceId: "x",
+        resourceName: "x",
+        logoImageId: null,
+        accentColor: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps a long app name within the dashboard name limit", () => {
+    const template = expectValid(
+      buildBrandTemplate({
+        source: asc(),
+        resourceId: "1",
+        resourceName: "A".repeat(140),
+        logoImageId: null,
+        accentColor: null,
+      }),
+      "en",
+      // 100 capitals are too long for any header: the Studio warns.
+      { nameFitsHeader: false },
+    );
+    expect(template.name.length).toBe(100);
+  });
+});
+
+describe("templates in the creator's language (#268)", () => {
+  it("German has exactly the English keys and arguments", () => {
+    expect(compareCatalogs(templateEn, templateDe)).toEqual([]);
+  });
+
+  it("Overview: names, slide names and chart titles in English and German; single-source metrics untitled", () => {
+    const sources = [asc(), gsc, vercel];
+    const en = expectValid(buildOverviewTemplate(sources), "en");
+    const de = expectValid(
+      buildOverviewTemplate(sources, { locale: "de" }),
+      "de",
+    );
+    expect(en.name).toBe("Overview");
+    expect(de.name).toBe("Übersicht");
+    expect(en.slides!.map((slide) => slide.name)).toEqual(["App Store", "Web"]);
+    expect(de.slides!.map((slide) => slide.name)).toEqual(["App Store", "Web"]);
+    // Metric widgets show "Downloads · All apps" and "Last 7 days · Total"
+    // in the screen language; charts name their period.
+    expect(titles(en)).toEqual([
+      ["metric", null],
+      ["metric", null],
+      ["line", "Downloads, 30 days"],
+      ["bar", "Downloads by app"],
+      ["metric", null],
+      ["metric", null],
+      ["metric", null],
+      ["line", "Search clicks, 30 days"],
+      ["line", "Visitors, 30 days"],
+    ]);
+    expect(titles(de)).toEqual([
+      ["metric", null],
+      ["metric", null],
+      ["line", "Downloads, 30 Tage"],
+      ["bar", "Downloads nach App"],
+      ["metric", null],
+      ["metric", null],
+      ["metric", null],
+      ["line", "Suchklicks, 30 Tage"],
+      ["line", "Besucher, 30 Tage"],
+    ]);
+  });
+
+  it("Overview keeps a name the creator gives", () => {
+    expect(
+      buildOverviewTemplate([asc()], { name: "Studio", locale: "de" })!.name,
+    ).toBe("Studio");
+  });
+
+  it("Overview titles metrics with the connection when several of one kind are connected", () => {
+    const sources = [asc("Studio A", true), asc("Studio B", true)];
+    const de = expectValid(
+      buildOverviewTemplate(sources, { locale: "de" }),
+      "de",
+    );
+    const deTitles = titles(de).map(([, title]) => title);
+    expect(deTitles).toContain("Downloads, 7 Tage · Studio A");
+    expect(deTitles).toContain("Erlöse, 30 Tage · Studio A");
+    expect(deTitles).toContain("Rezensionen, 30 Tage · Studio B");
+    expect(deTitles).not.toContain(null);
+  });
+
+  it("Brand: every widget titled, slides Today/Trend in English and Heute/Verlauf in German", () => {
+    const input = {
+      source: asc("Team", true),
+      resourceId: "6767935139",
+      resourceName: "Wurfel – Cube Solver",
+      logoImageId: crypto.randomUUID(),
+      accentColor: null,
+    };
+    const en = expectValid(buildBrandTemplate(input), "en");
+    const de = expectValid(
+      buildBrandTemplate({ ...input, locale: "de" }),
+      "de",
+    );
+    expect(de.name).toBe("Wurfel – Cube Solver");
+    expect(en.slides!.map((slide) => slide.name)).toEqual(["Today", "Trend"]);
+    expect(de.slides!.map((slide) => slide.name)).toEqual(["Heute", "Verlauf"]);
+    expect(titles(en)).toEqual([
+      ["image", null],
+      ["metric", "Downloads, 7 days"],
+      ["metric", "Proceeds, 30 days"],
+      ["metric", "Reviews, 30 days"],
+      ["line", "Downloads, 30 days"],
+      ["bar", "Top territories"],
+      ["line", "Downloads, 90 days"],
+      ["line", "Proceeds, 90 days"],
+    ]);
+    expect(titles(de)).toEqual([
+      ["image", null],
+      ["metric", "Downloads, 7 Tage"],
+      ["metric", "Erlöse, 30 Tage"],
+      ["metric", "Rezensionen, 30 Tage"],
+      ["line", "Downloads, 30 Tage"],
+      ["bar", "Top-Länder"],
+      ["line", "Downloads, 90 Tage"],
+      ["line", "Erlöse, 90 Tage"],
+    ]);
+  });
+
+  it("every template fits in every language", () => {
+    const mixes: TemplateSource[][] = [
+      [asc()],
+      [asc("Team", true)],
+      [asc("Studio A", true), asc("Studio B", true)],
+      [asc("A"), asc("B"), asc("C")],
+      [gsc],
+      [vercel],
+      [demo],
+      [asc("Team", true), gsc, vercel, demo],
+      [ads()],
+      [ads("Ads", null, null)],
+      [ads("Example Apps US"), ads("Example Apps EU", "EUR", "Europe/Berlin")],
+      [
+        asc("Team", true),
+        ads("Example Apps US", "USD", "America/Argentina/ComodRivadavia"),
+        gsc,
+        vercel,
+        demo,
+      ],
+      [asc("A"), asc("B"), ads("C"), ads("D"), vercel],
+    ];
+    for (const locale of SUPPORTED_LOCALES) {
+      for (const sources of mixes) {
+        expectValid(buildOverviewTemplate(sources, { locale }), locale);
+      }
+      for (const source of [asc("Team", true), asc(), gsc, vercel, demo]) {
+        for (const logoImageId of [crypto.randomUUID(), null]) {
+          expectValid(
+            buildBrandTemplate({
+              source,
+              resourceId: "r-1",
+              resourceName: "Wurfel – Cube Solver",
+              logoImageId,
+              accentColor: null,
+              locale,
+            }),
+            locale,
+          );
+        }
+      }
+    }
+  });
+});
+
+describe("splitWidths", () => {
+  it("splits cells into whole widths, larger ones first", () => {
+    expect(splitWidths(12, 4)).toEqual([3, 3, 3, 3]);
+    expect(splitWidths(9, 2)).toEqual([5, 4]);
+    expect(splitWidths(9, 3)).toEqual([3, 3, 3]);
+    expect(splitWidths(12, 1)).toEqual([12]);
+  });
+});

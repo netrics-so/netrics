@@ -73,10 +73,14 @@ export function registerHttpHardening(
     reply.header("x-content-type-options", "nosniff");
     reply.header("referrer-policy", "no-referrer");
     reply.header("x-frame-options", "DENY");
-    reply.header(
-      "content-security-policy",
-      "default-src 'none'; frame-ancestors 'none'",
-    );
+    // A route may set a stricter policy of its own (image content adds
+    // sandbox, #217); every other response gets this one.
+    if (!reply.hasHeader("content-security-policy")) {
+      reply.header(
+        "content-security-policy",
+        "default-src 'none'; frame-ancestors 'none'",
+      );
+    }
     if (https) {
       reply.header("strict-transport-security", "max-age=31536000");
     }

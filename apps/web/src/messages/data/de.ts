@@ -1,0 +1,523 @@
+import type { Catalog } from "@netrics/domain";
+import type { dataEn } from "./en";
+export const dataDe: Catalog<typeof dataEn> = {
+  data: {
+    dashboard: {
+      sourceReconnect: "Verbinde {name} erneut, um Importe fortzusetzen.",
+      sourceAccess:
+        "Aktualisiere den Zugriff für {name}, um Importe fortzusetzen.",
+      sourcePaused:
+        "Die App-Erfassung für {name} ist pausiert. Aufbewahrte Daten bleiben verfügbar.",
+      sourcePending: "Der erste vollständige Import von {name} steht noch aus.",
+      sourceOutage:
+        "Die Importe von {name} sind unterbrochen. Prüfe die Verbindung.",
+
+      perDateMeasure:
+        "{name} hat einen Wert pro Datum. Zeige die Kennzahl als Tabelle oder Diagramm nach {dimensions}.",
+      requiresScope:
+        "Getrennt anzeigen oder auf genau einen Wert filtern: {dimensions}.",
+      pendingResult:
+        "Einige Quellenberichte stehen noch aus. Bekannte Werte werden als unvollständig angezeigt; fehlende Werte werden nicht als 0 angezeigt.",
+      partialResult:
+        "Einige Quelldaten fehlen. Prüfe das Modell, bevor du dieses Ergebnis verwendest.",
+      done: "Fertig",
+      applyBeforeSave:
+        "Übernimm oder verwirf den offenen Widget-Filter, bevor du das Dashboard speicherst.",
+      discardFilter: "Filteränderungen verwerfen",
+      filterProblem:
+        "{name}: Ordne den Filter {filter} diesem Modell zu oder begründe, warum er hier nicht gilt.",
+      receivedAt: "Älteste Quellenaktualisierung: {at}",
+      browseValues: "Werte durchsuchen",
+      searchValues: "Verfügbare Werte suchen",
+      loadingValues: "Werte werden geladen…",
+      choicesFailed: "Verfügbare Werte konnten nicht geladen werden.",
+      noValues: "Keine passenden Werte.",
+      previousValues: "Vorherige Werte",
+      nextValues: "Weitere Werte",
+
+      shownRows: "{shown} von {total} Gruppen werden angezeigt.",
+      binding: "Veröffentlichte Kennzahl",
+      model: "Modell",
+      missingModel: "Modell nicht verfügbar",
+      publishedOnly:
+        "Verwendet die veröffentlichte Definition. Entwürfe wirken sich erst nach der Veröffentlichung aus.",
+      editModels: "Modelle bearbeiten",
+      view: "Darstellung",
+      measures: "Kennzahlen",
+      groupBy: "Gruppieren nach",
+      limit: "Maximale Zeilen",
+      widgetFilter: "Zusätzlicher Widget-Filter",
+      formulaPlaceholder: '[Land] = "DE"',
+      applyFilter: "Filter anwenden",
+      applicability: "Anwendbarkeit gemeinsamer Filter",
+      applicabilityHint:
+        "Deaktiviere Filter nur für unabhängige Ergebnisse und begründe es. Feste Bereiche gelten immer.",
+      independentTotal:
+        "Unabhängiger Gesamtwert; dieser Filter gilt hier nicht.",
+      exclusionReason: "Warum {name} hier nicht gilt",
+      sharedFilters: "Gemeinsame Filter",
+      sharedFiltersHint:
+        "Ordne jedem Filter eine passende Dimension je Modell zu. Widgets teilen diese Auswahl.",
+      filterNumber: "Filter {number}",
+      name: "Name",
+      type: "Werttyp",
+      control: "Bedienelement",
+      values: "Werte auswählen",
+      range: "Bereich",
+      mapModels: "Dimensionen je Modell",
+      notMapped: "Nicht zugeordnet",
+      defaultValue: "Standardauswahl",
+      fixedScope: "Fester Bereich",
+      fixedScopeHint:
+        "Gilt immer zusätzlich zur Auswahl der Betrachter, auch auf verbundenen Bildschirmen.",
+      removeFilter: "Filter entfernen",
+      addFilter: "Gemeinsamen Filter hinzufügen",
+      from: "Von",
+      to: "Bis (einschließlich)",
+      invalidValue: "Gib einen gültigen Wert für diesen Filter ein.",
+      removeValue: "{value} entfernen",
+      unmatched: "Nicht zugeordnet / fehlend",
+      yes: "Wahr",
+      no: "Falsch",
+      chooseValue: "Wert auswählen",
+      enterValue: "Wert eingeben",
+      addValue: "Hinzufügen",
+      allValues: "Alle Werte",
+      fixedScopeActive: "Zusätzlich gilt ein fester Bereich.",
+      resetFilters: "Filter zurücksetzen",
+      catalogFailed: "Veröffentlichte Modelle konnten nicht geladen werden.",
+      retry: "Erneut versuchen",
+      staleModel:
+        "Letzte gültige Daten werden angezeigt. Prüfe das Modell und seine Quellen.",
+      resultWarnings:
+        "{count, plural, one {# Datenhinweis. Prüfe die Modellvorschau.} other {# Datenhinweise. Prüfe die Modellvorschau.}}",
+      views: {
+        value: "Wert",
+        table: "Tabelle",
+        bar: "Balkendiagramm",
+        line: "Liniendiagramm",
+      },
+      types: {
+        string: "Text",
+        boolean: "Wahr / falsch",
+        date: "Berichtsdatum",
+        timestamp: "UTC-Zeitstempel",
+        integer: "Ganze Zahl",
+        decimal: "Exakte Dezimalzahl",
+        number: "Zahl",
+      },
+    },
+    loadingInputVersions: "Eingabeversionen des Entwurfs werden geladen…",
+    versionHistory: "Veröffentlichte Versionen",
+    historyHint:
+      "Stelle veröffentlichte Schritte oder Modelldefinitionen als neuen gespeicherten Entwurf wieder her. Der gespeicherte Entwurf wird ersetzt. Der aktuelle Name, Quelldaten und Live-Dashboards bleiben erhalten. Prüfe die Vorschau und veröffentliche den Entwurf, wenn er bereit ist.",
+    historyUnsaved:
+      "Speichere deine Änderungen, bevor du eine Version wiederherstellst oder Eingabeversionen änderst.",
+    historyLoading: "Veröffentlichte Versionen werden geladen…",
+    historyEmpty:
+      "Veröffentliche diesen Entwurf, um den Versionsverlauf zu beginnen.",
+    historyVersion: "Version {version}",
+    historyActive: "Aktuell veröffentlicht",
+    historyNewest: "Neueste Versionen",
+    historyOlder: "Ältere Versionen",
+    restoreDraft: "Als Entwurf wiederherstellen",
+    restoredNotice:
+      "Die veröffentlichte Definition wurde als Entwurf wiederhergestellt. Prüfe die Vorschau vor dem Veröffentlichen. Live-Dashboards nutzen weiterhin die aktuelle Veröffentlichung.",
+    restoredInputs:
+      "Basiert auf der veröffentlichten Version {version}. Die damaligen Vorbereitungsversionen bleiben festgelegt; Korrekturen der Quelldaten gelten weiterhin.",
+    adoptLatestInputs: "Neueste veröffentlichte Eingaben verwenden",
+    latestInputsNotice:
+      "Der Entwurf verwendet jetzt die neuesten veröffentlichten Eingaben. Prüfe die Vorschau vor dem Veröffentlichen.",
+    title: "Daten & Kennzahlen",
+    subtitle:
+      "Bereite deine Daten vor und definiere wiederverwendbare Kennzahlen.",
+    datasets: "Datensätze",
+    preparations: "Aufbereitungen",
+    models: "Modelle",
+    search: "Datensatz suchen",
+    newPreparation: "Neue Aufbereitung",
+    newModel: "Neues Modell",
+    editReference: "Tabelle bearbeiten",
+    referenceEditHint:
+      "Beim Speichern wird die Tabelle erst ersetzt, wenn alle Seiten angenommen wurden. Abhängige Kennzahlen und Dashboards lesen danach die neuen Daten. Nach einer gleichzeitigen Änderung muss die Tabelle neu geladen werden.",
+    referenceCellHint:
+      'Eine leere Zelle mit erlaubten Leerwerten bedeutet „fehlend“. Gib "" für leeren Text ein. Text, der mit einem Anführungszeichen beginnt, kann die JSON-Zeichenfolgenschreibweise verwenden, um die Zeichen zu erhalten.',
+    referenceLoadProgress: "Tabelle wird geladen: {loaded} von {total} Zeilen.",
+    referenceSaveProgress:
+      "Tabelle wird gespeichert: {saved} von {total} Zeilen.",
+    newReference: "Referenzdaten eingeben",
+    connectSource: "Quelle verbinden",
+    back: "Zurück zu den Daten",
+    source: "Quelle",
+    name: "Name",
+    field: "Spalte",
+    type: "Typ",
+    rows: "Zeilen",
+    columns: "Spalten",
+    choose: "Auswählen…",
+    chooseSource: "Datensatz auswählen",
+    sourceName: "Datensatz",
+    prepare: "Diese Daten aufbereiten",
+    raw: "Quelldatensätze",
+    resources: "Ressourcennamen der Verbindung",
+    observations: "Bereits aggregiert",
+    prepared: "Aufbereitet",
+    manual: "Referenztabelle",
+    sample: "Datenvorschau",
+    sampleHint:
+      "Vorschau mit bis zu 100 Zeilen. Aufbereitungsschritte verwenden alle verfügbaren Zeilen.",
+    aggregatedHint:
+      "Dieser Datensatz enthält bereits aggregierte Werte. Prüfe ihre Granularität, bevor du gruppierst oder Summen berechnest.",
+    emptyDatasets: "Beginne mit deinen Daten",
+    emptyDatasetsHint:
+      "Verbinde einen Dienst oder gib eine Referenztabelle ein, um Apps, Kampagnen oder andere gemeinsame Entitäten zuzuordnen.",
+    emptyPreparations: "Daten einmal aufbereiten",
+    emptyPreparationsHint:
+      "Wähle einen Datensatz und bereinige, berechne oder verbinde seine Spalten. Prüfe jeden Schritt vor der Veröffentlichung.",
+    emptyModels: "Bringe deine Daten zusammen",
+    emptyModelsHint:
+      "Ein Modell verbindet Datensätze über gemeinsame Dimensionen und definiert die Kennzahlen deiner Dashboards.",
+    noMatch: "Keine Datensätze passen zu deiner Suche.",
+    noRows: "Keine Zeilen in dieser Vorschau.",
+    loading: "Vorschau wird geladen…",
+    retry: "Erneut versuchen",
+    refresh: "Daten aktualisieren",
+    previous: "Zurück",
+    next: "Weiter",
+    rowRange: "Zeilen {from}–{to} von {count}",
+    draft: "Entwurf",
+    published: "Veröffentlicht v{version}",
+    unpublished: "Nicht veröffentlicht",
+    changed: "Unveröffentlichte Änderungen",
+    save: "Entwurf speichern",
+    saving: "Wird gespeichert…",
+    saved: "Entwurf gespeichert",
+    publish: "Veröffentlichen",
+    publishing: "Wird veröffentlicht…",
+    publishedNotice:
+      "Veröffentlicht. Die geprüfte Version steht jetzt zur Verfügung.",
+    preview: "Vorschau",
+    previewing: "Vorschau wird vorbereitet…",
+    undo: "Rückgängig",
+    close: "Schließen",
+    cancel: "Abbrechen",
+    remove: "Entfernen",
+    unsaved:
+      "Du hast ungespeicherte Änderungen. Speichere deinen Entwurf, bevor du die Seite verlässt.",
+    discard: "Änderungen verwerfen",
+    stay: "Weiter bearbeiten",
+    preparationName: "Name der Aufbereitung",
+    modelName: "Modellname",
+    defaultPreparation: "Unbenannte Aufbereitung",
+    defaultModel: "Unbenanntes Modell",
+    steps: "Angewendete Schritte",
+    editStep: "Schritt bearbeiten",
+    applyStepChanges: "Änderungen prüfen und anwenden",
+    moveStepUp: "Schritt früher ausführen",
+    moveStepDown: "Schritt später ausführen",
+    removeStep: "Schritt entfernen",
+    outputRemovalHint:
+      "Die Ausgabe behält ihre veröffentlichte Identität. Beim Entfernen dieses letzten Vorgangs übernimmt der vorherige Schritt die Ausgabe; alle abhängigen Ausgaben werden geprüft.",
+    stepMoveHint:
+      "Verschiebe Schritte innerhalb einer einzelnen Verarbeitungskette. Jede Änderung prüft alle Ausgaben; Verzweigungen behalten ihre bisherigen Eingaben.",
+    finishStep:
+      "Wende diesen Schritt an oder brich ihn ab, bevor du einen anderen Schritt auswählst oder speicherst.",
+    removeStepHint:
+      "Entferne diesen Vorgang und behalte die anderen Schritte. Ihre Vorschauen werden vor dem Anwenden geprüft. Rückgängig stellt diesen Vorgang wieder her.",
+    continueInput: "Mit diesen Daten fortfahren",
+    stepInput: "Schritt {number}: {name}",
+    datasetInput: "Datensatz: {name}",
+    appendInput: "Eingabe {number}",
+    matchAppendColumns: "Spalten vor dem Anfügen zuordnen",
+    appendMatchHint:
+      "Prüfe die anhand der Namen vorgeschlagenen Zuordnungen. Nur zugeordnete Spalten bleiben erhalten. Fehlende Spalten einer Eingabe ergeben null, wenn eine andere Eingabe sie bereitstellt. Ordne Geldbeträgen auch ihre Währungsspalten zu. Jede Eingabe benötigt mindestens eine Zuordnung.",
+    noMatchingColumn: "Keine passende Spalte",
+    addInput: "Eingabe hinzufügen",
+    addJoinKey: "Weitere Spalten zuordnen",
+    addRename: "Weitere Spalte umbenennen",
+    mergedNamePrefix: "Präfix für Namen verbundener Spalten (optional)",
+    aggregateFilter: "Vor der Aggregation filtern (optional)",
+    preparationAdoptionHint:
+      "Veröffentlichte Modelle behalten ihre gewählte Aufbereitungsversion. Nach dem Veröffentlichen dieser Änderungen prüfst und veröffentlichst du die aktualisierten Eingaben in jedem Modell, das sie übernehmen soll.",
+    republish: "Aktualisierte Eingaben veröffentlichen",
+    unit: "Einheit",
+    unitHint:
+      "Optionale Einheit, zum Beispiel visits oder currency. Verwende für Geldbeträge eine Währungsspalte.",
+    currencyColumn: "Währungsspalte",
+    noCurrencyColumn: "Kein Geldbetrag",
+    decimalScale: "Nachkommastellen (optional)",
+    typeMetadataHint:
+      "Entferne Währung oder Nachkommastellen unter Spaltenoptionen, bevor du einen anderen Typ auswählst.",
+    currencyTypeHint:
+      "Diese Spalte kennzeichnet Währungen. Löse ihre Verknüpfung mit Geldbeträgen, bevor du ihren Typ änderst.",
+    fieldOptions: "Spaltenoptionen",
+    removeColumn: "Spalte entfernen",
+    allowMissing: "Fehlende Werte erlauben",
+    editErrors: {
+      missingStep:
+        "Dieser Schritt oder eine seiner Eingaben fehlt. Lade die Aufbereitung neu.",
+      outputIdentity:
+        "Veröffentlichte Ausgabeidentitäten bleiben erhalten. Bearbeite die Optionen dieser Ausgabe; Entfernen oder Verschieben könnte abhängige Modelle beschädigen.",
+      sourceInUse:
+        "Andere Schritte verwenden diese Quelle. Ändere ihren Datensatz oder entferne zuerst die abhängigen Vorgänge.",
+      chooseInput:
+        "Wähle, welche Eingabe nach dem Entfernen der Verbindung oder Anfügung weiterverwendet werden soll.",
+      branchMove:
+        "Diese Verschiebung überschreitet eine Quelle, Verbindung oder gemeinsam genutzte Verzweigung. Verschiebe nur benachbarte Schritte einer einzelnen Verarbeitungskette.",
+      noNeighbour: "In dieser Richtung gibt es keinen benachbarten Schritt.",
+      cycle:
+        "Diese Eingabe würde eine Schleife erzeugen. Wähle einen früheren oder unabhängigen Schritt.",
+      identityChanged:
+        "Behalte beim Bearbeiten die Identitäten bestehender Schritte, berechneter und verbundener Spalten.",
+      appendDuplicate:
+        "Dadurch würde derselbe Schritt zweimal angefügt und seine Zeilen verdoppelt. Ändere oder entferne zuerst die Anfügung.",
+    },
+    addStep: "Schritt hinzufügen",
+    applyStep: "Schritt anwenden",
+    operation: "Was soll dieser Schritt tun?",
+    select: "Spalten auswählen",
+    rename: "Spalte umbenennen",
+    cast: "Spaltentyp ändern",
+    replace: "Werte ersetzen",
+    filter: "Zeilen filtern",
+    calculate: "Spalte berechnen",
+    deduplicate: "Duplikate entfernen",
+    append: "Zeilen anfügen",
+    join: "Spalten zusammenführen",
+    group: "Gruppieren und aggregieren",
+    newName: "Neuer Name",
+    formula: "Formel",
+    formulaHelp:
+      "Verwende Spaltennamen in eckigen Klammern, zum Beispiel [Umsatz] / [Downloads]. IF, AND, OR und COALESCE werden unterstützt.",
+    insertColumn: "Spalte einfügen",
+    formulaPlaceholder: "Formel eingeben…",
+    keep: "Behalten",
+    first: "Erste Zeile",
+    last: "Letzte Zeile",
+    keys: "Schlüsselspalten",
+    groupKeys: "Gruppieren nach",
+    aggregate: "Aggregation",
+    aggregateName: "Ergebnisname",
+    addAggregate: "Aggregation hinzufügen",
+    from: "Wert suchen",
+    to: "Ersetzen durch",
+    nullValue: "Leer (null)",
+    onError: "Bei fehlgeschlagener Konvertierung",
+    reject: "Anhalten und Fehler anzeigen",
+    useNull: "Leeren Wert verwenden",
+    otherDataset: "Anderer Datensatz",
+    leftKey: "Spalte in diesen Daten",
+    rightKey: "Passende Spalte",
+    joinMode: "Zu behaltende Zeilen",
+    leftJoin: "Alle Zeilen dieser Daten",
+    innerJoin: "Nur passende Zeilen",
+    cardinality: "Erwartete Treffer",
+    manyToOne: "Ein Treffer pro Quellzeile",
+    oneToOne: "Eindeutige Schlüssel auf beiden Seiten",
+    output: "Ausgabe",
+    prefix: "Präfix für zusammengeführte Spalten",
+    joinHint:
+      "Doppelte Zuordnungsschlüssel stoppen die Zusammenführung, damit Summen nicht versehentlich vervielfacht werden.",
+    outputHint:
+      "Die Veröffentlichung stellt diese Ausgabe für Modelle und weitere Aufbereitungen bereit.",
+    warnings: "Hinweise zur Vorschau",
+    warningLabels: {
+      data_source_pending:
+        "Schema geprüft. Die erste vollständige Datenlieferung dieser Quelle steht noch aus; diese Vorschau enthält deshalb keine berechneten Werte.",
+      aggregate_missing_inputs:
+        "Eine Zusammenfassung enthält fehlende Eingabewerte. Das Ergebnis verwendet die gemeldeten Werte und kann unvollständig sein.",
+      decimal_rounded:
+        "Einige Dezimalergebnisse wurden auf 18 Nachkommastellen gerundet.",
+      division_by_zero: "Eine Division durch null ergibt einen leeren Wert.",
+      retained_source_history_incomplete:
+        "Einige ältere Quelldatensätze werden nicht mehr aufbewahrt.",
+      model_window_history_incomplete:
+        "Einige Zeitfenster oder frühere Zeiträume beginnen vor den ältesten aufbewahrten Daten. Ihre Werte sind daher unvollständig.",
+      prepared_cache_capacity_reached:
+        "Die Aufbereitung wurde ohne Zwischenspeicherung ausgewertet, weil die Speicherrichtlinie erreicht wurde.",
+      using_last_valid_source_snapshot:
+        "Die neueste Aktualisierung konnte nicht verarbeitet werden. Dies sind die letzten gültigen aufbewahrten Daten.",
+      generic: "Prüfe diese Vorschau vor der Veröffentlichung.",
+    },
+    sourcePending: "Noch keine abgeschlossene Aktualisierung",
+    sum: "Summe",
+    count: "Anzahl",
+    distinct_count: "Eindeutige Anzahl",
+    avg: "Durchschnitt",
+    min: "Minimum",
+    max: "Maximum",
+    lastAggregate: "Neuester Wert",
+    any: "Mindestens einmal wahr",
+    all: "Alle wahr",
+    orderBy: "Datum des Stands",
+    relationships: "Beziehungen",
+    dimensions: "Dimensionen",
+    measures: "Kennzahlen",
+    addRelationship: "Beziehung hinzufügen",
+    addDimension: "Dimension hinzufügen",
+    addMeasure: "Kennzahl hinzufügen",
+    modelHint:
+      "Verknüpfe gemeinsame Entitäten und definiere Kennzahlen. Jede Faktentabelle wird einzeln aggregiert, bevor Ergebnisse verbunden werden.",
+    factDataset: "Daten mit wiederholten Schlüsseln",
+    dimensionDataset: "Daten mit eindeutigen Schlüsseln",
+    dimensionLabel: "Spalte für Anzeigenamen (optional)",
+    dimensionLabelNone: "Den Wert selbst anzeigen",
+    dimensionName: "Dimensionsname",
+    requiredScope: "Diese Dimensionen getrennt halten",
+    requiredScopeHelp:
+      "Diese Kennzahl erfordert eine Gruppierung nach jeder gewählten Dimension oder einen Filter auf genau einen Wert. Geeignet für Bewertungen, Momentaufnahmen und andere nicht kombinierbare Werte.",
+    measureName: "Kennzahlname",
+    measureKind: "Berechnung",
+    aggregateMeasure: "Spalte aggregieren",
+    formulaMeasure: "Aus Kennzahlen berechnen",
+    measureFormulaHelp:
+      "Verwende Kennzahlnamen, zum Beispiel [Ertrag] - [Ausgaben]. Alle Operanden verwenden dieselben Filter.",
+    rollingMeasure: "Gleitender Zeitraum",
+    offsetMeasure: "Vergleich mit früherem Zeitraum",
+    baseMeasure: "Ausgangskennzahl",
+    rollingHelp:
+      "Jedes Zeitfenster wird aus den zugrunde liegenden Zeilen neu berechnet, damit Durchschnitte und eindeutige Anzahlen exakt bleiben. Gleitend berechnen lassen sich nur Kennzahlen, die eine Spalte aggregieren.",
+    offsetHelp:
+      "Monats- und Jahresvergleiche behalten den Kalendertag bei. Ist der frühere Monat kürzer, zählt sein letzter Tag: Der 31. März wird also mit dem 28. oder 29. Februar verglichen.",
+    timeDimension: "Datumsdimension",
+    timeDimensionHelp:
+      "Die Ergebnisse werden nach diesem Datum gruppiert. Zur Auswahl stehen nur Datumsdimensionen mit dem Berichtsdatum des Anbieters.",
+    noTimeDimension:
+      "Lege zuerst eine Dimension auf einer Datumsspalte an. Zeitstempel eignen sich nicht als Bezug für ein Zeitfenster.",
+    windowLength: "Fensterlänge",
+    windowLengthLimit: "Bis zu {max} {unit}.",
+    windowLengthInvalid: "Gib 1 bis {max} {unit} ein.",
+    windowUnit: "Einheit",
+    windowUnits: {
+      day: "{count, plural, one {Tag} other {Tage}}",
+      week: "{count, plural, one {Woche} other {Wochen}}",
+      month: "{count, plural, one {Monat} other {Monate}}",
+    },
+    compareWith: "Vergleichen mit",
+    offsetPresets: {
+      previousDay: "Vortag",
+      previousWeek: "Vorwoche",
+      previousMonth: "Vormonat",
+      lastYear: "Gleicher Zeitraum im Vorjahr",
+      previousPeriod: "Vorheriger Zeitraum gleicher Länge",
+      custom: "Eigene Verschiebung",
+    },
+    offsetLength: "Zurück um",
+    offsetOutput: "Anzeigen",
+    offsetOutputs: {
+      value: "Früherer Wert",
+      change: "Veränderung",
+      percent_change: "Veränderung in %",
+    },
+    addChangeMeasures: "Veränderungen als Kennzahlen hinzufügen",
+    changeMeasureName: "{name} (Veränderung)",
+    percentChangeMeasureName: "{name} (Veränderung in %)",
+    measureInUse:
+      "Dient als Ausgangskennzahl für {names}. Entferne oder ändere zuerst diese Kennzahlen.",
+    dimensionInUse:
+      "Dient als Datum für {names}. Entferne oder ändere zuerst diese Kennzahlen.",
+    sharedFilter: "Gemeinsamer Filter",
+    sharedFilterHelp:
+      "Verwende Dimensionsnamen in eckigen Klammern. Der Filter gilt für jede angeforderte Kennzahl.",
+    groupBy: "Ergebnisse anzeigen nach",
+    queryMeasures: "Kennzahlen für die Vorschau",
+    noMeasures:
+      "Füge mindestens eine Kennzahl hinzu, um das Modell anzuzeigen.",
+    noDimensions:
+      "Füge Dimensionen hinzu, um Kennzahlen zu filtern und zu gruppieren.",
+    dateAlignment: "Datumsinterpretation",
+    reportingDate: "Berichtsdatum des Anbieters",
+    instant: "Exakter Zeitstempel",
+    stale:
+      "Der letzte gültige Datenstand wird angezeigt, weil die neueste Aktualisierung nicht verarbeitet werden konnte.",
+    missing: "Fehlend",
+    partial: "Teilweise",
+    true: "Wahr",
+    false: "Falsch",
+    referenceName: "Name der Referenztabelle",
+    referenceHint:
+      "Ordne gemeinsame Entitäten wie Apps oder Kampagnen zu. Füge eine Tabelle mit Spaltenüberschriften ein oder gib Zeilen unten ein.",
+    pasteTable: "CSV oder tabulatorgetrennte Tabelle einfügen",
+    importTable: "Eingefügte Tabelle verwenden",
+    addColumn: "Spalte hinzufügen",
+    addRow: "Zeile hinzufügen",
+    keyColumn: "Spalte mit eindeutigem Schlüssel",
+    retention: "Daten behalten",
+    forever: "Bis zur Löschung",
+    days: "Für eine Anzahl von Tagen",
+    retentionDays: "Tage",
+    retentionHint:
+      "Die Aufbewahrungsrichtlinie deines Workspaces gilt ebenfalls. Eine Verkürzung lässt sich nicht rückgängig machen, um abgelaufene Daten wiederherzustellen.",
+    saveReference: "Referenztabelle speichern",
+    referenceSaved: "Referenztabelle gespeichert",
+    columnName: "Spaltenname",
+    tableRequired:
+      "Gib eine Tabelle mit Überschriften und mindestens einer Zeile ein.",
+    value: "Wert",
+    previewCurrent: "Gespeicherten Entwurf anzeigen",
+    freshPreview: "Die Vorschau entspricht deinem aktuellen Entwurf.",
+    previewInitial:
+      "Wähle Kennzahlen und prüfe diesen Entwurf vor der Veröffentlichung.",
+    previewOutdated:
+      "Der Entwurf wurde geändert. Prüfe ihn vor der Veröffentlichung erneut.",
+    errors: {
+      window:
+        "Prüfe die gleitenden und vergleichenden Kennzahlen. Jede braucht eine Ausgangskennzahl, eine Datumsdimension mit dem Berichtsdatum des Anbieters und eine Länge im erlaubten Bereich.",
+      windowGrouping:
+        "Gleitende und vergleichende Kennzahlen haben einen Wert pro Datum. Zeige sie nach ihrer Datumsdimension, zum Beispiel als Liniendiagramm oder Tabelle. Nur Vergleiche mit dem Vormonat, Vorjahr oder gleich langen Vorzeitraum können einen einzelnen Wert zeigen, und nur für einen geschlossenen Zeitraum.",
+      windowRange:
+        "Dieser Vergleich braucht einen vollständigen Zeitraum. Wähle ein Start- und ein Enddatum.",
+      windowRangeDefault:
+        "Dieser Vergleich braucht einen Zeitraum. Füge einen gemeinsamen Datumsfilter mit der Steuerung „Bereich“ auf seinem Datum hinzu, mit einem Standard-Start- und Enddatum, oder gruppiere die Kennzahl nach diesem Datum.",
+      windowFilterMode:
+        "Gleitende und vergleichende Kennzahlen können nur einem Datumsfilter folgen, der einen Zeitraum auswählt. Stelle sein Bedienelement auf „Bereich“ um oder nimm dieses Widget davon aus.",
+      windowFilter:
+        "Filtere das Datum gleitender und vergleichender Kennzahlen nur mit Von- und Bis-Bedingungen, verbunden mit AND, und nutze für alle dieselbe Datumsdimension.",
+      history:
+        "Diese veröffentlichte Version ist nicht verfügbar. Lade den Verlauf neu und wähle eine andere Version.",
+      unavailable:
+        "Eine benötigte Quelle oder Eingabeversion ist nicht verfügbar. Prüfe die Verbindung und veröffentlichte Vorbereitungen vor dem Wiederherstellen oder Veröffentlichen.",
+      pinConflict:
+        "Diese Eingaben hängen von unterschiedlichen veröffentlichten Versionen derselben Vorbereitung ab. Verwende die neuesten veröffentlichten Eingaben oder entferne die Eingabe, die eine neuere Version benötigt.",
+      scope:
+        "Gruppiere nach den erforderlichen Dimensionen oder wähle für jede genau einen Wert aus, bevor du diese Kennzahl verwendest.",
+      label:
+        "Wähle eine Textspalte für Anzeigenamen. Jede Identität braucht einen eindeutigen, konsistenten Namen.",
+      pending:
+        "Die erste vollständige Datenlieferung dieser Quelle steht noch aus. Prüfe den Synchronisierungsstatus der Verbindung; die Daten erscheinen, sobald der Anbieterbericht vorliegt.",
+      generic:
+        "Der Vorgang konnte nicht abgeschlossen werden. Versuche es erneut.",
+      conflict:
+        "Jemand hat diese Daten geändert. Lade die Seite vor dem Speichern neu.",
+      formula:
+        "Prüfe Namen, Funktionen und Klammern der Formel und versuche es erneut.",
+      field:
+        "Eine referenzierte Spalte ist nicht verfügbar. Prüfe Datensatz und Spaltenauswahl.",
+      cardinality:
+        "Die Zuordnungsseite enthält doppelte Schlüssel. Wähle einen eindeutigen Schlüssel oder entferne vor der Zusammenführung Duplikate.",
+      units:
+        "Die Werte haben inkompatible Typen, Einheiten oder Währungen. Gleiche sie vor der Berechnung ausdrücklich an.",
+      limit:
+        "Der Vorgang überschreitet die Verarbeitungs- oder Speicherrichtlinie deines Workspaces. Grenze die Daten ein oder bitte deinen Administrator um eine Anpassung.",
+      expired:
+        "Die aufbewahrten Daten dieser Quelle sind abgelaufen. Aktualisiere die Quelle oder wähle einen anderen Datensatz.",
+      unpublished:
+        "Veröffentliche die referenzierte Aufbereitung, bevor du sie hier verwendest.",
+      invalid: "Prüfe die eingegebenen Werte und Pflichtfelder.",
+      cycle:
+        "Diese Abhängigkeiten bilden einen Kreis. Entferne die Beziehung oder den Schritt, der auf sich selbst zurückverweist.",
+      filter:
+        "Die Kennzahl kann die gewählte Dimension oder den Filter nicht verwenden. Füge eine kompatible Beziehung hinzu oder wähle eine andere Dimension.",
+    },
+    types: {
+      string: "Text",
+      boolean: "Wahr / falsch",
+      integer: "Ganze Zahl",
+      number: "Gleitkommazahl",
+      decimal: "Exakte Dezimalzahl",
+      date: "Datum",
+      timestamp: "Zeitstempel",
+      json: "Strukturierte Daten",
+    },
+  },
+};

@@ -2,6 +2,10 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    # One full `pnpm test` peaks at about 50 connections (one database per
+    # test file); the default of 100 runs out when two runs share this
+    # server, and suites then fail in setup with 53300 (#351).
+    command: ["postgres", "-c", "max_connections=300"]
     environment:
       POSTGRES_USER: netrics
       POSTGRES_PASSWORD: netrics

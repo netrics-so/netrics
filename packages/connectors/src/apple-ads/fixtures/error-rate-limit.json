@@ -1,0 +1,8 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/rate-limits), checked 2026-10-29; IDs and names are synthetic. TO BE CONFIRMED by #370: the 429 body.",
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Too many requests",
+    "details": []
+  }
+}

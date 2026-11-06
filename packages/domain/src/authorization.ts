@@ -1,6 +1,7 @@
-import type { WorkspaceRole } from "@netrics/contracts";
+/** Workspace roles, strongest first. `@netrics/contracts` validates these. */
+export const WORKSPACE_ROLES = ["owner", "admin", "editor", "viewer"] as const;
 
-export type { WorkspaceRole } from "@netrics/contracts";
+export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 
 export type WorkspaceAction =
   | "workspace:view"
@@ -17,7 +18,18 @@ export type WorkspaceAction =
   | "connections:create"
   | "connections:update"
   | "connections:delete"
-  | "audit:view";
+  | "dashboards:view"
+  | "dashboards:create"
+  | "dashboards:update"
+  | "dashboards:delete"
+  | "devices:view"
+  | "devices:manage"
+  | "audit:view"
+  | "data:preview"
+  | "data:edit"
+  | "data:publish"
+  | "data:query"
+  | "data:delete";
 
 const ALL_ACTIONS: readonly WorkspaceAction[] = [
   "workspace:view",
@@ -34,7 +46,18 @@ const ALL_ACTIONS: readonly WorkspaceAction[] = [
   "connections:create",
   "connections:update",
   "connections:delete",
+  "dashboards:view",
+  "dashboards:create",
+  "dashboards:update",
+  "dashboards:delete",
+  "devices:view",
+  "devices:manage",
   "audit:view",
+  "data:preview",
+  "data:edit",
+  "data:publish",
+  "data:query",
+  "data:delete",
 ];
 
 const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<WorkspaceAction>> = {
@@ -49,12 +72,22 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<WorkspaceAction>> = {
     "connections:view",
     "connections:create",
     "connections:update",
+    "dashboards:view",
+    "dashboards:create",
+    "dashboards:update",
+    "devices:view",
+    "data:preview",
+    "data:edit",
+    "data:publish",
+    "data:query",
   ]),
   viewer: new Set([
     "workspace:view",
     "members:view",
     "projects:view",
     "connections:view",
+    "dashboards:view",
+    "data:query",
   ]),
 };
 

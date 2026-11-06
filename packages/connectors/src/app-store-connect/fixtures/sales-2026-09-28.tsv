@@ -1,0 +1,17 @@
+Provider	Provider Country	SKU	Developer	Title	Version	Product Type Identifier	Units	Developer Proceeds	Begin Date	End Date	Customer Currency	Country Code	Currency of Proceeds	Apple Identifier	Customer Price	Promo Code	Parent Identifier	Subscription	Period	Category	CMB	Device	Supported Platforms	Proceeds Reason	Preserved Pricing	Client	Order Type
+APPLE	US	EXFIELDNOTES	Example Developer	Example Field Notes	2.1	1F	10	0	09/28/2026	09/28/2026	USD	US	USD	1000000001	0					Productivity		iPhone	iOS				
+APPLE	US	EXFIELDNOTES	Example Developer	Example Field Notes	2.1	1F	3	0	09/28/2026	09/28/2026	EUR	DE	EUR	1000000001	0					Productivity		iPad	iOS				
+APPLE	US	EXFIELDNOTES	Example Developer	Example Field Notes	2.1	1F	2	0	09/28/2026	09/28/2026	JPY	JP	JPY	1000000001	0					Productivity		iPhone	iOS				
+APPLE	US	EXFIELDNOTES	Example Developer	Example Field Notes	2.1	3F	4	0	09/28/2026	09/28/2026	USD	US	USD	1000000001	0					Productivity		iPhone	iOS				
+APPLE	US	EXFIELDNOTES	Example Developer	Example Field Notes	2.1	7	20	0	09/28/2026	09/28/2026	USD	US	USD	1000000001	0					Productivity		iPhone	iOS				
+APPLE	US	EXFIELDNOTES.PRO	Example Developer	com.example.fieldnotes.pro		IA1	5	0.70	09/28/2026	09/28/2026	USD	US	USD	1100000001	0.99		EXFIELDNOTES			Productivity		iPhone	iOS				
+APPLE	US	EXFIELDNOTES.PRO	Example Developer	com.example.fieldnotes.pro		IA1	2	84	09/28/2026	09/28/2026	JPY	JP	JPY	1100000001	120		EXFIELDNOTES			Productivity		iPhone	iOS				
+APPLE	US	EXFIELDNOTES.SUB	Example Developer	com.example.fieldnotes.monthly		IAY	3	3.49	09/28/2026	09/28/2026	EUR	DE	EUR	1100000002	4.99		EXFIELDNOTES	New	1 Month	Productivity		iPhone	iOS				
+APPLE	US	EXFIELDNOTES.PRO	Example Developer	com.example.fieldnotes.pro		IA1	-1	0.70	09/28/2026	09/28/2026	USD	US	USD	1100000001	-0.99		EXFIELDNOTES			Productivity		iPhone	iOS				
+APPLE	US	EXFIELDNOTES.PRO	Example Developer	com.example.fieldnotes.pro		IA3	2	0	09/28/2026	09/28/2026	USD	US	USD	1100000001	0		EXFIELDNOTES			Productivity		iPhone	iOS				
+APPLE	US	EXFIELDNOTES.TIP	Example Developer	com.example.fieldnotes.tip		ZZ9	7	1.00	09/28/2026	09/28/2026	USD	US	USD	1100000003	1.49		EXFIELDNOTES			Productivity		iPhone	iOS				
+APPLE	US	EXLEDGER	Example Developer	Example Ledger	2.1	1	2	1.99	09/28/2026	09/28/2026	GBP	GB	GBP	1000000002	2.99					Finance		iPhone	iOS				
+APPLE	US	EXLEDGER	Example Developer	Example Ledger	2.1	F1	1	4.20	09/28/2026	09/28/2026	USD	US	USD	1000000002	5.99					Finance		Desktop	macOS				
+APPLE	US	EXATLAS	Example Developer	Example Atlas	2.1	1F	50	0	09/28/2026	09/28/2026	USD	US	USD	1000000003	0					Navigation		iPhone	iOS				
+APPLE	US	EXATLAS.MAPS	Example Developer	com.example.atlas.maps		IA1	4	2.10	09/28/2026	09/28/2026	USD	US	USD	1100000031	2.99		EXATLAS			Navigation		iPhone	iOS				
+APPLE	US	EXDRAFT.INK	Example Developer	com.example.draft.ink		IA1	1	0.70	09/28/2026	09/28/2026	USD	FR	EUR	1100000041	0.99		EXDRAFT			Productivity		iPhone	iOS				

@@ -1,0 +1,513 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { z } from "zod";
+
+import {
+  DEVICE_API_VERSION,
+  DEVICE_DASHBOARD_SCHEMAS,
+  approveDeviceRequestSchema,
+  createPairingRequestSchema,
+  createPairingResponseSchema,
+  deviceDashboardQuerySchema,
+  deviceDashboardResponseSchema,
+  deviceDashboardV2ResponseSchema,
+  deviceDashboardV3ResponseSchema,
+  deviceHeartbeatRequestSchema,
+  deviceListResponseSchema,
+  deviceResponseSchema,
+  deviceSelfResponseSchema,
+  lookupPairingRequestSchema,
+  lookupPairingResponseSchema,
+  pollPairingRequestSchema,
+  pollPairingResponseSchema,
+  refreshDeviceTokenRequestSchema,
+  refreshDeviceTokenResponseSchema,
+  serverInfoResponseSchema,
+  updateDeviceRequestSchema,
+} from "@netrics/contracts";
+import type { Database } from "@netrics/database";
+import { can, type Locale, type WorkspaceAction } from "@netrics/domain";
+
+import type { AuthService } from "../auth/index.js";
+import type { CredentialKeyring } from "../credentials.js";
+import { createDeviceService, type Result } from "../devices/service.js";
+import {
+  parseBody,
+  resolveAccess,
+  sendError,
+  type WorkspaceAccess,
+} from "./access.js";
+import { routeSchema } from "./openapi.js";
+import { createRequireDevice } from "./principal.js";
+import { createRequireSession } from "./session.js";
+
+// HTTP layer for devices and pairing (ADR 0010, ADR 0011).
+
+export interface DeviceRouteDeps {
+  dataPolicy?: import("@netrics/domain").DataPolicy;
+  authService: AuthService;
+  db: Database;
+  pairingUrl: string;
+  version: string;
+  /** NETRICS_EXCHANGE_RATES: display-currency conversion (#191). */
+  exchangeRates?: boolean;
+  /** Reuse of computed dashboard payloads; default 30 s, 0 for none. */
+  payloadCacheMs?: number;
+  /** NETRICS_DEFAULT_LOCALE: screens of workspaces without a language. */
+  defaultLocale?: Locale | null;
+  /** Opens stored envelopes: whether a connection holds a reviews key. */
+  credentialKeyring?: CredentialKeyring;
+}
+
+const deviceParamsSchema = z.object({ deviceId: z.uuid() });
+
+/** Whether an If-None-Match header names this entity tag. */
+export function matchesEtag(header: string | undefined, etag: string): boolean {
+  if (!header) {
+    return false;
+  }
+  return header
+    .split(",")
+    .map((tag) => tag.trim().replace(/^W\//, ""))
+    .some((tag) => tag === "*" || tag === etag);
+}
+
+function unwrap<T>(result: Result<T>, reply: FastifyReply): T | null {
+  if (!result.ok) {
+    sendError(reply, result.status, result.error);
+    return null;
+  }
+  return result.value;
+}
+
+export function registerDeviceRoutes(
+  app: FastifyInstance,
+  deps: DeviceRouteDeps,
+): void {
+  const requireSession = createRequireSession(deps.authService);
+  const requireDevice = createRequireDevice({ db: deps.db });
+  const devices = createDeviceService(deps);
+
+  async function authorize(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    action: WorkspaceAction,
+  ): Promise<WorkspaceAccess | null> {
+    const access = await resolveAccess(deps.db, request, reply);
+    if (!access) {
+      return null;
+    }
+    if (!can(access.role, action)) {
+      sendError(reply, 403, "forbidden");
+      return null;
+    }
+    return access;
+  }
+
+  // Public: the TV app checks a server before pairing (ADR 0010).
+  app.get(
+    "/v1/server",
+    {
+      schema: routeSchema({
+        summary: "Identify this server for device apps",
+        tags: ["devices"],
+        response: serverInfoResponseSchema,
+        public: true,
+      }),
+    },
+    async () =>
+      serverInfoResponseSchema.parse({
+        product: "netrics",
+        deviceApiVersion: DEVICE_API_VERSION,
+        version: deps.version,
+        pairingUrl: deps.pairingUrl,
+        dashboardSchemas: [...DEVICE_DASHBOARD_SCHEMAS],
+      }),
+  );
+
+  // Public: a device starts pairing without any credentials. The body is
+  // optional (#406): apps before it send none.
+  app.post(
+    "/v1/device/pairings",
+    {
+      schema: routeSchema({
+        summary:
+          "Start pairing a device (shows a code on screen); the optional " +
+          "body reports the device's platform",
+        tags: ["devices"],
+        // Nullish: without a body Fastify hands the validator null.
+        body: createPairingRequestSchema.nullish(),
+        response: createPairingResponseSchema,
+        errors: [429],
+        public: true,
+      }),
+    },
+    async (request, reply) => {
+      const body = createPairingRequestSchema.nullish().safeParse(request.body);
+      if (!body.success) {
+        return sendError(reply, 400, "invalid_request");
+      }
+      const pairing = unwrap(
+        await devices.createPairing(
+          request.clientIp,
+          body.data?.platform ?? null,
+        ),
+        reply,
+      );
+      if (!pairing) {
+        return;
+      }
+      return createPairingResponseSchema.parse(pairing);
+    },
+  );
+
+  // Public: the device proves itself with the poll secret.
+  app.post(
+    "/v1/device/pairings/poll",
+    {
+      schema: routeSchema({
+        summary: "Poll a pairing; returns the credentials once approved",
+        tags: ["devices"],
+        body: pollPairingRequestSchema,
+        response: pollPairingResponseSchema,
+        errors: [404, 410],
+        public: true,
+      }),
+    },
+    async (request, reply) => {
+      const body = parseBody(pollPairingRequestSchema, request, reply);
+      if (!body) {
+        return;
+      }
+      const result = unwrap(await devices.poll(body), reply);
+      if (!result) {
+        return;
+      }
+      // Credentials must never be cached on the way.
+      void reply.header("cache-control", "no-store");
+      return pollPairingResponseSchema.parse(result);
+    },
+  );
+
+  // Public: the refresh token in the body is the credential.
+  app.post(
+    "/v1/device/token",
+    {
+      schema: routeSchema({
+        summary: "Exchange a device refresh token for new credentials",
+        tags: ["devices"],
+        body: refreshDeviceTokenRequestSchema,
+        response: refreshDeviceTokenResponseSchema,
+        public: true,
+      }),
+    },
+    async (request, reply) => {
+      const body = parseBody(refreshDeviceTokenRequestSchema, request, reply);
+      if (!body) {
+        return;
+      }
+      const credentials = unwrap(
+        await devices.refresh(body.refreshToken),
+        reply,
+      );
+      if (!credentials) {
+        return;
+      }
+      void reply.header("cache-control", "no-store");
+      return refreshDeviceTokenResponseSchema.parse({ credentials });
+    },
+  );
+
+  // Device API: device access tokens only (ADR 0011).
+  void app.register(
+    (scope, _opts, done) => {
+      scope.addHook("onRequest", requireDevice);
+
+      scope.get(
+        "/me",
+        {
+          schema: routeSchema({
+            summary: "The calling device",
+            tags: ["devices"],
+            response: deviceSelfResponseSchema,
+            device: true,
+          }),
+        },
+        async (request, reply) => {
+          const device = unwrap(await devices.self(request.device!), reply);
+          if (!device) {
+            return;
+          }
+          return deviceSelfResponseSchema.parse({ device });
+        },
+      );
+
+      scope.get(
+        "/dashboard",
+        {
+          schema: routeSchema({
+            summary:
+              "The device's dashboard: schema 1 (tiles) by default, schema 2 " +
+              "(slides, widgets, theme, images in the 16:9 layout) with " +
+              "?schema=2, schema 3 (primary and custom layouts per screen " +
+              "format, device rotation and display mode) with ?schema=3, " +
+              "each when server info lists it; ETags are per schema: send " +
+              "If-None-Match with the last ETag to get 304 when nothing changed",
+            tags: ["devices"],
+            querystring: deviceDashboardQuerySchema,
+            response: z.union([
+              deviceDashboardResponseSchema,
+              deviceDashboardV2ResponseSchema,
+              deviceDashboardV3ResponseSchema,
+            ]),
+            device: true,
+            notModified: true,
+          }),
+        },
+        async (request, reply) => {
+          const query = deviceDashboardQuerySchema.parse(request.query);
+          const schema =
+            query.schema === "3" ? 3 : query.schema === "2" ? 2 : 1;
+          const dashboard = unwrap(
+            await devices.dashboard(request.device!, request.log, schema),
+            reply,
+          );
+          if (!dashboard) {
+            return;
+          }
+          const etag = `"${dashboard.version}"`;
+          // Private data: caches must ask again every time.
+          void reply.header("etag", etag).header("cache-control", "no-cache");
+          if (matchesEtag(request.headers["if-none-match"], etag)) {
+            return reply.code(304).send();
+          }
+          if (!("schema" in dashboard)) {
+            return deviceDashboardResponseSchema.parse(dashboard);
+          }
+          return dashboard.schema === 3
+            ? deviceDashboardV3ResponseSchema.parse(dashboard)
+            : deviceDashboardV2ResponseSchema.parse(dashboard);
+        },
+      );
+
+      scope.post(
+        "/heartbeat",
+        {
+          schema: routeSchema({
+            summary:
+              "Report the device's app version, uptime, last error and screen",
+            tags: ["devices"],
+            body: deviceHeartbeatRequestSchema,
+            device: true,
+          }),
+        },
+        async (request, reply) => {
+          const body = parseBody(deviceHeartbeatRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const result = await devices.heartbeat(request.device!, body);
+          if (!result.ok) {
+            return sendError(reply, result.status, result.error);
+          }
+          return reply.code(204).send();
+        },
+      );
+
+      // Settings → Unpair on the device (ADR 0021). Older servers answer
+      // 404 here; the apps then unpair locally only.
+      scope.post(
+        "/me/revoke",
+        {
+          schema: routeSchema({
+            summary:
+              "Revoke the calling device and all its credentials (unpair)",
+            tags: ["devices"],
+            device: true,
+          }),
+        },
+        async (request, reply) => {
+          const result = await devices.selfRevoke(request.device!);
+          if (!result.ok) {
+            return sendError(reply, result.status, result.error);
+          }
+          return reply.code(204).send();
+        },
+      );
+
+      done();
+    },
+    { prefix: "/v1/device" },
+  );
+
+  void app.register(
+    (scope, _opts, done) => {
+      scope.addHook("onRequest", requireSession);
+
+      scope.get(
+        "/workspaces/:workspaceId/devices",
+        {
+          schema: routeSchema({
+            summary: "List paired devices",
+            tags: ["devices"],
+            response: deviceListResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "devices:view");
+          if (!access) {
+            return;
+          }
+          return deviceListResponseSchema.parse({
+            devices: await devices.list(access.workspaceId),
+          });
+        },
+      );
+
+      // Installation-level like the pairing itself: any signed-in user may
+      // look up a code they hold; misses count as failed approvals.
+      scope.post(
+        "/device-pairings/lookup",
+        {
+          schema: routeSchema({
+            summary:
+              "Look up a pending pairing code before approving it (the " +
+              "platform its device reported)",
+            tags: ["devices"],
+            body: lookupPairingRequestSchema,
+            response: lookupPairingResponseSchema,
+            errors: [404, 429],
+          }),
+        },
+        async (request, reply) => {
+          const body = parseBody(lookupPairingRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const pairing = unwrap(
+            await devices.lookup(
+              request.sessionIdentity!.domainUserId,
+              body.code,
+            ),
+            reply,
+          );
+          if (!pairing) {
+            return;
+          }
+          void reply.header("cache-control", "no-store");
+          return lookupPairingResponseSchema.parse({ pairing });
+        },
+      );
+
+      scope.post(
+        "/workspaces/:workspaceId/devices/approve",
+        {
+          schema: routeSchema({
+            summary: "Approve a pairing code and add the device",
+            tags: ["devices"],
+            body: approveDeviceRequestSchema,
+            response: deviceResponseSchema,
+            errors: [403, 404, 429],
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "devices:manage");
+          if (!access) {
+            return;
+          }
+          const body = parseBody(approveDeviceRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const device = unwrap(
+            await devices.approve(
+              { workspaceId: access.workspaceId, userId: access.callerId },
+              body,
+            ),
+            reply,
+          );
+          if (!device) {
+            return;
+          }
+          return deviceResponseSchema.parse({ device });
+        },
+      );
+
+      scope.patch(
+        "/workspaces/:workspaceId/devices/:deviceId",
+        {
+          schema: routeSchema({
+            summary:
+              "Rename a device, change its dashboard, rotation or display mode",
+            tags: ["devices"],
+            body: updateDeviceRequestSchema,
+            response: deviceResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "devices:manage");
+          if (!access) {
+            return;
+          }
+          const params = deviceParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "device_not_found");
+          }
+          const body = parseBody(updateDeviceRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          const device = unwrap(
+            await devices.update(
+              { workspaceId: access.workspaceId, userId: access.callerId },
+              params.data.deviceId,
+              body,
+            ),
+            reply,
+          );
+          if (!device) {
+            return;
+          }
+          return deviceResponseSchema.parse({ device });
+        },
+      );
+
+      scope.post(
+        "/workspaces/:workspaceId/devices/:deviceId/revoke",
+        {
+          schema: routeSchema({
+            summary: "Revoke a device and all its credentials",
+            tags: ["devices"],
+            response: deviceResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "devices:manage");
+          if (!access) {
+            return;
+          }
+          const params = deviceParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "device_not_found");
+          }
+          const device = unwrap(
+            await devices.revoke(
+              { workspaceId: access.workspaceId, userId: access.callerId },
+              params.data.deviceId,
+            ),
+            reply,
+          );
+          if (!device) {
+            return;
+          }
+          return deviceResponseSchema.parse({ device });
+        },
+      );
+
+      done();
+    },
+    { prefix: "/v1" },
+  );
+}

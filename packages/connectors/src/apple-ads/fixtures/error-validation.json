@@ -1,0 +1,16 @@
+{
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/calling-apple-ads-platform-api), checked 2026-10-29; IDs and names are synthetic. TO BE CONFIRMED by #370 captures.",
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation errors found",
+    "details": [
+      {
+        "code": "INVALID_FIELD",
+        "message": "Unknown filter field",
+        "info": {
+          "field": "filters[0].field"
+        }
+      }
+    ]
+  }
+}

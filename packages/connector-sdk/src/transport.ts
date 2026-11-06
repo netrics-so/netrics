@@ -1,3 +1,4 @@
+import { datasetPageSchema, DATASET_LIMITS } from "./datasets.js";
 import { z } from "zod";
 
 const opaqueRecordSchema = z.record(z.string(), z.unknown());
@@ -69,9 +70,119 @@ export function observationKey(observation: Observation): string {
   ]);
 }
 
+// ─── Review text (optional, since SDK 0.2.8; ADR 0019 §11) ─────────────────
+
+/**
+ * One customer review of a resource (an app), for the latest-review widget.
+ * Title, body and author are user content and personal data: the host
+ * stores them in its own table with length caps and retention, never in
+ * observations, logs or errors. Text longer than the host's caps (title 300,
+ * body 4,000, author 100 characters) is cut on ingest.
+ */
+export const syncReviewSchema = z.object({
+  /** The provider's review id; unique per connection. */
+  id: z.string().min(1).max(200),
+  /** The resource (app) the review belongs to. */
+  resource: z.string().min(1),
+  rating: z.number().int().min(1).max(5),
+  title: z.string().nullable(),
+  body: z.string().nullable(),
+  /** The reviewer's nickname as the provider shows it. */
+  author: z.string().nullable(),
+  /** ISO 3166-1 alpha-2, uppercase; null when unknown. */
+  territory: z
+    .string()
+    .regex(/^[A-Z]{2}$/)
+    .nullable(),
+  createdAt: z.iso.datetime({ offset: false }),
+});
+export type SyncReview = z.infer<typeof syncReviewSchema>;
+
+/**
+ * A span of review creation times [from, to) of one resource that the
+ * connector read completely. The host deletes stored reviews of that
+ * resource created inside the span that the result did not return, so
+ * edited and deleted reviews follow the provider.
+ */
+export const reviewWindowSchema = z
+  .object({
+    resource: z.string().min(1),
+    from: z.iso.datetime({ offset: false }),
+    to: z.iso.datetime({ offset: false }),
+  })
+  .refine((window) => window.from < window.to, {
+    message: "from must be before to",
+  });
+export type ReviewWindow = z.infer<typeof reviewWindowSchema>;
+
 export const syncResultSchema = z.object({
   observations: z.array(observationSchema),
+  datasetPages: z
+    .array(datasetPageSchema)
+    .max(DATASET_LIMITS.datasets)
+    .optional(),
+  /**
+   * Optional (SDK 0.2.8): reviews read on this page. Connectors without
+   * review text return neither this nor `reviewWindows`.
+   */
+  reviews: z.array(syncReviewSchema).optional(),
+  /** Optional (SDK 0.2.8): the spans this page read completely. */
+  reviewWindows: z.array(reviewWindowSchema).optional(),
+  /**
+   * Where the next request continues. The host commits each page with its
+   * cursor as a checkpoint, so a cursor returned with done=false may come
+   * back in a later run (after a failure) with a later `to`.
+   */
   nextCursor: z.string().min(1).optional(),
   done: z.boolean(),
 });
 export type SyncResult = z.infer<typeof syncResultSchema>;
+
+// ─── Resource icons (optional capability, since SDK 0.2.5; #226) ──────────
+
+/** Raster types an icon may have; the host validates the bytes strictly. */
+export const RESOURCE_ICON_CONTENT_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
+/** Largest icon a connector may return (the host's image limit, 1 MiB). */
+export const RESOURCE_ICON_MAX_BYTES = 1_048_576;
+/** Resources per resourceIcons call. */
+export const RESOURCE_ICONS_MAX_RESOURCES = 50;
+
+export const resourceIconsRequestSchema = z.object({
+  resources: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        /**
+         * Hints from the host: the territories (ISO 3166-1 alpha-2,
+         * uppercase) the resource has the most data for, most first. A
+         * store-based connector may look the resource up there when its
+         * default storefront does not list it.
+         */
+        territories: z
+          .array(z.string().regex(/^[A-Z]{2}$/))
+          .max(5)
+          .optional(),
+      }),
+    )
+    .min(1)
+    .max(RESOURCE_ICONS_MAX_RESOURCES),
+});
+export type ResourceIconsRequest = z.infer<typeof resourceIconsRequestSchema>;
+
+export const resourceIconSchema = z.object({
+  resourceId: z.string().min(1),
+  contentType: z.enum(RESOURCE_ICON_CONTENT_TYPES),
+  /** The image bytes, base64 (transport objects stay JSON). */
+  data: z.base64().min(1),
+});
+export type ResourceIcon = z.infer<typeof resourceIconSchema>;
+
+export const resourceIconsResultSchema = z.object({
+  /** One icon per resource that has one; resources without are left out. */
+  icons: z.array(resourceIconSchema),
+});
+export type ResourceIconsResult = z.infer<typeof resourceIconsResultSchema>;

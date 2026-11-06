@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "bad_request",
+    "message": "Invalid request: the pro plan only grants access to the latest 366 days of data."
+  }
+}

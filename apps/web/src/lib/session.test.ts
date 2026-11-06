@@ -80,9 +80,9 @@ describe("requireSession", () => {
     expect(result.user).toEqual(sessionBody.user);
     expect(result.cookieHeader).toBe("better-auth.session_token=abc");
     // The incoming cookie header is forwarded verbatim to the API.
-    expect(fetchMock.mock.calls[0]![1]?.headers).toEqual({
-      cookie: "better-auth.session_token=abc",
-    });
+    expect(
+      Object.fromEntries(new Headers(fetchMock.mock.calls[0]![1]?.headers)),
+    ).toEqual({ cookie: "better-auth.session_token=abc" });
   });
 
   it("redirects to /login when the session is expired or revoked", async () => {

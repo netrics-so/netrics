@@ -1,7 +1,20 @@
 import { connectorManifestSchema, type ConnectorManifest } from "./manifest.js";
 import { satisfiesRange } from "./semver.js";
 
-export const SDK_VERSION = "0.2.0";
+// 0.2.1: the additive "oauth2" auth strategy (ADR 0012).
+// 0.2.2: the additive "signed-key" auth strategy and
+// ConnectorResponse.bytes() for binary bodies (ADR 0014).
+// 0.2.3: the "currency_minor" unit, whose metrics declare a "currency"
+// dimension (ADR 0014).
+// 0.2.4: the optional manifest field resourceNoun (#208).
+// 0.2.5: the optional Connector.resourceIcons capability (#226).
+// 0.2.6: the optional manifest field translations (ADR 0016, #257).
+// 0.2.7: the optional manifest fields category and brandColor (#306).
+// 0.2.8: optional SyncResult.reviews and reviewWindows (ADR 0019 §11).
+// All are additive: ^0.2.0 connectors keep loading.
+// 0.2.9: optional typed source datasets and durable dataset pages (ADR 0022).
+// 0.2.10: optional durable dataset staging and page provenance (ADR 0023).
+export const SDK_VERSION = "0.2.10";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

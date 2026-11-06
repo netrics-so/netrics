@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { demoManifest } from "@netrics/connectors";
 
-import { ConnectorRegistry, createDefaultRegistry } from "./registry.js";
+import { ConnectorRegistry } from "./registry.js";
 
 function connectorWith(manifest: ConnectorManifest): Connector {
   return {
@@ -55,10 +55,5 @@ describe("ConnectorRegistry", () => {
     expect(() => registry.register(connectorWith(demoManifest))).toThrow(
       /already registered/,
     );
-  });
-
-  it("seeds the default registry with the demo connector", () => {
-    const registry = createDefaultRegistry();
-    expect(registry.get("demo")?.manifest.id).toBe("demo");
   });
 });
