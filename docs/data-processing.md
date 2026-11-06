@@ -231,7 +231,9 @@ budgets without an SDK or database schema change. The individual 128 MiB stage,
 1 MiB metadata and page/record safeguards remain in force even when the
 aggregate cache budget is `null`.
 
-Retained raw storage and source-count policy defaults are uncapped. Execution
+Retained raw storage and source-count policy defaults are uncapped. One source
+generation holds at most the smaller of `maxGenerationRows` and `queryRows`, since
+no read could load a larger one; see `docs/data-scale-validation.md`. Execution
 defaults are 100,000 rows, 5 million operations and 128 MiB of output per evaluation, 15
 seconds per database statement and 100 connector pages per sync attempt. All
 are configurable, including `null`. They govern an individual execution, not

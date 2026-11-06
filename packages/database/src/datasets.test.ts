@@ -489,6 +489,48 @@ describe("durable typed dataset ingestion", () => {
       await admin.unsafe("drop function dataset_test_failure()");
     }
   });
+  it("rejects generations larger than the query row budget at ingest", async () => {
+    const d = definition("row-budget");
+    const attempt = (
+      refreshKey: string,
+      count: number,
+      limits: { queryRows: number | null; maxGenerationRows: number | null },
+    ) =>
+      withWorkspace(db, { workspaceId: a }, (tx) =>
+        ingestDatasetPage(tx, {
+          workspaceId: a,
+          connectionId: ca,
+          definition: d,
+          page: page(d, {
+            refreshKey,
+            records: Array.from({ length: count }, (_, i) =>
+              record(refreshKey + i),
+            ),
+          }),
+          now,
+          policyDefaults: { ...DEFAULT_DATA_POLICY, ...limits },
+        }),
+      );
+    // An unset generation limit inherits the query budget, so nothing is
+    // stored that every later preview, publication and query would refuse.
+    await expect(
+      attempt("over", 4, { queryRows: 3, maxGenerationRows: null }),
+    ).rejects.toThrow("dataset_refresh_limit");
+    await expect(
+      attempt("explicit", 3, { queryRows: 10, maxGenerationRows: 2 }),
+    ).rejects.toThrow("dataset_refresh_limit");
+    const fits = await attempt("fits", 3, {
+      queryRows: 3,
+      maxGenerationRows: null,
+    });
+    // Incremental upserts also refuse to load an oversized prior generation.
+    await expect(
+      attempt("grown", 1, { queryRows: 3, maxGenerationRows: null }),
+    ).rejects.toThrow("dataset_generation_limit");
+    await expect(
+      attempt("uncapped", 1, { queryRows: null, maxGenerationRows: null }),
+    ).resolves.toMatchObject({ datasetId: fits.datasetId });
+  });
   it("scopes the ingest statement timeout to the page and keeps one without a query timeout", async () => {
     await admin.unsafe(`create table dataset_timeout_probe(timeout text)`);
     await admin.unsafe(

@@ -12,7 +12,11 @@ import {
   type SourceDatasetDefinition,
 } from "@netrics/contracts";
 import type { Db, Transaction } from "./context.js";
-import { exceedsDataPolicy, type DataPolicy } from "@netrics/domain";
+import {
+  datasetGenerationRowLimit,
+  exceedsDataPolicy,
+  type DataPolicy,
+} from "@netrics/domain";
 import { datasetWorkspaceBytes } from "./data-usage.js";
 import { resolveDataPolicy } from "./data-policy.js";
 import {
@@ -266,6 +270,7 @@ async function ingestPage(
       : input.maxWorkspaceBytes;
   if (quota !== null && (!Number.isSafeInteger(quota) || quota < 1))
     return fail("dataset_quota_invalid");
+  const generationRows = datasetGenerationRowLimit(policy);
   const definitionResult = sourceDatasetSchema.safeParse(input.definition);
   if (!definitionResult.success) return fail("dataset_schema_invalid");
   const definition = definitionResult.data;
@@ -378,10 +383,7 @@ async function ingestPage(
     fail("dataset_page_out_of_order");
   if (
     exceedsDataPolicy(refresh.pageCount + 1, policy.maxRefreshPages) ||
-    exceedsDataPolicy(
-      refresh.rowCount + page.records.length,
-      policy.maxGenerationRows,
-    )
+    exceedsDataPolicy(refresh.rowCount + page.records.length, generationRows)
   )
     fail("dataset_refresh_limit");
   await tx.insert(dataPages).values({
@@ -453,10 +455,10 @@ async function ingestPage(
           or(isNull(dataRecords.expiresAt), gt(dataRecords.expiresAt, now)),
         ),
       );
-    const old = await (policy.maxGenerationRows === null
+    const old = await (generationRows === null
       ? oldQuery
-      : oldQuery.limit(policy.maxGenerationRows + 1));
-    if (exceedsDataPolicy(old.length, policy.maxGenerationRows))
+      : oldQuery.limit(generationRows + 1));
+    if (exceedsDataPolicy(old.length, generationRows))
       fail("dataset_generation_limit");
     for (const row of old) {
       const values = { ...(row.values as Record<string, unknown>) };
@@ -538,7 +540,7 @@ async function ingestPage(
       });
     }
   }
-  if (exceedsDataPolicy(rows.size, policy.maxGenerationRows))
+  if (exceedsDataPolicy(rows.size, generationRows))
     fail("dataset_generation_limit");
   let bytes = 0;
   let generationExpiresAt = expiresAt;

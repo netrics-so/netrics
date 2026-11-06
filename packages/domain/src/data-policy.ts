@@ -47,6 +47,20 @@ export const DEFAULT_DATA_POLICY: Readonly<DataPolicy> = {
   preparedCacheSeconds: 86_400,
   maxRetentionDays: null,
 };
+/**
+ * Rows one published source generation may hold. Every read of a raw
+ * generation (preview, preparation, publication, query) loads at most
+ * `queryRows`, so a larger generation could be stored but never used:
+ * ingestion rejects it instead. `null` in both removes the bound.
+ */
+export function datasetGenerationRowLimit(
+  policy: Pick<DataPolicy, "maxGenerationRows" | "queryRows">,
+): number | null {
+  const { maxGenerationRows, queryRows } = policy;
+  if (maxGenerationRows === null) return queryRows;
+  if (queryRows === null) return maxGenerationRows;
+  return Math.min(maxGenerationRows, queryRows);
+}
 export function exceedsDataPolicy(
   value: number,
   maximum: number | null,

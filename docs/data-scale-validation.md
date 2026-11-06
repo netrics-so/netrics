@@ -120,6 +120,20 @@ output and a 15-second SQL statement timeout; these are configurable, including
 `null`. The default 100 sync pages per worker turn is a cooperative yield budget,
 not a total import limit: the cursor continues in another turn.
 
+Ingestion and query row limits are consistent. Every read of a raw generation
+(preview, preparation, publication and model query) loads at most `queryRows`,
+so a source generation may hold at most the smaller of `maxGenerationRows` and
+`queryRows`; `null` in one defers to the other, and only `null` in both removes
+the bound. With the defaults (`maxGenerationRows: null`, `queryRows: 100000`) a
+refresh whose staged or published rows exceed 100,000 fails at ingestion with
+`dataset_refresh_limit` or `dataset_generation_limit`, and the previous generation
+stays current. Previously such a source ingested successfully and then every
+preview, publication and query failed with `data_source_row_limit`. The same
+bound caps how many prior rows an incremental upsert/append/window refresh loads
+into worker memory. Raising `queryRows` for a workspace raises its ingest bound
+too. Generations already stored above the bound remain readable only under a
+larger `queryRows`; their next incremental refresh is rejected until then.
+
 Some limits bound one message or definition rather than a customer's total data:
 
 | Safeguard                     | Current behavior                                                                                                                                        |
