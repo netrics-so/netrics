@@ -15,6 +15,7 @@ const cacheCeiling = z
 /** null removes a policy ceiling; omitted keys inherit the instance default. */
 export const dataPolicyOverrideSchema = z.strictObject({
   maxWorkspaceBytes: ceiling.optional(),
+  maxConnectorStagingBytes: cacheCeiling.optional(),
   maxGenerationRows: ceiling.optional(),
   maxGenerationBytes: ceiling.optional(),
   maxRefreshPages: ceiling.optional(),

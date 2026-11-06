@@ -533,11 +533,11 @@ describe("host staging storage boundaries", () => {
     await expect(store.getPage(stage.id, "0")).rejects.toThrow(
       "dataset_stage_integrity",
     );
-    await adminSetDataPolicy(db, workspaceId, { maxWorkspaceBytes: 1 });
+    await adminSetDataPolicy(db, workspaceId, { maxConnectorStagingBytes: 1 });
     const quotaKey = randomUUID();
     await expect(
       store.put({ key: quotaKey, metadata: {}, pages: [retainedPage()] }),
-    ).rejects.toThrow("dataset_workspace_quota");
+    ).rejects.toThrow("dataset_stage_quota");
     expect(await store.get(quotaKey)).toBeNull();
     await adminSetDataPolicy(db, workspaceId, {});
     const controller = new AbortController();
@@ -561,7 +561,7 @@ describe("host staging storage boundaries", () => {
     expect(await store.get("aborted-during-write")).toBeNull();
   });
 
-  it("stops counting expired stages toward the workspace quota before pruning", async () => {
+  it("stops counting expired stages toward the cache budget before pruning", async () => {
     const [w] =
       await owner`insert into workspaces(name) values ('Stage quota') returning id`;
     const [c] =
@@ -579,11 +579,11 @@ describe("host staging storage boundaries", () => {
     const size = header!.byte_size as number;
     // Room for one stage, not two.
     await adminSetDataPolicy(db, w!.id as string, {
-      maxWorkspaceBytes: size + Math.floor(size / 2),
+      maxConnectorStagingBytes: size + Math.floor(size / 2),
     });
     await expect(
       at(now).put({ key: "second", metadata: {}, pages: [retainedPage()] }),
-    ).rejects.toThrow("dataset_workspace_quota");
+    ).rejects.toThrow("dataset_stage_quota");
     const later = new Date((header!.expires_at as Date).getTime() + 1);
     await expect(
       at(later).put({ key: "second", metadata: {}, pages: [retainedPage()] }),

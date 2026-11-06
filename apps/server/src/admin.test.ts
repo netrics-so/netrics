@@ -2,7 +2,10 @@ import type { FastifyInstance } from "fastify";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { adminWorkspaceListResponseSchema } from "@netrics/contracts";
+import {
+  adminWorkspaceListResponseSchema,
+  dataPolicyResponseSchema,
+} from "@netrics/contracts";
 import {
   createDatabase,
   createRawSqlClient,
@@ -209,6 +212,60 @@ describe("installation admin API", () => {
       ["Root WS", 1],
       ["Member WS", 1],
     ]);
+  });
+
+  it("round-trips independent connector cache policy and restores its inherited default", async () => {
+    const ws = adminWorkspaceListResponseSchema.parse(
+      (await listWorkspaces({ cookie: instanceAdminCookie })).json(),
+    ).workspaces[0]!.id;
+    const url = `/v1/admin/workspaces/${ws}/data-policy`;
+    const headers = { cookie: instanceAdminCookie };
+    for (const budget of [0, 2_097_152, null]) {
+      const overrides = {
+        maxWorkspaceBytes: 4096,
+        maxConnectorStagingBytes: budget,
+      };
+      const response = await app.inject({
+        method: "PUT",
+        url,
+        headers,
+        payload: overrides,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(dataPolicyResponseSchema.parse(response.json())).toMatchObject({
+        policy: overrides,
+        overrides,
+      });
+      const read = await app.inject({ url, headers });
+      expect(read.statusCode, read.body).toBe(200);
+      expect(dataPolicyResponseSchema.parse(read.json()).overrides).toEqual(
+        overrides,
+      );
+    }
+    for (const invalid of [-1, 0.5])
+      expect(
+        (
+          await app.inject({
+            method: "PUT",
+            url,
+            headers,
+            payload: { maxConnectorStagingBytes: invalid },
+          })
+        ).statusCode,
+      ).toBe(400);
+    const reset = await app.inject({
+      method: "PUT",
+      url,
+      headers,
+      payload: {},
+    });
+    expect(reset.statusCode, reset.body).toBe(200);
+    const restored = dataPolicyResponseSchema.parse(reset.json());
+    expect(restored.policy).toMatchObject({
+      maxWorkspaceBytes: null,
+      maxConnectorStagingBytes: 134_217_728,
+    });
+    expect(restored.overrides).toEqual({});
   });
 
   it("refuses ordinary users and anonymous callers", async () => {

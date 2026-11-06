@@ -4258,6 +4258,18 @@
                             }
                           ]
                         },
+                        "maxConnectorStagingBytes": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "maxGenerationRows": {
                           "anyOf": [
                             {
@@ -4465,6 +4477,7 @@
                       },
                       "required": [
                         "maxWorkspaceBytes",
+                        "maxConnectorStagingBytes",
                         "maxGenerationRows",
                         "maxGenerationBytes",
                         "maxRefreshPages",
@@ -4493,6 +4506,18 @@
                             {
                               "type": "integer",
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "maxConnectorStagingBytes": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
                               "maximum": 9007199254740991
                             },
                             {
@@ -4848,6 +4873,18 @@
                       }
                     ]
                   },
+                  "maxConnectorStagingBytes": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "maxGenerationRows": {
                     "anyOf": [
                       {
@@ -5099,6 +5136,18 @@
                             }
                           ]
                         },
+                        "maxConnectorStagingBytes": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "maxGenerationRows": {
                           "anyOf": [
                             {
@@ -5306,6 +5355,7 @@
                       },
                       "required": [
                         "maxWorkspaceBytes",
+                        "maxConnectorStagingBytes",
                         "maxGenerationRows",
                         "maxGenerationBytes",
                         "maxRefreshPages",
@@ -5334,6 +5384,18 @@
                             {
                               "type": "integer",
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "maxConnectorStagingBytes": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
                               "maximum": 9007199254740991
                             },
                             {

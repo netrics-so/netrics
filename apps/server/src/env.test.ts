@@ -15,6 +15,29 @@ const productionUrls = {
 };
 
 describe("loadConfig", () => {
+  it("configures the connector staging admission budget independently of raw storage", () => {
+    expect(loadConfig({}).dataPolicy.maxConnectorStagingBytes).toBe(
+      134_217_728,
+    );
+    for (const budget of [0, 2_097_152, null])
+      expect(
+        loadConfig({
+          NETRICS_DATA_POLICY: JSON.stringify({
+            maxWorkspaceBytes: 4096,
+            maxConnectorStagingBytes: budget,
+          }),
+        }).dataPolicy,
+      ).toMatchObject({
+        maxWorkspaceBytes: 4096,
+        maxConnectorStagingBytes: budget,
+      });
+    expect(() =>
+      loadConfig({
+        NETRICS_DATA_POLICY: JSON.stringify({ maxConnectorStagingBytes: -1 }),
+      }),
+    ).toThrow("NETRICS_DATA_POLICY");
+  });
+
   it("allows self-hosters to raise or remove data and execution policy ceilings", () => {
     const config = loadConfig({
       NETRICS_DATA_POLICY: JSON.stringify({

@@ -247,10 +247,9 @@ async function reusableFrame(
   selected: boolean,
   catalog: Catalog,
   client: PlayReportsClient,
-  runtime: ConnectorRuntime,
+  store: ConnectorRuntime["datasetStaging"],
   signature: string,
 ): Promise<Frame> {
-  const store = runtime.datasetStaging;
   if (!store) return readFrame(task, apps, selected, catalog, client);
   const objects = frameObjects(task, catalog);
   const permitted =
@@ -570,7 +569,10 @@ export async function syncPlayReports(
     request.resources !== undefined,
     catalog,
     options.client,
-    runtime,
+    // Once a task starts buffered, keep that choice through its continuation.
+    // Admitting a cache later would change stage identity and abandon the
+    // partially committed refresh even though the provider report is unchanged.
+    state.task && !state.stageId ? undefined : runtime.datasetStaging,
     options.signature,
   );
   const roster = hash(frame.apps);
