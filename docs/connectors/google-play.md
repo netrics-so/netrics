@@ -75,10 +75,16 @@ changed content restarts the pending partition. An app/report-month replacement
 publishes only after every page is committed. A missing, inaccessible or corrupt
 report updates status and keeps previously published records.
 
-Retained rows default to until deleted, subject to configurable workspace or
-installation retention. Earnings original columns may contain order identifiers
-and postal data, so that JSON field is classified personal. Losing Google
-authorization pauses future ingestion; it does not remove workspace history.
+The connector declares its rows as kept until deleted. Earnings original
+columns may contain order identifiers and postal data, so that JSON field is
+classified personal, and a new connection therefore keeps earnings rows for 90
+days unless the person chooses a longer period or "until deleted" in the setup
+or the connection's "Data retention" settings; the other datasets start at
+until deleted. Connections created before per-connection retention keep until
+deleted. Workspace or installation retention still caps every choice (see
+[retention per connection](../data-processing.md#retention-per-connection)).
+Losing Google authorization pauses future ingestion; it does not remove
+workspace history.
 
 ## Current implementation boundaries
 

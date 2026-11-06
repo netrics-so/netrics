@@ -199,6 +199,11 @@ implementation work; this plan does not create or complete issue records.
     [#454](https://github.com/netrics-so/netrics/issues/454). General preparations
     can calculate proceeds and classify downloads from these retained fields.
 
+  - Per-connection dataset retention in setup and settings (personal data
+    preset to 90 days, connector defaults otherwise, workspace maximum still
+    caps; existing connections recorded unchanged):
+    [#492](https://github.com/netrics-so/netrics/issues/492).
+
   - Google Play report datasets, scoped public listing ratings, stored-credential
     setup preview and app management: [#457](https://github.com/netrics-so/netrics/issues/457).
     Connector integration proves exact proceeds/corrections, OAuth refresh and

@@ -42,6 +42,8 @@ export const apiErrorsEn = {
     goal_not_found: "That goal no longer exists.",
     review_not_found: "That review no longer exists.",
     connection_not_found: "That connection no longer exists.",
+    retention_dataset_unknown:
+      "This connection has no such data table. Reload the page and choose again.",
     reviews_not_supported:
       "This connection has no reviews. A latest-review widget needs an App Store Connect connection.",
     goal_name_taken: "A goal with that name already exists in this workspace.",

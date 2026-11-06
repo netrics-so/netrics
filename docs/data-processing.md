@@ -272,12 +272,55 @@ large.
 
 Source retention defaults to 30 days after collection. A source can request
 any positive retention period or explicitly use `retentionDays: null` to retain
-until deleted. Personal fields require an explicit retention choice; no fixed
-90-day rule is imposed. The shortest finite source/field/tier retention applies
-to the complete record. A shorter workspace retention policy immediately
-reduces stored deadlines and clears derived caches; increasing it later cannot
-revive expired data. Replay preserves original collection time and deadlines.
+until deleted. Personal fields require an explicit retention declaration in the
+connector. The shortest finite source/field/tier retention applies to the
+complete record. A shorter workspace retention policy immediately reduces
+stored deadlines and clears derived caches; increasing it later cannot revive
+expired data. Replay preserves original collection time and deadlines.
 Credentials, headers and tokens never belong in datasets.
+
+### Retention per connection
+
+Each connection chooses how long each of its connector's datasets is kept
+(#492), in the setup step and in the connection's "Data retention" settings.
+The choice is days after collection or "until deleted", per dataset, and it
+replaces the connector's declared dataset and field retention for that
+connection:
+
+- A dataset with personal-classified fields starts at 90 days (or the
+  connector's shorter declaration). The person can choose a longer period,
+  "until deleted", or a shorter one.
+- Other datasets start at the connector's declared retention (the shortest
+  finite dataset/field `retentionDays`) and can be changed too.
+- The workspace maximum (`maxRetentionDays`) still caps every choice; the
+  shortest finite period wins. Settings show when that cap applies.
+- Saving applies at once, in the same transaction, through
+  `apply_connection_retention`: unexpired records and the current generation of
+  each dataset, unexpired refreshes and live connector stages take the new
+  deadline from their collection time. A shorter period therefore removes
+  access immediately and clears derived caches (query snapshots and prepared
+  outputs), as the workspace policy does. A longer period only extends data
+  that has not expired yet; expired, superseded or released data is never
+  revived. Later ingestion and staging use the choice as well.
+- Ingestion, connector staging, connection retention saves and workspace
+  policy changes take the same workspace lock before they read or apply
+  retention, so a sync page in flight during a change either commits first
+  and is shortened, or waits and uses the new values.
+- The connection records the choice, who made it and when
+  (`connections.retention_*`), and the audit log records
+  `connection.retention_updated` with the chosen values. A connection created
+  without a choice shows "Preset" until someone saves one.
+
+Connections that existed before per-connection retention keep what they had:
+migration `0061_connection_retention` records each registered dataset's
+declared retention as an explicit choice, with the migration time and no
+person, and datasets they register later follow the connector default instead
+of the preset. Personal fields are not cut to 90 days retroactively, and the
+migration deletes nothing. New connections get the 90-day preset.
+
+App Store review texts are stored outside the dataset engine and keep their
+own fixed bound (90 days, at most 50 per app); per-connection retention does
+not cover them.
 
 Expired rows are excluded at read time. Hourly scheduler maintenance removes
 expired rows, pages, prepared outputs and query snapshots in batches through

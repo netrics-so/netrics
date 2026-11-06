@@ -253,6 +253,7 @@ export async function buildApp(
     credentialKeyring,
     oauthProviders,
     oauthTokens,
+    dataPolicy: config.dataPolicy,
     ...(deps.signedKeys ? { signedKeys: deps.signedKeys } : {}),
   });
   registerTemplateRoutes(app, {

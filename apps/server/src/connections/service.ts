@@ -23,7 +23,12 @@ import type {
   StoredConnectionPreviewRequest,
   StoredConnectionPreviewResponse,
 } from "@netrics/contracts";
-import { validateConnectionConfig } from "@netrics/contracts";
+import {
+  connectorDatasetRetention,
+  validateConnectionConfig,
+  type ConnectionRetentionChoice,
+} from "@netrics/contracts";
+import { retentionNamesDatasets } from "./retention.js";
 import {
   executeCheck,
   executeDiscover,
@@ -1344,12 +1349,19 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
    */
   async function createConnections(
     actor: Actor,
-    body: CreateConnectionsRequest,
+    body: CreateConnectionsRequest & { retention?: ConnectionRetentionChoice },
     lent?: LentKey,
   ): Promise<Result<ConnectionDetail[]>> {
     const registered = registry.get(body.connectorId);
     if (!registered) {
       return fail(400, "invalid_request");
+    }
+    // Retention chosen in setup (#492) names only the connector's datasets.
+    if (
+      body.retention &&
+      !retentionNamesDatasets(registered.manifest, body.retention)
+    ) {
+      return fail(400, "retention_dataset_unknown");
     }
     const usable = checkCredentialConnector(registered.manifest);
     if (!usable.ok) {
@@ -1462,6 +1474,14 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             : null,
           projectId: body.projectId ?? null,
           pollIntervalSeconds: registered.manifest.minRefreshIntervalSeconds,
+          ...(body.retention
+            ? {
+                retention: {
+                  choice: body.retention,
+                  chosenBy: actor.callerId,
+                },
+              }
+            : {}),
         });
         // Transactional enqueue invariant: the connection, its state, and
         // the initial backfill job commit atomically.
@@ -1481,6 +1501,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             connectorId: body.connectorId,
             ...(entries.length > 1 || lent ? { sharedCredential: true } : {}),
             ...(lent ? { keySharedFrom: lent.connectionId } : {}),
+            ...(body.retention ? { retention: body.retention } : {}),
           },
         });
         rows.push(created);
@@ -1698,6 +1719,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           description: manifest.description,
           metricsCount: manifest.metrics.length,
           datasetsCount: manifest.datasets?.length ?? 0,
+          ...(manifest.datasets?.length
+            ? { datasets: manifest.datasets.map(connectorDatasetRetention) }
+            : {}),
           supportsResourceSelection:
             manifest.supportsResourceSelection ?? false,
           category: manifest.category ?? "other",
@@ -1729,6 +1753,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           ? { pendingKeyId: body.pendingKeyId }
           : {}),
         ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
+        ...(body.retention !== undefined ? { retention: body.retention } : {}),
         connections: [
           {
             name: body.name,

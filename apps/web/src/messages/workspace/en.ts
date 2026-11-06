@@ -592,6 +592,40 @@ export const workspaceEn = {
         "netrics deletes its copy of the {name} key {keyId}. The key itself stays valid at {name} until you revoke it there.",
       apiKeys: "API keys",
     },
+    retention: {
+      title: "Data retention",
+      setupTitle: "Data retention",
+      intro:
+        "How long netrics keeps the data this connection collects, per data table. Data is counted from when it was collected.",
+      setupIntro:
+        "Choose how long netrics keeps the data this connection collects. You can change it later in the connection's settings.",
+      keepData: "Keep data",
+      forever: "Until deleted",
+      days: "For a number of days",
+      daysLabel: "Days",
+      personal: "Contains personal data",
+      personalPreset:
+        "Preset to {days, plural, one {# day} other {# days}} because it contains personal data. You can choose a longer period or keep it until deleted.",
+      connectorDefault:
+        "Connector default: {days, plural, one {# day} other {# days}}.",
+      connectorDefaultForever: "Connector default: until deleted.",
+      cappedByWorkspace:
+        "Your workspace keeps data for at most {days, plural, one {# day} other {# days}}, so that limit applies.",
+      workspaceMax:
+        "Your workspace’s retention policy also applies: at most {days, plural, one {# day} other {# days}}.",
+      shortenWarning:
+        "Shorter periods apply right away: data older than the new period is removed and cannot be restored. Longer periods only keep data that has not expired yet.",
+      chosenBy: "Chosen by {name} on {date}.",
+      chosenOn: "Chosen on {date}.",
+      migrated:
+        "Recorded on {date} from the retention this connection already had. Nothing was shortened.",
+      preset:
+        "Preset: personal data 90 days, other data the connector default. Not reviewed yet.",
+      save: "Save retention",
+      saved: "Retention saved.",
+      readOnly:
+        "Only members who can edit connections can change the retention.",
+    },
     edit: {
       updated: "Connection updated.",
       name: "Name",

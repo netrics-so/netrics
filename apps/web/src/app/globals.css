@@ -5451,6 +5451,27 @@ a.button.primary:hover {
   padding-left: 1.25rem;
 }
 
+/* Dataset retention per connection (#492): one bordered choice per dataset. */
+.retention-dataset {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-4, 1rem);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.retention-dataset legend {
+  padding: 0 0.4rem;
+  overflow-wrap: anywhere;
+}
+.retention-dataset-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+}
+.retention-dataset .page-meta {
+  margin: 0;
+}
+
 /* Declared chart-to-filter interactions (#490): values that set a filter. */
 .sw-measure .sw-measure-choice {
   padding: 0;

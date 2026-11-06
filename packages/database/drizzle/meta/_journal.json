@@ -428,6 +428,13 @@
       "when": 1793970677551,
       "tag": "0060_superseded_generation_release",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1794003276942,
+      "tag": "0061_connection_retention",
+      "breakpoints": true
     }
   ]
 }

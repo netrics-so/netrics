@@ -55,7 +55,11 @@ beforeAll(async () => {
   otherConnectionId = cb!.id as string;
   const before = await owner`select * from connections order by id`;
   await test.migrate();
-  expect(await owner`select * from connections order by id`).toEqual(before);
+  // Later migrations may add columns (0061: retention); existing ones stay.
+  const columns = Object.keys(before[0]!);
+  expect(
+    await owner`select ${owner(columns)} from connections order by id`,
+  ).toEqual(before);
   db = createDatabase(test.appUrl);
   const schedulerUrl = new URL(test.adminUrl);
   schedulerUrl.username = "netrics_scheduler";

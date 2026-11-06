@@ -48,8 +48,10 @@ fields are retained separately in `provider_fields`; they are not substituted
 for the all-version fields. Written review averages below have different
 coverage and remain separate.
 
-These public aggregate snapshots have no connector-imposed expiry. Installation
-and workspace retention/deletion policies can shorten their lifetime; uncapped
+These public aggregate snapshots have no connector-imposed expiry. The
+connection's "Data retention" setting ([retention per
+connection](../data-processing.md#retention-per-connection)), installation and
+workspace retention/deletion policies can shorten their lifetime; uncapped
 self-hosted policy keeps them until deletion. Transport batches bound each
 request, not the number of apps in an account. App discovery follows provider
 pages with cycle detection and the host's execution budget, without a fixed

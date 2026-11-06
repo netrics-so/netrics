@@ -507,6 +507,40 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "netrics löscht seine Kopie des Schlüssels {keyId} für {name}. Der Schlüssel selbst bleibt bei {name} gültig, bis du ihn dort widerrufst.",
       apiKeys: "API-Schlüssel",
     },
+    retention: {
+      title: "Datenaufbewahrung",
+      setupTitle: "Datenaufbewahrung",
+      intro:
+        "Wie lange netrics die Daten dieser Verbindung aufbewahrt, je Datentabelle. Gezählt wird ab dem Abruf der Daten.",
+      setupIntro:
+        "Wähle, wie lange netrics die Daten dieser Verbindung aufbewahrt. Du kannst das später in den Einstellungen der Verbindung ändern.",
+      keepData: "Daten behalten",
+      forever: "Bis zur Löschung",
+      days: "Für eine Anzahl von Tagen",
+      daysLabel: "Tage",
+      personal: "Enthält personenbezogene Daten",
+      personalPreset:
+        "Voreingestellt auf {days, plural, one {# Tag} other {# Tage}}, weil die Tabelle personenbezogene Daten enthält. Du kannst einen längeren Zeitraum wählen oder bis zur Löschung behalten.",
+      connectorDefault:
+        "Vorgabe des Connectors: {days, plural, one {# Tag} other {# Tage}}.",
+      connectorDefaultForever: "Vorgabe des Connectors: bis zur Löschung.",
+      cappedByWorkspace:
+        "Dein Workspace bewahrt Daten höchstens {days, plural, one {# Tag} other {# Tage}} auf; diese Grenze gilt.",
+      workspaceMax:
+        "Die Aufbewahrungsrichtlinie deines Workspaces gilt ebenfalls: höchstens {days, plural, one {# Tag} other {# Tage}}.",
+      shortenWarning:
+        "Kürzere Zeiträume gelten sofort: Daten, die älter sind, werden entfernt und lassen sich nicht wiederherstellen. Längere Zeiträume behalten nur Daten, die noch nicht abgelaufen sind.",
+      chosenBy: "Gewählt von {name} am {date}.",
+      chosenOn: "Gewählt am {date}.",
+      migrated:
+        "Am {date} aus der bisherigen Aufbewahrung dieser Verbindung übernommen. Nichts wurde verkürzt.",
+      preset:
+        "Voreinstellung: personenbezogene Daten 90 Tage, andere Daten nach Vorgabe des Connectors. Noch nicht geprüft.",
+      save: "Aufbewahrung speichern",
+      saved: "Aufbewahrung gespeichert.",
+      readOnly:
+        "Nur Mitglieder, die Verbindungen bearbeiten dürfen, können die Aufbewahrung ändern.",
+    },
     edit: {
       updated: "Verbindung aktualisiert.",
       name: "Name",

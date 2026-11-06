@@ -376,6 +376,23 @@ export const connections = pgTable(
     // the grant but not the connector config (e.g. the property), so it is
     // not scheduled and the web app shows "Finish setup".
     setupPending: boolean("setup_pending").notNull().default(false),
+    // Dataset retention chosen for this connection (#492): dataset key →
+    // days, or null to keep until deleted. Datasets without an entry follow
+    // `retentionFallback`: "preset" (personal data 90 days, otherwise the
+    // connector's declared default) or "connector" (the declared default;
+    // connections that existed before per-connection retention). The
+    // workspace maximum still caps every value.
+    retentionChoice: jsonb("retention_choice").notNull().default({}),
+    retentionFallback: text("retention_fallback").notNull().default("preset"),
+    // preset: nobody chose yet; chosen: a person saved it; migrated: recorded
+    // from the previous effective retention by migration 0061.
+    retentionBasis: text("retention_basis").notNull().default("preset"),
+    retentionChosenBy: uuid("retention_chosen_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    retentionChosenAt: timestamp("retention_chosen_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -387,6 +404,18 @@ export const connections = pgTable(
   // workspace (dashboard_tiles).
   (table) => [
     unique("connections_id_workspace_unique").on(table.id, table.workspaceId),
+    check(
+      "connections_retention_choice_object",
+      sql`jsonb_typeof(${table.retentionChoice}) = 'object'`,
+    ),
+    check(
+      "connections_retention_fallback_valid",
+      sql`${table.retentionFallback} in ('preset','connector')`,
+    ),
+    check(
+      "connections_retention_basis_valid",
+      sql`${table.retentionBasis} in ('preset','chosen','migrated')`,
+    ),
   ],
 );
 

@@ -3,7 +3,6 @@ import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
 import {
   datasetRecordSchema,
-  datasetRetentionDays,
   validateDatasetPage,
   type DatasetPage,
   type SourceDatasetDefinition,
@@ -13,6 +12,7 @@ import { exceedsDataPolicy, type DataPolicy } from "@netrics/domain";
 import type { Transaction } from "./context.js";
 import { connectorStagingWorkspaceBytes } from "./data-usage.js";
 import { resolveDataPolicy } from "./data-policy.js";
+import { connectionDatasetRetentionDays } from "./connection-retention.js";
 import { DatasetStoreError } from "./datasets.js";
 import {
   connections,
@@ -229,7 +229,7 @@ export async function storeConnectorStage(
     pages.reduce((n, p) => n + Buffer.byteLength(JSON.stringify(p)) + 512, 512);
   if (byteSize > MAX_STAGE_BYTES) return fail("dataset_stage_limit");
   await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${scope.workspaceId}, 440))`,
+    sql`select pg_advisory_xact_lock(hashtextextended(${scope.workspaceId}::uuid::text, 440))`,
   );
   const now = currentTime(scope);
   const { policy } = await resolveDataPolicy(
@@ -265,7 +265,12 @@ export async function storeConnectorStage(
   await tx
     .delete(dataConnectorStages)
     .where(and(scopeWhere(scope), eq(dataConnectorStages.key, input.key)));
-  const requested = datasetRetentionDays(definition);
+  const requested = await connectionDatasetRetentionDays(
+    tx,
+    scope.workspaceId,
+    scope.connectionId,
+    definition,
+  );
   const sourceExpiresAt = minimum(
     expiry(now, requested),
     expiry(now, policy.maxRetentionDays),

@@ -138,6 +138,14 @@ export interface NewConnection {
    * (ADR 0012): not scheduled until setup is finished.
    */
   setupPending?: boolean;
+  /**
+   * Dataset retention chosen in setup (#492). Without it the connection
+   * starts with the preset (personal data 90 days).
+   */
+  retention?: {
+    choice: Record<string, number | null>;
+    chosenBy: string | null;
+  };
 }
 
 /**
@@ -159,6 +167,14 @@ export async function insertConnection(
       credentialsEncrypted: input.credentialsEncrypted,
       projectId: input.projectId,
       setupPending: input.setupPending ?? false,
+      ...(input.retention
+        ? {
+            retentionChoice: input.retention.choice,
+            retentionBasis: "chosen",
+            retentionChosenBy: input.retention.chosenBy,
+            retentionChosenAt: new Date(),
+          }
+        : {}),
     })
     .returning();
   if (!row) {
