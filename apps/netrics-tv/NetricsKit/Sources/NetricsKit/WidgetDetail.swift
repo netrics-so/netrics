@@ -140,7 +140,7 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
                 measures.map { id in
                     let name = data.metadata?.measures.first { $0.id == id }?.name ?? id
                     let group = groups.map { row.dimensions[$0]?.text(language: language) ?? "—" }.joined(separator: " · ")
-                    return Item(label: group.isEmpty ? name : "\(group) · \(name)", value: row.measures[id]?.text(language: language) ?? "—")
+                    return Item(label: group.isEmpty ? name : "\(group) · \(name)", value: data.text(row.measures[id], measure: id, language: language))
                 }
             }
             return detail([], items: items, text: data.scope?.joined(separator: "\n"), fallbackTitle: data.metadata?.modelName ?? widget.type)

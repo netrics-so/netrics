@@ -34,7 +34,7 @@ struct MeasureWidgetView: View {
                 ).font(font(24)).foregroundStyle(env.colors.muted)
             } else if options.view == "value" {
                 Text(
-                    measureIds.first.flatMap { rows.first?.measures[$0]?.text(language: env.language) } ?? "—"
+                    measureIds.first.map { data.text(rows.first?.measures[$0], measure: $0, language: env.language) } ?? "—"
                 )
                 .font(font(84, .semibold)).monospacedDigit().minimumScaleFactor(0.4).lineLimit(2)
                 .frame(maxWidth: .infinity, maxHeight: scroll ? nil : .infinity, alignment: .leading)
@@ -117,7 +117,7 @@ struct MeasureWidgetView: View {
                         Text(row.dimensionLabels?[$0] ?? row.dimensions[$0]?.text(language: env.language) ?? "—")
                     }
                     ForEach(measureIds, id: \.self) {
-                        Text(row.measures[$0]?.text(language: env.language) ?? "—").monospacedDigit()
+                        Text(data.text(row.measures[$0], measure: $0, language: env.language)).monospacedDigit()
                     }
                 }.font(font(28))
             }
@@ -138,7 +138,8 @@ struct MeasureWidgetView: View {
     private var bars: some View {
         VStack(alignment: .leading, spacing: env.pt(12)) {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                let cell = measureIds.first.flatMap { row.measures[$0] }
+                let id = measureIds.first
+                let cell = id.flatMap { row.measures[$0] }
                 HStack {
                     Text(
                         groupBy.map { row.dimensionLabels?[$0] ?? row.dimensions[$0]?.text(language: env.language) ?? "—" }.joined(
@@ -150,7 +151,7 @@ struct MeasureWidgetView: View {
                                 .offset(x: box.size.width * (value >= 0 ? 0.5 : 0.5 - abs(value) / extent / 2))
                         }
                     }.frame(width: env.pt(160), height: env.pt(16))
-                    Text(cell?.text(language: env.language) ?? "—").monospacedDigit()
+                    Text(id.map { data.text(cell, measure: $0, language: env.language) } ?? "—").monospacedDigit()
                 }.font(font(28))
             }
         }
