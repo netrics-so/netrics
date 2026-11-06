@@ -714,10 +714,40 @@ export async function listObservationDatasets(
     metricDefinitionId?: string;
   } = {},
 ) {
+  const { entries, truncated } = await observationDescriptors(
+    tx,
+    workspaceId,
+    options,
+  );
+  if (truncated) return fail("dataset_catalog_limit");
+  return entries;
+}
+
+/**
+ * Bounded source-picker listing: an oversized legacy catalog returns its
+ * first `limit` entries and `truncated: true` instead of failing.
+ */
+export async function listObservationCatalog(
+  tx: Transaction,
+  workspaceId: string,
+  limit: number,
+) {
+  return observationDescriptors(tx, workspaceId, { limit });
+}
+
+async function observationDescriptors(
+  tx: Transaction,
+  workspaceId: string,
+  options: {
+    limit?: number | null;
+    connectionId?: string;
+    metricDefinitionId?: string;
+  },
+) {
   const limit = options.limit ?? null;
   if (limit !== null && (!Number.isSafeInteger(limit) || limit < 1))
     return fail("dataset_catalog_limit_invalid");
-  const rows = await tx.execute<{
+  const found = await tx.execute<{
     connection_id: string;
     metric_id: string;
     key: string;
@@ -732,9 +762,9 @@ export async function listObservationDatasets(
     ${options.connectionId ? sql`and c.id=${options.connectionId}` : sql``}
     ${options.metricDefinitionId ? sql`and m.id=${options.metricDefinitionId}` : sql``}
     order by c.id,m.key ${limit === null ? sql`` : sql`limit ${limit + 1}`}`);
-  if (limit !== null && rows.length > limit)
-    return fail("dataset_catalog_limit");
-  return rows.map((row) => ({
+  const truncated = limit !== null && found.length > limit;
+  const rows = truncated ? found.slice(0, limit) : found;
+  const entries = rows.map((row) => ({
     id: `observation:${row.connection_id}:${row.metric_id}`,
     connectionId: row.connection_id,
     metricDefinitionId: row.metric_id,
@@ -784,6 +814,7 @@ export async function listObservationDatasets(
       ],
     }),
   }));
+  return { entries, truncated };
 }
 
 /** Rebuild a retained refresh without another network call. Bounded and tenant scoped. */

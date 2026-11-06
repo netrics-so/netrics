@@ -44,7 +44,7 @@ import {
   withWorkspace,
   schema,
   ingestDatasetPage,
-  listObservationDatasets,
+  listObservationCatalog,
   readObservationDataset,
   insertAuditEvent,
   DatasetStoreError,
@@ -64,6 +64,11 @@ export class DataServiceError extends Error {
   }
 }
 const MAX_SNAPSHOT_EXPIRY = Date.parse("9999-12-31T23:59:59Z");
+/**
+ * Source-picker bound for the legacy observation catalog, independent of the
+ * query row budget. A larger catalog is listed truncated, never refused.
+ */
+export const DATA_SOURCE_CATALOG_ENTRIES = 10_000;
 const LEGACY_PAGE_KEY_PATTERN =
   "^page:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{64}$";
 function fail(code: string, status: 400 | 404 | 409 | 413 | 503 = 400): never {
@@ -139,6 +144,8 @@ interface SourceView {
   aggregated: boolean;
   expiresAt: string | null;
   connectionId: string | null;
+  /** Listed, but larger than the workspace query row budget can load. */
+  rowLimitExceeded?: boolean;
 }
 function stable(value: unknown): string {
   if (Array.isArray(value)) return "[" + value.map(stable).join(",") + "]";
@@ -377,27 +384,35 @@ async function resourceCatalog(
     : query.limit(policy.queryRows + 1));
   if (exceedsDataPolicy(rows.length, policy.queryRows))
     fail("data_source_row_limit", 413);
-  const id = "resources:" + connectionId;
   const generationId =
     "resources:" + createHash("sha256").update(stable(rows)).digest("hex");
-  const table: DataTable = {
-    fields: RESOURCE_FIELDS.map((field) => ({ ...field })),
-    rows,
-    provenance: [{ datasetId: id, generationId }],
-  };
-  const view: SourceView = {
-    id,
-    name: connection.name + " / Resources",
-    kind: "resources",
-    fields: table.fields,
+  const view = resourceView(connectionId, connection.name, {
     generationId,
     rowCount: rows.length,
+  });
+  const table: DataTable = {
+    fields: view.fields,
+    rows,
+    provenance: [{ datasetId: view.id, generationId }],
+  };
+  return { table, view };
+}
+function resourceView(
+  connectionId: string,
+  connectionName: string,
+  state: Pick<SourceView, "generationId" | "rowCount" | "rowLimitExceeded">,
+): SourceView {
+  return {
+    id: "resources:" + connectionId,
+    name: connectionName + " / Resources",
+    kind: "resources",
+    fields: RESOURCE_FIELDS.map((field) => ({ ...field })),
     schemaVersion: 1,
     aggregated: false,
     expiresAt: null,
     connectionId,
+    ...state,
   };
-  return { table, view };
 }
 
 /** One loader per serializable transaction pins each source generation once. */
@@ -1045,26 +1060,49 @@ export function createDataService(
           connectionId: d.connectionId,
         });
       }
+      // Listing counts resource names instead of loading them, so one
+      // oversized catalog is flagged rather than failing the whole picker.
       const namedConnections = await tx
-        .selectDistinct({ id: schema.connectionResources.connectionId })
+        .select({
+          id: schema.connectionResources.connectionId,
+          name: schema.connections.name,
+          rows: sql<number>`count(*)::int`,
+        })
         .from(schema.connectionResources)
-        .where(eq(schema.connectionResources.workspaceId, actor.workspaceId));
-      for (const connection of namedConnections)
+        .innerJoin(
+          schema.connections,
+          and(
+            eq(schema.connections.id, schema.connectionResources.connectionId),
+            eq(
+              schema.connections.workspaceId,
+              schema.connectionResources.workspaceId,
+            ),
+          ),
+        )
+        .where(eq(schema.connectionResources.workspaceId, actor.workspaceId))
+        .groupBy(
+          schema.connectionResources.connectionId,
+          schema.connections.name,
+        )
+        .orderBy(asc(schema.connectionResources.connectionId));
+      for (const connection of namedConnections) {
+        const rowCount = Number(connection.rows);
         items.push(
-          (
-            await resourceCatalog(
-              tx,
-              actor.workspaceId,
-              connection.id,
-              policyFor(tx),
-            )
-          ).view,
+          resourceView(connection.id, connection.name, {
+            generationId: null,
+            rowCount,
+            ...(exceedsDataPolicy(rowCount, policyFor(tx).queryRows)
+              ? { rowLimitExceeded: true }
+              : {}),
+          }),
         );
-      for (const legacy of await listObservationDatasets(
+      }
+      const legacyCatalog = await listObservationCatalog(
         tx,
         actor.workspaceId,
-        { limit: policyFor(tx).queryRows },
-      ))
+        DATA_SOURCE_CATALOG_ENTRIES,
+      );
+      for (const legacy of legacyCatalog.entries)
         items.push({
           id: legacy.id,
           name: legacy.definition.name,
@@ -1122,7 +1160,10 @@ export function createDataService(
             connectionId: null,
           });
       void now;
-      return { sources: items };
+      return {
+        sources: items,
+        ...(legacyCatalog.truncated ? { truncated: true } : {}),
+      };
     });
   const findPreparation = async (
     tx: Transaction,

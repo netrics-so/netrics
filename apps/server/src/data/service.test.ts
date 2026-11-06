@@ -19,7 +19,11 @@ import {
   type DataExpression,
 } from "@netrics/domain";
 import { createTestDatabase } from "../test-db.js";
-import { createDataService, type DataActor } from "./service.js";
+import {
+  createDataService,
+  DATA_SOURCE_CATALOG_ENTRIES,
+  type DataActor,
+} from "./service.js";
 
 const NOW = new Date("2026-11-05T12:00:00Z");
 let db: Database,
@@ -773,6 +777,50 @@ describe("persistent reusable data processing", () => {
       expect(rows).toHaveLength(0);
     }
   });
+  it("lists oversized catalogs under their own bound instead of failing the source picker", async () => {
+    const [workspace] =
+      await admin`insert into workspaces(name) values ('Catalogs') returning id`;
+    const scoped = { ...actor, workspaceId: workspace!.id as string };
+    await admin`insert into connectors(id,version,manifest) values ('catalog-fixture','1.0.0','{}')`;
+    const [large, small] =
+      await admin`insert into connections(workspace_id,connector_id,name) values (${scoped.workspaceId},'catalog-fixture','Large'),(${scoped.workspaceId},'catalog-fixture','Small') returning id`;
+    await admin`insert into connection_resources(connection_id,workspace_id,resource_id,name,kind)
+      select ${large!.id},${scoped.workspaceId},'app-' || n,'App ' || n,'app' from generate_series(1,3) n`;
+    await admin`insert into connection_resources(connection_id,workspace_id,resource_id,name,kind) values (${small!.id},${scoped.workspaceId},'only','Only','app')`;
+    await admin`insert into metric_definitions(connector_id,key,name,description,kind,unit,granularity,dimensions,aggregations)
+      select 'catalog-fixture','metric_' || n,'Metric ' || n,'Count','delta','count','day','[]','["sum"]' from generate_series(1,2) n`;
+    await adminSetDataPolicy(db, scoped.workspaceId, { queryRows: 2 });
+    const listed = await service.listSources(scoped);
+    const byId = new Map(listed.sources.map((source) => [source.id, source]));
+    // The oversized resource catalog is flagged; the rest still lists.
+    expect(byId.get("resources:" + large!.id)).toMatchObject({
+      rowCount: 3,
+      rowLimitExceeded: true,
+    });
+    expect(byId.get("resources:" + small!.id)).toMatchObject({ rowCount: 1 });
+    expect(
+      byId.get("resources:" + small!.id)?.rowLimitExceeded,
+    ).toBeUndefined();
+    // Four legacy entries (two connections x two metrics) exceed queryRows
+    // but not the catalog's own bound.
+    expect(
+      listed.sources.filter((source) => source.kind === "observations"),
+    ).toHaveLength(4);
+    expect(listed.truncated).toBeUndefined();
+    await expect(
+      service.preview(scoped, "resources:" + large!.id),
+    ).rejects.toThrow("data_source_row_limit");
+
+    // An uncapped query budget no longer makes the catalog unbounded.
+    await adminSetDataPolicy(db, scoped.workspaceId, { queryRows: null });
+    await admin`insert into metric_definitions(connector_id,key,name,description,kind,unit,granularity,dimensions,aggregations)
+      select 'catalog-fixture','bulk_' || n,'Bulk ' || n,'Count','delta','count','day','[]','["sum"]' from generate_series(1,${DATA_SOURCE_CATALOG_ENTRIES / 2}) n`;
+    const bounded = await service.listSources(scoped);
+    expect(bounded.truncated).toBe(true);
+    expect(
+      bounded.sources.filter((source) => source.kind === "observations"),
+    ).toHaveLength(DATA_SOURCE_CATALOG_ENTRIES);
+  }, 30_000);
   it("applies tier policy, permits uncapped retention, and never revives expired data", async () => {
     const [workspace] =
       await admin`insert into workspaces(name) values ('Policy') returning id`;

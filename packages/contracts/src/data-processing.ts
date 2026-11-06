@@ -217,9 +217,13 @@ export const dataSourceViewSchema = z.object({
   aggregated: z.boolean(),
   expiresAt: z.iso.datetime().nullable(),
   connectionId: z.uuid().nullable(),
+  /** Listed, but larger than the workspace query row budget can load. */
+  rowLimitExceeded: z.boolean().optional(),
 });
 export const dataSourcesResponseSchema = z.object({
   sources: z.array(dataSourceViewSchema),
+  /** The legacy observation catalog had more entries than the listing returns. */
+  truncated: z.boolean().optional(),
 });
 export const dataPreviewResponseSchema = z.object({
   fields: z.array(dataFieldViewSchema),

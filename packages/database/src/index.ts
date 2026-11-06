@@ -470,6 +470,7 @@ export {
   pruneDatasetHistory,
   replayDatasetRefresh,
   listObservationDatasets,
+  listObservationCatalog,
   readObservationDataset,
   previewDataset,
   DatasetStoreError,
