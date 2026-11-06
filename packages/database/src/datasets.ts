@@ -672,7 +672,15 @@ export async function pruneDatasetHistory(
 export async function listObservationDatasets(
   tx: Transaction,
   workspaceId: string,
+  options: {
+    limit?: number | null;
+    connectionId?: string;
+    metricDefinitionId?: string;
+  } = {},
 ) {
+  const limit = options.limit ?? null;
+  if (limit !== null && (!Number.isSafeInteger(limit) || limit < 1))
+    return fail("dataset_catalog_limit_invalid");
   const rows = await tx.execute<{
     connection_id: string;
     metric_id: string;
@@ -684,8 +692,12 @@ export async function listObservationDatasets(
     dimensions: string[];
   }>(sql`select c.id as connection_id,m.id as metric_id,m.key,m.name,m.kind,m.unit,m.granularity,m.dimensions
     from connections c join metric_definitions m on m.connector_id=c.connector_id
-    where c.workspace_id=${workspaceId} order by c.id,m.key limit 1001`);
-  if (rows.length > 1000) return fail("dataset_catalog_limit");
+    where c.workspace_id=${workspaceId}
+    ${options.connectionId ? sql`and c.id=${options.connectionId}` : sql``}
+    ${options.metricDefinitionId ? sql`and m.id=${options.metricDefinitionId}` : sql``}
+    order by c.id,m.key ${limit === null ? sql`` : sql`limit ${limit + 1}`}`);
+  if (limit !== null && rows.length > limit)
+    return fail("dataset_catalog_limit");
   return rows.map((row) => ({
     id: `observation:${row.connection_id}:${row.metric_id}`,
     connectionId: row.connection_id,
@@ -842,11 +854,11 @@ export async function readObservationDataset(
     input.from >= input.toExclusive
   )
     return fail("dataset_observation_query_invalid");
-  const dataset = (await listObservationDatasets(tx, input.workspaceId)).find(
-    (d) =>
-      d.connectionId === input.connectionId &&
-      d.metricDefinitionId === input.metricDefinitionId,
-  );
+  const [dataset] = await listObservationDatasets(tx, input.workspaceId, {
+    connectionId: input.connectionId,
+    metricDefinitionId: input.metricDefinitionId,
+    limit: 1,
+  });
   if (!dataset) return null;
   const found = await tx.execute<{
     value: number;

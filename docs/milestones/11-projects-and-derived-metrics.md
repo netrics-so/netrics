@@ -159,6 +159,9 @@ implementation work; this plan does not create or complete issue records.
   - Definition preview/publication before the first complete source report:
     [#460](https://github.com/netrics-so/netrics/issues/460). This prepares
     template installation without fabricated zero values or empty generations.
+  - Representative workload checks and resolved legacy catalog ceiling:
+    [#466](https://github.com/netrics-so/netrics/issues/466). See the measured
+    boundaries; broader retained-history/concurrency acceptance remains open.
 - 11C: [#442](https://github.com/netrics-so/netrics/issues/442)
   - Existing-step editing, explicit append matching and typed reference authoring:
     [#464](https://github.com/netrics-so/netrics/issues/464).

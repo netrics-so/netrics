@@ -546,3 +546,41 @@ describe("durable typed dataset ingestion", () => {
     ).toBe(0);
   });
 });
+
+it("lists more than 1,000 legacy datasets under configurable policy and scopes a single observation read", async () => {
+  await admin`insert into connectors(id,version,manifest) values ('catalog-scale','1.0.0','{}')`;
+  const [connection] =
+    await admin`insert into connections(workspace_id,connector_id,name) values (${a},'catalog-scale','Large catalog') returning id`;
+  await admin`insert into metric_definitions(connector_id,key,name,description,kind,unit,granularity,dimensions,aggregations)
+    select 'catalog-scale','metric_' || n,'Metric ' || n,'Count','delta','count','day','[]','["sum"]' from generate_series(1,1005) n`;
+  const rows = await withWorkspace(db, { workspaceId: a }, (tx) =>
+    listObservationDatasets(tx, a, { connectionId: connection!.id }),
+  );
+  expect(rows).toHaveLength(1005);
+  await expect(
+    withWorkspace(db, { workspaceId: a }, (tx) =>
+      listObservationDatasets(tx, a, {
+        connectionId: connection!.id,
+        limit: 1000,
+      }),
+    ),
+  ).rejects.toThrow("dataset_catalog_limit");
+  const metric = rows.at(-1)!;
+  await admin`insert into observations(workspace_id,connection_id,metric_definition_id,dimensions,source_timestamp,value) values (${a},${connection!.id},${metric.metricDefinitionId},'{}','2026-11-01T00:00:00Z',7)`;
+  const input = {
+    workspaceId: a,
+    connectionId: connection!.id,
+    metricDefinitionId: metric.metricDefinitionId,
+    from: new Date("2026-11-01"),
+    toExclusive: new Date("2026-11-02"),
+  };
+  const found = await withWorkspace(db, { workspaceId: a }, (tx) =>
+    readObservationDataset(tx, input),
+  );
+  expect(found?.rows[0]?.value).toBe(7);
+  expect(
+    await withWorkspace(db, { workspaceId: b }, (tx) =>
+      readObservationDataset(tx, input),
+    ),
+  ).toBeNull();
+});

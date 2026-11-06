@@ -812,7 +812,11 @@ export function createDataService(
             )
           ).view,
         );
-      for (const legacy of await listObservationDatasets(tx, actor.workspaceId))
+      for (const legacy of await listObservationDatasets(
+        tx,
+        actor.workspaceId,
+        { limit: policyFor(tx).queryRows },
+      ))
         items.push({
           id: legacy.id,
           name: legacy.definition.name,
