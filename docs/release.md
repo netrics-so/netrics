@@ -39,6 +39,12 @@ does (see `docs/architecture.md`, "Application release").
    signed too. Syft generates an SPDX JSON SBOM per platform, and
    `cosign attest --type spdxjson` attaches it to that platform manifest and to
    the index. The SBOMs are also kept as the workflow artifact `sbom`.
+   Cosign 3 stores signatures and attestations as Sigstore bundles that refer
+   to the image (OCI 1.1 referrers; on GHCR the `sha256-<digest>` fallback
+   tag), not as the older `sha256-<digest>.sig` and `.att` tags. The CI job
+   `signing` runs these commands on every pull request against a throwaway
+   image in a registry local to the job, so a cosign update meets them before
+   a release does.
 6. **Dispatch.** The workflow sends a `repository_dispatch` event of type
    `release-candidate` to the private `netrics-so/netrics-cloud` repository
    with payload:
@@ -266,7 +272,10 @@ Later versions carry the metadata over and only need the notes.
 ## Verifying an image
 
 Every published image (commit and version tags, both platforms) is signed and
-carries an SPDX SBOM attestation, both keyless via GitHub OIDC:
+carries an SPDX SBOM attestation, both keyless via GitHub OIDC. Use cosign 3
+or later: images published since the move to cosign 3 carry Sigstore bundles,
+which cosign 2 finds only with `--new-bundle-format`. Cosign 3 also verifies
+the older images (0.1.0 and earlier), which carry the previous format.
 
 ```sh
 cosign verify \

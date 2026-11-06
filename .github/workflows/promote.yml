@@ -134,7 +134,7 @@ jobs:
           done
           {
             echo
-            echo "Verify an image:"
+            echo "Verify an image (cosign 3 or later):"
             echo
             echo '```sh'
             echo "cosign verify-attestation --type spdxjson \\"
