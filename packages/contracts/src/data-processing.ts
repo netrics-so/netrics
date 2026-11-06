@@ -6,6 +6,7 @@ import { z } from "zod";
 import {
   DATA_TYPES,
   DATA_FUNCTIONS,
+  MODEL_WINDOW_LIMITS,
   type DataExpression,
   type PreparationNode,
   type PreparationGraph,
@@ -157,6 +158,24 @@ export const preparationGraphSchema: z.ZodType<PreparationGraph> =
     outputs: z.array(id).min(1).max(20),
   });
 const binding = z.strictObject({ datasetId: dataSourceIdSchema, fieldId: id });
+/** Per-unit length bounds; the total lookback limit needs the model, so the domain checks it. */
+const windowLength = <U extends keyof typeof MODEL_WINDOW_LIMITS>(unit: U) =>
+  z.strictObject({
+    unit: z.literal(unit),
+    length: z.number().int().min(1).max(MODEL_WINDOW_LIMITS[unit]),
+  });
+const modelWindowSchema = z.discriminatedUnion("unit", [
+  windowLength("day"),
+  windowLength("week"),
+  windowLength("month"),
+]);
+const modelOffsetSchema = z.discriminatedUnion("unit", [
+  windowLength("day"),
+  windowLength("week"),
+  windowLength("month"),
+  windowLength("year"),
+  windowLength("range"),
+]);
 export const semanticModelDefinitionSchema: z.ZodType<SemanticModelDefinition> =
   z.strictObject({
     version: z.literal(1),
@@ -200,6 +219,25 @@ export const semanticModelDefinitionSchema: z.ZodType<SemanticModelDefinition> =
             kind: z.literal("formula"),
             requiredDimensions: z.array(id).max(10).optional(),
             expression: dataExpressionSchema,
+          }),
+          z.strictObject({
+            id,
+            name: z.string().min(1).max(100),
+            kind: z.literal("rolling"),
+            requiredDimensions: z.array(id).max(10).optional(),
+            baseMeasureId: id,
+            timeDimensionId: id,
+            window: modelWindowSchema,
+          }),
+          z.strictObject({
+            id,
+            name: z.string().min(1).max(100),
+            kind: z.literal("period_offset"),
+            requiredDimensions: z.array(id).max(10).optional(),
+            baseMeasureId: id,
+            timeDimensionId: id,
+            offset: modelOffsetSchema,
+            output: z.enum(["value", "change", "percent_change"]),
           }),
         ]),
       )
@@ -328,6 +366,8 @@ export const modelMeasureCellSchema = z.object({
   unit: z.string().optional(),
   currency: z.string().optional(),
   status: z.enum(["ok", "missing", "partial"]),
+  /** Period-offset measures: the inclusive civil-date interval that was compared. */
+  comparedTo: z.object({ from: z.iso.date(), to: z.iso.date() }).optional(),
 });
 export const modelQueryResponseSchema = z.object({
   filterValueLabels: z

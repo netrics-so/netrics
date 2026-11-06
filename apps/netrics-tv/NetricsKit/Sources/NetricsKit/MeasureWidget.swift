@@ -58,6 +58,13 @@ public struct MeasureCell: Codable, Sendable, Equatable {
     public var currency: String?
     public var status: String
 
+    /// A percent-change measure's ratio shows as the signed percentage compare
+    /// widgets use ("+8.3%", "−60%"); anything else as `text(language:)`.
+    public func text(language: ScreenLanguage, percentChange: Bool) -> String {
+        guard percentChange, let ratio = value.chartNumber else { return text(language: language) }
+        return MetricFormat.change(delta: ratio, ratio: ratio, unit: "count", language: language)?.text
+            ?? text(language: language)
+    }
     public func text(language: ScreenLanguage) -> String {
         var value = self.value.text(language: language)
         if unit == "currency_minor", let currency, self.value != .null {
@@ -121,6 +128,9 @@ public struct MeasureCell: Codable, Sendable, Equatable {
 public struct MeasureNamedField: Codable, Sendable, Equatable {
     public var id: String
     public var name: String
+    /// The measure's value is a change ratio, (current − previous) / |previous|.
+    /// Absent in payloads from servers before #486.
+    public var percentChange: Bool? = nil
 }
 public struct MeasureMetadata: Codable, Sendable, Equatable {
     public var modelId: String
@@ -167,6 +177,12 @@ public struct MeasureWidgetData: Codable, Sendable, Equatable {
     public var exclusions: [MeasureExclusion]
 }
 extension MeasureWidgetData {
+    /// A measure cell as displayed, honouring the measure's metadata.
+    public func text(_ cell: MeasureCell?, measure id: String, language: ScreenLanguage) -> String {
+        cell?.text(
+            language: language,
+            percentChange: metadata?.measures.first { $0.id == id }?.percentChange == true) ?? "—"
+    }
     public var expirationDate: Date? {
         guard let raw = result?.expiresAt else { return nil }
         let formatter = ISO8601DateFormatter()

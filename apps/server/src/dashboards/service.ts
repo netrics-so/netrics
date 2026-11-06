@@ -1263,13 +1263,22 @@ async function validateDataBindings(
               ),
           );
         if (!unchanged)
-          await validateDashboardMeasure(
-            tx,
-            workspaceId,
-            filters,
-            binding,
-            options,
-          );
+          try {
+            await validateDashboardMeasure(
+              tx,
+              workspaceId,
+              filters,
+              binding,
+              options,
+            );
+          } catch (error) {
+            // With its saved defaults this comparison has no period: ask the
+            // editor for a range filter with a default range. A viewer who
+            // later clears that range gets a per-widget state instead.
+            if (safeDataError(error) === "model_window_time_range_required")
+              return fail(400, "dashboard_measure_window_range_required");
+            throw error;
+          }
       } else if (dataWidgetCost(widget.type) > 0) {
         const exclusions = widget.filterExclusions ?? [];
         if (

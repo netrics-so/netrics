@@ -53,5 +53,33 @@ import Testing
         let cached = try JSONDecoder().decode(MeasureWidgetData.self, from: JSONEncoder().encode(data))
         #expect(cached == data)
     }
-
+    @Test func showsPercentChangeMeasuresAsSignedPercentages() throws {
+        let json =
+            #"{"id":"measure-1","type":"measure","x":0,"y":0,"w":4,"h":3,"label":"Units","measureIds":["pct","units"],"groupBy":[],"options":{"view":"table","limit":20},"data":{"metadata":{"modelId":"m","modelName":"Units","measures":[{"id":"pct","name":"Change in %","percentChange":true},{"id":"units","name":"Units"}],"dimensions":[]},"result":{"rows":[{"dimensions":{},"measures":{"pct":{"value":"0.083333333333333333","type":"decimal","status":"ok"},"units":{"value":"0.5","type":"decimal","status":"ok"}}}],"warnings":[],"provenance":[],"stale":false},"error":null,"exclusions":[]}}"#
+        let widget = try JSONDecoder().decode(DeviceWidget.self, from: Data(json.utf8))
+        guard case .measure(_, _, _, let data) = widget.content else {
+            Issue.record("measure widget")
+            return
+        }
+        let row = try #require(data.result?.rows.first)
+        #expect(data.metadata?.measures.map(\.percentChange) == [true, nil])
+        #expect(data.text(row.measures["pct"], measure: "pct", language: .en) == "+8.3%")
+        #expect(data.text(row.measures["units"], measure: "units", language: .en) == "0.5")
+        #expect(try cell("-0.6").text(language: .de, percentChange: true) == "−60%")
+        #expect(try cell("-0.0125").text(language: .de, percentChange: true) == "−1,3%")
+        #expect(try cell("0").text(language: .en, percentChange: true) == "±0%")
+        #expect(
+            WidgetDetail.make(widget, now: Date(timeIntervalSince1970: 0))?.items.map(\.value) == ["+8.3%", "0.5"])
+        // Payloads from servers before the flag still decode, as plain values.
+        let olderJSON = json.replacingOccurrences(of: #","percentChange":true"#, with: "")
+        guard case .measure(_, _, _, let older) = try JSONDecoder().decode(DeviceWidget.self, from: Data(olderJSON.utf8)).content
+        else {
+            Issue.record("older measure widget")
+            return
+        }
+        #expect(older.metadata?.measures.first?.percentChange == nil)
+        #expect(
+            older.text(older.result?.rows.first?.measures["pct"], measure: "pct", language: .en)
+                == "0.083333333333333333")
+    }
 }

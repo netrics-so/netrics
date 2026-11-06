@@ -9,6 +9,8 @@ export const dataEn = {
       sourceOutage:
         "Imports from {name} are interrupted. Check the connection.",
 
+      perDateMeasure:
+        "{name} has one value per date. Show it as a table or chart grouped by {dimensions}.",
       requiresScope: "Keep separate, or filter to one value: {dimensions}.",
       pendingResult:
         "Some source reports have not arrived yet. Known values are shown as partial; missing values are not zero.",
@@ -320,6 +322,8 @@ export const dataEn = {
       division_by_zero: "Division by zero produces an empty value.",
       retained_source_history_incomplete:
         "Some older source records are no longer retained.",
+      model_window_history_incomplete:
+        "Some windows or earlier periods start before the oldest retained data, so their values are partial.",
       prepared_cache_capacity_reached:
         "The preparation was evaluated without caching because its storage policy was reached.",
       using_last_valid_source_snapshot:
@@ -359,6 +363,50 @@ export const dataEn = {
     formulaMeasure: "Calculate from measures",
     measureFormulaHelp:
       "Reference measures by name, for example [Income] - [Spend]. All operands use the same filters.",
+    rollingMeasure: "Rolling",
+    offsetMeasure: "Compared with earlier period",
+    baseMeasure: "Based on measure",
+    rollingHelp:
+      "Each window is recalculated from the underlying rows, so averages and distinct counts stay exact. Only measures that aggregate a column can roll.",
+    offsetHelp:
+      "Month and year comparisons keep the day of the month. When the earlier month is shorter, its last day is used, so 31 March compares with 28 or 29 February.",
+    timeDimension: "Date dimension",
+    timeDimensionHelp:
+      "Results are grouped by this date. Only date dimensions using the provider reporting date are listed.",
+    noTimeDimension:
+      "Add a dimension on a date column first. Timestamps cannot anchor a window.",
+    windowLength: "Window length",
+    windowLengthLimit: "Up to {max} {unit}.",
+    windowLengthInvalid: "Enter 1 to {max} {unit}.",
+    windowUnit: "Unit",
+    windowUnits: {
+      day: "{count, plural, one {day} other {days}}",
+      week: "{count, plural, one {week} other {weeks}}",
+      month: "{count, plural, one {month} other {months}}",
+    },
+    compareWith: "Compare with",
+    offsetPresets: {
+      previousDay: "Previous day",
+      previousWeek: "Previous week",
+      previousMonth: "Previous month",
+      lastYear: "Same period last year",
+      previousPeriod: "Previous period of equal length",
+      custom: "Custom shift",
+    },
+    offsetLength: "Shift back by",
+    offsetOutput: "Show",
+    offsetOutputs: {
+      value: "Earlier value",
+      change: "Change",
+      percent_change: "Change in %",
+    },
+    addChangeMeasures: "Add change measures",
+    changeMeasureName: "{name} (change)",
+    percentChangeMeasureName: "{name} (change in %)",
+    measureInUse:
+      "Used as the base of {names}. Remove or change those measures first.",
+    dimensionInUse:
+      "Used as the date of {names}. Remove or change those measures first.",
     sharedFilter: "Shared filter",
     sharedFilterHelp:
       "Reference dimension names in brackets. This filter applies to every requested measure.",
@@ -399,6 +447,18 @@ export const dataEn = {
     previewInitial: "Choose measures and preview this draft before publishing.",
     previewOutdated: "The draft changed. Preview it again before publishing.",
     errors: {
+      window:
+        "Check the rolling and comparison measures. Each needs a base measure, a date dimension on the provider reporting date and a length within the allowed range.",
+      windowGrouping:
+        "Rolling and comparison measures have one value per date. Show them by their date dimension, for example as a line chart or table. Only comparisons with the previous month, year or period of equal length can show a single value, and only for one closed date range.",
+      windowRange:
+        "This comparison needs a complete date range. Choose both a start and an end date.",
+      windowRangeDefault:
+        "This comparison needs a date range. Add a shared date filter set to Range on its date, with a default start and end date, or show the measure grouped by that date.",
+      windowFilterMode:
+        "Rolling and comparison measures can only follow a date filter that selects a range. Set its control to Range, or exclude this widget from it.",
+      windowFilter:
+        "Filter the date of rolling and comparison measures only with from and to conditions joined by AND, and use the same date dimension for all of them.",
       history:
         "This published version is unavailable. Reload its history and choose another version.",
       unavailable:

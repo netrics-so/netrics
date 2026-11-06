@@ -12,6 +12,8 @@ export const dataDe: Catalog<typeof dataEn> = {
       sourceOutage:
         "Die Importe von {name} sind unterbrochen. Prüfe die Verbindung.",
 
+      perDateMeasure:
+        "{name} hat einen Wert pro Datum. Zeige die Kennzahl als Tabelle oder Diagramm nach {dimensions}.",
       requiresScope:
         "Getrennt anzeigen oder auf genau einen Wert filtern: {dimensions}.",
       pendingResult:
@@ -329,6 +331,8 @@ export const dataDe: Catalog<typeof dataEn> = {
       division_by_zero: "Eine Division durch null ergibt einen leeren Wert.",
       retained_source_history_incomplete:
         "Einige ältere Quelldatensätze werden nicht mehr aufbewahrt.",
+      model_window_history_incomplete:
+        "Einige Zeitfenster oder frühere Zeiträume beginnen vor den ältesten aufbewahrten Daten. Ihre Werte sind daher unvollständig.",
       prepared_cache_capacity_reached:
         "Die Aufbereitung wurde ohne Zwischenspeicherung ausgewertet, weil die Speicherrichtlinie erreicht wurde.",
       using_last_valid_source_snapshot:
@@ -368,6 +372,50 @@ export const dataDe: Catalog<typeof dataEn> = {
     formulaMeasure: "Aus Kennzahlen berechnen",
     measureFormulaHelp:
       "Verwende Kennzahlnamen, zum Beispiel [Ertrag] - [Ausgaben]. Alle Operanden verwenden dieselben Filter.",
+    rollingMeasure: "Gleitender Zeitraum",
+    offsetMeasure: "Vergleich mit früherem Zeitraum",
+    baseMeasure: "Ausgangskennzahl",
+    rollingHelp:
+      "Jedes Zeitfenster wird aus den zugrunde liegenden Zeilen neu berechnet, damit Durchschnitte und eindeutige Anzahlen exakt bleiben. Gleitend berechnen lassen sich nur Kennzahlen, die eine Spalte aggregieren.",
+    offsetHelp:
+      "Monats- und Jahresvergleiche behalten den Kalendertag bei. Ist der frühere Monat kürzer, zählt sein letzter Tag: Der 31. März wird also mit dem 28. oder 29. Februar verglichen.",
+    timeDimension: "Datumsdimension",
+    timeDimensionHelp:
+      "Die Ergebnisse werden nach diesem Datum gruppiert. Zur Auswahl stehen nur Datumsdimensionen mit dem Berichtsdatum des Anbieters.",
+    noTimeDimension:
+      "Lege zuerst eine Dimension auf einer Datumsspalte an. Zeitstempel eignen sich nicht als Bezug für ein Zeitfenster.",
+    windowLength: "Fensterlänge",
+    windowLengthLimit: "Bis zu {max} {unit}.",
+    windowLengthInvalid: "Gib 1 bis {max} {unit} ein.",
+    windowUnit: "Einheit",
+    windowUnits: {
+      day: "{count, plural, one {Tag} other {Tage}}",
+      week: "{count, plural, one {Woche} other {Wochen}}",
+      month: "{count, plural, one {Monat} other {Monate}}",
+    },
+    compareWith: "Vergleichen mit",
+    offsetPresets: {
+      previousDay: "Vortag",
+      previousWeek: "Vorwoche",
+      previousMonth: "Vormonat",
+      lastYear: "Gleicher Zeitraum im Vorjahr",
+      previousPeriod: "Vorheriger Zeitraum gleicher Länge",
+      custom: "Eigene Verschiebung",
+    },
+    offsetLength: "Zurück um",
+    offsetOutput: "Anzeigen",
+    offsetOutputs: {
+      value: "Früherer Wert",
+      change: "Veränderung",
+      percent_change: "Veränderung in %",
+    },
+    addChangeMeasures: "Veränderungen als Kennzahlen hinzufügen",
+    changeMeasureName: "{name} (Veränderung)",
+    percentChangeMeasureName: "{name} (Veränderung in %)",
+    measureInUse:
+      "Dient als Ausgangskennzahl für {names}. Entferne oder ändere zuerst diese Kennzahlen.",
+    dimensionInUse:
+      "Dient als Datum für {names}. Entferne oder ändere zuerst diese Kennzahlen.",
     sharedFilter: "Gemeinsamer Filter",
     sharedFilterHelp:
       "Verwende Dimensionsnamen in eckigen Klammern. Der Filter gilt für jede angeforderte Kennzahl.",
@@ -413,6 +461,18 @@ export const dataDe: Catalog<typeof dataEn> = {
     previewOutdated:
       "Der Entwurf wurde geändert. Prüfe ihn vor der Veröffentlichung erneut.",
     errors: {
+      window:
+        "Prüfe die gleitenden und vergleichenden Kennzahlen. Jede braucht eine Ausgangskennzahl, eine Datumsdimension mit dem Berichtsdatum des Anbieters und eine Länge im erlaubten Bereich.",
+      windowGrouping:
+        "Gleitende und vergleichende Kennzahlen haben einen Wert pro Datum. Zeige sie nach ihrer Datumsdimension, zum Beispiel als Liniendiagramm oder Tabelle. Nur Vergleiche mit dem Vormonat, Vorjahr oder gleich langen Vorzeitraum können einen einzelnen Wert zeigen, und nur für einen geschlossenen Zeitraum.",
+      windowRange:
+        "Dieser Vergleich braucht einen vollständigen Zeitraum. Wähle ein Start- und ein Enddatum.",
+      windowRangeDefault:
+        "Dieser Vergleich braucht einen Zeitraum. Füge einen gemeinsamen Datumsfilter mit der Steuerung „Bereich“ auf seinem Datum hinzu, mit einem Standard-Start- und Enddatum, oder gruppiere die Kennzahl nach diesem Datum.",
+      windowFilterMode:
+        "Gleitende und vergleichende Kennzahlen können nur einem Datumsfilter folgen, der einen Zeitraum auswählt. Stelle sein Bedienelement auf „Bereich“ um oder nimm dieses Widget davon aus.",
+      windowFilter:
+        "Filtere das Datum gleitender und vergleichender Kennzahlen nur mit Von- und Bis-Bedingungen, verbunden mit AND, und nutze für alle dieselbe Datumsdimension.",
       history:
         "Diese veröffentlichte Version ist nicht verfügbar. Lade den Verlauf neu und wähle eine andere Version.",
       unavailable:

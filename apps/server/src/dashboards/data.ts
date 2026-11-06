@@ -12,7 +12,11 @@ import {
   compareDataValues,
   dimensionValueLabels,
   dataKey,
+  measureIsPercentChange,
+  measureLookbackDays,
+  measurePerDateDimensions,
   measureRequiredDimensions,
+  measureTypeProbe,
   querySemanticModel,
   validateMeasureView,
   DataProcessingError,
@@ -81,12 +85,18 @@ export async function publishedModel(
     metadata: {
       modelId,
       modelName: row.name,
-      measures: definition.measures.map(({ id, name }) => {
+      measures: definition.measures.map((measure) => {
+        const { id, name } = measure;
         const requiredDimensions = measureRequiredDimensions(definition, [id]);
+        const perDateDimensions = measurePerDateDimensions(definition, [id]);
         return {
           id,
           name,
           ...(requiredDimensions.length ? { requiredDimensions } : {}),
+          ...(perDateDimensions.length ? { perDateDimensions } : {}),
+          ...(measureIsPercentChange(definition, id)
+            ? { percentChange: true as const }
+            : {}),
         };
       }),
       dimensions,
@@ -211,6 +221,29 @@ export async function validateDashboardMeasure(
     )
       throw new DataServiceError("dashboard_filter_type_changed");
   }
+  // Windows read one date range. A list filter on their date can select
+  // several dates or "no date", which no window can read, so refuse it here
+  // rather than on every viewer's query. Range filters always give a range;
+  // a viewer clearing one is a per-widget state (see queryDashboardMeasure).
+  const windowDimensions = new Set(
+    measureLookbackDays(model.definition, binding.measureIds).keys(),
+  );
+  if (
+    windowDimensions.size &&
+    filters.some(
+      (filter) =>
+        filter.mode === "values" &&
+        !binding.exclusions.some(
+          (exclusion) => exclusion.filterId === filter.id,
+        ) &&
+        filter.mappings.some(
+          (mapping) =>
+            mapping.modelId === binding.modelId &&
+            windowDimensions.has(mapping.dimensionId),
+        ),
+    )
+  )
+    throw new DataServiceError("dashboard_filter_window_unsupported");
   const query = dashboardModelQuery(filters, {}, binding, options.limit);
   // Validate the shape and filter paths using the published schema, even with no current rows.
   const tables = new Map(
@@ -221,20 +254,12 @@ export async function validateDashboardMeasure(
   );
   querySemanticModel(model.definition, tables, query);
   if (options.view === "bar" || options.view === "line") {
-    const ungrouped = querySemanticModel(
-      {
-        ...model.definition,
-        measures: model.definition.measures.map(
-          ({ requiredDimensions: _grain, ...measure }) => measure,
-        ),
-      },
-      tables,
-      {
-        ...query,
-        groupBy: [],
-      },
+    // The model's own static probe: types, units and currencies as queries
+    // return them, without a grain or the time grouping windows need.
+    const measureId = binding.measureIds[0]!;
+    const measure = measureTypeProbe(model.definition, tables, [measureId]).get(
+      measureId,
     );
-    const measure = ungrouped.rows[0]?.measures[binding.measureIds[0]!];
     if (measure && !["integer", "number", "decimal"].includes(measure.type))
       throw new DataServiceError("dashboard_measure_numeric_required");
     if (options.view === "line") {
@@ -402,13 +427,18 @@ export async function queryDashboardMeasure(
       };
     });
   } catch (error) {
+    const code = safeDataError(error);
     return {
       ...(sourceHealth ? { sourceHealth } : {}),
-      status: "outage",
+      // A comparison over the selected period has nothing to compare while
+      // the viewer's date range is open: no data for this filter, not an
+      // outage of its sources.
+      status:
+        code === "model_window_time_range_required" ? "no_data" : "outage",
       widgetId: input.id,
       metadata: null,
       result: null,
-      error: safeDataError(error),
+      error: code,
       exclusions,
     };
   }

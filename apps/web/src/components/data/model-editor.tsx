@@ -2,6 +2,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import {
   formatDataFormula,
+  measureIsPercentChange,
   parseDataFormula,
   type SemanticModelDefinition,
   type ModelMeasure,
@@ -18,8 +19,23 @@ import {
   type ModelResult,
 } from "@/lib/data-api";
 import { dataErrorKey, newDataId } from "@/lib/data-editing";
-import { useT } from "@/lib/i18n/client";
-import { AggregateFields, ColumnChecks, ColumnSelect } from "./fields";
+import { useLocale, useT } from "@/lib/i18n/client";
+import { formatPercentChange } from "@/lib/format-metric";
+import {
+  AggregateFields,
+  ColumnChecks,
+  ColumnSelect,
+  WindowedMeasureFields,
+} from "./fields";
+import {
+  changeMeasureSiblings,
+  isWindowedMeasure,
+  measureDependents,
+  rollingBaseOf,
+  timeDimensionCandidates,
+  toWindowedMeasure,
+  windowBaseCandidates,
+} from "@/lib/model-measures";
 import { DataTable } from "./data-table";
 import { PreviewNotes } from "./preview-notes";
 import { DefinitionHistory } from "./definition-history";
@@ -87,10 +103,17 @@ export function ModelEditor({
   const [result, setResult] = useState<ModelResult | null>(null),
     [previewState, setPreviewState] = useState("");
   const [outputFields, setOutputFields] = useState<DataField[]>([]);
+  // Percent-change measures of the previewed draft, shown as percentages.
+  const [percentIds, setPercentIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const locale = useLocale();
   const [busy, setBusy] = useState<
     "preview" | "save" | "publish" | "history" | null
   >(null);
   const [error, setError] = useState<string | null>(null),
+    // Shown beside the Preview button, which sits far below the page header.
+    [previewError, setPreviewError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
   const current = JSON.stringify({ name, definition, formulaTexts }),
     queryState = JSON.stringify({ measureIds, groupBy, filterText });
@@ -134,6 +157,7 @@ export function ModelEditor({
     if (inputMetadata.loading || inputMetadata.error || !valid()) return;
     setBusy("preview");
     setError(null);
+    setPreviewError(null);
     setNotice(null);
     try {
       const model = build();
@@ -151,6 +175,12 @@ export function ModelEditor({
         record ? { id: record.id, version: record.version } : undefined,
       );
       setResult(next);
+      const percents = new Set(
+        model.measures
+          .filter((m) => measureIsPercentChange(model, m.id))
+          .map((m) => m.id),
+      );
+      setPercentIds(percents);
       setOutputFields([
         ...groupBy.map((id): DataField => {
           const dimension = model.dimensions.find((d) => d.id === id)!;
@@ -164,7 +194,7 @@ export function ModelEditor({
           return {
             id: "m." + id,
             name: model.measures.find((m) => m.id === id)!.name,
-            type: cell?.type ?? "decimal",
+            type: percents.has(id) ? "string" : (cell?.type ?? "decimal"),
             nullable: true,
             ...(cell?.unit ? { unit: cell.unit } : {}),
           };
@@ -172,7 +202,7 @@ export function ModelEditor({
       ]);
       setPreviewState(current + queryState);
     } catch (failure) {
-      setError(t(`errors.${dataErrorKey(failure)}`));
+      setPreviewError(t(`errors.${dataErrorKey(failure)}`));
       setResult(null);
     } finally {
       setBusy(null);
@@ -182,6 +212,7 @@ export function ModelEditor({
     if (inputMetadata.loading || inputMetadata.error || !valid()) return;
     setBusy(publish ? "publish" : "save");
     setError(null);
+    setPreviewError(null);
     setNotice(null);
     try {
       const model = build();
@@ -230,6 +261,7 @@ export function ModelEditor({
     if (!record) return;
     setBusy("history");
     setError(null);
+    setPreviewError(null);
     setNotice(null);
     try {
       const saved =
@@ -289,6 +321,30 @@ export function ModelEditor({
     });
     setMeasureIds((ids) => [...ids, id]);
   }
+  const timeDimensions = timeDimensionCandidates(definition, fieldsFor);
+  const dependents = (id: string) => measureDependents(definition, id);
+  function addChangeMeasures(
+    measure: Extract<ModelMeasure, { kind: "period_offset" }>,
+  ) {
+    const added = changeMeasureSiblings(
+      definition,
+      measure,
+      {
+        change: t("changeMeasureName", { name: measure.name }),
+        percent_change: t("percentChangeMeasureName", { name: measure.name }),
+      },
+      newDataId,
+    );
+    const at = definition.measures.findIndex((m) => m.id === measure.id) + 1;
+    change({
+      measures: [
+        ...definition.measures.slice(0, at),
+        ...added,
+        ...definition.measures.slice(at),
+      ],
+    });
+    setMeasureIds((ids) => [...ids, ...added.map((m) => m.id)]);
+  }
   const dimensionFields: DataField[] = definition.dimensions.map((d) => ({
     ...(fieldsFor(d.datasetId).find((f) => f.id === d.fieldId) ?? {
       type: "string",
@@ -314,9 +370,11 @@ export function ModelEditor({
           "m." + id,
           cell.value === null
             ? null
-            : cell.currency
-              ? String(cell.value) + " " + cell.currency
-              : cell.value,
+            : percentIds.has(id)
+              ? formatPercentChange(cell.value, locale)
+              : cell.currency
+                ? String(cell.value) + " " + cell.currency
+                : cell.value,
         ]),
       ]),
     ) ?? [];
@@ -324,10 +382,17 @@ export function ModelEditor({
     label: string,
     value: string,
     onChange: (id: string) => void,
+    blockedBy?: string,
   ) => (
     <label className="field">
       {label}
-      <select value={value} onChange={(e) => onChange(e.target.value)} required>
+      <select
+        aria-describedby={blockedBy}
+        disabled={!!blockedBy}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required
+      >
         <option value="">{t("choose")}</option>
         {selectedSources.map((s) => (
           <option key={s.id} value={s.id}>
@@ -643,6 +708,9 @@ export function ModelEditor({
                   d.id === dimension.id ? { ...d, ...patch } : d,
                 ),
               });
+            const anchoring = definition.measures.filter(
+              (m) => isWindowedMeasure(m) && m.timeDimensionId === dimension.id,
+            );
             return (
               <div
                 className="data-model-row data-model-row--dimension"
@@ -657,6 +725,8 @@ export function ModelEditor({
                     onChange={(e) => update({ name: e.target.value })}
                   />
                 </label>
+                {/* A window's anchor keeps its date column: another source
+                    or column could change its type or alignment. */}
                 {sourceSelect(
                   t("sourceName"),
                   dimension.datasetId,
@@ -667,9 +737,14 @@ export function ModelEditor({
                       labelFieldId: undefined,
                       timeAlignment: undefined,
                     }),
+                  anchoring.length ? dimension.id + "-in-use" : undefined,
                 )}
                 <ColumnSelect
                   label={t("field")}
+                  disabled={anchoring.length > 0}
+                  describedBy={
+                    anchoring.length ? dimension.id + "-in-use" : undefined
+                  }
                   fields={fieldsFor(dimension.datasetId).filter(
                     (f) => f.type !== "json",
                   )}
@@ -709,6 +784,10 @@ export function ModelEditor({
                 </label>
                 <button
                   type="button"
+                  disabled={anchoring.length > 0}
+                  aria-describedby={
+                    anchoring.length ? dimension.id + "-in-use" : undefined
+                  }
                   onClick={() => {
                     change({
                       dimensions: definition.dimensions.filter(
@@ -728,6 +807,13 @@ export function ModelEditor({
                 >
                   {t("remove")}
                 </button>
+                {anchoring.length ? (
+                  <p className="help" id={dimension.id + "-in-use"}>
+                    {t("dimensionInUse", {
+                      names: anchoring.map((m) => m.name).join(", "),
+                    })}
+                  </p>
+                ) : null}
               </div>
             );
           })}
@@ -762,6 +848,12 @@ export function ModelEditor({
                 </label>
                 <button
                   type="button"
+                  disabled={dependents(measure.id).length > 0}
+                  aria-describedby={
+                    dependents(measure.id).length
+                      ? measure.id + "-in-use"
+                      : undefined
+                  }
                   onClick={() => {
                     change({
                       measures: definition.measures.filter(
@@ -776,43 +868,83 @@ export function ModelEditor({
                   {t("remove")}
                 </button>
               </div>
+              {dependents(measure.id).length ? (
+                <p className="help" id={measure.id + "-in-use"}>
+                  {t("measureInUse", {
+                    names: dependents(measure.id)
+                      .map((m) => m.name)
+                      .join(", "),
+                  })}
+                </p>
+              ) : null}
               <div className="data-form-grid">
                 <label className="field">
                   {t("measureKind")}
                   <select
+                    aria-describedby={
+                      dependents(measure.id).length
+                        ? measure.id + "-in-use"
+                        : undefined
+                    }
                     value={measure.kind}
                     onChange={(e) => {
+                      const kind = e.target.value;
                       changeMeasure(
                         measure.id,
-                        e.target.value === "aggregate"
-                          ? {
-                              id: measure.id,
-                              name: measure.name,
-                              requiredDimensions: measure.requiredDimensions,
-                              kind: "aggregate",
-                              datasetId: definition.datasets[0]!,
-                              aggregate: {
+                        kind === "rolling" || kind === "period_offset"
+                          ? toWindowedMeasure(
+                              measure,
+                              kind,
+                              definition,
+                              fieldsFor,
+                            )
+                          : kind === "aggregate"
+                            ? {
                                 id: measure.id,
                                 name: measure.name,
-                                op: "count",
+                                requiredDimensions: measure.requiredDimensions,
+                                kind: "aggregate",
+                                datasetId: definition.datasets[0]!,
+                                aggregate: {
+                                  id: measure.id,
+                                  name: measure.name,
+                                  op: "count",
+                                },
+                              }
+                            : {
+                                id: measure.id,
+                                name: measure.name,
+                                requiredDimensions: measure.requiredDimensions,
+                                kind: "formula",
+                                expression: {
+                                  kind: "literal",
+                                  type: "integer",
+                                  value: 0,
+                                },
                               },
-                            }
-                          : {
-                              id: measure.id,
-                              name: measure.name,
-                              requiredDimensions: measure.requiredDimensions,
-                              kind: "formula",
-                              expression: {
-                                kind: "literal",
-                                type: "integer",
-                                value: 0,
-                              },
-                            },
                       );
                     }}
                   >
                     <option value="aggregate">{t("aggregateMeasure")}</option>
-                    <option value="formula">{t("formulaMeasure")}</option>
+                    {/* Rolling re-aggregates its base's rows. */}
+                    {(
+                      [
+                        ["formula", "formulaMeasure"],
+                        ["rolling", "rollingMeasure"],
+                        ["period_offset", "offsetMeasure"],
+                      ] as const
+                    ).map(([kind, label]) => (
+                      <option
+                        key={kind}
+                        value={kind}
+                        disabled={
+                          measure.kind === "aggregate" &&
+                          rollingBaseOf(definition, measure.id).length > 0
+                        }
+                      >
+                        {t(label)}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 {measure.kind === "aggregate"
@@ -876,6 +1008,33 @@ export function ModelEditor({
                     })
                   }
                 />
+              ) : isWindowedMeasure(measure) ? (
+                <>
+                  <WindowedMeasureFields
+                    measure={measure}
+                    baseMeasures={windowBaseCandidates(definition, measure)}
+                    timeDimensions={timeDimensions}
+                    onChange={(next) => changeMeasure(measure.id, next)}
+                  />
+                  {measure.kind === "period_offset" ? (
+                    <div className="data-form-actions">
+                      <button
+                        type="button"
+                        disabled={
+                          !changeMeasureSiblings(
+                            definition,
+                            measure,
+                            { change: "", percent_change: "" },
+                            () => "",
+                          ).length
+                        }
+                        onClick={() => addChangeMeasures(measure)}
+                      >
+                        {t("addChangeMeasures")}
+                      </button>
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <div className="field">
                   <label htmlFor={measure.id}>{t("formula")}</label>
@@ -965,6 +1124,11 @@ export function ModelEditor({
             {t("sharedFilterHelp")}
           </p>
         </div>
+        {previewError ? (
+          <p role="alert" className="error">
+            {previewError}
+          </p>
+        ) : null}
         {result?.stale ? <p className="notice">{t("stale")}</p> : null}
         {result ? <PreviewNotes warnings={result.warnings} /> : null}
         {result ? (

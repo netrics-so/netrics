@@ -1179,3 +1179,212 @@ describe("immutable semantic result pagination", () => {
     expect(result.warnings).toContain("immutable_pagination_unavailable");
   });
 });
+
+describe("windowed measures over corrected history", () => {
+  const daily = sourceDatasetSchema.parse({
+    key: "daily_revenue",
+    name: "Daily revenue",
+    version: 1,
+    mode: "snapshot",
+    grain: "One reporting day and currency",
+    keyFields: ["id"],
+    retentionDays: null,
+    fields: [
+      { id: "id", type: "string" },
+      { id: "day", type: "date" },
+      {
+        id: "amount",
+        type: "decimal",
+        unit: "currency",
+        currencyField: "currency",
+      },
+      { id: "currency", type: "string" },
+    ].map((field) => ({
+      ...field,
+      name: field.id,
+      nullable: false,
+      classification: "internal",
+    })),
+  });
+  // 2026-09-25 … 2026-10-05: six lookback days before the requested range.
+  const days = Array.from({ length: 11 }, (_, index) =>
+    new Date(Date.UTC(2026, 8, 25 + index)).toISOString().slice(0, 10),
+  );
+  const date = (value: string) =>
+    ({ kind: "literal", type: "date", value }) as const;
+  const day = { kind: "field", fieldId: "day" } as const;
+  const windowQuery: DataModelQuery = {
+    measureIds: ["revenue_7d"],
+    groupBy: ["day"],
+    filter: {
+      kind: "call",
+      fn: "and",
+      args: [
+        { kind: "call", fn: "gte", args: [day, date("2026-10-01")] },
+        { kind: "call", fn: "lte", args: [day, date("2026-10-05")] },
+      ],
+    },
+    limit: 2,
+  };
+  const shown = (result: {
+    rows: Array<{
+      dimensions: Record<string, unknown>;
+      measures: Record<string, { value: unknown }>;
+    }>;
+  }) =>
+    result.rows.map((row) => [
+      row.dimensions.day,
+      row.measures.revenue_7d!.value,
+    ]);
+
+  it("recomputes rolling windows from corrected lookback rows while pinned pages and fallbacks keep their generation", async () => {
+    const f = await fixture();
+    const records = (amounts: Record<string, string> = {}) =>
+      days.map((value) => ({
+        values: {
+          id: value,
+          day: value,
+          amount: amounts[value] ?? "1",
+          currency: "EUR",
+        },
+      }));
+    const source = await f.service.saveManual(f.actor, {
+      definition: daily,
+      records: records(),
+    });
+    const datasetId = source.datasetId;
+    const { model } = await f.service.saveModel(f.actor, {
+      name: "Rolling revenue",
+      definition: {
+        version: 1,
+        datasets: [datasetId],
+        relationships: [],
+        dimensions: [
+          {
+            id: "day",
+            name: "Day",
+            datasetId,
+            fieldId: "day",
+            timeAlignment: "reporting_date",
+          },
+        ],
+        measures: [
+          {
+            id: "revenue",
+            name: "Revenue",
+            kind: "aggregate",
+            datasetId,
+            aggregate: {
+              id: "revenue",
+              name: "Revenue",
+              op: "sum",
+              fieldId: "amount",
+            },
+          },
+          {
+            id: "revenue_7d",
+            name: "Revenue, 7 days",
+            kind: "rolling",
+            baseMeasureId: "revenue",
+            timeDimensionId: "day",
+            window: { unit: "day", length: 7 },
+          },
+        ],
+      },
+    });
+    await f.service.publishModel(f.actor, model.id, model.version);
+    const read = (input: DataModelQuery, actor = f.actor) =>
+      f.service.query(actor, model.id, input);
+
+    // September rows feed the window but never become result rows or pages.
+    const first = await read({ ...windowQuery, pinPages: true });
+    expect(shown(first)).toEqual([
+      ["2026-10-01", "7"],
+      ["2026-10-02", "7"],
+    ]);
+    expect(first.rows[0]!.measures.revenue_7d).toMatchObject({
+      currency: "EUR",
+      status: "ok",
+    });
+    expect(first.totalRows).toBe(5);
+    expect(first.nextPageToken).toBeDefined();
+
+    // A late correction dated before the requested range changes exactly the
+    // windows that contain it (2026-10-01 to 10-04), not 10-05.
+    const correction = await f.service.saveManual(
+      f.actor,
+      {
+        definition: daily,
+        generationId: source.generationId,
+        records: records({ "2026-09-28": "10" }),
+      },
+      datasetId,
+    );
+    const ordinary = { ...windowQuery, limit: 5 };
+    const fresh = await read(ordinary);
+    expect(fresh.stale).toBe(false);
+    expect(shown(fresh)).toEqual([
+      ["2026-10-01", "16"],
+      ["2026-10-02", "16"],
+      ["2026-10-03", "16"],
+      ["2026-10-04", "16"],
+      ["2026-10-05", "7"],
+    ]);
+    expect(fresh.provenance).not.toEqual(first.provenance);
+
+    // The page session keeps the generation it was opened on, lookback included.
+    const second = await read({
+      ...windowQuery,
+      pageToken: first.nextPageToken!,
+    });
+    expect(second).toMatchObject({
+      releaseId: first.releaseId,
+      provenance: first.provenance,
+      totalRows: 5,
+      offset: 2,
+    });
+    expect(shown(second)).toEqual([
+      ["2026-10-03", "7"],
+      ["2026-10-04", "7"],
+    ]);
+
+    // A correction that makes a window invalid falls back to the last valid
+    // vector of this exact query, which is still loaded under authorization.
+    await f.service.saveManual(
+      f.actor,
+      {
+        definition: daily,
+        generationId: correction.generationId,
+        records: [
+          ...records({ "2026-09-28": "10" }),
+          {
+            values: {
+              id: "usd",
+              day: "2026-09-30",
+              amount: "3",
+              currency: "USD",
+            },
+          },
+        ],
+      },
+      datasetId,
+    );
+    const fallback = await read(ordinary);
+    expect(fallback).toMatchObject({
+      stale: true,
+      error: "aggregate_currency_mixed",
+      provenance: fresh.provenance,
+    });
+    expect(fallback.rows).toEqual(fresh.rows);
+    expect(fallback.warnings).toContain("using_last_valid_source_snapshot");
+    const [foreign] =
+      await admin`insert into workspaces(name) values ('Foreign windows') returning id`;
+    await expect(
+      read(ordinary, { workspaceId: foreign!.id as string, callerId }),
+    ).rejects.toThrow("data_model_not_found");
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 0,
+    });
+    await expect(read(ordinary)).rejects.toThrow("aggregate_currency_mixed");
+  });
+});

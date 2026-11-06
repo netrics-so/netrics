@@ -1575,3 +1575,599 @@ describe("published dashboard measure bindings", () => {
     expect(changed.statusCode, changed.body).toBe(400);
   });
 });
+
+describe("rolling and period-offset model measures", () => {
+  const dashboards = (
+    method: "POST" | "PUT",
+    path: string,
+    cookie: string,
+    payload: unknown,
+  ) =>
+    app.inject({
+      method,
+      url: `/v1/workspaces/${workspaceId}/dashboards${path}`,
+      headers: { cookie },
+      payload: payload as InjectOptions["payload"],
+    });
+  // 2026-09-25 … 2026-10-05, one unit per day.
+  const days = Array.from({ length: 11 }, (_, index) =>
+    new Date(Date.UTC(2026, 8, 25 + index)).toISOString().slice(0, 10),
+  );
+  let sourceId: string;
+  const rolling = {
+    id: "units_7d",
+    name: "Units, 7 days",
+    kind: "rolling",
+    baseMeasureId: "units",
+    timeDimensionId: "day",
+    window: { unit: "day", length: 7 },
+  };
+  const weekChange = {
+    id: "units_week_change",
+    name: "Units vs. previous week",
+    kind: "period_offset",
+    baseMeasureId: "units",
+    timeDimensionId: "day",
+    offset: { unit: "week", length: 1 },
+    output: "change",
+  };
+  const definition = (measures: unknown[]) => ({
+    version: 1,
+    datasets: [sourceId],
+    relationships: [],
+    dimensions: [
+      {
+        id: "day",
+        name: "Day",
+        datasetId: sourceId,
+        fieldId: "day",
+        timeAlignment: "reporting_date",
+      },
+      {
+        id: "at",
+        name: "Received",
+        datasetId: sourceId,
+        fieldId: "at",
+        timeAlignment: "instant",
+      },
+    ],
+    measures: [
+      {
+        id: "units",
+        name: "Units",
+        kind: "aggregate",
+        datasetId: sourceId,
+        aggregate: { id: "units", name: "Units", op: "sum", fieldId: "units" },
+      },
+      ...measures,
+    ],
+  });
+  const create = async (name: string, measures: unknown[]) => {
+    const created = await call("POST", "/models", editor, {
+      name,
+      definition: definition(measures),
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    return modelResponseSchema.parse(created.json()).model;
+  };
+  const publish = (model: { id: string; version: number }) =>
+    call("POST", `/models/${model.id}/publish`, editor, {
+      version: model.version,
+    });
+
+  it("refuses invalid windowed measures when saving or publishing", async () => {
+    const source = await call("POST", "/manual", editor, {
+      definition: {
+        key: "daily-windowed-units",
+        name: "Daily units",
+        version: 1,
+        mode: "snapshot",
+        grain: "one reporting day",
+        keyFields: ["id"],
+        retentionDays: null,
+        fields: [
+          { id: "id", type: "string" },
+          { id: "day", type: "date" },
+          { id: "at", type: "timestamp" },
+          { id: "units", type: "integer" },
+        ].map((field) => ({
+          ...field,
+          name: field.id,
+          nullable: false,
+          classification: "internal",
+        })),
+      },
+      records: days.map((day) => ({
+        values: { id: day, day, at: `${day}T12:00:00Z`, units: 1 },
+      })),
+    });
+    expect(source.statusCode, source.body).toBe(200);
+    sourceId = source.json().datasetId as string;
+
+    // Bounds are part of the contract.
+    for (const window of [
+      { unit: "day", length: 367 },
+      { unit: "month", length: 0 },
+      { unit: "year", length: 1 },
+    ]) {
+      const refused = await call("POST", "/models", editor, {
+        name: "Out of bounds",
+        definition: definition([{ ...rolling, window }]),
+      });
+      expect(refused.statusCode, refused.body).toBe(400);
+    }
+
+    // Semantic rules surface as stable codes when publishing.
+    for (const [measures, code] of [
+      [
+        [
+          {
+            id: "double",
+            name: "Double",
+            kind: "formula",
+            expression: {
+              kind: "call",
+              fn: "multiply",
+              args: [
+                { kind: "field", fieldId: "units" },
+                { kind: "literal", type: "integer", value: 2 },
+              ],
+            },
+          },
+          { ...rolling, baseMeasureId: "double" },
+        ],
+        "model_window_base_aggregate_required",
+      ],
+      [
+        [{ ...rolling, timeDimensionId: "at" }],
+        "model_window_date_dimension_required",
+      ],
+      [
+        [
+          { ...rolling, window: { unit: "day", length: 366 } },
+          {
+            ...weekChange,
+            id: "year_ago",
+            baseMeasureId: "units_7d",
+            offset: { unit: "day", length: 366 },
+            output: "value",
+          },
+          {
+            ...weekChange,
+            id: "too_far",
+            baseMeasureId: "year_ago",
+            offset: { unit: "day", length: 100 },
+          },
+        ],
+        "model_window_lookback_limit",
+      ],
+      [
+        [{ ...weekChange, id: "loop", baseMeasureId: "loop" }],
+        "model_measure_cycle",
+      ],
+    ] as const) {
+      const model = await create("Invalid windows", [...measures]);
+      const refused = await publish(model);
+      expect(refused.statusCode, refused.body).toBe(400);
+      expect(refused.json()).toEqual({ error: code });
+    }
+  });
+
+  it("serves rolling and offset measures to viewers and refuses an ungrouped rolling binding", async () => {
+    const model = await create("Windowed units", [rolling, weekChange]);
+    const published = await publish(model);
+    expect(published.statusCode, published.body).toBe(200);
+
+    const range = (from: string, to: string) => ({
+      kind: "call",
+      fn: "and",
+      args: [
+        {
+          kind: "call",
+          fn: "gte",
+          args: [
+            { kind: "field", fieldId: "day" },
+            { kind: "literal", type: "date", value: from },
+          ],
+        },
+        {
+          kind: "call",
+          fn: "lte",
+          args: [
+            { kind: "field", fieldId: "day" },
+            { kind: "literal", type: "date", value: to },
+          ],
+        },
+      ],
+    });
+    const direct = await call("POST", `/models/${model.id}/query`, viewer, {
+      measureIds: ["units_7d", "units_week_change"],
+      groupBy: ["day"],
+      filter: range("2026-10-02", "2026-10-05"),
+    });
+    expect(direct.statusCode, direct.body).toBe(200);
+    const result = modelQueryResponseSchema.parse(direct.json());
+    expect(result.totalRows).toBe(4);
+    expect(result.rows.map((row) => row.dimensions.day)).toEqual(days.slice(7));
+    expect(result.rows.at(-1)!.measures).toMatchObject({
+      units_7d: { value: "7", status: "ok" },
+      units_week_change: {
+        value: "0",
+        status: "ok",
+        comparedTo: { from: "2026-09-28", to: "2026-09-28" },
+      },
+    });
+
+    const filter = {
+      id: "day",
+      name: "Day",
+      type: "date",
+      mode: "range",
+      mappings: [{ modelId: model.id, dimensionId: "day" }],
+      defaultValue: null,
+    };
+    const widget = (view: string, groupBy: string[]) => ({
+      type: "measure",
+      x: 0,
+      y: 0,
+      w: 6,
+      h: 3,
+      binding: {
+        modelId: model.id,
+        measureIds: ["units_7d"],
+        groupBy,
+        exclusions: [],
+      },
+      options: { view, limit: 20 },
+    });
+    const dashboard = await dashboards("POST", "", editor, {
+      name: "Rolling units",
+      settings: { dataFilters: [filter] },
+      slides: [{ widgets: [widget("line", ["day"])] }],
+    });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    const read = await dashboards(
+      "POST",
+      `/${dashboard.json().dashboard.id as string}/data`,
+      viewer,
+      {
+        values: {
+          day: { kind: "range", from: "2026-10-01", to: "2026-10-05" },
+        },
+      },
+    );
+    expect(read.statusCode, read.body).toBe(200);
+    const [line] = read.json().widgets;
+    expect(line.error).toBeNull();
+    // Lookback rows from September fill each window but add no points.
+    expect(line.result.totalRows).toBe(5);
+    expect(
+      line.result.rows.map(
+        (row: {
+          dimensions: { day: string };
+          measures: { units_7d: { value: unknown } };
+        }) => [row.dimensions.day, row.measures.units_7d.value],
+      ),
+    ).toEqual(days.slice(6).map((day) => [day, "7"]));
+
+    const ungrouped = await dashboards("POST", "", editor, {
+      name: "Ungrouped rolling",
+      settings: { dataFilters: [filter] },
+      slides: [{ widgets: [widget("value", [])] }],
+    });
+    expect(ungrouped.statusCode, ungrouped.body).toBe(400);
+    expect(ungrouped.json()).toEqual({
+      error: "model_window_time_grouping_required",
+    });
+  });
+
+  it("keeps dashboard date filters on windowed bindings to supported ranges", async () => {
+    const previousPeriod = {
+      id: "units_previous_period",
+      name: "Units, previous period",
+      kind: "period_offset",
+      baseMeasureId: "units",
+      timeDimensionId: "day",
+      offset: { unit: "range", length: 1 },
+      output: "value",
+    };
+    const model = await create("Windowed filters", [
+      rolling,
+      previousPeriod,
+      { ...previousPeriod, id: "units_pct", output: "percent_change" },
+    ]);
+    expect((await publish(model)).statusCode).toBe(200);
+    const filter = (mode: "values" | "range", defaultValue: unknown) => ({
+      id: "day",
+      name: "Day",
+      type: "date",
+      mode,
+      mappings: [{ modelId: model.id, dimensionId: "day" }],
+      defaultValue,
+    });
+    const widget = (measureId: string, view: string, groupBy: string[]) => ({
+      type: "measure",
+      x: 0,
+      y: 0,
+      w: 6,
+      h: 3,
+      binding: {
+        modelId: model.id,
+        measureIds: [measureId],
+        groupBy,
+        exclusions: [],
+      },
+      options: { view, limit: 20 },
+    });
+
+    // A list of dates can become several dates or "no date", which no
+    // window can read: refused when saving, not at every viewer's query.
+    const listed = await dashboards("POST", "", editor, {
+      name: "Listed days",
+      settings: { dataFilters: [filter("values", null)] },
+      slides: [{ widgets: [widget("units_7d", "line", ["day"])] }],
+    });
+    expect(listed.statusCode, listed.body).toBe(400);
+    expect(listed.json()).toEqual({
+      error: "dashboard_filter_window_unsupported",
+    });
+    // Excluding the widget from that filter is fine.
+    const excluded = await dashboards("POST", "", editor, {
+      name: "Listed days, excluded",
+      settings: { dataFilters: [filter("values", null)] },
+      slides: [
+        {
+          widgets: [
+            {
+              ...widget("units_7d", "line", ["day"]),
+              binding: {
+                ...widget("units_7d", "line", ["day"]).binding,
+                exclusions: [{ filterId: "day", reason: "Rolling" }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(excluded.statusCode, excluded.body).toBe(200);
+
+    // Saved without a default range (or without any date filter), the
+    // comparison has no period: the editor is asked for one.
+    for (const dataFilters of [[filter("range", null)], []]) {
+      const open = await dashboards("POST", "", editor, {
+        name: "Previous period, no range",
+        settings: { dataFilters },
+        slides: [{ widgets: [widget("units_previous_period", "value", [])] }],
+      });
+      expect(open.statusCode, open.body).toBe(400);
+      expect(open.json()).toEqual({
+        error: "dashboard_measure_window_range_required",
+      });
+    }
+
+    // A cleared range leaves a comparison without its period: the widget
+    // explains that instead of reporting an outage.
+    const ranged = await dashboards("POST", "", editor, {
+      name: "Previous period",
+      settings: {
+        dataFilters: [
+          filter("range", {
+            kind: "range",
+            from: "2026-10-04",
+            to: "2026-10-05",
+          }),
+        ],
+      },
+      slides: [{ widgets: [widget("units_previous_period", "value", [])] }],
+    });
+    expect(ranged.statusCode, ranged.body).toBe(200);
+    const read = (values: unknown) =>
+      dashboards(
+        "POST",
+        `/${ranged.json().dashboard.id as string}/data`,
+        viewer,
+        { values },
+      );
+    const chosen = await read({});
+    expect(chosen.statusCode, chosen.body).toBe(200);
+    expect(chosen.json().widgets[0]).toMatchObject({
+      status: "ok",
+      error: null,
+    });
+    // Clients learn which measures are change ratios to show percentages.
+    expect(chosen.json().widgets[0].metadata.measures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "units_pct", percentChange: true }),
+        expect.not.objectContaining({ percentChange: true }),
+      ]),
+    );
+    expect(
+      chosen
+        .json()
+        .widgets[0].metadata.measures.filter(
+          (measure: { percentChange?: true }) => measure.percentChange,
+        ),
+    ).toHaveLength(1);
+    expect(chosen.json().widgets[0].result.rows[0].measures).toMatchObject({
+      units_previous_period: {
+        value: "2",
+        comparedTo: { from: "2026-10-02", to: "2026-10-03" },
+      },
+    });
+    for (const value of [
+      { kind: "range", from: null, to: null },
+      { kind: "range", from: "2026-10-01", to: null },
+    ]) {
+      const cleared = await read({ day: value });
+      expect(cleared.statusCode, cleared.body).toBe(200);
+      expect(cleared.json().widgets[0]).toMatchObject({
+        status: "no_data",
+        error: "model_window_time_range_required",
+        result: null,
+      });
+    }
+  });
+
+  it("type-checks dashboard charts with the units windowed measures return", async () => {
+    const source = await call("POST", "/manual", editor, {
+      definition: {
+        key: "daily-windowed-weights",
+        name: "Daily weights",
+        version: 1,
+        mode: "snapshot",
+        grain: "one reporting day",
+        keyFields: ["id"],
+        retentionDays: null,
+        fields: [
+          { id: "id", type: "string" },
+          { id: "day", type: "date" },
+          { id: "kg", type: "integer", unit: "kg" },
+        ].map((field) => ({
+          ...field,
+          name: field.id,
+          nullable: false,
+          classification: "internal",
+        })),
+      },
+      records: days.map((day, index) => ({
+        values: { id: day, day, kg: index + 1 },
+      })),
+    });
+    expect(source.statusCode, source.body).toBe(200);
+    const weights = source.json().datasetId as string;
+    const field = (fieldId: string) => ({ kind: "field", fieldId });
+    const created = await call("POST", "/models", editor, {
+      name: "Weight change",
+      definition: {
+        version: 1,
+        datasets: [weights],
+        relationships: [],
+        dimensions: [
+          {
+            id: "day",
+            name: "Day",
+            datasetId: weights,
+            fieldId: "day",
+            timeAlignment: "reporting_date",
+          },
+        ],
+        measures: [
+          {
+            id: "kg",
+            name: "Weight",
+            kind: "aggregate",
+            datasetId: weights,
+            aggregate: { id: "kg", name: "Weight", op: "sum", fieldId: "kg" },
+          },
+          {
+            id: "kg_daily",
+            name: "Weight per day",
+            kind: "aggregate",
+            datasetId: weights,
+            requiredDimensions: ["day"],
+            aggregate: { id: "kg", name: "Weight", op: "sum", fieldId: "kg" },
+          },
+          {
+            ...weekChange,
+            id: "kg_pct",
+            baseMeasureId: "kg",
+            output: "percent_change",
+          },
+          // Last week's change, and the week before: still ratios.
+          {
+            ...weekChange,
+            id: "kg_pct_prior",
+            baseMeasureId: "kg_pct",
+            output: "value",
+          },
+          {
+            ...weekChange,
+            id: "kg_pct_prior_2",
+            baseMeasureId: "kg_pct_prior",
+            output: "value",
+          },
+          {
+            id: "share",
+            name: "Share",
+            kind: "formula",
+            expression: {
+              kind: "call",
+              fn: "divide",
+              args: [field("kg"), field("kg")],
+            },
+          },
+          // A unitless ratio plus another: kilograms only in the base.
+          {
+            id: "pct_and_share",
+            name: "Change and share",
+            kind: "formula",
+            expression: {
+              kind: "call",
+              fn: "add",
+              args: [field("kg_pct"), field("share")],
+            },
+          },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const model = modelResponseSchema.parse(created.json()).model;
+    const published = await publish(model);
+    expect(published.statusCode, published.body).toBe(200);
+    const dashboard = await dashboards("POST", "", editor, {
+      name: "Weight change",
+      settings: { dataFilters: [] },
+      slides: [
+        {
+          widgets: [
+            {
+              type: "measure",
+              x: 0,
+              y: 0,
+              w: 6,
+              h: 3,
+              binding: {
+                modelId: model.id,
+                measureIds: ["pct_and_share"],
+                groupBy: ["day"],
+                exclusions: [],
+              },
+              options: { view: "line", limit: 20 },
+            },
+          ],
+        },
+      ],
+    });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    const read = await dashboards(
+      "POST",
+      `/${dashboard.json().dashboard.id as string}/data`,
+      viewer,
+      { values: {} },
+    );
+    expect(read.statusCode, read.body).toBe(200);
+    const [line] = read.json().widgets;
+    expect(line.error).toBeNull();
+    // 2026-10-05 (11 kg) against 2026-09-28 (4 kg): +175%, plus a share of 1.
+    expect(line.result.rows.at(-1).measures.pct_and_share).toMatchObject({
+      value: "2.75",
+      status: "ok",
+    });
+    expect(
+      line.metadata.measures
+        .filter((measure: { percentChange?: true }) => measure.percentChange)
+        .map((measure: { id: string }) => measure.id),
+    ).toEqual(["kg_pct", "kg_pct_prior", "kg_pct_prior_2"]);
+    // Only windows need the date grouped; a date grain can be filtered.
+    expect(line.metadata.measures).toEqual(
+      expect.arrayContaining([
+        { id: "kg_daily", name: "Weight per day", requiredDimensions: ["day"] },
+        expect.objectContaining({
+          id: "pct_and_share",
+          requiredDimensions: ["day"],
+          perDateDimensions: ["day"],
+        }),
+      ]),
+    );
+  });
+});

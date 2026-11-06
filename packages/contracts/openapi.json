@@ -11856,6 +11856,19 @@
                                     "type": "string",
                                     "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                   }
+                                },
+                                "perDateDimensions": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                  }
+                                },
+                                "percentChange": {
+                                  "type": "boolean",
+                                  "enum": [
+                                    true
+                                  ]
                                 }
                               },
                               "required": [
@@ -12607,6 +12620,19 @@
                                             "type": "string",
                                             "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                           }
+                                        },
+                                        "perDateDimensions": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                          }
+                                        },
+                                        "percentChange": {
+                                          "type": "boolean",
+                                          "enum": [
+                                            true
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -12810,6 +12836,26 @@
                                                   "missing",
                                                   "partial"
                                                 ]
+                                              },
+                                              "comparedTo": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "from": {
+                                                    "type": "string",
+                                                    "format": "date",
+                                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                                  },
+                                                  "to": {
+                                                    "type": "string",
+                                                    "format": "date",
+                                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "from",
+                                                  "to"
+                                                ],
+                                                "additionalProperties": false
                                               }
                                             },
                                             "required": [
@@ -13400,6 +13446,19 @@
                                             "type": "string",
                                             "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                           }
+                                        },
+                                        "perDateDimensions": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                          }
+                                        },
+                                        "percentChange": {
+                                          "type": "boolean",
+                                          "enum": [
+                                            true
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -13603,6 +13662,26 @@
                                                   "missing",
                                                   "partial"
                                                 ]
+                                              },
+                                              "comparedTo": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "from": {
+                                                    "type": "string",
+                                                    "format": "date",
+                                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                                  },
+                                                  "to": {
+                                                    "type": "string",
+                                                    "format": "date",
+                                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "from",
+                                                  "to"
+                                                ],
+                                                "additionalProperties": false
                                               }
                                             },
                                             "required": [
@@ -39160,6 +39239,281 @@
                                         "expression"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        },
+                                        "name": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 100
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "rolling"
+                                          ]
+                                        },
+                                        "requiredDimensions": {
+                                          "maxItems": 10,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          }
+                                        },
+                                        "baseMeasureId": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        },
+                                        "timeDimensionId": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        },
+                                        "window": {
+                                          "oneOf": [
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "unit": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "day"
+                                                  ]
+                                                },
+                                                "length": {
+                                                  "type": "integer",
+                                                  "minimum": 1,
+                                                  "maximum": 366
+                                                }
+                                              },
+                                              "required": [
+                                                "unit",
+                                                "length"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "unit": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "week"
+                                                  ]
+                                                },
+                                                "length": {
+                                                  "type": "integer",
+                                                  "minimum": 1,
+                                                  "maximum": 53
+                                                }
+                                              },
+                                              "required": [
+                                                "unit",
+                                                "length"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "unit": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "month"
+                                                  ]
+                                                },
+                                                "length": {
+                                                  "type": "integer",
+                                                  "minimum": 1,
+                                                  "maximum": 12
+                                                }
+                                              },
+                                              "required": [
+                                                "unit",
+                                                "length"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "name",
+                                        "kind",
+                                        "baseMeasureId",
+                                        "timeDimensionId",
+                                        "window"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        },
+                                        "name": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 100
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "period_offset"
+                                          ]
+                                        },
+                                        "requiredDimensions": {
+                                          "maxItems": 10,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          }
+                                        },
+                                        "baseMeasureId": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        },
+                                        "timeDimensionId": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        },
+                                        "offset": {
+                                          "oneOf": [
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "unit": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "day"
+                                                  ]
+                                                },
+                                                "length": {
+                                                  "type": "integer",
+                                                  "minimum": 1,
+                                                  "maximum": 366
+                                                }
+                                              },
+                                              "required": [
+                                                "unit",
+                                                "length"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "unit": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "week"
+                                                  ]
+                                                },
+                                                "length": {
+                                                  "type": "integer",
+                                                  "minimum": 1,
+                                                  "maximum": 53
+                                                }
+                                              },
+                                              "required": [
+                                                "unit",
+                                                "length"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "unit": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "month"
+                                                  ]
+                                                },
+                                                "length": {
+                                                  "type": "integer",
+                                                  "minimum": 1,
+                                                  "maximum": 12
+                                                }
+                                              },
+                                              "required": [
+                                                "unit",
+                                                "length"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "unit": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "year"
+                                                  ]
+                                                },
+                                                "length": {
+                                                  "type": "integer",
+                                                  "minimum": 1,
+                                                  "maximum": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "unit",
+                                                "length"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "unit": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "range"
+                                                  ]
+                                                },
+                                                "length": {
+                                                  "type": "integer",
+                                                  "minimum": 1,
+                                                  "maximum": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "unit",
+                                                "length"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          ]
+                                        },
+                                        "output": {
+                                          "type": "string",
+                                          "enum": [
+                                            "value",
+                                            "change",
+                                            "percent_change"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "name",
+                                        "kind",
+                                        "baseMeasureId",
+                                        "timeDimensionId",
+                                        "offset",
+                                        "output"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   ]
                                 }
@@ -39653,6 +40007,281 @@
                                 "expression"
                               ],
                               "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 100
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "rolling"
+                                  ]
+                                },
+                                "requiredDimensions": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
+                                },
+                                "baseMeasureId": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "timeDimensionId": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "window": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "day"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 366
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "week"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 53
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "month"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 12
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "kind",
+                                "baseMeasureId",
+                                "timeDimensionId",
+                                "window"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 100
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "period_offset"
+                                  ]
+                                },
+                                "requiredDimensions": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
+                                },
+                                "baseMeasureId": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "timeDimensionId": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "offset": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "day"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 366
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "week"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 53
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "month"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 12
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "year"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "range"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                },
+                                "output": {
+                                  "type": "string",
+                                  "enum": [
+                                    "value",
+                                    "change",
+                                    "percent_change"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "kind",
+                                "baseMeasureId",
+                                "timeDimensionId",
+                                "offset",
+                                "output"
+                              ],
+                              "additionalProperties": false
                             }
                           ]
                         }
@@ -39975,6 +40604,281 @@
                                       "name",
                                       "kind",
                                       "expression"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "rolling"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "baseMeasureId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "timeDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "window": {
+                                        "oneOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 366
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "week"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 53
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "month"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 12
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "baseMeasureId",
+                                      "timeDimensionId",
+                                      "window"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "period_offset"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "baseMeasureId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "timeDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "offset": {
+                                        "oneOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 366
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "week"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 53
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "month"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 12
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "year"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "range"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ]
+                                      },
+                                      "output": {
+                                        "type": "string",
+                                        "enum": [
+                                          "value",
+                                          "change",
+                                          "percent_change"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "baseMeasureId",
+                                      "timeDimensionId",
+                                      "offset",
+                                      "output"
                                     ],
                                     "additionalProperties": false
                                   }
@@ -40466,6 +41370,281 @@
                                 "expression"
                               ],
                               "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 100
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "rolling"
+                                  ]
+                                },
+                                "requiredDimensions": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
+                                },
+                                "baseMeasureId": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "timeDimensionId": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "window": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "day"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 366
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "week"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 53
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "month"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 12
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "kind",
+                                "baseMeasureId",
+                                "timeDimensionId",
+                                "window"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 100
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "period_offset"
+                                  ]
+                                },
+                                "requiredDimensions": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
+                                },
+                                "baseMeasureId": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "timeDimensionId": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "offset": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "day"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 366
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "week"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 53
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "month"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 12
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "year"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "range"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                },
+                                "output": {
+                                  "type": "string",
+                                  "enum": [
+                                    "value",
+                                    "change",
+                                    "percent_change"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "kind",
+                                "baseMeasureId",
+                                "timeDimensionId",
+                                "offset",
+                                "output"
+                              ],
+                              "additionalProperties": false
                             }
                           ]
                         }
@@ -40722,6 +41901,26 @@
                                     "missing",
                                     "partial"
                                   ]
+                                },
+                                "comparedTo": {
+                                  "type": "object",
+                                  "properties": {
+                                    "from": {
+                                      "type": "string",
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                    },
+                                    "to": {
+                                      "type": "string",
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                    }
+                                  },
+                                  "required": [
+                                    "from",
+                                    "to"
+                                  ],
+                                  "additionalProperties": false
                                 }
                               },
                               "required": [
@@ -41265,6 +42464,281 @@
                                       "expression"
                                     ],
                                     "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "rolling"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "baseMeasureId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "timeDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "window": {
+                                        "oneOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 366
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "week"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 53
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "month"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 12
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "baseMeasureId",
+                                      "timeDimensionId",
+                                      "window"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "period_offset"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "baseMeasureId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "timeDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "offset": {
+                                        "oneOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 366
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "week"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 53
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "month"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 12
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "year"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "range"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ]
+                                      },
+                                      "output": {
+                                        "type": "string",
+                                        "enum": [
+                                          "value",
+                                          "change",
+                                          "percent_change"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "baseMeasureId",
+                                      "timeDimensionId",
+                                      "offset",
+                                      "output"
+                                    ],
+                                    "additionalProperties": false
                                   }
                                 ]
                               }
@@ -41757,6 +43231,281 @@
                                 "expression"
                               ],
                               "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 100
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "rolling"
+                                  ]
+                                },
+                                "requiredDimensions": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
+                                },
+                                "baseMeasureId": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "timeDimensionId": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "window": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "day"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 366
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "week"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 53
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "month"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 12
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "kind",
+                                "baseMeasureId",
+                                "timeDimensionId",
+                                "window"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 100
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "period_offset"
+                                  ]
+                                },
+                                "requiredDimensions": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
+                                },
+                                "baseMeasureId": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "timeDimensionId": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                },
+                                "offset": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "day"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 366
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "week"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 53
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "month"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 12
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "year"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "unit": {
+                                          "type": "string",
+                                          "enum": [
+                                            "range"
+                                          ]
+                                        },
+                                        "length": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "unit",
+                                        "length"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                },
+                                "output": {
+                                  "type": "string",
+                                  "enum": [
+                                    "value",
+                                    "change",
+                                    "percent_change"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "kind",
+                                "baseMeasureId",
+                                "timeDimensionId",
+                                "offset",
+                                "output"
+                              ],
+                              "additionalProperties": false
                             }
                           ]
                         }
@@ -42087,6 +43836,281 @@
                                       "name",
                                       "kind",
                                       "expression"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "rolling"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "baseMeasureId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "timeDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "window": {
+                                        "oneOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 366
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "week"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 53
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "month"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 12
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "baseMeasureId",
+                                      "timeDimensionId",
+                                      "window"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "period_offset"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "baseMeasureId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "timeDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "offset": {
+                                        "oneOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 366
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "week"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 53
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "month"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 12
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "year"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "range"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ]
+                                      },
+                                      "output": {
+                                        "type": "string",
+                                        "enum": [
+                                          "value",
+                                          "change",
+                                          "percent_change"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "baseMeasureId",
+                                      "timeDimensionId",
+                                      "offset",
+                                      "output"
                                     ],
                                     "additionalProperties": false
                                   }
@@ -42634,6 +44658,281 @@
                                       "expression"
                                     ],
                                     "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "rolling"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "baseMeasureId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "timeDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "window": {
+                                        "oneOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 366
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "week"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 53
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "month"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 12
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "baseMeasureId",
+                                      "timeDimensionId",
+                                      "window"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "period_offset"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "baseMeasureId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "timeDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "offset": {
+                                        "oneOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 366
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "week"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 53
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "month"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 12
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "year"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "range"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ]
+                                      },
+                                      "output": {
+                                        "type": "string",
+                                        "enum": [
+                                          "value",
+                                          "change",
+                                          "percent_change"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "baseMeasureId",
+                                      "timeDimensionId",
+                                      "offset",
+                                      "output"
+                                    ],
+                                    "additionalProperties": false
                                   }
                                 ]
                               }
@@ -43085,6 +45384,26 @@
                                     "missing",
                                     "partial"
                                   ]
+                                },
+                                "comparedTo": {
+                                  "type": "object",
+                                  "properties": {
+                                    "from": {
+                                      "type": "string",
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                    },
+                                    "to": {
+                                      "type": "string",
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                    }
+                                  },
+                                  "required": [
+                                    "from",
+                                    "to"
+                                  ],
+                                  "additionalProperties": false
                                 }
                               },
                               "required": [
@@ -43555,6 +45874,26 @@
                                     "missing",
                                     "partial"
                                   ]
+                                },
+                                "comparedTo": {
+                                  "type": "object",
+                                  "properties": {
+                                    "from": {
+                                      "type": "string",
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                    },
+                                    "to": {
+                                      "type": "string",
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                    }
+                                  },
+                                  "required": [
+                                    "from",
+                                    "to"
+                                  ],
+                                  "additionalProperties": false
                                 }
                               },
                               "required": [
@@ -46130,6 +48469,281 @@
                                       "name",
                                       "kind",
                                       "expression"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "rolling"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "baseMeasureId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "timeDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "window": {
+                                        "oneOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 366
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "week"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 53
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "month"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 12
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "baseMeasureId",
+                                      "timeDimensionId",
+                                      "window"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "period_offset"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "baseMeasureId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "timeDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "offset": {
+                                        "oneOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 366
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "week"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 53
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "month"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 12
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "year"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "range"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ]
+                                      },
+                                      "output": {
+                                        "type": "string",
+                                        "enum": [
+                                          "value",
+                                          "change",
+                                          "percent_change"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "baseMeasureId",
+                                      "timeDimensionId",
+                                      "offset",
+                                      "output"
                                     ],
                                     "additionalProperties": false
                                   }
@@ -52436,6 +55050,19 @@
                                                               "type": "string",
                                                               "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                                             }
+                                                          },
+                                                          "perDateDimensions": {
+                                                            "type": "array",
+                                                            "items": {
+                                                              "type": "string",
+                                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                            }
+                                                          },
+                                                          "percentChange": {
+                                                            "type": "boolean",
+                                                            "enum": [
+                                                              true
+                                                            ]
                                                           }
                                                         },
                                                         "required": [
@@ -52639,6 +55266,26 @@
                                                                     "missing",
                                                                     "partial"
                                                                   ]
+                                                                },
+                                                                "comparedTo": {
+                                                                  "type": "object",
+                                                                  "properties": {
+                                                                    "from": {
+                                                                      "type": "string",
+                                                                      "format": "date",
+                                                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                                                    },
+                                                                    "to": {
+                                                                      "type": "string",
+                                                                      "format": "date",
+                                                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                                                    }
+                                                                  },
+                                                                  "required": [
+                                                                    "from",
+                                                                    "to"
+                                                                  ],
+                                                                  "additionalProperties": false
                                                                 }
                                                               },
                                                               "required": [
@@ -56080,6 +58727,19 @@
                                                               "type": "string",
                                                               "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                                             }
+                                                          },
+                                                          "perDateDimensions": {
+                                                            "type": "array",
+                                                            "items": {
+                                                              "type": "string",
+                                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                            }
+                                                          },
+                                                          "percentChange": {
+                                                            "type": "boolean",
+                                                            "enum": [
+                                                              true
+                                                            ]
                                                           }
                                                         },
                                                         "required": [
@@ -56283,6 +58943,26 @@
                                                                     "missing",
                                                                     "partial"
                                                                   ]
+                                                                },
+                                                                "comparedTo": {
+                                                                  "type": "object",
+                                                                  "properties": {
+                                                                    "from": {
+                                                                      "type": "string",
+                                                                      "format": "date",
+                                                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                                                    },
+                                                                    "to": {
+                                                                      "type": "string",
+                                                                      "format": "date",
+                                                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                                                    }
+                                                                  },
+                                                                  "required": [
+                                                                    "from",
+                                                                    "to"
+                                                                  ],
+                                                                  "additionalProperties": false
                                                                 }
                                                               },
                                                               "required": [

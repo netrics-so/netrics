@@ -19,6 +19,17 @@ export * from "./source-status.js";
 export * from "./data-expression.js";
 export * from "./data-preparation.js";
 export * from "./data-model.js";
+export {
+  MODEL_WINDOW_LIMITS,
+  measureDependencies,
+  measureIsPercentChange,
+  measureLookbackDays,
+  measurePerDateDimensions,
+  modelQueryTimeRange,
+  type ModelDateInterval,
+  type ModelOffsetUnit,
+  type ModelWindowUnit,
+} from "./data-model-windows.js";
 export * from "./data-field-references.js";
 export * from "./data-formula.js";
 export * from "./data-policy.js";

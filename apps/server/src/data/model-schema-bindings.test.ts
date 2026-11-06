@@ -802,4 +802,52 @@ describe("restored model schema dependencies", () => {
       await expectUsedDriftRejected(f, model);
     },
   );
+  it.each(["anchor date", "base measure field"] as const)(
+    "protects the %s of a restored rolling measure",
+    async (change) => {
+      const f = await fixture();
+      const raw = await enter(
+        f,
+        "windowed",
+        [field("amount", "decimal"), field("day", "date")],
+        [{ id: "a", amount: "5", day: "2026-11-01" }],
+      );
+      const definition = semantic(raw.id);
+      definition.dimensions.push({
+        id: "day",
+        name: "Day",
+        datasetId: raw.id,
+        fieldId: "day",
+        timeAlignment: "reporting_date",
+      });
+      definition.measures.push({
+        id: "total_7d",
+        name: "Total, 7 days",
+        kind: "rolling",
+        baseMeasureId: "total",
+        timeDimensionId: "day",
+        window: { unit: "day", length: 7 },
+      });
+      const model = await restore(f, await publishModel(f, definition));
+      await replace(
+        f,
+        raw,
+        change === "anchor date"
+          ? [field("amount", "decimal"), field("day", "timestamp")]
+          : [field("amount", "integer"), field("day", "date")],
+        [
+          change === "anchor date"
+            ? { id: "a", amount: "5", day: "2026-11-01T00:00:00Z" }
+            : { id: "a", amount: 5, day: "2026-11-01" },
+        ],
+      );
+      await expectUsedDriftRejected(f, model);
+      await expect(
+        f.service.query(f.actor, model.id, {
+          measureIds: ["total_7d"],
+          groupBy: ["day"],
+        }),
+      ).rejects.toThrow("data_model_schema_changed");
+    },
+  );
 });

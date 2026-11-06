@@ -14,6 +14,27 @@ import { dataErrorKey } from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
 import type { StudioAction } from "@/lib/studio-document";
 import { FilterExclusions } from "./shared-filters";
+
+type CatalogModel = PublishedModelCatalog["models"][number];
+/** Rolling windows and day/week comparisons have one value per date, which
+ * no filter reduces to one. An ordinary grain on a date can be fixed by the
+ * widget filter, so it does not count. */
+function perDateMeasure(model: CatalogModel | undefined, measureId: string) {
+  return !!model?.measures.find((measure) => measure.id === measureId)
+    ?.perDateDimensions?.length;
+}
+/** The measure the single-value view keeps: a chosen one with a single
+ * value, else the model's first such, else the first chosen. */
+export function valueViewMeasureId(
+  model: CatalogModel | undefined,
+  measureIds: string[],
+): string {
+  return (
+    measureIds.find((measureId) => !perDateMeasure(model, measureId)) ??
+    model?.measures.find((measure) => !perDateMeasure(model, measure.id))?.id ??
+    measureIds[0]!
+  );
+}
 export function MeasureFields({
   widget,
   models,
@@ -44,6 +65,15 @@ export function MeasureFields({
         .flatMap((measure) => measure.requiredDimensions ?? []) ?? [],
     ),
   ];
+  // Rolling and day/week comparisons have no single value: the value view
+  // offers them only once already chosen.
+  const perDate = (measure: CatalogModel["measures"][number]) =>
+    widget.options.view !== "value" ||
+    widget.binding.measureIds.includes(measure.id)
+      ? []
+      : (model?.dimensions.filter((dimension) =>
+          measure.perDateDimensions?.includes(dimension.id),
+        ) ?? []);
   const refs =
     model?.dimensions.map((dimension) => ({
       id: dimension.id,
@@ -79,7 +109,9 @@ export function MeasureFields({
           measureIds:
             view === "table"
               ? widget.binding.measureIds
-              : widget.binding.measureIds.slice(0, 1),
+              : view === "value"
+                ? [valueViewMeasureId(model, widget.binding.measureIds)]
+                : widget.binding.measureIds.slice(0, 1),
           groupBy:
             view === "value"
               ? []
@@ -188,6 +220,12 @@ export function MeasureFields({
             <input
               type={widget.options.view === "table" ? "checkbox" : "radio"}
               name={`${id}-measure`}
+              disabled={perDate(measure).length > 0}
+              aria-describedby={
+                perDate(measure).length
+                  ? `${id}-per-date-${measure.id}`
+                  : undefined
+              }
               checked={widget.binding.measureIds.includes(measure.id)}
               onChange={(event) =>
                 update({
@@ -211,6 +249,22 @@ export function MeasureFields({
             {measure.name}
           </label>
         ))}
+        {model?.measures.map((measure) =>
+          perDate(measure).length ? (
+            <p
+              key={measure.id}
+              className="help"
+              id={`${id}-per-date-${measure.id}`}
+            >
+              {t("perDateMeasure", {
+                name: measure.name,
+                dimensions: perDate(measure)
+                  .map((dimension) => dimension.name)
+                  .join(", "),
+              })}
+            </p>
+          ) : null,
+        )}
       </fieldset>
       {widget.options.view !== "value" ? (
         <fieldset>

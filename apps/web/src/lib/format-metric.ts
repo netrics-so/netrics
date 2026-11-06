@@ -127,6 +127,25 @@ export interface ChangeView {
   text: string;
 }
 
+/** |ratio| as a percentage: one decimal below 10%, whole above. */
+function unsignedPercent(ratio: number, locale: Locale): string {
+  return `${new Intl.NumberFormat(locale, {
+    maximumFractionDigits: Math.abs(ratio) < 0.1 ? 1 : 0,
+  }).format(Math.abs(ratio) * 100)}%`;
+}
+
+/**
+ * A change ratio (a percent-change measure, as a decimal string or number)
+ * as the signed percentage compare widgets show: "+8.3%", "−60%".
+ */
+export function formatPercentChange(value: unknown, locale: Locale): string {
+  const ratio =
+    value === null || value === undefined || value === "" ? NaN : Number(value);
+  if (!Number.isFinite(ratio)) return "—";
+  const sign = ratio > 0 ? "+" : ratio < 0 ? "−" : "±";
+  return `${sign}${unsignedPercent(ratio, locale)}`;
+}
+
 /** Null when there is nothing to compare with. */
 export function formatChange(
   delta: number | null,
@@ -149,10 +168,11 @@ export function formatChange(
   const sign = delta > 0 ? "+" : delta < 0 ? "−" : "±";
   // A change of rank reads in places, not as a percentage of the rank.
   if (ratio !== null && unit !== "position") {
-    const percent = new Intl.NumberFormat(locale, {
-      maximumFractionDigits: Math.abs(ratio) < 0.1 ? 1 : 0,
-    }).format(Math.abs(ratio) * 100);
-    return { direction, tone, text: `${sign}${percent}%` };
+    return {
+      direction,
+      tone,
+      text: `${sign}${unsignedPercent(ratio, locale)}`,
+    };
   }
   return {
     direction,
