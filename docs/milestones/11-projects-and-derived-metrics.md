@@ -168,6 +168,10 @@ implementation work; this plan does not create or complete issue records.
 - 11C: [#442](https://github.com/netrics-so/netrics/issues/442)
   - Existing-step editing, explicit append matching and typed reference authoring:
     [#464](https://github.com/netrics-so/netrics/issues/464).
+  - Published definition history and explicit restore-to-draft with historical
+    input pins and matching authoring metadata:
+    [#470](https://github.com/netrics-so/netrics/issues/470). Source corrections
+    remain current; unpublished draft history/source-value rollback is not implied.
 - 11D: [#443](https://github.com/netrics-so/netrics/issues/443)
   - Immutable semantic result continuation across corrections/publication:
     [#471](https://github.com/netrics-so/netrics/issues/471). Opt-in API sessions

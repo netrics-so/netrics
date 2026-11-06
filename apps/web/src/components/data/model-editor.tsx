@@ -12,6 +12,7 @@ import {
   previewModelDefinition,
   saveModel,
   publishModel,
+  restoreModel,
   type DataSource,
   type ModelDraft,
   type ModelResult,
@@ -21,6 +22,8 @@ import { useT } from "@/lib/i18n/client";
 import { AggregateFields, ColumnChecks, ColumnSelect } from "./fields";
 import { DataTable } from "./data-table";
 import { PreviewNotes } from "./preview-notes";
+import { DefinitionHistory } from "./definition-history";
+import { useDraftSources } from "@/lib/data-source-metadata";
 
 const EMPTY: SemanticModelDefinition = {
   version: 1,
@@ -31,7 +34,7 @@ const EMPTY: SemanticModelDefinition = {
 };
 export function ModelEditor({
   workspaceId,
-  sources,
+  sources: sourceCatalog,
   initial,
   onSaved,
   onClose,
@@ -60,6 +63,13 @@ export function ModelEditor({
   };
   const [record, setRecord] = useState(initial),
     [name, setName] = useState(initial?.name ?? t("defaultModel"));
+  const inputMetadata = useDraftSources(
+    workspaceId,
+    "models",
+    record,
+    sourceCatalog,
+  );
+  const sources = inputMetadata.sources;
   const [definition, setDefinition] = useState(initial?.definition ?? EMPTY);
   const [formulaTexts, setFormulaTexts] = useState<Record<string, string>>({});
   const [savedState, setSavedState] = useState(
@@ -77,7 +87,9 @@ export function ModelEditor({
   const [result, setResult] = useState<ModelResult | null>(null),
     [previewState, setPreviewState] = useState("");
   const [outputFields, setOutputFields] = useState<DataField[]>([]);
-  const [busy, setBusy] = useState<"preview" | "save" | "publish" | null>(null);
+  const [busy, setBusy] = useState<
+    "preview" | "save" | "publish" | "history" | null
+  >(null);
   const [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
   const current = JSON.stringify({ name, definition, formulaTexts }),
@@ -119,7 +131,7 @@ export function ModelEditor({
     };
   }
   async function preview() {
-    if (!valid()) return;
+    if (inputMetadata.loading || inputMetadata.error || !valid()) return;
     setBusy("preview");
     setError(null);
     setNotice(null);
@@ -128,11 +140,16 @@ export function ModelEditor({
       const filter = filterText.trim()
         ? parseDataFormula(filterText, model.dimensions)
         : undefined;
-      const next = await previewModelDefinition(workspaceId, model, {
-        measureIds,
-        groupBy,
-        ...(filter ? { filter } : {}),
-      });
+      const next = await previewModelDefinition(
+        workspaceId,
+        model,
+        {
+          measureIds,
+          groupBy,
+          ...(filter ? { filter } : {}),
+        },
+        record ? { id: record.id, version: record.version } : undefined,
+      );
       setResult(next);
       setOutputFields([
         ...groupBy.map((id): DataField => {
@@ -162,7 +179,7 @@ export function ModelEditor({
     }
   }
   async function persist(publish: boolean) {
-    if (!valid()) return;
+    if (inputMetadata.loading || inputMetadata.error || !valid()) return;
     setBusy(publish ? "publish" : "save");
     setError(null);
     setNotice(null);
@@ -203,6 +220,52 @@ export function ModelEditor({
         onSaved(published.model);
         setNotice(t("publishedNotice"));
       } else setNotice(t("saved"));
+    } catch (failure) {
+      setError(t(`errors.${dataErrorKey(failure)}`));
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function restore(version?: number) {
+    if (!record) return;
+    setBusy("history");
+    setError(null);
+    setNotice(null);
+    try {
+      const saved =
+        version === undefined
+          ? await saveModel(
+              workspaceId,
+              {
+                name,
+                definition,
+                version: record.version,
+                adoptLatestInputs: true,
+              },
+              record.id,
+            )
+          : await restoreModel(workspaceId, record.id, record.version, version);
+      const next = saved.model;
+      setRecord(next);
+      setName(next.name);
+      setDefinition(next.definition);
+      setFormulaTexts({});
+      setSavedState(
+        JSON.stringify({
+          name: next.name,
+          definition: next.definition,
+          formulaTexts: {},
+        }),
+      );
+      setMeasureIds(next.definition.measures.map((measure) => measure.id));
+      setGroupBy([]);
+      setFilterText("");
+      setResult(null);
+      setPreviewState("");
+      onSaved(next);
+      setNotice(
+        t(version === undefined ? "latestInputsNotice" : "restoredNotice"),
+      );
     } catch (failure) {
       setError(t(`errors.${dataErrorKey(failure)}`));
     } finally {
@@ -294,6 +357,8 @@ export function ModelEditor({
             type="button"
             disabled={
               !!busy ||
+              inputMetadata.loading ||
+              !!inputMetadata.error ||
               !name.trim() ||
               !definition.measures.length ||
               (!!record && !dirty)
@@ -305,13 +370,26 @@ export function ModelEditor({
           <button
             type="button"
             className="primary"
-            disabled={!!busy || !fresh || !!error || !name.trim()}
+            disabled={
+              !!busy ||
+              inputMetadata.loading ||
+              !!inputMetadata.error ||
+              !fresh ||
+              !!error ||
+              !name.trim() ||
+              (!!record?.restoredFromVersion &&
+                record.publishedVersion === record.version &&
+                !dirty)
+            }
             onClick={() => void persist(true)}
           >
             {t(
               busy === "publish"
                 ? "publishing"
-                : !dirty && record && record.publishedVersion === record.version
+                : !dirty &&
+                    record &&
+                    !record.restoredFromVersion &&
+                    record.publishedVersion === record.version
                   ? "republish"
                   : "publish",
             )}
@@ -329,9 +407,37 @@ export function ModelEditor({
           {notice}
         </p>
       ) : null}
+      {inputMetadata.loading ? (
+        <p role="status" className="page-meta">
+          {t("loadingInputVersions")}
+        </p>
+      ) : null}
+      {inputMetadata.error ? (
+        <div role="alert">
+          <p className="error">
+            {t(`errors.${dataErrorKey(inputMetadata.error)}`)}
+          </p>
+          <button type="button" onClick={inputMetadata.retry}>
+            {t("retry")}
+          </button>
+        </div>
+      ) : null}
+      {record ? (
+        <DefinitionHistory
+          workspaceId={workspaceId}
+          kind="models"
+          id={record.id}
+          publishedVersion={record.publishedVersion}
+          restoredFromVersion={record.restoredFromVersion}
+          disabled={!!busy}
+          unsaved={dirty}
+          onRestore={restore}
+          onAdoptLatest={() => restore()}
+        />
+      ) : null}
       <fieldset
         ref={fieldsRef}
-        disabled={!!busy}
+        disabled={!!busy || inputMetadata.loading || !!inputMetadata.error}
         className="data-editor-fields"
       >
         <div className="field data-name-field">
@@ -816,7 +922,12 @@ export function ModelEditor({
           <button
             type="button"
             className="primary"
-            disabled={!!busy || !measureIds.length}
+            disabled={
+              !!busy ||
+              inputMetadata.loading ||
+              !!inputMetadata.error ||
+              !measureIds.length
+            }
             onClick={() => void preview()}
           >
             {t(busy === "preview" ? "previewing" : "preview")}

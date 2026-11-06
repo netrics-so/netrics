@@ -415,6 +415,135 @@ describe("data API authorization and contract", () => {
       ).statusCode,
     ).toBe(409);
   });
+  it("restricts history and draft restoration to editors and leaves published results active", async () => {
+    const current = modelResponseSchema.parse(
+      (await call("GET", `/models/${modelId}`, editor)).json(),
+    ).model;
+    const created = await call("POST", "/models", editor, {
+      name: "History model",
+      definition: current.definition,
+    });
+    const model = modelResponseSchema.parse(created.json()).model;
+    expect(
+      (
+        await call("POST", `/models/${model.id}/publish`, editor, {
+          version: 1,
+        })
+      ).statusCode,
+    ).toBe(200);
+    const prep = await call("POST", "/preparations", editor, {
+      name: "History preparation",
+      graph: {
+        version: 1,
+        nodes: [{ id: "source", type: "source", datasetId }],
+        outputs: ["source"],
+      },
+    });
+    const preparation = prep.json().preparation as { id: string };
+    expect(
+      (
+        await call("POST", `/preparations/${preparation.id}/publish`, editor, {
+          version: 1,
+        })
+      ).statusCode,
+    ).toBe(200);
+    for (const [kind, resourceId] of [
+      ["models", model.id],
+      ["preparations", preparation.id],
+    ] as const) {
+      const history = await call(
+        "GET",
+        `/${kind}/${resourceId}/history?limit=1`,
+        editor,
+      );
+      expect(history.statusCode, history.body).toBe(200);
+      expect(history.headers["cache-control"]).toBe("no-store");
+      expect(history.json()).toMatchObject({
+        versions: [{ version: 1, active: true }],
+        nextBeforeVersion: null,
+      });
+      expect(
+        (await call("GET", `/${kind}/${resourceId}/history?limit=51`, editor))
+          .statusCode,
+      ).toBe(400);
+      expect(
+        (await call("GET", `/${kind}/${resourceId}/history`, viewer))
+          .statusCode,
+      ).toBe(403);
+      expect(
+        (await call("GET", `/${kind}/${resourceId}/history`, stranger))
+          .statusCode,
+      ).toBe(404);
+      expect(
+        (
+          await call("POST", `/${kind}/${resourceId}/restore`, viewer, {
+            version: 1,
+            publishedVersion: 1,
+          })
+        ).statusCode,
+      ).toBe(403);
+      expect(
+        (
+          await call("POST", `/${kind}/${resourceId}/restore`, stranger, {
+            version: 1,
+            publishedVersion: 1,
+          })
+        ).statusCode,
+      ).toBe(404);
+      const metadata = await call(
+        "GET",
+        `/${kind}/${resourceId}/inputs?version=1`,
+        editor,
+      );
+      expect(metadata.statusCode, metadata.body).toBe(200);
+      expect(metadata.headers["cache-control"]).toBe("no-store");
+      expect(metadata.json().sources[0].fields.length).toBeGreaterThan(0);
+      expect(
+        (await call("GET", `/${kind}/${resourceId}/inputs?version=1`, viewer))
+          .statusCode,
+      ).toBe(403);
+      expect(
+        (await call("GET", `/${kind}/${resourceId}/inputs?version=1`, stranger))
+          .statusCode,
+      ).toBe(404);
+      expect(
+        (await call("GET", `/${kind}/${resourceId}/inputs?version=99`, editor))
+          .statusCode,
+      ).toBe(409);
+      const restored = await call(
+        "POST",
+        `/${kind}/${resourceId}/restore`,
+        editor,
+        { version: 1, publishedVersion: 1 },
+      );
+      expect(restored.statusCode, restored.body).toBe(200);
+      expect(Object.values(restored.json())[0]).toMatchObject({
+        version: 2,
+        publishedVersion: 1,
+        restoredFromVersion: 1,
+      });
+      expect(
+        (
+          await call("POST", `/${kind}/${resourceId}/restore`, editor, {
+            version: 1,
+            publishedVersion: 1,
+          })
+        ).statusCode,
+      ).toBe(409);
+    }
+    const live = await call("POST", `/models/${model.id}/query`, viewer, {
+      measureIds: ["total"],
+      groupBy: [],
+    });
+    expect(live.statusCode).toBe(200);
+    expect(live.json().rows[0].measures.total.value).toBe("12.5");
+    const stalePreview = await call("POST", "/models/preview", editor, {
+      definition: model.definition,
+      query: { measureIds: ["total"], groupBy: [] },
+      draft: { id: model.id, version: 1 },
+    });
+    expect(stalePreview.statusCode).toBe(409);
+  });
   it("rejects arbitrary code and excessive expression nesting before execution", async () => {
     const code = await call("POST", "/formula", editor, {
       formula: "globalThis.process.exit()",

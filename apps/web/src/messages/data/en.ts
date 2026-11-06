@@ -100,6 +100,26 @@ export const dataEn = {
         number: "Number",
       },
     },
+    loadingInputVersions: "Loading the draft’s input versions…",
+    versionHistory: "Published version history",
+    historyHint:
+      "Restore published steps or model definitions as a new saved draft, replacing the saved draft. The current name, source data and live dashboards stay as they are. Preview the restored draft, then publish when ready.",
+    historyUnsaved:
+      "Save your changes before restoring a version or changing input versions.",
+    historyLoading: "Loading published versions…",
+    historyEmpty: "Publish this draft to begin its version history.",
+    historyVersion: "Version {version}",
+    historyActive: "Currently published",
+    historyNewest: "Newest versions",
+    historyOlder: "Older versions",
+    restoreDraft: "Restore as draft",
+    restoredNotice:
+      "Published definition restored as a draft. Preview it before publishing. Live dashboards still use the current publication.",
+    restoredInputs:
+      "Based on published version {version}. Its preparation input versions stay pinned; source-data corrections still apply.",
+    adoptLatestInputs: "Use latest published inputs",
+    latestInputsNotice:
+      "The draft now uses the latest published inputs. Preview it before publishing.",
     title: "Data & measures",
     subtitle: "Prepare your data and define measures you can reuse.",
     datasets: "Datasets",
@@ -377,6 +397,12 @@ export const dataEn = {
     previewInitial: "Choose measures and preview this draft before publishing.",
     previewOutdated: "The draft changed. Preview it again before publishing.",
     errors: {
+      history:
+        "This published version is unavailable. Reload its history and choose another version.",
+      unavailable:
+        "A required source or input version is unavailable. Check its connection and published preparations before restoring or publishing.",
+      pinConflict:
+        "These inputs depend on different published versions of the same preparation. Use latest published inputs, or remove the input that needs a newer version.",
       scope:
         "Group by the required dimensions, or select one value for each, before using this measure.",
       label:

@@ -414,6 +414,13 @@
       "when": 1793907712298,
       "tag": "0058_connector_report_staging",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1793907712299,
+      "tag": "0059_definition_history",
+      "breakpoints": true
     }
   ]
 }

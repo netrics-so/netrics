@@ -10,6 +10,7 @@ import {
   previewPreparation,
   savePreparation,
   publishPreparation,
+  restorePreparation,
   type DataSource,
   type PreparationDraft,
   type DataPreview,
@@ -23,6 +24,8 @@ import { useT } from "@/lib/i18n/client";
 import { DataTable } from "./data-table";
 import { StepForm } from "./step-form";
 import { PreviewNotes } from "./preview-notes";
+import { DefinitionHistory } from "./definition-history";
+import { useDraftSources } from "@/lib/data-source-metadata";
 import {
   PreparationEditError,
   preparationStepInputs,
@@ -35,7 +38,7 @@ import {
 
 export function PreparationEditor({
   workspaceId,
-  sources,
+  sources: sourceCatalog,
   initial,
   sourceId,
   onSaved,
@@ -54,6 +57,13 @@ export function PreparationEditor({
     nameId = useId(),
     sourceSelectId = useId();
   const [record, setRecord] = useState(initial);
+  const inputMetadata = useDraftSources(
+    workspaceId,
+    "preparations",
+    record,
+    sourceCatalog,
+  );
+  const sources = inputMetadata.sources;
   const [name, setName] = useState(initial?.name ?? t("defaultPreparation"));
   const [graph, setGraph] = useState<PreparationGraph>(
     initial?.graph ?? {
@@ -81,7 +91,9 @@ export function PreparationEditor({
   const [removing, setRemoving] = useState(false),
     [bypass, setBypass] = useState("");
   const [adding, setAdding] = useState(false),
-    [busy, setBusy] = useState<"preview" | "save" | "publish" | null>(null);
+    [busy, setBusy] = useState<
+      "preview" | "save" | "publish" | "history" | null
+    >(null);
   const [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
   const request = useRef(0);
@@ -105,11 +117,19 @@ export function PreparationEditor({
     setNotice(null);
     try {
       const validation = validateAll
-        ? await previewPreparation(workspaceId, next)
+        ? await previewPreparation(
+            workspaceId,
+            next,
+            record ? { id: record.id, version: record.version } : undefined,
+          )
         : null;
       const result = validation?.outputs[output]
         ? validation
-        : await previewPreparation(workspaceId, preparationAt(next, output));
+        : await previewPreparation(
+            workspaceId,
+            preparationAt(next, output),
+            record ? { id: record.id, version: record.version } : undefined,
+          );
       if (sequence !== request.current) return;
       const table = result.outputs[output]!;
       setPreview({ ...table, warnings: result.warnings });
@@ -134,6 +154,7 @@ export function PreparationEditor({
     // Initial preview only; later edits are explicitly previewed.
   }, []);
   async function persist(publish: boolean) {
+    if (inputMetadata.loading || inputMetadata.error) return;
     setError(null);
     setNotice(null);
     setBusy(publish ? "publish" : "save");
@@ -163,6 +184,48 @@ export function PreparationEditor({
         onSaved(published.preparation);
         setNotice(t("publishedNotice"));
       } else setNotice(t("saved"));
+    } catch (failure) {
+      setError(t(`errors.${dataErrorKey(failure)}`));
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function restore(version?: number) {
+    if (!record) return;
+    setBusy("history");
+    setError(null);
+    setNotice(null);
+    request.current++;
+    try {
+      const result =
+        version === undefined
+          ? await savePreparation(
+              workspaceId,
+              { name, graph, version: record.version, adoptLatestInputs: true },
+              record.id,
+            )
+          : await restorePreparation(
+              workspaceId,
+              record.id,
+              record.version,
+              version,
+            );
+      const next = result.preparation;
+      setRecord(next);
+      setName(next.name);
+      setGraph(next.graph);
+      setSavedState(JSON.stringify({ name: next.name, graph: next.graph }));
+      setHistory([]);
+      setSelected(next.graph.outputs[0] ?? "");
+      setAdding(false);
+      setEditing(null);
+      setRemoving(false);
+      setPreview(null);
+      setPreviewState("");
+      onSaved(next);
+      setNotice(
+        t(version === undefined ? "latestInputsNotice" : "restoredNotice"),
+      );
     } catch (failure) {
       setError(t(`errors.${dataErrorKey(failure)}`));
     } finally {
@@ -222,7 +285,11 @@ export function PreparationEditor({
           ? undefined
           : preparationStepInputs(selectedNode)[0];
       const input = inputId
-        ? await previewPreparation(workspaceId, preparationAt(graph, inputId))
+        ? await previewPreparation(
+            workspaceId,
+            preparationAt(graph, inputId),
+            record ? { id: record.id, version: record.version } : undefined,
+          )
         : null;
       if (sequence === request.current)
         setEditing({
@@ -277,6 +344,8 @@ export function PreparationEditor({
             type="button"
             disabled={
               !!busy ||
+              inputMetadata.loading ||
+              !!inputMetadata.error ||
               adding ||
               !!editing ||
               removing ||
@@ -293,6 +362,8 @@ export function PreparationEditor({
             className="primary"
             disabled={
               !!busy ||
+              inputMetadata.loading ||
+              !!inputMetadata.error ||
               adding ||
               !!editing ||
               removing ||
@@ -317,6 +388,34 @@ export function PreparationEditor({
           {notice}
         </p>
       ) : null}
+      {inputMetadata.loading ? (
+        <p role="status" className="page-meta">
+          {t("loadingInputVersions")}
+        </p>
+      ) : null}
+      {inputMetadata.error ? (
+        <div role="alert">
+          <p className="error">
+            {t(`errors.${dataErrorKey(inputMetadata.error)}`)}
+          </p>
+          <button type="button" onClick={inputMetadata.retry}>
+            {t("retry")}
+          </button>
+        </div>
+      ) : null}
+      {record ? (
+        <DefinitionHistory
+          workspaceId={workspaceId}
+          kind="preparations"
+          id={record.id}
+          publishedVersion={record.publishedVersion}
+          restoredFromVersion={record.restoredFromVersion}
+          disabled={!!busy || formOpen}
+          unsaved={dirty}
+          onRestore={restore}
+          onAdoptLatest={() => restore()}
+        />
+      ) : null}
       <div className="data-builder">
         <aside className="data-steps">
           <div className="field">
@@ -339,7 +438,12 @@ export function PreparationEditor({
                     ? initialSource.datasetId
                     : ""
                 }
-                disabled={!!busy || graph.nodes.length > 1}
+                disabled={
+                  !!busy ||
+                  inputMetadata.loading ||
+                  !!inputMetadata.error ||
+                  graph.nodes.length > 1
+                }
                 onChange={(e) => changeSource(e.target.value)}
               >
                 <option value="" disabled>
@@ -366,7 +470,14 @@ export function PreparationEditor({
                 <button
                   type="button"
                   aria-current={node.id === selected ? "step" : undefined}
-                  disabled={!!busy || adding || !!editing || removing}
+                  disabled={
+                    !!busy ||
+                    inputMetadata.loading ||
+                    !!inputMetadata.error ||
+                    adding ||
+                    !!editing ||
+                    removing
+                  }
                   onClick={() => {
                     setAdding(false);
                     void show(graph, node.id).catch(() => undefined);
@@ -390,6 +501,8 @@ export function PreparationEditor({
             disabled={
               !graph.outputs.length ||
               !!busy ||
+              inputMetadata.loading ||
+              !!inputMetadata.error ||
               adding ||
               !!editing ||
               removing ||
@@ -403,7 +516,13 @@ export function PreparationEditor({
           <button
             type="button"
             disabled={
-              !history.length || !!busy || adding || !!editing || removing
+              !history.length ||
+              !!busy ||
+              inputMetadata.loading ||
+              !!inputMetadata.error ||
+              adding ||
+              !!editing ||
+              removing
             }
             onClick={() => {
               const previous = history.at(-1)!;
@@ -433,7 +552,12 @@ export function PreparationEditor({
             </div>
             <button
               type="button"
-              disabled={!!busy || !selected}
+              disabled={
+                !!busy ||
+                inputMetadata.loading ||
+                !!inputMetadata.error ||
+                !selected
+              }
               onClick={() => void show(graph, selected).catch(() => undefined)}
             >
               {t(busy === "preview" ? "previewing" : "preview")}
@@ -444,14 +568,25 @@ export function PreparationEditor({
               <div className="data-form-actions">
                 <button
                   type="button"
-                  disabled={!!busy || formOpen}
+                  disabled={
+                    !!busy ||
+                    inputMetadata.loading ||
+                    !!inputMetadata.error ||
+                    formOpen
+                  }
                   onClick={() => void editSelected()}
                 >
                   {t("editStep")}
                 </button>
                 <button
                   type="button"
-                  disabled={!!busy || formOpen || !!moveUp}
+                  disabled={
+                    !!busy ||
+                    inputMetadata.loading ||
+                    !!inputMetadata.error ||
+                    formOpen ||
+                    !!moveUp
+                  }
                   title={moveUp ? t(`editErrors.${moveUp}`) : undefined}
                   onClick={() => void move("up")}
                 >
@@ -459,7 +594,13 @@ export function PreparationEditor({
                 </button>
                 <button
                   type="button"
-                  disabled={!!busy || formOpen || !!moveDown}
+                  disabled={
+                    !!busy ||
+                    inputMetadata.loading ||
+                    !!inputMetadata.error ||
+                    formOpen ||
+                    !!moveDown
+                  }
                   title={moveDown ? t(`editErrors.${moveDown}`) : undefined}
                   onClick={() => void move("down")}
                 >
@@ -467,7 +608,13 @@ export function PreparationEditor({
                 </button>
                 <button
                   type="button"
-                  disabled={!!busy || formOpen || !!removal}
+                  disabled={
+                    !!busy ||
+                    inputMetadata.loading ||
+                    !!inputMetadata.error ||
+                    formOpen ||
+                    !!removal
+                  }
                   title={removal ? t(`editErrors.${removal}`) : undefined}
                   onClick={() => {
                     setBypass(preparationStepInputs(selectedNode)[0] ?? "");
@@ -553,6 +700,9 @@ export function PreparationEditor({
             <StepForm
               key={editing.node.id}
               workspaceId={workspaceId}
+              draft={
+                record ? { id: record.id, version: record.version } : undefined
+              }
               input={preparationStepInputs(editing.node)[0] ?? ""}
               graph={graph}
               initial={editing.node}
@@ -611,6 +761,9 @@ export function PreparationEditor({
             <StepForm
               key={currentOutput}
               workspaceId={workspaceId}
+              draft={
+                record ? { id: record.id, version: record.version } : undefined
+              }
               input={currentOutput}
               fields={fields}
               graph={graph}

@@ -71,6 +71,10 @@ it("distinguishes a first import from unpublished definitions and unavailable re
   expect(dataErrorCodeKey("data_source_pending")).toBe("pending");
   expect(dataErrorCodeKey("data_source_not_published")).toBe("unpublished");
   expect(dataErrorCodeKey("data_source_history_unavailable")).toBe("expired");
+  expect(dataErrorCodeKey("data_dependency_version_conflict")).toBe(
+    "pinConflict",
+  );
+  expect(dataErrorCodeKey("data_source_not_found")).toBe("unavailable");
 });
 
 it("round-trips reference cells without losing null, empty text, quotes, false or exact decimals", async () => {

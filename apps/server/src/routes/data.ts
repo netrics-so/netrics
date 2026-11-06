@@ -98,7 +98,12 @@ export function registerDataRoutes(
               reply,
             );
             if (!body) return;
-            return service.preview(a, body.sourceId, body.limit);
+            return service.preview(
+              a,
+              body.sourceId,
+              body.limit,
+              body.preparationDraft,
+            );
           }),
       );
       scope.post(
@@ -257,7 +262,7 @@ export function registerDataRoutes(
               reply,
             );
             if (!body) return;
-            return service.previewPreparation(a, body.graph);
+            return service.previewPreparation(a, body.graph, body.draft);
           }),
       );
       scope.get(
@@ -345,7 +350,12 @@ export function registerDataRoutes(
               reply,
             );
             if (!body) return;
-            return service.previewModel(a, body.definition, body.query);
+            return service.previewModel(
+              a,
+              body.definition,
+              body.query,
+              body.draft,
+            );
           }),
       );
       scope.post(
@@ -446,6 +456,84 @@ export function registerDataRoutes(
             return service.query(a, model, body, true);
           }),
       );
+      for (const kind of ["preparations", "models"] as const) {
+        scope.get(
+          `/workspaces/:workspaceId/data/${kind}/:id/inputs`,
+          {
+            schema: routeSchema({
+              summary:
+                "Read draft-bound input dataset metadata using restored definition versions",
+              tags: ["data"],
+              querystring: contracts.dataDraftInputsQuerySchema,
+              response: contracts.dataSourcesResponseSchema,
+              errors: [400, 403, 404, 409, 413, 503],
+            }),
+          },
+          (request, reply) =>
+            execute(request, reply, "data:edit", async (actor) => {
+              const resourceId = id(request, reply);
+              if (!resourceId) return;
+              const input = contracts.dataDraftInputsQuerySchema.parse(
+                request.query,
+              );
+              reply.header("cache-control", "no-store");
+              return kind === "preparations"
+                ? service.preparationInputs(actor, resourceId, input.version)
+                : service.modelInputs(actor, resourceId, input.version);
+            }),
+        );
+
+        scope.get(
+          `/workspaces/:workspaceId/data/${kind}/:id/history`,
+          {
+            schema: routeSchema({
+              summary: "List immutable published definition history",
+              tags: ["data"],
+              querystring: contracts.dataHistoryQuerySchema,
+              response: contracts.dataHistoryResponseSchema,
+              errors: [400, 403, 404, 409, 503],
+            }),
+          },
+          (request, reply) =>
+            execute(request, reply, "data:edit", async (actor) => {
+              const resourceId = id(request, reply);
+              if (!resourceId) return;
+              const input = contracts.dataHistoryQuerySchema.parse(
+                request.query,
+              );
+              reply.header("cache-control", "no-store");
+              return kind === "preparations"
+                ? service.preparationHistory(actor, resourceId, input)
+                : service.modelHistory(actor, resourceId, input);
+            }),
+        );
+        scope.post(
+          `/workspaces/:workspaceId/data/${kind}/:id/restore`,
+          {
+            schema: doc(
+              "Restore a published definition to a new draft without changing publication",
+              kind === "preparations"
+                ? contracts.preparationResponseSchema
+                : contracts.modelResponseSchema,
+              contracts.dataRestoreRequestSchema,
+            ),
+          },
+          (request, reply) =>
+            execute(request, reply, "data:edit", async (actor) => {
+              const resourceId = id(request, reply);
+              const input = parseBody(
+                contracts.dataRestoreRequestSchema,
+                request,
+                reply,
+              );
+              if (!resourceId || !input) return;
+              reply.header("cache-control", "no-store");
+              return kind === "preparations"
+                ? service.restorePreparation(actor, resourceId, input)
+                : service.restoreModel(actor, resourceId, input);
+            }),
+        );
+      }
       done();
     },
     { prefix: "/v1" },
