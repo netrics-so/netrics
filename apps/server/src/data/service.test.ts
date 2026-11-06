@@ -1009,3 +1009,92 @@ describe("paged reference editing", () => {
     ).rejects.toThrow("data_source_history_unavailable");
   });
 });
+
+it("adopts changed preparations only through an explicit fresh model publication and keeps stable outputs usable", async () => {
+  const source = await service.saveManual(actor, {
+    definition: definition("preparation_adoption", [
+      { id: "id", type: "string" },
+      { id: "amount", type: "decimal" },
+      { id: "currency", type: "string" },
+    ]),
+    records: [{ values: { id: "one", amount: "1.10", currency: "EUR" } }],
+  });
+  const scaled = (factor: string): PreparationGraph => ({
+    version: 1,
+    nodes: [
+      { id: "input", type: "source", datasetId: source.datasetId },
+      {
+        id: "output",
+        type: "calculate",
+        input: "input",
+        fieldId: "scaled",
+        name: "Scaled",
+        expression: {
+          kind: "call",
+          fn: "multiply",
+          args: [
+            f("amount"),
+            { kind: "literal", type: "decimal", value: factor },
+          ],
+        },
+      },
+    ],
+    outputs: ["output"],
+  });
+  const prep = (
+    await service.savePreparation(actor, {
+      name: "Scaled amounts",
+      graph: scaled("2"),
+    })
+  ).preparation;
+  await service.publishPreparation(actor, prep.id, prep.version);
+  const datasetId = `prepared:${prep.id}:output`;
+  const modelDefinition: SemanticModelDefinition = {
+    version: 1,
+    datasets: [datasetId],
+    relationships: [],
+    dimensions: [],
+    measures: [
+      {
+        id: "total",
+        name: "Total",
+        kind: "aggregate",
+        datasetId,
+        aggregate: { id: "total", name: "Total", op: "sum", fieldId: "scaled" },
+      },
+    ],
+  };
+  const model = (
+    await service.saveModel(actor, {
+      name: "Preparation adoption",
+      definition: modelDefinition,
+    })
+  ).model;
+  await service.publishModel(actor, model.id, model.version);
+  const query = { measureIds: ["total"], groupBy: [] };
+  const current = () => service.query(actor, model.id, query);
+  expect((await current()).rows[0]!.measures.total!.value).toBe("2.2");
+  const changed = (
+    await service.savePreparation(
+      actor,
+      { name: prep.name, graph: scaled("3"), version: prep.version },
+      prep.id,
+    )
+  ).preparation;
+  await service.publishPreparation(actor, prep.id, changed.version);
+  expect((await current()).rows[0]!.measures.total!.value).toBe("2.2");
+  expect(
+    (await service.previewModel(actor, modelDefinition, query)).rows[0]!
+      .measures.total!.value,
+  ).toBe("3.3");
+  const fresh = (
+    await service.saveModel(
+      actor,
+      { name: model.name, definition: modelDefinition, version: model.version },
+      model.id,
+    )
+  ).model;
+  expect((await current()).rows[0]!.measures.total!.value).toBe("2.2");
+  await service.publishModel(actor, model.id, fresh.version);
+  expect((await current()).rows[0]!.measures.total!.value).toBe("3.3");
+});

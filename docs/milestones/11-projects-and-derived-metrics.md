@@ -160,6 +160,8 @@ implementation work; this plan does not create or complete issue records.
     [#460](https://github.com/netrics-so/netrics/issues/460). This prepares
     template installation without fabricated zero values or empty generations.
 - 11C: [#442](https://github.com/netrics-so/netrics/issues/442)
+  - Existing-step editing, explicit append matching and typed reference authoring:
+    [#464](https://github.com/netrics-so/netrics/issues/464).
 - 11D: [#443](https://github.com/netrics-so/netrics/issues/443)
 - 11E: [#444](https://github.com/netrics-so/netrics/issues/444)
   - Apple storefront rating snapshots: [#452](https://github.com/netrics-so/netrics/issues/452).

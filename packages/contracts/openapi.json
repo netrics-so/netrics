@@ -33069,6 +33069,24 @@
                                             "type": "string",
                                             "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                                           }
+                                        },
+                                        "columnMappings": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "object",
+                                            "propertyNames": {
+                                              "type": "string",
+                                              "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                            },
+                                            "additionalProperties": {
+                                              "type": "string",
+                                              "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                            }
+                                          }
                                         }
                                       },
                                       "required": [
@@ -33804,6 +33822,24 @@
                                     "type": "string",
                                     "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                                   }
+                                },
+                                "columnMappings": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                    }
+                                  }
                                 }
                               },
                               "required": [
@@ -34378,6 +34414,24 @@
                                         "items": {
                                           "type": "string",
                                           "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "columnMappings": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          }
                                         }
                                       }
                                     },
@@ -35109,6 +35163,24 @@
                                   "items": {
                                     "type": "string",
                                     "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
+                                },
+                                "columnMappings": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                    }
                                   }
                                 }
                               },
@@ -35973,6 +36045,24 @@
                                           "type": "string",
                                           "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                                         }
+                                      },
+                                      "columnMappings": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          }
+                                        }
                                       }
                                     },
                                     "required": [
@@ -36707,6 +36797,24 @@
                                     "type": "string",
                                     "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                                   }
+                                },
+                                "columnMappings": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                    }
+                                  }
                                 }
                               },
                               "required": [
@@ -37289,6 +37397,24 @@
                                         "items": {
                                           "type": "string",
                                           "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "columnMappings": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          }
                                         }
                                       }
                                     },
@@ -38076,6 +38202,24 @@
                                         "items": {
                                           "type": "string",
                                           "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "columnMappings": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          }
                                         }
                                       }
                                     },

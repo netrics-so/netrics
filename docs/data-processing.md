@@ -283,12 +283,29 @@ saving or publishing. Numeric, boolean and exact decimal money results retain
 their types. Publication validates relationship cardinality even for ungrouped
 queries. English and German cover the workspace, including responsive layouts.
 
-Reference imports currently publish one snapshot per request (up to 10,000
-records and the API body budget). Large paged imports, editing existing
-reference tables, preparation step editing/reordering, multi-key join forms
-and explicit version history/rollback controls remain tracked in
-[#442](https://github.com/netrics-so/netrics/issues/442). The engine already
-accepts multi-key joins and versioned definitions through the API.
+Reference imports and edits publish complete snapshots through bounded transport
+pages. The editor can declare units, currency columns, exact decimal precision
+and nullable values; monetary amounts require a non-null currency identity.
+Incompatible field types stay disabled until their currency/precision metadata
+is explicitly removed, so an edit cannot silently turn money into a scalar.
+
+[#464](https://github.com/netrics-so/netrics/issues/464) adds editing of existing
+preparation steps, safe removal/reordering, multiple join keys, multiple renamed
+columns and aggregate filters. Changes preview every output before applying;
+undo restores the prior graph. Sources, merges, shared branches and public outputs
+constrain which moves/removals are safe, with explanations. Appending a step or
+removing a final unary operation preserves the public prepared-dataset identity.
+A published model keeps its pinned preparation definitions until the customer
+previews it and chooses **Publish updated inputs**, creating a new model release.
+
+Append can explicitly match independently authored columns with different field
+IDs. `columnMappings` maps each input node's source-field IDs to output-field IDs;
+a mapped input projects only the confirmed columns, including required currency
+companions. The form proposes matches by name and requires an explicit matching
+choice. Omitted mappings keep the existing union-by-ID behavior. Missing values
+remain null; schema/unit/currency incompatibilities still fail validation.
+Persistent version history and rollback controls remain tracked in
+[#442](https://github.com/netrics-so/netrics/issues/442).
 
 ## Published measures on dashboards
 

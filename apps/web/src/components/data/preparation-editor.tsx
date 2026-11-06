@@ -23,6 +23,15 @@ import { useT } from "@/lib/i18n/client";
 import { DataTable } from "./data-table";
 import { StepForm } from "./step-form";
 import { PreviewNotes } from "./preview-notes";
+import {
+  PreparationEditError,
+  preparationStepInputs,
+  replacePreparationStep,
+  removePreparationStep,
+  movePreparationStep,
+  preparationMoveProblem,
+  preparationRemovalProblem,
+} from "@/lib/preparation-editing";
 
 export function PreparationEditor({
   workspaceId,
@@ -65,6 +74,12 @@ export function PreparationEditor({
     [selected, setSelected] = useState(graph.outputs[0] ?? "");
   const [preview, setPreview] = useState<DataPreview | null>(null),
     [previewState, setPreviewState] = useState("");
+  const [editing, setEditing] = useState<{
+    node: PreparationNode;
+    fields: DataField[];
+  } | null>(null);
+  const [removing, setRemoving] = useState(false),
+    [bypass, setBypass] = useState("");
   const [adding, setAdding] = useState(false),
     [busy, setBusy] = useState<"preview" | "save" | "publish" | null>(null);
   const [error, setError] = useState<string | null>(null),
@@ -76,19 +91,25 @@ export function PreparationEditor({
     ? selected
     : (graph.outputs[0] ?? "");
   useEffect(() => {
-    onDirty(dirty || adding);
+    onDirty(dirty || adding || !!editing || removing);
     return () => onDirty(false);
-  }, [dirty, adding, onDirty]);
-  async function show(next: PreparationGraph, output: string) {
+  }, [dirty, adding, editing, removing, onDirty]);
+  async function show(
+    next: PreparationGraph,
+    output: string,
+    validateAll = false,
+  ) {
     const sequence = ++request.current;
     setBusy("preview");
     setError(null);
     setNotice(null);
     try {
-      const result = await previewPreparation(
-        workspaceId,
-        preparationAt(next, output),
-      );
+      const validation = validateAll
+        ? await previewPreparation(workspaceId, next)
+        : null;
+      const result = validation?.outputs[output]
+        ? validation
+        : await previewPreparation(workspaceId, preparationAt(next, output));
       if (sequence !== request.current) return;
       const table = result.outputs[output]!;
       setPreview({ ...table, warnings: result.warnings });
@@ -150,18 +171,92 @@ export function PreparationEditor({
   }
   const initialSource = graph.nodes.find((n) => n.type === "source");
   function changeSource(id: string) {
-    const next: PreparationGraph = {
-      version: 1,
-      nodes: [{ id: "source", type: "source", datasetId: id }],
-      outputs: ["source"],
-    };
+    const outputId = initialSource?.id ?? "source";
+    const next: PreparationGraph = initialSource
+      ? replacePreparationStep(graph, outputId, [
+          { ...initialSource, datasetId: id },
+        ])
+      : {
+          version: 1,
+          nodes: [{ id: outputId, type: "source", datasetId: id }],
+          outputs: [outputId],
+        };
     setHistory((list) => [...list, graph]);
     setGraph(next);
-    setSelected("source");
+    setSelected(outputId);
     setAdding(false);
-    void show(next, "source").catch(() => undefined);
+    void show(next, outputId).catch(() => undefined);
   }
   const fields: DataField[] = preview?.fields ?? [];
+  const selectedNode = graph.nodes.find((node) => node.id === selected);
+  const moveUp = selectedNode
+    ? preparationMoveProblem(graph, selected, "up")
+    : "missingStep";
+  const moveDown = selectedNode
+    ? preparationMoveProblem(graph, selected, "down")
+    : "missingStep";
+  const removal = selectedNode
+    ? preparationRemovalProblem(graph, selected)
+    : "missingStep";
+  const formOpen = adding || !!editing || removing;
+  const nodeLabel = (nodeId: string) => {
+    const node = graph.nodes.find((node) => node.id === nodeId);
+    return node?.type === "source"
+      ? (sources.find((source) => source.id === node.datasetId)?.name ??
+          node.datasetId)
+      : node?.type === "calculate"
+        ? node.name
+        : node
+          ? t(node.type)
+          : nodeId;
+  };
+  async function editSelected() {
+    if (!selectedNode) return;
+    const sequence = ++request.current;
+    setBusy("preview");
+    setError(null);
+    setNotice(null);
+    try {
+      const inputId =
+        selectedNode.type === "append"
+          ? undefined
+          : preparationStepInputs(selectedNode)[0];
+      const input = inputId
+        ? await previewPreparation(workspaceId, preparationAt(graph, inputId))
+        : null;
+      if (sequence === request.current)
+        setEditing({
+          node: selectedNode,
+          fields:
+            selectedNode.type === "append"
+              ? (preview?.fields ?? [])
+              : inputId
+                ? input!.outputs[inputId]!.fields
+                : [],
+        });
+    } catch (failure) {
+      if (sequence === request.current)
+        setError(t(`errors.${dataErrorKey(failure)}`));
+    } finally {
+      if (sequence === request.current) setBusy(null);
+    }
+  }
+  async function changeGraph(next: PreparationGraph, output: string) {
+    await show(next, output, true);
+    setHistory((list) => [...list, graph]);
+    setGraph(next);
+  }
+  async function move(direction: "up" | "down") {
+    try {
+      await changeGraph(
+        movePreparationStep(graph, selected, direction),
+        selected,
+      );
+    } catch (failure) {
+      if (failure instanceof PreparationEditError)
+        setError(t(`editErrors.${failure.problem}`));
+    }
+  }
   return (
     <section className="data-editor" aria-labelledby="preparation-title">
       <header className="data-editor-header">
@@ -181,7 +276,13 @@ export function PreparationEditor({
           <button
             type="button"
             disabled={
-              !!busy || adding || !name.trim() || !graph.nodes.length || !dirty
+              !!busy ||
+              adding ||
+              !!editing ||
+              removing ||
+              !name.trim() ||
+              !graph.nodes.length ||
+              !dirty
             }
             onClick={() => void persist(false)}
           >
@@ -193,6 +294,8 @@ export function PreparationEditor({
             disabled={
               !!busy ||
               adding ||
+              !!editing ||
+              removing ||
               !name.trim() ||
               !graph.nodes.length ||
               previewState !== JSON.stringify(graph) ||
@@ -263,7 +366,7 @@ export function PreparationEditor({
                 <button
                   type="button"
                   aria-current={node.id === selected ? "step" : undefined}
-                  disabled={!!busy}
+                  disabled={!!busy || adding || !!editing || removing}
                   onClick={() => {
                     setAdding(false);
                     void show(graph, node.id).catch(() => undefined);
@@ -288,6 +391,8 @@ export function PreparationEditor({
               !graph.outputs.length ||
               !!busy ||
               adding ||
+              !!editing ||
+              removing ||
               !preview ||
               !graph.outputs.includes(selected)
             }
@@ -297,7 +402,9 @@ export function PreparationEditor({
           </button>
           <button
             type="button"
-            disabled={!history.length || !!busy}
+            disabled={
+              !history.length || !!busy || adding || !!editing || removing
+            }
             onClick={() => {
               const previous = history.at(-1)!;
               setHistory((list) => list.slice(0, -1));
@@ -314,6 +421,9 @@ export function PreparationEditor({
             {t("undo")}
           </button>
           <p className="page-meta">{t("outputHint")}</p>
+          {record?.publishedVersion ? (
+            <p className="help">{t("preparationAdoptionHint")}</p>
+          ) : null}
         </aside>
         <div className="data-preview-panel">
           <div className="data-preview-header">
@@ -329,6 +439,143 @@ export function PreparationEditor({
               {t(busy === "preview" ? "previewing" : "preview")}
             </button>
           </div>
+          {selectedNode ? (
+            <div className="data-step-actions">
+              <div className="data-form-actions">
+                <button
+                  type="button"
+                  disabled={!!busy || formOpen}
+                  onClick={() => void editSelected()}
+                >
+                  {t("editStep")}
+                </button>
+                <button
+                  type="button"
+                  disabled={!!busy || formOpen || !!moveUp}
+                  title={moveUp ? t(`editErrors.${moveUp}`) : undefined}
+                  onClick={() => void move("up")}
+                >
+                  {t("moveStepUp")}
+                </button>
+                <button
+                  type="button"
+                  disabled={!!busy || formOpen || !!moveDown}
+                  title={moveDown ? t(`editErrors.${moveDown}`) : undefined}
+                  onClick={() => void move("down")}
+                >
+                  {t("moveStepDown")}
+                </button>
+                <button
+                  type="button"
+                  disabled={!!busy || formOpen || !!removal}
+                  title={removal ? t(`editErrors.${removal}`) : undefined}
+                  onClick={() => {
+                    setBypass(preparationStepInputs(selectedNode)[0] ?? "");
+                    setRemoving(true);
+                  }}
+                >
+                  {t("removeStep")}
+                </button>
+              </div>
+              <p className="help">
+                {graph.outputs.includes(selected)
+                  ? removal
+                    ? t("editErrors.outputIdentity")
+                    : t("outputRemovalHint")
+                  : t("stepMoveHint")}
+              </p>
+              {formOpen ? <p className="help">{t("finishStep")}</p> : null}
+            </div>
+          ) : null}
+          {removing && selectedNode ? (
+            <div
+              className="data-step-form"
+              role="group"
+              aria-label={t("removeStep")}
+            >
+              <p>{t("removeStepHint")}</p>
+              {preparationStepInputs(selectedNode).length > 1 ? (
+                <label className="field">
+                  {t("continueInput")}
+                  <select
+                    value={bypass}
+                    onChange={(event) => setBypass(event.target.value)}
+                  >
+                    {preparationStepInputs(selectedNode).map((nodeId) => (
+                      <option key={nodeId} value={nodeId}>
+                        {nodeLabel(nodeId)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <div className="data-form-actions">
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => {
+                    try {
+                      const next = removePreparationStep(
+                        graph,
+                        selected,
+                        bypass,
+                      );
+                      void changeGraph(
+                        next,
+                        next.nodes.some((node) => node.id === selected)
+                          ? selected
+                          : next.outputs[0]!,
+                      )
+                        .then(() => setRemoving(false))
+                        .catch(() => undefined);
+                    } catch (failure) {
+                      if (failure instanceof PreparationEditError)
+                        setError(t(`editErrors.${failure.problem}`));
+                    }
+                  }}
+                >
+                  {t("removeStep")}
+                </button>
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => {
+                    setRemoving(false);
+                    void show(graph, selected).catch(() => undefined);
+                  }}
+                >
+                  {t("cancel")}
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {editing ? (
+            <StepForm
+              key={editing.node.id}
+              workspaceId={workspaceId}
+              input={preparationStepInputs(editing.node)[0] ?? ""}
+              graph={graph}
+              initial={editing.node}
+              fields={editing.fields}
+              sources={sources.filter(
+                (source) =>
+                  !record ||
+                  !source.id.startsWith("prepared:" + record.id + ":"),
+              )}
+              busy={!!busy}
+              onCancel={() => {
+                setEditing(null);
+                void show(graph, selected).catch(() => undefined);
+              }}
+              onApply={async (nodes) => {
+                await changeGraph(
+                  replacePreparationStep(graph, editing.node.id, nodes),
+                  editing.node.id,
+                );
+                setEditing(null);
+              }}
+            />
+          ) : null}
           <DataTable
             fields={fields}
             rows={preview?.rows ?? []}
@@ -366,17 +613,19 @@ export function PreparationEditor({
               workspaceId={workspaceId}
               input={currentOutput}
               fields={fields}
+              graph={graph}
               sources={sources.filter(
                 (s) =>
                   !record || !s.id.startsWith("prepared:" + record.id + ":"),
               )}
               busy={!!busy}
-              onCancel={() => setAdding(false)}
+              onCancel={() => {
+                setAdding(false);
+                void show(graph, currentOutput).catch(() => undefined);
+              }}
               onApply={async (nodes) => {
                 const next = appendPreparation(graph, nodes, currentOutput);
-                await show(next, nodes.at(-1)!.id);
-                setHistory((list) => [...list, graph]);
-                setGraph(next);
+                await changeGraph(next, currentOutput);
                 setAdding(false);
               }}
             />

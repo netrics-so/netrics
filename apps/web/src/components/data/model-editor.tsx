@@ -169,7 +169,9 @@ export function ModelEditor({
     try {
       const model = build();
       const saved =
-        record && !dirty
+        record &&
+        !dirty &&
+        (!publish || record.publishedVersion !== record.version)
           ? { model: record }
           : await saveModel(
               workspaceId,
@@ -306,7 +308,13 @@ export function ModelEditor({
             disabled={!!busy || !fresh || !!error || !name.trim()}
             onClick={() => void persist(true)}
           >
-            {t(busy === "publish" ? "publishing" : "publish")}
+            {t(
+              busy === "publish"
+                ? "publishing"
+                : !dirty && record && record.publishedVersion === record.version
+                  ? "republish"
+                  : "publish",
+            )}
           </button>
         </div>
       </header>

@@ -127,6 +127,7 @@ export const preparationNodeSchema: z.ZodType<PreparationNode> =
       id,
       type: z.literal("append"),
       inputs: z.array(id).min(2).max(20),
+      columnMappings: z.record(id, z.record(id, id)).optional(),
     }),
     z.strictObject({
       id,
