@@ -453,8 +453,10 @@ export const dataEn = {
         "Rolling and comparison measures have one value per date. Show them by their date dimension, for example as a line chart or table. Only comparisons with the previous month, year or period of equal length can show a single value, and only for one closed date range.",
       windowRange:
         "This comparison needs a complete date range. Choose both a start and an end date.",
+      windowRangeDefault:
+        "This comparison needs a date range. Add a shared date filter set to Range on its date, with a default start and end date, or show the measure grouped by that date.",
       windowFilterMode:
-        "Rolling and comparison measures can only follow a date filter that selects a range. Make the filter a range, or exclude this widget from it.",
+        "Rolling and comparison measures can only follow a date filter that selects a range. Set its control to Range, or exclude this widget from it.",
       windowFilter:
         "Filter the date of rolling and comparison measures only with from and to conditions joined by AND, and use the same date dimension for all of them.",
       history:

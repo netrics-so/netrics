@@ -467,7 +467,9 @@ Decisions:
   range for a comparison that needs a closed one, that widget reports
   `no_data` with `model_window_time_range_required` and asks for a complete
   range; it is not an outage, and the dashboard's other widgets are
-  unaffected. Multi-date selections are never widened to a covering range.
+  unaffected. Saving such a comparison whose filters give no closed range by
+  default (no range filter on its date, or one without a default range) is
+  refused with `dashboard_measure_window_range_required`. Multi-date selections are never widened to a covering range.
 
 The executor still loads whole published generations in memory. A future SQL
 push-down of date filters must widen the lower bound by the measure lookback.

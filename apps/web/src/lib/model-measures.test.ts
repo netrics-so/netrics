@@ -341,6 +341,9 @@ describe("windowed measure editing", () => {
     expect(dataErrorCodeKey("model_window_time_range_required")).toBe(
       "windowRange",
     );
+    expect(dataErrorCodeKey("dashboard_measure_window_range_required")).toBe(
+      "windowRangeDefault",
+    );
     expect(dataErrorCodeKey("dashboard_filter_window_unsupported")).toBe(
       "windowFilterMode",
     );

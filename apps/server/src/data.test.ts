@@ -1931,6 +1931,20 @@ describe("rolling and period-offset model measures", () => {
     });
     expect(excluded.statusCode, excluded.body).toBe(200);
 
+    // Saved without a default range (or without any date filter), the
+    // comparison has no period: the editor is asked for one.
+    for (const dataFilters of [[filter("range", null)], []]) {
+      const open = await dashboards("POST", "", editor, {
+        name: "Previous period, no range",
+        settings: { dataFilters },
+        slides: [{ widgets: [widget("units_previous_period", "value", [])] }],
+      });
+      expect(open.statusCode, open.body).toBe(400);
+      expect(open.json()).toEqual({
+        error: "dashboard_measure_window_range_required",
+      });
+    }
+
     // A cleared range leaves a comparison without its period: the widget
     // explains that instead of reporting an outage.
     const ranged = await dashboards("POST", "", editor, {
