@@ -1,3 +1,4 @@
+import { sourceDatasetSchema, DATASET_LIMITS } from "./datasets.js";
 import { z } from "zod";
 
 import { parseRange } from "./semver.js";
@@ -289,9 +290,16 @@ export const connectorManifestSchema = z
     docsUrl: z.url().optional(),
     authStrategies: z.array(authStrategySchema).min(1),
     configSchema: jsonSchemaSchema,
+    datasets: z
+      .array(sourceDatasetSchema)
+      .max(DATASET_LIMITS.datasets)
+      .refine(
+        (items) => new Set(items.map((item) => item.key)).size === items.length,
+        { message: "Dataset keys must be unique" },
+      )
+      .optional(),
     metrics: z
       .array(metricDefinitionSchema)
-      .min(1)
       .refine(
         (metrics) =>
           new Set(metrics.map((metric) => metric.key)).size === metrics.length,
@@ -319,6 +327,11 @@ export const connectorManifestSchema = z
     },
   )
   .superRefine((manifest, context) => {
+    if (manifest.metrics.length === 0 && !manifest.datasets?.length)
+      context.addIssue({
+        code: "custom",
+        message: "A connector must declare metrics or datasets",
+      });
     if (!manifest.translations) {
       return;
     }

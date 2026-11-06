@@ -1,3 +1,4 @@
+import { datasetPageSchema, DATASET_LIMITS } from "./datasets.js";
 import { z } from "zod";
 
 const opaqueRecordSchema = z.record(z.string(), z.unknown());
@@ -116,6 +117,10 @@ export type ReviewWindow = z.infer<typeof reviewWindowSchema>;
 
 export const syncResultSchema = z.object({
   observations: z.array(observationSchema),
+  datasetPages: z
+    .array(datasetPageSchema)
+    .max(DATASET_LIMITS.datasets)
+    .optional(),
   /**
    * Optional (SDK 0.2.8): reviews read on this page. Connectors without
    * review text return neither this nor `reviewWindows`.

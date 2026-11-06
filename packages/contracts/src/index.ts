@@ -3410,3 +3410,21 @@ export const deviceHeartbeatRequestSchema = z.object({
 export type DeviceHeartbeatRequest = z.infer<
   typeof deviceHeartbeatRequestSchema
 >;
+
+// Portable source dataset contract (ADR 0022).
+export {
+  sourceDatasetSchema,
+  datasetPageSchema,
+  validateDatasetPage,
+  datasetRecordKey,
+  datasetTimeKey,
+  datasetPartitionMatches,
+  datasetRetentionDays,
+  DATASET_LIMITS,
+} from "@netrics/connector-sdk";
+export type {
+  SourceDatasetDefinition,
+  DatasetField,
+  DatasetRecord,
+  DatasetPage,
+} from "@netrics/connector-sdk";

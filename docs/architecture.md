@@ -533,9 +533,20 @@ driver).
 
 ### Derived metrics
 
-Derived metrics use a restricted expression and query model rather than user
-code. Validation covers units, currencies, aggregation compatibility, missing
-values, time zones, and division by zero.
+The agreed product direction now includes reusable source datasets, data
+preparation, relationships across systems, named measures and dashboard-wide
+filtering. [ADR 0022](./decisions/0022-reusable-data-model-and-processing.md)
+proposes the logical schema, execution model and compatibility path. These
+capabilities are not implemented by the current observation model; the numeric
+observations and connector contract above describe the existing implementation.
+
+In the proposal, row calculations and aggregate measures share a typed,
+restricted expression engine. Prepared datasets and semantic models are
+independent of dashboards. Widgets use model measures and shared dimensions;
+the server resolves their filter context and validates units, currencies,
+grain, missing values, time semantics and relationship cardinality. Editable
+templates configure the same capabilities exposed to customers. Milestone 11
+contains the proposed implementation gates.
 
 ## Jobs, events, and alerts
 

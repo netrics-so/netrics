@@ -7,7 +7,7 @@ import tseslint from "typescript-eslint";
 // any package.
 export const PACKAGE_LAYERS = {
   domain: [],
-  contracts: ["domain"],
+  contracts: ["domain", "connector-sdk"],
   "connector-sdk": [],
   connectors: ["connector-sdk"],
   "connector-runtime": ["connector-sdk"],

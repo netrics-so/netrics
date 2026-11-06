@@ -15,6 +15,7 @@ import {
   listDueConnections,
   pruneAppReviews,
   pruneHistory,
+  pruneDatasetHistory,
   pruneOAuthAuthorizations,
   prunePendingKeys,
   pruneSecurityRecords,
@@ -178,6 +179,11 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
       return;
     }
     lastMaintenance = Date.now();
+    await pruneDatasetHistory(
+      schedulerDb,
+      now(),
+      (deps.retention ?? DEFAULT_RETENTION).batch,
+    );
     const result = await pruneHistory(schedulerDb, deps.retention);
     if (result.jobsDeleted > 0 || result.syncRunsDeleted > 0) {
       logger.info(result, "pruned finished history");

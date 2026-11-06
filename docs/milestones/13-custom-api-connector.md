@@ -7,7 +7,7 @@ through the UI without executing custom code.
 
 ## Dependencies
 
-- Milestones 03–04 and 12
+- Milestones 03–04, the shared data engine in 11, and the SDK in 12
 
 ## In scope
 
@@ -16,7 +16,8 @@ through the UI without executing custom code.
 - Pagination strategies required by common APIs
 - JSON record selection and field mapping
 - Timestamp, value, unit, and dimension configuration
-- Restricted transformation expressions
+- Restricted transformation expressions using the shared typed AST and
+  preparation engine (ADR 0022), with no separate custom-API formula language
 - Refresh interval, lookback, and backfill settings
 - Test request with redacted response preview
 - Private definition versioning, import, and export
@@ -36,11 +37,14 @@ through the UI without executing custom code.
 1. Define the portable declarative schema and its versioning.
 2. Implement the hardened outbound HTTP client.
 3. Add supported authentication and pagination strategies.
-4. Implement JSON extraction and restricted transformations.
+4. Publish retained, typed source datasets into the milestone 11 engine;
+   reuse JSON extraction, preparation steps and restricted transformations.
 5. Build request testing and redacted response preview.
 6. Build metric mapping, validation, and schedule setup.
 7. Add import, export, revision history, and rollback.
-8. Connect publication submissions to the community review process.
+8. Connect publication submissions to the community review process. Imported
+   datasets can participate in the same relationships, measures and dashboard
+   filters as bundled connector data.
 
 ## Security invariants
 

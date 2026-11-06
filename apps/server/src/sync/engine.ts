@@ -21,6 +21,8 @@ import {
 import {
   connectionResourcesDiscoveredAt,
   ingestAppReviews,
+  ingestDatasetPage,
+  DatasetStoreError,
   schema,
   upsertConnectionResources,
   withWorkspace,
@@ -678,6 +680,32 @@ async function runSync(
       });
     };
 
+    const ingestDatasets = async (
+      tx: Transaction,
+      result: Pick<SyncResult, "datasetPages">,
+    ) => {
+      for (const page of result.datasetPages ?? []) {
+        const definition = manifest.datasets?.find(
+          (item) => item.key === page.datasetKey,
+        );
+        if (!definition)
+          throw new ContractViolationError("Undeclared source dataset");
+        try {
+          await ingestDatasetPage(tx, {
+            workspaceId,
+            connectionId,
+            definition,
+            page,
+            now,
+          });
+        } catch (error) {
+          if (error instanceof DatasetStoreError)
+            throw new ContractViolationError(error.code);
+          throw error;
+        }
+      }
+    };
+    let finalDatasetPages: Pick<SyncResult, "datasetPages"> = {};
     let finalObservations: Observation[] = [];
     let finalReviews: Pick<SyncResult, "reviews" | "reviewWindows"> = {};
     let finalCursor = startCursor;
@@ -701,6 +729,7 @@ async function runSync(
         );
         if (result.done) {
           finalObservations = result.observations;
+          finalDatasetPages = result;
           finalReviews = result;
           finalCursor = result.nextCursor ?? iso(window.to);
           break;
@@ -724,6 +753,7 @@ async function runSync(
           async (tx) => {
             const count = await ingestPage(tx, result.observations);
             await ingestReviews(tx, result);
+            await ingestDatasets(tx, result);
             await tx
               .insert(schema.connectionState)
               .values({
@@ -752,6 +782,7 @@ async function runSync(
         progress.observationsWritten +
         (await ingestPage(tx, finalObservations));
       await ingestReviews(tx, finalReviews);
+      await ingestDatasets(tx, finalDatasetPages);
 
       // Cursor advancement commits in this same transaction as the
       // observation inserts — never without them.
