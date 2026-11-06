@@ -413,6 +413,42 @@ describe("choosing a connection's retention", () => {
     expect(finishedFirst).toBe(false);
   });
 
+  it("counts days as fixed 24 hours, like ingestion, whatever the session time zone", async () => {
+    const connectionId = await connection(a);
+    const definition = personalDataset();
+    // Berlin leaves summer time on 2026-10-25: a calendar day there is 25 hours.
+    const collected = new Date("2026-10-24T12:00:00Z");
+    await ingest(
+      db,
+      a,
+      connectionId,
+      definition,
+      page(definition, "r1", ["x"]),
+      collected,
+    );
+    const berlin = postgres(test.appUrl, {
+      max: 1,
+      connection: { TimeZone: "Europe/Berlin" },
+    });
+    try {
+      const local = drizzle(berlin, { schema: { ...schema, ...auth } });
+      await withWorkspace(local, { workspaceId: a }, (tx) =>
+        setConnectionRetention(tx, {
+          workspaceId: a,
+          connectionId,
+          choice: { earnings: 30 },
+          chosenBy: userId,
+          effective: { earnings: 30 },
+        }),
+      );
+    } finally {
+      await berlin.end({ timeout: 5 });
+    }
+    expect((await deadlines(admin, connectionId)).x!.expiresAt).toEqual(
+      new Date(collected.getTime() + 30 * DAY),
+    );
+  });
+
   it("cannot read or change another workspace's connection", async () => {
     const connectionId = await connection(a);
     const definition = personalDataset();

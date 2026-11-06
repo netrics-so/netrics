@@ -50,11 +50,12 @@ ALTER TABLE "connections" ALTER COLUMN "retention_fallback" SET DEFAULT 'preset'
 CREATE FUNCTION retention_deadline(p_from timestamptz, p_days bigint)
 RETURNS timestamptz LANGUAGE sql IMMUTABLE
 SET search_path = public, pg_temp AS $$
-  -- Matches retentionExpiry(): beyond the timestamp range means no expiry.
+  -- Matches retentionExpiry(): a day is a fixed 86,400 seconds, whatever the
+  -- session time zone, and beyond the timestamp range means no expiry.
   SELECT CASE
     WHEN p_days IS NULL THEN NULL
     WHEN p_days <= ('9999-12-31'::date - (p_from AT TIME ZONE 'UTC')::date)
-      THEN p_from + make_interval(days => p_days::integer)
+      THEN p_from + make_interval(secs => p_days * 86400)
   END
 $$;
 --> statement-breakpoint
