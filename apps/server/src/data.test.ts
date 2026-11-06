@@ -1790,9 +1790,9 @@ describe("rolling and period-offset model measures", () => {
     expect(result.totalRows).toBe(4);
     expect(result.rows.map((row) => row.dimensions.day)).toEqual(days.slice(7));
     expect(result.rows.at(-1)!.measures).toMatchObject({
-      units_7d: { value: 7, status: "ok" },
+      units_7d: { value: "7", status: "ok" },
       units_week_change: {
-        value: 0,
+        value: "0",
         status: "ok",
         comparedTo: { from: "2026-09-28", to: "2026-09-28" },
       },
@@ -1848,7 +1848,7 @@ describe("rolling and period-offset model measures", () => {
           measures: { units_7d: { value: unknown } };
         }) => [row.dimensions.day, row.measures.units_7d.value],
       ),
-    ).toEqual(days.slice(6).map((day) => [day, 7]));
+    ).toEqual(days.slice(6).map((day) => [day, "7"]));
 
     const ungrouped = await dashboards("POST", "", editor, {
       name: "Ungrouped rolling",
