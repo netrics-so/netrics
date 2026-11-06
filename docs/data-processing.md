@@ -281,7 +281,9 @@ Credentials, headers and tokens never belong in datasets.
 
 Expired rows are excluded at read time. Hourly scheduler maintenance removes
 expired rows, pages, prepared outputs and query snapshots in batches through
-`prune_dataset_history`. The scheduler has no direct read access to source
+`prune_dataset_history`, repeating bounded batches until one comes back short
+or a 10-second budget is spent; a drain that ends with work left resumes on the
+next scheduler tick rather than an hour later. The scheduler has no direct read access to source
 records. Dataset/model tables use forced RLS and explicit tenant predicates.
 
 Retention bounds the current generation, not every copy of it. Each upsert,
@@ -304,8 +306,9 @@ source retention so a late retry is still rejected rather than republished.
 `maxWorkspaceBytes` counts only current and pinned generations and the pages of
 live refreshes. Superseded copies awaiting maintenance do not count, so
 frequent refreshes of the same dataset do not accumulate quota usage; physical
-storage carries at most the copies published within the grace period plus one
-maintenance interval.
+storage carries the copies published within the grace period plus one
+maintenance interval, and a larger backlog is drained tick by tick instead of
+growing unseen.
 
 ## Preparations and semantic models
 
