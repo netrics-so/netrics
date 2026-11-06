@@ -211,7 +211,7 @@ describe("public listing scope and availability", () => {
       { country: "DE", locale: "de" },
       request.to,
     );
-    expect(first.record.values).toMatchObject({
+    expect(first.record?.values).toMatchObject({
       app_id: ALPHA,
       storefront: "DE",
       locale: "de",
@@ -226,7 +226,7 @@ describe("public listing scope and availability", () => {
       { country: "DE", locale: "de" },
       request.to,
     );
-    expect(none.record.values).toMatchObject({
+    expect(none.record?.values).toMatchObject({
       rating: null,
       rating_count: 0,
       availability: "unrated",
@@ -237,7 +237,7 @@ describe("public listing scope and availability", () => {
       { country: "DE", locale: "de" },
       request.to,
     );
-    expect(missing.record.values).toMatchObject({
+    expect(missing.record?.values).toMatchObject({
       rating: null,
       rating_count: null,
       availability: "not_listed",
@@ -260,33 +260,40 @@ describe("public listing scope and availability", () => {
     expect(listingFacts(html, ALPHA)).toBeUndefined();
     expect(listingFacts(html + html, BETA)).toBeUndefined();
     const fake = fakePlay();
+    // A failed lookup records nothing: under the upsert key (app, scope,
+    // day) a record would replace the day's earlier good snapshot.
+    const snapshot = () =>
+      listingSnapshot(
+        fake.runtime,
+        ALPHA,
+        { country: "US", locale: "en" },
+        request.to,
+      );
     fake.publicStatus.set(ALPHA, 429);
+    expect(await snapshot()).toEqual({});
+    fake.publicStatus.delete(ALPHA);
+    fake.publicFacts.set(ALPHA, { malformed: true });
+    expect(await snapshot()).toEqual({});
+    fake.publicFacts.delete(ALPHA);
+    const failing = {
+      ...fake.runtime,
+      fetch: () => Promise.reject(new Error("sensitive provider text")),
+    };
     expect(
-      (
-        await listingSnapshot(
-          fake.runtime,
-          ALPHA,
-          { country: "US", locale: "en" },
-          request.to,
-        )
-      ).record.values,
-    ).toMatchObject({
-      availability: "temporarily_unavailable",
+      await listingSnapshot(
+        failing,
+        ALPHA,
+        { country: "US", locale: "en" },
+        request.to,
+      ),
+    ).toEqual({});
+    // A missing listing is a fact, not a failure.
+    fake.apps.delete(ALPHA);
+    expect((await snapshot()).record?.values).toMatchObject({
+      availability: "not_listed",
       rating: null,
       rating_count: null,
     });
-    fake.publicStatus.delete(ALPHA);
-    fake.publicFacts.set(ALPHA, { malformed: true });
-    expect(
-      (
-        await listingSnapshot(
-          fake.runtime,
-          ALPHA,
-          { country: "US", locale: "en" },
-          request.to,
-        )
-      ).record.values.availability,
-    ).toBe("temporarily_unavailable");
   });
 });
 

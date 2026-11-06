@@ -529,7 +529,7 @@ export async function syncPlayReports(
           capturedAt,
         );
         options.onListing?.(id, snapshot);
-        return snapshot.record;
+        return snapshot.record ? [snapshot.record] : [];
       }),
     );
     const next: State =
@@ -546,7 +546,7 @@ export async function syncPlayReports(
           pageKey: "0",
           previousPageKey: null,
           complete: true,
-          records: snapshots,
+          records: snapshots.flat(),
         },
       ],
       nextCursor: encode(next),

@@ -87,7 +87,12 @@ export function listingFacts(
 }
 
 export interface ListingSnapshot {
-  record: DatasetRecord;
+  /**
+   * The day's rating snapshot; absent when the lookup failed (status,
+   * transport error, unreadable page), so an earlier snapshot of the same
+   * day is kept under the upsert key instead of being replaced.
+   */
+  record?: DatasetRecord;
   name?: string;
   artwork?: string;
 }
@@ -103,7 +108,7 @@ export async function listingSnapshot(
   url.searchParams.set("gl", scope.country);
   url.searchParams.set("hl", scope.locale);
   let facts: z.infer<typeof entrySchema> | undefined,
-    availability = "temporarily_unavailable",
+    availability: string | undefined,
     rating: string | null = null,
     count: number | null = null;
   try {
@@ -135,11 +140,9 @@ export async function listingSnapshot(
   } catch {
     if (runtime.signal.aborted)
       throw new Error("Google Play listing lookup cancelled");
-    facts = undefined;
-    rating = null;
-    count = null;
-    availability = "temporarily_unavailable";
+    return {};
   }
+  if (availability === undefined) return {};
   let artwork: string | undefined;
   if (facts?.image) {
     const image = new URL(facts.image);

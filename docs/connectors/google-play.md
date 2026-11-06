@@ -56,8 +56,10 @@ can deliberately exclude those inputs.
 Ratings use the public Play listing's structured data, without authentication,
 for the configured country/language and its default form factor. This is a
 best-effort public presentation source, **not a documented aggregate-rating
-API**. A site change, blocking response or incomplete listing yields missing
-availability. There is no fallback to written-review averages or a different
+API**. An incomplete listing is recorded as such; a site change, blocking
+response or failed lookup records nothing, so a snapshot collected earlier the
+same day is kept (rows from earlier versions may say `temporarily_unavailable`).
+There is no fallback to written-review averages or a different
 country. Historical snapshots start when connected. Scores cannot be added or
 averaged across apps, days or stores into an overall store score. Google's
 [rating explanation](https://support.google.com/googleplay/android-developer/answer/138230?hl=en)

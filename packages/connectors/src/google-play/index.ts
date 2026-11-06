@@ -301,7 +301,8 @@ export function createGooglePlayConnector(
         apps: async () =>
           selected ?? (await discover(context, runtime)).map((app) => app.id),
         onListing: (id, snapshot) => {
-          cacheListing(listingKey(context, id), snapshot);
+          // A failed lookup is not cached: names and artwork are read again.
+          if (snapshot.record) cacheListing(listingKey(context, id), snapshot);
         },
       });
     },
