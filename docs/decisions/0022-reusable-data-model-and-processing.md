@@ -435,6 +435,16 @@ Decisions:
   and offsets; they never become result rows, `totalRows` or pages. Other
   uses of the time dimension in the filter are refused. Total lookback is at
   most 800 days.
+- Windowed measures never change the other measures of the same query. Without
+  a date bound, rows without a date keep their group: measures without a
+  window aggregate them and windowed measures are missing there. A closed
+  range whose start is after its end selects no dates, so a windowed query
+  over it returns no rows, grouped or not.
+- Publishing type-checks windowed measures statically: a rolling or offset
+  value has its base's type, unit and currency, `change` needs a numeric base
+  and `percent_change` is a unitless ratio, so formulas over them fail at
+  publish rather than on every query. The ratio is shown as a signed
+  percentage by clients; its value stays the ratio.
 - Rolling and dated offsets need the time dimension in the grouping; other
   grouped dimensions partition the windows. All windowed measures of one query
   share one time dimension.
