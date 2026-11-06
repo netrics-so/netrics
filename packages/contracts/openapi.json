@@ -11856,6 +11856,12 @@
                                     "type": "string",
                                     "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                   }
+                                },
+                                "percentChange": {
+                                  "type": "boolean",
+                                  "enum": [
+                                    true
+                                  ]
                                 }
                               },
                               "required": [
@@ -12607,6 +12613,12 @@
                                             "type": "string",
                                             "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                           }
+                                        },
+                                        "percentChange": {
+                                          "type": "boolean",
+                                          "enum": [
+                                            true
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -13420,6 +13432,12 @@
                                             "type": "string",
                                             "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                           }
+                                        },
+                                        "percentChange": {
+                                          "type": "boolean",
+                                          "enum": [
+                                            true
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -55011,6 +55029,12 @@
                                                               "type": "string",
                                                               "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                                             }
+                                                          },
+                                                          "percentChange": {
+                                                            "type": "boolean",
+                                                            "enum": [
+                                                              true
+                                                            ]
                                                           }
                                                         },
                                                         "required": [
@@ -58675,6 +58699,12 @@
                                                               "type": "string",
                                                               "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                                             }
+                                                          },
+                                                          "percentChange": {
+                                                            "type": "boolean",
+                                                            "enum": [
+                                                              true
+                                                            ]
                                                           }
                                                         },
                                                         "required": [

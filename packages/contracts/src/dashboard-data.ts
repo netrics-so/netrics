@@ -77,6 +77,9 @@ export const dashboardMeasureMetadataSchema = z.object({
       id,
       name: z.string(),
       requiredDimensions: z.array(id).optional(),
+      /** The value is a change ratio, (current − previous) / |previous|;
+       * clients show it as a percentage. */
+      percentChange: z.literal(true).optional(),
     }),
   ),
   dimensions: z.array(

@@ -84,12 +84,17 @@ export async function publishedModel(
     metadata: {
       modelId,
       modelName: row.name,
-      measures: definition.measures.map(({ id, name }) => {
+      measures: definition.measures.map((measure) => {
+        const { id, name } = measure;
         const requiredDimensions = measureRequiredDimensions(definition, [id]);
         return {
           id,
           name,
           ...(requiredDimensions.length ? { requiredDimensions } : {}),
+          ...(measure.kind === "period_offset" &&
+          measure.output === "percent_change"
+            ? { percentChange: true as const }
+            : {}),
         };
       }),
       dimensions,

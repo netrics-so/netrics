@@ -4,6 +4,7 @@ import {
   displayUnit,
   formatCompactValue,
   formatChange,
+  formatPercentChange,
   formatValue,
   metricPickerLabel,
   observationBreakdown,
@@ -251,5 +252,18 @@ describe("German formatting", () => {
         "de",
       ),
     ).toBe("Klicks (pro Seite / Suchanfrage)");
+  });
+});
+
+describe("formatPercentChange", () => {
+  it("reads a change ratio as a signed percentage, like compare widgets", () => {
+    expect(formatPercentChange("0.083333333333333333", "en")).toBe("+8.3%");
+    expect(formatPercentChange("0.5", "en")).toBe("+50%");
+    expect(formatPercentChange("-0.6", "de")).toBe("−60%");
+    expect(formatPercentChange("-0.0125", "de")).toBe("−1,3%");
+    expect(formatPercentChange(0, "en")).toBe("±0%");
+    expect(formatPercentChange(null, "en")).toBe("—");
+    // Matches the percentage formatChange shows for the same ratio.
+    expect(formatChange(1, 0.0833, "units")?.text).toBe("+8.3%");
   });
 });

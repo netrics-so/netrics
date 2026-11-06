@@ -1871,7 +1871,11 @@ describe("rolling and period-offset model measures", () => {
       offset: { unit: "range", length: 1 },
       output: "value",
     };
-    const model = await create("Windowed filters", [rolling, previousPeriod]);
+    const model = await create("Windowed filters", [
+      rolling,
+      previousPeriod,
+      { ...previousPeriod, id: "units_pct", output: "percent_change" },
+    ]);
     expect((await publish(model)).statusCode).toBe(200);
     const filter = (mode: "values" | "range", defaultValue: unknown) => ({
       id: "day",
@@ -1956,6 +1960,20 @@ describe("rolling and period-offset model measures", () => {
       status: "ok",
       error: null,
     });
+    // Clients learn which measures are change ratios to show percentages.
+    expect(chosen.json().widgets[0].metadata.measures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "units_pct", percentChange: true }),
+        expect.not.objectContaining({ percentChange: true }),
+      ]),
+    );
+    expect(
+      chosen
+        .json()
+        .widgets[0].metadata.measures.filter(
+          (measure: { percentChange?: true }) => measure.percentChange,
+        ),
+    ).toHaveLength(1);
     expect(chosen.json().widgets[0].result.rows[0].measures).toMatchObject({
       units_previous_period: {
         value: "2",

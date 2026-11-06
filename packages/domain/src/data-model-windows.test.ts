@@ -1034,4 +1034,18 @@ describe("windowed measure validation and edge cases", () => {
       expect(result.totalRows).toBe(0);
     }
   });
+
+  it("does not warn about rounding a percent change", () => {
+    // 10-01 → 10-02 for app a: 1/12 is not a finite decimal.
+    const result = run({
+      measureIds: ["pctDay"],
+      groupBy: ["date", "app"],
+      filter: call("and", between("2026-10-02", "2026-10-02"), appIs("a")),
+    });
+    expect(result.rows[0]!.measures.pctDay).toMatchObject({
+      value: "0.083333333333333333",
+      status: "ok",
+    });
+    expect(result.warnings).not.toContain("decimal_rounded");
+  });
 });

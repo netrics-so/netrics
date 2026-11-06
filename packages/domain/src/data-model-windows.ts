@@ -417,12 +417,15 @@ export function windowChange(
       else value = ((a as number) - (b as number)) / Math.abs(b as number);
     } else {
       const delta = exactDecimal("subtract", String(a), String(b), budget)!;
+      // A ratio is defined to 18 places: its rounding is not a data issue.
+      const rounded = budget.warnings.has("decimal_rounded");
       value = exactDecimal(
         "divide",
         delta,
         String(b).replace(/^-/, ""),
         budget,
       );
+      if (!rounded) budget.warnings.delete("decimal_rounded");
     }
   }
   validateDataValue(resultType, value, true);

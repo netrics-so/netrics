@@ -18,7 +18,8 @@ import {
   type ModelResult,
 } from "@/lib/data-api";
 import { dataErrorKey, newDataId } from "@/lib/data-editing";
-import { useT } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
+import { formatPercentChange } from "@/lib/format-metric";
 import {
   AggregateFields,
   ColumnChecks,
@@ -101,6 +102,11 @@ export function ModelEditor({
   const [result, setResult] = useState<ModelResult | null>(null),
     [previewState, setPreviewState] = useState("");
   const [outputFields, setOutputFields] = useState<DataField[]>([]);
+  // Percent-change measures of the previewed draft, shown as percentages.
+  const [percentIds, setPercentIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const locale = useLocale();
   const [busy, setBusy] = useState<
     "preview" | "save" | "publish" | "history" | null
   >(null);
@@ -168,6 +174,14 @@ export function ModelEditor({
         record ? { id: record.id, version: record.version } : undefined,
       );
       setResult(next);
+      const percents = new Set(
+        model.measures
+          .filter(
+            (m) => m.kind === "period_offset" && m.output === "percent_change",
+          )
+          .map((m) => m.id),
+      );
+      setPercentIds(percents);
       setOutputFields([
         ...groupBy.map((id): DataField => {
           const dimension = model.dimensions.find((d) => d.id === id)!;
@@ -181,7 +195,7 @@ export function ModelEditor({
           return {
             id: "m." + id,
             name: model.measures.find((m) => m.id === id)!.name,
-            type: cell?.type ?? "decimal",
+            type: percents.has(id) ? "string" : (cell?.type ?? "decimal"),
             nullable: true,
             ...(cell?.unit ? { unit: cell.unit } : {}),
           };
@@ -357,9 +371,11 @@ export function ModelEditor({
           "m." + id,
           cell.value === null
             ? null
-            : cell.currency
-              ? String(cell.value) + " " + cell.currency
-              : cell.value,
+            : percentIds.has(id)
+              ? formatPercentChange(cell.value, locale)
+              : cell.currency
+                ? String(cell.value) + " " + cell.currency
+                : cell.value,
         ]),
       ]),
     ) ?? [];

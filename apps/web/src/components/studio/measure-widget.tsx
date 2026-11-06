@@ -8,6 +8,7 @@ import { previewDashboardMeasures } from "@/lib/dashboard-data-api";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { dataErrorKey } from "@/lib/data-editing";
 import { ApiError } from "@/lib/api";
+import { formatPercentChange } from "@/lib/format-metric";
 import {
   currencyExponent,
   displayMeasureAmount,
@@ -15,6 +16,9 @@ import {
 } from "@netrics/domain";
 
 export type MeasureWidget = Extract<DashboardWidget, { type: "measure" }>;
+type ModelCell = NonNullable<
+  DashboardWidgetData["result"]
+>["rows"][number]["measures"][string];
 export function formatMeasureCell(
   value: unknown,
   type: string,
@@ -130,6 +134,21 @@ export function MeasureWidgetView({
       t("false"),
       unit,
     );
+  const percentChange = new Set(
+    data?.metadata?.measures
+      .filter((measure) => measure.percentChange)
+      .map((measure) => measure.id) ?? [],
+  );
+  /** A measure cell as shown; percent changes read as signed percentages. */
+  const cellText = (id: string, cell: ModelCell | undefined) =>
+    percentChange.has(id)
+      ? formatPercentChange(cell?.value, locale)
+      : format(
+          cell?.value,
+          cell?.type ?? "decimal",
+          cell?.currency,
+          cell?.unit,
+        );
   const error = expired
     ? t("errors.expired")
     : data?.error
@@ -165,14 +184,16 @@ export function MeasureWidgetView({
     ...Object.fromEntries(
       widget.binding.measureIds.map((id) => [
         `measure.${id}`,
-        row.measures[id]?.currency
-          ? format(
-              row.measures[id]?.value,
-              row.measures[id]!.type,
-              row.measures[id]?.currency,
-              row.measures[id]?.unit,
-            )
-          : (row.measures[id]?.value ?? null),
+        percentChange.has(id)
+          ? cellText(id, row.measures[id])
+          : row.measures[id]?.currency
+            ? format(
+                row.measures[id]?.value,
+                row.measures[id]!.type,
+                row.measures[id]?.currency,
+                row.measures[id]?.unit,
+              )
+            : (row.measures[id]?.value ?? null),
       ]),
     ),
   }));
@@ -233,12 +254,7 @@ export function MeasureWidgetView({
         <p>{loading ? t("loading") : "—"}</p>
       ) : widget.options.view === "value" ? (
         <p className="sw-measure-value">
-          {format(
-            cell?.value,
-            cell?.type ?? "decimal",
-            cell?.currency,
-            cell?.unit,
-          )}
+          {cellText(widget.binding.measureIds[0]!, cell)}
         </p>
       ) : rows.length === 0 ? (
         <p>{t("noRows")}</p>
@@ -284,14 +300,7 @@ export function MeasureWidgetView({
                   }}
                 />
               </div>
-              <span>
-                {format(
-                  cell?.value,
-                  cell?.type ?? "decimal",
-                  cell?.currency,
-                  cell?.unit,
-                )}
-              </span>
+              <span>{cellText(widget.binding.measureIds[0]!, cell)}</span>
             </div>
           ))}
         </div>
@@ -323,14 +332,7 @@ export function MeasureWidgetView({
                 >
                   {String(dimension ?? "—")}
                 </button>
-                <span>
-                  {format(
-                    cell?.value,
-                    cell?.type ?? "decimal",
-                    cell?.currency,
-                    cell?.unit,
-                  )}
-                </span>
+                <span>{cellText(widget.binding.measureIds[0]!, cell)}</span>
               </li>
             ))}
           </ol>

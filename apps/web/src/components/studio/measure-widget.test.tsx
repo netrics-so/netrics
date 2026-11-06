@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { formatMeasureCell } from "./measure-widget";
+import type { DashboardWidgetData } from "@netrics/contracts";
+import { renderI18n } from "@/lib/i18n/test-render";
+import { formatMeasureCell, MeasureWidgetView } from "./measure-widget";
 const format = (
   value: unknown,
   type = "decimal",
@@ -35,5 +37,61 @@ describe("semantic value display", () => {
     expect(format(0, "integer")).toBe("0");
     expect(format("4.5", "decimal", undefined, "en", "stars")).toBe("4.5 ★");
     expect(format("12.5", "decimal", undefined, "en", "percent")).toBe("12.5%");
+  });
+});
+
+describe("percent change measures", () => {
+  const data = (
+    view: "value" | "table",
+  ): Parameters<typeof MeasureWidgetView>[0] => ({
+    widget: {
+      title: null,
+      options: { view, limit: 20 },
+      binding: {
+        measureIds: ["pct"],
+        groupBy: view === "table" ? ["day"] : [],
+      },
+    },
+    data: {
+      widgetId: "00000000-0000-4000-8000-000000000001",
+      status: "ok",
+      error: null,
+      exclusions: [],
+      metadata: {
+        modelId: "00000000-0000-4000-8000-000000000002",
+        modelName: "Sales",
+        measures: [
+          { id: "pct", name: "Units, change in %", percentChange: true },
+        ],
+        dimensions: [{ id: "day", name: "Day", type: "date" }],
+      },
+      result: {
+        releaseId: null,
+        rows: [
+          {
+            dimensions: view === "table" ? { day: "2026-10-02" } : {},
+            measures: {
+              pct: {
+                value: "0.083333333333333333",
+                type: "decimal",
+                status: "ok",
+              },
+            },
+          },
+        ],
+        warnings: [],
+        operations: 1,
+        provenance: [],
+        appliedFilter: null,
+        groupBy: [],
+      },
+    } as unknown as DashboardWidgetData,
+  });
+  it("shows a percent change as a signed percentage in every view", () => {
+    for (const view of ["value", "table"] as const) {
+      const html = renderI18n(<MeasureWidgetView {...data(view)} />);
+      expect(html).toContain("+8.3%");
+      expect(html).not.toContain("0.083333");
+    }
   });
 });
