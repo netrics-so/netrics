@@ -72,17 +72,10 @@ beforeAll(async () => {
     ownerUserId: userId,
   });
   otherId = await createWorkspace(db, { name: "Other", ownerUserId: userId });
-  await withWorkspace(db, { workspaceId }, (tx) =>
-    tx.insert(schema.connections).values(
-      [apple, google].map((source) => ({
-        id: source.id,
-        workspaceId,
-        connectorId: source.connectorId,
-        name: source.name,
-        setupPending: false,
-      })),
-    ),
-  );
+  // Raw SQL: the schema is older than drizzle's current connection columns.
+  for (const source of [apple, google])
+    await owner`insert into connections(id,workspace_id,connector_id,name,setup_pending)
+      values (${source.id},${workspaceId},${source.connectorId},${source.name},false)`;
   await test.migrate();
 }, 60000);
 afterAll(async () => {

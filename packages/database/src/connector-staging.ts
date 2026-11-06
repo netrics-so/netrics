@@ -3,7 +3,6 @@ import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
 import {
   datasetRecordSchema,
-  datasetRetentionDays,
   validateDatasetPage,
   type DatasetPage,
   type SourceDatasetDefinition,
@@ -13,6 +12,7 @@ import { exceedsDataPolicy, type DataPolicy } from "@netrics/domain";
 import type { Transaction } from "./context.js";
 import { connectorStagingWorkspaceBytes } from "./data-usage.js";
 import { resolveDataPolicy } from "./data-policy.js";
+import { connectionDatasetRetentionDays } from "./connection-retention.js";
 import { DatasetStoreError } from "./datasets.js";
 import {
   connections,
@@ -265,7 +265,12 @@ export async function storeConnectorStage(
   await tx
     .delete(dataConnectorStages)
     .where(and(scopeWhere(scope), eq(dataConnectorStages.key, input.key)));
-  const requested = datasetRetentionDays(definition);
+  const requested = await connectionDatasetRetentionDays(
+    tx,
+    scope.workspaceId,
+    scope.connectionId,
+    definition,
+  );
   const sourceExpiresAt = minimum(
     expiry(now, requested),
     expiry(now, policy.maxRetentionDays),

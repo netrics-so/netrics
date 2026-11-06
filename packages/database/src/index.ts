@@ -477,6 +477,15 @@ export {
 } from "./datasets.js";
 export { registerSourceDataset } from "./datasets.js";
 export type { IngestDatasetPageInput } from "./datasets.js";
+export {
+  connectionDatasetRetentionDays,
+  findConnectionRetention,
+  setConnectionRetention,
+} from "./connection-retention.js";
+export type {
+  ConnectionRetentionRecord,
+  SetConnectionRetentionInput,
+} from "./connection-retention.js";
 export { resolveDataPolicy, adminSetDataPolicy } from "./data-policy.js";
 
 export {

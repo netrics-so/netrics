@@ -15,8 +15,10 @@ import { AppStoreAnalyticsPanel } from "./app-store-analytics-panel";
 import { AppStoreReviewsPanel } from "./app-store-reviews-panel";
 import { AddAdAccountPanel } from "./add-ad-account-panel";
 import { SignedKeyPanel } from "./signed-key-panel";
+import { RetentionSettings } from "./retention-settings";
 import {
   getConnection,
+  getConnectionRetention,
   getWorkspace,
   listConnectors,
   listObservations,
@@ -67,6 +69,7 @@ export default async function ConnectionDetailPage({
   const stores = await getT("storeTemplate");
   const ads = await getT("connections.appleAds");
   const health = await getT("health");
+  const retentionT = await getT("connections.retention");
 
   const [{ workspaces }, workspaceResult, detail] = await Promise.all([
     listWorkspaces(cookieHeader),
@@ -80,11 +83,18 @@ export default async function ConnectionDetailPage({
   const role = membership.role;
   const { connection, syncRuns } = detail;
 
-  const [{ connectors }, { observations }, { metrics }] = await Promise.all([
-    listConnectors(cookieHeader),
-    listObservations(cookieHeader, workspaceId, connectionId, { limit: 100 }),
-    listWorkspaceMetrics(cookieHeader, workspaceId),
-  ]);
+  const [{ connectors }, { observations }, { metrics }, retentionResult] =
+    await Promise.all([
+      listConnectors(cookieHeader),
+      listObservations(cookieHeader, workspaceId, connectionId, { limit: 100 }),
+      listWorkspaceMetrics(cookieHeader, workspaceId),
+      getConnectionRetention(cookieHeader, workspaceId, connectionId),
+    ]);
+  // Dataset retention (#492), for connectors that collect data tables.
+  const retention =
+    retentionResult && retentionResult.retention.datasets.length > 0
+      ? retentionResult.retention
+      : null;
   // Metric names for the observations table (the key stays in the tooltip).
   const metricNames = new Map(
     metrics
@@ -450,6 +460,19 @@ export default async function ConnectionDetailPage({
               connector={connector}
             />
           )}
+        </div>
+      ) : null}
+
+      {retention ? (
+        <div className="card" id="retention">
+          <h2>{retentionT("title")}</h2>
+          <RetentionSettings
+            workspaceId={workspaceId}
+            connectionId={connection.id}
+            retention={retention}
+            canUpdate={canUpdate}
+            setup={connection.setupPending}
+          />
         </div>
       ) : null}
 

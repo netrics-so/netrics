@@ -35,6 +35,10 @@ import {
   measureWidgetOptionsSchema,
 } from "./dashboard-data.js";
 
+import {
+  connectionRetentionChoiceSchema,
+  connectorDatasetRetentionSchema,
+} from "./connection-retention.js";
 import { goalProgressSchema } from "./goals.js";
 import { imageContentTypeSchema } from "./images.js";
 
@@ -496,6 +500,11 @@ export const connectorCatalogEntrySchema = z.object({
   description: z.string().min(1),
   metricsCount: z.number().int().nonnegative(),
   datasetsCount: z.number().int().nonnegative().optional(),
+  /**
+   * The connector's datasets with their declared retention and the preset a
+   * new connection starts with (#492), for the setup retention step.
+   */
+  datasets: z.array(connectorDatasetRetentionSchema).optional(),
   supportsResourceSelection: z.boolean().optional(),
   /** Catalogue category; "other" when the manifest does not say (#306). */
   category: connectorCategorySchema,
@@ -551,6 +560,11 @@ export const createConnectionRequestSchema = z.object({
   pendingKeyId: pendingKeyIdSchema.optional(),
   projectId: z.uuid().optional(),
   resources: z.array(z.string().min(1)).optional(),
+  /**
+   * Dataset retention chosen in setup (#492): dataset key → days, null until
+   * deleted. Omitted datasets start with the preset.
+   */
+  retention: connectionRetentionChoiceSchema.optional(),
 });
 export type CreateConnectionRequest = z.infer<
   typeof createConnectionRequestSchema
@@ -3483,6 +3497,7 @@ export type {
 
 export * from "./data-processing.js";
 export * from "./data-policy.js";
+export * from "./connection-retention.js";
 
 export * from "./dashboard-data.js";
 

@@ -11,6 +11,7 @@ import {
   storedConnectionPreviewResponseSchema,
   connectionResourcesResponseSchema,
   connectionResponseSchema,
+  connectionRetentionResponseSchema,
   connectorListResponseSchema,
   createConnectionRequestSchema,
   createConnectionsRequestSchema,
@@ -28,12 +29,14 @@ import {
   sharedKeyResourcesResponseSchema,
   signedKeyPairResponseSchema,
   updateConnectionRequestSchema,
+  updateConnectionRetentionRequestSchema,
 } from "@netrics/contracts";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import type { Database } from "@netrics/database";
-import { can } from "@netrics/domain";
+import { can, type DataPolicy } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
+import { createConnectionRetentionService } from "../connections/retention.js";
 import {
   createConnectionService,
   type Result,
@@ -57,6 +60,8 @@ export interface ConnectionRouteDeps {
   oauthProviders: OAuthProviders;
   oauthTokens?: OAuthTokenService;
   signedKeys?: SignedKeyProviders;
+  /** Instance data policy defaults (workspace maximum retention, #492). */
+  dataPolicy?: DataPolicy;
 }
 
 const connectionParamsSchema = z.object({ connectionId: z.uuid() });
@@ -83,6 +88,7 @@ export function registerConnectionRoutes(
 ): void {
   const requireSession = createRequireSession(deps.authService);
   const connections = createConnectionService(deps);
+  const retention = createConnectionRetentionService(deps);
 
   void app.register(
     (scope, _opts, done) => {
@@ -318,6 +324,88 @@ export function registerConnectionRoutes(
             return;
           }
           return connectionDetailResponseSchema.parse(detail);
+        },
+      );
+
+      // Dataset retention of a connection (#492): one choice per dataset,
+      // capped by the workspace maximum. Saving applies it to stored
+      // deadlines at once.
+      scope.get(
+        "/workspaces/:workspaceId/connections/:connectionId/retention",
+        {
+          schema: routeSchema({
+            summary: "Get a connection's dataset retention",
+            tags: ["connections"],
+            response: connectionRetentionResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:view")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const value = unwrap(
+            await retention.get(access, params.data.connectionId),
+            reply,
+          );
+          if (!value) {
+            return;
+          }
+          return connectionRetentionResponseSchema.parse({ retention: value });
+        },
+      );
+
+      scope.put(
+        "/workspaces/:workspaceId/connections/:connectionId/retention",
+        {
+          schema: routeSchema({
+            summary: "Choose a connection's dataset retention",
+            tags: ["connections"],
+            body: updateConnectionRetentionRequestSchema,
+            response: connectionRetentionResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:update")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const body = parseBody(
+            updateConnectionRetentionRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) {
+            return;
+          }
+          const value = unwrap(
+            await retention.set(
+              access,
+              params.data.connectionId,
+              body.datasets,
+            ),
+            reply,
+          );
+          if (!value) {
+            return;
+          }
+          return connectionRetentionResponseSchema.parse({ retention: value });
         },
       );
 

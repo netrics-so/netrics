@@ -1,0 +1,128 @@
+import { and, eq, sql } from "drizzle-orm";
+import {
+  chosenRetentionDays,
+  connectionRetentionBasisSchema,
+  connectionRetentionChoiceSchema,
+  connectionRetentionFallbackSchema,
+  type ConnectionRetentionBasis,
+  type ConnectionRetentionChoice,
+  type ConnectionRetentionFallback,
+  type SourceDatasetDefinition,
+} from "@netrics/contracts";
+
+import type { Transaction } from "./context.js";
+import { connections, users } from "./schema.js";
+
+// Per-connection dataset retention (#492). Runs as netrics_app inside
+// withWorkspace; every query also names the workspace explicitly.
+
+export interface ConnectionRetentionRecord {
+  choice: ConnectionRetentionChoice;
+  fallback: ConnectionRetentionFallback;
+  basis: ConnectionRetentionBasis;
+  chosenAt: Date | null;
+  chosenBy: { id: string; name: string } | null;
+}
+
+export async function findConnectionRetention(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+): Promise<ConnectionRetentionRecord | null> {
+  const [row] = await tx
+    .select({
+      choice: connections.retentionChoice,
+      fallback: connections.retentionFallback,
+      basis: connections.retentionBasis,
+      chosenAt: connections.retentionChosenAt,
+      chosenById: connections.retentionChosenBy,
+      chosenByName: users.displayName,
+    })
+    .from(connections)
+    .leftJoin(users, eq(users.id, connections.retentionChosenBy))
+    .where(
+      and(
+        eq(connections.workspaceId, workspaceId),
+        eq(connections.id, connectionId),
+      ),
+    );
+  if (!row) return null;
+  // Malformed stored choices fall back to the preset rather than failing a sync.
+  const choice = connectionRetentionChoiceSchema.safeParse(row.choice);
+  const fallback = connectionRetentionFallbackSchema.safeParse(row.fallback);
+  const basis = connectionRetentionBasisSchema.safeParse(row.basis);
+  return {
+    choice: choice.success ? choice.data : {},
+    fallback: fallback.success ? fallback.data : "preset",
+    basis: basis.success ? basis.data : "preset",
+    chosenAt: row.chosenAt,
+    chosenBy:
+      row.chosenById && row.chosenByName
+        ? { id: row.chosenById, name: row.chosenByName }
+        : null,
+  };
+}
+
+/**
+ * The retention a source dataset of this connection asks for, before the
+ * workspace maximum. Used by ingestion and connector staging.
+ */
+export async function connectionDatasetRetentionDays(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+  definition: SourceDatasetDefinition,
+): Promise<number | null> {
+  const record = await findConnectionRetention(tx, workspaceId, connectionId);
+  return chosenRetentionDays(
+    definition,
+    record ?? { choice: {}, fallback: "preset" },
+  ).days;
+}
+
+export interface SetConnectionRetentionInput {
+  workspaceId: string;
+  connectionId: string;
+  /** The new explicit choice; it replaces the stored one. */
+  choice: ConnectionRetentionChoice;
+  chosenBy: string | null;
+  /**
+   * Dataset key → days after the workspace maximum, for every dataset of the
+   * connector. Stored deadlines follow these values immediately.
+   */
+  effective: Record<string, number | null>;
+  now?: Date;
+}
+
+/**
+ * Records the choice on the connection and applies it to stored deadlines
+ * (apply_connection_retention): shorter periods take effect at once and
+ * clear derived caches; longer ones only extend data that has not expired.
+ */
+export async function setConnectionRetention(
+  tx: Transaction,
+  input: SetConnectionRetentionInput,
+): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const updated = await tx
+    .update(connections)
+    .set({
+      retentionChoice: input.choice,
+      retentionBasis: "chosen",
+      retentionChosenBy: input.chosenBy,
+      retentionChosenAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(connections.workspaceId, input.workspaceId),
+        eq(connections.id, input.connectionId),
+      ),
+    )
+    .returning({ id: connections.id });
+  if (updated.length === 0) return false;
+  const [applied] = await tx.execute<{ applied: boolean }>(
+    sql`select apply_connection_retention(${input.workspaceId}::uuid, ${input.connectionId}::uuid, ${JSON.stringify(input.effective)}::jsonb, ${now.toISOString()}::timestamptz) as applied`,
+  );
+  return applied?.applied === true;
+}

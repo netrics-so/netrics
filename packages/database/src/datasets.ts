@@ -19,6 +19,7 @@ import {
 } from "@netrics/domain";
 import { datasetWorkspaceBytes } from "./data-usage.js";
 import { resolveDataPolicy } from "./data-policy.js";
+import { connectionDatasetRetentionDays } from "./connection-retention.js";
 import {
   connections,
   dataDatasets,
@@ -290,7 +291,16 @@ async function ingestPage(
     sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}, 440))`,
   );
   const now = input.clock?.() ?? input.now ?? new Date();
-  const requestedRetention = datasetRetentionDays(definition);
+  // The connection's choice (#492) replaces the connector's declaration.
+  const requestedRetention =
+    connectionId !== null && (input.kind ?? "source") === "source"
+      ? await connectionDatasetRetentionDays(
+          tx,
+          workspaceId,
+          connectionId,
+          definition,
+        )
+      : datasetRetentionDays(definition);
   const retentionDays =
     policy.maxRetentionDays === null
       ? requestedRetention

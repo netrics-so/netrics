@@ -44,6 +44,8 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     theme_not_found: "Dieses Design existiert nicht mehr.",
     review_not_found: "Diese Bewertung gibt es nicht mehr.",
     connection_not_found: "Diese Verbindung gibt es nicht mehr.",
+    retention_dataset_unknown:
+      "Diese Verbindung hat keine solche Datentabelle. Lade die Seite neu und wähle erneut.",
     reviews_not_supported:
       "Diese Verbindung hat keine Bewertungen. Ein Widget für die neueste Bewertung braucht eine App-Store-Connect-Verbindung.",
     goal_not_found: "Dieses Ziel existiert nicht mehr.",

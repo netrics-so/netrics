@@ -13,6 +13,11 @@ import { AppleAdsSetup } from "./apple-ads-setup";
 import { AppPicker } from "../app-picker";
 import { ConfigFields } from "../config-fields";
 import { ConnectOAuthButton } from "../connect-oauth-button";
+import {
+  presetRetentionValues,
+  RetentionFields,
+  type RetentionValues,
+} from "../retention-fields";
 import { SignedKeyFields } from "../signed-key-fields";
 import { TokenField } from "../token-field";
 import { ConnectorCatalogue } from "@/components/sources/connector-catalogue";
@@ -62,6 +67,7 @@ export function NewConnectionWizard({
 }: NewConnectionWizardProps) {
   const locale = useLocale();
   const t = useT("connections.wizard");
+  const retentionT = useT("connections.retention");
   const common = useT("common");
   const router = useRouter();
   const [initial] = useState(
@@ -94,6 +100,10 @@ export function NewConnectionWizard({
   const [selectedResources, setSelectedResources] =
     useState<Set<string> | null>(null);
   const [appSelection, setAppSelection] = useState<string[] | null>(null);
+  // Dataset retention chosen in setup (#492), starting from the presets.
+  const [retention, setRetention] = useState<RetentionValues>(() =>
+    presetRetentionValues(initial?.datasets ?? []),
+  );
   const [pending, setPending] = useState<"preview" | "create" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -135,6 +145,7 @@ export function NewConnectionWizard({
     setFieldErrors({});
     setPreview(null);
     setSelectedResources(null);
+    setRetention(presetRetentionValues(entry.datasets ?? []));
     setError(null);
   }
 
@@ -237,6 +248,7 @@ export function NewConnectionWizard({
         name: name.trim() || connector.name,
         ...payload,
         ...(resources ? { resources } : {}),
+        ...(connector.datasets?.length ? { retention } : {}),
       });
       router.push(`/workspaces/${workspaceId}/connections/${connection.id}`);
     } catch (cause) {
@@ -455,6 +467,19 @@ export function NewConnectionWizard({
                 ))}
               </ul>
             </>
+          ) : null}
+          {connector?.datasets?.length ? (
+            <section className="stack" aria-labelledby="setup-retention">
+              <h3 id="setup-retention">{retentionT("setupTitle")}</h3>
+              <p className="muted">{retentionT("setupIntro")}</p>
+              <RetentionFields
+                idPrefix="setup-retention"
+                datasets={connector.datasets}
+                values={retention}
+                disabled={pending !== null}
+                onChange={setRetention}
+              />
+            </section>
           ) : null}
           <div className="actions">
             <button

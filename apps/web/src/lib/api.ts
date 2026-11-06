@@ -87,6 +87,10 @@ import {
   type StoredConnectionPreviewResponse,
   connectionResourcesResponseSchema,
   connectionResponseSchema,
+  connectionRetentionResponseSchema,
+  type ConnectionRetentionResponse,
+  updateConnectionRetentionRequestSchema,
+  type UpdateConnectionRetentionRequest,
   connectorListResponseSchema,
   connectionsResponseSchema,
   createConnectionRequestSchema,
@@ -421,6 +425,22 @@ export async function getConnection(
   return parseResponse(connectionDetailResponseSchema, response);
 }
 
+/** A connection's dataset retention (#492); null when it does not exist. */
+export async function getConnectionRetention(
+  cookieHeader: string,
+  workspaceId: string,
+  connectionId: string,
+): Promise<ConnectionRetentionResponse | null> {
+  const response = await apiFetch(
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/retention`,
+    { headers: { cookie: cookieHeader } },
+  );
+  if (response.status === 404 || response.status === 403) {
+    return null;
+  }
+  return parseResponse(connectionRetentionResponseSchema, response);
+}
+
 export function listObservations(
   cookieHeader: string,
   workspaceId: string,
@@ -749,6 +769,20 @@ export function updateConnection(
     "PATCH",
     `/v1/workspaces/${workspaceId}/connections/${connectionId}`,
     updateConnectionRequestSchema.parse(input),
+  );
+}
+
+/** Saves a connection's dataset retention (#492); applies at once. */
+export function updateConnectionRetention(
+  workspaceId: string,
+  connectionId: string,
+  input: UpdateConnectionRetentionRequest,
+): Promise<ConnectionRetentionResponse> {
+  return browserSend(
+    connectionRetentionResponseSchema,
+    "PUT",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/retention`,
+    updateConnectionRetentionRequestSchema.parse(input),
   );
 }
 

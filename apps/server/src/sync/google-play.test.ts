@@ -283,9 +283,11 @@ describe("Google Play through OAuth, worker, datasets and models", () => {
       aggregated: false,
       expiresAt: null,
     });
+    // Earnings carry personal provider columns: a new connection keeps
+    // them for the 90-day preset (#492), installs follow the connector.
     expect(sources.find((source) => source.id === earningsId)).toMatchObject({
       rowCount: 8,
-      expiresAt: null,
+      expiresAt: "2027-02-03T12:00:00.000Z",
     });
     expect(
       credentialFields.every(
