@@ -892,6 +892,85 @@ describe("backfill", () => {
     expect(run.pages.at(-1)!.nextCursor).toBe("2026-09-27T00:00:00.000Z");
   });
 
+  it("a backfill never replaces retained rows of days Apple no longer serves", async () => {
+    // Today (PT) is Oct 1, 2026: days from Nov 5, 2025 on are inside the
+    // retention edge; Apple has dropped Oct 15, 2025 since the earlier run.
+    const OLD_DAY = "2025-10-15";
+    const report = buildReport([
+      {
+        SKU: "field-notes",
+        "Apple Identifier": FIELD_NOTES,
+        "Product Type Identifier": "1F",
+        Units: "3",
+        "Developer Proceeds": "0.70",
+        "Currency of Proceeds": "EUR",
+        "Country Code": "DE",
+        Device: "iPhone",
+      },
+    ]);
+    const raw = createAppStoreConnectConnector({
+      ratings: false,
+      rawSales: true,
+      now: () => NOW,
+      log: () => undefined,
+      analytics: false,
+    });
+    /** The host's replace_window ingestion, per app partition and day. */
+    const stored = new Map<string, unknown[]>();
+    const backfill = async (api: ReturnType<typeof fake>) => {
+      const observations: Observation[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 200; page += 1) {
+        const result = syncResultSchema.parse(
+          await raw.sync(
+            CONTEXT,
+            {
+              mode: "backfill",
+              from: new Date(NOW - BACKFILL_DAYS * DAY_MS).toISOString(),
+              to: new Date(NOW).toISOString(),
+              ...(cursor ? { cursor } : {}),
+              resources: [FIELD_NOTES],
+            },
+            api.runtime,
+          ),
+        );
+        observations.push(...result.observations);
+        for (const dataset of result.datasetPages ?? []) {
+          const window = dataset.window!;
+          const app = String(window.partition!.app_id);
+          for (const key of [...stored.keys()]) {
+            const [keyApp, day] = key.split("/");
+            if (
+              keyApp === app &&
+              day! >= window.from &&
+              day! < window.toExclusive
+            )
+              stored.delete(key);
+          }
+          for (const record of dataset.records) {
+            const key = `${app}/${String(record.values.day)}`;
+            stored.set(key, [...(stored.get(key) ?? []), record.values]);
+          }
+        }
+        if (result.done) break;
+        cursor = result.nextCursor;
+      }
+      return observations;
+    };
+
+    await backfill(fake({ reports: { [OLD_DAY]: report } }));
+    expect(stored.get(`${FIELD_NOTES}/${OLD_DAY}`)).toHaveLength(1);
+
+    const observations = await backfill(
+      fake({ reports: { [OLD_DAY]: report }, expiredBefore: "2025-11-05" }),
+    );
+    expect(stored.get(`${FIELD_NOTES}/${OLD_DAY}`)).toHaveLength(1);
+    // The metrics still read an expired day as a day without sales.
+    expect(
+      valueOf(observations, "downloads", { resource: FIELD_NOTES }, OLD_DAY),
+    ).toBe(0);
+  });
+
   it("resumes from a checkpoint in a later run with the same result", async () => {
     const reports = territoryMonth();
     const from = new Date(NOW - BACKFILL_DAYS * DAY_MS).toISOString();

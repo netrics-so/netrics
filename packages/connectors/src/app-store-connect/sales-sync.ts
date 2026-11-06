@@ -92,8 +92,11 @@ function startOfNextMonth(ms: number): number {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
 }
 
-/** A day's report: its rows, or "pending" when it is not published yet. */
-type DayReport = SalesRow[] | "pending";
+/**
+ * A day's report: its rows, "pending" when it is not published yet, or
+ * "expired" when Apple no longer serves the day (past its retention).
+ */
+type DayReport = SalesRow[] | "pending" | "expired";
 
 /**
  * Reads one reporting day. A 404 for a day whose report should exist (D + 1
@@ -128,7 +131,7 @@ async function readDay(
     body.parameter === "filter[reportDate]" &&
     dayMs < oldestKeptMs
   ) {
-    return [];
+    return "expired";
   }
   throw new AppStoreConnectApiError(response.status, body);
 }
@@ -296,12 +299,17 @@ async function readSalesPage(
   );
   const published = new Map<number, SalesRow[]>();
   let pendingMs: number | undefined;
+  /** The day after the newest day Apple no longer serves, if any. */
+  let servedFromMs: number | undefined;
   days.forEach((dayMs, index) => {
     const report = reports[index]!;
     if (report === "pending") {
       pendingMs ??= dayMs;
     } else if (pendingMs === undefined) {
-      published.set(dayMs, report);
+      // An expired day reads as a day without sales for the metrics.
+      published.set(dayMs, report === "expired" ? [] : report);
+      if (report === "expired")
+        servedFromMs = Math.max(servedFromMs ?? 0, dayMs + DAY_MS);
     }
   });
 
@@ -414,8 +422,17 @@ async function readSalesPage(
       : options.listAppIds
         ? await options.listAppIds()
         : [...new Set([...apps, ...appBySku.values()])];
+    // The retained rows replace their window: never let it cover a day
+    // Apple no longer serves, or rows kept from when it did would go.
     options.retained(
-      retainSalesRows(published, emitFrom, emitTo, appBySku, rawApps, selected),
+      retainSalesRows(
+        published,
+        Math.max(emitFrom, servedFromMs ?? emitFrom),
+        emitTo,
+        appBySku,
+        rawApps,
+        selected,
+      ),
     );
   }
 
