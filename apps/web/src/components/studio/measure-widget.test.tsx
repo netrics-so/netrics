@@ -243,3 +243,44 @@ describe("viewer interaction state", () => {
     ).toBeUndefined();
   });
 });
+
+describe("viewer interaction state with typed values", () => {
+  it("clears an equivalent decimal default to all values instead of re-selecting it", () => {
+    const filter: DashboardDataFilter = {
+      id: "price",
+      name: "Price",
+      type: "decimal",
+      mode: "values",
+      mappings: [{ modelId: "model", dimensionId: "price" }],
+      defaultValue: { kind: "values", values: ["1.0"] },
+    };
+    const calls: unknown[][] = [];
+    const interaction = liveInteraction(
+      {
+        id: "00000000-0000-4000-8000-000000000004",
+        type: "measure",
+        title: null,
+        x: 0,
+        y: 0,
+        w: 6,
+        h: 4,
+        binding: {
+          modelId: "model",
+          measureIds: ["income"],
+          groupBy: ["price"],
+          exclusions: [],
+          interaction: { filterId: "price" },
+        },
+        options: { view: "bar", limit: 20 },
+      } as MeasureWidget,
+      {
+        dataFilters: [filter],
+        filterValues: {},
+        onFilterValue: (...args: unknown[]) => calls.push(args),
+      } as unknown as StudioEnv,
+    )!;
+    expect(interaction.selected("1.00")).toBe(true);
+    interaction.toggle("1.00");
+    expect(calls).toEqual([["price", null]]);
+  });
+});

@@ -261,18 +261,31 @@ export function measureInteractionValue(
   return value === null ? null : { kind: "range", from: value, to: value };
 }
 
-/** Whether the current choice is exactly what clicking `value` sets. */
+/** Whether the current choice is what clicking `value` sets, compared by the
+ * filter's type as filters are evaluated ("1.0" = "1.00", equal instants at
+ * different fractional precision). Missing values only match missing ones. */
 export function measureInteractionSelected(
   filter: DashboardDataFilter,
   current: DashboardFilterValue,
   value: unknown,
 ): boolean {
-  const chosen = measureInteractionValue(filter, value);
-  return (
-    chosen !== null &&
-    current !== null &&
-    JSON.stringify(current) === JSON.stringify(chosen)
-  );
+  if (value === undefined || current === null || current.kind !== filter.mode)
+    return false;
+  const same = (chosen: unknown) => {
+    if (chosen === null || value === null) return chosen === value;
+    try {
+      return compareDataValues(filter.type, chosen, value) === 0;
+    } catch {
+      return false;
+    }
+  };
+  return current.kind === "values"
+    ? current.values.length === 1 && same(current.values[0])
+    : value !== null &&
+        current.from !== null &&
+        current.to !== null &&
+        same(current.from) &&
+        same(current.to);
 }
 
 /** Exact presentation amount, without ever converting a decimal to a float. */

@@ -286,4 +286,67 @@ describe("declared chart-to-filter interactions", () => {
     ).toBe(false);
     expect(measureInteractionSelected(country, null, "FR")).toBe(false);
   });
+  it("compares the current choice by the filter's type, as filters evaluate it", () => {
+    const amount: DashboardDataFilter = {
+      id: "amount",
+      name: "Amount",
+      type: "decimal",
+      mode: "values",
+      mappings: [{ modelId: "store", dimensionId: "amount" }],
+      defaultValue: { kind: "values", values: ["1.0"] },
+    };
+    expect(
+      measureInteractionSelected(amount, amount.defaultValue, "1.00"),
+    ).toBe(true);
+    expect(
+      measureInteractionSelected(amount, amount.defaultValue, "1.01"),
+    ).toBe(false);
+    expect(
+      measureInteractionSelected(
+        { ...amount, mode: "range" },
+        { kind: "range", from: "2.50", to: "2.5" },
+        "2.500",
+      ),
+    ).toBe(true);
+    const at: DashboardDataFilter = {
+      ...amount,
+      id: "at",
+      type: "timestamp",
+      mode: "range",
+      defaultValue: null,
+    };
+    expect(
+      measureInteractionSelected(
+        at,
+        {
+          kind: "range",
+          from: "2026-10-01T10:00:00Z",
+          to: "2026-10-01T10:00:00.000Z",
+        },
+        "2026-10-01T10:00:00.000000Z",
+      ),
+    ).toBe(true);
+    expect(
+      measureInteractionSelected(
+        at,
+        { kind: "range", from: "2026-10-01T10:00:00Z", to: null },
+        "2026-10-01T10:00:00Z",
+      ),
+    ).toBe(false);
+    // Missing values only match a missing value.
+    expect(
+      measureInteractionSelected(
+        amount,
+        { kind: "values", values: [null] },
+        null,
+      ),
+    ).toBe(true);
+    expect(
+      measureInteractionSelected(
+        amount,
+        { kind: "values", values: [null] },
+        "0",
+      ),
+    ).toBe(false);
+  });
 });
