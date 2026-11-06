@@ -235,7 +235,11 @@ Retained raw storage and source-count policy defaults are uncapped. Execution
 defaults are 100,000 rows, 5 million operations and 128 MiB of output per evaluation, 15
 seconds per database statement and 100 connector pages per sync attempt. All
 are configurable, including `null`. They govern an individual execution, not
-the amount of retained history. Page sessions and ordinary last-valid query
+the amount of retained history. Dataset ingestion applies the statement timeout
+only to its own statements and restores the caller's setting afterwards, so
+checkpoint and other sync work in the same transaction keep their own bound.
+With `queryTimeoutMs: null`, ingestion statements still stop after 5 minutes
+(`DATASET_INGEST_TIMEOUT_MS`). Page sessions and ordinary last-valid query
 snapshots each default to 100 identities per release and a one-day lifetime.
 The additional `queryPageSessionsPerCaller` policy defaults to 10 page sessions
 per authenticated user/release; users share that limit across tabs and login

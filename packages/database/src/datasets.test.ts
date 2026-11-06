@@ -10,6 +10,7 @@ import {
 import { createTestDatabase, type TestDatabase } from "./test-db.js";
 import { withWorkspace, hasSqlstate, type Db } from "./context.js";
 import { datasetWorkspaceBytes } from "./data-usage.js";
+import { DEFAULT_DATA_POLICY } from "@netrics/domain";
 import {
   ingestDatasetPage,
   previewDataset,
@@ -486,6 +487,53 @@ describe("durable typed dataset ingestion", () => {
     } finally {
       await admin.unsafe("drop trigger dataset_test_failure on data_records");
       await admin.unsafe("drop function dataset_test_failure()");
+    }
+  });
+  it("scopes the ingest statement timeout to the page and keeps one without a query timeout", async () => {
+    await admin.unsafe(`create table dataset_timeout_probe(timeout text)`);
+    await admin.unsafe(
+      `create function dataset_timeout_probe() returns trigger language plpgsql security definer set search_path=public as $$ begin insert into dataset_timeout_probe values (current_setting('statement_timeout')); return new; end $$`,
+    );
+    await admin.unsafe(
+      `create trigger dataset_timeout_probe after insert on data_pages for each row execute function dataset_timeout_probe()`,
+    );
+    try {
+      const d = definition("timeout-scope");
+      const run = (
+        refreshKey: string,
+        queryTimeoutMs: number | null,
+        overrides: Partial<DatasetPage> = {},
+      ) =>
+        withWorkspace(db, { workspaceId: a }, async (tx) => {
+          await tx.execute(sql`set local statement_timeout = '42s'`);
+          const outcome = await ingestDatasetPage(tx, {
+            workspaceId: a,
+            connectionId: ca,
+            definition: d,
+            page: page(d, { refreshKey, ...overrides }),
+            now,
+            policyDefaults: { ...DEFAULT_DATA_POLICY, queryTimeoutMs },
+          }).catch((error: Error) => error.message);
+          const [row] = await tx.execute<{ timeout: string }>(
+            sql`select current_setting('statement_timeout') as timeout`,
+          );
+          return { outcome, timeout: row?.timeout };
+        });
+      expect((await run("bounded", 15_000)).timeout).toBe("42s");
+      expect((await run("unbounded", null)).timeout).toBe("42s");
+      // A rejected page leaves the caller's transaction usable and unchanged.
+      expect(
+        await run("rejected", 15_000, { previousPageKey: "missing" }),
+      ).toEqual({ outcome: "dataset_page_out_of_order", timeout: "42s" });
+      expect(
+        (await admin`select timeout from dataset_timeout_probe`).map(
+          (row) => row.timeout,
+        ),
+      ).toEqual(["15s", "5min"]);
+    } finally {
+      await admin.unsafe(
+        "drop trigger dataset_timeout_probe on data_pages; drop function dataset_timeout_probe(); drop table dataset_timeout_probe",
+      );
     }
   });
   it("replays retained pages without a provider call or extending retention", async () => {

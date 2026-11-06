@@ -249,6 +249,7 @@ export interface IngestDatasetPageInput {
 async function ingestPage(
   tx: Transaction,
   input: IngestDatasetPageInput,
+  scope: { previousTimeout?: string },
 ): Promise<{
   datasetId: string;
   generationId: string | null;
@@ -275,9 +276,11 @@ async function ingestPage(
     return fail("dataset_page_invalid");
   }
   const { workspaceId, connectionId } = input;
-  await tx.execute(
-    sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
+  // Scoped to this page: ingestDatasetPage restores the caller's value.
+  const [timeout] = await tx.execute<{ previous: string }>(
+    sql`select current_setting('statement_timeout') as previous, set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? DATASET_INGEST_TIMEOUT_MS)}, true)`,
   );
+  scope.previousTimeout = timeout?.previous ?? "0";
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}, 440))`,
   );
@@ -650,16 +653,38 @@ export async function previewDataset(
   };
 }
 
+/**
+ * Per-statement ingest bound when the query policy sets none (`null`).
+ * Ingestion still needs a bound so a stuck statement cannot hold the
+ * workspace ingest lock indefinitely.
+ */
+export const DATASET_INGEST_TIMEOUT_MS = 300_000;
+
 /** Hide driver SQL/parameters from worker logs and API error paths. */
 export async function ingestDatasetPage(
   tx: Transaction,
   input: IngestDatasetPageInput,
 ) {
+  // The ingest timeout must not leak into the rest of the caller's
+  // transaction (checkpoint, audit and later sync work).
+  const scope: { previousTimeout?: string } = {};
+  let failed = false;
   try {
-    return await ingestPage(tx, input);
+    return await ingestPage(tx, input, scope);
   } catch (error) {
+    failed = true;
     if (error instanceof DatasetStoreError) throw error;
     throw new DatasetStoreError("dataset_storage_failed");
+  } finally {
+    if (scope.previousTimeout !== undefined) {
+      const reset = tx.execute(
+        sql`select set_config('statement_timeout', ${scope.previousTimeout}, true)`,
+      );
+      // After a database error the transaction (or the caller's savepoint) is
+      // aborted and rolling it back resets the setting; keep the original error.
+      if (failed) await reset.catch(() => undefined);
+      else await reset;
+    }
   }
 }
 
