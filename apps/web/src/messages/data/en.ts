@@ -9,6 +9,8 @@ export const dataEn = {
       sourceOutage:
         "Imports from {name} are interrupted. Check the connection.",
 
+      perDateMeasure:
+        "{name} has one value per date. Show it as a table or chart grouped by {dimensions}.",
       requiresScope: "Keep separate, or filter to one value: {dimensions}.",
       pendingResult:
         "Some source reports have not arrived yet. Known values are shown as partial; missing values are not zero.",

@@ -12,6 +12,8 @@ export const dataDe: Catalog<typeof dataEn> = {
       sourceOutage:
         "Die Importe von {name} sind unterbrochen. Prüfe die Verbindung.",
 
+      perDateMeasure:
+        "{name} hat einen Wert pro Datum. Zeige die Kennzahl als Tabelle oder Diagramm nach {dimensions}.",
       requiresScope:
         "Getrennt anzeigen oder auf genau einen Wert filtern: {dimensions}.",
       pendingResult:

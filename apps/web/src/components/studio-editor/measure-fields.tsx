@@ -44,6 +44,28 @@ export function MeasureFields({
         .flatMap((measure) => measure.requiredDimensions ?? []) ?? [],
     ),
   ];
+  const datedMeasure = (measureId: string) =>
+    model?.measures
+      .find((measure) => measure.id === measureId)
+      ?.requiredDimensions?.some((dimensionId) =>
+        model.dimensions.some(
+          (dimension) =>
+            dimension.id === dimensionId &&
+            (dimension.type === "date" || dimension.type === "timestamp"),
+        ),
+      ) ?? false;
+  // Rolling and dated comparisons (and other measures kept per date) have no
+  // single value: the value view offers them only once already chosen.
+  const perDate = (measure: NonNullable<typeof model>["measures"][number]) =>
+    widget.options.view !== "value" ||
+    widget.binding.measureIds.includes(measure.id) ||
+    !datedMeasure(measure.id)
+      ? []
+      : (model?.dimensions.filter(
+          (dimension) =>
+            (dimension.type === "date" || dimension.type === "timestamp") &&
+            measure.requiredDimensions?.includes(dimension.id),
+        ) ?? []);
   const refs =
     model?.dimensions.map((dimension) => ({
       id: dimension.id,
@@ -79,7 +101,18 @@ export function MeasureFields({
           measureIds:
             view === "table"
               ? widget.binding.measureIds
-              : widget.binding.measureIds.slice(0, 1),
+              : view === "value"
+                ? [
+                    // Prefer a measure that has a single value.
+                    widget.binding.measureIds.find(
+                      (measureId) => !datedMeasure(measureId),
+                    ) ??
+                      model?.measures.find(
+                        (measure) => !datedMeasure(measure.id),
+                      )?.id ??
+                      widget.binding.measureIds[0]!,
+                  ]
+                : widget.binding.measureIds.slice(0, 1),
           groupBy:
             view === "value"
               ? []
@@ -188,6 +221,12 @@ export function MeasureFields({
             <input
               type={widget.options.view === "table" ? "checkbox" : "radio"}
               name={`${id}-measure`}
+              disabled={perDate(measure).length > 0}
+              aria-describedby={
+                perDate(measure).length
+                  ? `${id}-per-date-${measure.id}`
+                  : undefined
+              }
               checked={widget.binding.measureIds.includes(measure.id)}
               onChange={(event) =>
                 update({
@@ -211,6 +250,22 @@ export function MeasureFields({
             {measure.name}
           </label>
         ))}
+        {model?.measures.map((measure) =>
+          perDate(measure).length ? (
+            <p
+              key={measure.id}
+              className="help"
+              id={`${id}-per-date-${measure.id}`}
+            >
+              {t("perDateMeasure", {
+                name: measure.name,
+                dimensions: perDate(measure)
+                  .map((dimension) => dimension.name)
+                  .join(", "),
+              })}
+            </p>
+          ) : null,
+        )}
       </fieldset>
       {widget.options.view !== "value" ? (
         <fieldset>
