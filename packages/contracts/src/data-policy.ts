@@ -6,6 +6,12 @@ const ceiling = z
   .positive()
   .max(Number.MAX_SAFE_INTEGER)
   .nullable();
+const cacheCeiling = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER)
+  .nullable();
 /** null removes a policy ceiling; omitted keys inherit the instance default. */
 export const dataPolicyOverrideSchema = z.strictObject({
   maxWorkspaceBytes: ceiling.optional(),
@@ -22,8 +28,8 @@ export const dataPolicyOverrideSchema = z.strictObject({
   queryOperations: ceiling.optional(),
   queryOutputBytes: ceiling.optional(),
   queryTimeoutMs: ceiling.optional(),
-  querySnapshotCount: ceiling.optional(),
-  querySnapshotSeconds: ceiling.optional(),
+  querySnapshotCount: cacheCeiling.optional(),
+  querySnapshotSeconds: cacheCeiling.optional(),
   preparedCacheSeconds: ceiling.optional(),
   maxRetentionDays: ceiling.optional(),
 });

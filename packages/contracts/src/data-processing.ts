@@ -281,6 +281,10 @@ export const modelQueryInputSchema = z.strictObject({
     .nonnegative()
     .max(Number.MAX_SAFE_INTEGER)
     .optional(),
+  /** Repeat the original query inputs and omit offset when continuing a pinned page. */
+  pageToken: z.string().min(1).max(120).optional(),
+  /** Opt in on the first published query to retain an immutable page session. */
+  pinPages: z.boolean().optional(),
 });
 export const modelMeasureCellSchema = z.object({
   value: z.unknown(),
@@ -304,6 +308,8 @@ export const modelQueryResponseSchema = z.object({
   expiresAt: z.iso.datetime().nullable().optional(),
   totalRows: z.number().int().nonnegative().optional(),
   offset: z.number().int().nonnegative().optional(),
+  nextPageToken: z.string().max(120).optional(),
+  pageExpiresAt: z.iso.datetime().optional(),
   releaseId: z.uuid().nullable(),
   rows: z
     .array(

@@ -198,7 +198,9 @@ Storage and source-count policy defaults are uncapped. Execution defaults are
 seconds per database statement and 100 connector pages per sync attempt. All
 are configurable, including `null`. They govern an individual execution, not
 the amount of retained history. Query snapshots default to 100 identities per
-release and a one-day lifetime; prepared cache entries default to one day,
+release and a one-day lifetime; either query snapshot setting accepts `0` to
+disable storing and reusing snapshots, including last-valid fallback.
+Prepared cache entries default to one day,
 bounded by the earliest source expiry. Those policies are configurable too.
 Wire safeguards remain: 100 fields, 1,000 records/1 MiB per page, 64 KiB per
 record, 1 KiB per key, and 100 rows per preview. Paged ingestion can exceed one
@@ -336,10 +338,15 @@ the provider's reporting coverage or delay.
 
 Semantic queries support ordered result pages with `limit` and `offset`, up to
 1,000 groups per response. This bounds one response rather than the number of
-groups in a model. Each request pins its own current generations; clients that
-page a changing model must compare provenance and restart if it changes. An
-immutable cursor spanning several requests remains future work. Multi-select
-filters use typed list membership without growing a deep expression tree.
+groups in a model. Ordinary offset requests read current generations separately.
+[#471](https://github.com/netrics-so/netrics/issues/471) adds opt-in immutable
+continuation with `pinPages: true` and `pageToken`: pages retain the original
+model release and source/prepared generation identities across corrections and
+publication. Each continuation reauthorizes its inputs and fails if pinned
+history, caches or metadata fingerprints are unavailable; it never renews the
+deadline or silently changes data. Ordinary dashboard/device requests do not
+allocate page sessions. See [the API and expiry rules](./data-query-pagination.md).
+Multi-select filters use typed list membership without growing a deep expression tree.
 
 Device schemas 2/3 include server-computed measure results. The shared native
 and browser renderers support values, tables and charts without calculating

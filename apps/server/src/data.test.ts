@@ -332,6 +332,89 @@ describe("data API authorization and contract", () => {
       (await call("POST", "/models/preview", stranger, body)).statusCode,
     ).toBe(404);
   });
+  it("continues pinned result pages through the authorized query API", async () => {
+    const source = await call("POST", "/manual", editor, {
+      ...manual,
+      definition: { ...manual.definition, key: "paged-numbers" },
+      records: [
+        { values: { id: "one", amount: "1.10" } },
+        { values: { id: "two", amount: "2.20" } },
+      ],
+    });
+    expect(source.statusCode, source.body).toBe(200);
+    const datasetId = source.json().datasetId as string;
+    const created = await call("POST", "/models", editor, {
+      name: "Paged numbers",
+      definition: {
+        version: 1,
+        datasets: [datasetId],
+        relationships: [],
+        dimensions: [{ id: "id", name: "ID", datasetId, fieldId: "id" }],
+        measures: [
+          {
+            id: "total",
+            name: "Total",
+            kind: "aggregate",
+            datasetId,
+            aggregate: {
+              id: "total",
+              name: "Total",
+              op: "sum",
+              fieldId: "amount",
+            },
+          },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const id = modelResponseSchema.parse(created.json()).model.id;
+    expect(
+      (await call("POST", `/models/${id}/publish`, editor, { version: 1 }))
+        .statusCode,
+    ).toBe(200);
+    const input = { measureIds: ["total"], groupBy: ["id"], limit: 1 };
+    const firstResponse = await call("POST", `/models/${id}/query`, viewer, {
+      ...input,
+      pinPages: true,
+    });
+    expect(firstResponse.statusCode, firstResponse.body).toBe(200);
+    const first = modelQueryResponseSchema.parse(firstResponse.json());
+    expect(first.nextPageToken).toBeDefined();
+    const continuation = { ...input, pageToken: first.nextPageToken! };
+    expect(
+      (await call("POST", `/models/${id}/query`, undefined, continuation))
+        .statusCode,
+    ).toBe(401);
+    expect(
+      (await call("POST", `/models/${id}/query`, stranger, continuation))
+        .statusCode,
+    ).toBe(404);
+    const response = await call(
+      "POST",
+      `/models/${id}/query`,
+      viewer,
+      continuation,
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    const second = modelQueryResponseSchema.parse(response.json());
+    expect(second).toMatchObject({
+      releaseId: first.releaseId,
+      provenance: first.provenance,
+      offset: 1,
+    });
+    expect(second.rows[0]).toMatchObject({
+      dimensions: { id: "two" },
+      measures: { total: { value: "2.2" } },
+    });
+    expect(
+      (
+        await call("POST", `/models/${id}/query`, viewer, {
+          ...continuation,
+          filter: { kind: "literal", type: "boolean", value: true },
+        })
+      ).statusCode,
+    ).toBe(409);
+  });
   it("rejects arbitrary code and excessive expression nesting before execution", async () => {
     const code = await call("POST", "/formula", editor, {
       formula: "globalThis.process.exit()",
