@@ -75,6 +75,7 @@ DECLARE
   days bigint;
   cap bigint;
   current_generation uuid;
+  v_dataset uuid;
 BEGIN
   IF p_workspace IS DISTINCT FROM nullif(current_setting('app.workspace_id', true), '')::uuid
     THEN RAISE EXCEPTION 'connection retention outside the current workspace'; END IF;
@@ -85,40 +86,15 @@ BEGIN
   p_now := greatest(p_now, now());
   SELECT (overrides ->> 'maxRetentionDays')::bigint INTO cap
     FROM data_workspace_policies WHERE workspace_id = p_workspace;
-  FOR d IN
-    SELECT id, key FROM data_datasets
-    WHERE workspace_id = p_workspace AND connection_id = p_connection
-      AND kind = 'source' AND p_days ? key
-  LOOP
-    IF jsonb_typeof(p_days -> d.key) = 'null' THEN days := NULL;
-    ELSIF jsonb_typeof(p_days -> d.key) = 'number' THEN
-      days := (p_days ->> d.key)::bigint;
+  FOR d IN SELECT key, value FROM jsonb_each(p_days) LOOP
+    IF jsonb_typeof(d.value) = 'null' THEN days := NULL;
+    ELSIF jsonb_typeof(d.value) = 'number' THEN
+      days := (d.value #>> '{}')::bigint;
       IF days < 1 THEN RAISE EXCEPTION 'invalid connection retention'; END IF;
     ELSE RAISE EXCEPTION 'invalid connection retention';
     END IF;
     days := least(days, cap);
-    SELECT g.id INTO current_generation FROM data_generations g
-      WHERE g.workspace_id = p_workspace AND g.dataset_id = d.id
-        AND (g.expires_at IS NULL OR g.expires_at > p_now)
-        AND NOT EXISTS (SELECT 1 FROM data_generations n
-          WHERE n.workspace_id = p_workspace AND n.dataset_id = d.id AND n.sequence > g.sequence);
-    UPDATE data_records SET expires_at = retention_deadline(collected_at, days)
-      WHERE workspace_id = p_workspace AND generation_id = current_generation
-        AND (expires_at IS NULL OR expires_at > p_now);
-    UPDATE data_records r SET expires_at = least(r.expires_at, retention_deadline(r.collected_at, days))
-      FROM data_generations g
-      WHERE g.workspace_id = p_workspace AND g.dataset_id = d.id
-        AND g.id IS DISTINCT FROM current_generation
-        AND r.workspace_id = p_workspace AND r.generation_id = g.id;
-    UPDATE data_generations SET expires_at = CASE
-        WHEN id = current_generation THEN retention_deadline(created_at, days)
-        ELSE least(expires_at, retention_deadline(created_at, days)) END
-      WHERE workspace_id = p_workspace AND dataset_id = d.id;
-    UPDATE data_refreshes SET expires_at = CASE
-        WHEN expires_at IS NULL OR expires_at > p_now
-          THEN retention_deadline(source_collected_at, days)
-        ELSE expires_at END
-      WHERE workspace_id = p_workspace AND dataset_id = d.id;
+    -- Staged reports can exist before ingestion registers their dataset.
     UPDATE data_connector_stages SET
         source_expires_at = CASE
           WHEN source_expires_at IS NULL OR source_expires_at > p_now
@@ -127,6 +103,32 @@ BEGIN
         expires_at = least(expires_at, retention_deadline(source_collected_at, days))
       WHERE workspace_id = p_workspace AND connection_id = p_connection
         AND dataset_key = d.key;
+    SELECT id INTO v_dataset FROM data_datasets
+      WHERE workspace_id = p_workspace AND connection_id = p_connection
+        AND kind = 'source' AND key = d.key;
+    CONTINUE WHEN v_dataset IS NULL;
+    SELECT g.id INTO current_generation FROM data_generations g
+      WHERE g.workspace_id = p_workspace AND g.dataset_id = v_dataset
+        AND (g.expires_at IS NULL OR g.expires_at > p_now)
+        AND NOT EXISTS (SELECT 1 FROM data_generations n
+          WHERE n.workspace_id = p_workspace AND n.dataset_id = v_dataset AND n.sequence > g.sequence);
+    UPDATE data_records SET expires_at = retention_deadline(collected_at, days)
+      WHERE workspace_id = p_workspace AND generation_id = current_generation
+        AND (expires_at IS NULL OR expires_at > p_now);
+    UPDATE data_records r SET expires_at = least(r.expires_at, retention_deadline(r.collected_at, days))
+      FROM data_generations g
+      WHERE g.workspace_id = p_workspace AND g.dataset_id = v_dataset
+        AND g.id IS DISTINCT FROM current_generation
+        AND r.workspace_id = p_workspace AND r.generation_id = g.id;
+    UPDATE data_generations SET expires_at = CASE
+        WHEN id = current_generation THEN retention_deadline(created_at, days)
+        ELSE least(expires_at, retention_deadline(created_at, days)) END
+      WHERE workspace_id = p_workspace AND dataset_id = v_dataset;
+    UPDATE data_refreshes SET expires_at = CASE
+        WHEN expires_at IS NULL OR expires_at > p_now
+          THEN retention_deadline(source_collected_at, days)
+        ELSE expires_at END
+      WHERE workspace_id = p_workspace AND dataset_id = v_dataset;
   END LOOP;
   DELETE FROM data_model_query_snapshots WHERE workspace_id = p_workspace;
   DELETE FROM data_prepared_generations WHERE workspace_id = p_workspace;

@@ -15,6 +15,7 @@ import {
 } from "./connection-retention.js";
 import { withWorkspace, type Db } from "./context.js";
 import { adminSetDataPolicy } from "./data-policy.js";
+import { storeConnectorStage } from "./connector-staging.js";
 import { ingestDatasetPage } from "./datasets.js";
 import * as schema from "./schema.js";
 import { createTestDatabase, type TestDatabase } from "./test-db.js";
@@ -446,6 +447,43 @@ describe("choosing a connection's retention", () => {
     }
     expect((await deadlines(admin, connectionId)).x!.expiresAt).toEqual(
       new Date(collected.getTime() + 30 * DAY),
+    );
+  });
+
+  it("applies to staged reports of datasets not registered yet", async () => {
+    const connectionId = await connection(a);
+    const definition = personalDataset();
+    // An initial sync has staged a report but not ingested the dataset.
+    await withWorkspace(db, { workspaceId: a }, (tx) =>
+      storeConnectorStage(
+        tx,
+        { workspaceId: a, connectionId, connectorId: "retention-fixture" },
+        {
+          key: "report-1",
+          metadata: { object: "earnings.csv" },
+          pages: [page(definition, "r1", ["x"])],
+        },
+        definition,
+      ),
+    );
+    const stage = async () =>
+      (
+        await admin`
+          select source_collected_at, source_expires_at, expires_at
+          from data_connector_stages where connection_id = ${connectionId}`
+      )[0]!;
+    const before = await stage();
+    expect(before.source_expires_at).toEqual(
+      new Date((before.source_collected_at as Date).getTime() + 90 * DAY),
+    );
+    expect(await choose(a, connectionId, { earnings: null })).toBe(true);
+    const kept = await stage();
+    expect(kept.source_expires_at).toBeNull();
+    // The cache lifetime itself is never extended.
+    expect(kept.expires_at).toEqual(before.expires_at);
+    expect(await choose(a, connectionId, { earnings: 2 })).toBe(true);
+    expect((await stage()).source_expires_at).toEqual(
+      new Date((before.source_collected_at as Date).getTime() + 2 * DAY),
     );
   });
 
