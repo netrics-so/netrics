@@ -421,6 +421,13 @@
       "when": 1793907712299,
       "tag": "0059_definition_history",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1793970677551,
+      "tag": "0060_superseded_generation_release",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ import {
 } from "@netrics/contracts";
 import { createTestDatabase, type TestDatabase } from "./test-db.js";
 import { withWorkspace, hasSqlstate, type Db } from "./context.js";
+import { datasetWorkspaceBytes } from "./data-usage.js";
 import {
   ingestDatasetPage,
   previewDataset,
@@ -596,6 +597,128 @@ describe("durable typed dataset ingestion", () => {
         await admin`select count(*)::int n from data_records where generation_id=${r.generationId}`
       )[0]?.n,
     ).toBe(0);
+  });
+  it("bounds retained storage across repeated refreshes while pinned generations stay readable", async () => {
+    const [workspace] =
+      await admin`insert into workspaces(name) values ('Churn') returning id`;
+    const w = workspace!.id as string;
+    const [connection] =
+      await admin`insert into connections(workspace_id,connector_id,name) values (${w},'dataset-fixture','Churn') returning id`;
+    const cw = connection!.id as string;
+    const d = { ...definition("churn"), retentionDays: null };
+    const minute = 60_000;
+    const records = (round: number) =>
+      Array.from({ length: 40 }, (_, i) => record("k" + i, `${round}.${i}`));
+    const at = (round: number) => new Date(now.getTime() + round * minute);
+    const refresh = (round: number, quota: number | null) =>
+      withWorkspace(db, { workspaceId: w }, (tx) =>
+        ingestDatasetPage(tx, {
+          workspaceId: w,
+          connectionId: cw,
+          definition: d,
+          page: page(d, {
+            refreshKey: "churn-" + round,
+            records: records(round),
+          }),
+          now: at(round),
+          maxWorkspaceBytes: quota,
+        }),
+      );
+    const usage = (round: number) =>
+      withWorkspace(db, { workspaceId: w }, (tx) =>
+        datasetWorkspaceBytes(tx, w, at(round)),
+      );
+    const baseline = await usage(0);
+    // An abandoned refresh that a newer one supersedes can never publish.
+    const dead = await ingest(
+      d,
+      page(d, { refreshKey: "churn-dead", complete: false }),
+      w,
+      cw,
+    );
+    const first = await refresh(1, null);
+    const single = (await usage(1)) - baseline;
+    const quota = baseline + 3 * single;
+    const generations: string[] = [first.generationId!];
+    for (let round = 2; round <= 12; round++)
+      generations.push((await refresh(round, quota)).generationId!);
+    // Only the current generation and its refresh pages count.
+    const current = await usage(12);
+    expect(current - baseline).toBeLessThan(1.5 * single);
+
+    // A last-valid fallback snapshot pins one superseded generation.
+    const pinned = generations[4]!;
+    const [model] =
+      await admin`insert into data_models(workspace_id,name,definition) values (${w},'Pins','{}') returning id`;
+    const [release] =
+      await admin`insert into data_model_releases(model_id,workspace_id,version,definition,dependencies,schema_bindings) values (${model!.id},${w},1,'{}','{}','{}') returning id`;
+    const pinExpiry = new Date(now.getTime() + 6 * 60 * minute);
+    await admin`insert into data_model_query_snapshots(release_id,workspace_id,query_key,generations,expires_at) values (${release!.id},${w},'fallback',${admin.json({ [first.datasetId]: pinned })},${pinExpiry})`;
+    // The pinned generation's records count again; its raw pages do not.
+    expect(await usage(12)).toBeGreaterThan(current + 0.3 * single);
+
+    const url = new URL(test.appUrl);
+    url.username = "netrics_scheduler";
+    url.password = "netrics_scheduler";
+    const client = postgres(url.toString(), { max: 1 });
+    const scheduler = drizzle(client, { schema: { ...schema, ...auth } });
+    const prune = async (moment: Date) => {
+      while ((await pruneDatasetHistory(scheduler, moment, 100)) > 0);
+    };
+    const physical = async () =>
+      (
+        await admin`select
+          (select count(*)::int from data_generations where dataset_id=${first.datasetId}) generations,
+          (select count(*)::int from data_records r join data_generations g on g.id=r.generation_id where g.dataset_id=${first.datasetId}) records,
+          (select count(*)::int from data_pages p join data_refreshes f on f.id=p.refresh_id where f.dataset_id=${first.datasetId}) pages`
+      )[0]!;
+    try {
+      // In-flight grace: a just-superseded generation is not released yet.
+      await prune(at(12));
+      expect((await physical()).generations).toBeGreaterThan(2);
+      const later = new Date(now.getTime() + 60 * minute);
+      await prune(later);
+      expect(await physical()).toEqual({
+        generations: 2,
+        records: 80,
+        pages: 1,
+      });
+      expect(
+        await admin`select 1 from data_pages where refresh_id=(select id from data_refreshes where dataset_id=${dead.datasetId} and refresh_key='churn-dead')`,
+      ).toHaveLength(0);
+      const read = await preview(first.datasetId, w, later, pinned);
+      expect(read?.generation.id).toBe(pinned);
+      expect(read?.rows).toHaveLength(40);
+      expect((await preview(first.datasetId, w, later))?.generation.id).toBe(
+        generations.at(-1),
+      );
+      expect(await preview(first.datasetId, w, later, generations[3])).toBe(
+        null,
+      );
+      // After the pin's own expiry the generation is reclaimed too.
+      const expired = new Date(pinExpiry.getTime() + minute);
+      await prune(expired);
+      expect(await physical()).toEqual({
+        generations: 1,
+        records: 40,
+        pages: 1,
+      });
+      expect(await preview(first.datasetId, w, expired, pinned)).toBe(null);
+      // Repeated refreshes keep working under the quota after maintenance.
+      const resumed = await withWorkspace(db, { workspaceId: w }, (tx) =>
+        ingestDatasetPage(tx, {
+          workspaceId: w,
+          connectionId: cw,
+          definition: d,
+          page: page(d, { refreshKey: "churn-final", records: records(99) }),
+          now: expired,
+          maxWorkspaceBytes: quota,
+        }),
+      );
+      expect(resumed.generationId).not.toBeNull();
+    } finally {
+      await client.end({ timeout: 5 });
+    }
   });
 });
 

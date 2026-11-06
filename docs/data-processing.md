@@ -173,7 +173,7 @@ in-progress snapshot cannot overwrite a newer published refresh.
 
 The database exports `previewDataset` (bounded, workspace-scoped) and
 `replayDatasetRefresh` (rebuild from retained complete pages without network
-access). Replay preserves the original collection time and expiry. Published
+access; available for the refresh behind the current generation). Replay preserves the original collection time and expiry. Published
 row values remain typed JSONB source views; prepared analytical relations,
 expression graphs and semantic queries are described below.
 
@@ -277,6 +277,29 @@ Expired rows are excluded at read time. Hourly scheduler maintenance removes
 expired rows, pages, prepared outputs and query snapshots in batches through
 `prune_dataset_history`. The scheduler has no direct read access to source
 records. Dataset/model tables use forced RLS and explicit tenant predicates.
+
+Retention bounds the current generation, not every copy of it. Each upsert,
+append or replacement refresh publishes a complete new generation, so a
+superseded generation is released once nothing can legitimately read it: no
+unexpired last-valid query snapshot or pinned page session names it, and its
+successor is at least 15 minutes old. That grace covers request transactions
+that read a generation before committing the snapshot that pins it. Nothing else
+pins raw generations: ingestion reads only the latest one, prepared caches hold
+their own output rows and are reachable only through the current input vector,
+and published definition history and restore store no generation identities.
+A pinned generation stays readable until the last snapshot or session naming it
+expires, even with `retentionDays: null`; source retention still ends it sooner.
+Maintenance marks a released generation expired (readers that still name it fail
+with an explicit expiry error, never a partial read) and then removes its records.
+Raw pages of a complete refresh are kept only while its generation is current,
+for `replayDatasetRefresh`; an incomplete refresh that a newer published refresh
+has made unpublishable also loses its pages. Their metadata rows remain until
+source retention so a late retry is still rejected rather than republished.
+`maxWorkspaceBytes` counts only current and pinned generations and the pages of
+live refreshes. Superseded copies awaiting maintenance do not count, so
+frequent refreshes of the same dataset do not accumulate quota usage; physical
+storage carries at most the copies published within the grace period plus one
+maintenance interval.
 
 ## Preparations and semantic models
 

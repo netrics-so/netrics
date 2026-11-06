@@ -4,6 +4,7 @@ import {
   adminSetDataPolicy,
   createDatabase,
   createRawSqlClient,
+  pruneDatasetHistory,
   withWorkspace,
   type Database,
   type Sql,
@@ -49,11 +50,19 @@ const definition = sourceDatasetSchema.parse({
     },
   ],
 });
-let db: Database, admin: Sql, callerId: string, viewerId: string;
+let db: Database,
+  scheduler: Database,
+  admin: Sql,
+  callerId: string,
+  viewerId: string;
 beforeAll(async () => {
   const test = await createTestDatabase();
   db = createDatabase(test.appUrl);
   admin = createRawSqlClient(test.adminUrl, { max: 1 });
+  const schedulerUrl = new URL(test.adminUrl);
+  schedulerUrl.username = "netrics_scheduler";
+  schedulerUrl.password = "netrics_scheduler";
+  scheduler = createDatabase(schedulerUrl.toString());
   const [user, viewer] =
     await admin`insert into users(email,display_name) values ('pagination@example.com','Owner'),('pagination-viewer@example.com','Viewer') returning id`;
   callerId = user!.id as string;
@@ -62,6 +71,7 @@ beforeAll(async () => {
 }, 60_000);
 afterAll(async () => {
   await db?.$client.end({ timeout: 5 });
+  await scheduler?.$client.end({ timeout: 5 });
   await admin?.end({ timeout: 5 });
 });
 
@@ -479,6 +489,51 @@ describe("immutable semantic result pagination", () => {
       f.read({ ...query, pageToken: first.nextPageToken! }),
     ).rejects.toThrow("data_page_unavailable");
     await expect(f.read()).rejects.toThrow("data_source_not_found");
+  });
+
+  it("keeps a session's superseded generation through maintenance until the session expires", async () => {
+    const f = await fixture();
+    const first = await f.read();
+    let generationId = f.source.generationId;
+    for (let round = 1; round <= 5; round++)
+      ({ generationId } = await f.service.saveManual(
+        f.actor,
+        {
+          definition,
+          generationId,
+          records: f.records.map((record) => ({
+            values: { ...record.values, amount: String(round * 10) },
+          })),
+        },
+        f.source.datasetId,
+      ));
+    const generations = async () =>
+      (
+        await admin`select id from data_generations where dataset_id=${f.source.datasetId} order by sequence`
+      ).map((row) => row.id as string);
+    expect(await generations()).toHaveLength(6);
+    const prune = async (at: Date) => {
+      while ((await pruneDatasetHistory(scheduler, at, 100)) > 0);
+    };
+    const hours = (n: number) => n * 3_600_000;
+    f.advance(hours(2));
+    await prune(new Date(NOW.getTime() + hours(2)));
+    // Unpinned intermediate corrections are reclaimed; the session's input
+    // and the current generation stay.
+    expect(await generations()).toEqual([f.source.generationId, generationId]);
+    const second = await f.read({ ...query, pageToken: first.nextPageToken! });
+    expect(second.rows[0]).toMatchObject({
+      dimensions: { id: "b" },
+      measures: { amount: { value: "2" } },
+    });
+    expect(second.provenance).toEqual(first.provenance);
+    const expired = new Date(first.pageExpiresAt!).getTime() + 1_000;
+    f.advance(expired - NOW.getTime());
+    await prune(new Date(expired));
+    expect(await generations()).toEqual([generationId]);
+    await expect(
+      f.read({ ...query, pageToken: first.nextPageToken! }),
+    ).rejects.toThrow("data_page_unavailable");
   });
 
   it("does not renew expiry and obeys shortened or disabled snapshot policies", async () => {

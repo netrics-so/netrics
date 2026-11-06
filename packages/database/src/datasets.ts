@@ -406,7 +406,10 @@ async function ingestPage(
   if (!page.complete) {
     if (
       quota !== null &&
-      exceedsDataPolicy(await datasetWorkspaceBytes(tx, workspaceId), quota)
+      exceedsDataPolicy(
+        await datasetWorkspaceBytes(tx, workspaceId, now),
+        quota,
+      )
     )
       fail("dataset_workspace_quota");
     assertFreshRefresh();
@@ -571,7 +574,7 @@ async function ingestPage(
     await tx.insert(dataRecords).values(entries.slice(offset, offset + 1000));
   if (
     quota !== null &&
-    exceedsDataPolicy(await datasetWorkspaceBytes(tx, workspaceId), quota)
+    exceedsDataPolicy(await datasetWorkspaceBytes(tx, workspaceId, now), quota)
   )
     fail("dataset_workspace_quota");
   await tx
