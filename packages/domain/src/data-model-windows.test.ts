@@ -16,6 +16,7 @@ import {
   shiftCivilMonths,
 } from "./data-model-windows.js";
 import { semanticModelFieldReferences } from "./data-field-references.js";
+import { formatDataFormula, parseDataFormula } from "./data-formula.js";
 import type { DataTable } from "./data-preparation.js";
 import type { DataExpression, DataRow } from "./data-expression.js";
 
@@ -822,6 +823,37 @@ describe("rolling and period-offset measures", () => {
         "date",
       ).range,
     ).toEqual({ from: "2026-10-05", to: null });
+  });
+
+  it("reads date bounds typed as formula text", () => {
+    const fields = [{ id: "date", name: "Day" }];
+    const typed = parseDataFormula(
+      '[Day] >= TO_DATE("2026-10-01") AND TO_DATE("2026-10-31") >= [Day]',
+      fields,
+    );
+    expect(modelQueryTimeRange(typed, "date")).toEqual({
+      range: { from: "2026-10-01", to: "2026-10-31" },
+    });
+    const formatted = parseDataFormula(
+      formatDataFormula(call("lt", field("date"), day("2026-11-01")), fields),
+      fields,
+    );
+    expect(modelQueryTimeRange(formatted, "date").range).toEqual({
+      from: null,
+      to: "2026-10-31",
+    });
+    expect(() =>
+      modelQueryTimeRange(
+        parseDataFormula('[Day] >= TO_DATE("2026-13-01")', fields),
+        "date",
+      ),
+    ).toThrow();
+    expect(() =>
+      modelQueryTimeRange(
+        parseDataFormula("[Day] >= TO_DATE([Day])", fields),
+        "date",
+      ),
+    ).toThrow("model_window_time_filter_unsupported");
   });
 
   it("keeps queries without windowed measures on the existing path", () => {

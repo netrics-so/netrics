@@ -323,6 +323,16 @@ function timeBound(
     literal = a;
     fn = FLIPPED[fn] as keyof typeof FLIPPED;
   }
+  // Formula text writes date literals as TO_DATE("…"), which parses back
+  // as a call on a text literal; treat both as the same constant date.
+  if (
+    literal?.kind === "call" &&
+    literal.fn === "to_date" &&
+    literal.args.length === 1 &&
+    literal.args[0]!.kind === "literal" &&
+    literal.args[0]!.type === "string"
+  )
+    literal = { ...literal.args[0]!, type: "date" };
   if (
     literal?.kind !== "literal" ||
     literal.type !== "date" ||
