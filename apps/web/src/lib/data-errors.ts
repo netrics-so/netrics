@@ -3,8 +3,10 @@ export function dataErrorCodeKey(code: string) {
   if (/cardinality|not_unique|identity_conflict/.test(code))
     return "cardinality";
   if (/quota|limit|budget|capacity/.test(code)) return "limit";
-  if (/expired|replay_unavailable/.test(code)) return "expired";
-  if (/not_published|source_pending/.test(code)) return "unpublished";
+  if (code === "data_source_pending") return "pending";
+  if (/expired|replay_unavailable|history_unavailable/.test(code))
+    return "expired";
+  if (/not_published/.test(code)) return "unpublished";
   if (/cycle|ambiguous_path/.test(code)) return "cycle";
   if (/incompatible_dimension|relationship_path|filter/.test(code))
     return "filter";

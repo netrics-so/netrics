@@ -1,6 +1,8 @@
 "use client";
 import { useT } from "@/lib/i18n/client";
 const labels = [
+  "data_source_pending",
+  "aggregate_missing_inputs",
   "decimal_rounded",
   "division_by_zero",
   "retained_source_history_incomplete",

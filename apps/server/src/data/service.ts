@@ -128,6 +128,8 @@ export function createDataLoader(
     generations?: Record<string, string>;
     overrides?: Map<string, { version: number; graph: PreparationGraph }>;
     policy?: DataPolicy;
+    /** Definition preview/publication only; never interpret a pending input as collected rows. */
+    allowPendingSchemas?: boolean;
   } = {},
 ) {
   const tables = new Map<string, DataTable>(),
@@ -213,20 +215,24 @@ export function createDataLoader(
           }),
         )
         .digest("hex");
-      const [cachedGeneration] = override
-        ? []
-        : await tx
-            .select()
-            .from(schema.dataPreparedGenerations)
-            .where(
-              and(
-                eq(schema.dataPreparedGenerations.workspaceId, workspaceId),
-                eq(schema.dataPreparedGenerations.preparationId, preparationId),
-                eq(schema.dataPreparedGenerations.version, version),
-                eq(schema.dataPreparedGenerations.inputKey, inputKey),
-                gt(schema.dataPreparedGenerations.expiresAt, now),
-              ),
-            );
+      const [cachedGeneration] =
+        override || warnings.has("data_source_pending")
+          ? []
+          : await tx
+              .select()
+              .from(schema.dataPreparedGenerations)
+              .where(
+                and(
+                  eq(schema.dataPreparedGenerations.workspaceId, workspaceId),
+                  eq(
+                    schema.dataPreparedGenerations.preparationId,
+                    preparationId,
+                  ),
+                  eq(schema.dataPreparedGenerations.version, version),
+                  eq(schema.dataPreparedGenerations.inputKey, inputKey),
+                  gt(schema.dataPreparedGenerations.expiresAt, now),
+                ),
+              );
       let preparedGenerationId = cachedGeneration?.id;
       if (cachedGeneration) {
         const cached = cachedGeneration.outputs as {
@@ -247,7 +253,7 @@ export function createDataLoader(
         const execution = executePreparation(graph, inputs, budget);
         execution.warnings.forEach((w) => warnings.add(w));
         result = execution.outputs[output]!;
-        if (!override) {
+        if (!override && !warnings.has("data_source_pending")) {
           const byteSize = Buffer.byteLength(JSON.stringify(execution.outputs));
           const [usage] = await tx
             .select({
@@ -399,7 +405,49 @@ export function createDataLoader(
         )
         .orderBy(desc(schema.dataGenerations.sequence))
         .limit(1);
-      if (!generation) fail("data_source_pending", 409);
+      if (!generation) {
+        // A source that once published data is never reinterpreted as a first
+        // import after retention/GC. Snapshot fallback must also stay exact.
+        if (dataset.hasPublishedData)
+          fail("data_source_history_unavailable", 409);
+        if (!options.allowPendingSchemas || requested)
+          fail("data_source_pending", 409);
+        const [version] = await tx
+          .select()
+          .from(schema.dataSchemaVersions)
+          .where(
+            and(
+              eq(schema.dataSchemaVersions.workspaceId, workspaceId),
+              eq(schema.dataSchemaVersions.datasetId, id),
+            ),
+          )
+          .orderBy(desc(schema.dataSchemaVersions.version))
+          .limit(1);
+        if (!version) fail("data_schema_not_found", 409);
+        const definition = sourceDatasetSchema.parse(version.definition);
+        const pending: DataTable = {
+          fields: definition.fields.map((field) => ({ ...field })),
+          rows: [],
+        };
+        validateDataTable(pending, budget);
+        warnings.add("data_source_pending");
+        bindings[id] = pending.fields;
+        views.set(id, {
+          id,
+          name: dataset.name,
+          kind: dataset.kind as "source" | "manual",
+          fields: pending.fields,
+          generationId: null,
+          rowCount: null,
+          schemaVersion: version.version,
+          aggregated: false,
+          expiresAt: null,
+          connectionId: dataset.connectionId,
+        });
+        visiting.delete(id);
+        tables.set(id, pending);
+        return pending;
+      }
       if (generation.expiresAt !== null && generation.expiresAt <= now)
         fail("data_source_expired", 409);
       const [version] = await tx
@@ -745,7 +793,9 @@ export function createDataService(
     ) =>
       run(actor, async (tx, now) => {
         const parsed = semanticModelDefinitionSchema.parse(definition),
-          loader = loadFor(tx, actor.workspaceId, now);
+          loader = loadFor(tx, actor.workspaceId, now, {
+            allowPendingSchemas: true,
+          });
         for (const source of parsed.datasets) await loader.load(source);
         const result = querySemanticModel(
           parsed,
@@ -755,6 +805,9 @@ export function createDataService(
         );
         return {
           ...result,
+          ...(loader.warnings.has("data_source_pending")
+            ? { rows: [], totalRows: 0 }
+            : {}),
           releaseId: null,
           stale: false,
           warnings: [...loader.warnings, ...result.warnings],
@@ -929,15 +982,17 @@ export function createDataService(
           actor.workspaceId,
           now,
           preparationGraphSchema.parse(graph),
+          loadFor(tx, actor.workspaceId, now, { allowPendingSchemas: true }),
         );
+        const pending = loader.warnings.has("data_source_pending");
         return {
           outputs: Object.fromEntries(
             Object.entries(output.outputs).map(([id, table]) => [
               id,
               {
                 fields: table.fields,
-                rows: table.rows.slice(0, 100),
-                truncated: table.rows.length > 100,
+                rows: pending ? [] : table.rows.slice(0, 100),
+                truncated: !pending && table.rows.length > 100,
               },
             ]),
           ),
@@ -957,6 +1012,7 @@ export function createDataService(
             actor.workspaceId,
             now,
             graph,
+            loadFor(tx, actor.workspaceId, now, { allowPendingSchemas: true }),
           );
         if (
           graph.nodes.some(
@@ -985,6 +1041,7 @@ export function createDataService(
           createdAt: now,
         });
         const publishedLoader = loadFor(tx, actor.workspaceId, now, {
+          allowPendingSchemas: true,
           dependencies: {
             prepared: { ...loader.dependencies.prepared, [id]: row.version },
           },
@@ -1076,7 +1133,9 @@ export function createDataService(
         if (row.version !== expected) fail("version_conflict", 409);
         if (row.publishedVersion === expected) return { model: modelView(row) };
         const definition = semanticModelDefinitionSchema.parse(row.definition),
-          loader = loadFor(tx, actor.workspaceId, now);
+          loader = loadFor(tx, actor.workspaceId, now, {
+            allowPendingSchemas: true,
+          });
         for (const source of definition.datasets) await loader.load(source);
         validateSemanticModel(
           definition,

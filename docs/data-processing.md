@@ -21,6 +21,22 @@ three-valued boolean semantics are unchanged. A deliberate filter excluding
 missing rows is evaluated before aggregation. Execution version 3 invalidates
 older prepared/query caches so these warnings are not silently lost.
 
+Definition previews and publication can use a newly registered source's schema
+before its first complete report arrives. Previews show a waiting note and no
+calculated rows; publication stores definitions and schema bindings without
+creating raw or prepared generations. Ordinary dataset/model queries continue
+to report `data_source_pending`, including count measures, until a real complete
+generation arrives. The published definitions then read that generation without
+republishing. Available inputs still undergo actual relationship/cardinality
+checks during publication.
+
+`data_datasets.has_published_data` survives retention pruning. A source that
+once published data cannot become a schema-only first import after its history
+is removed. Migration 0056 conservatively marks all pre-migration sources as
+historical, since older retention may have removed evidence of publication;
+an existing unfinished source therefore needs its next complete import before
+using this path. Removed, foreign and expired inputs remain unavailable.
+
 ## Typed source datasets
 
 SDK 0.2.9 adds optional `manifest.datasets` and `SyncResult.datasetPages`.
