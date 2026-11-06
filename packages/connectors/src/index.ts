@@ -42,6 +42,10 @@ export {
 } from "./apple-ads/index.js";
 export { createDemoConnector, demoManifest } from "./demo/index.js";
 export {
+  createGooglePlayConnector,
+  googlePlayManifest,
+} from "./google-play/index.js";
+export {
   createSearchConsoleConnector,
   searchConsoleManifest,
 } from "./google-search-console/index.js";

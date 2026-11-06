@@ -319,8 +319,8 @@ export function querySemanticModel(
       budget.tick();
       let cell: DataCell,
         status: ModelMeasureResult["status"] = "ok";
-      if (m.kind === "aggregate")
-        cell = aggregateData(
+      if (m.kind === "aggregate") {
+        const { partial, ...aggregated } = aggregateData(
           {
             ...table(m.datasetId),
             rows: grouped.get(m.datasetId)?.get(key) ?? [],
@@ -328,7 +328,9 @@ export function querySemanticModel(
           m.aggregate,
           budget,
         );
-      else {
+        cell = aggregated;
+        if (partial) status = "partial";
+      } else {
         const dependencies = [...references(m.expression)].map(
             (ref) => [ref, evaluate(ref)] as const,
           ),

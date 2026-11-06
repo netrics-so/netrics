@@ -39,6 +39,67 @@ const orders: DataTable = {
   expiresAt: "2026-12-01T00:00:00Z",
 };
 const sources = new Map([["orders", orders]]);
+it("keeps known numeric aggregate values while exposing missing inputs, and preserves count/boolean semantics", () => {
+  const input: DataTable = {
+    fields: [
+      { id: "value", name: "Value", type: "integer", nullable: true },
+      { id: "flag", name: "Flag", type: "boolean", nullable: true },
+    ],
+    rows: [
+      { value: 0, flag: true },
+      { value: null, flag: null },
+      { value: 5, flag: false },
+    ],
+  };
+  for (const op of ["sum", "avg", "min", "max"] as const) {
+    const budget = new ProcessingBudget();
+    expect(
+      aggregateData(
+        input,
+        { id: "total", name: "Total", op, fieldId: "value" },
+        budget,
+      ),
+    ).toMatchObject({ partial: true });
+    expect(budget.warnings).toContain("aggregate_missing_inputs");
+  }
+  expect(
+    aggregateData(input, {
+      id: "count",
+      name: "Reported values",
+      op: "count",
+      fieldId: "value",
+    }),
+  ).toEqual({ value: 2, type: "integer" });
+  expect(
+    aggregateData(input, {
+      id: "any",
+      name: "Any",
+      op: "any",
+      fieldId: "flag",
+    }),
+  ).toEqual({ value: true, type: "boolean" });
+  const prepared = executePreparation(
+    {
+      version: 1,
+      nodes: [
+        { id: "raw", type: "source", datasetId: "input" },
+        {
+          id: "group",
+          type: "group",
+          input: "raw",
+          keys: [],
+          aggregates: [
+            { id: "total", name: "Total", op: "sum", fieldId: "value" },
+          ],
+        },
+      ],
+      outputs: ["group"],
+    },
+    new Map([["input", input]]),
+  );
+  expect(prepared.outputs.group?.rows[0]?.total).toBe("5");
+  expect(prepared.warnings).toContain("aggregate_missing_inputs");
+});
 function run(nodes: PreparationGraph["nodes"]) {
   return executePreparation(
     {

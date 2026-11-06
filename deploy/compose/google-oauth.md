@@ -1,6 +1,6 @@
 # Google OAuth app for a self-hosted instance
 
-Connectors that sign in with Google (Google Search Console) need a Google
+Connectors that sign in with Google (Google Search Console and Google Play) need a Google
 OAuth app registered for your instance. The hosted service uses netrics' own
 app; a self-hosted instance uses its own, in a Google Cloud project you
 control ([ADR 0012](../../docs/decisions/0012-oauth-authorization-code-platform.md)).
@@ -59,15 +59,21 @@ last Search Console connection), Google invalidates the tokens of every
 OAuth client in that project for that account. Two instances sharing a
 project, or an OAuth client, would disconnect each other.
 
-## 3. Enable the Search Console API
+## 3. Enable the connector APIs
 
 1. Go to **APIs & Services** > **Library**.
 2. Search for **Google Search Console API** (`searchconsole.googleapis.com`)
    and open it.
 3. Choose **Enable**.
 
-Without it, connecting succeeds but listing properties and syncing fail with
-a "has not been used in project ... or it is disabled" error.
+For Google Play, also enable **Google Play Developer Reporting API**
+(`playdeveloperreporting.googleapis.com`) for app discovery, and **Cloud Storage
+API** (`storage.googleapis.com`) for report downloads. Play Console account/app
+and financial permissions still control which private reports the signed-in
+account can read; enabling an API does not grant those permissions.
+
+Without the required APIs, connecting may succeed while discovery or syncing
+fails with an API-disabled error.
 
 ## 4. Configure the Google Auth Platform
 
@@ -94,20 +100,24 @@ Then:
    your instance: `example.com` for `netrics.example.com`. Optionally fill in
    **App domain** (home page, privacy policy, terms of service links) and a
    logo; step 5 says when they are needed. Save.
-2. **Data access**: choose **Add or remove scopes** and select these three,
+2. **Data access**: choose **Add or remove scopes** and select the identity scopes and the scopes of connectors you use,
    then **Update** and **Save**:
 
-   | Scope                                                 | Why                                   |
-   | ----------------------------------------------------- | ------------------------------------- |
-   | `openid`                                              | Identifies the Google account         |
-   | `https://www.googleapis.com/auth/userinfo.email`      | Shows which account a connection uses |
-   | `https://www.googleapis.com/auth/webmasters.readonly` | Read-only Search Console access       |
+   | Scope                                                    | Why                                   |
+   | -------------------------------------------------------- | ------------------------------------- |
+   | `openid`                                                 | Identifies the Google account         |
+   | `https://www.googleapis.com/auth/userinfo.email`         | Shows which account a connection uses |
+   | `https://www.googleapis.com/auth/webmasters.readonly`    | Read-only Search Console access       |
+   | `https://www.googleapis.com/auth/devstorage.read_only`   | Google Play report downloads          |
+   | `https://www.googleapis.com/auth/playdeveloperreporting` | Google Play app discovery             |
 
    If `webmasters.readonly` is not in the list, the Search Console API is not
    enabled yet (step 3); you can also paste it under **Manually add scopes**.
-   Google lists all three as non-sensitive, so they need no security
-   review. netrics asks for exactly these scopes when a user connects; do
-   not add others here.
+   Each connector requests its own declared scopes, together with the identity
+   scopes. Storage read-only scope can technically read other Cloud Storage
+   data available to the account; the connector restricts requests to the Play
+   report bucket. Check the consent console's classification and complete any
+   verification it requires for your selected scopes.
 
 ## 5. Testing or in production (External apps only)
 
@@ -134,10 +144,11 @@ Internal app (step 4), or publish the External app:
    **In production**, and any Google account can connect; the test user list
    no longer applies.
 
-Because the app only asks for non-sensitive scopes, publishing needs no
-Google verification. **Brand verification** (offered on **Branding** or
-**Verification center**) is optional: it lets the consent screen show your
-app name and logo instead of only the domain.
+Publishing and verification are separate. Complete any scope verification
+Google requires, especially when enabling Google Play's Storage/Reporting
+scopes. A Search Console-only configuration previously used non-sensitive
+scopes; do not assume the same approval applies to newly added scopes.
+**Brand verification** lets the consent screen show the app name and logo.
 
 Existing connections keep their 7-day tokens after publishing; reconnect
 them once.
@@ -204,8 +215,14 @@ Compose recreates `api` and `worker` with the new environment.
    property (a test user while the app is in Testing). After consent you
    return to netrics and choose the property.
 
-The host needs outbound HTTPS to `oauth2.googleapis.com` and
-`searchconsole.googleapis.com`; users' browsers need to reach
+For Google Play, choose the connector, authorize the report scopes, then check
+its report URI and choose apps before saving. See the
+[connector guide](../../docs/connectors/google-play.md).
+
+The host needs outbound HTTPS to `oauth2.googleapis.com` and the APIs used:
+`searchconsole.googleapis.com`, `storage.googleapis.com` and
+`playdeveloperreporting.googleapis.com`. Public Play ratings/artwork additionally
+use `play.google.com` and `play-lh.googleusercontent.com`; browsers authorize at
 `accounts.google.com`.
 
 ## Troubleshooting
@@ -248,8 +265,8 @@ the oldest. In each case **Reconnect** on the connection fixes it.
 
 **"Google hasn't verified this app".** Expected while the app is in Testing
 (test users choose **Continue**). For a published app, check that **Data
-access** lists only the three scopes above; sensitive scopes would require
-Google's verification.
+access** lists the scopes you intended to enable and complete any verification
+Google requires. Adding Google Play changes the requested scopes.
 
 **Disconnecting one connection stopped others.** netrics only revokes at
 Google when the deleted connection was the last one of that Google account

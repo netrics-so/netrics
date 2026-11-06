@@ -211,6 +211,8 @@ export const dataEn = {
       "Publishing makes this output available to models and other preparations.",
     warnings: "Preview notes",
     warningLabels: {
+      aggregate_missing_inputs:
+        "An aggregate contains missing input values. The result uses the reported values and may be incomplete.",
       decimal_rounded:
         "Some decimal results were rounded to 18 decimal places.",
       division_by_zero: "Division by zero produces an empty value.",

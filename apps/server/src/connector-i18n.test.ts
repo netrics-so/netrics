@@ -127,6 +127,7 @@ describe("connector catalog sync", () => {
       "app-store-connect",
       "apple-ads",
       "demo",
+      "google-play",
       "google-search-console",
       "vercel",
     ]);

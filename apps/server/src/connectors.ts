@@ -3,6 +3,7 @@ import {
   createAppStoreConnectConnector,
   createAppleAdsConnector,
   createDemoConnector,
+  createGooglePlayConnector,
   createSearchConsoleConnector,
   createVercelConnector,
 } from "@netrics/connectors";
@@ -51,6 +52,7 @@ export function createDefaultRegistry(
     createVercelConnector(),
     createSearchConsoleConnector(),
     createAppStoreConnectConnector(),
+    createGooglePlayConnector(),
     createAppleAdsConnector(),
   ];
   for (const connector of connectors) {

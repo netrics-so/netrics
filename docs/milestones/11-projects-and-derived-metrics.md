@@ -165,3 +165,10 @@ implementation work; this plan does not create or complete issue records.
   - Original Apple sales rows and authoritative app/window corrections:
     [#454](https://github.com/netrics-so/netrics/issues/454). General preparations
     can calculate proceeds and classify downloads from these retained fields.
+
+  - Google Play report datasets, scoped public listing ratings, stored-credential
+    setup preview and app management: [#457](https://github.com/netrics-so/netrics/issues/457).
+    Connector integration proves exact proceeds/corrections, OAuth refresh and
+    workspace isolation. Editable portfolio templates, confirmed cross-store
+    mappings, dashboard source-health actions and real-account acceptance remain
+    open. See [current implementation boundaries](../connectors/google-play.md#current-implementation-boundaries).

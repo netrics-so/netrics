@@ -7,6 +7,7 @@ import { HealthBadge } from "../../health-badge";
 import { FinishSetup } from "../finish-setup";
 import { OAuthOutcomeBanner } from "../oauth-outcome";
 import { ReconnectBanner } from "../reconnect-banner";
+import { StoreConnectionSettings } from "../store-connection-settings";
 import { SearchConsoleSettings } from "../search-console-settings";
 import { ConnectionActions } from "./connection-actions";
 import { EditConnectionForm } from "./edit-connection-form";
@@ -418,6 +419,12 @@ export default async function ConnectionDetailPage({
               connectorName={connector?.name ?? connection.connectorName}
               mode="edit"
             />
+          ) : connector?.supportsResourceSelection ? (
+            <StoreConnectionSettings
+              workspaceId={workspaceId}
+              connection={connection}
+              connector={connector}
+            />
           ) : (
             <EditConnectionForm
               workspaceId={workspaceId}
@@ -476,66 +483,75 @@ export default async function ConnectionDetailPage({
         )}
       </div>
 
-      <div className="card">
-        <h2>{t("latestObservations")}</h2>
-        {observations.length === 0 ? (
-          <p className="muted">{t("noObservations")}</p>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{t("observations.metric")}</th>
-                <th>{t("observations.resource")}</th>
-                <th>{t("observations.breakdown")}</th>
-                <th>{t("observations.day")}</th>
-                <th>{t("observations.value")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {observations.map((observation) => (
-                <tr
-                  key={`${observation.metricKey}/${observation.seriesKey}/${observation.sourceTimestamp}`}
-                >
-                  <td title={observation.metricKey}>
-                    {metricNames.get(observation.metricKey) ??
-                      observation.metricKey}
-                  </td>
-                  <td
-                    className="muted"
-                    title={
-                      observation.resourceName
-                        ? observation.dimensions.resource
-                        : undefined
-                    }
-                  >
-                    {observation.resourceName ??
-                      observation.dimensions.resource ??
-                      "—"}
-                  </td>
-                  <td>
-                    {observationBreakdown(observation.dimensions).map(
-                      ([dimension, value]) => (
-                        <div key={dimension}>
-                          <span className="muted">
-                            {dimensionNames[dimension] ?? dimension}
-                          </span>{" "}
-                          {value}
-                        </div>
-                      ),
-                    )}
-                  </td>
-                  <td className="muted nowrap">
-                    {observation.sourceTimestamp.slice(0, 10)}
-                  </td>
-                  <td className="nowrap">
-                    {numbers.format(observation.value)}
-                  </td>
+      {(connector?.datasetsCount ?? 0) > 0 && can(role, "data:preview") ? (
+        <div className="card">
+          <h2>{t("dataTables")}</h2>
+          <p className="muted">{t("dataTablesHelp")}</p>
+          <Link href={`/workspaces/${workspaceId}/data`}>{t("openData")}</Link>
+        </div>
+      ) : null}
+      {connector?.metricsCount !== 0 ? (
+        <div className="card">
+          <h2>{t("latestObservations")}</h2>
+          {observations.length === 0 ? (
+            <p className="muted">{t("noObservations")}</p>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t("observations.metric")}</th>
+                  <th>{t("observations.resource")}</th>
+                  <th>{t("observations.breakdown")}</th>
+                  <th>{t("observations.day")}</th>
+                  <th>{t("observations.value")}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody>
+                {observations.map((observation) => (
+                  <tr
+                    key={`${observation.metricKey}/${observation.seriesKey}/${observation.sourceTimestamp}`}
+                  >
+                    <td title={observation.metricKey}>
+                      {metricNames.get(observation.metricKey) ??
+                        observation.metricKey}
+                    </td>
+                    <td
+                      className="muted"
+                      title={
+                        observation.resourceName
+                          ? observation.dimensions.resource
+                          : undefined
+                      }
+                    >
+                      {observation.resourceName ??
+                        observation.dimensions.resource ??
+                        "—"}
+                    </td>
+                    <td>
+                      {observationBreakdown(observation.dimensions).map(
+                        ([dimension, value]) => (
+                          <div key={dimension}>
+                            <span className="muted">
+                              {dimensionNames[dimension] ?? dimension}
+                            </span>{" "}
+                            {value}
+                          </div>
+                        ),
+                      )}
+                    </td>
+                    <td className="muted nowrap">
+                      {observation.sourceTimestamp.slice(0, 10)}
+                    </td>
+                    <td className="nowrap">
+                      {numbers.format(observation.value)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ) : null}
     </>
   );
 }

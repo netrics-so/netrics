@@ -201,6 +201,47 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     connect: "TV verbinden",
   },
   connections: {
+    apps: {
+      unsaved:
+        "Deine Verbindungseinstellungen oder App-Auswahl sind nicht gespeichert. Seite verlassen?",
+      title: "Apps für den Import",
+      all: "Alle aktuellen und zukünftigen Apps",
+      allHelp:
+        "Neue Apps, auf die dieses Konto zugreifen kann, werden automatisch einbezogen.",
+      choose: "Apps auswählen",
+      search: "Apps nach Name oder ID suchen",
+      selectResults: "Suchergebnisse auswählen ({count})",
+      clear: "Auswahl leeren",
+      selected:
+        "{count, plural, one {# App ausgewählt} other {# Apps ausgewählt}}",
+      unlisted: "Derzeit nicht aufgelistet",
+      unlistedHelp:
+        "Bisher ausgewählte Apps bleiben ausgewählt, wenn der Anbieter sie vorübergehend nicht auflistet. Bereits importierte Daten bleiben erhalten.",
+      empty:
+        "Keine Apps gefunden. Prüfe die Kontoberechtigungen oder ergänze Paketnamen unter „Erweiterte Einstellungen“.",
+      noResults: "Keine passenden Apps.",
+      noneHelp:
+        "Keine Apps ausgewählt: Neue App-Daten werden nicht importiert. Bereits importierte Daten bleiben verfügbar.",
+      pages: "Seiten der App-Liste",
+      previous: "Zurück",
+      next: "Weiter",
+      page: "Seite {page} von {pages}",
+      intro:
+        "Prüfe den Zugriff, wähle deine Apps und speichere dann. Alle ausgewählten Apps verwenden die Zugangsdaten dieser Verbindung.",
+      name: "Name der Verbindung",
+      reportGuide: "Berichts-URI und Berechtigungen finden",
+      advanced: "Erweiterte Einstellungen",
+      scopeHelp:
+        "Bewertungen gelten für das ausgewählte Store-Land. Erlöse behalten ihre ursprüngliche Währung; verschiedene Währungen werden nicht zu einer irreführenden Summe addiert.",
+      check: "Zugriff prüfen und Apps finden",
+      checking: "Zugriff wird geprüft…",
+      accessOk: "Zugriff geprüft. Wähle die Apps für den Import.",
+      accessFailed: "Der Zugriff konnte nicht bestätigt werden.",
+      save: "Einstellungen und App-Auswahl speichern",
+      start: "Speichern und Import starten",
+      saved:
+        "Gespeichert. Der Import der ausgewählten Daten ist eingeplant; bisherige Daten bleiben erhalten.",
+    },
     newPage: {
       pageTitle: "Verbindung hinzufügen · netrics",
       title: "Verbindung hinzufügen",
@@ -210,9 +251,13 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       finishSetup: "Einrichtung abschließen",
     },
     detail: {
+      dataTables: "Datentabellen",
+      dataTablesHelp:
+        "Erkunde Rohberichte, bereite Daten auf und erstelle wiederverwendbare Kennzahlen für deine Dashboards.",
+      openData: "Daten & Kennzahlen öffnen",
       back: "Zurück zu den Quellen",
       setupFinished:
-        "Einrichtung abgeschlossen. Die erste Synchronisierung ist eingeplant und liest bis zu 16 Monate zurück; danach kommen alle paar Stunden neue Daten.",
+        "Einrichtung abgeschlossen. Der erste Import für den eingestellten Zeitraum ist eingeplant; neue Daten werden danach nach dem Zeitplan dieser Verbindung abgerufen.",
       pausedCredentials:
         "Die Synchronisierung ist pausiert: Diese Verbindung braucht neue Zugangsdaten.",
       uploadNewKey: "Lade einen neuen Schlüssel für {name} hoch.",

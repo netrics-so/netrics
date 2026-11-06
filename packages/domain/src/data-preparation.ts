@@ -205,7 +205,7 @@ export function aggregateData(
   table: DataTable,
   definition: AggregateDefinition,
   budget = new ProcessingBudget(),
-): DataCell {
+): DataCell & { partial?: true } {
   const field = definition.fieldId
     ? fieldOf(table, definition.fieldId)
     : undefined;
@@ -349,11 +349,17 @@ export function aggregateData(
     currency = c as string | undefined;
   }
   validateDataValue(type, value, true);
+  const partial =
+    value !== null &&
+    ["sum", "avg", "min", "max"].includes(definition.op) &&
+    nonNull.length < rows.length;
+  if (partial) budget.warnings.add("aggregate_missing_inputs");
   return {
     value,
     type,
     ...(preservesUnit && field?.unit ? { unit: field.unit } : {}),
     ...(preservesUnit && currency ? { currency } : {}),
+    ...(partial ? { partial: true as const } : {}),
   };
 }
 

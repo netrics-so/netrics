@@ -7,6 +7,7 @@ import type {
 
 import { EditConnectionForm } from "./[connectionId]/edit-connection-form";
 import { ReconnectBanner } from "./reconnect-banner";
+import { StoreConnectionSettings } from "./store-connection-settings";
 import { SearchConsoleSettings } from "./search-console-settings";
 import { useT } from "@/lib/i18n/client";
 import { SEARCH_CONSOLE_CONNECTOR_ID } from "@/lib/oauth-connection";
@@ -56,6 +57,12 @@ export function FinishSetup({
             connection={connection}
             connectorName={connector?.name ?? connection.connectorName}
             mode="finish"
+          />
+        ) : connector?.supportsResourceSelection ? (
+          <StoreConnectionSettings
+            workspaceId={workspaceId}
+            connection={connection}
+            connector={connector}
           />
         ) : (
           <EditConnectionForm

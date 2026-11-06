@@ -597,6 +597,7 @@ describe("catalog sync", () => {
       "demo",
       "endless",
       "flaky-pages",
+      "google-play",
       "google-search-console",
       "leaky",
       "naming",
