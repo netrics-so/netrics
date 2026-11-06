@@ -24,6 +24,7 @@ export {
   measureDependencies,
   measureIsPercentChange,
   measureLookbackDays,
+  measurePerDateDimensions,
   modelQueryTimeRange,
   type ModelDateInterval,
   type ModelOffsetUnit,

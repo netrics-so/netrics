@@ -11,6 +11,7 @@ import {
   addCivilDays,
   measureIsPercentChange,
   measureLookbackDays,
+  measurePerDateDimensions,
   modelQueryTimeRange,
   offsetInterval,
   rollingWindowStart,
@@ -788,6 +789,19 @@ describe("rolling and period-offset measures", () => {
     expect(measureRequiredDimensions(model(), ["units7"])).toEqual(["date"]);
     expect(measureRequiredDimensions(model(), ["prevMonth"])).toEqual([]);
     expect(measureRequiredDimensions(model(), ["changeDay"])).toEqual(["date"]);
+    // Only windows need the date grouped; an ordinary date grain does not.
+    const grained = model([
+      { ...aggregate("daily", "sum", "units"), requiredDimensions: ["date"] },
+      offset("prevYear7", "units7", "year"),
+    ]);
+    expect(measureRequiredDimensions(grained, ["daily"])).toEqual(["date"]);
+    expect(measurePerDateDimensions(grained, ["daily", "prevMonth"])).toEqual(
+      [],
+    );
+    expect(measurePerDateDimensions(grained, ["prevYear7"])).toEqual(["date"]);
+    expect(measurePerDateDimensions(grained, ["changeDay", "units"])).toEqual([
+      "date",
+    ]);
     expect(semanticModelFieldReferences(model()).get("sales")).toEqual(
       new Set(["date", "at", "app", "amount", "units", "user"]),
     );

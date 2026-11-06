@@ -14,6 +14,27 @@ import { dataErrorKey } from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
 import type { StudioAction } from "@/lib/studio-document";
 import { FilterExclusions } from "./shared-filters";
+
+type CatalogModel = PublishedModelCatalog["models"][number];
+/** Rolling windows and day/week comparisons have one value per date, which
+ * no filter reduces to one. An ordinary grain on a date can be fixed by the
+ * widget filter, so it does not count. */
+function perDateMeasure(model: CatalogModel | undefined, measureId: string) {
+  return !!model?.measures.find((measure) => measure.id === measureId)
+    ?.perDateDimensions?.length;
+}
+/** The measure the single-value view keeps: a chosen one with a single
+ * value, else the model's first such, else the first chosen. */
+export function valueViewMeasureId(
+  model: CatalogModel | undefined,
+  measureIds: string[],
+): string {
+  return (
+    measureIds.find((measureId) => !perDateMeasure(model, measureId)) ??
+    model?.measures.find((measure) => !perDateMeasure(model, measure.id))?.id ??
+    measureIds[0]!
+  );
+}
 export function MeasureFields({
   widget,
   models,
@@ -44,27 +65,14 @@ export function MeasureFields({
         .flatMap((measure) => measure.requiredDimensions ?? []) ?? [],
     ),
   ];
-  const datedMeasure = (measureId: string) =>
-    model?.measures
-      .find((measure) => measure.id === measureId)
-      ?.requiredDimensions?.some((dimensionId) =>
-        model.dimensions.some(
-          (dimension) =>
-            dimension.id === dimensionId &&
-            (dimension.type === "date" || dimension.type === "timestamp"),
-        ),
-      ) ?? false;
-  // Rolling and dated comparisons (and other measures kept per date) have no
-  // single value: the value view offers them only once already chosen.
-  const perDate = (measure: NonNullable<typeof model>["measures"][number]) =>
+  // Rolling and day/week comparisons have no single value: the value view
+  // offers them only once already chosen.
+  const perDate = (measure: CatalogModel["measures"][number]) =>
     widget.options.view !== "value" ||
-    widget.binding.measureIds.includes(measure.id) ||
-    !datedMeasure(measure.id)
+    widget.binding.measureIds.includes(measure.id)
       ? []
-      : (model?.dimensions.filter(
-          (dimension) =>
-            (dimension.type === "date" || dimension.type === "timestamp") &&
-            measure.requiredDimensions?.includes(dimension.id),
+      : (model?.dimensions.filter((dimension) =>
+          measure.perDateDimensions?.includes(dimension.id),
         ) ?? []);
   const refs =
     model?.dimensions.map((dimension) => ({
@@ -102,16 +110,7 @@ export function MeasureFields({
             view === "table"
               ? widget.binding.measureIds
               : view === "value"
-                ? [
-                    // Prefer a measure that has a single value.
-                    widget.binding.measureIds.find(
-                      (measureId) => !datedMeasure(measureId),
-                    ) ??
-                      model?.measures.find(
-                        (measure) => !datedMeasure(measure.id),
-                      )?.id ??
-                      widget.binding.measureIds[0]!,
-                  ]
+                ? [valueViewMeasureId(model, widget.binding.measureIds)]
                 : widget.binding.measureIds.slice(0, 1),
           groupBy:
             view === "value"

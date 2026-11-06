@@ -14,6 +14,7 @@ import {
   dataKey,
   measureIsPercentChange,
   measureLookbackDays,
+  measurePerDateDimensions,
   measureRequiredDimensions,
   measureTypeProbe,
   querySemanticModel,
@@ -87,10 +88,12 @@ export async function publishedModel(
       measures: definition.measures.map((measure) => {
         const { id, name } = measure;
         const requiredDimensions = measureRequiredDimensions(definition, [id]);
+        const perDateDimensions = measurePerDateDimensions(definition, [id]);
         return {
           id,
           name,
           ...(requiredDimensions.length ? { requiredDimensions } : {}),
+          ...(perDateDimensions.length ? { perDateDimensions } : {}),
           ...(measureIsPercentChange(definition, id)
             ? { percentChange: true as const }
             : {}),

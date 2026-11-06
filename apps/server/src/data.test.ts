@@ -2060,6 +2060,14 @@ describe("rolling and period-offset model measures", () => {
             aggregate: { id: "kg", name: "Weight", op: "sum", fieldId: "kg" },
           },
           {
+            id: "kg_daily",
+            name: "Weight per day",
+            kind: "aggregate",
+            datasetId: weights,
+            requiredDimensions: ["day"],
+            aggregate: { id: "kg", name: "Weight", op: "sum", fieldId: "kg" },
+          },
+          {
             ...weekChange,
             id: "kg_pct",
             baseMeasureId: "kg",
@@ -2150,5 +2158,16 @@ describe("rolling and period-offset model measures", () => {
         .filter((measure: { percentChange?: true }) => measure.percentChange)
         .map((measure: { id: string }) => measure.id),
     ).toEqual(["kg_pct", "kg_pct_prior", "kg_pct_prior_2"]);
+    // Only windows need the date grouped; a date grain can be filtered.
+    expect(line.metadata.measures).toEqual(
+      expect.arrayContaining([
+        { id: "kg_daily", name: "Weight per day", requiredDimensions: ["day"] },
+        expect.objectContaining({
+          id: "pct_and_share",
+          requiredDimensions: ["day"],
+          perDateDimensions: ["day"],
+        }),
+      ]),
+    );
   });
 });

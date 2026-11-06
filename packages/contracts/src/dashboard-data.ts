@@ -77,6 +77,10 @@ export const dashboardMeasureMetadataSchema = z.object({
       id,
       name: z.string(),
       requiredDimensions: z.array(id).optional(),
+      /** The part of requiredDimensions the measure must be grouped by (its
+       * rolling windows and day/week offsets): a filter fixing the date does
+       * not give it a single value. */
+      perDateDimensions: z.array(id).optional(),
       /** The value is a change ratio, (current − previous) / |previous|;
        * clients show it as a percentage. */
       percentChange: z.literal(true).optional(),

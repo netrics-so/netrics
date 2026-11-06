@@ -11857,6 +11857,13 @@
                                     "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                   }
                                 },
+                                "perDateDimensions": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                  }
+                                },
                                 "percentChange": {
                                   "type": "boolean",
                                   "enum": [
@@ -12608,6 +12615,13 @@
                                           "type": "string"
                                         },
                                         "requiredDimensions": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                          }
+                                        },
+                                        "perDateDimensions": {
                                           "type": "array",
                                           "items": {
                                             "type": "string",
@@ -13427,6 +13441,13 @@
                                           "type": "string"
                                         },
                                         "requiredDimensions": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                          }
+                                        },
+                                        "perDateDimensions": {
                                           "type": "array",
                                           "items": {
                                             "type": "string",
@@ -55030,6 +55051,13 @@
                                                               "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                                             }
                                                           },
+                                                          "perDateDimensions": {
+                                                            "type": "array",
+                                                            "items": {
+                                                              "type": "string",
+                                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                            }
+                                                          },
                                                           "percentChange": {
                                                             "type": "boolean",
                                                             "enum": [
@@ -58694,6 +58722,13 @@
                                                             "type": "string"
                                                           },
                                                           "requiredDimensions": {
+                                                            "type": "array",
+                                                            "items": {
+                                                              "type": "string",
+                                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                            }
+                                                          },
+                                                          "perDateDimensions": {
                                                             "type": "array",
                                                             "items": {
                                                               "type": "string",

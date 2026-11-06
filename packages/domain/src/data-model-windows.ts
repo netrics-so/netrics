@@ -125,6 +125,31 @@ export function measureIsPercentChange(
   return false;
 }
 
+/**
+ * The date dimensions a query must group by for these measures: those of
+ * their rolling windows and day/week offsets, directly or through formulas
+ * and offsets. Unlike an ordinary grain, a filter fixing the date does not
+ * stand in for the grouping, so the measures have no single value.
+ */
+export function measurePerDateDimensions(
+  model: SemanticModelDefinition,
+  ids: readonly string[],
+): string[] {
+  const measures = new Map(model.measures.map((m) => [m.id, m]));
+  const dimensions = new Set<string>(),
+    seen = new Set<string>();
+  const visit = (id: string) => {
+    const measure = measures.get(id);
+    if (!measure || seen.has(id)) return;
+    seen.add(id);
+    if (isWindowedMeasure(measure) && windowNeedsTimeGrouping(measure))
+      dimensions.add(measure.timeDimensionId);
+    measureDependencies(measure).forEach(visit);
+  };
+  ids.forEach(visit);
+  return [...dimensions];
+}
+
 /** Whether the measure can only be evaluated at a single date. */
 export function windowNeedsTimeGrouping(measure: WindowedMeasure): boolean {
   return (

@@ -4,7 +4,7 @@ import type {
   PublishedModelCatalog,
 } from "@netrics/contracts";
 import { renderI18n } from "@/lib/i18n/test-render";
-import { MeasureFields } from "./measure-fields";
+import { MeasureFields, valueViewMeasureId } from "./measure-fields";
 
 const models: PublishedModelCatalog["models"] = [
   {
@@ -12,7 +12,14 @@ const models: PublishedModelCatalog["models"] = [
     modelName: "Sales",
     measures: [
       { id: "revenue", name: "Revenue" },
-      { id: "revenue7", name: "Revenue, 7 days", requiredDimensions: ["day"] },
+      {
+        id: "revenue7",
+        name: "Revenue, 7 days",
+        requiredDimensions: ["day"],
+        perDateDimensions: ["day"],
+      },
+      // Kept per day, but a filter on one day gives one value.
+      { id: "daily", name: "Daily revenue", requiredDimensions: ["day"] },
       { id: "byApp", name: "Revenue per app", requiredDimensions: ["app"] },
     ],
     dimensions: [
@@ -65,6 +72,8 @@ describe("measure binding fields", () => {
     expect(radio(html, "Revenue, 7 days")).toContain('disabled=""');
     // A scope on another dimension can still be fixed by a filter.
     expect(radio(html, "Revenue per app")).not.toContain('disabled=""');
+    expect(radio(html, "Daily revenue")).not.toContain('disabled=""');
+    expect(html).not.toContain("Daily revenue has one value per date");
     expect(radio(html, "Revenue")).not.toContain('disabled=""');
     expect(html).toContain(
       "Revenue, 7 days has one value per date. Show it as a table or chart grouped by Day.",
@@ -76,5 +85,11 @@ describe("measure binding fields", () => {
     expect(
       radio(render("table", ["revenue"]), "Revenue, 7 days"),
     ).not.toContain('disabled=""');
+  });
+
+  it("keeps a measure with a date grain when switching to a single value", () => {
+    expect(valueViewMeasureId(models[0], ["daily", "revenue"])).toBe("daily");
+    expect(valueViewMeasureId(models[0], ["revenue7", "byApp"])).toBe("byApp");
+    expect(valueViewMeasureId(models[0], ["revenue7"])).toBe("revenue");
   });
 });
