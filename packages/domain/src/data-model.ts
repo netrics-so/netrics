@@ -2,7 +2,6 @@ import {
   compileRowExpression,
   dataFail,
   ProcessingBudget,
-  PROCESSING_LIMITS,
   type DataExpression,
   type DataCell,
   type DataField,
@@ -17,6 +16,24 @@ import {
   type AggregateDefinition,
   type DataTable,
 } from "./data-preparation.js";
+import {
+  addCivilDays,
+  civilDaysInclusive,
+  expressionReferences as references,
+  isWindowedMeasure,
+  measureDependencies,
+  measureLookbackDays,
+  modelQueryTimeRange,
+  offsetInterval,
+  rollingWindowStart,
+  validateWindowDefinition,
+  windowCell,
+  windowChange,
+  windowNeedsTimeGrouping,
+  type ModelOffsetUnit,
+  type ModelWindowUnit,
+  type WindowedMeasure,
+} from "./data-model-windows.js";
 
 export interface ModelRelationship {
   id: string;
@@ -40,6 +57,21 @@ export type ModelMeasure = {
 } & (
   | { kind: "aggregate"; datasetId: string; aggregate: AggregateDefinition }
   | { kind: "formula"; expression: DataExpression }
+  /** Re-aggregates the base aggregate's rows over the window ending on each date. */
+  | {
+      kind: "rolling";
+      baseMeasureId: string;
+      timeDimensionId: string;
+      window: { unit: ModelWindowUnit; length: number };
+    }
+  /** The base measure over an earlier interval, or the change against it. */
+  | {
+      kind: "period_offset";
+      baseMeasureId: string;
+      timeDimensionId: string;
+      offset: { unit: ModelOffsetUnit; length: number };
+      output: "value" | "change" | "percent_change";
+    }
 );
 export interface SemanticModelDefinition {
   version: 1;
@@ -62,6 +94,8 @@ export interface ModelQuery {
 }
 export interface ModelMeasureResult extends DataCell {
   status: "ok" | "missing" | "partial";
+  /** period_offset only: the inclusive interval compared with. */
+  comparedTo?: { from: string; to: string };
 }
 
 /** One display name per typed identity; names never join or merge records. */
@@ -93,22 +127,6 @@ export function dimensionValueLabels(
     labels.set(key, label);
   }
   return labels;
-}
-function references(expression: DataExpression): Set<string> {
-  const result = new Set<string>(),
-    stack: Array<[DataExpression, number]> = [[expression, 0]];
-  let nodes = 0;
-  while (stack.length) {
-    const [item, depth] = stack.pop()!;
-    if (++nodes > PROCESSING_LIMITS.nodes || depth > PROCESSING_LIMITS.depth)
-      dataFail("expression_complexity_limit");
-    if (item.kind === "field") result.add(item.fieldId);
-    else if (item.kind === "call") {
-      if (item.args.length > 20) dataFail("expression_arity_invalid");
-      for (const arg of item.args) stack.push([arg, depth + 1]);
-    } else if (item.kind !== "literal") dataFail("expression_invalid");
-  }
-  return result;
 }
 function scalarKey(table: DataTable, row: DataRow, fieldId: string): string {
   return JSON.stringify(
@@ -166,9 +184,10 @@ export function measureRequiredDimensions(
     visiting.add(id);
     for (const dimension of measure.requiredDimensions ?? [])
       dimensions.add(dimension);
-    if (measure.kind === "formula")
-      for (const dependency of references(measure.expression))
-        visit(dependency);
+    // Rolling and day/week offsets are only defined per date.
+    if (isWindowedMeasure(measure) && windowNeedsTimeGrouping(measure))
+      dimensions.add(measure.timeDimensionId);
+    for (const dependency of measureDependencies(measure)) visit(dependency);
     visiting.delete(id);
     done.add(id);
   };
@@ -307,7 +326,8 @@ export function querySemanticModel(
     dataFail("model_filter_boolean_required");
   const neededDatasets = new Set<string>(),
     visiting = new Set<string>(),
-    validatedMeasures = new Set<string>();
+    validatedMeasures = new Set<string>(),
+    windowed: WindowedMeasure[] = [];
   const fixedDimensions = singleValueDimensions(query.filter);
   const discover = (id: string) => {
     if (validatedMeasures.has(id)) return;
@@ -332,11 +352,80 @@ export function querySemanticModel(
     if (m.kind === "aggregate") {
       table(m.datasetId);
       neededDatasets.add(m.datasetId);
-    } else for (const ref of references(m.expression)) discover(ref);
+    } else if (m.kind === "formula")
+      for (const ref of references(m.expression)) discover(ref);
+    else {
+      validateWindowDefinition(m);
+      const base = measures.get(m.baseMeasureId);
+      if (!base) dataFail("model_measure_not_found", m.baseMeasureId);
+      if (m.kind === "rolling" && base.kind !== "aggregate")
+        dataFail("model_window_base_aggregate_required", m.id);
+      const d = dimensions.get(m.timeDimensionId);
+      if (!d) dataFail("model_dimension_not_found", m.timeDimensionId);
+      if (
+        field(d.datasetId, d.fieldId).type !== "date" ||
+        d.timeAlignment !== "reporting_date"
+      )
+        dataFail("model_window_date_dimension_required", m.id);
+      windowed.push(m);
+      discover(m.baseMeasureId);
+    }
     visiting.delete(id);
     validatedMeasures.add(id);
   };
   query.measureIds.forEach(discover);
+  // Windowed measures read rows before the requested range: split the time
+  // range out of the filter, admit [from − lookback, to] and output [from, to].
+  let windowPlan:
+    | {
+        dimensionId: string;
+        from: string | null;
+        to: string | null;
+        lowest: string | null;
+        grouped: boolean;
+        rangeDays: number;
+        partitionBy: string[];
+        residual?: ReturnType<typeof compileRowExpression>;
+      }
+    | undefined;
+  if (windowed.length) {
+    const dimensionId = windowed[0]!.timeDimensionId;
+    if (windowed.some((m) => m.timeDimensionId !== dimensionId))
+      dataFail("model_window_time_dimension_conflict");
+    const grouped = query.groupBy.includes(dimensionId);
+    if (!grouped && windowed.some(windowNeedsTimeGrouping))
+      dataFail("model_window_time_grouping_required", dimensionId);
+    const { range, residual } = modelQueryTimeRange(query.filter, dimensionId);
+    const closed = range.from !== null && range.to !== null;
+    if (
+      !closed &&
+      (!grouped ||
+        windowed.some(
+          (m) => m.kind === "period_offset" && m.offset.unit === "range",
+        ))
+    )
+      dataFail("model_window_time_range_required", dimensionId);
+    const rangeDays = closed
+      ? Math.max(1, civilDaysInclusive(range.from!, range.to!))
+      : 0;
+    const lookback =
+      measureLookbackDays(model, query.measureIds, rangeDays).get(
+        dimensionId,
+      ) ?? 0;
+    const compiled = residual
+      ? compileRowExpression(residual, dimensionFields)
+      : undefined;
+    windowPlan = {
+      dimensionId,
+      from: range.from,
+      to: range.to,
+      lowest: range.from === null ? null : addCivilDays(range.from, -lookback),
+      grouped,
+      rangeDays,
+      partitionBy: query.groupBy.filter((id) => id !== dimensionId),
+      ...(compiled ? { residual: compiled } : {}),
+    };
+  }
   const indexes = new Map<string, Map<string, DataRow>>();
   const index = (relationship: ModelRelationship) => {
     const existing = indexes.get(relationship.id);
@@ -369,6 +458,10 @@ export function querySemanticModel(
   const grouped = new Map<string, Map<string, DataRow[]>>(),
     groupValues = new Map<string, DataRow>();
   const pendingByDataset = new Map<string, Set<string>>();
+  // Windowed queries: dataset → partition → date → rows, and each dataset's
+  // earliest retained date (before any filter).
+  const buckets = new Map<string, Map<string, Map<string, DataRow[]>>>(),
+    earliest = new Map<string, string>();
   if (!query.groupBy.length) groupValues.set("[]", {});
   for (const datasetId of neededDatasets) {
     const source = useData(datasetId);
@@ -404,13 +497,48 @@ export function querySemanticModel(
         }
         values[id] = current?.[d.fieldId] ?? null;
       }
-      if (filter && filter.evaluate(values, budget).value !== true) continue;
+      if (windowPlan) {
+        const date = values[windowPlan.dimensionId] as string | null;
+        if (date !== null) {
+          const first = earliest.get(datasetId);
+          if (first === undefined || date < first)
+            earliest.set(datasetId, date);
+        }
+        if (
+          windowPlan.residual &&
+          windowPlan.residual.evaluate(values, budget).value !== true
+        )
+          continue;
+        if (
+          date === null ||
+          (windowPlan.lowest !== null && date < windowPlan.lowest) ||
+          (windowPlan.to !== null && date > windowPlan.to)
+        )
+          continue;
+        const partition = dataKey(
+          dimensionFields,
+          values,
+          windowPlan.partitionBy,
+        );
+        const datasetBuckets =
+          buckets.get(datasetId) ?? new Map<string, Map<string, DataRow[]>>();
+        buckets.set(datasetId, datasetBuckets);
+        const dates = datasetBuckets.get(partition) ?? new Map();
+        datasetBuckets.set(partition, dates);
+        const rows = dates.get(date) ?? [];
+        rows.push(row);
+        dates.set(date, rows);
+        // Lookback rows feed windows only; they never form output groups.
+        if (windowPlan.from !== null && date < windowPlan.from) continue;
+      } else if (filter && filter.evaluate(values, budget).value !== true)
+        continue;
       const group = dataKey(dimensionFields, values, query.groupBy);
       if (!groupValues.has(group))
         groupValues.set(
           group,
           Object.fromEntries(query.groupBy.map((id) => [id, values[id]])),
         );
+      if (windowPlan) continue;
       const members = groups.get(group) ?? [];
       members.push(row);
       groups.set(group, members);
@@ -452,6 +580,181 @@ export function querySemanticModel(
     query.window === "last"
       ? Math.max(0, orderedGroups.length - offset)
       : offset + limit;
+  const formulaCell = (
+    expression: DataExpression,
+    dependencies: ReadonlyArray<readonly [string, ModelMeasureResult]>,
+  ): DataCell => {
+    const row: DataRow = {},
+      fields: DataField[] = [];
+    const usedIds = new Set(dependencies.map(([ref]) => ref));
+    for (const [ref, result] of dependencies) {
+      const f: DataField = {
+        id: ref,
+        name: measures.get(ref)!.name,
+        type: result.type,
+        nullable: true,
+        ...(result.unit ? { unit: result.unit } : {}),
+      };
+      if (result.currency) {
+        let currencyId = ref + ".currency";
+        while (usedIds.has(currencyId)) currencyId += ".currency";
+        usedIds.add(currencyId);
+        f.currencyField = currencyId;
+        row[currencyId] = result.currency;
+        fields.push({
+          id: currencyId,
+          name: "Currency",
+          type: "string",
+          nullable: false,
+        });
+      }
+      fields.push(f);
+      row[ref] = result.value;
+    }
+    return compileRowExpression(expression, fields).evaluate(row, budget);
+  };
+  // Windowed evaluation: each measure at (partition, interval), cached across
+  // groups so neighbouring dates and offsets reuse results.
+  type WindowedResult = ModelMeasureResult & { incomplete?: true };
+  const windowCache = new Map<string, WindowedResult>(),
+    sortedDates = new Map<Map<string, DataRow[]>, string[]>();
+  const rowsIn = (
+    datasetId: string,
+    partition: string,
+    from: string,
+    to: string,
+  ): DataRow[] => {
+    const dates = buckets.get(datasetId)?.get(partition);
+    if (!dates) return [];
+    let sorted = sortedDates.get(dates);
+    if (!sorted) {
+      sorted = [...dates.keys()].sort();
+      budget.tick(sorted.length);
+      sortedDates.set(dates, sorted);
+    }
+    let low = 0,
+      high = sorted.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (sorted[middle]! < from) low = middle + 1;
+      else high = middle;
+    }
+    const rows: DataRow[] = [];
+    for (let i = low; i < sorted.length && sorted[i]! <= to; i++) {
+      const bucket = dates.get(sorted[i]!)!;
+      budget.tick(bucket.length + 1);
+      for (const row of bucket) rows.push(row);
+    }
+    return rows;
+  };
+  const evaluateWindowed = (
+    partition: string,
+    id: string,
+    from: string,
+    to: string,
+    derived: boolean,
+  ): WindowedResult => {
+    const cacheKey = JSON.stringify([partition, id, from, to, derived]);
+    const cached = windowCache.get(cacheKey);
+    if (cached) return cached;
+    const m = measures.get(id)!;
+    budget.tick();
+    let cell: DataCell,
+      partial: boolean,
+      incomplete = false,
+      comparedTo: { from: string; to: string } | undefined;
+    if (m.kind === "aggregate") {
+      const { partial: waiting, ...aggregated } = aggregateData(
+        {
+          ...table(m.datasetId),
+          rows: rowsIn(m.datasetId, partition, from, to),
+          pendingSources: [...(pendingByDataset.get(m.datasetId) ?? [])],
+        },
+        m.aggregate,
+        budget,
+      );
+      cell = aggregated;
+      partial = !!waiting;
+      if (derived) {
+        // A window or compared interval reaching before retained history.
+        const first = earliest.get(m.datasetId);
+        incomplete = first === undefined || from < first;
+        if (incomplete) budget.warnings.add("model_window_history_incomplete");
+      }
+    } else if (m.kind === "formula") {
+      const dependencies = [...references(m.expression)].map(
+        (ref) =>
+          [ref, evaluateWindowed(partition, ref, from, to, derived)] as const,
+      );
+      cell = formulaCell(m.expression, dependencies);
+      partial = dependencies.some(([, result]) => result.status !== "ok");
+      incomplete = dependencies.some(([, result]) => result.incomplete);
+    } else if (m.kind === "rolling") {
+      const base = evaluateWindowed(
+        partition,
+        m.baseMeasureId,
+        rollingWindowStart(to, m.window),
+        to,
+        true,
+      );
+      cell = windowCell(base);
+      partial = base.status === "partial";
+      incomplete = !!base.incomplete;
+    } else {
+      comparedTo = offsetInterval(from, to, m.offset, windowPlan!.rangeDays);
+      const previous = evaluateWindowed(
+        partition,
+        m.baseMeasureId,
+        comparedTo.from,
+        comparedTo.to,
+        true,
+      );
+      if (m.output === "value") {
+        cell = windowCell(previous);
+        partial = previous.status === "partial";
+        incomplete = !!previous.incomplete;
+      } else {
+        const current = evaluateWindowed(
+          partition,
+          m.baseMeasureId,
+          from,
+          to,
+          derived,
+        );
+        cell = windowChange(m.id, m.output, current, previous, budget);
+        partial = [current, previous].some((r) => r.status === "partial");
+        incomplete = !!(current.incomplete || previous.incomplete);
+      }
+    }
+    // Incomplete history is partial, never missing or zero.
+    const status: ModelMeasureResult["status"] = incomplete
+      ? "partial"
+      : cell.value === null
+        ? "missing"
+        : partial
+          ? "partial"
+          : "ok";
+    const result: WindowedResult = {
+      ...cell,
+      status,
+      ...(comparedTo ? { comparedTo } : {}),
+      ...(incomplete ? { incomplete: true as const } : {}),
+    };
+    windowCache.set(cacheKey, result);
+    return result;
+  };
+  const windowedMeasure = (values: DataRow, id: string): ModelMeasureResult => {
+    const w = windowPlan!;
+    const date = w.grouped ? (values[w.dimensionId] as string) : undefined;
+    const { incomplete: _incomplete, ...result } = evaluateWindowed(
+      dataKey(dimensionFields, values, w.partitionBy),
+      id,
+      date ?? w.from!,
+      date ?? w.to!,
+      false,
+    );
+    return result;
+  };
   for (const [key, values] of orderedGroups.slice(start, end)) {
     const computed = new Map<string, ModelMeasureResult>();
     const evaluate = (id: string): ModelMeasureResult => {
@@ -474,37 +777,12 @@ export function querySemanticModel(
         cell = aggregated;
         if (partial) status = "partial";
       } else {
+        // Windowed measures are evaluated by evaluateWindowed only.
+        if (m.kind !== "formula") return dataFail("model_window_unsupported");
         const dependencies = [...references(m.expression)].map(
-            (ref) => [ref, evaluate(ref)] as const,
-          ),
-          row: DataRow = {},
-          fields: DataField[] = [];
-        const usedIds = new Set(dependencies.map(([ref]) => ref));
-        for (const [ref, result] of dependencies) {
-          const f: DataField = {
-            id: ref,
-            name: measures.get(ref)!.name,
-            type: result.type,
-            nullable: true,
-            ...(result.unit ? { unit: result.unit } : {}),
-          };
-          if (result.currency) {
-            let currencyId = ref + ".currency";
-            while (usedIds.has(currencyId)) currencyId += ".currency";
-            usedIds.add(currencyId);
-            f.currencyField = currencyId;
-            row[currencyId] = result.currency;
-            fields.push({
-              id: currencyId,
-              name: "Currency",
-              type: "string",
-              nullable: false,
-            });
-          }
-          fields.push(f);
-          row[ref] = result.value;
-        }
-        cell = compileRowExpression(m.expression, fields).evaluate(row, budget);
+          (ref) => [ref, evaluate(ref)] as const,
+        );
+        cell = formulaCell(m.expression, dependencies);
         if (dependencies.some(([, result]) => result.status !== "ok"))
           status = "partial";
       }
@@ -532,7 +810,10 @@ export function querySemanticModel(
       dimensions: values,
       ...(Object.keys(labels).length ? { dimensionLabels: labels } : {}),
       measures: Object.fromEntries(
-        query.measureIds.map((id) => [id, evaluate(id)]),
+        query.measureIds.map((id) => [
+          id,
+          windowPlan ? windowedMeasure(values, id) : evaluate(id),
+        ]),
       ),
     });
   }
@@ -637,6 +918,21 @@ export function validateSemanticModel(
       )
     )
       dataFail("model_measure_grain_invalid");
+    if (isWindowedMeasure(measure)) {
+      const dimension = model.dimensions.find(
+        (dimension) => dimension.id === measure.timeDimensionId,
+      );
+      if (!dimension)
+        dataFail("model_dimension_not_found", measure.timeDimensionId);
+      const field = schemas
+        .get(dimension.datasetId)
+        ?.fields.find((field) => field.id === dimension.fieldId);
+      if (
+        field?.type !== "date" ||
+        dimension.timeAlignment !== "reporting_date"
+      )
+        dataFail("model_window_date_dimension_required", measure.id);
+    }
   }
   const unguarded = {
     ...model,
@@ -644,19 +940,44 @@ export function validateSemanticModel(
       ({ requiredDimensions: _grain, ...measure }) => measure,
     ),
   };
-  for (let offset = 0; offset < model.measures.length; offset += 50)
-    querySemanticModel(
-      unguarded,
-      schemas,
-      {
-        measureIds: model.measures
-          .slice(offset, offset + 50)
-          .map((measure) => measure.id),
-        groupBy: [],
-        now,
-      },
-      budget,
-    );
+  // Windowed measures (and formulas over them) are only defined per date or
+  // over a closed range: probe them grouped by their time dimension.
+  const probes = new Map<string | undefined, string[]>();
+  const windowedModel = model.measures.some(isWindowedMeasure);
+  for (const measure of model.measures) {
+    const dimension = windowedModel
+      ? [...measureLookbackDays(model, [measure.id]).keys()][0]
+      : undefined;
+    probes.set(dimension, [...(probes.get(dimension) ?? []), measure.id]);
+  }
+  for (const [dimension, ids] of probes)
+    for (let offset = 0; offset < ids.length; offset += 50)
+      querySemanticModel(
+        unguarded,
+        schemas,
+        {
+          measureIds: ids.slice(offset, offset + 50),
+          groupBy: dimension ? [dimension] : [],
+          ...(dimension
+            ? {
+                filter: {
+                  kind: "call" as const,
+                  fn: "eq" as const,
+                  args: [
+                    { kind: "field" as const, fieldId: dimension },
+                    {
+                      kind: "literal" as const,
+                      type: "date" as const,
+                      value: "2000-01-01",
+                    },
+                  ],
+                },
+              }
+            : {}),
+          now,
+        },
+        budget,
+      );
   for (const table of sources.values()) validateDataTable(table, budget);
   const datasetId = model.datasets[0];
   if (!datasetId) dataFail("model_dataset_not_declared");

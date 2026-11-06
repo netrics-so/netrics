@@ -876,7 +876,7 @@ export function ModelEditor({
                     })
                   }
                 />
-              ) : (
+              ) : measure.kind !== "formula" ? null : ( // Rolling and period-offset inputs: #486 web package.
                 <div className="field">
                   <label htmlFor={measure.id}>{t("formula")}</label>
                   <textarea
