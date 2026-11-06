@@ -306,12 +306,76 @@ describe("publication before the first complete report", () => {
     expect(
       await admin`select id from data_prepared_generations where preparation_id=${preparation.preparation.id}`,
     ).toHaveLength(0);
-    await expect(
-      service.query(actor, model.model.id, {
-        measureIds: ["count"],
-        groupBy: [],
-      }),
-    ).rejects.toThrow("data_source_pending");
+    const waiting = await service.query(actor, model.model.id, {
+      measureIds: ["count"],
+      groupBy: [],
+    });
+    expect(waiting.rows[0]?.measures.count).toMatchObject({
+      value: null,
+      status: "missing",
+    });
+    expect(waiting.pendingSources).toEqual([first.datasetId]);
+    expect(waiting.warnings).toContain("data_source_pending");
+    expect(
+      await admin`select query_key from data_model_query_snapshots where release_id=${waiting.releaseId!}`,
+    ).toHaveLength(0);
+    const combinedGraph: PreparationGraph = {
+      version: 1,
+      nodes: [
+        { id: "ready", type: "source", datasetId: salesId },
+        { id: "waiting", type: "source", datasetId: first.datasetId },
+        { id: "combined", type: "append", inputs: ["ready", "waiting"] },
+      ],
+      outputs: ["combined"],
+    };
+    const combinedPreparation = await service.savePreparation(actor, {
+      name: "Known and pending reports",
+      graph: combinedGraph,
+    });
+    await service.publishPreparation(
+      actor,
+      combinedPreparation.preparation.id,
+      1,
+    );
+    const combinedSource = `prepared:${combinedPreparation.preparation.id}:combined`;
+    const combinedModel = await service.saveModel(actor, {
+      name: "Partial proceeds",
+      definition: {
+        version: 1,
+        datasets: [combinedSource],
+        relationships: [],
+        dimensions: [],
+        measures: [
+          {
+            id: "proceeds",
+            name: "Proceeds",
+            kind: "aggregate",
+            datasetId: combinedSource,
+            aggregate: {
+              id: "proceeds",
+              name: "Proceeds",
+              op: "sum",
+              fieldId: "amount",
+            },
+          },
+        ],
+      },
+    });
+    await service.publishModel(actor, combinedModel.model.id, 1);
+    const partial = await service.query(actor, combinedModel.model.id, {
+      measureIds: ["proceeds"],
+      groupBy: [],
+    });
+    expect(partial.rows[0]?.measures.proceeds).toMatchObject({
+      value: "175",
+      currency: "EUR",
+      status: "partial",
+    });
+    expect(partial.pendingSources).toEqual([first.datasetId]);
+    expect(partial.receivedAt).toBeNull();
+    expect(
+      await admin`select id from data_prepared_generations where preparation_id=${combinedPreparation.preparation.id}`,
+    ).toHaveLength(0);
     await expect(service.preview(actor, first.datasetId)).rejects.toThrow(
       "data_source_pending",
     );
@@ -355,6 +419,16 @@ describe("publication before the first complete report", () => {
       datasetId: first.datasetId,
       generationId: completed.generationId,
     });
+    const completeTotal = await service.query(actor, combinedModel.model.id, {
+      measureIds: ["proceeds"],
+      groupBy: [],
+    });
+    expect(completeTotal.rows[0]?.measures.proceeds).toMatchObject({
+      value: "178.5",
+      status: "ok",
+    });
+    expect(completeTotal.pendingSources).toBeUndefined();
+
     // A source that once had data never turns back into an empty first import.
     await admin`delete from data_generations where dataset_id=${first.datasetId}`;
     expect(
@@ -817,5 +891,121 @@ describe("persistent reusable data processing", () => {
       () => new Date(NOW.getTime() + 2 * 86400000),
     );
     await expect(later.query(actor, model.model.id, query)).rejects.toThrow();
+  });
+});
+
+describe("paged reference editing", () => {
+  it("publishes all pages atomically, reads pinned generations and rejects stale writers", async () => {
+    const def = definition("paged_edit", [
+      { id: "id", type: "string" },
+      { id: "amount", type: "decimal" },
+      { id: "currency", type: "string" },
+    ]);
+    def.fields = def.fields.map((field) =>
+      field.id === "amount" ? { ...field, scale: 4 } : field,
+    );
+    const records = Array.from({ length: 1205 }, (_, index) => ({
+      values: {
+        id: String(index).padStart(5, "0"),
+        amount: "12345678901234567890.1200",
+        currency: "EUR",
+      },
+    }));
+    const refreshId = randomUUID();
+    const staged = await service.saveManualPage(actor, {
+      definition: def,
+      generationId: null,
+      refreshId,
+      page: 0,
+      complete: false,
+      records: records.slice(0, 1000),
+    });
+    expect(staged.generationId).toBeNull();
+    const empty = await service.readManual(actor, staged.datasetId, {
+      offset: 0,
+      limit: 1000,
+    });
+    expect(empty.records).toEqual([]);
+    const finalPage = {
+      definition: def,
+      datasetId: staged.datasetId,
+      generationId: null,
+      refreshId,
+      page: 1,
+      complete: true,
+      records: records.slice(1000),
+    };
+    const completed = await service.saveManualPage(actor, finalPage);
+    expect(completed.generationId).toBeTruthy();
+    expect(await service.saveManualPage(actor, finalPage)).toEqual(completed);
+    const first = await service.readManual(actor, staged.datasetId, {
+      generationId: completed.generationId!,
+      offset: 0,
+      limit: 1000,
+    });
+    const second = await service.readManual(actor, staged.datasetId, {
+      generationId: completed.generationId!,
+      offset: first.records.length,
+      limit: 1000,
+    });
+    expect(first.total).toBe(1205);
+    expect([...first.records, ...second.records]).toEqual(records);
+    await expect(
+      service.readManual(other, staged.datasetId, { offset: 0, limit: 1000 }),
+    ).rejects.toThrow("data_source_not_found");
+    await expect(
+      service.saveManualPage(other, { ...finalPage, refreshId: randomUUID() }),
+    ).rejects.toThrow("data_source_not_found");
+
+    // A cancelled edit can reserve a schema version without publishing any row.
+    await service.saveManualPage(actor, {
+      ...finalPage,
+      definition: { ...def, name: "Cancelled" },
+      generationId: completed.generationId,
+      refreshId: randomUUID(),
+      page: 0,
+      complete: false,
+      records: [],
+    });
+    const proposal = {
+      ...finalPage,
+      definition: { ...def, name: "Edited" },
+      generationId: completed.generationId,
+      page: 0,
+      records: [{ values: { id: "new", amount: "0.10", currency: "EUR" } }],
+    };
+    const writes = await Promise.allSettled([
+      service.saveManualPage(actor, { ...proposal, refreshId: randomUUID() }),
+      service.saveManualPage(actor, { ...proposal, refreshId: randomUUID() }),
+    ]);
+    expect(
+      writes.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    const rejected = writes.find(
+      (result) => result.status === "rejected",
+    ) as PromiseRejectedResult;
+    expect(String(rejected.reason)).toContain("version_conflict");
+    const latest = await service.readManual(actor, staged.datasetId, {
+      offset: 0,
+      limit: 1000,
+    });
+    expect(latest.definition.name).toBe("Edited");
+    expect(latest.records).toEqual(proposal.records);
+    expect(
+      (
+        await service.readManual(actor, staged.datasetId, {
+          generationId: completed.generationId!,
+          offset: 1000,
+          limit: 1000,
+        })
+      ).records,
+    ).toHaveLength(205);
+    await expect(service.saveManualPage(actor, finalPage)).rejects.toThrow(
+      "version_conflict",
+    );
+    await admin`delete from data_generations where dataset_id=${staged.datasetId}`;
+    await expect(
+      service.readManual(actor, staged.datasetId, { offset: 0, limit: 1000 }),
+    ).rejects.toThrow("data_source_history_unavailable");
   });
 });

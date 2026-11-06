@@ -1,10 +1,12 @@
 import { buildDeviceDashboardV3 } from "./devices/dashboard.js";
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance, InjectOptions } from "fastify";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createDatabase,
   withWorkspace,
+  schema,
   type Database,
 } from "@netrics/database";
 import {
@@ -125,6 +127,112 @@ describe("data API authorization and contract", () => {
     expect((await call("POST", "/manual", viewer, manual)).statusCode).toBe(
       403,
     );
+  });
+  it("authorizes store templates and paged manual editing before accessing workspace data", async () => {
+    const url = `/v1/workspaces/${workspaceId}/dashboard-templates/stores`;
+    expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
+    for (const [cookie, status] of [
+      [viewer, 403],
+      [stranger, 404],
+    ] as const) {
+      expect(
+        (await app.inject({ method: "GET", url, headers: { cookie } }))
+          .statusCode,
+      ).toBe(status);
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url,
+            headers: { cookie },
+            payload: {
+              requestId: randomUUID(),
+              name: "Stores",
+              connections: [randomUUID()],
+              groups: [],
+            },
+          })
+        ).statusCode,
+      ).toBe(status);
+      expect(
+        (
+          await call("POST", "/manual/pages", cookie, {
+            definition: manual.definition,
+            generationId: null,
+            refreshId: randomUUID(),
+            page: 0,
+            complete: true,
+            records: manual.records,
+          })
+        ).statusCode,
+      ).toBe(status);
+      expect(
+        (
+          await call("POST", `/manual/${randomUUID()}/read`, cookie, {
+            offset: 0,
+            limit: 1000,
+          })
+        ).statusCode,
+      ).toBe(status);
+    }
+    const [connection] = await withWorkspace(db, { workspaceId }, (tx) =>
+      tx
+        .insert(schema.connections)
+        .values({
+          workspaceId,
+          connectorId: "app-store-connect",
+          name: "Template Apple",
+          setupPending: false,
+        })
+        .returning(),
+    );
+    const payload = {
+      requestId: randomUUID(),
+      name: "Stores",
+      connections: [connection!.id],
+      groups: [],
+    };
+    const response = await app.inject({
+      method: "POST",
+      url,
+      headers: { cookie: editor },
+      payload,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json()).toMatchObject({
+      productDatasetId: expect.any(String),
+      mappingDatasetId: expect.any(String),
+      models: {
+        downloads: expect.any(String),
+        proceeds: expect.any(String),
+        ratings: expect.any(String),
+      },
+    });
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          headers: { cookie: editor },
+          payload,
+        })
+      ).json(),
+    ).toEqual(response.json());
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          headers: { cookie: editor },
+          payload: {
+            ...payload,
+            requestId: randomUUID(),
+            connections: [randomUUID()],
+          },
+        })
+      ).statusCode,
+    ).toBe(404);
   });
   it("lets an editor publish reference data, a model and its measures", async () => {
     const source = await call("POST", "/manual", editor, manual);

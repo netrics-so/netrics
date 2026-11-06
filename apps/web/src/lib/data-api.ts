@@ -19,6 +19,7 @@ import type {
   ModelQuery,
 } from "@netrics/domain";
 import { browserSend, ApiError } from "./api";
+import { referenceRecordPages } from "./data-editing";
 import { apiFetch } from "./api-fetch";
 
 export type DataSource = z.infer<typeof dataSourceViewSchema>;
@@ -157,3 +158,87 @@ export const saveReference = (
     base(workspaceId) + "/manual" + (id ? "/" + id : ""),
     input,
   );
+
+export type ReferenceTable = {
+  datasetId: string;
+  definition: import("@netrics/contracts").SourceDatasetDefinition;
+  generationId: string | null;
+  records: Array<{ values: Record<string, unknown>; deleted?: boolean }>;
+};
+export async function readReference(
+  workspaceId: string,
+  datasetId: string,
+  onProgress?: (loaded: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<ReferenceTable> {
+  const { manualDatasetReadResponseSchema } =
+    await import("@netrics/contracts");
+  let result: ReferenceTable | undefined,
+    offset = 0;
+  for (;;) {
+    const page = await browserSend(
+      manualDatasetReadResponseSchema,
+      "POST",
+      base(workspaceId) + `/manual/${datasetId}/read`,
+      {
+        offset,
+        ...(result?.generationId ? { generationId: result.generationId } : {}),
+      },
+      { signal },
+    );
+    if (result && result.generationId !== page.generationId)
+      throw new ApiError(409, "version_conflict");
+    result ??= {
+      datasetId,
+      definition: page.definition,
+      generationId: page.generationId,
+      records: [],
+    };
+    result.records.push(...page.records);
+    offset += page.records.length;
+    onProgress?.(offset, page.total);
+    if (offset >= page.total) return result;
+    if (!page.records.length)
+      throw new ApiError(409, "data_snapshot_unavailable");
+  }
+}
+export async function saveReferencePages(
+  workspaceId: string,
+  input: {
+    definition: ReferenceTable["definition"];
+    records: ReferenceTable["records"];
+    datasetId?: string;
+    generationId?: string | null;
+  },
+  onProgress?: (saved: number, total: number) => void,
+) {
+  const { manualDatasetPageResponseSchema } =
+    await import("@netrics/contracts");
+  const refreshId = crypto.randomUUID();
+  let offset = 0,
+    page = 0,
+    datasetId = input.datasetId;
+  for (const records of referenceRecordPages(input.records)) {
+    const complete = offset + records.length >= input.records.length;
+    const result = await browserSend(
+      manualDatasetPageResponseSchema,
+      "POST",
+      base(workspaceId) + "/manual/pages",
+      {
+        ...(datasetId ? { datasetId } : {}),
+        generationId: input.generationId ?? null,
+        definition: input.definition,
+        refreshId,
+        page,
+        complete,
+        records,
+      },
+    );
+    datasetId = result.datasetId;
+    offset += records.length;
+    page++;
+    onProgress?.(offset, input.records.length);
+    if (complete) return result;
+  }
+  throw new ApiError(503, "data_operation_failed");
+}

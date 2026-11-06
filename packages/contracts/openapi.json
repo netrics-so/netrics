@@ -11557,6 +11557,13 @@
                         ]
                       }
                     },
+                    "labels": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
                     "total": {
                       "type": "integer",
                       "minimum": 0,
@@ -11718,6 +11725,13 @@
                                 },
                                 "name": {
                                   "type": "string"
+                                },
+                                "requiredDimensions": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                  }
                                 }
                               },
                               "required": [
@@ -12372,6 +12386,52 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "sourceHealth": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "connectionId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ok",
+                                    "pending",
+                                    "auth_failed",
+                                    "needs_reauthorization",
+                                    "outage",
+                                    "paused"
+                                  ]
+                                },
+                                "lastSuccessAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "connectionId",
+                                "name",
+                                "status",
+                                "lastSuccessAt"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
                           "scope": {
                             "type": "array",
                             "items": {
@@ -12416,6 +12476,13 @@
                                         },
                                         "name": {
                                           "type": "string"
+                                        },
+                                        "requiredDimensions": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                          }
                                         }
                                       },
                                       "required": [
@@ -12478,6 +12545,35 @@
                               {
                                 "type": "object",
                                 "properties": {
+                                  "filterValueLabels": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "dimensionId": {
+                                          "type": "string"
+                                        },
+                                        "value": {},
+                                        "label": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "dimensionId",
+                                        "value",
+                                        "label"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "pendingSources": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 240
+                                    }
+                                  },
                                   "receivedAt": {
                                     "anyOf": [
                                       {
@@ -12536,6 +12632,15 @@
                                             "type": "string"
                                           },
                                           "additionalProperties": {}
+                                        },
+                                        "dimensionLabels": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string"
+                                          }
                                         },
                                         "measures": {
                                           "type": "object",
@@ -13065,6 +13170,52 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "sourceHealth": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "connectionId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ok",
+                                    "pending",
+                                    "auth_failed",
+                                    "needs_reauthorization",
+                                    "outage",
+                                    "paused"
+                                  ]
+                                },
+                                "lastSuccessAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "connectionId",
+                                "name",
+                                "status",
+                                "lastSuccessAt"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
                           "scope": {
                             "type": "array",
                             "items": {
@@ -13109,6 +13260,13 @@
                                         },
                                         "name": {
                                           "type": "string"
+                                        },
+                                        "requiredDimensions": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                          }
                                         }
                                       },
                                       "required": [
@@ -13171,6 +13329,35 @@
                               {
                                 "type": "object",
                                 "properties": {
+                                  "filterValueLabels": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "dimensionId": {
+                                          "type": "string"
+                                        },
+                                        "value": {},
+                                        "label": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "dimensionId",
+                                        "value",
+                                        "label"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "pendingSources": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 240
+                                    }
+                                  },
                                   "receivedAt": {
                                     "anyOf": [
                                       {
@@ -13229,6 +13416,15 @@
                                             "type": "string"
                                           },
                                           "additionalProperties": {}
+                                        },
+                                        "dimensionLabels": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string"
+                                          }
                                         },
                                         "measures": {
                                           "type": "object",
@@ -30018,7 +30214,8 @@
                               "source",
                               "observations",
                               "prepared",
-                              "manual"
+                              "manual",
+                              "resources"
                             ]
                           },
                           "fields": {
@@ -31242,6 +31439,864 @@
                       "type": "string",
                       "format": "uuid",
                       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "required": [
+                    "datasetId",
+                    "generationId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Conflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Request body too large"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Took too long; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Took too long; try again later"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/data/manual/{id}/read": {
+      "post": {
+        "summary": "Read a pinned page of an editable reference table",
+        "tags": [
+          "data"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "generationId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "offset": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "limit": {
+                    "default": 1000,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "definition": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "version": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "fields": {
+                          "minItems": 1,
+                          "maxItems": 100,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "string",
+                                  "boolean",
+                                  "integer",
+                                  "number",
+                                  "decimal",
+                                  "date",
+                                  "timestamp",
+                                  "json"
+                                ]
+                              },
+                              "nullable": {
+                                "type": "boolean"
+                              },
+                              "classification": {
+                                "type": "string",
+                                "enum": [
+                                  "public",
+                                  "internal",
+                                  "personal"
+                                ]
+                              },
+                              "retentionDays": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "unit": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "currencyField": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                              },
+                              "scale": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 18
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "type",
+                              "nullable",
+                              "classification"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "keyFields": {
+                          "minItems": 1,
+                          "maxItems": 10,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                          }
+                        },
+                        "grain": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300
+                        },
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "upsert",
+                            "append",
+                            "replace_window",
+                            "snapshot"
+                          ]
+                        },
+                        "reportingField": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                        },
+                        "reportingTimeZone": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "retentionDays": {
+                          "default": 30,
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "name",
+                        "version",
+                        "fields",
+                        "keyFields",
+                        "grain",
+                        "mode",
+                        "retentionDays"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "generationId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "records": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "values": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {}
+                          },
+                          "deleted": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "values"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "definition",
+                    "generationId",
+                    "records",
+                    "offset",
+                    "total"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Conflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Request body too large"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Took too long; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Took too long; try again later"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/data/manual/pages": {
+      "post": {
+        "summary": "Stage a reference-table edit and publish only its complete final page",
+        "tags": [
+          "data"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "datasetId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "generationId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "definition": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "version": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "fields": {
+                        "minItems": 1,
+                        "maxItems": 100,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "string",
+                                "boolean",
+                                "integer",
+                                "number",
+                                "decimal",
+                                "date",
+                                "timestamp",
+                                "json"
+                              ]
+                            },
+                            "nullable": {
+                              "type": "boolean"
+                            },
+                            "classification": {
+                              "type": "string",
+                              "enum": [
+                                "public",
+                                "internal",
+                                "personal"
+                              ]
+                            },
+                            "retentionDays": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "unit": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "currencyField": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                            },
+                            "scale": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 18
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "type",
+                            "nullable",
+                            "classification"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "keyFields": {
+                        "minItems": 1,
+                        "maxItems": 10,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                        }
+                      },
+                      "grain": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "upsert",
+                          "append",
+                          "replace_window",
+                          "snapshot"
+                        ]
+                      },
+                      "reportingField": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                      },
+                      "reportingTimeZone": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "retentionDays": {
+                        "default": 30,
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "name",
+                      "version",
+                      "fields",
+                      "keyFields",
+                      "grain",
+                      "mode"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "refreshId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "page": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "records": {
+                    "maxItems": 1000,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "values": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        },
+                        "deleted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "values"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "generationId",
+                  "definition",
+                  "refreshId",
+                  "page",
+                  "complete",
+                  "records"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "datasetId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "generationId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -37557,6 +38612,10 @@
                                       "type": "string",
                                       "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                                     },
+                                    "labelFieldId": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                    },
                                     "timeAlignment": {
                                       "type": "string",
                                       "enum": [
@@ -37597,6 +38656,14 @@
                                           "enum": [
                                             "aggregate"
                                           ]
+                                        },
+                                        "requiredDimensions": {
+                                          "maxItems": 10,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          }
                                         },
                                         "datasetId": {
                                           "type": "string",
@@ -37675,6 +38742,14 @@
                                           "enum": [
                                             "formula"
                                           ]
+                                        },
+                                        "requiredDimensions": {
+                                          "maxItems": 10,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          }
                                         },
                                         "expression": {
                                           "$ref": "#/components/schemas/DataExpressionDepth16"
@@ -38018,6 +39093,10 @@
                               "type": "string",
                               "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                             },
+                            "labelFieldId": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                            },
                             "timeAlignment": {
                               "type": "string",
                               "enum": [
@@ -38058,6 +39137,14 @@
                                   "enum": [
                                     "aggregate"
                                   ]
+                                },
+                                "requiredDimensions": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
                                 },
                                 "datasetId": {
                                   "type": "string",
@@ -38136,6 +39223,14 @@
                                   "enum": [
                                     "formula"
                                   ]
+                                },
+                                "requiredDimensions": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
                                 },
                                 "expression": {
                                   "$ref": "#/components/schemas/DataExpressionDepth16Input"
@@ -38319,6 +39414,10 @@
                                     "type": "string",
                                     "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                                   },
+                                  "labelFieldId": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  },
                                   "timeAlignment": {
                                     "type": "string",
                                     "enum": [
@@ -38359,6 +39458,14 @@
                                         "enum": [
                                           "aggregate"
                                         ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
                                       },
                                       "datasetId": {
                                         "type": "string",
@@ -38437,6 +39544,14 @@
                                         "enum": [
                                           "formula"
                                         ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
                                       },
                                       "expression": {
                                         "$ref": "#/components/schemas/DataExpressionDepth16"
@@ -38776,6 +39891,10 @@
                               "type": "string",
                               "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                             },
+                            "labelFieldId": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                            },
                             "timeAlignment": {
                               "type": "string",
                               "enum": [
@@ -38816,6 +39935,14 @@
                                   "enum": [
                                     "aggregate"
                                   ]
+                                },
+                                "requiredDimensions": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
                                 },
                                 "datasetId": {
                                   "type": "string",
@@ -38894,6 +40021,14 @@
                                   "enum": [
                                     "formula"
                                   ]
+                                },
+                                "requiredDimensions": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
                                 },
                                 "expression": {
                                   "$ref": "#/components/schemas/DataExpressionDepth16Input"
@@ -38993,6 +40128,35 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "filterValueLabels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "dimensionId": {
+                            "type": "string"
+                          },
+                          "value": {},
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "dimensionId",
+                          "value",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "pendingSources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240
+                      }
+                    },
                     "receivedAt": {
                       "anyOf": [
                         {
@@ -39051,6 +40215,15 @@
                               "type": "string"
                             },
                             "additionalProperties": {}
+                          },
+                          "dimensionLabels": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
                           },
                           "measures": {
                             "type": "object",
@@ -39480,6 +40653,10 @@
                                     "type": "string",
                                     "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                                   },
+                                  "labelFieldId": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  },
                                   "timeAlignment": {
                                     "type": "string",
                                     "enum": [
@@ -39520,6 +40697,14 @@
                                         "enum": [
                                           "aggregate"
                                         ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
                                       },
                                       "datasetId": {
                                         "type": "string",
@@ -39598,6 +40783,14 @@
                                         "enum": [
                                           "formula"
                                         ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
                                       },
                                       "expression": {
                                         "$ref": "#/components/schemas/DataExpressionDepth16"
@@ -39940,6 +41133,10 @@
                               "type": "string",
                               "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                             },
+                            "labelFieldId": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                            },
                             "timeAlignment": {
                               "type": "string",
                               "enum": [
@@ -39980,6 +41177,14 @@
                                   "enum": [
                                     "aggregate"
                                   ]
+                                },
+                                "requiredDimensions": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
                                 },
                                 "datasetId": {
                                   "type": "string",
@@ -40058,6 +41263,14 @@
                                   "enum": [
                                     "formula"
                                   ]
+                                },
+                                "requiredDimensions": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  }
                                 },
                                 "expression": {
                                   "$ref": "#/components/schemas/DataExpressionDepth16Input"
@@ -40249,6 +41462,10 @@
                                     "type": "string",
                                     "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                                   },
+                                  "labelFieldId": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  },
                                   "timeAlignment": {
                                     "type": "string",
                                     "enum": [
@@ -40289,6 +41506,14 @@
                                         "enum": [
                                           "aggregate"
                                         ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
                                       },
                                       "datasetId": {
                                         "type": "string",
@@ -40367,6 +41592,14 @@
                                         "enum": [
                                           "formula"
                                         ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
                                       },
                                       "expression": {
                                         "$ref": "#/components/schemas/DataExpressionDepth16"
@@ -40762,6 +41995,10 @@
                                     "type": "string",
                                     "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                                   },
+                                  "labelFieldId": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  },
                                   "timeAlignment": {
                                     "type": "string",
                                     "enum": [
@@ -40802,6 +42039,14 @@
                                         "enum": [
                                           "aggregate"
                                         ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
                                       },
                                       "datasetId": {
                                         "type": "string",
@@ -40880,6 +42125,14 @@
                                         "enum": [
                                           "formula"
                                         ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
                                       },
                                       "expression": {
                                         "$ref": "#/components/schemas/DataExpressionDepth16"
@@ -41182,6 +42435,35 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "filterValueLabels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "dimensionId": {
+                            "type": "string"
+                          },
+                          "value": {},
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "dimensionId",
+                          "value",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "pendingSources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240
+                      }
+                    },
                     "receivedAt": {
                       "anyOf": [
                         {
@@ -41240,6 +42522,15 @@
                               "type": "string"
                             },
                             "additionalProperties": {}
+                          },
+                          "dimensionLabels": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
                           },
                           "measures": {
                             "type": "object",
@@ -41597,6 +42888,35 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "filterValueLabels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "dimensionId": {
+                            "type": "string"
+                          },
+                          "value": {},
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "dimensionId",
+                          "value",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "pendingSources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240
+                      }
+                    },
                     "receivedAt": {
                       "anyOf": [
                         {
@@ -41655,6 +42975,15 @@
                               "type": "string"
                             },
                             "additionalProperties": {}
+                          },
+                          "dimensionLabels": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
                           },
                           "measures": {
                             "type": "object",
@@ -41772,6 +43101,550 @@
                     "appliedFilter",
                     "groupBy",
                     "stale"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Conflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Request body too large"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Took too long; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Took too long; try again later"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/dashboard-templates/stores": {
+      "get": {
+        "summary": "Choose store connections and confirmed app identities",
+        "tags": [
+          "dashboards"
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "connectorId": {
+                            "type": "string",
+                            "enum": [
+                              "app-store-connect",
+                              "google-play"
+                            ]
+                          },
+                          "setupPending": {
+                            "type": "boolean"
+                          },
+                          "apps": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "connectorId",
+                          "setupPending",
+                          "apps"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "connections"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Request body too large"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Took too long; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Took too long; try again later"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Install editable store preparations, measures and a dashboard atomically",
+        "tags": [
+          "dashboards"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "requestId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "connections": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "groups": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "apps": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "connectionId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "appId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 65536
+                              }
+                            },
+                            "required": [
+                              "connectionId",
+                              "appId"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "apps"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "appScope": {
+                    "type": "object",
+                    "properties": {
+                      "connectionId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "appId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 65536
+                      }
+                    },
+                    "required": [
+                      "connectionId",
+                      "appId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "requestId",
+                  "name",
+                  "connections"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dashboardId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "mappingDatasetId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "productDatasetId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "models": {
+                      "type": "object",
+                      "properties": {
+                        "downloads": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "proceeds": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "ratings": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "required": [
+                        "downloads",
+                        "proceeds",
+                        "ratings"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "preparationIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "dashboardId",
+                    "mappingDatasetId",
+                    "productDatasetId",
+                    "models",
+                    "preparationIds"
                   ],
                   "additionalProperties": false
                 }
@@ -47373,6 +49246,52 @@
                                         "data": {
                                           "type": "object",
                                           "properties": {
+                                            "sourceHealth": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "connectionId": {
+                                                    "type": "string",
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "ok",
+                                                      "pending",
+                                                      "auth_failed",
+                                                      "needs_reauthorization",
+                                                      "outage",
+                                                      "paused"
+                                                    ]
+                                                  },
+                                                  "lastSuccessAt": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "connectionId",
+                                                  "name",
+                                                  "status",
+                                                  "lastSuccessAt"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
                                             "scope": {
                                               "type": "array",
                                               "items": {
@@ -47417,6 +49336,13 @@
                                                           },
                                                           "name": {
                                                             "type": "string"
+                                                          },
+                                                          "requiredDimensions": {
+                                                            "type": "array",
+                                                            "items": {
+                                                              "type": "string",
+                                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                            }
                                                           }
                                                         },
                                                         "required": [
@@ -47479,6 +49405,35 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "filterValueLabels": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "dimensionId": {
+                                                            "type": "string"
+                                                          },
+                                                          "value": {},
+                                                          "label": {
+                                                            "type": "string"
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "dimensionId",
+                                                          "value",
+                                                          "label"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      }
+                                                    },
+                                                    "pendingSources": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 240
+                                                      }
+                                                    },
                                                     "receivedAt": {
                                                       "anyOf": [
                                                         {
@@ -47537,6 +49492,15 @@
                                                               "type": "string"
                                                             },
                                                             "additionalProperties": {}
+                                                          },
+                                                          "dimensionLabels": {
+                                                            "type": "object",
+                                                            "propertyNames": {
+                                                              "type": "string"
+                                                            },
+                                                            "additionalProperties": {
+                                                              "type": "string"
+                                                            }
                                                           },
                                                           "measures": {
                                                             "type": "object",
@@ -50917,6 +52881,52 @@
                                         "data": {
                                           "type": "object",
                                           "properties": {
+                                            "sourceHealth": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "connectionId": {
+                                                    "type": "string",
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "ok",
+                                                      "pending",
+                                                      "auth_failed",
+                                                      "needs_reauthorization",
+                                                      "outage",
+                                                      "paused"
+                                                    ]
+                                                  },
+                                                  "lastSuccessAt": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "connectionId",
+                                                  "name",
+                                                  "status",
+                                                  "lastSuccessAt"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
                                             "scope": {
                                               "type": "array",
                                               "items": {
@@ -50961,6 +52971,13 @@
                                                           },
                                                           "name": {
                                                             "type": "string"
+                                                          },
+                                                          "requiredDimensions": {
+                                                            "type": "array",
+                                                            "items": {
+                                                              "type": "string",
+                                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                            }
                                                           }
                                                         },
                                                         "required": [
@@ -51023,6 +53040,35 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "filterValueLabels": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "dimensionId": {
+                                                            "type": "string"
+                                                          },
+                                                          "value": {},
+                                                          "label": {
+                                                            "type": "string"
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "dimensionId",
+                                                          "value",
+                                                          "label"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      }
+                                                    },
+                                                    "pendingSources": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 240
+                                                      }
+                                                    },
                                                     "receivedAt": {
                                                       "anyOf": [
                                                         {
@@ -51081,6 +53127,15 @@
                                                               "type": "string"
                                                             },
                                                             "additionalProperties": {}
+                                                          },
+                                                          "dimensionLabels": {
+                                                            "type": "object",
+                                                            "propertyNames": {
+                                                              "type": "string"
+                                                            },
+                                                            "additionalProperties": {
+                                                              "type": "string"
+                                                            }
                                                           },
                                                           "measures": {
                                                             "type": "object",

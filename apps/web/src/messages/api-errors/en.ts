@@ -5,6 +5,17 @@
  */
 export const apiErrorsEn = {
   apiErrors: {
+    store_mapping_duplicate: "Each app can belong to only one linked product.",
+    store_scope_invalid: "Choose an app from one of the selected connections.",
+    store_template_request_reused:
+      "This setup was already submitted. Open your dashboards or start a new setup.",
+    store_template_removed:
+      "This dashboard was removed after creation. Start a new setup to create another.",
+    store_connector_required:
+      "Choose App Store Connect or Google Play connections.",
+    store_source_schema_unavailable:
+      "This connector version does not provide the datasets this template needs.",
+
     last_owner: "The last owner of a workspace cannot be demoted or removed.",
     membership_exists: "That person is already a member of this workspace.",
     email_delivery_failed:

@@ -396,3 +396,218 @@ it("pages deterministic groups without a permanent result-count ceiling", () => 
     querySemanticModel(model, inputs, { ...query, offset: 1200 }).rows,
   ).toEqual([]);
 });
+
+describe("dimension display names", () => {
+  const named: SemanticModelDefinition = {
+    ...model,
+    dimensions: model.dimensions.map((dimension) =>
+      dimension.id === "app"
+        ? { ...dimension, fieldId: "id", labelFieldId: "name" }
+        : dimension,
+    ),
+  };
+  it("groups and filters by stable identity while returning a separate display name", () => {
+    const result = querySemanticModel(named, sources, {
+      measureIds: ["total-downloads"],
+      groupBy: ["app"],
+    });
+    expect(
+      result.rows.map((row) => [
+        row.dimensions.app,
+        row.dimensionLabels?.app,
+        row.measures["total-downloads"]?.value,
+      ]),
+    ).toEqual([
+      ["a", "App A", "35"],
+      ["b", "App B", "10"],
+    ]);
+    const selected = querySemanticModel(named, sources, {
+      measureIds: ["total-downloads"],
+      groupBy: ["app"],
+      filter: { kind: "call", fn: "eq", args: [field("app"), literal("b")] },
+    });
+    expect(selected.rows[0]?.dimensions.app).toBe("b");
+    expect(selected.rows[0]?.dimensionLabels?.app).toBe("App B");
+  });
+  it("never merges distinct identities merely because their display names match", () => {
+    const sameNames = new Map(sources).set("apps", {
+      ...apps,
+      rows: apps.rows.map((row) => ({ ...row, name: "Same name" })),
+    });
+    const result = querySemanticModel(named, sameNames, {
+      measureIds: ["total-downloads"],
+      groupBy: ["app"],
+    });
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows.map((row) => row.dimensionLabels?.app)).toEqual([
+      "Same name",
+      "Same name",
+    ]);
+  });
+  it("rejects incompatible display columns and conflicting names for one identity", () => {
+    const wrong = {
+      ...named,
+      dimensions: [{ ...named.dimensions[0]!, labelFieldId: "missing" }],
+    };
+    expect(() =>
+      querySemanticModel(wrong, sources, {
+        measureIds: ["total-downloads"],
+        groupBy: ["app"],
+      }),
+    ).toThrow("model_dimension_label_invalid");
+    const direct: SemanticModelDefinition = {
+      version: 1,
+      datasets: ["apps"],
+      relationships: [],
+      dimensions: [named.dimensions[0]!],
+      measures: [
+        {
+          id: "count",
+          name: "Count",
+          kind: "aggregate",
+          datasetId: "apps",
+          aggregate: { id: "count", name: "Count", op: "count" },
+        },
+      ],
+    };
+    const conflicting = new Map([
+      [
+        "apps",
+        {
+          ...apps,
+          rows: [apps.rows[0]!, { ...apps.rows[0]!, name: "Different" }],
+        },
+      ],
+    ]);
+    expect(() =>
+      querySemanticModel(direct, conflicting, {
+        measureIds: ["count"],
+        groupBy: ["app"],
+      }),
+    ).toThrow("model_dimension_label_conflict");
+  });
+});
+
+describe("required measure dimensions", () => {
+  const guarded: SemanticModelDefinition = {
+    ...model,
+    measures: model.measures.map((measure) =>
+      measure.id === "apple-downloads"
+        ? { ...measure, requiredDimensions: ["app"] }
+        : measure,
+    ),
+  };
+  const query = (filter?: DataExpression, groupBy: string[] = []) =>
+    querySemanticModel(guarded, sources, {
+      measureIds: ["total-downloads"],
+      groupBy,
+      ...(filter ? { filter } : {}),
+    });
+  it("applies aggregate grain requirements through dependent formulas", () => {
+    expect(() => query()).toThrow("model_measure_scope_required");
+    expect(query(undefined, ["app"]).rows).toHaveLength(2);
+    for (const filter of [
+      { kind: "call", fn: "eq", args: [field("app"), literal("App A")] },
+      { kind: "call", fn: "eq", args: [literal("App A"), field("app")] },
+      {
+        kind: "call",
+        fn: "in",
+        args: [
+          field("app"),
+          { kind: "literal", type: "json", value: ["App A"] },
+        ],
+      },
+    ] as DataExpression[]) {
+      expect(query(filter).rows[0]?.measures["total-downloads"]?.value).toBe(
+        "35",
+      );
+      expect(
+        query({
+          kind: "call",
+          fn: "and",
+          args: [
+            filter,
+            { kind: "call", fn: "eq", args: [field("country"), literal("DE")] },
+          ],
+        }).rows,
+      ).toHaveLength(1);
+    }
+  });
+  it("refuses a multi-value or disjunctive filter as a single fixed grain", () => {
+    const a: DataExpression = {
+      kind: "call",
+      fn: "eq",
+      args: [field("app"), literal("App A")],
+    };
+    const b: DataExpression = {
+      kind: "call",
+      fn: "eq",
+      args: [field("app"), literal("App B")],
+    };
+    expect(() => query({ kind: "call", fn: "or", args: [a, b] })).toThrow(
+      "model_measure_scope_required",
+    );
+    expect(() =>
+      query({
+        kind: "call",
+        fn: "in",
+        args: [
+          field("app"),
+          { kind: "literal", type: "json", value: ["App A", "App B"] },
+        ],
+      }),
+    ).toThrow("model_measure_scope_required");
+  });
+});
+
+it("keeps pending counts and boolean aggregates unknown until a known value decides them", () => {
+  const definition: SemanticModelDefinition = {
+    version: 1,
+    datasets: ["flags"],
+    relationships: [],
+    dimensions: [],
+    measures: (["count", "any", "all"] as const).map((op) => ({
+      id: op,
+      name: op,
+      kind: "aggregate",
+      datasetId: "flags",
+      aggregate: {
+        id: op,
+        name: op,
+        op,
+        ...(op === "count" ? {} : { fieldId: "flag" }),
+      },
+    })),
+  };
+  const query = (values: boolean[]) =>
+    querySemanticModel(
+      definition,
+      new Map([
+        [
+          "flags",
+          {
+            fields: [
+              { id: "flag", name: "Flag", type: "boolean", nullable: false },
+            ],
+            rows: values.map((flag) => ({ flag })),
+            pendingSources: ["waiting"],
+          },
+        ],
+      ]),
+      { measureIds: ["count", "any", "all"], groupBy: [] },
+    );
+  const empty = query([]);
+  expect(
+    Object.values(empty.rows[0]!.measures).map((cell) => cell.value),
+  ).toEqual([null, null, null]);
+  expect(empty.pendingSources).toEqual(["waiting"]);
+  expect(query([true]).rows[0]!.measures).toMatchObject({
+    count: { value: 1, status: "partial" },
+    any: { value: true, status: "partial" },
+    all: { value: null, status: "missing" },
+  });
+  expect(query([false]).rows[0]!.measures).toMatchObject({
+    any: { value: null, status: "missing" },
+    all: { value: false, status: "partial" },
+  });
+});

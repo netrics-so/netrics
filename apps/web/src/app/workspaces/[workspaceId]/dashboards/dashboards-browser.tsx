@@ -65,6 +65,7 @@ export function DashboardsBrowser({
   meta: string;
 }) {
   const t = useT("dashboardsPage");
+  const stores = useT("storeTemplate");
   const filterId = useId();
   const [filter, setFilter] = useState("");
   const [creating, setCreating] = useState<{
@@ -150,6 +151,18 @@ export function DashboardsBrowser({
             {t("templates")}
           </h2>
           <ul className="dashboards-template-list">
+            <li>
+              <Link
+                className="dashboards-template dashboards-template--overview"
+                href={`/workspaces/${workspaceId}/dashboards/stores`}
+              >
+                <TemplateGlyph choice="overview" />
+                <span className="dashboards-template-text">
+                  <strong>{stores("title")}</strong>
+                  <span>{stores("templateCard")}</span>
+                </span>
+              </Link>
+            </li>
             {TEMPLATES.map((choice) => (
               <li key={choice}>
                 <button

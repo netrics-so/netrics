@@ -268,7 +268,10 @@ describe("Google Play through OAuth, worker, datasets and models", () => {
       attempts: 0,
     });
     const { sources } = await service.listSources(actor);
-    expect(sources).toHaveLength(4);
+    expect(sources.filter((source) => source.kind === "source")).toHaveLength(
+      4,
+    );
+    expect(sources.some((source) => source.kind === "resources")).toBe(true);
     installsId = sources.find(
       (source) => source.name === "Google Play install report rows",
     )!.id;

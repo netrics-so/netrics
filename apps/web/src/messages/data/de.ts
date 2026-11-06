@@ -3,6 +3,19 @@ import type { dataEn } from "./en";
 export const dataDe: Catalog<typeof dataEn> = {
   data: {
     dashboard: {
+      sourceReconnect: "Verbinde {name} erneut, um Importe fortzusetzen.",
+      sourceAccess:
+        "Aktualisiere den Zugriff für {name}, um Importe fortzusetzen.",
+      sourcePaused:
+        "Die App-Erfassung für {name} ist pausiert. Aufbewahrte Daten bleiben verfügbar.",
+      sourcePending: "Der erste vollständige Import von {name} steht noch aus.",
+      sourceOutage:
+        "Die Importe von {name} sind unterbrochen. Prüfe die Verbindung.",
+
+      requiresScope:
+        "Getrennt anzeigen oder auf genau einen Wert filtern: {dimensions}.",
+      pendingResult:
+        "Einige Quellenberichte stehen noch aus. Bekannte Werte werden als unvollständig angezeigt; fehlende Werte werden nicht als 0 angezeigt.",
       partialResult:
         "Einige Quelldaten fehlen. Prüfe das Modell, bevor du dieses Ergebnis verwendest.",
       done: "Fertig",
@@ -101,6 +114,14 @@ export const dataDe: Catalog<typeof dataEn> = {
     search: "Datensatz suchen",
     newPreparation: "Neue Aufbereitung",
     newModel: "Neues Modell",
+    editReference: "Tabelle bearbeiten",
+    referenceEditHint:
+      "Beim Speichern wird die Tabelle erst ersetzt, wenn alle Seiten angenommen wurden. Abhängige Kennzahlen und Dashboards lesen danach die neuen Daten. Nach einer gleichzeitigen Änderung muss die Tabelle neu geladen werden.",
+    referenceCellHint:
+      'Eine leere Zelle mit erlaubten Leerwerten bedeutet „fehlend“. Gib "" für leeren Text ein. Text, der mit einem Anführungszeichen beginnt, kann die JSON-Zeichenfolgenschreibweise verwenden, um die Zeichen zu erhalten.',
+    referenceLoadProgress: "Tabelle wird geladen: {loaded} von {total} Zeilen.",
+    referenceSaveProgress:
+      "Tabelle wird gespeichert: {saved} von {total} Zeilen.",
     newReference: "Referenzdaten eingeben",
     connectSource: "Quelle verbinden",
     back: "Zurück zu den Daten",
@@ -115,6 +136,7 @@ export const dataDe: Catalog<typeof dataEn> = {
     sourceName: "Datensatz",
     prepare: "Diese Daten aufbereiten",
     raw: "Quelldatensätze",
+    resources: "Ressourcennamen der Verbindung",
     observations: "Bereits aggregiert",
     prepared: "Aufbereitet",
     manual: "Referenztabelle",
@@ -252,7 +274,12 @@ export const dataDe: Catalog<typeof dataEn> = {
       "Verknüpfe gemeinsame Entitäten und definiere Kennzahlen. Jede Faktentabelle wird einzeln aggregiert, bevor Ergebnisse verbunden werden.",
     factDataset: "Daten mit wiederholten Schlüsseln",
     dimensionDataset: "Daten mit eindeutigen Schlüsseln",
+    dimensionLabel: "Spalte für Anzeigenamen (optional)",
+    dimensionLabelNone: "Den Wert selbst anzeigen",
     dimensionName: "Dimensionsname",
+    requiredScope: "Diese Dimensionen getrennt halten",
+    requiredScopeHelp:
+      "Diese Kennzahl erfordert eine Gruppierung nach jeder gewählten Dimension oder einen Filter auf genau einen Wert. Geeignet für Bewertungen, Momentaufnahmen und andere nicht kombinierbare Werte.",
     measureName: "Kennzahlname",
     measureKind: "Berechnung",
     aggregateMeasure: "Spalte aggregieren",
@@ -304,6 +331,10 @@ export const dataDe: Catalog<typeof dataEn> = {
     previewOutdated:
       "Der Entwurf wurde geändert. Prüfe ihn vor der Veröffentlichung erneut.",
     errors: {
+      scope:
+        "Gruppiere nach den erforderlichen Dimensionen oder wähle für jede genau einen Wert aus, bevor du diese Kennzahl verwendest.",
+      label:
+        "Wähle eine Textspalte für Anzeigenamen. Jede Identität braucht einen eindeutigen, konsistenten Namen.",
       pending:
         "Die erste vollständige Datenlieferung dieser Quelle steht noch aus. Prüfe den Synchronisierungsstatus der Verbindung; die Daten erscheinen, sobald der Anbieterbericht vorliegt.",
       generic:

@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useDashboardData } from "./dashboard-data-provider";
 import { useEffect, useState, type CSSProperties } from "react";
 import type { DashboardWidget, DashboardWidgetData } from "@netrics/contracts";
@@ -69,11 +70,13 @@ export function MeasureWidgetView({
   loading = false,
   onFilter,
   fontScale = 1,
+  workspaceId,
 }: {
   widget: Pick<MeasureWidget, "title" | "options"> & {
     binding: Pick<MeasureWidget["binding"], "measureIds" | "groupBy">;
   };
   fontScale?: number;
+  workspaceId?: string;
   data: DashboardWidgetData | null;
   loading?: boolean;
   onFilter?: (dimensionId: string, value: unknown) => void;
@@ -158,6 +161,7 @@ export function MeasureWidgetView({
   ];
   const tableRows = rows.map((row) => ({
     ...row.dimensions,
+    ...row.dimensionLabels,
     ...Object.fromEntries(
       widget.binding.measureIds.map((id) => [
         `measure.${id}`,
@@ -174,6 +178,7 @@ export function MeasureWidgetView({
   }));
   const chartRows = rows.map((row) => ({
     dimension: row.dimensions[widget.binding.groupBy[0]!],
+    label: row.dimensionLabels?.[widget.binding.groupBy[0]!],
     cell: row.measures[widget.binding.measureIds[0]!],
   }));
   const numeric = chartRows.map(({ cell }) =>
@@ -260,7 +265,7 @@ export function MeasureWidgetView({
         </div>
       ) : widget.options.view === "bar" ? (
         <div className="sw-measure-bars">
-          {chartRows.map(({ dimension, cell }, index) => (
+          {chartRows.map(({ dimension, label, cell }, index) => (
             <div className="sw-measure-bar" key={index}>
               <button
                 type="button"
@@ -269,7 +274,7 @@ export function MeasureWidgetView({
                   onFilter?.(widget.binding.groupBy[0]!, dimension)
                 }
               >
-                {String(dimension ?? "—")}
+                {label ?? String(dimension ?? "—")}
               </button>
               <div className="sw-measure-track">
                 <span
@@ -358,6 +363,9 @@ export function MeasureWidgetView({
       {data?.result?.stale ? (
         <p className="sw-notice">{t("dashboard.staleModel")}</p>
       ) : null}
+      {data?.result?.pendingSources?.length ? (
+        <p className="sw-notice">{t("dashboard.pendingResult")}</p>
+      ) : null}
       {rows.some((row) =>
         Object.values(row.measures).some((cell) => cell.status === "partial"),
       ) ? (
@@ -370,6 +378,27 @@ export function MeasureWidgetView({
           })}
         </p>
       ) : null}
+      {data?.sourceHealth
+        ?.filter((source) => source.status !== "ok")
+        .map((source) => {
+          const message = t(
+            `dashboard.${source.status === "needs_reauthorization" ? "sourceReconnect" : source.status === "auth_failed" ? "sourceAccess" : source.status === "paused" ? "sourcePaused" : source.status === "pending" ? "sourcePending" : "sourceOutage"}`,
+            { name: source.name },
+          );
+          return (
+            <p className="sw-notice" key={source.connectionId}>
+              {workspaceId ? (
+                <Link
+                  href={`/workspaces/${workspaceId}/connections/${source.connectionId}`}
+                >
+                  {message}
+                </Link>
+              ) : (
+                message
+              )}
+            </p>
+          );
+        })}
       {data?.exclusions.map((exclusion) => (
         <p className="sw-measure-scope" key={exclusion.filterId}>
           {exclusion.reason}
@@ -436,6 +465,7 @@ export function LiveMeasureWidget({
   return (
     <MeasureWidgetView
       widget={widget}
+      workspaceId={env.workspaceId}
       fontScale={env.fontScale}
       data={batch ? (batch.widgets.get(widget.id) ?? null) : data}
       loading={batch ? batch.loading : loading}

@@ -1,5 +1,5 @@
 /** Portable, bounded expressions shared by data preparation and model measures. */
-export const DATA_EXECUTION_VERSION = 3;
+export const DATA_EXECUTION_VERSION = 4;
 export const DATA_TYPES = [
   "string",
   "boolean",

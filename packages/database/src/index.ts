@@ -474,5 +474,6 @@ export {
   previewDataset,
   DatasetStoreError,
 } from "./datasets.js";
+export { registerSourceDataset } from "./datasets.js";
 export type { IngestDatasetPageInput } from "./datasets.js";
 export { resolveDataPolicy, adminSetDataPolicy } from "./data-policy.js";

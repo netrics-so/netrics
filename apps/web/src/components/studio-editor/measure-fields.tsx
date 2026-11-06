@@ -37,6 +37,13 @@ export function MeasureFields({
   const model = models.find(
     (model) => model.modelId === widget.binding.modelId,
   );
+  const required = [
+    ...new Set(
+      model?.measures
+        .filter((measure) => widget.binding.measureIds.includes(measure.id))
+        .flatMap((measure) => measure.requiredDimensions ?? []) ?? [],
+    ),
+  ];
   const refs =
     model?.dimensions.map((dimension) => ({
       id: dimension.id,
@@ -107,6 +114,7 @@ export function MeasureFields({
             setFormula("");
             onFilterDraftChange?.(undefined);
             setError(null);
+            const required = next.measures[0]?.requiredDimensions ?? [];
             dispatch({
               type: "updateWidget",
               widgetId: widget.id,
@@ -116,10 +124,14 @@ export function MeasureFields({
                   measureIds: next.measures
                     .slice(0, 1)
                     .map((measure) => measure.id),
-                  groupBy: [],
+                  groupBy: required.slice(0, 3),
                   exclusions: [],
                 },
-                options: { ...widget.options, view: "value" },
+                options: {
+                  ...widget.options,
+                  view:
+                    required.length && required.length <= 3 ? "table" : "value",
+                },
               },
             });
           }}
@@ -140,6 +152,19 @@ export function MeasureFields({
           </Link>
         </p>
       </div>
+      {required.length ? (
+        <p className="help">
+          {t("requiresScope", {
+            dimensions: required
+              .map(
+                (id) =>
+                  model?.dimensions.find((dimension) => dimension.id === id)
+                    ?.name ?? id,
+              )
+              .join(", "),
+          })}
+        </p>
+      ) : null}
       <div className="field">
         <label htmlFor={`${id}-view`}>{t("view")}</label>
         <select

@@ -29,9 +29,15 @@ export interface ModelDimension {
   name: string;
   datasetId: string;
   fieldId: string;
+  /** Presentation only: filters and grouping continue to use fieldId's stable value. */
+  labelFieldId?: string;
   timeAlignment?: "reporting_date" | "instant";
 }
-export type ModelMeasure = { id: string; name: string } & (
+export type ModelMeasure = {
+  id: string;
+  name: string;
+  requiredDimensions?: string[];
+} & (
   | { kind: "aggregate"; datasetId: string; aggregate: AggregateDefinition }
   | { kind: "formula"; expression: DataExpression }
 );
@@ -53,6 +59,37 @@ export interface ModelQuery {
 export interface ModelMeasureResult extends DataCell {
   status: "ok" | "missing" | "partial";
 }
+
+/** One display name per typed identity; names never join or merge records. */
+export function dimensionValueLabels(
+  dimension: ModelDimension,
+  table: DataTable,
+  budget = new ProcessingBudget(),
+): Map<string, string> {
+  const labels = new Map<string, string>();
+  if (!dimension.labelFieldId) return labels;
+  const field = table.fields.find(
+    (field) => field.id === dimension.labelFieldId,
+  );
+  if (!field || field.type !== "string")
+    dataFail("model_dimension_label_invalid");
+  for (const row of table.rows) {
+    budget.tick();
+    const label = row[dimension.labelFieldId];
+    if (
+      label === null ||
+      label === undefined ||
+      row[dimension.fieldId] === null
+    )
+      continue;
+    if (typeof label !== "string") dataFail("model_dimension_label_invalid");
+    const key = dataKey(table.fields, row, [dimension.fieldId]);
+    if (labels.has(key) && labels.get(key) !== label)
+      dataFail("model_dimension_label_conflict");
+    labels.set(key, label);
+  }
+  return labels;
+}
 function references(expression: DataExpression): Set<string> {
   const result = new Set<string>(),
     stack: Array<[DataExpression, number]> = [[expression, 0]];
@@ -73,6 +110,66 @@ function scalarKey(table: DataTable, row: DataRow, fieldId: string): string {
   return JSON.stringify(
     JSON.parse(dataKey(table.fields, row, [fieldId]))[0][1],
   );
+}
+
+/** A required grain can also be fixed to one value by a conjunctive filter. */
+function singleValueDimensions(expression?: DataExpression): Set<string> {
+  const result = new Set<string>();
+  if (!expression || expression.kind !== "call") return result;
+  if (expression.fn === "and") {
+    for (const arg of expression.args)
+      for (const id of singleValueDimensions(arg)) result.add(id);
+  } else if (
+    ["eq", "in"].includes(expression.fn) &&
+    expression.args.length === 2
+  ) {
+    const [a, b] = expression.args;
+    if (
+      a?.kind === "field" &&
+      b?.kind === "literal" &&
+      b.value !== null &&
+      (expression.fn === "eq" ||
+        (b.type === "json" &&
+          Array.isArray(b.value) &&
+          b.value.length === 1 &&
+          b.value[0] !== null))
+    )
+      result.add(a.fieldId);
+    else if (
+      expression.fn === "eq" &&
+      b?.kind === "field" &&
+      a?.kind === "literal" &&
+      a.value !== null
+    )
+      result.add(b.fieldId);
+  }
+  return result;
+}
+
+/** Include the grain of formula dependencies when describing a reusable measure. */
+export function measureRequiredDimensions(
+  model: SemanticModelDefinition,
+  ids: string[],
+): string[] {
+  const dimensions = new Set<string>(),
+    done = new Set<string>(),
+    visiting = new Set<string>();
+  const visit = (id: string) => {
+    if (done.has(id)) return;
+    if (visiting.has(id)) dataFail("model_measure_cycle");
+    const measure = model.measures.find((measure) => measure.id === id);
+    if (!measure) dataFail("model_measure_not_found");
+    visiting.add(id);
+    for (const dimension of measure.requiredDimensions ?? [])
+      dimensions.add(dimension);
+    if (measure.kind === "formula")
+      for (const dependency of references(measure.expression))
+        visit(dependency);
+    visiting.delete(id);
+    done.add(id);
+  };
+  ids.forEach(visit);
+  return [...dimensions];
 }
 
 /** Aggregate each fact separately at the shared grain. Never join fact rows together. */
@@ -205,11 +302,26 @@ export function querySemanticModel(
   const neededDatasets = new Set<string>(),
     visiting = new Set<string>(),
     validatedMeasures = new Set<string>();
+  const fixedDimensions = singleValueDimensions(query.filter);
   const discover = (id: string) => {
     if (validatedMeasures.has(id)) return;
     if (visiting.has(id)) dataFail("model_measure_cycle");
     const m = measures.get(id);
     if (!m) dataFail("model_measure_not_found", id);
+    const grain = m.requiredDimensions ?? [];
+    if (
+      grain.length > 10 ||
+      new Set(grain).size !== grain.length ||
+      grain.some((dimension) => !dimensions.has(dimension))
+    )
+      dataFail("model_measure_grain_invalid");
+    if (
+      grain.some(
+        (dimension) =>
+          !query.groupBy.includes(dimension) && !fixedDimensions.has(dimension),
+      )
+    )
+      dataFail("model_measure_scope_required");
     visiting.add(id);
     if (m.kind === "aggregate") {
       table(m.datasetId);
@@ -250,14 +362,20 @@ export function querySemanticModel(
   model.relationships.forEach(index);
   const grouped = new Map<string, Map<string, DataRow[]>>(),
     groupValues = new Map<string, DataRow>();
+  const pendingByDataset = new Map<string, Set<string>>();
   if (!query.groupBy.length) groupValues.set("[]", {});
   for (const datasetId of neededDatasets) {
     const source = useData(datasetId);
+    const pending = new Set(source.pendingSources ?? []);
+    pendingByDataset.set(datasetId, pending);
     validateDataTable(source, budget);
     const paths = new Map<string, ModelRelationship[]>();
     for (const id of required) {
       const d = dimensions.get(id)!;
       const path = findPath(datasetId, d.datasetId);
+      for (const step of path)
+        for (const source of table(step.to.datasetId).pendingSources ?? [])
+          pending.add(source);
       paths.set(id, path);
       path.forEach(index);
     }
@@ -294,8 +412,18 @@ export function querySemanticModel(
   }
   const results: Array<{
     dimensions: DataRow;
+    dimensionLabels?: Record<string, string>;
     measures: Record<string, ModelMeasureResult>;
   }> = [];
+  const displayLabels = new Map(
+    [...required].map((id) => {
+      const dimension = dimensions.get(id)!;
+      return [
+        id,
+        dimensionValueLabels(dimension, table(dimension.datasetId), budget),
+      ] as const;
+    }),
+  );
   const orderedGroups = [...groupValues].sort(([, a], [, b]) => {
     budget.tick();
     for (const id of query.groupBy) {
@@ -324,6 +452,7 @@ export function querySemanticModel(
           {
             ...table(m.datasetId),
             rows: grouped.get(m.datasetId)?.get(key) ?? [],
+            pendingSources: [...(pendingByDataset.get(m.datasetId) ?? [])],
           },
           m.aggregate,
           budget,
@@ -370,8 +499,24 @@ export function querySemanticModel(
       computed.set(id, result);
       return result;
     };
+    const labels = Object.fromEntries(
+      query.groupBy.flatMap((id) => {
+        const dimension = dimensions.get(id)!;
+        const label = displayLabels
+          .get(id)!
+          .get(
+            dataKey(
+              table(dimension.datasetId).fields,
+              { [dimension.fieldId]: values[id] },
+              [dimension.fieldId],
+            ),
+          );
+        return label === undefined ? [] : [[id, label]];
+      }),
+    );
     results.push({
       dimensions: values,
+      ...(Object.keys(labels).length ? { dimensionLabels: labels } : {}),
       measures: Object.fromEntries(
         query.measureIds.map((id) => [id, evaluate(id)]),
       ),
@@ -384,8 +529,55 @@ export function querySemanticModel(
   for (const datasetId of usedDatasets)
     for (const p of table(datasetId).provenance ?? [])
       lineage.set(p.datasetId + ":" + p.generationId, p);
+  // Label only literal filter values; never copy the whole dimension into a result.
+  const literals = new Set<string>();
+  const collectLiterals = (expression: DataExpression) => {
+    if (expression.kind === "literal") {
+      const values =
+        expression.type === "json" && Array.isArray(expression.value)
+          ? expression.value
+          : [expression.value];
+      for (const value of values) literals.add(JSON.stringify(value));
+    } else if (expression.kind === "call")
+      expression.args.forEach(collectLiterals);
+  };
+  if (query.filter) collectLiterals(query.filter);
+  const filterValueLabels: Array<{
+    dimensionId: string;
+    value: unknown;
+    label: string;
+  }> = [];
+  for (const id of query.filter ? references(query.filter) : []) {
+    const dimension = dimensions.get(id)!;
+    if (!dimension.labelFieldId) continue;
+    const source = table(dimension.datasetId),
+      labels = displayLabels.get(id)!,
+      seen = new Set<string>();
+    for (const row of source.rows) {
+      budget.tick();
+      const value = row[dimension.fieldId],
+        key = JSON.stringify(value);
+      if (!literals.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      const label = labels.get(
+        dataKey(source.fields, row, [dimension.fieldId]),
+      );
+      if (label !== undefined)
+        filterValueLabels.push({ dimensionId: id, value, label });
+    }
+  }
   return {
     rows: results,
+    ...(filterValueLabels.length ? { filterValueLabels } : {}),
+    ...([...pendingByDataset.values()].some((pending) => pending.size)
+      ? {
+          pendingSources: [
+            ...new Set(
+              [...pendingByDataset.values()].flatMap((pending) => [...pending]),
+            ),
+          ],
+        }
+      : {}),
     totalRows: orderedGroups.length,
     offset,
     warnings: [...budget.warnings],
@@ -410,6 +602,8 @@ export function validateSemanticModel(
     [...sources].map(([id, table]) => [id, { fields: table.fields, rows: [] }]),
   );
   for (const dimension of model.dimensions) {
+    const source = sources.get(dimension.datasetId);
+    if (source) dimensionValueLabels(dimension, source, budget);
     const field = schemas
       .get(dimension.datasetId)
       ?.fields.find((field) => field.id === dimension.fieldId);
@@ -419,9 +613,26 @@ export function validateSemanticModel(
     if (field.type === "date" && !dimension.timeAlignment)
       dataFail("model_date_alignment_required");
   }
+  for (const measure of model.measures) {
+    const grain = measure.requiredDimensions ?? [];
+    if (
+      grain.length > 10 ||
+      new Set(grain).size !== grain.length ||
+      grain.some(
+        (id) => !model.dimensions.some((dimension) => dimension.id === id),
+      )
+    )
+      dataFail("model_measure_grain_invalid");
+  }
+  const unguarded = {
+    ...model,
+    measures: model.measures.map(
+      ({ requiredDimensions: _grain, ...measure }) => measure,
+    ),
+  };
   for (let offset = 0; offset < model.measures.length; offset += 50)
     querySemanticModel(
-      model,
+      unguarded,
       schemas,
       {
         measureIds: model.measures

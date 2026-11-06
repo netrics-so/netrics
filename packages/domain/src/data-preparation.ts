@@ -24,6 +24,8 @@ export interface DataTable {
   provenance?: DataProvenance[];
   expiresAt?: string;
   aggregated?: boolean;
+  /** Declared inputs that have never completed an import; distinct from empty data. */
+  pendingSources?: string[];
 }
 export type AggregateOperation =
   | "sum"
@@ -183,7 +185,10 @@ function keysValid(table: DataTable, keys: string[]) {
 }
 function sourceContext(
   tables: DataTable[],
-): Pick<DataTable, "provenance" | "expiresAt" | "aggregated"> {
+): Pick<
+  DataTable,
+  "provenance" | "expiresAt" | "aggregated" | "pendingSources"
+> {
   const refs = new Map<string, DataProvenance>();
   let expiry: string | undefined;
   for (const table of tables) {
@@ -198,6 +203,13 @@ function sourceContext(
   return {
     provenance: [...refs.values()],
     aggregated: tables.some((table) => table.aggregated),
+    ...(tables.some((table) => table.pendingSources?.length)
+      ? {
+          pendingSources: [
+            ...new Set(tables.flatMap((table) => table.pendingSources ?? [])),
+          ],
+        }
+      : {}),
     ...(expiry ? { expiresAt: expiry } : {}),
   };
 }
@@ -348,12 +360,23 @@ export function aggregateData(
       dataFail("data_currency_invalid");
     currency = c as string | undefined;
   }
+  const waiting = !!table.pendingSources?.length;
+  if (waiting) {
+    budget.warnings.add("data_source_pending");
+    if (
+      !rows.length ||
+      (definition.op === "any" && value !== true) ||
+      (definition.op === "all" && value !== false)
+    )
+      value = null;
+  }
   validateDataValue(type, value, true);
-  const partial =
+  const missing =
     value !== null &&
     ["sum", "avg", "min", "max"].includes(definition.op) &&
     nonNull.length < rows.length;
-  if (partial) budget.warnings.add("aggregate_missing_inputs");
+  if (missing) budget.warnings.add("aggregate_missing_inputs");
+  const partial = value !== null && (missing || waiting);
   return {
     value,
     type,

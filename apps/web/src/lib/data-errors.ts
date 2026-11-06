@@ -1,4 +1,6 @@
 export function dataErrorCodeKey(code: string) {
+  if (/measure_scope_required|measure_grain_invalid/.test(code)) return "scope";
+  if (/dimension_label/.test(code)) return "label";
   if (code === "version_conflict") return "conflict";
   if (/cardinality|not_unique|identity_conflict/.test(code))
     return "cardinality";

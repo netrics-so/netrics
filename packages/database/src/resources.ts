@@ -68,29 +68,34 @@ export async function upsertConnectionResources(
   if (unique.size === 0) {
     return;
   }
-  await tx
-    .insert(schema.connectionResources)
-    .values(
-      [...unique.values()].map((resource) => ({
-        workspaceId: input.workspaceId,
-        connectionId: input.connectionId,
-        resourceId: resource.id,
-        name: resource.name,
-        kind: resource.kind,
-        discoveredAt: input.now,
-      })),
-    )
-    .onConflictDoUpdate({
-      target: [
-        schema.connectionResources.connectionId,
-        schema.connectionResources.resourceId,
-        schema.connectionResources.kind,
-      ],
-      set: {
-        name: sql`excluded.name`,
-        discoveredAt: sql`excluded.discovered_at`,
-      },
-    });
+  const resources = [...unique.values()];
+  // Provider/account size is not a SQL parameter-count limit. Keep each
+  // statement bounded while the caller's transaction remains atomic.
+  for (let offset = 0; offset < resources.length; offset += 1000) {
+    await tx
+      .insert(schema.connectionResources)
+      .values(
+        resources.slice(offset, offset + 1000).map((resource) => ({
+          workspaceId: input.workspaceId,
+          connectionId: input.connectionId,
+          resourceId: resource.id,
+          name: resource.name,
+          kind: resource.kind,
+          discoveredAt: input.now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [
+          schema.connectionResources.connectionId,
+          schema.connectionResources.resourceId,
+          schema.connectionResources.kind,
+        ],
+        set: {
+          name: sql`excluded.name`,
+          discoveredAt: sql`excluded.discovered_at`,
+        },
+      });
+  }
 }
 
 /** When the connection's resource names were last discovered, if ever. */

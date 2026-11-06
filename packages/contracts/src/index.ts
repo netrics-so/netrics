@@ -3484,3 +3484,5 @@ export * from "./data-processing.js";
 export * from "./data-policy.js";
 
 export * from "./dashboard-data.js";
+
+export * from "./store-templates.js";

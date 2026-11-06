@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   DATA_TYPES,
   DataProcessingError,
@@ -11,10 +11,12 @@ import {
   validateDatasetPage,
   datasetRecordKey,
 } from "@netrics/contracts";
-import { saveReference } from "@/lib/data-api";
+import { saveReferencePages, type ReferenceTable } from "@/lib/data-api";
 import {
   dataErrorKey,
-  enteredValue,
+  referenceCellText,
+  referenceRecordPages,
+  referenceCellValue,
   newDataId,
   parseEnteredTable,
 } from "@/lib/data-editing";
@@ -25,8 +27,10 @@ export function ReferenceEditor({
   onSaved,
   onClose,
   onDirty,
+  initial,
 }: {
   workspaceId: string;
+  initial?: ReferenceTable;
   onSaved: () => void;
   onClose: () => void;
   onDirty: (dirty: boolean) => void;
@@ -34,17 +38,35 @@ export function ReferenceEditor({
   const t = useT("data"),
     nameId = useId(),
     pasteId = useId();
-  const [name, setName] = useState("");
-  const [key] = useState(() => "reference_" + newDataId());
-  const [fields, setFields] = useState<DataField[]>([
-    { id: "id", name: "ID", type: "string", nullable: false },
-    { id: "name", name: t("name"), type: "string", nullable: true },
-  ]);
-  const [rows, setRows] = useState<string[][]>([["", ""]]),
-    [keyField, setKeyField] = useState("id");
+  const [name, setName] = useState(initial?.definition.name ?? "");
+  const [key] = useState(
+    () => initial?.definition.key ?? "reference_" + newDataId(),
+  );
+  const [fields, setFields] = useState<DataField[]>(
+    initial?.definition.fields ?? [
+      { id: "id", name: "ID", type: "string", nullable: false },
+      { id: "name", name: t("name"), type: "string", nullable: true },
+    ],
+  );
+  const [rows, setRows] = useState<string[][]>(() =>
+      initial
+        ? initial.records.map((record) =>
+            initial.definition.fields.map((field) =>
+              referenceCellText(field.type, record.values[field.id]),
+            ),
+          )
+        : [["", ""]],
+    ),
+    [keyFields, setKeyFields] = useState(
+      initial?.definition.keyFields ?? ["id"],
+    );
   const [paste, setPaste] = useState(""),
-    [retention, setRetention] = useState<"days" | "forever">("forever"),
-    [days, setDays] = useState(30);
+    [retention, setRetention] = useState<"days" | "forever">(
+      initial?.definition.retentionDays === null || !initial
+        ? "forever"
+        : "days",
+    ),
+    [days, setDays] = useState(initial?.definition.retentionDays ?? 30);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -52,16 +74,20 @@ export function ReferenceEditor({
     page,
     Math.max(0, Math.ceil(rows.length / 50) - 1),
   );
-  const dirty =
-    !!name ||
-    !!paste ||
-    rows.some((row) => row.some((value) => !!value)) ||
-    fields.length !== 2 ||
-    fields[0]?.name !== "ID" ||
-    fields[1]?.name !== t("name") ||
-    fields.some((field) => field.type !== "string") ||
-    retention !== "forever" ||
-    days !== 30;
+  const current = JSON.stringify({
+    name,
+    fields,
+    rows,
+    keyFields,
+    retention,
+    days,
+  });
+  const baseline = useRef(current);
+  const dirty = current !== baseline.current || !!paste;
+  const [progress, setProgress] = useState<{
+    saved: number;
+    total: number;
+  } | null>(null);
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -75,28 +101,39 @@ export function ReferenceEditor({
     setError(null);
     setBusy(true);
     try {
-      if (!rows.length || !rows.some((row) => row.some((cell) => cell !== "")))
-        throw new DataProcessingError("data_table_invalid");
       const definition = sourceDatasetSchema.parse({
+        ...initial?.definition,
         key,
         name: name.trim(),
-        version: 1,
+        version: (initial?.definition.version ?? 0) + 1,
         mode: "snapshot",
-        keyFields: [keyField],
+        keyFields,
         grain: "one reference record",
         retentionDays: retention === "forever" ? null : days,
         fields: fields.map((f) => ({
           ...f,
-          nullable: f.id === keyField ? false : f.nullable,
-          classification: "internal",
+          nullable: keyFields.includes(f.id) ? false : f.nullable,
+          classification:
+            initial?.definition.fields.find((field) => field.id === f.id)
+              ?.classification ?? "internal",
         })),
       });
       const records = rows.map((row) => ({
         values: Object.fromEntries(
           definition.fields.map((f, index) => {
-            if (f.id === keyField && !row[index]?.trim())
+            if (keyFields.includes(f.id) && !row[index]?.trim())
               throw new DataProcessingError("data_key_invalid");
-            return [f.id, enteredValue(f.type, row[index] ?? "", f.nullable)];
+            const value = referenceCellValue(
+              f.type,
+              row[index] ?? "",
+              f.nullable,
+            );
+            if (
+              keyFields.includes(f.id) &&
+              (value === null || (typeof value === "string" && !value.trim()))
+            )
+              throw new DataProcessingError("data_key_invalid");
+            return [f.id, value];
           }),
         ),
       }));
@@ -105,17 +142,30 @@ export function ReferenceEditor({
       );
       if (new Set(keys).size !== keys.length)
         throw new DataProcessingError("data_key_not_unique");
-      for (let offset = 0; offset < records.length; offset += 1000)
+      for (const page of referenceRecordPages(records))
         validateDatasetPage(definition, {
           datasetKey: key,
-          schemaVersion: 1,
+          schemaVersion: definition.version,
           refreshKey: "validation",
           pageKey: "validation",
           previousPageKey: null,
           complete: true,
-          records: records.slice(offset, offset + 1000),
+          records: page,
         });
-      await saveReference(workspaceId, { definition, records });
+      await saveReferencePages(
+        workspaceId,
+        {
+          definition,
+          records,
+          ...(initial
+            ? {
+                datasetId: initial.datasetId,
+                generationId: initial.generationId,
+              }
+            : {}),
+        },
+        (saved, total) => setProgress({ saved, total }),
+      );
       onDirty(false);
       onSaved();
     } catch (failure) {
@@ -131,10 +181,14 @@ export function ReferenceEditor({
           <button className="link-button" type="button" onClick={onClose}>
             {t("back")}
           </button>
-          <h2 id="reference-title">{t("newReference")}</h2>
+          <h2 id="reference-title">
+            {t(initial ? "editReference" : "newReference")}
+          </h2>
         </div>
       </header>
       <p className="data-intro">{t("referenceHint")}</p>
+      {initial ? <p className="notice">{t("referenceEditHint")}</p> : null}
+      <p className="help">{t("referenceCellHint")}</p>
       <form onSubmit={(e) => void save(e)}>
         <fieldset disabled={busy} className="data-editor-fields">
           <div className="field data-name-field">
@@ -164,10 +218,30 @@ export function ReferenceEditor({
               onClick={() => {
                 try {
                   const imported = parseEnteredTable(paste);
-                  setFields(imported.fields);
-                  setRows(imported.rows);
+                  const fields = imported.fields.map(
+                    (field) =>
+                      initial?.definition.fields.find(
+                        (old) => old.name === field.name,
+                      ) ?? field,
+                  );
+                  setFields(fields);
+                  setRows(
+                    imported.rows.map((row) =>
+                      row.map((cell, index) =>
+                        fields[index]?.type === "string" && cell.startsWith('"')
+                          ? JSON.stringify(cell)
+                          : cell,
+                      ),
+                    ),
+                  );
                   setPage(0);
-                  setKeyField(imported.fields[0]!.id);
+                  setKeyFields(
+                    keyFields.every((key) =>
+                      fields.some((field) => field.id === key),
+                    )
+                      ? keyFields
+                      : [fields[0]!.id],
+                  );
                   setPaste("");
                   setError(null);
                 } catch {
@@ -317,8 +391,16 @@ export function ReferenceEditor({
             <label className="field">
               {t("keyColumn")}
               <select
-                value={keyField}
-                onChange={(e) => setKeyField(e.target.value)}
+                multiple
+                value={keyFields}
+                onChange={(e) =>
+                  setKeyFields(
+                    Array.from(
+                      e.target.selectedOptions,
+                      (option) => option.value,
+                    ),
+                  )
+                }
               >
                 {fields
                   .filter((f) => f.type !== "json")
@@ -333,6 +415,7 @@ export function ReferenceEditor({
               {t("retention")}
               <select
                 value={retention}
+                disabled={!!initial}
                 onChange={(e) =>
                   setRetention(e.target.value as typeof retention)
                 }
@@ -349,6 +432,7 @@ export function ReferenceEditor({
                   min={1}
                   required
                   value={days}
+                  disabled={!!initial}
                   onChange={(e) => setDays(Number(e.target.value))}
                 />
               </label>
@@ -369,6 +453,9 @@ export function ReferenceEditor({
             </button>
           </div>
         </fieldset>
+        {progress && busy ? (
+          <p role="status">{t("referenceSaveProgress", progress)}</p>
+        ) : null}
       </form>
     </section>
   );

@@ -177,6 +177,7 @@ export const semanticModelDefinitionSchema: z.ZodType<SemanticModelDefinition> =
           name: z.string().min(1).max(100),
           datasetId: dataSourceIdSchema,
           fieldId: id,
+          labelFieldId: id.optional(),
           timeAlignment: z.enum(["reporting_date", "instant"]).optional(),
         }),
       )
@@ -188,6 +189,7 @@ export const semanticModelDefinitionSchema: z.ZodType<SemanticModelDefinition> =
             id,
             name: z.string().min(1).max(100),
             kind: z.literal("aggregate"),
+            requiredDimensions: z.array(id).max(10).optional(),
             datasetId: dataSourceIdSchema,
             aggregate,
           }),
@@ -195,6 +197,7 @@ export const semanticModelDefinitionSchema: z.ZodType<SemanticModelDefinition> =
             id,
             name: z.string().min(1).max(100),
             kind: z.literal("formula"),
+            requiredDimensions: z.array(id).max(10).optional(),
             expression: dataExpressionSchema,
           }),
         ]),
@@ -205,7 +208,7 @@ export const semanticModelDefinitionSchema: z.ZodType<SemanticModelDefinition> =
 export const dataSourceViewSchema = z.object({
   id: dataSourceIdSchema,
   name: z.string(),
-  kind: z.enum(["source", "observations", "prepared", "manual"]),
+  kind: z.enum(["source", "observations", "prepared", "manual", "resources"]),
   fields: z.array(dataFieldViewSchema),
   generationId: z.string().nullable(),
   rowCount: z.number().int().nonnegative().nullable(),
@@ -286,6 +289,16 @@ export const modelMeasureCellSchema = z.object({
   status: z.enum(["ok", "missing", "partial"]),
 });
 export const modelQueryResponseSchema = z.object({
+  filterValueLabels: z
+    .array(
+      z.object({
+        dimensionId: z.string(),
+        value: z.unknown(),
+        label: z.string(),
+      }),
+    )
+    .optional(),
+  pendingSources: z.array(dataSourceIdSchema).optional(),
   receivedAt: z.iso.datetime().nullable().optional(),
   expiresAt: z.iso.datetime().nullable().optional(),
   totalRows: z.number().int().nonnegative().optional(),
@@ -295,6 +308,7 @@ export const modelQueryResponseSchema = z.object({
     .array(
       z.object({
         dimensions: z.record(z.string(), z.unknown()),
+        dimensionLabels: z.record(z.string(), z.string()).optional(),
         measures: z.record(z.string(), modelMeasureCellSchema),
       }),
     )
@@ -349,4 +363,37 @@ export const preparationPreviewResponseSchema = z.object({
 });
 export const preparationPreviewRequestSchema = z.strictObject({
   graph: preparationGraphSchema,
+});
+
+export const manualDatasetPageInputSchema = z.strictObject({
+  datasetId: z.uuid().optional(),
+  generationId: z.uuid().nullable(),
+  definition: sourceDatasetSchema.refine(
+    (definition) => definition.mode === "snapshot",
+  ),
+  refreshId: z.uuid(),
+  page: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  complete: z.boolean(),
+  records: z.array(datasetRecordSchema).max(1000),
+});
+export const manualDatasetPageResponseSchema = z.object({
+  datasetId: z.uuid(),
+  generationId: z.uuid().nullable(),
+});
+export const manualDatasetReadInputSchema = z.strictObject({
+  generationId: z.uuid().optional(),
+  offset: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(Number.MAX_SAFE_INTEGER)
+    .default(0),
+  limit: z.number().int().min(1).max(1000).default(1000),
+});
+export const manualDatasetReadResponseSchema = z.object({
+  definition: sourceDatasetSchema,
+  generationId: z.uuid().nullable(),
+  records: z.array(datasetRecordSchema).max(1000),
+  offset: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
 });

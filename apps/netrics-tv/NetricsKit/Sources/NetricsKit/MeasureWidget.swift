@@ -129,6 +129,7 @@ public struct MeasureMetadata: Codable, Sendable, Equatable {
     public var dimensions: [MeasureNamedField]
 }
 public struct MeasureResultRow: Codable, Sendable, Equatable {
+    public var dimensionLabels: [String: String]? = nil
     public var dimensions: [String: MeasureValue]
     public var measures: [String: MeasureCell]
 }
@@ -137,6 +138,7 @@ public struct MeasureProvenance: Codable, Sendable, Equatable {
     public var generationId: String
 }
 public struct MeasureResult: Codable, Sendable, Equatable {
+    public var pendingSources: [String]? = nil
     public var releaseId: String?
     public var receivedAt: String?
     public var expiresAt: String?
@@ -150,7 +152,14 @@ public struct MeasureExclusion: Codable, Sendable, Equatable {
     public var filterId: String
     public var reason: String
 }
+public struct MeasureSourceHealth: Codable, Sendable, Equatable {
+    public var connectionId: String
+    public var name: String
+    public var status: String
+    public var lastSuccessAt: String?
+}
 public struct MeasureWidgetData: Codable, Sendable, Equatable {
+    public var sourceHealth: [MeasureSourceHealth]? = nil
     public var scope: [String]?
     public var metadata: MeasureMetadata?
     public var result: MeasureResult?

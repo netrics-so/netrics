@@ -76,10 +76,17 @@ struct MeasureWidgetView: View {
                 )
                 .font(font(24)).foregroundStyle(env.colors.muted)
             }
+            if data.result?.pendingSources?.isEmpty == false {
+                Text(KitStrings.text(.sourceReportsPending, env.language)).font(font(24)).foregroundStyle(env.colors.muted)
+            }
             if data.result?.warnings.isEmpty == false
                 || rows.contains(where: { $0.measures.values.contains(where: { $0.status == "partial" }) })
             {
                 Text(env.language == .de ? "Datenhinweise: Prüfe das Modell." : "Data warnings: check the model.")
+                    .font(font(24)).foregroundStyle(env.colors.muted)
+            }
+            ForEach((data.sourceHealth ?? []).filter { $0.status != "ok" }, id: \.connectionId) { source in
+                Text("\(source.name): \(KitStrings.text(source.status == "needs_reauthorization" || source.status == "auth_failed" ? .sourceAccess : source.status == "paused" ? .sourcePaused : source.status == "pending" ? .noticeFirstSync : .noticeOutage, env.language))")
                     .font(font(24)).foregroundStyle(env.colors.muted)
             }
             ForEach(data.exclusions, id: \.filterId) { exclusion in
@@ -107,7 +114,7 @@ struct MeasureWidgetView: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 GridRow {
                     ForEach(groupBy, id: \.self) {
-                        Text(row.dimensions[$0]?.text(language: env.language) ?? "—")
+                        Text(row.dimensionLabels?[$0] ?? row.dimensions[$0]?.text(language: env.language) ?? "—")
                     }
                     ForEach(measureIds, id: \.self) {
                         Text(row.measures[$0]?.text(language: env.language) ?? "—").monospacedDigit()
@@ -134,7 +141,7 @@ struct MeasureWidgetView: View {
                 let cell = measureIds.first.flatMap { row.measures[$0] }
                 HStack {
                     Text(
-                        groupBy.map { row.dimensions[$0]?.text(language: env.language) ?? "—" }.joined(
+                        groupBy.map { row.dimensionLabels?[$0] ?? row.dimensions[$0]?.text(language: env.language) ?? "—" }.joined(
                             separator: " · "))
                     GeometryReader { box in
                         if let value = cell?.value.chartNumber {

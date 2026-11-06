@@ -3,6 +3,12 @@ import { ZodError, type ZodType } from "zod";
 
 import {
   IMAGE_NAME_HEADER,
+  storeTemplateOptionsSchema,
+  storeTemplateRequestSchema,
+  storeTemplateResultSchema,
+  type StoreTemplateRequest,
+  type StoreTemplateOptions,
+  type StoreTemplateResult,
   createDashboardFromTemplateRequestSchema,
   dashboardTemplateOptionsResponseSchema,
   resourceIconListResponseSchema,
@@ -476,8 +482,10 @@ export async function browserSend<T>(
   method: string,
   path: string,
   body?: unknown,
+  options?: { signal?: AbortSignal },
 ): Promise<T> {
   const response = await fetch(path, {
+    ...(options?.signal ? { signal: options.signal } : {}),
     method,
     headers: body === undefined ? {} : { "content-type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -1399,5 +1407,26 @@ export function revokeDevice(
     deviceResponseSchema,
     "POST",
     `/v1/workspaces/${workspaceId}/devices/${deviceId}/revoke`,
+  );
+}
+
+export function listStoreTemplateOptions(
+  workspaceId: string,
+): Promise<StoreTemplateOptions> {
+  return browserSend(
+    storeTemplateOptionsSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/dashboard-templates/stores`,
+  );
+}
+export function installStoreTemplate(
+  workspaceId: string,
+  input: StoreTemplateRequest,
+): Promise<StoreTemplateResult> {
+  return browserSend(
+    storeTemplateResultSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/dashboard-templates/stores`,
+    storeTemplateRequestSchema.parse(input),
   );
 }

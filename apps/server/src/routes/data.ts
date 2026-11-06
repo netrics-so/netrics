@@ -143,6 +143,49 @@ export function registerDataRoutes(
           }),
       );
       scope.post(
+        "/workspaces/:workspaceId/data/manual/:id/read",
+        {
+          schema: doc(
+            "Read a pinned page of an editable reference table",
+            contracts.manualDatasetReadResponseSchema,
+            contracts.manualDatasetReadInputSchema,
+          ),
+        },
+        (request, reply) =>
+          execute(request, reply, "data:edit", async (actor) => {
+            const source = id(request, reply),
+              input = parseBody(
+                contracts.manualDatasetReadInputSchema,
+                request,
+                reply,
+              );
+            if (!source || !input) return;
+            reply.header("cache-control", "no-store");
+            return service.readManual(actor, source, input);
+          }),
+      );
+      scope.post(
+        "/workspaces/:workspaceId/data/manual/pages",
+        {
+          schema: doc(
+            "Stage a reference-table edit and publish only its complete final page",
+            contracts.manualDatasetPageResponseSchema,
+            contracts.manualDatasetPageInputSchema,
+          ),
+        },
+        (request, reply) =>
+          execute(request, reply, "data:edit", async (actor) => {
+            const input = parseBody(
+              contracts.manualDatasetPageInputSchema,
+              request,
+              reply,
+            );
+            if (!input) return;
+            reply.header("cache-control", "no-store");
+            return service.saveManualPage(actor, input);
+          }),
+      );
+      scope.post(
         "/workspaces/:workspaceId/data/formula",
         {
           schema: doc(
