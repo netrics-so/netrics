@@ -30,6 +30,7 @@ export const dataPolicyOverrideSchema = z.strictObject({
   queryOutputBytes: ceiling.optional(),
   queryTimeoutMs: ceiling.optional(),
   querySnapshotCount: cacheCeiling.optional(),
+  queryPageSessionsPerCaller: cacheCeiling.optional(),
   querySnapshotSeconds: cacheCeiling.optional(),
   preparedCacheSeconds: ceiling.optional(),
   maxRetentionDays: ceiling.optional(),

@@ -268,6 +268,60 @@ describe("installation admin API", () => {
     expect(restored.overrides).toEqual({});
   });
 
+  it("round-trips caller page-session limits and preserves the aggregate snapshot policy", async () => {
+    const ws = adminWorkspaceListResponseSchema.parse(
+      (await listWorkspaces({ cookie: instanceAdminCookie })).json(),
+    ).workspaces[0]!.id;
+    const url = `/v1/admin/workspaces/${ws}/data-policy`;
+    const headers = { cookie: instanceAdminCookie };
+    for (const limit of [0, 3, null]) {
+      const overrides = {
+        querySnapshotCount: 100,
+        queryPageSessionsPerCaller: limit,
+      };
+      const response = await app.inject({
+        method: "PUT",
+        url,
+        headers,
+        payload: overrides,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(dataPolicyResponseSchema.parse(response.json())).toMatchObject({
+        policy: overrides,
+        overrides,
+      });
+      const read = await app.inject({ url, headers });
+      expect(read.statusCode, read.body).toBe(200);
+      expect(dataPolicyResponseSchema.parse(read.json()).overrides).toEqual(
+        overrides,
+      );
+    }
+    for (const invalid of [-1, 0.5])
+      expect(
+        (
+          await app.inject({
+            method: "PUT",
+            url,
+            headers,
+            payload: { queryPageSessionsPerCaller: invalid },
+          })
+        ).statusCode,
+      ).toBe(400);
+    const reset = await app.inject({
+      method: "PUT",
+      url,
+      headers,
+      payload: {},
+    });
+    expect(reset.statusCode, reset.body).toBe(200);
+    const restored = dataPolicyResponseSchema.parse(reset.json());
+    expect(restored.policy).toMatchObject({
+      querySnapshotCount: 100,
+      queryPageSessionsPerCaller: 10,
+    });
+    expect(restored.overrides).toEqual({});
+  });
+
   it("refuses ordinary users and anonymous callers", async () => {
     expect((await listWorkspaces({ cookie: memberCookie })).statusCode).toBe(
       403,

@@ -62,6 +62,8 @@ export class DataServiceError extends Error {
   }
 }
 const MAX_SNAPSHOT_EXPIRY = Date.parse("9999-12-31T23:59:59Z");
+const LEGACY_PAGE_KEY_PATTERN =
+  "^page:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{64}$";
 function fail(code: string, status: 400 | 404 | 409 | 413 | 503 = 400): never {
   throw new DataServiceError(code, status);
 }
@@ -2028,6 +2030,7 @@ export function createDataService(
           now,
           policyFor(tx),
           preview,
+          "user:" + actor.callerId,
         );
       }),
   };
@@ -2053,7 +2056,10 @@ async function findDataModel(
   return row;
 }
 
-/** Internal query entry for dashboard/device transactions. Caller supplies an authorized workspace. */
+/**
+ * Internal query entry for authorized workspace transactions. Pinned paging
+ * additionally requires a trusted principal identity, never a request field.
+ */
 export async function queryDataModel(
   tx: Transaction,
   workspaceId: string,
@@ -2062,7 +2068,10 @@ export async function queryDataModel(
   now: Date,
   policy: DataPolicy,
   preview = false,
+  pageOwner?: string,
 ): Promise<DataModelQueryResult> {
+  if ((query.pageToken || query.pinPages) && !pageOwner)
+    fail("data_page_unavailable", 409);
   const continuation = query.pageToken ? readPageToken(query.pageToken) : null;
   if ((continuation || query.pinPages) && preview)
     fail("data_page_preview_unsupported");
@@ -2082,6 +2091,11 @@ export async function queryDataModel(
       }),
     )
     .digest("hex");
+  const callerPagePrefix = pageOwner
+    ? "page:v2:" + createHash("sha256").update(pageOwner).digest("hex") + ":"
+    : null;
+  const pageSessionKey = (sessionId: string) =>
+    callerPagePrefix! + sessionId + ":" + pageQueryKey;
   // Clamp to the latest representable deadline: the policy allows lifetimes
   // up to MAX_SAFE_INTEGER seconds, which would otherwise be an Invalid Date.
   const snapshotDeadline = () =>
@@ -2234,7 +2248,7 @@ export async function queryDataModel(
           eq(schema.dataModelQuerySnapshots.releaseId, release!.id),
           eq(
             schema.dataModelQuerySnapshots.queryKey,
-            "page:" + continuation.sessionId + ":" + pageQueryKey,
+            pageSessionKey(continuation.sessionId),
           ),
           gt(schema.dataModelQuerySnapshots.expiresAt, now),
         ),
@@ -2242,6 +2256,7 @@ export async function queryDataModel(
     if (
       !snapshot ||
       policy.querySnapshotCount === 0 ||
+      policy.queryPageSessionsPerCaller === 0 ||
       snapshotExpiry(snapshot) <= now
     )
       fail("data_page_unavailable", 409);
@@ -2327,7 +2342,8 @@ export async function queryDataModel(
     // Cache only generation identities, never a second copy of source rows.
     // Limit cache cardinality and lifetime independently of source retention.
     // Reclaim expired identities before admission, including deadlines shortened
-    // by the current policy. Active sessions are never evicted or renewed here.
+    // by the current policy. Old unowned sessions cannot be resumed safely;
+    // retire only their exact known key format, preserving versioned formats.
     await tx
       .delete(schema.dataModelQuerySnapshots)
       .where(
@@ -2335,6 +2351,7 @@ export async function queryDataModel(
           eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
           eq(schema.dataModelQuerySnapshots.releaseId, release.id),
           or(
+            sql`${schema.dataModelQuerySnapshots.queryKey} ~ ${LEGACY_PAGE_KEY_PATTERN}`,
             lte(schema.dataModelQuerySnapshots.expiresAt, now),
             ...(policy.querySnapshotSeconds !== null
               ? [
@@ -2361,12 +2378,14 @@ export async function queryDataModel(
           eq(schema.dataModelQuerySnapshots.releaseId, release.id),
         ),
       );
-    // Page sessions and last-valid snapshots have separate capacity, each
-    // bounded by querySnapshotCount, so pinned clients cannot crowd out the
-    // fallback snapshots that ordinary and dashboard queries rely on.
+    // Both pools have their own per-release aggregate cap. Owned sessions also
+    // have a per-caller cap; neither count implies a reserved share of capacity.
     const sessionCount = existing.filter((s) =>
       s.queryKey.startsWith("page:"),
     ).length;
+    const callerSessionCount = callerPagePrefix
+      ? existing.filter((s) => s.queryKey.startsWith(callerPagePrefix)).length
+      : 0;
     const snapshotCount = existing.length - sessionCount;
     if (
       query.pinPages &&
@@ -2379,6 +2398,10 @@ export async function queryDataModel(
         [...execution.loader.views.values()].every(
           (source) =>
             source.kind !== "prepared" || source.generationId !== null,
+        ) &&
+        !exceedsDataPolicy(
+          callerSessionCount + 1,
+          policy.queryPageSessionsPerCaller,
         ) &&
         !exceedsDataPolicy(sessionCount + 1, policy.querySnapshotCount) &&
         policy.querySnapshotSeconds !== 0
@@ -2416,7 +2439,7 @@ export async function queryDataModel(
         await tx.insert(schema.dataModelQuerySnapshots).values({
           workspaceId,
           releaseId: release.id,
-          queryKey: "page:" + sessionId + ":" + pageQueryKey,
+          queryKey: pageSessionKey(sessionId),
           generations,
           expiresAt,
           updatedAt: now,
@@ -2433,6 +2456,7 @@ export async function queryDataModel(
       }
     }
     if (
+      !query.pinPages &&
       policy.querySnapshotCount !== 0 &&
       policy.querySnapshotSeconds !== 0 &&
       (!exceedsDataPolicy(snapshotCount + 1, policy.querySnapshotCount) ||

@@ -4438,6 +4438,18 @@
                             }
                           ]
                         },
+                        "queryPageSessionsPerCaller": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "querySnapshotSeconds": {
                           "anyOf": [
                             {
@@ -4492,6 +4504,7 @@
                         "queryOutputBytes",
                         "queryTimeoutMs",
                         "querySnapshotCount",
+                        "queryPageSessionsPerCaller",
                         "querySnapshotSeconds",
                         "preparedCacheSeconds",
                         "maxRetentionDays"
@@ -4682,6 +4695,18 @@
                           ]
                         },
                         "querySnapshotCount": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "queryPageSessionsPerCaller": {
                           "anyOf": [
                             {
                               "type": "integer",
@@ -5053,6 +5078,18 @@
                       }
                     ]
                   },
+                  "queryPageSessionsPerCaller": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "querySnapshotSeconds": {
                     "anyOf": [
                       {
@@ -5316,6 +5353,18 @@
                             }
                           ]
                         },
+                        "queryPageSessionsPerCaller": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "querySnapshotSeconds": {
                           "anyOf": [
                             {
@@ -5370,6 +5419,7 @@
                         "queryOutputBytes",
                         "queryTimeoutMs",
                         "querySnapshotCount",
+                        "queryPageSessionsPerCaller",
                         "querySnapshotSeconds",
                         "preparedCacheSeconds",
                         "maxRetentionDays"
@@ -5560,6 +5610,18 @@
                           ]
                         },
                         "querySnapshotCount": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "queryPageSessionsPerCaller": {
                           "anyOf": [
                             {
                               "type": "integer",

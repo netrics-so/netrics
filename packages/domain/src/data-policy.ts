@@ -18,6 +18,8 @@ export interface DataPolicy {
   queryOutputBytes: number | null;
   queryTimeoutMs: number | null;
   querySnapshotCount: number | null;
+  /** Page-session admissions per authenticated caller/release; zero disables pinned paging. */
+  queryPageSessionsPerCaller: number | null;
   querySnapshotSeconds: number | null;
   preparedCacheSeconds: number | null;
   /** Optional tier ceiling; a source may request shorter retention. */
@@ -40,6 +42,7 @@ export const DEFAULT_DATA_POLICY: Readonly<DataPolicy> = {
   queryOutputBytes: 134_217_728,
   queryTimeoutMs: 15_000,
   querySnapshotCount: 100,
+  queryPageSessionsPerCaller: 10,
   querySnapshotSeconds: 86_400,
   preparedCacheSeconds: 86_400,
   maxRetentionDays: null,

@@ -28,6 +28,32 @@ describe("data cache policy", () => {
       ).toBe(false);
   });
 
+  it("limits pinned page sessions per caller without removing the release-wide bound", () => {
+    expect(parseDataPolicyDefaults().queryPageSessionsPerCaller).toBe(10);
+    for (const limit of [0, 3, null]) {
+      expect(
+        parseDataPolicyDefaults({
+          querySnapshotCount: 100,
+          queryPageSessionsPerCaller: limit,
+        }),
+      ).toMatchObject({
+        querySnapshotCount: 100,
+        queryPageSessionsPerCaller: limit,
+      });
+    }
+    for (const invalid of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1])
+      expect(
+        dataPolicyOverrideSchema.safeParse({
+          queryPageSessionsPerCaller: invalid,
+        }).success,
+      ).toBe(false);
+    expect(
+      parseDataPolicyDefaults({
+        queryPageSessionsPerCaller: Number.MAX_SAFE_INTEGER,
+      }).queryPageSessionsPerCaller,
+    ).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
   it("allows explicitly disabling query snapshots without allowing zero data/execution quotas", () => {
     expect(
       parseDataPolicyDefaults({
