@@ -48,6 +48,13 @@ TTL does not shorten an otherwise longer source retention period, and resuming
 from cached data cannot extend personal-data retention. A staged reference is not
 needed to replay an already retained raw refresh.
 
+Staging reads, writes and source admission use the host's current clock, including
+after database lock waits. The sync window and run audit retain their original
+start time; that timestamp is not a retention clock. Losing disposable staging
+between a read and its committed checkpoint is retryable: the checkpoint stays
+unchanged, and a fresh attempt rebuilds the pending partition. Corrupted staged
+content or an altered existing reference remains a permanent contract failure.
+
 The staging factory receives the connector call's abort signal. The host checks
 it around storage transactions and between chunk writes. Timeout, abort or an
 ended connector call revokes further staging access; an interrupted transaction

@@ -68,6 +68,12 @@ function classifyConnectorError(
   error: unknown,
   context: ConnectionContext,
 ): Error {
+  // Host capability validation errors remain permanent across the credential
+  // boundary. Only the trusted class qualifies; names/messages are not tags.
+  if (error instanceof ContractViolationError)
+    return new ContractViolationError(
+      redactCredentialValues(error.message, context.credentials),
+    );
   if (error instanceof EgressDeniedError) {
     return new ContractViolationError(
       `connector "${connector.manifest.id}": ${error.message}`,

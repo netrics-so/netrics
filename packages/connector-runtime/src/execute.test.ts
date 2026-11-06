@@ -340,6 +340,111 @@ describe("executeDiscover", () => {
 });
 
 describe("runtime capabilities", () => {
+  it.each(["get", "getPage"] as const)(
+    "preserves trusted host %s contract failures while dropping credential-bearing details",
+    async (operation) => {
+      const secret = "private-credential-value";
+      const context = { ...baseContext, credentials: { token: secret } };
+      const original = Object.assign(
+        new ContractViolationError(`invalid staged input ${secret}`, {
+          cause: new Error(`storage detail ${secret}`),
+        }),
+        { code: "dataset_stage_integrity", details: { credential: secret } },
+      );
+      const connector: Connector = {
+        ...connectorWith(demoManifest),
+        async sync(_context, _request, runtime) {
+          if (operation === "get") await runtime.datasetStaging!.get("report");
+          else
+            await runtime.datasetStaging!.getPage(
+              "e859be5d-03b1-432c-83d0-b46ef045c142",
+              "page-1",
+            );
+          return { observations: [], done: true };
+        },
+      };
+      const failure: unknown = await executeSync(connector, context, request, {
+        datasetStaging: () => ({
+          async get() {
+            throw original;
+          },
+          async getPage() {
+            throw original;
+          },
+          async put() {
+            throw new Error("unused");
+          },
+        }),
+      }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(ContractViolationError);
+      expect(failure).not.toBe(original);
+      expect((failure as Error).message).toBe(
+        "invalid staged input [redacted]",
+      );
+      expect((failure as Error).stack).not.toContain(secret);
+      expect(failure).not.toHaveProperty("cause");
+      expect(failure).not.toHaveProperty("code");
+      expect(failure).not.toHaveProperty("details");
+    },
+  );
+
+  it.each(["name", "code", "message"] as const)(
+    "keeps a generic capability failure retryable when its %s impersonates a contract error",
+    async (identifier) => {
+      const secret = "private-credential-value";
+      const context = { ...baseContext, credentials: { token: secret } };
+      const message =
+        identifier === "message"
+          ? `ContractViolationError dataset_stage_integrity ${secret}`
+          : `storage failed ${secret}`;
+      const original = Object.assign(
+        new Error(message, { cause: new Error(`private cause ${secret}`) }),
+        { details: { credential: secret } },
+        identifier === "code" ? { code: "dataset_stage_integrity" } : {},
+      );
+      if (identifier === "name") original.name = "ContractViolationError";
+      const connector: Connector = {
+        ...connectorWith(demoManifest),
+        async sync(_context, _request, runtime) {
+          await runtime.datasetStaging!.getPage(
+            "e859be5d-03b1-432c-83d0-b46ef045c142",
+            "page-1",
+          );
+          return { observations: [], done: true };
+        },
+      };
+      const failure: unknown = await executeSync(connector, context, request, {
+        datasetStaging: () => ({
+          async get() {
+            return null;
+          },
+          async getPage() {
+            throw original;
+          },
+          async put() {
+            throw new Error("unused");
+          },
+        }),
+      }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure).not.toBeInstanceOf(ContractViolationError);
+      expect(failure).not.toBe(original);
+      expect((failure as Error).message).toBe(
+        message.replace(secret, "[redacted]"),
+      );
+      expect((failure as Error).stack).not.toContain(secret);
+      expect(failure).not.toHaveProperty("cause");
+      expect(failure).not.toHaveProperty("code");
+      expect(failure).not.toHaveProperty("details");
+    },
+  );
+
   it("passes optional connection staging the call signal and revokes it after completion", async () => {
     let staged: ConnectorDatasetStaging | undefined;
     let calls = 0;

@@ -142,6 +142,58 @@ afterAll(async () => {
 });
 
 describe("durable typed dataset ingestion", () => {
+  it.each(["replay", "partial", "complete"] as const)(
+    "uses the persisted refresh deadline when the clock advances before %s admission",
+    async (kind) => {
+      const d = {
+        ...definition("refresh-clock-" + kind, "snapshot"),
+        retentionDays: 1,
+      };
+      const first = page(d, { complete: false });
+      const original = await ingest(d, first);
+      const before = new Date(now.getTime() + 86_400_000 - 1_000);
+      const after = new Date(now.getTime() + 86_400_000 + 1_000);
+      const next =
+        kind === "replay"
+          ? first
+          : page(d, {
+              pageKey: "p2",
+              previousPageKey: "p1",
+              complete: kind === "complete",
+              records: [record("two")],
+            });
+      let samples = 0;
+      await expect(
+        withWorkspace(db, { workspaceId: a }, (tx) =>
+          ingestDatasetPage(tx, {
+            workspaceId: a,
+            connectionId: ca,
+            definition: d,
+            page: next,
+            clock: () => (++samples <= 2 ? before : after),
+          }),
+        ),
+      ).rejects.toThrow("dataset_refresh_expired");
+      const [refresh] =
+        await admin`select source_collected_at,expires_at,last_page_key from data_refreshes where dataset_id=${original.datasetId}`;
+      expect(refresh).toMatchObject({
+        source_collected_at: now,
+        expires_at: new Date(now.getTime() + 86_400_000),
+        last_page_key: "p1",
+      });
+      expect(
+        (
+          await admin`select count(*)::integer as n from data_pages p join data_refreshes r on r.id=p.refresh_id where r.dataset_id=${original.datasetId}`
+        )[0]!.n,
+      ).toBe(1);
+      expect(
+        (
+          await admin`select count(*)::integer as n from data_generations where dataset_id=${original.datasetId}`
+        )[0]!.n,
+      ).toBe(0);
+    },
+  );
+
   it("accepts more than the old 100-page refresh ceiling when policy permits", async () => {
     const d = definition("many-pages", "snapshot");
     let result;

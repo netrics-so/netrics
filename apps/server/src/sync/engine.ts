@@ -25,6 +25,7 @@ import {
   ingestAppReviews,
   ingestDatasetPage,
   DatasetStoreError,
+  DatasetStageUnavailableError,
   resolveDataPolicy,
   schema,
   upsertConnectionResources,
@@ -249,7 +250,8 @@ async function runSync(
     );
   }
   const attempt = job.attempts + 1;
-  const now = deps.now?.() ?? new Date();
+  const clock = deps.now ?? (() => new Date());
+  const now = clock();
   const log = logger.child({ connectionId, mode, attempt });
 
   // Step 1: load connection + state under the job's tenant context.
@@ -732,6 +734,7 @@ async function runSync(
             page,
             now,
             policyDefaults: deps.dataPolicy,
+            clock,
             ...(page.stagingId || page.stagingPageKey
               ? {
                   retainedSource: await connectorStageProvenance(
@@ -740,7 +743,7 @@ async function runSync(
                       workspaceId,
                       connectionId,
                       connectorId: manifest.id,
-                      now,
+                      clock,
                       policyDefaults: deps.dataPolicy,
                     },
                     page,
@@ -749,8 +752,18 @@ async function runSync(
               : {}),
           });
         } catch (error) {
-          if (error instanceof DatasetStoreError)
+          if (error instanceof DatasetStageUnavailableError) throw error;
+          if (error instanceof DatasetStoreError) {
+            // Source retention can expire after provenance was checked, while
+            // waiting on ingestion's lock. Rebuild from the durable checkpoint.
+            if (
+              page.stagingId &&
+              (error.code === "dataset_replay_unavailable" ||
+                error.code === "dataset_refresh_expired")
+            )
+              throw new DatasetStageUnavailableError();
             throw new ContractViolationError(error.code);
+          }
           throw error;
         }
       }
@@ -802,7 +815,7 @@ async function runSync(
                 workspaceId,
                 connectionId,
                 manifest,
-                now,
+                clock,
                 policyDefaults: deps.dataPolicy,
                 signal,
               }),
