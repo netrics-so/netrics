@@ -299,7 +299,7 @@ jobs:
           persist-credentials: false
       - name: Same cosign-installer as the release workflows
         run: |
-          pins=$(grep -ho 'sigstore/cosign-installer@[0-9a-f]*' .github/workflows/release.yml .github/workflows/promote.yml .github/workflows/ci.yml | sort -u)
+          pins=$(grep -hoE 'sigstore/cosign-installer@[0-9a-f]{40}' .github/workflows/release.yml .github/workflows/promote.yml .github/workflows/ci.yml | sort -u)
           echo "$pins"
           test "$(echo "$pins" | wc -l)" -eq 1 || { echo "::error::cosign-installer pins differ between workflows"; exit 1; }
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
