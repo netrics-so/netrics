@@ -5,6 +5,29 @@ import {
 } from "./data-policy.js";
 
 describe("data cache policy", () => {
+  it("gives connector staging its own configurable admission budget", () => {
+    expect(parseDataPolicyDefaults().maxConnectorStagingBytes).toBe(
+      134_217_728,
+    );
+    for (const budget of [0, 2_097_152, null]) {
+      expect(
+        parseDataPolicyDefaults({
+          maxWorkspaceBytes: 4096,
+          maxConnectorStagingBytes: budget,
+        }),
+      ).toMatchObject({
+        maxWorkspaceBytes: 4096,
+        maxConnectorStagingBytes: budget,
+      });
+    }
+    for (const invalid of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1])
+      expect(
+        dataPolicyOverrideSchema.safeParse({
+          maxConnectorStagingBytes: invalid,
+        }).success,
+      ).toBe(false);
+  });
+
   it("allows explicitly disabling query snapshots without allowing zero data/execution quotas", () => {
     expect(
       parseDataPolicyDefaults({

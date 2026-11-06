@@ -2,6 +2,7 @@
 
 Status: accepted implementation decision (2026-11-05; #472, milestone 11).
 Extends ADR 0022 and the optional typed dataset capability.
+Quota separation revised on 2026-11-06 in [#476](https://github.com/netrics-so/netrics/issues/476).
 
 ## Context
 
@@ -27,9 +28,25 @@ metadata digest ordering is independent of the database collation.
 
 PostgreSQL stores the initial implementation under forced tenant RLS and
 connection/workspace foreign keys. Pages have no UPDATE grant; headers allow
-only byte-accounting updates. Staged bytes count toward the same workspace data
-quota as raw ingestion, under the same quota lock. A single stage is limited to
-128 MiB of serialized JSONB, its metadata to 1 MiB, and each page/record to the
+only byte-accounting updates. `maxConnectorStagingBytes` governs the aggregate
+accounted bytes of live stages (serialized JSONB plus accounting overhead) in
+one workspace, under the same advisory lock used by raw ingestion. It defaults
+to 128 MiB; `0` refuses new stages and
+`null` removes the aggregate admission ceiling. Lowering this budget, including
+to `0`, does not evict or prevent reuse of already admitted live stages. Their
+original source-retention and cache deadlines still apply. Expired stages do
+not consume admission capacity while awaiting pruning.
+
+This changes the initial shared-quota decision: `maxWorkspaceBytes` now counts
+retained raw pages and records only. Optional staging can no longer make an
+otherwise admissible raw import exceed that cap by keeping a second parsed
+copy. Staging and prepared caches have separate budgets; total managed storage
+can therefore exceed `maxWorkspaceBytes`. The host checks actual staged bytes
+before publishing a stage, and the Google connector uses buffered ingestion if
+admission is refused. Raw ingestion still enforces its own quota.
+
+A single stage remains limited to 128 MiB of serialized JSONB, its metadata to
+1 MiB, and each page/record to the
 existing SDK wire safeguards. These are bounds for disposable execution storage,
 not customer history quotas. Whole initial report parsing remains buffered.
 
@@ -68,6 +85,9 @@ The connector parses the relevant report set once, partitions it into per-app
 transport pages, and stores the page index without provider records in the
 checkpoint. Resumed turns read only the needed parsed page. A new connector or
 worker process can use the same durable stage.
+When admission is refused, that report task stays buffered through its remaining
+app/page continuations, even if cache capacity later becomes available. Changing
+storage mode halfway through would abandon its partially committed refresh.
 
 Each turn still lists current report metadata. Before reusing staged private
 rows, it authorizes each exact object generation with a metadata-only GET.
@@ -82,8 +102,14 @@ is rebuilt by a real provider read and restarts that pending partition too.
 
 This removes repeated report transfer/decompression/parsing across page and app
 continuations while a stage remains live. It adds temporary PostgreSQL storage
-and metadata authorization requests. It does not implement streaming downloads,
-ZIP64, incremental CSV parsing, SQL analytical execution, delta source generations
+and metadata authorization requests. Independent cache admission avoids evicting
+an in-progress stage, which would restart the pending partition and could leave
+additional incomplete raw refreshes. Operators must account for raw retention,
+connector staging and prepared caches when sizing storage. This policy update
+does not change the SDK or require a database schema migration.
+
+It does not implement streaming downloads, ZIP64, incremental CSV parsing,
+SQL analytical execution, delta source generations
 or unlimited provider-file size. The normal 10 MiB buffered HTTP limit and 64 MiB
 ZIP inflation safeguard remain. Stage expiry, changed configuration/app roster,
 corrections and changed parser versions can require a new complete provider read.

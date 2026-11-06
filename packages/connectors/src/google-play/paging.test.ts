@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   ConnectionContext,
+  ConnectorDatasetStaging,
   ConnectorRuntime,
   SyncRequest,
   SyncResult,
@@ -67,6 +68,56 @@ async function firstRaw(
 }
 
 describe("Google Play checkpoint consistency", () => {
+  it("keeps a buffered refresh when staging capacity becomes available between turns", async () => {
+    const fake = fakePlay();
+    fake.put(
+      `stats/installs/installs_${ALPHA}_202610_country.csv`,
+      installFile(2001),
+      "1",
+    );
+    let available = false;
+    let cached: Parameters<ConnectorDatasetStaging["put"]>[0] | undefined;
+    const id = "00000000-0000-4000-8000-000000000001";
+    const store: ConnectorDatasetStaging = {
+      get: vi.fn(async (key) =>
+        cached ? { id, key, metadata: cached.metadata } : null,
+      ),
+      put: vi.fn(async (value) => {
+        if (!available) throw new Error("Staging cache is full");
+        cached = value;
+        return { id, key: value.key, metadata: value.metadata };
+      }),
+      getPage: vi.fn(async (_id, key) => {
+        const page = cached?.pages.find((page) => page.pageKey === key);
+        if (!page) throw new Error("Missing test stage page");
+        return page;
+      }),
+    };
+    fake.runtime.datasetStaging = store;
+    const { page: first } = await firstRaw(fake);
+    expect(first.datasetPages?.[0]?.stagingId).toBeUndefined();
+    available = true;
+    let cursor = first.nextCursor;
+    for (const [offset, complete] of [
+      [1000, false],
+      [2000, true],
+    ] as const) {
+      const next = await createGooglePlayConnector({
+        now: () => TEST_NOW,
+      }).sync(context, { ...request, cursor }, fake.runtime);
+      expect(next.datasetPages?.[0]).toMatchObject({
+        refreshKey: first.datasetPages?.[0]?.refreshKey,
+        pageKey: String(offset),
+        previousPageKey: String(offset - 1000),
+        complete,
+      });
+      expect(next.datasetPages?.[0]?.stagingId).toBeUndefined();
+      cursor = next.nextCursor;
+    }
+    expect(store.get).toHaveBeenCalledTimes(1);
+    expect(store.put).toHaveBeenCalledTimes(1);
+    expect(store.getPage).not.toHaveBeenCalled();
+  });
   it("restarts a changed pending object, pins the reporting window and never puts provider records in checkpoints", async () => {
     const fake = fakePlay(),
       name = `stats/installs/installs_${ALPHA}_202610_country.csv`;

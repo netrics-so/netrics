@@ -11,7 +11,7 @@ import {
 import { exceedsDataPolicy, type DataPolicy } from "@netrics/domain";
 
 import type { Transaction } from "./context.js";
-import { datasetWorkspaceBytes } from "./data-usage.js";
+import { connectorStagingWorkspaceBytes } from "./data-usage.js";
 import { resolveDataPolicy } from "./data-policy.js";
 import { DatasetStoreError } from "./datasets.js";
 import {
@@ -259,6 +259,9 @@ export async function storeConnectorStage(
       return fail("dataset_stage_conflict");
     return { id: existing.id, key: existing.key, metadata: existing.metadata };
   }
+  // A lower cache budget never invalidates admitted continuations. Only new
+  // stages consume capacity; zero disables allocation without evicting readers.
+  if (policy.maxConnectorStagingBytes === 0) return fail("dataset_stage_quota");
   await tx
     .delete(dataConnectorStages)
     .where(and(scopeWhere(scope), eq(dataConnectorStages.key, input.key)));
@@ -307,11 +310,15 @@ export async function storeConnectorStage(
     .where(and(scopeWhere(scope), eq(dataConnectorStages.id, stage!.id)));
   if (
     exceedsDataPolicy(
-      await datasetWorkspaceBytes(tx, scope.workspaceId, now),
-      policy.maxWorkspaceBytes,
+      await connectorStagingWorkspaceBytes(
+        tx,
+        scope.workspaceId,
+        currentTime(scope),
+      ),
+      policy.maxConnectorStagingBytes,
     )
   )
-    return fail("dataset_workspace_quota");
+    return fail("dataset_stage_quota");
   signal?.throwIfAborted();
   if (expired(stage!, scope)) return unavailable();
   return { id: stage!.id, key: input.key, metadata: input.metadata };

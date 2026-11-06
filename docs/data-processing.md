@@ -142,8 +142,8 @@ cannot contain an incomplete dataset page.
 SDK 0.2.10 adds optional `runtime.datasetStaging` for immutable parsed transport
 pages. [#472](https://github.com/netrics-so/netrics/issues/472) uses it for Google
 Play reports: the host scopes storage to the connection/workspace, validates and
-hashes page contents, counts staged bytes toward the workspace data policy and
-expires them within 24 hours or the shorter source/tier retention. Committing a
+hashes page contents, admits staged bytes under a separate workspace cache
+budget and expires them within 24 hours or the shorter source/tier retention. Committing a
 staged page verifies its exact rows/window and preserves the original source
 collection time and retention deadline. Repeated reads cannot renew retention.
 Scheduler maintenance removes expired chunks. See [ADR 0023](./decisions/0023-connector-dataset-staging.md).
@@ -193,6 +193,7 @@ overrides inherit those instance defaults. For example:
 ```json
 {
   "maxWorkspaceBytes": null,
+  "maxConnectorStagingBytes": 134217728,
   "maxGenerationRows": null,
   "maxRefreshPages": null,
   "maxSources": null,
@@ -210,8 +211,28 @@ overrides; `{}` restores inheritance. No billing plan identifiers are built
 into the dataset or processing schema. A hosted plan service can manage these
 overrides; self-hosters control the same defaults and API.
 
-Storage and source-count policy defaults are uncapped. Execution defaults are
-100,000 rows, 5 million operations and 128 MiB of output per evaluation, 15
+[#476](https://github.com/netrics-so/netrics/issues/476) separates raw retention
+from the optional connector cache. `maxWorkspaceBytes` now counts retained raw
+pages and records only; it no longer includes parsed connector staging.
+`maxConnectorStagingBytes` independently caps the aggregate accounted bytes of
+live stages (serialized JSONB plus accounting overhead) in each workspace, with
+a 128 MiB default. `0` refuses new stages; `null` removes that admission ceiling.
+Lowering the cache budget,
+including to `0`, leaves already admitted live stages usable until their
+existing expiry. Reads and repeated identical writes do not renew retention.
+Expired stages stop consuming admission capacity before scheduled pruning.
+
+Stage admission refusal makes Google Play use its buffered ingestion path;
+the raw import still has to fit `maxWorkspaceBytes`. This is an explicit change
+from the initial shared raw/staging quota. Connector staging and prepared caches
+have separate budgets, so total managed storage can exceed the raw storage cap.
+Installation defaults and the existing workspace policy API configure these
+budgets without an SDK or database schema change. The individual 128 MiB stage,
+1 MiB metadata and page/record safeguards remain in force even when the
+aggregate cache budget is `null`.
+
+Retained raw storage and source-count policy defaults are uncapped. Execution
+defaults are 100,000 rows, 5 million operations and 128 MiB of output per evaluation, 15
 seconds per database statement and 100 connector pages per sync attempt. All
 are configurable, including `null`. They govern an individual execution, not
 the amount of retained history. Query snapshots default to 100 identities per

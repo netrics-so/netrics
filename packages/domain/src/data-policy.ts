@@ -1,6 +1,9 @@
 /** Product quotas are deployment/tier policy, separate from bounded wire formats. */
 export interface DataPolicy {
+  /** Retained raw dataset pages and records; execution caches have separate budgets. */
   maxWorkspaceBytes: number | null;
+  /** Live connector staging per workspace; zero refuses new cache admissions. */
+  maxConnectorStagingBytes: number | null;
   maxGenerationRows: number | null;
   maxGenerationBytes: number | null;
   maxRefreshPages: number | null;
@@ -22,6 +25,7 @@ export interface DataPolicy {
 }
 export const DEFAULT_DATA_POLICY: Readonly<DataPolicy> = {
   maxWorkspaceBytes: null,
+  maxConnectorStagingBytes: 134_217_728,
   maxGenerationRows: null,
   maxGenerationBytes: null,
   maxRefreshPages: null,
