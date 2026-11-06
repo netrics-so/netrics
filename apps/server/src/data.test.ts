@@ -1575,3 +1575,289 @@ describe("published dashboard measure bindings", () => {
     expect(changed.statusCode, changed.body).toBe(400);
   });
 });
+
+describe("rolling and period-offset model measures", () => {
+  const dashboards = (
+    method: "POST" | "PUT",
+    path: string,
+    cookie: string,
+    payload: unknown,
+  ) =>
+    app.inject({
+      method,
+      url: `/v1/workspaces/${workspaceId}/dashboards${path}`,
+      headers: { cookie },
+      payload: payload as InjectOptions["payload"],
+    });
+  // 2026-09-25 … 2026-10-05, one unit per day.
+  const days = Array.from({ length: 11 }, (_, index) =>
+    new Date(Date.UTC(2026, 8, 25 + index)).toISOString().slice(0, 10),
+  );
+  let sourceId: string;
+  const rolling = {
+    id: "units_7d",
+    name: "Units, 7 days",
+    kind: "rolling",
+    baseMeasureId: "units",
+    timeDimensionId: "day",
+    window: { unit: "day", length: 7 },
+  };
+  const weekChange = {
+    id: "units_week_change",
+    name: "Units vs. previous week",
+    kind: "period_offset",
+    baseMeasureId: "units",
+    timeDimensionId: "day",
+    offset: { unit: "week", length: 1 },
+    output: "change",
+  };
+  const definition = (measures: unknown[]) => ({
+    version: 1,
+    datasets: [sourceId],
+    relationships: [],
+    dimensions: [
+      {
+        id: "day",
+        name: "Day",
+        datasetId: sourceId,
+        fieldId: "day",
+        timeAlignment: "reporting_date",
+      },
+      {
+        id: "at",
+        name: "Received",
+        datasetId: sourceId,
+        fieldId: "at",
+        timeAlignment: "instant",
+      },
+    ],
+    measures: [
+      {
+        id: "units",
+        name: "Units",
+        kind: "aggregate",
+        datasetId: sourceId,
+        aggregate: { id: "units", name: "Units", op: "sum", fieldId: "units" },
+      },
+      ...measures,
+    ],
+  });
+  const create = async (name: string, measures: unknown[]) => {
+    const created = await call("POST", "/models", editor, {
+      name,
+      definition: definition(measures),
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    return modelResponseSchema.parse(created.json()).model;
+  };
+  const publish = (model: { id: string; version: number }) =>
+    call("POST", `/models/${model.id}/publish`, editor, {
+      version: model.version,
+    });
+
+  it("refuses invalid windowed measures when saving or publishing", async () => {
+    const source = await call("POST", "/manual", editor, {
+      definition: {
+        key: "daily-windowed-units",
+        name: "Daily units",
+        version: 1,
+        mode: "snapshot",
+        grain: "one reporting day",
+        keyFields: ["id"],
+        retentionDays: null,
+        fields: [
+          { id: "id", type: "string" },
+          { id: "day", type: "date" },
+          { id: "at", type: "timestamp" },
+          { id: "units", type: "integer" },
+        ].map((field) => ({
+          ...field,
+          name: field.id,
+          nullable: false,
+          classification: "internal",
+        })),
+      },
+      records: days.map((day) => ({
+        values: { id: day, day, at: `${day}T12:00:00Z`, units: 1 },
+      })),
+    });
+    expect(source.statusCode, source.body).toBe(200);
+    sourceId = source.json().datasetId as string;
+
+    // Bounds are part of the contract.
+    for (const window of [
+      { unit: "day", length: 367 },
+      { unit: "month", length: 0 },
+      { unit: "year", length: 1 },
+    ]) {
+      const refused = await call("POST", "/models", editor, {
+        name: "Out of bounds",
+        definition: definition([{ ...rolling, window }]),
+      });
+      expect(refused.statusCode, refused.body).toBe(400);
+    }
+
+    // Semantic rules surface as stable codes when publishing.
+    for (const [measures, code] of [
+      [
+        [
+          {
+            id: "double",
+            name: "Double",
+            kind: "formula",
+            expression: {
+              kind: "call",
+              fn: "multiply",
+              args: [
+                { kind: "field", fieldId: "units" },
+                { kind: "literal", type: "integer", value: 2 },
+              ],
+            },
+          },
+          { ...rolling, baseMeasureId: "double" },
+        ],
+        "model_window_base_aggregate_required",
+      ],
+      [
+        [{ ...rolling, timeDimensionId: "at" }],
+        "model_window_date_dimension_required",
+      ],
+      [
+        [
+          { ...rolling, window: { unit: "day", length: 366 } },
+          {
+            ...weekChange,
+            id: "year_ago",
+            baseMeasureId: "units_7d",
+            offset: { unit: "day", length: 366 },
+            output: "value",
+          },
+          {
+            ...weekChange,
+            id: "too_far",
+            baseMeasureId: "year_ago",
+            offset: { unit: "day", length: 100 },
+          },
+        ],
+        "model_window_lookback_limit",
+      ],
+      [
+        [{ ...weekChange, id: "loop", baseMeasureId: "loop" }],
+        "model_measure_cycle",
+      ],
+    ] as const) {
+      const model = await create("Invalid windows", [...measures]);
+      const refused = await publish(model);
+      expect(refused.statusCode, refused.body).toBe(400);
+      expect(refused.json()).toEqual({ error: code });
+    }
+  });
+
+  it("serves rolling and offset measures to viewers and refuses an ungrouped rolling binding", async () => {
+    const model = await create("Windowed units", [rolling, weekChange]);
+    const published = await publish(model);
+    expect(published.statusCode, published.body).toBe(200);
+
+    const range = (from: string, to: string) => ({
+      kind: "call",
+      fn: "and",
+      args: [
+        {
+          kind: "call",
+          fn: "gte",
+          args: [
+            { kind: "field", fieldId: "day" },
+            { kind: "literal", type: "date", value: from },
+          ],
+        },
+        {
+          kind: "call",
+          fn: "lte",
+          args: [
+            { kind: "field", fieldId: "day" },
+            { kind: "literal", type: "date", value: to },
+          ],
+        },
+      ],
+    });
+    const direct = await call("POST", `/models/${model.id}/query`, viewer, {
+      measureIds: ["units_7d", "units_week_change"],
+      groupBy: ["day"],
+      filter: range("2026-10-02", "2026-10-05"),
+    });
+    expect(direct.statusCode, direct.body).toBe(200);
+    const result = modelQueryResponseSchema.parse(direct.json());
+    expect(result.totalRows).toBe(4);
+    expect(result.rows.map((row) => row.dimensions.day)).toEqual(days.slice(7));
+    expect(result.rows.at(-1)!.measures).toMatchObject({
+      units_7d: { value: 7, status: "ok" },
+      units_week_change: {
+        value: 0,
+        status: "ok",
+        comparedTo: { from: "2026-09-28", to: "2026-09-28" },
+      },
+    });
+
+    const filter = {
+      id: "day",
+      name: "Day",
+      type: "date",
+      mode: "range",
+      mappings: [{ modelId: model.id, dimensionId: "day" }],
+      defaultValue: null,
+    };
+    const widget = (view: string, groupBy: string[]) => ({
+      type: "measure",
+      x: 0,
+      y: 0,
+      w: 6,
+      h: 3,
+      binding: {
+        modelId: model.id,
+        measureIds: ["units_7d"],
+        groupBy,
+        exclusions: [],
+      },
+      options: { view, limit: 20 },
+    });
+    const dashboard = await dashboards("POST", "", editor, {
+      name: "Rolling units",
+      settings: { dataFilters: [filter] },
+      slides: [{ widgets: [widget("line", ["day"])] }],
+    });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    const read = await dashboards(
+      "POST",
+      `/${dashboard.json().dashboard.id as string}/data`,
+      viewer,
+      {
+        values: {
+          day: { kind: "range", from: "2026-10-01", to: "2026-10-05" },
+        },
+      },
+    );
+    expect(read.statusCode, read.body).toBe(200);
+    const [line] = read.json().widgets;
+    expect(line.error).toBeNull();
+    // Lookback rows from September fill each window but add no points.
+    expect(line.result.totalRows).toBe(5);
+    expect(
+      line.result.rows.map(
+        (row: {
+          dimensions: { day: string };
+          measures: { units_7d: { value: unknown } };
+        }) => [row.dimensions.day, row.measures.units_7d.value],
+      ),
+    ).toEqual(days.slice(6).map((day) => [day, 7]));
+
+    const ungrouped = await dashboards("POST", "", editor, {
+      name: "Ungrouped rolling",
+      settings: { dataFilters: [filter] },
+      slides: [{ widgets: [widget("value", [])] }],
+    });
+    expect(ungrouped.statusCode, ungrouped.body).toBe(400);
+    expect(ungrouped.json()).toEqual({
+      error: "model_window_time_grouping_required",
+    });
+  });
+});
