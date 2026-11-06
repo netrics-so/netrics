@@ -33,6 +33,10 @@ export async function withWorkspace<T>(
   db: Db,
   ctx: WorkspaceContext,
   fn: (tx: Transaction) => Promise<T>,
+  options?: {
+    isolationLevel?: "read committed" | "repeatable read" | "serializable";
+    accessMode?: "read only" | "read write";
+  },
 ): Promise<T> {
   const workspaceId = uuidSchema.parse(ctx.workspaceId);
   const userId = ctx.userId ? uuidSchema.parse(ctx.userId) : undefined;
@@ -44,7 +48,7 @@ export async function withWorkspace<T>(
       await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
     }
     return fn(tx);
-  });
+  }, options);
 }
 
 /**

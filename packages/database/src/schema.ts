@@ -1660,7 +1660,8 @@ export const dataDatasets = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    connectionId: uuid("connection_id").notNull(),
+    connectionId: uuid("connection_id"),
+    kind: text("kind").notNull().default("source"),
     key: text("key").notNull(),
     name: text("name").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -1668,6 +1669,13 @@ export const dataDatasets = pgTable(
       .defaultNow(),
   },
   (t) => [
+    check(
+      "data_datasets_kind_valid",
+      sql`${t.kind} in ('source','manual') and (${t.kind} = 'source') = (${t.connectionId} is not null)`,
+    ),
+    uniqueIndex("data_datasets_manual_key")
+      .on(t.workspaceId, t.key)
+      .where(sql`${t.kind} = 'manual'`),
     unique("data_datasets_tenant_key").on(t.id, t.workspaceId),
     unique("data_datasets_connection_key").on(t.connectionId, t.key),
     foreignKey({
@@ -1716,7 +1724,7 @@ export const dataRefreshes = pgTable(
     pageCount: integer("page_count").notNull().default(0),
     rowCount: integer("row_count").notNull().default(0),
     complete: boolean("complete").notNull().default(false),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1735,7 +1743,7 @@ export const dataRefreshes = pgTable(
     }).onDelete("cascade"),
     check(
       "data_refreshes_counts",
-      sql`${t.pageCount} between 0 and 100 and ${t.rowCount} between 0 and 100000`,
+      sql`${t.pageCount} >= 0 and ${t.rowCount} >= 0`,
     ),
     index("data_refreshes_expiry_idx").on(t.expiresAt),
   ],
@@ -1783,7 +1791,7 @@ export const dataGenerations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
   },
   (t) => [
     unique("data_generations_tenant_key").on(t.id, t.workspaceId),
@@ -1800,7 +1808,7 @@ export const dataGenerations = pgTable(
     }).onDelete("cascade"),
     check(
       "data_generations_counts",
-      sql`${t.sequence} > 0 and ${t.rowCount} between 0 and 100000`,
+      sql`${t.sequence} > 0 and ${t.rowCount} >= 0`,
     ),
     index("data_generations_expiry_idx").on(t.expiresAt),
   ],
@@ -1814,7 +1822,7 @@ export const dataRecords = pgTable(
     recordKey: text("record_key").notNull(),
     collectedAt: timestamp("collected_at", { withTimezone: true }).notNull(),
     values: jsonb("values").notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
   },
   (t) => [
     primaryKey({ columns: [t.generationId, t.recordKey] }),
@@ -1830,3 +1838,175 @@ export const dataRecords = pgTable(
     index("data_records_expiry_idx").on(t.expiresAt),
   ],
 );
+
+export const dataPreparations = pgTable(
+  "data_preparations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    graph: jsonb("graph").notNull(),
+    version: integer("version").notNull().default(1),
+    publishedVersion: integer("published_version"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique("data_preparations_tenant_key").on(t.id, t.workspaceId),
+    check(
+      "data_preparations_versions",
+      sql`${t.version} > 0 and (${t.publishedVersion} is null or ${t.publishedVersion} > 0)`,
+    ),
+  ],
+);
+export const dataPreparationVersions = pgTable(
+  "data_preparation_versions",
+  {
+    preparationId: uuid("preparation_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    version: integer("version").notNull(),
+    graph: jsonb("graph").notNull(),
+    outputSchemas: jsonb("output_schemas").notNull(),
+    dependencies: jsonb("dependencies").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.preparationId, t.workspaceId, t.version] }),
+    foreignKey({
+      columns: [t.preparationId, t.workspaceId],
+      foreignColumns: [dataPreparations.id, dataPreparations.workspaceId],
+      name: "data_preparation_versions_parent_fk",
+    }).onDelete("cascade"),
+    check("data_preparation_versions_positive", sql`${t.version} > 0`),
+  ],
+);
+export const dataModels = pgTable(
+  "data_models",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    definition: jsonb("definition").notNull(),
+    version: integer("version").notNull().default(1),
+    publishedVersion: integer("published_version"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique("data_models_tenant_key").on(t.id, t.workspaceId),
+    check(
+      "data_models_versions",
+      sql`${t.version} > 0 and (${t.publishedVersion} is null or ${t.publishedVersion} > 0)`,
+    ),
+  ],
+);
+export const dataModelReleases = pgTable(
+  "data_model_releases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    modelId: uuid("model_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    version: integer("version").notNull(),
+    definition: jsonb("definition").notNull(),
+    dependencies: jsonb("dependencies").notNull(),
+    schemaBindings: jsonb("schema_bindings").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique("data_model_releases_tenant_key").on(t.id, t.workspaceId),
+    unique("data_model_releases_version_key").on(
+      t.modelId,
+      t.workspaceId,
+      t.version,
+    ),
+    foreignKey({
+      columns: [t.modelId, t.workspaceId],
+      foreignColumns: [dataModels.id, dataModels.workspaceId],
+      name: "data_model_releases_parent_fk",
+    }).onDelete("cascade"),
+    check("data_model_releases_positive", sql`${t.version} > 0`),
+  ],
+);
+export const dataModelQuerySnapshots = pgTable(
+  "data_model_query_snapshots",
+  {
+    releaseId: uuid("release_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    queryKey: text("query_key").notNull(),
+    generations: jsonb("generations").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.releaseId, t.queryKey] }),
+    foreignKey({
+      columns: [t.releaseId, t.workspaceId],
+      foreignColumns: [dataModelReleases.id, dataModelReleases.workspaceId],
+      name: "data_model_query_snapshots_release_fk",
+    }).onDelete("cascade"),
+    index("data_model_query_snapshots_expiry_idx").on(t.expiresAt),
+  ],
+);
+
+/** Immutable prepared output, identified by definition and complete source vector. */
+export const dataPreparedGenerations = pgTable(
+  "data_prepared_generations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    preparationId: uuid("preparation_id").notNull(),
+    version: integer("version").notNull(),
+    inputKey: text("input_key").notNull(),
+    generations: jsonb("generations").notNull(),
+    outputs: jsonb("outputs").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique("data_prepared_generations_input_key").on(
+      t.preparationId,
+      t.workspaceId,
+      t.version,
+      t.inputKey,
+    ),
+    foreignKey({
+      columns: [t.preparationId, t.workspaceId, t.version],
+      foreignColumns: [
+        dataPreparationVersions.preparationId,
+        dataPreparationVersions.workspaceId,
+        dataPreparationVersions.version,
+      ],
+      name: "data_prepared_generations_version_fk",
+    }).onDelete("cascade"),
+    check("data_prepared_generations_size_check", sql`${t.byteSize} >= 0`),
+    index("data_prepared_generations_expiry_idx").on(t.expiresAt),
+  ],
+);
+
+/** Written only by the installation operator, never by workspace membership. */
+export const dataWorkspacePolicies = pgTable("data_workspace_policies", {
+  workspaceId: uuid("workspace_id")
+    .primaryKey()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  overrides: jsonb("overrides").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

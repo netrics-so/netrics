@@ -304,6 +304,7 @@ export async function startWorker(config: Config): Promise<void> {
       registry,
       credentialKeyring,
       imageQuota: config.imageQuota,
+      dataPolicy: config.dataPolicy,
       oauthTokens: createOAuthTokenService({
         db: appDb,
         credentialKeyring,

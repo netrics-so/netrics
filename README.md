@@ -178,6 +178,11 @@ Relevant environment variables (see `.env.example`):
   by the api and the web app (ADR 0016). The language for people without
   their own setting and for screens of workspaces without a screen
   language; the api refuses other values.
+- `NETRICS_DATA_POLICY` — JSON defaults for retained data, source counts,
+  retention and execution budgets, read by the api and worker. Storage and
+  source counts are uncapped by default; `null` removes a policy ceiling.
+  Installation administrators can override policy per workspace for customer
+  tiers. See [data-processing.md](docs/data-processing.md).
 - `NETRICS_AUTH_RATE_LIMIT` — `on` (default in production) or `off`.
   Sign-in, sign-up, password reset and verification mail are limited per
   client IP (`apps/server/src/auth/rate-limit.ts`). The counters live in

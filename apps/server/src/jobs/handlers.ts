@@ -9,6 +9,7 @@ import type { SignedKeyProviders } from "../signed-keys/registry.js";
 import type { OAuthTokenService } from "../oauth/tokens.js";
 
 import type { ImageQuota } from "@netrics/database";
+import type { DataPolicy } from "@netrics/domain";
 
 import { createSyncJobHandlers } from "../sync/engine.js";
 
@@ -63,6 +64,7 @@ export class TerminalJobError extends Error {
 const noopHandler: JobHandler = async () => {};
 
 export interface JobHandlerDeps {
+  dataPolicy?: DataPolicy;
   /** The reviewed connector bundle of this deployment. */
   registry: ConnectorRegistry;
   /** Instance keyring for decrypting connection credentials. */

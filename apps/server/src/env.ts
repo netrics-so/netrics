@@ -7,6 +7,8 @@ import {
   IMAGE_QUOTA_DEFAULT_COUNT,
   localeSchema,
   processRoleSchema,
+  dataPolicyOverrideSchema,
+  parseDataPolicyDefaults,
 } from "@netrics/contracts";
 
 import { Secret } from "./secret.js";
@@ -207,6 +209,23 @@ const envSchema = z
     // converted amounts; "off" fetches nothing and keeps every amount per
     // currency. Read at runtime by the scheduler and the API alike.
     NETRICS_EXCHANGE_RATES: z.enum(["ecb", "off"]).default("ecb"),
+    NETRICS_DATA_POLICY: z
+      .string()
+      .default("{}")
+      .transform((value, ctx) => {
+        try {
+          return parseDataPolicyDefaults(
+            dataPolicyOverrideSchema.parse(JSON.parse(value.trim() || "{}")),
+          );
+        } catch {
+          ctx.addIssue({
+            code: "custom",
+            message:
+              "NETRICS_DATA_POLICY must be a valid data policy JSON object",
+          });
+          return z.NEVER;
+        }
+      }),
     // The instance's default language (ADR 0016): "en" or "de"; unset is
     // English. Read at runtime; the web app reads the same variable.
     NETRICS_DEFAULT_LOCALE: localeSchema.optional(),
@@ -374,6 +393,7 @@ const envSchema = z
           : null,
     } satisfies Record<string, OAuthClientConfig | null>,
     exchangeRates: env.NETRICS_EXCHANGE_RATES === "ecb",
+    dataPolicy: env.NETRICS_DATA_POLICY,
     defaultLocale: env.NETRICS_DEFAULT_LOCALE ?? null,
     imageQuota: {
       maxCount: env.NETRICS_IMAGE_QUOTA_COUNT,

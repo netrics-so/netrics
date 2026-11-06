@@ -24,7 +24,12 @@ export type WorkspaceAction =
   | "dashboards:delete"
   | "devices:view"
   | "devices:manage"
-  | "audit:view";
+  | "audit:view"
+  | "data:preview"
+  | "data:edit"
+  | "data:publish"
+  | "data:query"
+  | "data:delete";
 
 const ALL_ACTIONS: readonly WorkspaceAction[] = [
   "workspace:view",
@@ -48,6 +53,11 @@ const ALL_ACTIONS: readonly WorkspaceAction[] = [
   "devices:view",
   "devices:manage",
   "audit:view",
+  "data:preview",
+  "data:edit",
+  "data:publish",
+  "data:query",
+  "data:delete",
 ];
 
 const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<WorkspaceAction>> = {
@@ -66,6 +76,10 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<WorkspaceAction>> = {
     "dashboards:create",
     "dashboards:update",
     "devices:view",
+    "data:preview",
+    "data:edit",
+    "data:publish",
+    "data:query",
   ]),
   viewer: new Set([
     "workspace:view",
@@ -73,6 +87,7 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<WorkspaceAction>> = {
     "projects:view",
     "connections:view",
     "dashboards:view",
+    "data:query",
   ]),
 };
 

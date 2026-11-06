@@ -1,3 +1,5 @@
+import { registerDataRoutes } from "./routes/data.js";
+import { registerDataPolicyRoutes } from "./routes/data-policy.js";
 import cors from "@fastify/cors";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 
@@ -181,6 +183,7 @@ export async function buildApp(
     }),
   });
   registerAdminRoutes(app, { authService, db });
+  registerDataPolicyRoutes(app, { authService, db, policy: config.dataPolicy });
   registerInvitationRoutes(app, {
     authService,
     db,
@@ -195,6 +198,12 @@ export async function buildApp(
     ...(deps.now ? { now: deps.now } : {}),
   });
   registerDashboardRoutes(app, { authService, db });
+  registerDataRoutes(app, {
+    authService,
+    db,
+    policy: config.dataPolicy,
+    ...(deps.now ? { now: deps.now } : {}),
+  });
   registerThemeRoutes(app, { authService, db });
   registerGoalRoutes(app, {
     authService,
