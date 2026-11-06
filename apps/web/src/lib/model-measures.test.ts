@@ -5,6 +5,7 @@ import {
   changeMeasureSiblings,
   measureDependents,
   offsetPreset,
+  rollingBaseOf,
   OFFSET_PRESETS,
   timeDimensionCandidates,
   toWindowedMeasure,
@@ -167,6 +168,53 @@ describe("windowed measure editing", () => {
         ...offsetMeasure,
       }).map((m) => m.id),
     ).not.toContain("second");
+  });
+
+  it("keeps offsets from picking formulas built on themselves", () => {
+    const growth = {
+      id: "growth",
+      name: "Growth",
+      kind: "formula" as const,
+      expression: {
+        kind: "call" as const,
+        fn: "subtract" as const,
+        args: [
+          { kind: "field" as const, fieldId: "revenue7" },
+          { kind: "field" as const, fieldId: "revenue7_prev" },
+        ],
+      },
+    };
+    const outer = {
+      id: "outer",
+      name: "Outer",
+      kind: "formula" as const,
+      expression: {
+        kind: "call" as const,
+        fn: "multiply" as const,
+        args: [
+          { kind: "field" as const, fieldId: "growth" },
+          { kind: "literal" as const, type: "integer" as const, value: 2 },
+        ],
+      },
+    };
+    const withFormulas = {
+      ...model,
+      measures: [...model.measures, growth, outer],
+    };
+    expect(
+      windowBaseCandidates(withFormulas, offsetMeasure).map((m) => m.id),
+    ).toEqual(["revenue", "orders", "aov", "revenue7"]);
+    // Formulas not built on the offset stay available.
+    expect(
+      windowBaseCandidates(withFormulas, {
+        ...offsetMeasure,
+        id: "other",
+      }).map((m) => m.id),
+    ).toContain("outer");
+    expect(rollingBaseOf(withFormulas, "revenue").map((m) => m.id)).toEqual([
+      "revenue7",
+    ]);
+    expect(rollingBaseOf(withFormulas, "revenue7")).toEqual([]);
   });
 
   it("converts a measure to a windowed kind with valid defaults", () => {

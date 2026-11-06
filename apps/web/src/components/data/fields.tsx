@@ -21,6 +21,7 @@ export function ColumnSelect({
   onChange,
   empty = false,
   disabled = false,
+  describedBy,
 }: {
   label: string;
   fields: DataField[];
@@ -28,6 +29,7 @@ export function ColumnSelect({
   onChange: (value: string) => void;
   empty?: boolean;
   disabled?: boolean;
+  describedBy?: string;
 }) {
   const id = useId(),
     t = useT("data");
@@ -39,6 +41,7 @@ export function ColumnSelect({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
+        aria-describedby={describedBy}
         required={!empty}
       >
         <option value="">{t("choose")}</option>

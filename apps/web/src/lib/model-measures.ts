@@ -1,5 +1,6 @@
 import {
   MODEL_WINDOW_LIMITS,
+  measureDependencies,
   type DataField,
   type ModelMeasure,
   type ModelOffsetUnit,
@@ -74,21 +75,38 @@ export function measureDependents(
   );
 }
 
+/** Rolling measures that re-aggregate `id`'s rows, which must stay an aggregate. */
+export function rollingBaseOf(definition: SemanticModelDefinition, id: string) {
+  return definition.measures.filter(
+    (measure) => measure.kind === "rolling" && measure.baseMeasureId === id,
+  );
+}
+
+/** Whether `measure` reads `id`, directly or through formulas and bases. */
 function dependsOn(
   definition: SemanticModelDefinition,
   measure: ModelMeasure,
   id: string,
   seen = new Set<string>(),
 ): boolean {
-  if (!isWindowedMeasure(measure) || seen.has(measure.id)) return false;
+  if (seen.has(measure.id)) return false;
   seen.add(measure.id);
-  if (measure.baseMeasureId === id) return true;
-  const base = definition.measures.find((m) => m.id === measure.baseMeasureId);
-  return !!base && dependsOn(definition, base, id, seen);
+  let references: string[];
+  try {
+    references = measureDependencies(measure);
+  } catch {
+    // An unreadable draft formula: offer nothing that might loop.
+    return true;
+  }
+  return references.some((ref) => {
+    if (ref === id) return true;
+    const next = definition.measures.find((m) => m.id === ref);
+    return !!next && dependsOn(definition, next, id, seen);
+  });
 }
 
 /** Rolling re-aggregates rows, so only aggregates qualify; offsets take any
- * measure that would not loop back through its own base chain. */
+ * measure that does not read the offset, through bases or formulas. */
 export function windowBaseCandidates(
   definition: SemanticModelDefinition,
   measure: WindowedMeasure,

@@ -29,6 +29,7 @@ import {
   changeMeasureSiblings,
   isWindowedMeasure,
   measureDependents,
+  rollingBaseOf,
   timeDimensionCandidates,
   toWindowedMeasure,
   windowBaseCandidates,
@@ -366,10 +367,17 @@ export function ModelEditor({
     label: string,
     value: string,
     onChange: (id: string) => void,
+    blockedBy?: string,
   ) => (
     <label className="field">
       {label}
-      <select value={value} onChange={(e) => onChange(e.target.value)} required>
+      <select
+        aria-describedby={blockedBy}
+        disabled={!!blockedBy}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required
+      >
         <option value="">{t("choose")}</option>
         {selectedSources.map((s) => (
           <option key={s.id} value={s.id}>
@@ -702,6 +710,8 @@ export function ModelEditor({
                     onChange={(e) => update({ name: e.target.value })}
                   />
                 </label>
+                {/* A window's anchor keeps its date column: another source
+                    or column could change its type or alignment. */}
                 {sourceSelect(
                   t("sourceName"),
                   dimension.datasetId,
@@ -712,9 +722,14 @@ export function ModelEditor({
                       labelFieldId: undefined,
                       timeAlignment: undefined,
                     }),
+                  anchoring.length ? dimension.id + "-in-use" : undefined,
                 )}
                 <ColumnSelect
                   label={t("field")}
+                  disabled={anchoring.length > 0}
+                  describedBy={
+                    anchoring.length ? dimension.id + "-in-use" : undefined
+                  }
                   fields={fieldsFor(dimension.datasetId).filter(
                     (f) => f.type !== "json",
                   )}
@@ -851,6 +866,11 @@ export function ModelEditor({
                 <label className="field">
                   {t("measureKind")}
                   <select
+                    aria-describedby={
+                      dependents(measure.id).length
+                        ? measure.id + "-in-use"
+                        : undefined
+                    }
                     value={measure.kind}
                     onChange={(e) => {
                       const kind = e.target.value;
@@ -891,9 +911,25 @@ export function ModelEditor({
                     }}
                   >
                     <option value="aggregate">{t("aggregateMeasure")}</option>
-                    <option value="formula">{t("formulaMeasure")}</option>
-                    <option value="rolling">{t("rollingMeasure")}</option>
-                    <option value="period_offset">{t("offsetMeasure")}</option>
+                    {/* Rolling re-aggregates its base's rows. */}
+                    {(
+                      [
+                        ["formula", "formulaMeasure"],
+                        ["rolling", "rollingMeasure"],
+                        ["period_offset", "offsetMeasure"],
+                      ] as const
+                    ).map(([kind, label]) => (
+                      <option
+                        key={kind}
+                        value={kind}
+                        disabled={
+                          measure.kind === "aggregate" &&
+                          rollingBaseOf(definition, measure.id).length > 0
+                        }
+                      >
+                        {t(label)}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 {measure.kind === "aggregate"

@@ -21,6 +21,7 @@ export * from "./data-preparation.js";
 export * from "./data-model.js";
 export {
   MODEL_WINDOW_LIMITS,
+  measureDependencies,
   measureLookbackDays,
   modelQueryTimeRange,
   type ModelDateInterval,

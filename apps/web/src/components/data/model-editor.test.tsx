@@ -268,6 +268,34 @@ describe("model editor windowed measures", () => {
     );
   });
 
+  it("keeps rolling bases aggregates and anchor dates on their column", () => {
+    const html = render([revenue, rolling, previous]);
+    const revenueCard = card(html, revenue.name);
+    // A rolling base can only stay an aggregate; the reason is the one shown
+    // for blocked removal.
+    for (const kind of ["formula", "rolling", "period_offset"])
+      expect(revenueCard).toMatch(
+        new RegExp(`<option value="${kind}" disabled="">`),
+      );
+    expect(revenueCard).toMatch(
+      /<select aria-describedby="revenue-in-use"[^>]*>/,
+    );
+    // The rolling measure is only an offset's base: any kind remains possible.
+    expect(card(html, rolling.name)).not.toContain(
+      '<option value="formula" disabled="">',
+    );
+    // The anchor date's source and column cannot change while in use.
+    const row = html.slice(
+      html.lastIndexOf(
+        '<div class="data-model-row',
+        html.indexOf('value="Reporting day"'),
+      ),
+      html.indexOf('id="day-in-use"'),
+    );
+    expect(row.match(/<select[^>]*disabled=""/g)).toHaveLength(2);
+    expect(row.match(/aria-describedby="day-in-use"/g)?.length).toBe(3);
+  });
+
   it("disables the change helper once both siblings exist", () => {
     const html = render([
       revenue,
