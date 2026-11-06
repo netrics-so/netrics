@@ -34,6 +34,13 @@ export interface MeasureWidgetBinding {
   groupBy: string[];
   filter?: DataExpression;
   exclusions: DashboardFilterExclusion[];
+  /** Declared chart-to-filter interaction: selecting a category, point or
+   * row value sets this shared filter (ADR 0022). Viewer-side only; the
+   * server evaluates the resulting choice like any other. */
+  interaction?: MeasureWidgetInteraction;
+}
+export interface MeasureWidgetInteraction {
+  filterId: string;
 }
 export const DASHBOARD_MEASURE_VIEWS = [
   "value",
@@ -212,6 +219,60 @@ export function validateMeasureView(
     (binding.measureIds.length !== 1 || binding.groupBy.length !== 1)
   )
     dataFail("dashboard_measure_chart_grain_invalid");
+}
+
+/**
+ * The grouping dimension a declared interaction reads its value from: the
+ * dimension the filter maps to for this widget's model. Every unsupported
+ * combination fails with its own code instead of a click doing nothing.
+ */
+export function measureInteractionDimension(
+  filters: readonly DashboardDataFilter[],
+  binding: MeasureWidgetBinding,
+  view: DashboardMeasureView,
+): string {
+  const filterId = binding.interaction?.filterId;
+  if (filterId === undefined) dataFail("dashboard_interaction_missing");
+  if (view === "value")
+    dataFail("dashboard_interaction_view_unsupported", filterId);
+  const filter = filters.find((filter) => filter.id === filterId);
+  if (!filter) dataFail("dashboard_interaction_filter_unknown", filterId);
+  if (binding.exclusions.some((exclusion) => exclusion.filterId === filterId))
+    dataFail("dashboard_interaction_filter_excluded", filterId);
+  const mappings = filter.mappings.filter(
+    (mapping) => mapping.modelId === binding.modelId,
+  );
+  if (
+    mappings.length !== 1 ||
+    !binding.groupBy.includes(mappings[0]!.dimensionId)
+  )
+    dataFail("dashboard_interaction_dimension_not_grouped", filterId);
+  return mappings[0]!.dimensionId;
+}
+
+/** The filter choice a click on `value` makes, or null when the value cannot
+ * be chosen (a missing value has no range). */
+export function measureInteractionValue(
+  filter: DashboardDataFilter,
+  value: unknown,
+): Exclude<DashboardFilterValue, null> | null {
+  if (value === undefined) return null;
+  if (filter.mode === "values") return { kind: "values", values: [value] };
+  return value === null ? null : { kind: "range", from: value, to: value };
+}
+
+/** Whether the current choice is exactly what clicking `value` sets. */
+export function measureInteractionSelected(
+  filter: DashboardDataFilter,
+  current: DashboardFilterValue,
+  value: unknown,
+): boolean {
+  const chosen = measureInteractionValue(filter, value);
+  return (
+    chosen !== null &&
+    current !== null &&
+    JSON.stringify(current) === JSON.stringify(chosen)
+  );
 }
 
 /** Exact presentation amount, without ever converting a decimal to a float. */

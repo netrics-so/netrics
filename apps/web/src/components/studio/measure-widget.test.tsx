@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { DashboardWidgetData } from "@netrics/contracts";
 import { renderI18n } from "@/lib/i18n/test-render";
-import { formatMeasureCell, MeasureWidgetView } from "./measure-widget";
+import type { DashboardDataFilter } from "@netrics/domain";
+import type { StudioEnv } from "@/lib/studio-widgets";
+import {
+  formatMeasureCell,
+  liveInteraction,
+  MeasureWidgetView,
+  type MeasureWidget,
+} from "./measure-widget";
 const format = (
   value: unknown,
   type = "decimal",
@@ -93,5 +100,146 @@ describe("percent change measures", () => {
       expect(html).toContain("+8.3%");
       expect(html).not.toContain("0.083333");
     }
+  });
+});
+
+describe("declared chart-to-filter interactions", () => {
+  const view = (
+    interaction?: Parameters<typeof MeasureWidgetView>[0]["interaction"],
+    chart: "bar" | "table" = "bar",
+  ): Parameters<typeof MeasureWidgetView>[0] => ({
+    widget: {
+      title: "Income",
+      options: { view: chart, limit: 20 },
+      binding: { measureIds: ["income"], groupBy: ["country"] },
+    },
+    interaction,
+    data: {
+      widgetId: "00000000-0000-4000-8000-000000000001",
+      status: "ok",
+      error: null,
+      exclusions: [],
+      metadata: {
+        modelId: "00000000-0000-4000-8000-000000000002",
+        modelName: "Sales",
+        measures: [{ id: "income", name: "Income" }],
+        dimensions: [{ id: "country", name: "Country", type: "string" }],
+      },
+      result: {
+        releaseId: null,
+        rows: ["DE", "FR"].map((country, index) => ({
+          dimensions: { country },
+          dimensionLabels: { country: country === "DE" ? "Germany" : "France" },
+          measures: {
+            income: {
+              value: String(100 - index),
+              type: "decimal",
+              status: "ok",
+            },
+          },
+        })),
+        warnings: [],
+        operations: 1,
+        provenance: [],
+        appliedFilter: null,
+        groupBy: ["country"],
+      },
+    } as unknown as DashboardWidgetData,
+  });
+  const interaction = {
+    dimensionId: "country",
+    filterName: "Market",
+    selectable: () => true,
+    selected: (value: unknown) => value === "FR",
+    toggle: () => undefined,
+  };
+  it("renders the grouped values as pressed/unpressed filter buttons in en and de", () => {
+    for (const chart of ["bar", "table"] as const) {
+      const html = renderI18n(
+        <MeasureWidgetView {...view(interaction, chart)} />,
+      );
+      expect(html).toContain("Select a value to filter by Market.");
+      expect(html).toMatch(
+        /<button[^>]*aria-pressed="false"[^>]*title="Filter by Market: Germany"[^>]*>Germany<\/button>/,
+      );
+      expect(html).toMatch(/aria-pressed="true"[^>]*>France<\/button>/);
+    }
+    expect(
+      renderI18n(<MeasureWidgetView {...view(interaction)} />, "de"),
+    ).toContain("Wähle einen Wert, um nach Market zu filtern.");
+  });
+  it("keeps undeclared and non-interactive widgets as plain text", () => {
+    const html = renderI18n(<MeasureWidgetView {...view()} />);
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("filter by");
+  });
+});
+
+describe("viewer interaction state", () => {
+  const filter: DashboardDataFilter = {
+    id: "market",
+    name: "Market",
+    type: "string",
+    mode: "values",
+    mappings: [{ modelId: "model", dimensionId: "country" }],
+    defaultValue: { kind: "values", values: ["DE"] },
+  };
+  const widget = {
+    id: "00000000-0000-4000-8000-000000000003",
+    type: "measure",
+    title: null,
+    x: 0,
+    y: 0,
+    w: 6,
+    h: 4,
+    binding: {
+      modelId: "model",
+      measureIds: ["income"],
+      groupBy: ["country"],
+      exclusions: [],
+      interaction: { filterId: "market" },
+    },
+    options: { view: "bar", limit: 20 },
+  } as MeasureWidget;
+  const env = (
+    filterValues: StudioEnv["filterValues"],
+    calls: unknown[][] = [],
+  ) =>
+    ({
+      dataFilters: [filter],
+      filterValues,
+      onFilterValue: (...args: unknown[]) => calls.push(args),
+    }) as unknown as StudioEnv;
+  it("sets the clicked value, then clears it back to the default or to all values", () => {
+    const calls: unknown[][] = [];
+    liveInteraction(widget, env({}, calls))!.toggle("FR");
+    liveInteraction(
+      widget,
+      env({ market: { kind: "values", values: ["FR"] } }, calls),
+    )!.toggle("FR");
+    // The default is that very value: clicking it again shows all values.
+    liveInteraction(widget, env({}, calls))!.toggle("DE");
+    expect(calls).toEqual([
+      ["market", { kind: "values", values: ["FR"] }],
+      ["market", undefined],
+      ["market", null],
+    ]);
+  });
+  it("is absent where the environment is not interactive or the declaration does not apply", () => {
+    expect(
+      liveInteraction(widget, { ...env({}), onFilterValue: undefined }),
+    ).toBeUndefined();
+    expect(
+      liveInteraction(
+        { ...widget, binding: { ...widget.binding, groupBy: [] } },
+        env({}),
+      ),
+    ).toBeUndefined();
+    expect(
+      liveInteraction(
+        { ...widget, binding: { ...widget.binding, interaction: undefined } },
+        env({}),
+      ),
+    ).toBeUndefined();
   });
 });

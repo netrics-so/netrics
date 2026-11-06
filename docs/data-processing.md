@@ -487,6 +487,24 @@ changes (including widgets of a model whose filters changed). A binding left
 unchanged after its model was republished does not block unrelated edits; it
 reports its problem when queried.
 
+A table, bar or line widget can declare one chart-to-filter interaction
+([#490](https://github.com/netrics-so/netrics/issues/490)): its binding names a
+shared filter (`interaction: { filterId }`), and a viewer clicking a category,
+point or row value sets that filter. A values filter is set to the clicked value
+and a range filter to the one-value range `from = to`; a missing value cannot set
+a range. Clicking the selected value again restores the saved default (or all
+values when the default is that value), the choice shows in the shared filter
+bar, and **Reset filters** clears it. The filter applies to every widget mapped to
+it, including the one clicked. A declaration is valid only for a filter the widget
+follows (not excluded) whose mapping for the widget's model is one of its
+groupings; otherwise saving fails with a `dashboard_interaction_*` code, and
+Studio lists it as a problem before saving. Removing the filter in Studio removes
+the declaration. A click changes only the viewer's filter values; the server
+evaluates them like any other choice, under the viewer's authorization and fixed
+scopes. The interaction is browser-only: the Studio canvas, the web TV view and
+paired screens stay non-interactive, and device payloads never include the
+binding, so native and cached clients are unchanged.
+
 `dashboards/published-models` exposes the published measure/dimension catalog
 without raw source fields or drafts. `dashboards/data/preview` evaluates unsaved
 widget bindings against published models only, and `dashboards/:id/data`
@@ -528,7 +546,7 @@ Existing observation dashboards keep their existing cache and payload behavior.
 Older native builds keep their existing unknown-widget fallback and need an
 update to display the new measure type.
 
-Chart-driven filter interactions, saving a compare widget as a reusable measure,
+Saving a compare widget as a reusable measure,
 advanced device-specific scope controls and remaining authoring/history work
 stay in [#443](https://github.com/netrics-so/netrics/issues/443) and the other
 milestone 11 gates. This first dashboard slice does not close that entire gate.
@@ -537,8 +555,8 @@ The current executor evaluates typed JSONB rows in memory and materializes
 prepared outputs in JSONB. Removing policy ceilings does not yet provide a
 streaming or SQL execution path. Representative-volume checks and a scalable
 execution/storage path remain release work; this implementation does not claim
-a tested unbounded workload. Lifecycle controls, advanced authoring and
-dashboard interactions remain tracked in milestone 11.
+a tested unbounded workload. Lifecycle controls and advanced authoring
+remain tracked in milestone 11.
 
 ## Editable app portfolio templates
 

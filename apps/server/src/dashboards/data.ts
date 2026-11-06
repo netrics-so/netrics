@@ -12,6 +12,7 @@ import {
   compareDataValues,
   dimensionValueLabels,
   dataKey,
+  measureInteractionDimension,
   measureIsPercentChange,
   measureLookbackDays,
   measurePerDateDimensions,
@@ -208,6 +209,10 @@ export async function validateDashboardMeasure(
   options: { view: "value" | "table" | "bar" | "line"; limit: number },
 ) {
   validateMeasureView(options.view, binding);
+  // A declared click target must be a filter this widget follows, on a
+  // dimension it is grouped by; otherwise clicking would silently do nothing.
+  if (binding.interaction)
+    measureInteractionDimension(filters, binding, options.view);
   const model = await publishedModel(tx, workspaceId, binding.modelId);
   for (const filter of filters) {
     const mapping = filter.mappings.find(
