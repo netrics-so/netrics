@@ -157,3 +157,6 @@ implementation work; this plan does not create or complete issue records.
 - 11C: [#442](https://github.com/netrics-so/netrics/issues/442)
 - 11D: [#443](https://github.com/netrics-so/netrics/issues/443)
 - 11E: [#444](https://github.com/netrics-so/netrics/issues/444)
+  - Apple storefront rating snapshots: [#452](https://github.com/netrics-so/netrics/issues/452).
+    Implements the scoped raw rating/count source, not the complete portfolio
+    template or Google Play gate.

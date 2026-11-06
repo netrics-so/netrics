@@ -10,6 +10,9 @@ import {
   connectionListResponseSchema,
   connectionResourcesResponseSchema,
   connectionResponseSchema,
+  dataSourcesResponseSchema,
+  modelQueryResponseSchema,
+  modelResponseSchema,
   errorResponseSchema,
   workspaceListResponseSchema,
 } from "@netrics/contracts";
@@ -160,12 +163,37 @@ const TEAM_A_ROTATED: FakeAscTeam = {
 
 const teams = [TEAM_A, TEAM_B];
 const asc = createFakeAsc(teams);
+let publicRating = 4.25;
+const ratingRequests: Array<{
+  url: string;
+  headers: Record<string, string> | undefined;
+}> = [];
 
 /** The real connector, its runtime.fetch pointed at the fake API. */
 function towardsFake(connector: Connector): Connector {
   const rewrite = (runtime: ConnectorRuntime): ConnectorRuntime => ({
     signal: runtime.signal,
-    fetch: (url, init) => asc.fetch(url, init),
+    fetch: async (url, init) => {
+      if (new URL(url).hostname !== "itunes.apple.com")
+        return asc.fetch(url, init);
+      ratingRequests.push({ url, headers: init?.headers });
+      const body = JSON.stringify({
+        results: (new URL(url).searchParams.get("id") ?? "")
+          .split(",")
+          .map((id) => ({
+            trackId: Number(id),
+            averageUserRating: publicRating,
+            userRatingCount: 123,
+          })),
+      });
+      return {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        text: () => body,
+        json: () => JSON.parse(body) as unknown,
+        bytes: () => new TextEncoder().encode(body),
+      };
+    },
   });
   return {
     manifest: connector.manifest,
@@ -182,7 +210,10 @@ function registry(): ConnectorRegistry {
   registry.register(createDemoConnector());
   registry.register(
     towardsFake(
-      createAppStoreConnectConnector({ now: () => NOW, log: () => {} }),
+      createAppStoreConnectConnector({
+        now: () => NOW,
+        log: () => {},
+      }),
     ),
   );
   return registry;
@@ -382,6 +413,7 @@ describe("App Store Connect connections", () => {
       expect(stored).toEqual(credentialsOf(team));
       expect(row!.config).toEqual({
         vendorNumber: team.vendorNumbers[0],
+        ratingStorefront: "US",
         resourceSelection: [team.apps[0]!.id],
       });
     }
@@ -461,6 +493,98 @@ describe("App Store Connect connections", () => {
           row.dimensions.resource === "1000000001",
       )?.value,
     ).toBe(12);
+  });
+
+  it("publishes selected apps' raw ratings for model queries and replaces same-day corrections", async () => {
+    const sources = await call("GET", "/data/sources");
+    expect(sources.statusCode, sources.body).toBe(200);
+    const source = dataSourcesResponseSchema
+      .parse(sources.json())
+      .sources.find(
+        (item) =>
+          item.connectionId === ids.a &&
+          item.name === "App Store rating snapshots",
+      );
+    expect(source).toMatchObject({
+      rowCount: 1,
+      aggregated: false,
+      expiresAt: null,
+    });
+    const datasetId = source!.id;
+    const model = await call("POST", "/data/models", {
+      name: "Store ratings",
+      definition: {
+        version: 1,
+        datasets: [datasetId],
+        relationships: [],
+        dimensions: [
+          { id: "app", name: "App", datasetId, fieldId: "app_id" },
+          {
+            id: "storefront",
+            name: "Storefront",
+            datasetId,
+            fieldId: "storefront",
+          },
+        ],
+        measures: ["rating", "rating_count"].map((fieldId) => ({
+          id: fieldId,
+          name: fieldId,
+          kind: "aggregate",
+          datasetId,
+          aggregate: {
+            id: fieldId,
+            name: fieldId,
+            op: "last",
+            fieldId,
+            orderBy: "captured_at",
+          },
+        })),
+      },
+    });
+    expect(model.statusCode, model.body).toBe(200);
+    const modelId = modelResponseSchema.parse(model.json()).model.id;
+    const published = await call("POST", `/data/models/${modelId}/publish`, {
+      version: 1,
+    });
+    expect(published.statusCode, published.body).toBe(200);
+    const query = async () => {
+      const response = await call("POST", `/data/models/${modelId}/query`, {
+        measureIds: ["rating", "rating_count"],
+        groupBy: ["app", "storefront"],
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      return modelQueryResponseSchema.parse(response.json());
+    };
+    const first = await query();
+    expect(first.rows).toHaveLength(1);
+    expect(first.rows[0]).toMatchObject({
+      dimensions: { app: "1000000001", storefront: "US" },
+      measures: {
+        rating: { value: "4.25", unit: "stars", status: "ok" },
+        rating_count: { value: 123, status: "ok" },
+      },
+    });
+    publicRating = 4.75;
+    await runSync(ids.a);
+    const second = await query();
+    expect(second.rows[0]?.measures.rating).toMatchObject({
+      value: "4.75",
+      status: "ok",
+    });
+    expect(second.provenance).not.toEqual(first.provenance);
+    const current = dataSourcesResponseSchema
+      .parse((await call("GET", "/data/sources")).json())
+      .sources.find((item) => item.id === datasetId);
+    expect(current?.rowCount).toBe(1);
+    expect(ratingRequests.length).toBeGreaterThan(0);
+    expect(
+      ratingRequests.every((item) => item.headers?.authorization === undefined),
+    ).toBe(true);
+    expect(
+      ratingRequests.every(
+        (item) => new URL(item.url).searchParams.get("country") === "us",
+      ),
+    ).toBe(true);
   });
 
   it("shows the stored key's issuer ID and key ID, never the private key", async () => {
