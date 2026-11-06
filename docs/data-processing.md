@@ -416,7 +416,9 @@ without raw source fields or drafts. `dashboards/data/preview` evaluates unsaved
 widget bindings against published models only, and `dashboards/:id/data`
 evaluates saved bindings. Workspace authorization and forced RLS apply to each
 path. One dashboard request uses a repeatable-read transaction, with individual
-widget failures isolated by savepoints. Responses include release/generation
+widget failures isolated by savepoints. Reads write only caches (last-valid
+snapshots, prepared outputs); when concurrent reads of the same query race on
+those writes, the losing read skips caching instead of failing its widget. Responses include release/generation
 identities, applied predicates, scope, source refresh time when known, expiry,
 warnings and explicit exclusions. Source refresh time describes ingestion, not
 the provider's reporting coverage or delay.

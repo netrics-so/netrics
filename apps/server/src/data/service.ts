@@ -556,60 +556,73 @@ export function createDataLoader(
           const byteSize = Buffer.byteLength(JSON.stringify(execution.outputs));
           // The immutable key remains unique after its cache deadline. Reclaim
           // only this expired entry before rebuilding the same input vector.
-          await tx
-            .delete(schema.dataPreparedGenerations)
-            .where(
-              and(
-                eq(schema.dataPreparedGenerations.workspaceId, workspaceId),
-                eq(schema.dataPreparedGenerations.preparationId, preparationId),
-                eq(schema.dataPreparedGenerations.version, version),
-                eq(schema.dataPreparedGenerations.inputKey, inputKey),
-                lte(schema.dataPreparedGenerations.expiresAt, now),
-              ),
-            );
-          const [usage] = await tx
-            .select({
-              bytes: sql<string>`coalesce(sum(${schema.dataPreparedGenerations.byteSize}),0)`,
-            })
-            .from(schema.dataPreparedGenerations)
-            .where(eq(schema.dataPreparedGenerations.workspaceId, workspaceId));
-          if (
-            !exceedsDataPolicy(byteSize, policy.maxPreparedGenerationBytes) &&
-            !exceedsDataPolicy(
-              Number(usage?.bytes ?? 0) + byteSize,
-              policy.maxPreparedBytes,
-            )
-          ) {
-            const expiresAt = Object.values(execution.outputs).reduce(
-              (expiry, table) =>
-                table.expiresAt && new Date(table.expiresAt) < expiry
-                  ? new Date(table.expiresAt)
-                  : expiry,
-              new Date(
-                policy.preparedCacheSeconds === null
-                  ? "9999-12-31T23:59:59Z"
-                  : now.getTime() + policy.preparedCacheSeconds * 1000,
-              ),
-            );
-            const [created] = await tx
-              .insert(schema.dataPreparedGenerations)
-              .values({
-                workspaceId,
-                preparationId,
-                version,
-                inputKey,
-                generations: { ...generations },
-                outputs: {
-                  tables: execution.outputs,
-                  warnings: execution.warnings,
-                },
-                byteSize,
-                expiresAt,
-                createdAt: now,
+          // Concurrent readers may build the same entry; one of them caches it
+          // and the others return their equal result uncached.
+          const stored = await cacheWrite(tx, async (tx) => {
+            await tx
+              .delete(schema.dataPreparedGenerations)
+              .where(
+                and(
+                  eq(schema.dataPreparedGenerations.workspaceId, workspaceId),
+                  eq(
+                    schema.dataPreparedGenerations.preparationId,
+                    preparationId,
+                  ),
+                  eq(schema.dataPreparedGenerations.version, version),
+                  eq(schema.dataPreparedGenerations.inputKey, inputKey),
+                  lte(schema.dataPreparedGenerations.expiresAt, now),
+                ),
+              );
+            const [usage] = await tx
+              .select({
+                bytes: sql<string>`coalesce(sum(${schema.dataPreparedGenerations.byteSize}),0)`,
               })
-              .returning({ id: schema.dataPreparedGenerations.id });
-            preparedGenerationId = created!.id;
-          } else warnings.add("prepared_cache_capacity_reached");
+              .from(schema.dataPreparedGenerations)
+              .where(
+                eq(schema.dataPreparedGenerations.workspaceId, workspaceId),
+              );
+            if (
+              !exceedsDataPolicy(byteSize, policy.maxPreparedGenerationBytes) &&
+              !exceedsDataPolicy(
+                Number(usage?.bytes ?? 0) + byteSize,
+                policy.maxPreparedBytes,
+              )
+            ) {
+              const expiresAt = Object.values(execution.outputs).reduce(
+                (expiry, table) =>
+                  table.expiresAt && new Date(table.expiresAt) < expiry
+                    ? new Date(table.expiresAt)
+                    : expiry,
+                new Date(
+                  policy.preparedCacheSeconds === null
+                    ? "9999-12-31T23:59:59Z"
+                    : now.getTime() + policy.preparedCacheSeconds * 1000,
+                ),
+              );
+              const [created] = await tx
+                .insert(schema.dataPreparedGenerations)
+                .values({
+                  workspaceId,
+                  preparationId,
+                  version,
+                  inputKey,
+                  generations: { ...generations },
+                  outputs: {
+                    tables: execution.outputs,
+                    warnings: execution.warnings,
+                  },
+                  byteSize,
+                  expiresAt,
+                  createdAt: now,
+                })
+                .returning({ id: schema.dataPreparedGenerations.id });
+              return created!.id;
+            }
+            return "capacity" as const;
+          });
+          if (stored === "capacity")
+            warnings.add("prepared_cache_capacity_reached");
+          else if (stored) preparedGenerationId = stored;
         }
       }
       if (preparedGenerationId)
@@ -2139,6 +2152,27 @@ async function findDataModel(
  * Internal query entry for authorized workspace transactions. Pinned paging
  * additionally requires a trusted principal identity, never a request field.
  */
+/** Best-effort write to the last-valid snapshot cache. Read paths (dashboards,
+ * devices) run under repeatable read without retries; concurrent readers of
+ * the same query update the same row, and the loser's serialization failure is
+ * rolled back to a savepoint instead of failing the read. */
+async function cacheWrite<T>(
+  tx: Transaction,
+  write: (tx: Transaction) => Promise<T>,
+): Promise<T | undefined> {
+  try {
+    return await tx.transaction((savepoint) => write(savepoint));
+  } catch (error) {
+    if (
+      !hasSqlstate(error, "40001") &&
+      !hasSqlstate(error, "40P01") &&
+      !hasSqlstate(error, "23505")
+    )
+      throw error;
+    return undefined;
+  }
+}
+
 export async function queryDataModel(
   tx: Transaction,
   workspaceId: string,
@@ -2428,31 +2462,34 @@ export async function queryDataModel(
     // Reclaim expired identities before admission, including deadlines shortened
     // by the current policy. Old unowned sessions cannot be resumed safely;
     // retire only their exact known key format, preserving versioned formats.
-    await tx
-      .delete(schema.dataModelQuerySnapshots)
-      .where(
-        and(
-          eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
-          eq(schema.dataModelQuerySnapshots.releaseId, release.id),
-          or(
-            sql`${schema.dataModelQuerySnapshots.queryKey} ~ ${LEGACY_PAGE_KEY_PATTERN}`,
-            lte(schema.dataModelQuerySnapshots.expiresAt, now),
-            ...(policy.querySnapshotSeconds !== null
-              ? [
-                  lte(
-                    schema.dataModelQuerySnapshots.updatedAt,
-                    new Date(
-                      Math.max(
-                        -62135596800000,
-                        now.getTime() - policy.querySnapshotSeconds * 1000,
+    // Concurrent readers race on this maintenance; whichever commits first does it.
+    await cacheWrite(tx, (tx) =>
+      tx
+        .delete(schema.dataModelQuerySnapshots)
+        .where(
+          and(
+            eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
+            eq(schema.dataModelQuerySnapshots.releaseId, release.id),
+            or(
+              sql`${schema.dataModelQuerySnapshots.queryKey} ~ ${LEGACY_PAGE_KEY_PATTERN}`,
+              lte(schema.dataModelQuerySnapshots.expiresAt, now),
+              ...(policy.querySnapshotSeconds !== null
+                ? [
+                    lte(
+                      schema.dataModelQuerySnapshots.updatedAt,
+                      new Date(
+                        Math.max(
+                          -62135596800000,
+                          now.getTime() - policy.querySnapshotSeconds * 1000,
+                        ),
                       ),
                     ),
-                  ),
-                ]
-              : []),
+                  ]
+                : []),
+            ),
           ),
         ),
-      );
+    );
     const existing = await tx
       .select({ queryKey: schema.dataModelQuerySnapshots.queryKey })
       .from(schema.dataModelQuerySnapshots)
@@ -2553,28 +2590,35 @@ export async function queryDataModel(
             : expiry,
         snapshotDeadline(),
       );
-      await tx
-        .insert(schema.dataModelQuerySnapshots)
-        .values({
-          workspaceId: workspaceId,
-          releaseId: release.id,
-          queryKey,
-          generations: execution.loader.generations,
-          expiresAt,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [
-            schema.dataModelQuerySnapshots.releaseId,
-            schema.dataModelQuerySnapshots.queryKey,
-          ],
-          set: {
+      // A concurrent reader of the same query records an equivalent fallback,
+      // so a serialization conflict here must not fail this read.
+      await cacheWrite(tx, (tx) =>
+        tx
+          .insert(schema.dataModelQuerySnapshots)
+          .values({
+            workspaceId: workspaceId,
+            releaseId: release.id,
+            queryKey,
             generations: execution.loader.generations,
             expiresAt,
             updatedAt: now,
-          },
-          setWhere: eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
-        });
+          })
+          .onConflictDoUpdate({
+            target: [
+              schema.dataModelQuerySnapshots.releaseId,
+              schema.dataModelQuerySnapshots.queryKey,
+            ],
+            set: {
+              generations: execution.loader.generations,
+              expiresAt,
+              updatedAt: now,
+            },
+            setWhere: eq(
+              schema.dataModelQuerySnapshots.workspaceId,
+              workspaceId,
+            ),
+          }),
+      );
     }
   }
   if (

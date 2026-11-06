@@ -22,6 +22,7 @@ import { createTestDatabase } from "./test-db.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
 
 let app: FastifyInstance, db: Database;
+let appConfig: ReturnType<typeof loadConfig>;
 let owner: string, editor: string, viewer: string, stranger: string;
 let workspaceId: string, datasetId: string, modelId: string;
 const base = () => `/v1/workspaces/${workspaceId}/data`;
@@ -59,6 +60,7 @@ beforeAll(async () => {
     BETTER_AUTH_URL: "http://localhost:3001",
     WEB_ORIGIN: "http://localhost:3000",
   });
+  appConfig = config;
   db = createDatabase(test.appUrl);
   app = await buildApp(config, {
     db,
@@ -1367,5 +1369,85 @@ describe("published dashboard measure bindings", () => {
           widget.type === "measure" && shown(widget.data.result as Result),
       ),
     ).toEqual([latest, latest, first]);
+  });
+  it("serves concurrent reads of the same dashboard without spurious outages", async () => {
+    const created = await dataCall("POST", "", editor, {
+      name: "Concurrent",
+      settings: { dataFilters: [filter()] },
+      slides: [
+        {
+          widgets: [widget("income"), widget("spend", 4), widget("margin", 8)],
+        },
+      ],
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const id = created.json().dashboard.id as string;
+    for (let round = 0; round < 3; round++) {
+      const responses = await Promise.all(
+        Array.from({ length: 8 }, (_, index) =>
+          index % 2
+            ? dataCall("POST", `/${id}/data`, viewer, { values: {} })
+            : dataCall("POST", "/data/preview", viewer, {
+                filters: [filter()],
+                values: {},
+                widgets: [
+                  {
+                    ...widget("income"),
+                    id: "51bb53cb-3540-4b70-a287-151c5fa16803",
+                  },
+                ].map(({ id, binding, options }) => ({ id, binding, options })),
+              }),
+        ),
+      );
+      for (const response of responses) {
+        expect(response.statusCode, response.body).toBe(200);
+        expect(
+          response
+            .json()
+            .widgets.map((widget: { status: string }) => widget.status),
+          response.body,
+        ).not.toContain("outage");
+      }
+    }
+  });
+  it("evaluates unsaved previews at the application clock", async () => {
+    const at = new Date("2031-02-03T04:05:06Z");
+    const clocked = await buildApp(appConfig, {
+      db,
+      authService: createAuthService(appConfig, db, {
+        logger: pino({ level: "silent" }),
+      }),
+      checkDb: async () => true,
+      now: () => at,
+    });
+    try {
+      const preview = await clocked.inject({
+        method: "POST",
+        url: `/v1/workspaces/${workspaceId}/dashboards/data/preview`,
+        headers: { cookie: viewer },
+        payload: {
+          filters: [],
+          values: {},
+          widgets: [
+            {
+              id: "51bb53cb-3540-4b70-a287-151c5fa16803",
+              binding: { ...widget("spend").binding, groupBy: ["country"] },
+              options: { view: "table", limit: 20 },
+            },
+          ],
+        },
+      });
+      expect(preview.statusCode, preview.body).toBe(200);
+      const snapshots = await withWorkspace(db, { workspaceId }, (tx) =>
+        tx
+          .select({ updatedAt: schema.dataModelQuerySnapshots.updatedAt })
+          .from(schema.dataModelQuerySnapshots),
+      );
+      expect(
+        snapshots.some((row) => row.updatedAt.getTime() === at.getTime()),
+      ).toBe(true);
+    } finally {
+      await clocked.close();
+    }
   });
 });
