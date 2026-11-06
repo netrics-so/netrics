@@ -178,3 +178,8 @@ implementation work; this plan does not create or complete issue records.
     mappings and dashboard source-health actions are implemented in
     [#462](https://github.com/netrics-so/netrics/issues/462). Real-account
     acceptance remains open. See [current implementation boundaries](../connectors/google-play.md#current-implementation-boundaries).
+
+  - Persisted non-store campaign proof, explicit column matching and a reproducible
+    advertising/website import walkthrough:
+    [#465](https://github.com/netrics-so/netrics/issues/465). Synthetic fixtures
+    exercise the generic engine; real-account acceptance remains separate.
