@@ -18,6 +18,7 @@ import {
   isBuiltinThemeKey,
   dataWidgetCost,
   isInsideFormatGrid,
+  measureInteractionDimension,
   meetsMinimumSize,
   placementsOverlap,
   type CustomLayout,
@@ -556,6 +557,26 @@ export function documentProblems(
             }),
           );
       }
+      if (widget.type === "measure" && widget.binding.interaction) {
+        const filterId = widget.binding.interaction.filterId;
+        try {
+          measureInteractionDimension(
+            document.settings.dataFilters ?? [],
+            widget.binding,
+            widget.options.view,
+          );
+        } catch {
+          at(
+            webTranslator(locale, "data.dashboard")("interactionProblem", {
+              name,
+              filter:
+                document.settings.dataFilters?.find(
+                  (filter) => filter.id === filterId,
+                )?.name ?? filterId,
+            }),
+          );
+        }
+      }
       if (!isInsideFormatGrid(widget, primaryOf(document))) {
         at(t("problems.outside", { name }));
       } else if (!meetsMinimumSize(widget.type, widget)) {
@@ -985,6 +1006,12 @@ export function createStudioReducer(newId: () => string) {
                               exclusions: widget.binding.exclusions.filter(
                                 (exclusion) => ids.has(exclusion.filterId),
                               ),
+                              // A removed filter can no longer be set by a click.
+                              interaction:
+                                widget.binding.interaction &&
+                                ids.has(widget.binding.interaction.filterId)
+                                  ? widget.binding.interaction
+                                  : undefined,
                             },
                           }
                         : widget.filterExclusions

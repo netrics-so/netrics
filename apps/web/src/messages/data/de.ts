@@ -85,6 +85,16 @@ export const dataDe: Catalog<typeof dataEn> = {
       allValues: "Alle Werte",
       fixedScopeActive: "Zusätzlich gilt ein fester Bereich.",
       resetFilters: "Filter zurücksetzen",
+      interaction: "Klick auf einen Wert setzt",
+      interactionNone: "Nichts (nicht interaktiv)",
+      interactionHelp:
+        "Im Browser können Betrachter auf einen Balken, Punkt oder Zeilenwert klicken, um diesen gemeinsamen Filter zu setzen. Aufgeführt sind nur Filter, denen dieses Widget über eine seiner Gruppierungen folgt. Gekoppelte Bildschirme bleiben nicht interaktiv.",
+      interactionUnavailable:
+        "Kein gemeinsamer Filter ist einer Gruppierung dieses Widgets zugeordnet. Gruppiere nach einer gefilterten Dimension oder lege zuerst einen gemeinsamen Filter an.",
+      interactionProblem:
+        "{name}: Ein Klick kann den Filter {filter} nicht setzen. Gruppiere Diagramm oder Tabelle nach der Dimension, der der Filter zugeordnet ist, nimm den Filter nicht mehr aus oder schalte die Interaktion aus.",
+      interactionHint: "Wähle einen Wert, um nach {filter} zu filtern.",
+      interactionChoice: "Nach {filter} filtern: {value}",
       catalogFailed: "Veröffentlichte Modelle konnten nicht geladen werden.",
       retry: "Erneut versuchen",
       staleModel:
@@ -506,6 +516,8 @@ export const dataDe: Catalog<typeof dataEn> = {
       invalid: "Prüfe die eingegebenen Werte und Pflichtfelder.",
       cycle:
         "Diese Abhängigkeiten bilden einen Kreis. Entferne die Beziehung oder den Schritt, der auf sich selbst zurückverweist.",
+      interaction:
+        "Ein Klick auf dieses Widget kann den gewählten Filter nicht setzen. Verwende eine Tabelle oder ein Diagramm, gruppiert nach der Dimension, der dieser Filter zugeordnet ist, oder schalte die Interaktion aus.",
       filter:
         "Die Kennzahl kann die gewählte Dimension oder den Filter nicht verwenden. Füge eine kompatible Beziehung hinzu oder wähle eine andere Dimension.",
     },

@@ -7,6 +7,7 @@ import type {
 } from "@netrics/contracts";
 import {
   formatDataFormula,
+  measureInteractionDimension,
   parseDataFormula,
   type DashboardDataFilter,
 } from "@netrics/domain";
@@ -384,6 +385,86 @@ export function MeasureFields({
         exclusions={widget.binding.exclusions}
         onChange={(exclusions) => update({ exclusions })}
       />
+      <InteractionField widget={widget} filters={filters} update={update} />
     </fieldset>
+  );
+}
+
+/** Declares which shared filter a click on a category, point or row value
+ * sets. Lists only filters that apply; an invalid saved choice stays visible
+ * (and is a dashboard problem) until the editor changes it. */
+function InteractionField({
+  widget,
+  filters,
+  update,
+}: {
+  widget: Extract<DashboardWidget, { type: "measure" }>;
+  filters: DashboardDataFilter[];
+  update: (
+    patch: Partial<Extract<DashboardWidget, { type: "measure" }>["binding"]>,
+  ) => void;
+}) {
+  const t = useT("data.dashboard"),
+    id = useId();
+  const current = widget.binding.interaction?.filterId;
+  const applicable = filters.filter((filter) => {
+    try {
+      measureInteractionDimension(
+        filters,
+        { ...widget.binding, interaction: { filterId: filter.id } },
+        widget.options.view,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (widget.options.view === "value" && current === undefined) return null;
+  const invalid =
+    current !== undefined &&
+    !applicable.some((filter) => filter.id === current);
+  return (
+    <div className="field">
+      <label htmlFor={`${id}-interaction`}>{t("interaction")}</label>
+      <select
+        id={`${id}-interaction`}
+        value={current ?? ""}
+        aria-invalid={invalid || undefined}
+        aria-describedby={`${id}-interaction-help`}
+        onChange={(event) =>
+          update({
+            interaction: event.target.value
+              ? { filterId: event.target.value }
+              : undefined,
+          })
+        }
+      >
+        <option value="">{t("interactionNone")}</option>
+        {invalid ? (
+          <option value={current}>
+            {filters.find((filter) => filter.id === current)?.name ?? current}
+          </option>
+        ) : null}
+        {applicable.map((filter) => (
+          <option key={filter.id} value={filter.id}>
+            {filter.name}
+          </option>
+        ))}
+      </select>
+      <p className="help" id={`${id}-interaction-help`}>
+        {applicable.length || current !== undefined
+          ? t("interactionHelp")
+          : t("interactionUnavailable")}
+      </p>
+      {invalid ? (
+        <p className="error" role="alert">
+          {t("interactionProblem", {
+            name: widget.title ?? t("binding"),
+            filter:
+              filters.find((filter) => filter.id === current)?.name ?? current,
+          })}
+        </p>
+      ) : null}
+    </div>
   );
 }

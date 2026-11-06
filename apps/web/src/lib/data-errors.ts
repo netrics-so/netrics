@@ -20,6 +20,7 @@ export function dataErrorCodeKey(code: string) {
   if (/expired|replay_unavailable|history_unavailable/.test(code))
     return "expired";
   if (/not_published/.test(code)) return "unpublished";
+  if (/^dashboard_interaction_/.test(code)) return "interaction";
   if (/cycle|ambiguous_path/.test(code)) return "cycle";
   if (/incompatible_dimension|relationship_path|filter/.test(code))
     return "filter";

@@ -1253,6 +1253,7 @@ async function validateDataBindings(
             (filter) =>
               !storedFilters.has(filter.id) ||
               !ids.has(filter.id) ||
+              binding.interaction?.filterId === filter.id ||
               binding.exclusions.some(
                 (exclusion) => exclusion.filterId === filter.id,
               ) ||
