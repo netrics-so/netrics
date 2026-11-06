@@ -249,9 +249,10 @@ export function measureTypeProbe(
     else {
       validateWindowDefinition(m);
       const base = visit(m.baseMeasureId);
+      // change and percent_change check the base is numeric, as at query time.
       cell =
-        m.kind === "period_offset" && m.output === "percent_change"
-          ? { value: null, type: base.type === "number" ? "number" : "decimal" }
+        m.kind === "period_offset" && m.output !== "value"
+          ? windowChange(m.id, m.output, base, base, budget)
           : windowCell(base);
     }
     visiting.delete(id);

@@ -940,4 +940,23 @@ describe("windowed measure validation and edge cases", () => {
       ),
     ).not.toThrow();
   });
+
+  it("refuses change outputs over non-numeric bases at publish", () => {
+    for (const output of ["change", "percent_change"] as const)
+      expect(() =>
+        validateSemanticModel(
+          model([lastApp, offset("bad", "lastApp", "range", output)]),
+          sources(),
+          NOW,
+        ),
+      ).toThrow("model_window_output_invalid");
+    // The value of an earlier period is fine for any base type.
+    expect(() =>
+      validateSemanticModel(
+        model([lastApp, offset("prevApp", "lastApp", "range")]),
+        sources(),
+        NOW,
+      ),
+    ).not.toThrow();
+  });
 });
