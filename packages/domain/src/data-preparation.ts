@@ -395,6 +395,7 @@ export function executePreparation(
   graph: PreparationGraph,
   sources: ReadonlyMap<string, DataTable>,
   budget = new ProcessingBudget(),
+  onNode?: (node: PreparationNode, output: DataTable) => void,
 ) {
   if (
     graph.version !== 1 ||
@@ -760,6 +761,7 @@ export function executePreparation(
     validateDataTable(output, budget);
     visiting.delete(id);
     done.set(id, output);
+    onNode?.(node, output);
     return output;
   };
   for (const node of graph.nodes) execute(node.id);

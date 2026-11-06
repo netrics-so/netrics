@@ -27,6 +27,8 @@ import {
   ProcessingBudget,
   executePreparation,
   querySemanticModel,
+  semanticModelFieldReferences,
+  preparationFieldReferences,
   validateSemanticModel,
   DEFAULT_DATA_POLICY,
   exceedsDataPolicy,
@@ -220,11 +222,9 @@ async function modelPublication(
 function checkSchemaBindings(
   pinned: Record<string, DataField[]>,
   actual: Record<string, DataField[]>,
-  ignoreUnused = false,
 ) {
   for (const [source, fields] of Object.entries(pinned)) {
     const nextFields = actual[source];
-    if (!nextFields && ignoreUnused) continue;
     if (
       !nextFields ||
       fields.some((field) => {
@@ -238,6 +238,84 @@ function checkSchemaBindings(
       })
     )
       fail("data_model_schema_changed", 409);
+  }
+}
+
+/** Draft edits retain historical meaning only for fields still affecting this model. */
+function checkRestoredModelBindings(
+  pinned: Record<string, DataField[]>,
+  loader: ReturnType<typeof createDataLoader>,
+  definition: SemanticModelDefinition,
+): void {
+  const required = semanticModelFieldReferences(definition);
+  const processed = new Map<string, Set<string>>();
+  const pending = [...required.keys()];
+  while (pending.length) {
+    const source = pending.shift()!;
+    const fields = required.get(source)!;
+    const previous = processed.get(source);
+    // Money metadata is an implicit input, including for a newly added field.
+    // Both schemas matter: a changed companion identity must not hide the old pin.
+    for (const id of fields)
+      for (const schema of [pinned[source], loader.bindings[source]]) {
+        const currency = schema?.find(
+          (field) => field.id === id,
+        )?.currencyField;
+        if (currency) fields.add(currency);
+      }
+    if (
+      previous &&
+      fields.size === previous.size &&
+      [...fields].every((field) => previous.has(field))
+    )
+      continue;
+    processed.set(source, new Set(fields));
+    const oldFields = pinned[source];
+    const actual = loader.bindings[source];
+    if (oldFields) {
+      if (!actual) fail("data_model_schema_changed", 409);
+      for (const field of oldFields) {
+        if (!fields.has(field.id)) continue;
+        const current = actual.find((candidate) => candidate.id === field.id);
+        if (
+          !current ||
+          current.type !== field.type ||
+          current.unit !== field.unit ||
+          current.currencyField !== field.currencyField
+        )
+          fail("data_model_schema_changed", 409);
+      }
+    }
+    const prepared = loader.preparedSources.get(source);
+    if (!prepared) {
+      // Every loaded prepared output must retain its exact historical graph,
+      // whether its values were rebuilt or came from the prepared cache.
+      if (actual && source.startsWith("prepared:"))
+        fail("data_model_schema_changed", 409);
+      continue;
+    }
+    const inputs = preparationFieldReferences(
+      prepared.graph,
+      loader.tables,
+      prepared.outputId,
+      fields,
+      loader.budget,
+    );
+    for (const [input, dependencies] of inputs) {
+      const existing = required.get(input);
+      if (!existing) {
+        required.set(input, new Set(dependencies));
+        pending.push(input);
+      } else {
+        let changed = false;
+        for (const field of dependencies)
+          if (!existing.has(field)) {
+            existing.add(field);
+            changed = true;
+          }
+        if (changed) pending.push(input);
+      }
+    }
   }
 }
 
@@ -339,6 +417,10 @@ export function createDataLoader(
   } = {},
 ) {
   const tables = new Map<string, DataTable>(),
+    preparedSources = new Map<
+      string,
+      { graph: PreparationGraph; outputId: string }
+    >(),
     views = new Map<string, SourceView>(),
     visiting = new Set<string>();
   const dependencies: Dependencies = {
@@ -396,6 +478,7 @@ export function createDataLoader(
       const graph =
         override?.graph ?? preparationGraphSchema.parse(published!.graph);
       if (!graph.outputs.includes(output)) fail("data_source_not_found", 404);
+      preparedSources.set(id, { graph, outputId: output });
       const nested = published?.dependencies as Dependencies | undefined;
       for (const [prepId, pinned] of Object.entries(nested?.prepared ?? {})) {
         if (
@@ -794,6 +877,7 @@ export function createDataLoader(
   return {
     load,
     tables,
+    preparedSources,
     views,
     dependencies,
     generations,
@@ -1088,10 +1172,10 @@ export function createDataService(
           });
         for (const source of parsed.datasets) await loader.load(source);
         if (restored)
-          checkSchemaBindings(
+          checkRestoredModelBindings(
             restored.schemaBindings as Record<string, DataField[]>,
-            loader.bindings,
-            true,
+            loader,
+            parsed,
           );
         const result = querySemanticModel(
           parsed,
@@ -1810,12 +1894,6 @@ export function createDataService(
             : {}),
         });
         for (const input of definition.datasets) await loader.load(input);
-        if (restored)
-          checkSchemaBindings(
-            restored.schemaBindings as Record<string, DataField[]>,
-            loader.bindings,
-            true,
-          );
         return { sources: [...loader.views.values()] };
       }),
     modelHistory: (
@@ -1875,9 +1953,10 @@ export function createDataService(
           dependencies: publication.dependencies as Dependencies,
         });
         for (const source of definition.datasets) await loader.load(source);
-        checkSchemaBindings(
+        checkRestoredModelBindings(
           publication.schemaBindings as Record<string, DataField[]>,
-          loader.bindings,
+          loader,
+          definition,
         );
         validateSemanticModel(
           definition,
@@ -1982,10 +2061,10 @@ export function createDataService(
           });
         for (const source of definition.datasets) await loader.load(source);
         if (restored)
-          checkSchemaBindings(
+          checkRestoredModelBindings(
             restored.schemaBindings as Record<string, DataField[]>,
-            loader.bindings,
-            true,
+            loader,
+            definition,
           );
         validateSemanticModel(
           definition,
@@ -2157,11 +2236,16 @@ export async function queryDataModel(
         : {}),
     });
     for (const source of definition.datasets) await loader.load(source);
-    if (release || restored)
+    if (release)
       checkSchemaBindings(
-        (release ?? restored)!.schemaBindings as Record<string, DataField[]>,
+        release.schemaBindings as Record<string, DataField[]>,
         loader.bindings,
-        !release,
+      );
+    else if (restored)
+      checkRestoredModelBindings(
+        restored.schemaBindings as Record<string, DataField[]>,
+        loader,
+        definition,
       );
     const result = querySemanticModel(
       definition,

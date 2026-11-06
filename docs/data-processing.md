@@ -361,6 +361,30 @@ latest catalog. Restored joins/appends use that context in source previews too.
 **Use latest published inputs** intentionally clears the restored pins and
 requires a new preview before publication.
 
+[#480](https://github.com/netrics-so/netrics/issues/480) lets restored models
+ignore historical fields they no longer depend on, including unused fields
+projected out by nested preparations. Restore, draft preview and publication
+check the complete model's dimensions, labels, relationships and aggregates,
+including filter/order fields and currency companions. The check follows the
+exact pinned preparation versions down to their source fields. Filters, joins,
+deduplication and grouping retain the dependencies that determine output rows,
+even for `COUNT(*)`; a cast does not hide a used input's changed type merely
+because its output type stays the same. Formula references name measures, not
+unrelated source columns with the same name.
+
+Draft input metadata remains readable when a used field is incompatible, so an
+editor can remove that dependency and preview the repair. Metadata loading still
+reauthorizes sources and validates the actual pinned preparations. Preview and
+publication reject changed type/unit/currency bindings for fields still in use;
+they do not implicitly adopt newer preparation versions. Newly referenced
+current fields without a historical binding must pass semantic validation.
+Published queries retain their existing full-schema compatibility checks. A
+repaired draft changes active dashboards only after explicit publication.
+
+Dependency analysis follows field and row dependencies alongside the canonical
+preparation executor using schema-only tables. It neither copies source values
+nor changes prepared-cache storage, and requires no database migration.
+
 Restoration reauthorizes and validates currently retained inputs; it cannot
 recover removed or expired sources. Source-data corrections continue to apply.
 History contains published definitions, not every unpublished draft or old source

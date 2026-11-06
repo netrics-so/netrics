@@ -500,6 +500,151 @@ describe("data API authorization and contract", () => {
         .statusCode,
     ).toBe(200);
   });
+  it("lets an editor repair a restored model after a used source field changes type", async () => {
+    const sourceDefinition = {
+      ...manual.definition,
+      key: "restored-schema-repair",
+      fields: [
+        ...manual.definition.fields,
+        {
+          id: "extra",
+          name: "Extra",
+          type: "string",
+          nullable: false,
+          classification: "internal",
+        },
+      ],
+    };
+    const source = await call("POST", "/manual", editor, {
+      definition: sourceDefinition,
+      records: [{ values: { id: "one", amount: "5", extra: "7" } }],
+    });
+    expect(source.statusCode, source.body).toBe(200);
+    const sourceId = source.json().datasetId as string;
+    const created = await call("POST", "/models", editor, {
+      name: "Repair restored model",
+      definition: {
+        version: 1,
+        datasets: [sourceId],
+        relationships: [],
+        dimensions: [
+          { id: "extra", name: "Extra", datasetId: sourceId, fieldId: "extra" },
+        ],
+        measures: [
+          {
+            id: "total",
+            name: "Total",
+            kind: "aggregate",
+            datasetId: sourceId,
+            aggregate: {
+              id: "total",
+              name: "Total",
+              op: "sum",
+              fieldId: "amount",
+            },
+          },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    let model = modelResponseSchema.parse(created.json()).model;
+    expect(
+      (
+        await call("POST", `/models/${model.id}/publish`, editor, {
+          version: 1,
+        })
+      ).statusCode,
+    ).toBe(200);
+    const query = { measureIds: ["total"], groupBy: [] };
+    const read = () => call("POST", `/models/${model.id}/query`, viewer, query);
+    const original = modelQueryResponseSchema.parse((await read()).json());
+    expect(original.rows[0]!.measures.total!.value).toBe("5");
+    const restored = await call("POST", `/models/${model.id}/restore`, editor, {
+      version: 1,
+      publishedVersion: 1,
+    });
+    expect(restored.statusCode, restored.body).toBe(200);
+    model = modelResponseSchema.parse(restored.json()).model;
+    const changed = await call("PUT", `/manual/${sourceId}`, editor, {
+      definition: {
+        ...sourceDefinition,
+        version: 2,
+        fields: sourceDefinition.fields.map((field) =>
+          field.id === "extra" ? { ...field, type: "integer" } : field,
+        ),
+      },
+      generationId: source.json().generationId,
+      records: [{ values: { id: "one", amount: "10", extra: 7 } }],
+    });
+    expect(changed.statusCode, changed.body).toBe(200);
+    const inputsPath = `/models/${model.id}/inputs?version=${model.version}`;
+    const metadata = await call("GET", inputsPath, editor);
+    expect(metadata.statusCode, metadata.body).toBe(200);
+    expect(metadata.headers["cache-control"]).toBe("no-store");
+    expect(
+      metadata
+        .json()
+        .sources.find((item: { id: string }) => item.id === sourceId).fields,
+    ).toContainEqual(expect.objectContaining({ id: "extra", type: "integer" }));
+    expect((await call("GET", inputsPath, viewer)).statusCode).toBe(403);
+    expect((await call("GET", inputsPath, stranger)).statusCode).toBe(404);
+    const blocked = await call("POST", "/models/preview", editor, {
+      definition: model.definition,
+      query,
+      draft: { id: model.id, version: model.version },
+    });
+    expect(blocked.statusCode, blocked.body).toBe(409);
+    expect(blocked.json()).toEqual({ error: "data_model_schema_changed" });
+    expect(
+      (
+        await call("POST", `/models/${model.id}/publish`, editor, {
+          version: model.version,
+        })
+      ).statusCode,
+    ).toBe(409);
+    const fixed = await call("PUT", `/models/${model.id}`, editor, {
+      name: model.name,
+      version: model.version,
+      definition: { ...model.definition, dimensions: [] },
+    });
+    expect(fixed.statusCode, fixed.body).toBe(200);
+    model = modelResponseSchema.parse(fixed.json()).model;
+    expect(model.restoredFromVersion).toBe(1);
+    expect((await call("GET", inputsPath, editor)).statusCode).toBe(409);
+    const preview = await call("POST", "/models/preview", editor, {
+      definition: model.definition,
+      query,
+      draft: { id: model.id, version: model.version },
+    });
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(
+      modelQueryResponseSchema.parse(preview.json()).rows[0]!.measures.total!
+        .value,
+    ).toBe("10");
+    const active = modelQueryResponseSchema.parse((await read()).json());
+    expect(active).toMatchObject({
+      releaseId: original.releaseId,
+      stale: true,
+      provenance: original.provenance,
+    });
+    expect(active.rows[0]!.measures.total!.value).toBe("5");
+    const published = await call(
+      "POST",
+      `/models/${model.id}/publish`,
+      editor,
+      {
+        version: model.version,
+      },
+    );
+    expect(published.statusCode, published.body).toBe(200);
+    expect(modelQueryResponseSchema.parse((await read()).json())).toMatchObject(
+      {
+        stale: false,
+        rows: [{ measures: { total: { value: "10" } } }],
+      },
+    );
+  });
+
   it("restricts history and draft restoration to editors and leaves published results active", async () => {
     const current = modelResponseSchema.parse(
       (await call("GET", `/models/${modelId}`, editor)).json(),
