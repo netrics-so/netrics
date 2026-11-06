@@ -320,6 +320,8 @@ export const dataEn = {
       division_by_zero: "Division by zero produces an empty value.",
       retained_source_history_incomplete:
         "Some older source records are no longer retained.",
+      model_window_history_incomplete:
+        "Some windows or earlier periods start before the oldest retained data, so their values are partial.",
       prepared_cache_capacity_reached:
         "The preparation was evaluated without caching because its storage policy was reached.",
       using_last_valid_source_snapshot:
@@ -359,6 +361,48 @@ export const dataEn = {
     formulaMeasure: "Calculate from measures",
     measureFormulaHelp:
       "Reference measures by name, for example [Income] - [Spend]. All operands use the same filters.",
+    rollingMeasure: "Rolling",
+    offsetMeasure: "Compared with earlier period",
+    baseMeasure: "Based on measure",
+    rollingHelp:
+      "Each window is recalculated from the underlying rows, so averages and distinct counts stay exact. Only measures that aggregate a column can roll.",
+    offsetHelp:
+      "Month and year comparisons keep the day of the month. When the earlier month is shorter, its last day is used, so 31 March compares with 28 or 29 February.",
+    timeDimension: "Date dimension",
+    timeDimensionHelp:
+      "Results are grouped by this date. Only date dimensions using the provider reporting date are listed.",
+    noTimeDimension:
+      "Add a dimension on a date column first. Timestamps cannot anchor a window.",
+    windowLength: "Window length",
+    windowUnit: "Unit",
+    windowUnits: {
+      day: "{count, plural, one {day} other {days}}",
+      week: "{count, plural, one {week} other {weeks}}",
+      month: "{count, plural, one {month} other {months}}",
+    },
+    compareWith: "Compare with",
+    offsetPresets: {
+      previousDay: "Previous day",
+      previousWeek: "Previous week",
+      previousMonth: "Previous month",
+      lastYear: "Same period last year",
+      previousPeriod: "Previous period of equal length",
+      custom: "Custom shift",
+    },
+    offsetLength: "Shift back by",
+    offsetOutput: "Show",
+    offsetOutputs: {
+      value: "Earlier value",
+      change: "Change",
+      percent_change: "Change in %",
+    },
+    addChangeMeasures: "Add change measures",
+    changeMeasureName: "{name} (change)",
+    percentChangeMeasureName: "{name} (change in %)",
+    measureInUse:
+      "Used as the base of {names}. Remove or change those measures first.",
+    dimensionInUse:
+      "Used as the date of {names}. Remove or change those measures first.",
     sharedFilter: "Shared filter",
     sharedFilterHelp:
       "Reference dimension names in brackets. This filter applies to every requested measure.",
@@ -399,6 +443,8 @@ export const dataEn = {
     previewInitial: "Choose measures and preview this draft before publishing.",
     previewOutdated: "The draft changed. Preview it again before publishing.",
     errors: {
+      window:
+        "Check the rolling and comparison measures. Each needs a date dimension on the provider reporting date and a length within the allowed range. Show results by that date, or filter it to one closed date range.",
       history:
         "This published version is unavailable. Reload its history and choose another version.",
       unavailable:

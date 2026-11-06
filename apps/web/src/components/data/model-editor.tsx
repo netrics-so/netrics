@@ -19,7 +19,20 @@ import {
 } from "@/lib/data-api";
 import { dataErrorKey, newDataId } from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
-import { AggregateFields, ColumnChecks, ColumnSelect } from "./fields";
+import {
+  AggregateFields,
+  ColumnChecks,
+  ColumnSelect,
+  WindowedMeasureFields,
+} from "./fields";
+import {
+  changeMeasureSiblings,
+  isWindowedMeasure,
+  measureDependents,
+  timeDimensionCandidates,
+  toWindowedMeasure,
+  windowBaseCandidates,
+} from "@/lib/model-measures";
 import { DataTable } from "./data-table";
 import { PreviewNotes } from "./preview-notes";
 import { DefinitionHistory } from "./definition-history";
@@ -288,6 +301,30 @@ export function ModelEditor({
       ],
     });
     setMeasureIds((ids) => [...ids, id]);
+  }
+  const timeDimensions = timeDimensionCandidates(definition, fieldsFor);
+  const dependents = (id: string) => measureDependents(definition, id);
+  function addChangeMeasures(
+    measure: Extract<ModelMeasure, { kind: "period_offset" }>,
+  ) {
+    const added = changeMeasureSiblings(
+      definition,
+      measure,
+      {
+        change: t("changeMeasureName", { name: measure.name }),
+        percent_change: t("percentChangeMeasureName", { name: measure.name }),
+      },
+      newDataId,
+    );
+    const at = definition.measures.findIndex((m) => m.id === measure.id) + 1;
+    change({
+      measures: [
+        ...definition.measures.slice(0, at),
+        ...added,
+        ...definition.measures.slice(at),
+      ],
+    });
+    setMeasureIds((ids) => [...ids, ...added.map((m) => m.id)]);
   }
   const dimensionFields: DataField[] = definition.dimensions.map((d) => ({
     ...(fieldsFor(d.datasetId).find((f) => f.id === d.fieldId) ?? {
@@ -643,6 +680,9 @@ export function ModelEditor({
                   d.id === dimension.id ? { ...d, ...patch } : d,
                 ),
               });
+            const anchoring = definition.measures.filter(
+              (m) => isWindowedMeasure(m) && m.timeDimensionId === dimension.id,
+            );
             return (
               <div
                 className="data-model-row data-model-row--dimension"
@@ -709,6 +749,10 @@ export function ModelEditor({
                 </label>
                 <button
                   type="button"
+                  disabled={anchoring.length > 0}
+                  aria-describedby={
+                    anchoring.length ? dimension.id + "-in-use" : undefined
+                  }
                   onClick={() => {
                     change({
                       dimensions: definition.dimensions.filter(
@@ -728,6 +772,13 @@ export function ModelEditor({
                 >
                   {t("remove")}
                 </button>
+                {anchoring.length ? (
+                  <p className="help" id={dimension.id + "-in-use"}>
+                    {t("dimensionInUse", {
+                      names: anchoring.map((m) => m.name).join(", "),
+                    })}
+                  </p>
+                ) : null}
               </div>
             );
           })}
@@ -762,6 +813,12 @@ export function ModelEditor({
                 </label>
                 <button
                   type="button"
+                  disabled={dependents(measure.id).length > 0}
+                  aria-describedby={
+                    dependents(measure.id).length
+                      ? measure.id + "-in-use"
+                      : undefined
+                  }
                   onClick={() => {
                     change({
                       measures: definition.measures.filter(
@@ -776,43 +833,62 @@ export function ModelEditor({
                   {t("remove")}
                 </button>
               </div>
+              {dependents(measure.id).length ? (
+                <p className="help" id={measure.id + "-in-use"}>
+                  {t("measureInUse", {
+                    names: dependents(measure.id)
+                      .map((m) => m.name)
+                      .join(", "),
+                  })}
+                </p>
+              ) : null}
               <div className="data-form-grid">
                 <label className="field">
                   {t("measureKind")}
                   <select
                     value={measure.kind}
                     onChange={(e) => {
+                      const kind = e.target.value;
                       changeMeasure(
                         measure.id,
-                        e.target.value === "aggregate"
-                          ? {
-                              id: measure.id,
-                              name: measure.name,
-                              requiredDimensions: measure.requiredDimensions,
-                              kind: "aggregate",
-                              datasetId: definition.datasets[0]!,
-                              aggregate: {
+                        kind === "rolling" || kind === "period_offset"
+                          ? toWindowedMeasure(
+                              measure,
+                              kind,
+                              definition,
+                              fieldsFor,
+                            )
+                          : kind === "aggregate"
+                            ? {
                                 id: measure.id,
                                 name: measure.name,
-                                op: "count",
+                                requiredDimensions: measure.requiredDimensions,
+                                kind: "aggregate",
+                                datasetId: definition.datasets[0]!,
+                                aggregate: {
+                                  id: measure.id,
+                                  name: measure.name,
+                                  op: "count",
+                                },
+                              }
+                            : {
+                                id: measure.id,
+                                name: measure.name,
+                                requiredDimensions: measure.requiredDimensions,
+                                kind: "formula",
+                                expression: {
+                                  kind: "literal",
+                                  type: "integer",
+                                  value: 0,
+                                },
                               },
-                            }
-                          : {
-                              id: measure.id,
-                              name: measure.name,
-                              requiredDimensions: measure.requiredDimensions,
-                              kind: "formula",
-                              expression: {
-                                kind: "literal",
-                                type: "integer",
-                                value: 0,
-                              },
-                            },
                       );
                     }}
                   >
                     <option value="aggregate">{t("aggregateMeasure")}</option>
                     <option value="formula">{t("formulaMeasure")}</option>
+                    <option value="rolling">{t("rollingMeasure")}</option>
+                    <option value="period_offset">{t("offsetMeasure")}</option>
                   </select>
                 </label>
                 {measure.kind === "aggregate"
@@ -876,7 +952,34 @@ export function ModelEditor({
                     })
                   }
                 />
-              ) : measure.kind !== "formula" ? null : ( // Rolling and period-offset inputs: #486 web package.
+              ) : isWindowedMeasure(measure) ? (
+                <>
+                  <WindowedMeasureFields
+                    measure={measure}
+                    baseMeasures={windowBaseCandidates(definition, measure)}
+                    timeDimensions={timeDimensions}
+                    onChange={(next) => changeMeasure(measure.id, next)}
+                  />
+                  {measure.kind === "period_offset" ? (
+                    <div className="data-form-actions">
+                      <button
+                        type="button"
+                        disabled={
+                          !changeMeasureSiblings(
+                            definition,
+                            measure,
+                            { change: "", percent_change: "" },
+                            () => "",
+                          ).length
+                        }
+                        onClick={() => addChangeMeasures(measure)}
+                      >
+                        {t("addChangeMeasures")}
+                      </button>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
                 <div className="field">
                   <label htmlFor={measure.id}>{t("formula")}</label>
                   <textarea

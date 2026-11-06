@@ -6,6 +6,7 @@ const labels = [
   "decimal_rounded",
   "division_by_zero",
   "retained_source_history_incomplete",
+  "model_window_history_incomplete",
   "prepared_cache_capacity_reached",
   "using_last_valid_source_snapshot",
 ] as const;

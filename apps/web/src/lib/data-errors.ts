@@ -7,6 +7,7 @@ export function dataErrorCodeKey(code: string) {
   if (code === "version_conflict") return "conflict";
   if (/cardinality|not_unique|identity_conflict/.test(code))
     return "cardinality";
+  if (/model_window_/.test(code)) return "window";
   if (/quota|limit|budget|capacity/.test(code)) return "limit";
   if (code === "data_source_pending") return "pending";
   if (/expired|replay_unavailable|history_unavailable/.test(code))
