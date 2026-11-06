@@ -12,6 +12,7 @@ import {
   findConnection,
   findConnectionRetention,
   insertAuditEvent,
+  lockWorkspaceIngestion,
   resolveDataPolicy,
   setConnectionRetention,
   withWorkspace,
@@ -127,6 +128,9 @@ export function createConnectionRetentionService(
         deps.db,
         { workspaceId: actor.workspaceId, userId: actor.callerId },
         async (tx): Promise<RetentionResult> => {
+          // Before reading the workspace maximum: a concurrent policy change
+          // or sync page finishes first (lock order: this lock, then rows).
+          await lockWorkspaceIngestion(tx, actor.workspaceId);
           const connection = await findConnection(
             tx,
             actor.workspaceId,

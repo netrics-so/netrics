@@ -229,7 +229,7 @@ export async function storeConnectorStage(
     pages.reduce((n, p) => n + Buffer.byteLength(JSON.stringify(p)) + 512, 512);
   if (byteSize > MAX_STAGE_BYTES) return fail("dataset_stage_limit");
   await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${scope.workspaceId}, 440))`,
+    sql`select pg_advisory_xact_lock(hashtextextended(${scope.workspaceId}::uuid::text, 440))`,
   );
   const now = currentTime(scope);
   const { policy } = await resolveDataPolicy(

@@ -141,3 +141,35 @@ REVOKE ALL ON FUNCTION apply_connection_retention(uuid, uuid, jsonb, timestamptz
 --> statement-breakpoint
 -- The API resolves the choice and the workspace maximum before this call.
 GRANT EXECUTE ON FUNCTION apply_connection_retention(uuid, uuid, jsonb, timestamptz) TO netrics_app;
+--> statement-breakpoint
+-- As in 0058, plus the workspace ingestion lock before any write, so a
+-- policy change serializes with ingestion and connection retention.
+CREATE OR REPLACE FUNCTION admin_set_data_policy(p_workspace uuid, p_overrides jsonb)
+RETURNS uuid LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+SET search_path = public, pg_temp AS $$
+DECLARE retention bigint;
+BEGIN
+  IF jsonb_typeof(p_overrides) <> 'object' THEN RAISE EXCEPTION 'invalid data policy'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id=p_workspace) THEN RETURN NULL; END IF;
+  -- The workspace ingestion lock (440), taken by dataset ingestion, staging
+  -- and connection retention before they read the policy: an in-flight page
+  -- commits first and is shortened below, or reads this policy (#492, #497).
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_workspace::text, 440));
+  INSERT INTO data_workspace_policies(workspace_id,overrides) VALUES(p_workspace,p_overrides)
+    ON CONFLICT (workspace_id) DO UPDATE SET overrides=EXCLUDED.overrides,updated_at=now();
+  retention := (p_overrides->>'maxRetentionDays')::bigint;
+  IF retention IS NOT NULL THEN
+    IF retention < 1 THEN RAISE EXCEPTION 'invalid data retention'; END IF;
+    -- A shorter policy can remove access immediately; a later increase never revives it.
+    UPDATE data_records SET expires_at=CASE WHEN retention <= ('9999-12-31'::date - collected_at::date) THEN least(expires_at,collected_at + make_interval(days => retention::integer)) ELSE expires_at END WHERE workspace_id=p_workspace;
+    UPDATE data_refreshes SET expires_at=CASE WHEN retention <= ('9999-12-31'::date - source_collected_at::date) THEN least(expires_at,source_collected_at + make_interval(days => retention::integer)) ELSE expires_at END WHERE workspace_id=p_workspace;
+    UPDATE data_generations SET expires_at=CASE WHEN retention <= ('9999-12-31'::date - created_at::date) THEN least(expires_at,created_at + make_interval(days => retention::integer)) ELSE expires_at END WHERE workspace_id=p_workspace;
+    UPDATE data_connector_stages SET
+      source_expires_at=CASE WHEN retention <= ('9999-12-31'::date - source_collected_at::date) THEN least(source_expires_at,source_collected_at + make_interval(days => retention::integer)) ELSE source_expires_at END,
+      expires_at=CASE WHEN retention <= ('9999-12-31'::date - source_collected_at::date) THEN least(expires_at,source_collected_at + make_interval(days => retention::integer)) ELSE expires_at END
+      WHERE workspace_id=p_workspace;
+    DELETE FROM data_model_query_snapshots WHERE workspace_id=p_workspace;
+    DELETE FROM data_prepared_generations WHERE workspace_id=p_workspace;
+  END IF;
+  RETURN p_workspace;
+END; $$;

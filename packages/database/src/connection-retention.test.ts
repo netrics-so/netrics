@@ -487,6 +487,116 @@ describe("choosing a connection's retention", () => {
     );
   });
 
+  /** Runs `work` in a transaction that stays open until `release()`. */
+  function held(workspaceId: string, work: (tx: never) => Promise<unknown>) {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let ready!: () => void;
+    const started = new Promise<void>((resolve) => (ready = resolve));
+    const done = withWorkspace(db, { workspaceId }, async (tx) => {
+      await work(tx as never);
+      ready();
+      await released;
+    });
+    return { started, release, done };
+  }
+  /** Whether `promise` settles within half a second. */
+  function settlesSoon(promise: Promise<unknown>) {
+    return Promise.race([
+      promise.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500)),
+    ]);
+  }
+  async function workspace(name: string) {
+    return (
+      await admin`insert into workspaces(name) values (${name}) returning id`
+    )[0]!.id as string;
+  }
+
+  it("reads the workspace maximum only after a concurrent policy change", async () => {
+    const ws = await workspace("Policy race");
+    const connectionId = await connection(ws);
+    const definition = personalDataset();
+    const collected = new Date();
+    await ingest(
+      db,
+      ws,
+      connectionId,
+      definition,
+      page(definition, "r1", ["x"]),
+      collected,
+    );
+    const policy = held(ws, (tx) =>
+      adminSetDataPolicy(tx, ws, { maxRetentionDays: 1 }),
+    );
+    await policy.started;
+    const saved = choose(ws, connectionId, { earnings: 400 });
+    const savedFirst = await settlesSoon(saved);
+    policy.release();
+    await policy.done;
+    expect(await saved).toBe(true);
+    expect(savedFirst).toBe(false);
+    expect((await deadlines(admin, connectionId)).x!.expiresAt).toEqual(
+      new Date(collected.getTime() + DAY),
+    );
+  });
+
+  it("shortens a sync page that is in flight when the workspace maximum drops (#497)", async () => {
+    const ws = await workspace("Policy after page");
+    const connectionId = await connection(ws);
+    const definition = personalDataset();
+    expect(await choose(ws, connectionId, { earnings: null })).toBe(true);
+    const collected = new Date();
+    const sync = held(ws, (tx) =>
+      ingestDatasetPage(tx as never, {
+        workspaceId: ws,
+        connectionId,
+        definition,
+        page: page(definition, "r1", ["x"]),
+        now: collected,
+      }),
+    );
+    await sync.started;
+    const policy = withWorkspace(db, { workspaceId: ws }, (tx) =>
+      adminSetDataPolicy(tx, ws, { maxRetentionDays: 1 }),
+    );
+    const policyFirst = await settlesSoon(policy);
+    sync.release();
+    await sync.done;
+    await policy;
+    expect((await deadlines(admin, connectionId)).x!.expiresAt).toEqual(
+      new Date(collected.getTime() + DAY),
+    );
+    expect(policyFirst).toBe(false);
+  });
+
+  it("makes a waiting sync page use a workspace maximum set meanwhile (#497)", async () => {
+    const ws = await workspace("Page after policy");
+    const connectionId = await connection(ws);
+    const definition = personalDataset();
+    expect(await choose(ws, connectionId, { earnings: null })).toBe(true);
+    const policy = held(ws, (tx) =>
+      adminSetDataPolicy(tx, ws, { maxRetentionDays: 1 }),
+    );
+    await policy.started;
+    const collected = new Date();
+    const sync = ingest(
+      db,
+      ws,
+      connectionId,
+      definition,
+      page(definition, "r1", ["x"]),
+      collected,
+    );
+    await settlesSoon(sync);
+    policy.release();
+    await policy.done;
+    await sync;
+    expect((await deadlines(admin, connectionId)).x!.expiresAt).toEqual(
+      new Date(collected.getTime() + DAY),
+    );
+  });
+
   it("cannot read or change another workspace's connection", async () => {
     const connectionId = await connection(a);
     const definition = personalDataset();

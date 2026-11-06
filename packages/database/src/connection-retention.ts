@@ -80,6 +80,21 @@ export async function connectionDatasetRetentionDays(
   ).days;
 }
 
+/**
+ * The workspace ingestion lock (440) for this transaction. Dataset ingestion,
+ * connector staging, connection retention and admin_set_data_policy take it
+ * before reading or applying retention, so they serialize. Take it before
+ * any connection row lock.
+ */
+export async function lockWorkspaceIngestion(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}::uuid::text, 440))`,
+  );
+}
+
 export interface SetConnectionRetentionInput {
   workspaceId: string;
   connectionId: string;
@@ -108,9 +123,7 @@ export async function setConnectionRetention(
   // before this and is then shortened below, or waits and reads the new
   // choice. Lock order is always this lock, then the connection row; sync
   // pages ingest datasets before taking their review row lock (sync/engine.ts).
-  await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${input.workspaceId}, 440))`,
-  );
+  await lockWorkspaceIngestion(tx, input.workspaceId);
   const now = input.now ?? new Date();
   const updated = await tx
     .update(connections)

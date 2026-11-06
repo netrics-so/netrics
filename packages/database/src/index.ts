@@ -480,6 +480,7 @@ export type { IngestDatasetPageInput } from "./datasets.js";
 export {
   connectionDatasetRetentionDays,
   findConnectionRetention,
+  lockWorkspaceIngestion,
   setConnectionRetention,
 } from "./connection-retention.js";
 export type {

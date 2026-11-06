@@ -302,6 +302,10 @@ connection:
   outputs), as the workspace policy does. A longer period only extends data
   that has not expired yet; expired, superseded or released data is never
   revived. Later ingestion and staging use the choice as well.
+- Ingestion, connector staging, connection retention saves and workspace
+  policy changes take the same workspace lock before they read or apply
+  retention, so a sync page in flight during a change either commits first
+  and is shortened, or waits and uses the new values.
 - The connection records the choice, who made it and when
   (`connections.retention_*`), and the audit log records
   `connection.retention_updated` with the chosen values. A connection created

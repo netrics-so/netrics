@@ -288,11 +288,17 @@ async function ingestPage(
   );
   scope.previousTimeout = timeout?.previous ?? "0";
   await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}, 440))`,
+    sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}::uuid::text, 440))`,
+  );
+  // Retention inputs are read under the lock, which policy and connection
+  // retention changes take too: a change made while this page waited applies.
+  const { policy: lockedPolicy } = await resolveDataPolicy(
+    tx,
+    input.workspaceId,
+    input.policyDefaults,
   );
   const now = input.clock?.() ?? input.now ?? new Date();
   // The connection's choice (#492) replaces the connector's declaration.
-  // Read under the workspace lock above, which retention updates also take.
   const requestedRetention =
     connectionId !== null && (input.kind ?? "source") === "source"
       ? await connectionDatasetRetentionDays(
@@ -303,9 +309,9 @@ async function ingestPage(
         )
       : datasetRetentionDays(definition);
   const retentionDays =
-    policy.maxRetentionDays === null
+    lockedPolicy.maxRetentionDays === null
       ? requestedRetention
-      : Math.min(requestedRetention ?? Infinity, policy.maxRetentionDays);
+      : Math.min(requestedRetention ?? Infinity, lockedPolicy.maxRetentionDays);
   const sourceCollectedAt = input.retainedSource?.collectedAt ?? now;
   const expiresAt = earlier(
     retentionExpiry(sourceCollectedAt, retentionDays),
