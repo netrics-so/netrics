@@ -38,6 +38,30 @@ describe("loadConfig", () => {
     ).toThrow("NETRICS_DATA_POLICY");
   });
 
+  it("configures caller page-session limits independently of aggregate query snapshots", () => {
+    expect(loadConfig({}).dataPolicy.queryPageSessionsPerCaller).toBe(10);
+    for (const limit of [0, 3, null])
+      expect(
+        loadConfig({
+          NETRICS_DATA_POLICY: JSON.stringify({
+            querySnapshotCount: 100,
+            queryPageSessionsPerCaller: limit,
+          }),
+        }).dataPolicy,
+      ).toMatchObject({
+        querySnapshotCount: 100,
+        queryPageSessionsPerCaller: limit,
+      });
+    for (const invalid of [-1, 0.5])
+      expect(() =>
+        loadConfig({
+          NETRICS_DATA_POLICY: JSON.stringify({
+            queryPageSessionsPerCaller: invalid,
+          }),
+        }),
+      ).toThrow("NETRICS_DATA_POLICY");
+  });
+
   it("allows self-hosters to raise or remove data and execution policy ceilings", () => {
     const config = loadConfig({
       NETRICS_DATA_POLICY: JSON.stringify({

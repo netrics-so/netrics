@@ -4,6 +4,7 @@ import type { FastifyInstance, InjectOptions } from "fastify";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  adminSetDataPolicy,
   createDatabase,
   withWorkspace,
   schema,
@@ -332,7 +333,7 @@ describe("data API authorization and contract", () => {
       (await call("POST", "/models/preview", stranger, body)).statusCode,
     ).toBe(404);
   });
-  it("continues pinned result pages through the authorized query API", async () => {
+  it("binds pinned pages to the authenticated caller and reauthorizes every continuation", async () => {
     const source = await call("POST", "/manual", editor, {
       ...manual,
       definition: { ...manual.definition, key: "paged-numbers" },
@@ -373,6 +374,10 @@ describe("data API authorization and contract", () => {
         .statusCode,
     ).toBe(200);
     const input = { measureIds: ["total"], groupBy: ["id"], limit: 1 };
+    await adminSetDataPolicy(db, workspaceId, {
+      querySnapshotCount: 3,
+      queryPageSessionsPerCaller: 1,
+    });
     const firstResponse = await call("POST", `/models/${id}/query`, viewer, {
       ...input,
       pinPages: true,
@@ -380,7 +385,53 @@ describe("data API authorization and contract", () => {
     expect(firstResponse.statusCode, firstResponse.body).toBe(200);
     const first = modelQueryResponseSchema.parse(firstResponse.json());
     expect(first.nextPageToken).toBeDefined();
+    const signIn = await app.inject({
+      method: "POST",
+      url: "/api/auth/sign-in/email",
+      payload: {
+        email: "data-viewer@example.com",
+        password: "password-12345",
+      },
+    });
+    expect(signIn.statusCode, signIn.body).toBe(200);
+    const header = signIn.headers["set-cookie"];
+    const secondLogin = (Array.isArray(header) ? header : [header])
+      .find((cookie) => cookie?.startsWith("better-auth.session_token="))!
+      .split(";")[0]!;
+    const denied = await call("POST", `/models/${id}/query`, secondLogin, {
+      ...input,
+      pinPages: true,
+    });
+    expect(denied.statusCode, denied.body).toBe(200);
+    const deniedResult = modelQueryResponseSchema.parse(denied.json());
+    expect(deniedResult.nextPageToken).toBeUndefined();
+    expect(deniedResult.warnings).toContain("immutable_pagination_unavailable");
+    const otherCaller = await call("POST", `/models/${id}/query`, editor, {
+      ...input,
+      pinPages: true,
+    });
+    expect(otherCaller.statusCode, otherCaller.body).toBe(200);
+    expect(
+      modelQueryResponseSchema.parse(otherCaller.json()).nextPageToken,
+    ).toBeDefined();
+    await adminSetDataPolicy(db, workspaceId, {});
     const continuation = { ...input, pageToken: first.nextPageToken! };
+    const crossCaller = await call(
+      "POST",
+      `/models/${id}/query`,
+      editor,
+      continuation,
+    );
+    expect(crossCaller.statusCode, crossCaller.body).toBe(409);
+    expect(crossCaller.json()).toEqual({ error: "data_page_unavailable" });
+    expect(
+      (
+        await call("POST", `/models/${id}/query`, editor, {
+          ...continuation,
+          callerId: "data-viewer@example.com",
+        })
+      ).statusCode,
+    ).toBe(400);
     expect(
       (await call("POST", `/models/${id}/query`, undefined, continuation))
         .statusCode,
@@ -392,7 +443,7 @@ describe("data API authorization and contract", () => {
     const response = await call(
       "POST",
       `/models/${id}/query`,
-      viewer,
+      secondLogin,
       continuation,
     );
     expect(response.statusCode, response.body).toBe(200);
@@ -414,6 +465,40 @@ describe("data API authorization and contract", () => {
         })
       ).statusCode,
     ).toBe(409);
+    const identity = await app.inject({
+      url: "/v1/me",
+      headers: { cookie: secondLogin },
+    });
+    expect(identity.statusCode, identity.body).toBe(200);
+    const removed = await app.inject({
+      method: "DELETE",
+      url: `/v1/workspaces/${workspaceId}/members/${identity.json().user.id}`,
+      headers: { cookie: owner },
+    });
+    expect(removed.statusCode, removed.body).toBe(204);
+    try {
+      expect(
+        (await call("POST", `/models/${id}/query`, secondLogin, continuation))
+          .statusCode,
+      ).toBe(404);
+    } finally {
+      expect(
+        (
+          await addMemberViaInvitation(
+            app,
+            db,
+            owner,
+            workspaceId,
+            "data-viewer@example.com",
+            "viewer",
+          )
+        ).statusCode,
+      ).toBe(200);
+    }
+    expect(
+      (await call("POST", `/models/${id}/query`, secondLogin, continuation))
+        .statusCode,
+    ).toBe(200);
   });
   it("restricts history and draft restoration to editors and leaves published results active", async () => {
     const current = modelResponseSchema.parse(

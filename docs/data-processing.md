@@ -235,9 +235,16 @@ Retained raw storage and source-count policy defaults are uncapped. Execution
 defaults are 100,000 rows, 5 million operations and 128 MiB of output per evaluation, 15
 seconds per database statement and 100 connector pages per sync attempt. All
 are configurable, including `null`. They govern an individual execution, not
-the amount of retained history. Query snapshots default to 100 identities per
-release and a one-day lifetime; either query snapshot setting accepts `0` to
-disable storing and reusing snapshots, including last-valid fallback.
+the amount of retained history. Page sessions and ordinary last-valid query
+snapshots each default to 100 identities per release and a one-day lifetime.
+The additional `queryPageSessionsPerCaller` policy defaults to 10 page sessions
+per authenticated user/release; users share that limit across tabs and login
+sessions. A positive reduction affects new admission only. `null` removes the
+caller limit while the aggregate `querySnapshotCount` still applies; `0` disables
+starting and continuing pinned pages without disabling ordinary queries/fallback.
+These limits do not reserve slots, and the aggregate pool can still fill.
+Setting `querySnapshotCount` or `querySnapshotSeconds` to `0` disables storing
+and reusing both snapshot pools, including last-valid fallback.
 Prepared cache entries default to one day,
 bounded by the earliest source expiry. Those policies are configurable too.
 Wire safeguards remain: 100 fields, 1,000 records/1 MiB per page, 64 KiB per
@@ -398,8 +405,12 @@ continuation with `pinPages: true` and `pageToken`: pages retain the original
 model release and source/prepared generation identities across corrections and
 publication. Each continuation reauthorizes its inputs and fails if pinned
 history, caches or metadata fingerprints are unavailable; it never renews the
-deadline or silently changes data. Ordinary dashboard/device requests do not
-allocate page sessions. See [the API and expiry rules](./data-query-pagination.md).
+deadline or silently changes data. Caller-bound sessions use the authenticated
+user identity; a different user cannot continue the token. Pinned first-page
+requests do not populate ordinary fallback capacity. Ordinary dashboard/device
+requests do not allocate page sessions. The caller-bound key namespace requires
+older unowned tokens to restart, without a SQL schema migration. See [the API,
+capacity and upgrade rules](./data-query-pagination.md).
 Multi-select filters use typed list membership without growing a deep expression tree.
 
 Device schemas 2/3 include server-computed measure results. The shared native

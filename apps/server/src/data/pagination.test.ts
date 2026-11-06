@@ -4,6 +4,7 @@ import {
   adminSetDataPolicy,
   createDatabase,
   createRawSqlClient,
+  withWorkspace,
   type Database,
   type Sql,
 } from "@netrics/database";
@@ -16,6 +17,7 @@ import {
 import { createTestDatabase } from "../test-db.js";
 import {
   createDataService,
+  queryDataModel,
   type DataActor,
   type DataModelQuery,
 } from "./service.js";
@@ -47,14 +49,15 @@ const definition = sourceDatasetSchema.parse({
     },
   ],
 });
-let db: Database, admin: Sql, callerId: string;
+let db: Database, admin: Sql, callerId: string, viewerId: string;
 beforeAll(async () => {
   const test = await createTestDatabase();
   db = createDatabase(test.appUrl);
   admin = createRawSqlClient(test.adminUrl, { max: 1 });
-  const [user] =
-    await admin`insert into users(email,display_name) values ('pagination@example.com','Owner') returning id`;
+  const [user, viewer] =
+    await admin`insert into users(email,display_name) values ('pagination@example.com','Owner'),('pagination-viewer@example.com','Viewer') returning id`;
   callerId = user!.id as string;
+  viewerId = viewer!.id as string;
   await admin`insert into connectors(id,version,manifest) values ('pagination-fixture','1.0.0','{}')`;
 }, 60_000);
 afterAll(async () => {
@@ -66,6 +69,8 @@ async function fixture(nested = false, defaults: Partial<DataPolicy> = {}) {
   const [workspace] =
     await admin`insert into workspaces(name) values ('Pagination') returning id`;
   const actor: DataActor = { workspaceId: workspace!.id as string, callerId };
+  const viewer: DataActor = { ...actor, callerId: viewerId };
+  await admin`insert into memberships(workspace_id,user_id,role) values (${actor.workspaceId},${callerId},'owner'),(${actor.workspaceId},${viewerId},'viewer')`;
   let now = NOW;
   const service = createDataService(db, () => now, {
     ...DEFAULT_DATA_POLICY,
@@ -115,6 +120,7 @@ async function fixture(nested = false, defaults: Partial<DataPolicy> = {}) {
   await service.publishModel(actor, model.id, 1);
   return {
     actor,
+    viewer,
     service,
     source,
     records,
@@ -548,11 +554,373 @@ describe("immutable semantic result pagination", () => {
     const denied = await f.read({ ...query, limit: 3, pinPages: true });
     expect(denied.nextPageToken).toBeUndefined();
     expect(denied.warnings).toContain("immutable_pagination_unavailable");
-    const [counts] =
+    // Even a pinned request that fits in one response must not seed fallback.
+    const singlePage = await f.read({ ...query, limit: 4, pinPages: true });
+    expect(singlePage.rows).toHaveLength(4);
+    expect(singlePage.nextPageToken).toBeUndefined();
+    const [pinnedOnly] =
       await admin`select count(*) filter (where query_key like 'page:%')::int as sessions, count(*) filter (where query_key not like 'page:%')::int as snapshots from data_model_query_snapshots where workspace_id=${f.actor.workspaceId}`;
-    expect(counts!.sessions).toBe(2);
-    // Ordinary snapshots stay admitted up to their own capacity.
-    expect(counts!.snapshots).toBe(2);
+    expect(pinnedOnly).toEqual({ sessions: 2, snapshots: 0 });
+    // Only actual ordinary queries populate their independent fallback pool.
+    await f.read({ ...query, limit: 3 });
+    await f.read({ ...query, limit: 4, pinPages: false });
+    const [afterOrdinary] =
+      await admin`select count(*) filter (where query_key like 'page:%')::int as sessions, count(*) filter (where query_key not like 'page:%')::int as snapshots from data_model_query_snapshots where workspace_id=${f.actor.workspaceId}`;
+    expect(afterOrdinary).toEqual({ sessions: 2, snapshots: 2 });
+  });
+
+  it("limits each authenticated caller without preventing another member from starting a session", async () => {
+    const f = await fixture();
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 4,
+      queryPageSessionsPerCaller: 2,
+    });
+    const first = await f.read(),
+      second = await f.read();
+    expect(first.nextPageToken).toBeDefined();
+    expect(second.nextPageToken).toBeDefined();
+    const restarted = createDataService(db, () => NOW);
+    const denied = await restarted.query(f.actor, f.model.id, {
+      ...query,
+      pinPages: true,
+    });
+    expect(denied.nextPageToken).toBeUndefined();
+    expect(denied.warnings).toContain("immutable_pagination_unavailable");
+    const viewer = await f.service.query(f.viewer, f.model.id, {
+      ...query,
+      pinPages: true,
+    });
+    expect(viewer.nextPageToken).toBeDefined();
+    await expect(
+      f.service.query(f.viewer, f.model.id, {
+        ...query,
+        pageToken: first.nextPageToken!,
+      }),
+    ).rejects.toThrow("data_page_unavailable");
+    await expect(
+      f.read({ ...query, pageToken: viewer.nextPageToken! }),
+    ).rejects.toThrow("data_page_unavailable");
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 4,
+      queryPageSessionsPerCaller: 1,
+    });
+    for (const pageToken of [first.nextPageToken!, second.nextPageToken!]) {
+      const continued = await restarted.query(f.actor, f.model.id, {
+        ...query,
+        pageToken,
+      });
+      expect(continued.rows[0]!.dimensions.id).toBe("b");
+      expect(continued.pageExpiresAt).toBe(first.pageExpiresAt);
+    }
+    expect(
+      (
+        await f.service.query(f.viewer, f.model.id, {
+          ...query,
+          pageToken: viewer.nextPageToken!,
+        })
+      ).rows[0]!.dimensions.id,
+    ).toBe("b");
+    expect((await f.read()).nextPageToken).toBeUndefined();
+  });
+
+  it.each([
+    { name: "caller", global: 4, caller: 1, distinctCallers: false },
+    { name: "release", global: 1, caller: null, distinctCallers: true },
+  ])(
+    "enforces the $name session limit under concurrent admission",
+    async ({ global, caller, distinctCallers }) => {
+      const f = await fixture();
+      await adminSetDataPolicy(db, f.actor.workspaceId, {
+        querySnapshotCount: global,
+        queryPageSessionsPerCaller: caller,
+      });
+      const results = await Promise.all([
+        f.service.query(f.actor, f.model.id, { ...query, pinPages: true }),
+        f.service.query(distinctCallers ? f.viewer : f.actor, f.model.id, {
+          ...query,
+          pinPages: true,
+        }),
+      ]);
+      expect(results.filter((result) => result.nextPageToken)).toHaveLength(1);
+      expect(results.filter((result) => !result.nextPageToken)).toMatchObject([
+        {
+          warnings: expect.arrayContaining([
+            "immutable_pagination_unavailable",
+          ]),
+        },
+      ]);
+      expect(
+        results.every((result) => result.rows[0]!.dimensions.id === "a"),
+      ).toBe(true);
+      const [counts] =
+        await admin`select count(*) filter (where query_key like 'page:%')::int as sessions, count(*) filter (where query_key not like 'page:%')::int as snapshots from data_model_query_snapshots where workspace_id=${f.actor.workspaceId}`;
+      expect(counts).toEqual({ sessions: 1, snapshots: 0 });
+    },
+  );
+
+  it("supports null caller limits without removing the global cap, and zero disables only page sessions", async () => {
+    const f = await fixture();
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 3,
+      queryPageSessionsPerCaller: 1,
+    });
+    const first = await f.read();
+    expect(first.nextPageToken).toBeDefined();
+    expect((await f.read()).nextPageToken).toBeUndefined();
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 3,
+      queryPageSessionsPerCaller: null,
+    });
+    expect((await f.read()).nextPageToken).toBeDefined();
+    expect((await f.read()).nextPageToken).toBeDefined();
+    expect(
+      (
+        await f.service.query(f.viewer, f.model.id, {
+          ...query,
+          pinPages: true,
+        })
+      ).nextPageToken,
+    ).toBeUndefined();
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 3,
+      queryPageSessionsPerCaller: 0,
+    });
+    await expect(
+      f.read({ ...query, pageToken: first.nextPageToken! }),
+    ).rejects.toThrow("data_page_unavailable");
+    const disabled = await f.service.query(f.viewer, f.model.id, {
+      ...query,
+      pinPages: true,
+    });
+    expect(disabled.nextPageToken).toBeUndefined();
+    expect(disabled.warnings).toContain("immutable_pagination_unavailable");
+    await f.read(query);
+    const [counts] =
+      await admin`select count(*) filter (where query_key not like 'page:%')::int as snapshots from data_model_query_snapshots where workspace_id=${f.actor.workspaceId}`;
+    expect(counts!.snapshots).toBe(1);
+  });
+
+  it("reclaims an expired caller allowance without renewing another member's active session", async () => {
+    const f = await fixture();
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 3,
+      queryPageSessionsPerCaller: 1,
+      querySnapshotSeconds: 10,
+    });
+    const first = await f.read();
+    f.advance(5000);
+    const viewer = await f.service.query(f.viewer, f.model.id, {
+      ...query,
+      pinPages: true,
+    });
+    f.advance(11000);
+    const replacement = await f.read();
+    expect(replacement.nextPageToken).toBeDefined();
+    expect(replacement.pageExpiresAt).toBe(
+      new Date(NOW.getTime() + 21000).toISOString(),
+    );
+    await expect(
+      f.read({ ...query, pageToken: first.nextPageToken! }),
+    ).rejects.toThrow("data_page_unavailable");
+    const continued = await f.service.query(f.viewer, f.model.id, {
+      ...query,
+      pageToken: viewer.nextPageToken!,
+    });
+    expect(continued.rows[0]!.dimensions.id).toBe("b");
+    expect(continued.pageExpiresAt).toBe(viewer.pageExpiresAt);
+    expect(
+      (
+        await f.service.query(f.viewer, f.model.id, {
+          ...query,
+          pinPages: true,
+        })
+      ).nextPageToken,
+    ).toBeUndefined();
+  });
+
+  it("requires a trusted principal for internal pinned queries while allowing ordinary dashboard queries", async () => {
+    const f = await fixture();
+    const first = await f.read();
+    const internal = (input: DataModelQuery) =>
+      withWorkspace(db, { workspaceId: f.actor.workspaceId }, (tx) =>
+        queryDataModel(tx, f.actor.workspaceId, f.model.id, input, NOW, {
+          ...DEFAULT_DATA_POLICY,
+        }),
+      );
+    for (const input of [
+      { ...query, pinPages: true },
+      { ...query, pageToken: first.nextPageToken! },
+    ])
+      await expect(internal(input)).rejects.toMatchObject({
+        code: "data_page_unavailable",
+        status: 409,
+      });
+    const ordinary = await internal(query);
+    expect(ordinary.rows[0]!.measures.amount!.value).toBe("1");
+    expect(ordinary.nextPageToken).toBeUndefined();
+    expect(ordinary.provenance).toEqual(first.provenance);
+    expect(
+      (await f.read({ ...query, pageToken: first.nextPageToken! })).rows[0]!
+        .dimensions.id,
+    ).toBe("b");
+  });
+
+  it("rejects unowned legacy tokens and retires only known legacy session records", async () => {
+    const f = await fixture();
+    const first = await f.read();
+    const [snapshot] =
+      await admin`select * from data_model_query_snapshots where workspace_id=${f.actor.workspaceId} and query_key like 'page:%'`;
+    const legacyId = randomUUID(),
+      legacyKey = `page:${legacyId}:${(snapshot!.query_key as string).split(":").at(-1)!}`;
+    const futureKey = `page:v3:${randomUUID()}:${"b".repeat(64)}`;
+    for (const key of [legacyKey, futureKey])
+      await admin`insert into data_model_query_snapshots(release_id,workspace_id,query_key,generations,expires_at,updated_at) values (${snapshot!.release_id},${f.actor.workspaceId},${key},${JSON.stringify(snapshot!.generations)}::jsonb,${snapshot!.expires_at},${snapshot!.updated_at})`;
+    await expect(
+      f.read({ ...query, pageToken: `${first.releaseId}:${legacyId}:1` }),
+    ).rejects.toThrow("data_page_unavailable");
+    await f.read(query);
+    const keys =
+      await admin`select query_key from data_model_query_snapshots where workspace_id=${f.actor.workspaceId}`;
+    expect(keys.map((row) => row.query_key)).not.toContain(legacyKey);
+    expect(keys.map((row) => row.query_key)).toContain(futureKey);
+    expect(
+      (await f.read({ ...query, pageToken: first.nextPageToken! })).rows[0]!
+        .dimensions.id,
+    ).toBe("b");
+  });
+
+  it("preserves a real ordinary fallback after pinned floods without letting pinned requests refresh its vector", async () => {
+    const f = await fixture();
+    const mappingDefinition = sourceDatasetSchema.parse({
+      ...definition,
+      key: "fairness_mapping",
+      fields: [
+        definition.fields[0]!,
+        { ...definition.fields[0]!, id: "match", name: "Match" },
+      ],
+    });
+    const mapping = await f.service.saveManual(f.actor, {
+      definition: mappingDefinition,
+      records: ["a", "b", "c", "d"].map((id) => ({
+        values: { id, match: id },
+      })),
+    });
+    const model = (
+      await f.service.saveModel(f.actor, {
+        name: "Fair fallback",
+        definition: {
+          ...f.modelDefinition,
+          datasets: [f.source.datasetId, mapping.datasetId],
+          relationships: [
+            {
+              id: "mapping",
+              from: { datasetId: f.source.datasetId, fieldId: "id" },
+              to: { datasetId: mapping.datasetId, fieldId: "match" },
+              cardinality: "many_to_one",
+            },
+          ],
+          dimensions: [
+            {
+              id: "id",
+              name: "ID",
+              datasetId: mapping.datasetId,
+              fieldId: "match",
+            },
+          ],
+        },
+      })
+    ).model;
+    await f.service.publishModel(f.actor, model.id, model.version);
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 3,
+      queryPageSessionsPerCaller: 2,
+    });
+    const read = (actor: DataActor, input: DataModelQuery) =>
+      f.service.query(actor, model.id, input);
+    expect(
+      (await read(f.actor, { ...query, pinPages: true })).nextPageToken,
+    ).toBeDefined();
+    expect(
+      (await read(f.actor, { ...query, limit: 2, pinPages: true }))
+        .nextPageToken,
+    ).toBeDefined();
+    expect(
+      (await read(f.actor, { ...query, limit: 3, pinPages: true }))
+        .nextPageToken,
+    ).toBeUndefined();
+    expect(
+      await admin`select query_key from data_model_query_snapshots where workspace_id=${f.actor.workspaceId} and query_key not like 'page:%'`,
+    ).toHaveLength(0);
+    const ordinary = { ...query, limit: 3 };
+    const known = await read(f.viewer, ordinary);
+    expect(known.rows.map((row) => row.measures.amount!.value)).toEqual([
+      "1",
+      "2",
+      "3",
+    ]);
+    const before =
+      await admin`select * from data_model_query_snapshots where workspace_id=${f.actor.workspaceId} and query_key not like 'page:%'`;
+    f.advance(1000);
+    await f.service.saveManual(
+      f.actor,
+      {
+        definition,
+        generationId: f.source.generationId,
+        records: f.records.map((record) => ({
+          values: { ...record.values, amount: "50" },
+        })),
+      },
+      f.source.datasetId,
+    );
+    const fresh = await read(f.viewer, { ...ordinary, pinPages: true });
+    expect(fresh.nextPageToken).toBeDefined();
+    expect(fresh.rows[0]!.measures.amount!.value).toBe("50");
+    const denied = await read(f.actor, { ...ordinary, pinPages: true });
+    expect(denied.nextPageToken).toBeUndefined();
+    expect(
+      await admin`select * from data_model_query_snapshots where workspace_id=${f.actor.workspaceId} and query_key not like 'page:%'`,
+    ).toEqual(before);
+    await f.service.saveManual(
+      f.actor,
+      {
+        definition: mappingDefinition,
+        generationId: mapping.generationId,
+        records: [
+          { values: { id: "one", match: "a" } },
+          { values: { id: "two", match: "a" } },
+        ],
+      },
+      mapping.datasetId,
+    );
+    const fallback = await read(f.viewer, ordinary);
+    expect(fallback).toMatchObject({
+      stale: true,
+      error: "model_relationship_cardinality_violation",
+      provenance: known.provenance,
+    });
+    expect(
+      fallback.rows.map((row) => ({
+        id: row.dimensions.id,
+        value: row.measures.amount!.value,
+      })),
+    ).toEqual([
+      { id: "a", value: "1" },
+      { id: "b", value: "2" },
+      { id: "c", value: "3" },
+    ]);
+    expect(fallback.warnings).toContain("using_last_valid_source_snapshot");
+    const pinnedFallback = await read(f.viewer, {
+      ...ordinary,
+      pinPages: true,
+    });
+    expect(pinnedFallback.stale).toBe(true);
+    expect(pinnedFallback.nextPageToken).toBeUndefined();
+    expect(pinnedFallback.warnings).toContain(
+      "immutable_pagination_unavailable",
+    );
+    expect(
+      await admin`select * from data_model_query_snapshots where workspace_id=${f.actor.workspaceId} and query_key not like 'page:%'`,
+    ).toEqual(before);
   });
 
   it("clamps very long snapshot lifetimes instead of failing", async () => {
