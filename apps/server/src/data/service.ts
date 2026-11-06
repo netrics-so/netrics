@@ -414,6 +414,11 @@ export function createDataLoader(
     allowPendingSchemas?: boolean;
     /** Queries may expose known values as partial, with pending input identities. */
     allowPendingResults?: boolean;
+    /** Last-valid fallback only: resource catalogs are current metadata with
+     * no retained history, so a changed catalog fingerprint reads the current
+     * catalog instead of refusing the pinned vector. Page continuations keep
+     * the strict check. */
+    currentResources?: boolean;
   } = {},
 ) {
   const tables = new Map<string, DataTable>(),
@@ -658,7 +663,8 @@ export function createDataLoader(
       generations[id] = catalog.view.generationId!;
       if (
         options.generations?.[id] &&
-        options.generations[id] !== generations[id]
+        options.generations[id] !== generations[id] &&
+        !options.currentResources
       )
         fail("data_snapshot_unavailable", 409);
       result = catalog.table;
@@ -2260,10 +2266,14 @@ export async function queryDataModel(
   const definition = semanticModelDefinitionSchema.parse(
     preview ? model.definition : release!.definition,
   );
-  const evaluate = async (generations?: Record<string, string>) => {
+  const evaluate = async (
+    generations?: Record<string, string>,
+    currentResources = false,
+  ) => {
     const loader = createDataLoader(tx, workspaceId, now, {
       policy,
       allowPendingResults: true,
+      currentResources,
       ...(generations ? { generations } : {}),
       ...(release || restored
         ? { dependencies: (release ?? restored)!.dependencies as Dependencies }
@@ -2443,6 +2453,7 @@ export async function queryDataModel(
       throw error;
     const fallback = await evaluate(
       snapshot.generations as Record<string, string>,
+      true,
     );
     return {
       ...fallback.result,

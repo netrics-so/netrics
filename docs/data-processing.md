@@ -483,7 +483,9 @@ Rename a product once in Products; change a listing's product ID in the mapping
 table. Future apps retain their source identity until explicitly linked. Resource
 names are exposed as a tenant-scoped `resources:<connectionId>` dataset whose
 content fingerprint invalidates dependent outputs when names change. It is current
-metadata, not a retained historical resource-name snapshot. It is excluded from
+metadata, not a retained historical resource-name snapshot: a last-valid
+fallback reads the current catalog with its retained report/reference
+generations rather than failing once apps are added or renamed. It is excluded from
 report freshness timestamps; retained report/reference generations determine those.
 
 Apple first-download units and Google daily user installs stay separated by store.

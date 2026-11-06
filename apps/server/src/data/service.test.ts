@@ -892,6 +892,70 @@ describe("persistent reusable data processing", () => {
     );
     await expect(later.query(actor, model.model.id, query)).rejects.toThrow();
   });
+  it("keeps the last-valid fallback when a resource catalog changes", async () => {
+    const [connection] =
+      await admin`select id from connections where workspace_id = ${actor.workspaceId} limit 1`;
+    const connectionId = connection!.id as string;
+    await admin`insert into connection_resources(connection_id,workspace_id,resource_id,name,kind) values (${connectionId},${actor.workspaceId},'a','App A','app')`;
+    const resources = "resources:" + connectionId;
+    const mappingDefinition = definition("resource-fallback-mapping", [
+      { id: "id", type: "string" },
+      { id: "app", type: "string" },
+    ]);
+    const mapping = await service.saveManual(actor, {
+      definition: mappingDefinition,
+      records: [{ values: { id: "p1", app: "a" } }],
+    });
+    const model = await service.saveModel(actor, {
+      name: "Resource fallback",
+      definition: {
+        ...initialModel,
+        datasets: [salesId, mapping.datasetId, resources],
+        relationships: [
+          {
+            id: "mapping",
+            from: { datasetId: salesId, fieldId: "app" },
+            to: { datasetId: mapping.datasetId, fieldId: "app" },
+            cardinality: "many_to_one",
+          },
+          {
+            id: "resource",
+            from: { datasetId: mapping.datasetId, fieldId: "app" },
+            to: { datasetId: resources, fieldId: "resource_id" },
+            cardinality: "many_to_one",
+          },
+        ],
+        dimensions: [
+          { id: "app", name: "App", datasetId: resources, fieldId: "name" },
+        ],
+        measures: [initialModel.measures[0]!],
+      },
+    });
+    await service.publishModel(actor, model.model.id, 1);
+    const query = { measureIds: ["income"], groupBy: ["app"] };
+    const first = await service.query(actor, model.model.id, query);
+    expect(first.stale).toBe(false);
+    // An app appears in the catalog and the mapping becomes invalid at once.
+    await admin`insert into connection_resources(connection_id,workspace_id,resource_id,name,kind) values (${connectionId},${actor.workspaceId},'z','App Z','app')`;
+    await service.saveManual(
+      actor,
+      {
+        definition: mappingDefinition,
+        generationId: mapping.generationId,
+        records: [
+          { values: { id: "p1", app: "a" } },
+          { values: { id: "p2", app: "a" } },
+        ],
+      },
+      mapping.datasetId,
+    );
+    const fallback = await service.query(actor, model.model.id, query);
+    expect(fallback).toMatchObject({
+      stale: true,
+      warnings: ["using_last_valid_source_snapshot"],
+    });
+    expect(fallback.rows).toEqual(first.rows);
+  });
 });
 
 describe("paged reference editing", () => {
