@@ -35,6 +35,15 @@ describe("workspaceNav (#302)", () => {
     expect(keys).not.toContain("screens");
     expect(keys).not.toContain("addSource");
     expect(keys).toContain("sources");
+    expect(keys).not.toContain("data");
+  });
+  it("offers data authoring only to members who can edit it", () => {
+    expect(workspaceNav(W, { ...ALL, editData: true })).toContainEqual({
+      key: "data",
+      href: `/workspaces/${W}/data`,
+      section: "sources",
+    });
+    expect(activeNavKey(`/workspaces/${W}/data`, W)).toBe("data");
   });
 });
 

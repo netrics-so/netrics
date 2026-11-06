@@ -2,8 +2,9 @@
 
 The architecture is [ADR 0022](./decisions/0022-reusable-data-model-and-processing.md).
 Implementation is tracked in [#439](https://github.com/netrics-so/netrics/issues/439).
-The dataset foundation below is the first implementation slice, not the complete
-model editor or dashboard query system.
+The dataset foundation, processing engine and first data authoring workspace
+are implemented in stacked draft pull requests. Dashboard integration and
+connector templates remain separate delivery gates.
 
 ## Typed source datasets
 
@@ -220,10 +221,34 @@ failure, with `stale: true`, the error code and a warning. Fallback re-authorize
 every source and cannot restore removed or expired data. Legacy observation
 snapshots cannot be reconstructed after their values change.
 
+## Data authoring workspace
+
+Workspace editors can open **Data & measures** to inspect typed datasets,
+create entered reference tables, paste CSV/TSV, prepare data and publish models.
+Preparation forms cover selection, renaming, casts, replacement, filtering,
+calculated columns, deduplication, append, single-key joins and grouping.
+Readable formulas and field insertion use the same typed expression tree as
+the API. Each step can be previewed independently of later steps; undo and
+unsaved-change protection keep draft changes recoverable during editing.
+
+Model authoring includes dataset selection, directed relationships, shared
+dimensions, aggregate measures and formulas over measures. An unsaved
+definition can be previewed with grouping and a shared typed filter before
+saving or publishing. Numeric, boolean and exact decimal money results retain
+their types. Publication validates relationship cardinality even for ungrouped
+queries. English and German cover the workspace, including responsive layouts.
+
+Reference imports currently publish one snapshot per request (up to 10,000
+records and the API body budget). Large paged imports, editing existing
+reference tables, preparation step editing/reordering, multi-key join forms
+and explicit version history/rollback controls remain tracked in
+[#442](https://github.com/netrics-so/netrics/issues/442). The engine already
+accepts multi-key joins and versioned definitions through the API.
+
 The current executor evaluates typed JSONB rows in memory and materializes
 prepared outputs in JSONB. Removing policy ceilings does not yet provide a
 streaming or SQL execution path. Representative-volume checks and a scalable
 execution/storage path remain release work; this implementation does not claim
 a tested unbounded workload. Rolling/previous-period calculations, explicit
-rollback/history controls, preparation/model authoring UI, widget integration
+rollback/history controls, advanced authoring controls, widget integration
 and connector templates remain tracked in milestone 11.

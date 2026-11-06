@@ -140,6 +140,7 @@ export const preparationNodeSchema: z.ZodType<PreparationNode> =
       mode: z.enum(["inner", "left"]),
       cardinality: z.enum(["many_to_one", "one_to_one"]),
       rightPrefix: z.string().regex(/^[a-z][a-z0-9_.-]{0,49}$/),
+      rightNamePrefix: z.string().max(100).optional(),
     }),
     z.strictObject({
       ...input,
@@ -279,7 +280,7 @@ export const modelMeasureCellSchema = z.object({
   status: z.enum(["ok", "missing", "partial"]),
 });
 export const modelQueryResponseSchema = z.object({
-  releaseId: z.uuid(),
+  releaseId: z.uuid().nullable(),
   rows: z
     .array(
       z.object({
@@ -297,6 +298,10 @@ export const modelQueryResponseSchema = z.object({
   groupBy: z.array(id),
   stale: z.boolean(),
   error: z.string().optional(),
+});
+export const modelDefinitionPreviewRequestSchema = z.strictObject({
+  definition: semanticModelDefinitionSchema,
+  query: modelQueryInputSchema,
 });
 export const parseFormulaRequestSchema = z.strictObject({
   formula: z.string().min(1).max(10000),

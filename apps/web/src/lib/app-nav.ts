@@ -14,6 +14,7 @@ export type NavKey =
   | "goals"
   | "themes"
   | "sources"
+  | "data"
   | "addSource"
   | "screens"
   | "team"
@@ -34,6 +35,7 @@ export interface NavPermissions {
   viewDevices: boolean;
   /** "Add source" only for roles that may create connections. */
   createConnections: boolean;
+  editData?: boolean;
 }
 
 export function workspacePath(workspaceId: string, area = ""): string {
@@ -52,6 +54,9 @@ export function workspaceNav(
     { key: "goals", href: at("goals"), section: "dashboards" },
     { key: "themes", href: at("settings/themes"), section: "dashboards" },
     { key: "sources", href: at("sources"), section: "sources" },
+    ...(permissions.editData
+      ? [{ key: "data", href: at("data"), section: "sources" } as const]
+      : []),
     ...(permissions.createConnections
       ? [
           {
@@ -93,6 +98,8 @@ export function activeNavKey(
       return "goals";
     case "sources":
       return "sources";
+    case "data":
+      return "data";
     case "connections":
       return second === "new" ? "addSource" : "sources";
     case "screens":

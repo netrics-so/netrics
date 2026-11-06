@@ -43,9 +43,9 @@ export function leavesPage(
  * Asks before unsaved changes are lost (ADR 0015: explicit Save, no
  * autosave): on reload, closing the tab and leaving by a link in the app.
  */
-export function useLeaveGuard(dirty: boolean) {
+export function useLeaveGuard(dirty: boolean, overrideMessage?: string) {
   const t = useT("studio.editor");
-  const message = t("leaveConfirm");
+  const message = overrideMessage ?? t("leaveConfirm");
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
   const messageRef = useRef(message);

@@ -201,6 +201,16 @@ describe("shared semantic query context", () => {
           ...sources,
           ["apps", { ...apps, rows: [...apps.rows, apps.rows[0]!] }],
         ]),
+        { measureIds: ["apple-downloads"], groupBy: [] },
+      ),
+    ).toThrow("model_relationship_cardinality_violation");
+    expect(() =>
+      querySemanticModel(
+        model,
+        new Map([
+          ...sources,
+          ["apps", { ...apps, rows: [...apps.rows, apps.rows[0]!] }],
+        ]),
         { measureIds: ["apple-downloads"], groupBy: ["app"] },
       ),
     ).toThrow("model_relationship_cardinality_violation");

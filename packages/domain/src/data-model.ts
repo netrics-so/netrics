@@ -242,6 +242,8 @@ export function querySemanticModel(
     indexes.set(relationship.id, lookup);
     return lookup;
   };
+  // Publishing and ungrouped previews must catch invalid mappings too.
+  model.relationships.forEach(index);
   const grouped = new Map<string, Map<string, DataRow[]>>(),
     groupValues = new Map<string, DataRow>();
   if (!query.groupBy.length) groupValues.set("[]", {});

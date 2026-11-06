@@ -23,6 +23,7 @@ export interface DataTable {
   rows: DataRow[];
   provenance?: DataProvenance[];
   expiresAt?: string;
+  aggregated?: boolean;
 }
 export type AggregateOperation =
   | "sum"
@@ -83,6 +84,7 @@ export type PreparationNode = { id: string } & (
       mode: "inner" | "left";
       cardinality: "many_to_one" | "one_to_one";
       rightPrefix: string;
+      rightNamePrefix?: string;
     }
   | {
       type: "group";
@@ -181,7 +183,7 @@ function keysValid(table: DataTable, keys: string[]) {
 }
 function sourceContext(
   tables: DataTable[],
-): Pick<DataTable, "provenance" | "expiresAt"> {
+): Pick<DataTable, "provenance" | "expiresAt" | "aggregated"> {
   const refs = new Map<string, DataProvenance>();
   let expiry: string | undefined;
   for (const table of tables) {
@@ -195,6 +197,7 @@ function sourceContext(
   }
   return {
     provenance: [...refs.values()],
+    aggregated: tables.some((table) => table.aggregated),
     ...(expiry ? { expiresAt: expiry } : {}),
   };
 }
@@ -457,6 +460,9 @@ export function executePreparation(
       const rightFields = right.fields.map((f) => ({
         ...f,
         id: node.rightPrefix + f.id,
+        name: node.rightNamePrefix
+          ? (node.rightNamePrefix + f.name).slice(0, 100)
+          : f.name,
         nullable: node.mode === "left" || f.nullable,
         ...(f.currencyField
           ? { currencyField: node.rightPrefix + f.currencyField }
@@ -528,6 +534,7 @@ export function executePreparation(
           ...(expression.result.unit ? { unit: expression.result.unit } : {}),
           ...(currencyId ? { currencyField: currencyId } : {}),
         };
+        output.fields.push(field);
         if (currencyId)
           output.fields.push({
             id: currencyId,
@@ -535,7 +542,6 @@ export function executePreparation(
             type: "string",
             nullable: true,
           });
-        output.fields.push(field);
         output.rows = input.rows.map((row) => {
           const result = expression.evaluate(row, budget);
           return {
@@ -633,6 +639,7 @@ export function executePreparation(
           fields: node.keys.map((k) => ({ ...fieldOf(input, k) })),
           rows: [],
           ...sourceContext([input]),
+          aggregated: true,
         };
         const resultTypes = node.aggregates.map((a) =>
           aggregateData({ ...input, rows: [] }, a, budget),

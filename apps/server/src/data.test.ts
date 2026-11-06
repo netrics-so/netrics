@@ -194,6 +194,31 @@ describe("data API authorization and contract", () => {
       ).statusCode,
     ).toBe(404);
   });
+  it("previews an unsaved model without creating or changing a draft", async () => {
+    const draft = modelResponseSchema.parse(
+      (await call("GET", `/models/${modelId}`, editor)).json(),
+    ).model;
+    const before = (await call("GET", "/models", editor)).json().models.length;
+    const body = {
+      definition: draft.definition,
+      query: { measureIds: ["total"], groupBy: [] },
+    };
+    const preview = await call("POST", "/models/preview", editor, body);
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(modelQueryResponseSchema.parse(preview.json())).toMatchObject({
+      releaseId: null,
+      rows: [{ measures: { total: { value: "12.5" } } }],
+    });
+    expect((await call("GET", "/models", editor)).json().models).toHaveLength(
+      before,
+    );
+    expect(
+      (await call("POST", "/models/preview", viewer, body)).statusCode,
+    ).toBe(403);
+    expect(
+      (await call("POST", "/models/preview", stranger, body)).statusCode,
+    ).toBe(404);
+  });
   it("rejects arbitrary code and excessive expression nesting before execution", async () => {
     const code = await call("POST", "/formula", editor, {
       formula: "globalThis.process.exit()",
