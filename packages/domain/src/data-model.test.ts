@@ -306,3 +306,40 @@ describe("shared semantic query context", () => {
     ).toBe(true);
   });
 });
+
+it("pages deterministic groups without a permanent result-count ceiling", () => {
+  const expanded: DataTable = {
+    fields: apps.fields,
+    rows: Array.from({ length: 1200 }, (_, index) => ({
+      id: `app-${index}`,
+      name: `App ${String(index).padStart(4, "0")}`,
+      country: "DE",
+    })),
+  };
+  const fact: DataTable = {
+    fields: apple.fields,
+    rows: expanded.rows.map((row) => ({ app: row.id, downloads: 1 })),
+  };
+  const inputs = new Map(sources)
+    .set("apps", expanded)
+    .set("apple", fact)
+    .set("play", { ...play, rows: [] });
+  const query = {
+    measureIds: ["apple-downloads"],
+    groupBy: ["app"],
+    limit: 2,
+    offset: 1100,
+  };
+  const result = querySemanticModel(model, inputs, query);
+  expect(result.totalRows).toBe(1200);
+  expect(result.rows.map((row) => row.dimensions.app)).toEqual([
+    "App 1100",
+    "App 1101",
+  ]);
+  expect(
+    result.rows.map((row) => row.measures["apple-downloads"]?.value),
+  ).toEqual(["1", "1"]);
+  expect(
+    querySemanticModel(model, inputs, { ...query, offset: 1200 }).rows,
+  ).toEqual([]);
+});

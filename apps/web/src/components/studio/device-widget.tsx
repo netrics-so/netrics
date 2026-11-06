@@ -1,4 +1,5 @@
 "use client";
+import { MeasureWidgetView } from "./measure-widget";
 
 import type { DeviceWidget } from "@netrics/contracts";
 import type { Locale } from "@netrics/domain";
@@ -281,6 +282,18 @@ export function DeviceWidgetView({
     fontScale: env.fontScale,
   };
   switch (widget.type) {
+    case "measure":
+      return (
+        <MeasureWidgetView
+          fontScale={env.fontScale}
+          widget={{
+            title: widget.label,
+            binding: { measureIds: widget.measureIds, groupBy: widget.groupBy },
+            options: widget.options,
+          }}
+          data={widget.data}
+        />
+      );
     case "metric":
       return (
         <MetricWidgetView

@@ -42,6 +42,8 @@ import {
   type StudioWidget,
 } from "@/lib/studio-widgets";
 
+import { LiveMeasureWidget } from "./measure-widget";
+
 import { LiveBarWidget } from "./bar-widget";
 import { LiveStatusWidget } from "./status-widget";
 import { LiveTableWidget } from "./table-widget";
@@ -107,6 +109,8 @@ export function LiveWidget({
   env: StudioEnv;
 }) {
   switch (widget.type) {
+    case "measure":
+      return <LiveMeasureWidget widget={widget} env={env} />;
     case "metric":
       return <LiveMetricWidget widget={widget} env={env} />;
     case "line":

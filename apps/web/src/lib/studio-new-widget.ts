@@ -38,6 +38,7 @@ function groupBy(metric: WorkspaceMetric): string | null {
 export function newWidget(
   type: WidgetType,
   input: {
+    models?: import("@netrics/contracts").PublishedModelCatalog["models"];
     metrics: readonly WorkspaceMetric[];
     /** Workspace images, newest first. */
     imageIds: readonly string[];
@@ -53,6 +54,23 @@ export function newWidget(
 ): { widget: NewWidget } | { reason: string } {
   const t = webTranslator(input.locale, "studio.newWidget");
   switch (type) {
+    case "measure": {
+      const model = input.models?.find((model) => model.measures.length);
+      if (!model) return { reason: t("noModels") };
+      return {
+        widget: {
+          type,
+          title: null,
+          binding: {
+            modelId: model.modelId,
+            measureIds: [model.measures[0]!.id],
+            groupBy: [],
+            exclusions: [],
+          },
+          options: { view: "value", limit: 20 },
+        },
+      };
+    }
     case "metric":
     case "line": {
       const metric = startingMetrics(input.metrics)[0];

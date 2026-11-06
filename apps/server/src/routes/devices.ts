@@ -43,6 +43,7 @@ import { createRequireSession } from "./session.js";
 // HTTP layer for devices and pairing (ADR 0010, ADR 0011).
 
 export interface DeviceRouteDeps {
+  dataPolicy?: import("@netrics/domain").DataPolicy;
   authService: AuthService;
   db: Database;
   pairingUrl: string;

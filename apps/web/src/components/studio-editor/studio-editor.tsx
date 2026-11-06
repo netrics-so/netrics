@@ -1,4 +1,8 @@
 "use client";
+import { DashboardDataProvider } from "@/components/studio/dashboard-data-provider";
+import { usePublishedModels } from "@/lib/use-published-models";
+import { SharedFilterEditor } from "./shared-filters";
+import { DashboardFilters } from "@/components/studio/shared-filters";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -161,11 +165,19 @@ export function StudioEditor({
   canCreateGoals?: boolean;
 }) {
   const locale = useLocale();
+  const dataText = useT("data.dashboard");
+  const catalog = usePublishedModels(workspaceId);
+  const [filterValues, setFilterValues] = useState<
+    Record<string, import("@netrics/domain").DashboardFilterValue>
+  >({});
   const t = useT("studio.editor");
   const formatsT = useT("studio.formats");
   const targetName = useTargetName();
   const common = useT("common");
   const router = useRouter();
+  const [formulaDrafts, setFormulaDrafts] = useState<Record<string, string>>(
+    {},
+  );
   const [state, dispatch] = useReducer(reducer, dashboard, (initial) =>
     initialStudioState(initial, locale),
   );
@@ -208,7 +220,12 @@ export function StudioEditor({
   /** A new widget dragged from the add menu over the canvas (#241). */
   const [incoming, setIncoming] = useState<CanvasOutline | null>(null);
 
-  const dirty = isDirty(state);
+  const pendingFormulaIds = Object.keys(formulaDrafts).filter((id) =>
+    state.draft.slides.some((slide) =>
+      slide.widgets.some((widget) => widget.id === id),
+    ),
+  );
+  const dirty = isDirty(state) || pendingFormulaIds.length > 0;
   useLeaveGuard(dirty);
 
   const { draft } = state;
@@ -314,6 +331,8 @@ export function StudioEditor({
   const env: StudioEnv = useMemo(
     () => ({
       workspaceId,
+      dataFilters: draft.settings.dataFilters ?? [],
+      filterValues,
       timeZone,
       fontScale: theme.tokens.fontScale,
       showHeader: draft.settings.showHeader,
@@ -326,6 +345,8 @@ export function StudioEditor({
       timeZone,
       theme.tokens.fontScale,
       draft.settings.showHeader,
+      draft.settings.dataFilters,
+      filterValues,
       metricsById,
       connections,
       studioImages,
@@ -464,6 +485,16 @@ export function StudioEditor({
   const save = useCallback(
     async (rebaseTo?: ScreenFormat) => {
       if (saving) return;
+      if (
+        Object.keys(formulaDrafts).some((id) =>
+          state.draft.slides.some((slide) =>
+            slide.widgets.some((widget) => widget.id === id),
+          ),
+        )
+      ) {
+        setError(dataText("applyBeforeSave"));
+        return;
+      }
       if (problems.length > 0) {
         setShowProblems(true);
         setError(t("fixProblems"));
@@ -497,7 +528,17 @@ export function StudioEditor({
         setSaving(false);
       }
     },
-    [saving, problems, workspaceId, state, locale, t, formatsT],
+    [
+      formulaDrafts,
+      dataText,
+      saving,
+      problems,
+      workspaceId,
+      state,
+      locale,
+      t,
+      formatsT,
+    ],
   );
 
   async function reloadSaved() {
@@ -508,6 +549,7 @@ export function StudioEditor({
         state.dashboardId,
       );
       dispatch({ type: "reload", dashboard: current });
+      setFormulaDrafts({});
       setSavedSlides(current.slides);
       setConflict(false);
       setError(null);
@@ -519,6 +561,10 @@ export function StudioEditor({
   }
 
   async function saveAsCopy() {
+    if (pendingFormulaIds.length) {
+      setError(dataText("applyBeforeSave"));
+      return;
+    }
     setSaving(true);
     try {
       const { dashboard: copy } = await createDashboard(
@@ -636,426 +682,473 @@ export function StudioEditor({
   }
 
   return (
-    <div className="studio">
-      <header className="studio-toolbar">
-        <div className="studio-title">
-          <nav className="studio-breadcrumb" aria-label={t("breadcrumb")}>
-            <Link href={workspacePath(workspaceId, "dashboards")}>
-              {t("dashboards")}
-            </Link>
-          </nav>
-          <h1>{draft.name.trim() || t("untitled")}</h1>
-          <span
-            className={
-              dirty ? "studio-state studio-state--dirty" : "studio-state"
-            }
-          >
-            {saving ? common("saving") : dirty ? t("unsaved") : t("saved")}
-          </span>
-          {dirty ? null : <FormatAttention slides={savedSlides} />}
-        </div>
-        <div className="studio-actions">
-          {liveScreens ? <LiveIndicator screens={liveScreens} /> : null}
-          <div
-            className="studio-history"
-            role="group"
-            aria-label={t("history")}
-          >
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => dispatch({ type: "undo" })}
-              disabled={state.past.length === 0}
-              aria-keyshortcuts="Control+Z Meta+Z"
-              aria-label={t("undo")}
-              title={t("undo")}
+    <DashboardDataProvider
+      workspaceId={workspaceId}
+      widgets={draft.slides.flatMap((slide) => slide.widgets)}
+      filters={draft.settings.dataFilters ?? []}
+      values={filterValues}
+    >
+      <div className="studio">
+        <header className="studio-toolbar">
+          <div className="studio-title">
+            <nav className="studio-breadcrumb" aria-label={t("breadcrumb")}>
+              <Link href={workspacePath(workspaceId, "dashboards")}>
+                {t("dashboards")}
+              </Link>
+            </nav>
+            <h1>{draft.name.trim() || t("untitled")}</h1>
+            <span
+              className={
+                dirty ? "studio-state studio-state--dirty" : "studio-state"
+              }
             >
-              ↶
-            </button>
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => dispatch({ type: "redo" })}
-              disabled={state.future.length === 0}
-              aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
-              aria-label={t("redo")}
-              title={t("redo")}
-            >
-              ↷
-            </button>
-            <button
-              type="button"
-              className="studio-discard"
-              onClick={() => {
-                if (window.confirm(t("discardConfirm"))) {
-                  dispatch({ type: "discard" });
-                  setError(null);
-                  setShowProblems(false);
-                }
-              }}
-              disabled={!dirty || saving}
-            >
-              {t("discard")}
-            </button>
+              {saving ? common("saving") : dirty ? t("unsaved") : t("saved")}
+            </span>
+            {dirty ? null : <FormatAttention slides={savedSlides} />}
           </div>
-          <button type="button" onClick={() => setPlaying(true)}>
-            ▶ {t("play")}
-          </button>
-          {activeDevices ? (
-            <button type="button" onClick={() => setAssigning(true)}>
-              {assignedCount > 0
-                ? t("showOnTvsCount", { count: assignedCount })
-                : t("showOnTvs")}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="primary"
-            onClick={() => void save()}
-            disabled={!dirty || saving}
-            aria-keyshortcuts="Control+S Meta+S"
-          >
-            {saving ? common("saving") : common("save")}
-          </button>
-        </div>
-      </header>
-
-      {conflict ? (
-        <div className="error studio-banner" role="alert">
-          <p>{t("conflict")}</p>
-          <div className="actions">
-            <button
-              type="button"
-              onClick={() => {
-                if (!dirty || window.confirm(t("loadTheirsConfirm"))) {
-                  void reloadSaved();
-                }
-              }}
-              disabled={saving}
+          <div className="studio-actions">
+            {liveScreens ? <LiveIndicator screens={liveScreens} /> : null}
+            <div
+              className="studio-history"
+              role="group"
+              aria-label={t("history")}
             >
-              {t("loadTheirs")}
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => dispatch({ type: "undo" })}
+                disabled={state.past.length === 0}
+                aria-keyshortcuts="Control+Z Meta+Z"
+                aria-label={t("undo")}
+                title={t("undo")}
+              >
+                ↶
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => dispatch({ type: "redo" })}
+                disabled={state.future.length === 0}
+                aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
+                aria-label={t("redo")}
+                title={t("redo")}
+              >
+                ↷
+              </button>
+              <button
+                type="button"
+                className="studio-discard"
+                onClick={() => {
+                  if (window.confirm(t("discardConfirm"))) {
+                    dispatch({ type: "discard" });
+                    setFormulaDrafts({});
+                    setError(null);
+                    setShowProblems(false);
+                  }
+                }}
+                disabled={!dirty || saving}
+              >
+                {t("discard")}
+              </button>
+            </div>
+            <button type="button" onClick={() => setPlaying(true)}>
+              ▶ {t("play")}
             </button>
+            {activeDevices ? (
+              <button type="button" onClick={() => setAssigning(true)}>
+                {assignedCount > 0
+                  ? t("showOnTvsCount", { count: assignedCount })
+                  : t("showOnTvs")}
+              </button>
+            ) : null}
             <button
               type="button"
               className="primary"
-              onClick={() => void saveAsCopy()}
-              disabled={saving}
+              onClick={() => void save()}
+              disabled={!dirty || saving}
+              aria-keyshortcuts="Control+S Meta+S"
             >
-              {t("saveCopy")}
+              {saving ? common("saving") : common("save")}
             </button>
           </div>
-        </div>
-      ) : null}
-      {error ? (
-        <div className="error studio-banner" role="alert">
-          <p>{error}</p>
-          {showProblems && problems.length > 0 ? (
-            <ul>
-              {problems.map((problem, index) => (
-                <li key={index}>
-                  {problem.slideId ? (
-                    <button
-                      type="button"
-                      className="link-button"
-                      onClick={() => {
-                        dispatch({
-                          type: "selectSlide",
-                          slideId: problem.slideId!,
-                        });
-                        if (problem.widgetId) {
-                          dispatch({
-                            type: "selectWidget",
-                            widgetId: problem.widgetId,
-                          });
-                        }
-                      }}
-                    >
-                      {problem.message}
-                    </button>
-                  ) : (
-                    problem.message
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
+        </header>
 
-      <div className="studio-body" inert={saving}>
-        <SlideRail
-          slides={draft.slides}
-          primaryFormat={primaryFormat}
-          selectedSlideId={slide?.id ?? ""}
-          tokens={theme.tokens}
-          defaultSeconds={draft.settings.defaultSlideSeconds}
-          slidesWithProblems={slidesWithProblems}
-          unreadableCounts={unreadable.perSlide}
-          dispatch={dispatch}
-          onRequestDelete={setConfirmDeleteSlide}
-        >
-          {slide && editing && customFormat === null ? (
-            <AddWidgetMenu
-              document={draft}
-              slide={slide}
-              metrics={metrics}
-              imageIds={images.map((image) => image.id)}
-              goals={goals}
-              reviewConnectionIds={reviewConnectionIds(connections)}
-              dispatch={dispatch}
-              showHeader={draft.settings.showHeader}
-              primaryFormat={primaryFormat}
-              onDragNew={setIncoming}
-            />
-          ) : null}
-        </SlideRail>
-        <section className="studio-stage" aria-label={t("stage")}>
-          {slide ? (
-            <>
-              <FormatSwitcher
-                statuses={statuses}
-                selected={formatView.target}
-                overview={formatView.overview}
-                panelId={stagePanelId}
-                onSelect={selectTarget}
-                onOverview={(on) => {
-                  formatDispatch({ type: "overview", on });
-                  if (on) {
-                    dispatch({
-                      type: "announce",
-                      text: formatsT("announceOverview"),
-                    });
-                  } else {
-                    announceTarget(formatView.target);
+        {conflict ? (
+          <div className="error studio-banner" role="alert">
+            <p>{t("conflict")}</p>
+            <div className="actions">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!dirty || window.confirm(t("loadTheirsConfirm"))) {
+                    void reloadSaved();
                   }
                 }}
+                disabled={saving}
+              >
+                {t("loadTheirs")}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void saveAsCopy()}
+                disabled={saving}
+              >
+                {t("saveCopy")}
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {error ? (
+          <div className="error studio-banner" role="alert">
+            <p>{error}</p>
+            {showProblems && problems.length > 0 ? (
+              <ul>
+                {problems.map((problem, index) => (
+                  <li key={index}>
+                    {problem.slideId ? (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => {
+                          dispatch({
+                            type: "selectSlide",
+                            slideId: problem.slideId!,
+                          });
+                          if (problem.widgetId) {
+                            dispatch({
+                              type: "selectWidget",
+                              widgetId: problem.widgetId,
+                            });
+                          }
+                        }}
+                      >
+                        {problem.message}
+                      </button>
+                    ) : (
+                      problem.message
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+
+        {catalog.error ? (
+          <p className="error" role="status">
+            {dataText("catalogFailed")}{" "}
+            <button type="button" onClick={catalog.retry}>
+              {dataText("retry")}
+            </button>
+          </p>
+        ) : null}
+        <DashboardFilters
+          workspaceId={workspaceId}
+          filters={draft.settings.dataFilters ?? []}
+          values={filterValues}
+          onChange={setFilterValues}
+        />
+        <div className="studio-body" inert={saving}>
+          <SlideRail
+            slides={draft.slides}
+            primaryFormat={primaryFormat}
+            selectedSlideId={slide?.id ?? ""}
+            tokens={theme.tokens}
+            defaultSeconds={draft.settings.defaultSlideSeconds}
+            slidesWithProblems={slidesWithProblems}
+            unreadableCounts={unreadable.perSlide}
+            dispatch={dispatch}
+            onRequestDelete={setConfirmDeleteSlide}
+          >
+            {slide && editing && customFormat === null ? (
+              <AddWidgetMenu
+                models={catalog.models}
+                document={draft}
+                slide={slide}
+                metrics={metrics}
+                imageIds={images.map((image) => image.id)}
+                goals={goals}
+                reviewConnectionIds={reviewConnectionIds(connections)}
+                dispatch={dispatch}
+                showHeader={draft.settings.showHeader}
+                primaryFormat={primaryFormat}
+                onDragNew={setIncoming}
               />
-              {formatView.overview ? (
-                <FormatOverview
-                  context={previewContext}
-                  view={formatView}
+            ) : null}
+          </SlideRail>
+          <section className="studio-stage" aria-label={t("stage")}>
+            {slide ? (
+              <>
+                <FormatSwitcher
                   statuses={statuses}
-                  slideId={slide.id}
+                  selected={formatView.target}
+                  overview={formatView.overview}
                   panelId={stagePanelId}
-                  onOpen={selectTarget}
-                />
-              ) : customFormat ? (
-                <CustomFormatEditor
-                  slide={slide}
-                  format={customFormat}
-                  primaryFormat={primaryFormat}
-                  page={formatView.page}
-                  document={draft}
-                  settings={draft.settings}
-                  tokens={theme.tokens}
-                  env={env}
-                  selectedWidgetId={state.selectedWidgetId}
-                  widgetsWithProblems={widgetsWithProblems}
-                  warnings={draftWarnings}
-                  panelId={stagePanelId}
-                  dispatch={dispatch}
-                  onPage={(page) => {
-                    formatDispatch({ type: "page", page });
-                    announceTarget(formatView.target, page);
+                  onSelect={selectTarget}
+                  onOverview={(on) => {
+                    formatDispatch({ type: "overview", on });
+                    if (on) {
+                      dispatch({
+                        type: "announce",
+                        text: formatsT("announceOverview"),
+                      });
+                    } else {
+                      announceTarget(formatView.target);
+                    }
                   }}
-                  makePrimary={makePrimary}
                 />
-              ) : editing ? (
-                <div
-                  id={stagePanelId}
-                  role="tabpanel"
-                  aria-labelledby={`${stagePanelId}-tab-${formatView.target}`}
-                  className="format-editor"
-                >
-                  <CanvasHead
-                    number={slideIndex + 1}
-                    name={slide.name?.trim() || null}
-                    format={primaryFormat}
-                    hasProblems={slidesWithProblems.has(slide.id)}
-                    cutOff={unreadable.perSlide.get(slide.id) ?? 0}
+                {formatView.overview ? (
+                  <FormatOverview
+                    context={previewContext}
+                    view={formatView}
+                    statuses={statuses}
+                    slideId={slide.id}
+                    panelId={stagePanelId}
+                    onOpen={selectTarget}
                   />
-                  <EditorCanvas
+                ) : customFormat ? (
+                  <CustomFormatEditor
                     slide={slide}
-                    dashboardName={draft.name}
+                    format={customFormat}
+                    primaryFormat={primaryFormat}
+                    page={formatView.page}
+                    document={draft}
                     settings={draft.settings}
                     tokens={theme.tokens}
                     env={env}
                     selectedWidgetId={state.selectedWidgetId}
                     widgetsWithProblems={widgetsWithProblems}
+                    warnings={draftWarnings}
+                    panelId={stagePanelId}
                     dispatch={dispatch}
-                    unreadable={unreadable.byWidget}
-                    incoming={incoming}
-                    primaryFormat={primaryFormat}
-                    format={primaryFormat}
+                    onPage={(page) => {
+                      formatDispatch({ type: "page", page });
+                      announceTarget(formatView.target, page);
+                    }}
+                    makePrimary={makePrimary}
                   />
-                  <StatusLine
-                    themeName={
-                      theme.builtin
-                        ? builtinThemeName(theme.builtin, locale)
-                        : theme.name
-                    }
-                    accent={theme.tokens.accent}
-                    showHeader={draft.settings.showHeader}
+                ) : editing ? (
+                  <div
+                    id={stagePanelId}
+                    role="tabpanel"
+                    aria-labelledby={`${stagePanelId}-tab-${formatView.target}`}
+                    className="format-editor"
                   >
-                    <WidgetClipboardBar
-                      selected={widget}
-                      clipboard={widgetClipboard.clipboard}
-                      onCopy={widgetClipboard.copy}
-                      onPaste={widgetClipboard.paste}
-                      onDuplicate={widgetClipboard.duplicate}
+                    <CanvasHead
+                      number={slideIndex + 1}
+                      name={slide.name?.trim() || null}
+                      format={primaryFormat}
+                      hasProblems={slidesWithProblems.has(slide.id)}
+                      cutOff={unreadable.perSlide.get(slide.id) ?? 0}
                     />
-                  </StatusLine>
-                </div>
-              ) : (
-                <FormatPreview
-                  context={previewContext}
-                  view={formatView}
-                  status={currentStatus}
-                  slideId={slide.id}
-                  warnings={draftWarnings}
-                  panelId={stagePanelId}
-                  onDevice={(device: PreviewDeviceId) => {
-                    formatDispatch({ type: "device", device });
-                    if (formatView.target === "scroll") {
-                      dispatch({
-                        type: "announce",
-                        text: formatsT("announceScroll", {
-                          device: formatsT(`device.${device}`),
-                        }),
-                      });
+                    <EditorCanvas
+                      slide={slide}
+                      dashboardName={draft.name}
+                      settings={draft.settings}
+                      tokens={theme.tokens}
+                      env={env}
+                      selectedWidgetId={state.selectedWidgetId}
+                      widgetsWithProblems={widgetsWithProblems}
+                      dispatch={dispatch}
+                      unreadable={unreadable.byWidget}
+                      incoming={incoming}
+                      primaryFormat={primaryFormat}
+                      format={primaryFormat}
+                    />
+                    <StatusLine
+                      themeName={
+                        theme.builtin
+                          ? builtinThemeName(theme.builtin, locale)
+                          : theme.name
+                      }
+                      accent={theme.tokens.accent}
+                      showHeader={draft.settings.showHeader}
+                    >
+                      <WidgetClipboardBar
+                        selected={widget}
+                        clipboard={widgetClipboard.clipboard}
+                        onCopy={widgetClipboard.copy}
+                        onPaste={widgetClipboard.paste}
+                        onDuplicate={widgetClipboard.duplicate}
+                      />
+                    </StatusLine>
+                  </div>
+                ) : (
+                  <FormatPreview
+                    context={previewContext}
+                    view={formatView}
+                    status={currentStatus}
+                    slideId={slide.id}
+                    warnings={draftWarnings}
+                    panelId={stagePanelId}
+                    onDevice={(device: PreviewDeviceId) => {
+                      formatDispatch({ type: "device", device });
+                      if (formatView.target === "scroll") {
+                        dispatch({
+                          type: "announce",
+                          text: formatsT("announceScroll", {
+                            device: formatsT(`device.${device}`),
+                          }),
+                        });
+                      }
+                    }}
+                    onPage={(page) => {
+                      formatDispatch({ type: "page", page });
+                      announceTarget(formatView.target, page);
+                    }}
+                    onShowWarning={showWarning}
+                    actions={
+                      formatView.target === "scroll" ? null : (
+                        <>
+                          <button
+                            type="button"
+                            title={formatsT("customizeHelp", {
+                              ratio: formatRatio(formatView.target),
+                              primary: formatRatio(primaryFormat),
+                            })}
+                            onClick={() => {
+                              dispatch({
+                                type: "customizeFormat",
+                                slideId: slide.id,
+                                format: formatView.target as ScreenFormat,
+                              });
+                              formatDispatch({ type: "page", page: 0 });
+                            }}
+                          >
+                            {formatsT("customize")}
+                          </button>
+                          {makePrimary}
+                        </>
+                      )
                     }
-                  }}
-                  onPage={(page) => {
-                    formatDispatch({ type: "page", page });
-                    announceTarget(formatView.target, page);
-                  }}
-                  onShowWarning={showWarning}
-                  actions={
-                    formatView.target === "scroll" ? null : (
-                      <>
-                        <button
-                          type="button"
-                          title={formatsT("customizeHelp", {
-                            ratio: formatRatio(formatView.target),
-                            primary: formatRatio(primaryFormat),
-                          })}
-                          onClick={() => {
-                            dispatch({
-                              type: "customizeFormat",
-                              slideId: slide.id,
-                              format: formatView.target as ScreenFormat,
-                            });
-                            formatDispatch({ type: "page", page: 0 });
-                          }}
-                        >
-                          {formatsT("customize")}
-                        </button>
-                        {makePrimary}
-                      </>
-                    )
-                  }
-                />
-              )}
-            </>
-          ) : null}
-        </section>
-        <aside className="studio-inspector" aria-label={t("inspector")}>
-          {widget && customFormat ? (
-            <p className="help format-scope-note">
-              {formatsT("contentEverywhere", {
-                ratio: formatRatio(customFormat),
-              })}
-            </p>
-          ) : null}
-          {widget ? (
-            <WidgetPanel
-              widget={widget}
-              workspaceId={workspaceId}
-              metrics={metrics}
-              images={pickable}
-              imagesInUse={imagesInUse}
-              problems={widgetProblems}
-              timeZone={timeZone}
-              fontScale={theme.tokens.fontScale}
-              showHeader={draft.settings.showHeader}
-              placement={formatPlacement}
-              unreadable={unreadable.byWidget.get(widget.id)}
-              currency={currency}
-              connections={connections}
-              dispatch={dispatch}
-              onUploadImage={onUploadImage}
-              onDeleteImage={onDeleteImage}
-              goals={goals}
-              canCreateGoals={canCreateGoals}
-              onGoalCreated={onGoalCreated}
-            />
-          ) : (
-            <>
-              {slide ? (
-                <SlideSettings
-                  slides={draft.slides}
-                  selectedSlideId={slide.id}
-                  defaultSeconds={draft.settings.defaultSlideSeconds}
-                  images={pickable}
-                  dispatch={dispatch}
-                  onUploadImage={onUploadImage}
-                  confirmDelete={confirmDeleteSlide}
-                  onConfirmDelete={setConfirmDeleteSlide}
-                />
-              ) : null}
-              <DashboardSettingsPanel
-                document={draft}
-                themes={themes}
-                baseTokens={baseTheme.tokens}
-                projects={projects}
+                  />
+                )}
+              </>
+            ) : null}
+          </section>
+          <aside className="studio-inspector" aria-label={t("inspector")}>
+            {widget && customFormat ? (
+              <p className="help format-scope-note">
+                {formatsT("contentEverywhere", {
+                  ratio: formatRatio(customFormat),
+                })}
+              </p>
+            ) : null}
+            {widget ? (
+              <WidgetPanel
+                widget={widget}
+                filterDraft={formulaDrafts[widget.id]}
+                onFilterDraftChange={(value) => {
+                  if (value === undefined) setError(null);
+                  setFormulaDrafts((drafts) => {
+                    const next = { ...drafts };
+                    if (value === undefined) delete next[widget.id];
+                    else next[widget.id] = value;
+                    return next;
+                  });
+                }}
+                models={catalog.models}
+                dataFilters={draft.settings.dataFilters ?? []}
+                workspaceId={workspaceId}
+                metrics={metrics}
                 images={pickable}
-                problems={dashboardProblems}
-                themesHref={`/workspaces/${workspaceId}/settings/themes`}
+                imagesInUse={imagesInUse}
+                problems={widgetProblems}
+                timeZone={timeZone}
+                fontScale={theme.tokens.fontScale}
+                showHeader={draft.settings.showHeader}
+                placement={formatPlacement}
+                unreadable={unreadable.byWidget.get(widget.id)}
+                currency={currency}
+                connections={connections}
                 dispatch={dispatch}
                 onUploadImage={onUploadImage}
+                onDeleteImage={onDeleteImage}
+                goals={goals}
+                canCreateGoals={canCreateGoals}
+                onGoalCreated={onGoalCreated}
               />
-            </>
-          )}
-        </aside>
-      </div>
+            ) : (
+              <>
+                {slide ? (
+                  <SlideSettings
+                    slides={draft.slides}
+                    selectedSlideId={slide.id}
+                    defaultSeconds={draft.settings.defaultSlideSeconds}
+                    images={pickable}
+                    dispatch={dispatch}
+                    onUploadImage={onUploadImage}
+                    confirmDelete={confirmDeleteSlide}
+                    onConfirmDelete={setConfirmDeleteSlide}
+                  />
+                ) : null}
+                <SharedFilterEditor
+                  workspaceId={workspaceId}
+                  filters={draft.settings.dataFilters ?? []}
+                  models={catalog.models}
+                  onChange={(dataFilters) => {
+                    setFilterValues({});
+                    dispatch({
+                      type: "updateSettings",
+                      patch: { dataFilters },
+                    });
+                  }}
+                />
+                <DashboardSettingsPanel
+                  document={draft}
+                  themes={themes}
+                  baseTokens={baseTheme.tokens}
+                  projects={projects}
+                  images={pickable}
+                  problems={dashboardProblems}
+                  themesHref={`/workspaces/${workspaceId}/settings/themes`}
+                  dispatch={dispatch}
+                  onUploadImage={onUploadImage}
+                />
+              </>
+            )}
+          </aside>
+        </div>
 
-      <div className="visually-hidden" aria-live="polite" aria-atomic="true">
-        {state.announcement ? (
-          <span key={state.announcement.id}>{state.announcement.text}</span>
+        <div className="visually-hidden" aria-live="polite" aria-atomic="true">
+          {state.announcement ? (
+            <span key={state.announcement.id}>{state.announcement.text}</span>
+          ) : null}
+        </div>
+
+        {playing && slide ? (
+          <PlayMode
+            document={draft}
+            tokens={theme.tokens}
+            env={env}
+            primaryFormat={primaryFormat}
+            layouts={draftLayouts}
+            startSlideId={slide.id}
+            onClose={stopPlaying}
+          />
+        ) : null}
+        {activeDevices ? (
+          <AssignTvs
+            open={assigning}
+            workspaceId={workspaceId}
+            dashboardId={state.dashboardId}
+            dashboardName={state.saved.name}
+            devices={activeDevices}
+            dashboardNames={new Map(Object.entries(dashboardNames))}
+            unsaved={dirty}
+            onClose={() => setAssigning(false)}
+            onAssigned={(updated) =>
+              setDevices((current) =>
+                (current ?? []).map(
+                  (device) =>
+                    updated.find((other) => other.id === device.id) ?? device,
+                ),
+              )
+            }
+          />
         ) : null}
       </div>
-
-      {playing && slide ? (
-        <PlayMode
-          document={draft}
-          tokens={theme.tokens}
-          env={env}
-          primaryFormat={primaryFormat}
-          layouts={draftLayouts}
-          startSlideId={slide.id}
-          onClose={stopPlaying}
-        />
-      ) : null}
-      {activeDevices ? (
-        <AssignTvs
-          open={assigning}
-          workspaceId={workspaceId}
-          dashboardId={state.dashboardId}
-          dashboardName={state.saved.name}
-          devices={activeDevices}
-          dashboardNames={new Map(Object.entries(dashboardNames))}
-          unsaved={dirty}
-          onClose={() => setAssigning(false)}
-          onAssigned={(updated) =>
-            setDevices((current) =>
-              (current ?? []).map(
-                (device) =>
-                  updated.find((other) => other.id === device.id) ?? device,
-              ),
-            )
-          }
-        />
-      ) : null}
-    </div>
+    </DashboardDataProvider>
   );
 }

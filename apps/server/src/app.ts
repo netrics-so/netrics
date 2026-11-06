@@ -197,7 +197,12 @@ export async function buildApp(
     exchangeRates: config.exchangeRates,
     ...(deps.now ? { now: deps.now } : {}),
   });
-  registerDashboardRoutes(app, { authService, db });
+  registerDashboardRoutes(app, {
+    authService,
+    db,
+    policy: config.dataPolicy,
+    ...(deps.now ? { now: deps.now } : {}),
+  });
   registerDataRoutes(app, {
     authService,
     db,
@@ -213,6 +218,7 @@ export async function buildApp(
   });
   registerImageRoutes(app, { authService, db, quota: config.imageQuota });
   registerDeviceRoutes(app, {
+    dataPolicy: config.dataPolicy,
     authService,
     db,
     pairingUrl: config.pairingUrl,

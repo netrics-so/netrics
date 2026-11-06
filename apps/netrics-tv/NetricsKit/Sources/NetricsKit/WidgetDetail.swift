@@ -65,7 +65,7 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
     /** Whether a widget has a detail sheet: the widgets with numbers. */
     public static func available(_ widget: DeviceWidget) -> Bool {
         switch widget.content {
-        case .metric, .line, .bar, .table, .status, .compare, .gauge, .review: return true
+        case .metric, .line, .bar, .table, .status, .compare, .gauge, .review, .measure: return true
         case .image, .text, .clock, .countdown, .unsupported: return false
         }
     }
@@ -134,6 +134,17 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
         }
 
         switch widget.content {
+        case .measure(let measures, let groups, _, let data):
+            guard !data.expired(at: now) else { return detail([], fallbackTitle: widget.type) }
+            let items = (data.result?.rows ?? []).flatMap { row in
+                measures.map { id in
+                    let name = data.metadata?.measures.first { $0.id == id }?.name ?? id
+                    let group = groups.map { row.dimensions[$0]?.text(language: language) ?? "—" }.joined(separator: " · ")
+                    return Item(label: group.isEmpty ? name : "\(group) · \(name)", value: row.measures[id]?.text(language: language) ?? "—")
+                }
+            }
+            return detail([], items: items, text: data.scope?.joined(separator: "\n"), fallbackTitle: data.metadata?.modelName ?? widget.type)
+
         case .metric(_, let data):
             return detail(
                 [

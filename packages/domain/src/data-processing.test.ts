@@ -546,3 +546,52 @@ describe("aggregate semantics", () => {
     ).toThrow("aggregate_latest_ambiguous");
   });
 });
+
+describe("typed list membership", () => {
+  it("compares exact decimals and preserves null membership semantics", () => {
+    const make = (value: unknown) =>
+      compileRowExpression(
+        call("in", field("amount"), lit("json", value)),
+        fields,
+      );
+    expect(
+      make(["9007199254740993.1"]).evaluate({ amount: "9007199254740993.10" })
+        .value,
+    ).toBe(true);
+    expect(make(["1", null]).evaluate({ amount: "2" }).value).toBeNull();
+    expect(make(["1"]).evaluate({ amount: null }).value).toBeNull();
+    expect(() => make([1]).evaluate({ amount: "1" })).toThrow(
+      "decimal_invalid",
+    );
+    expect(() => make({ one: "1" }).evaluate({ amount: "1" })).toThrow(
+      "expression_list_required",
+    );
+  });
+});
+
+it("requires exact decimal or integer monetary literals", () => {
+  expect(() =>
+    compileRowExpression(
+      {
+        kind: "literal",
+        type: "number",
+        value: 0.1,
+        unit: "currency",
+        currency: "EUR",
+      },
+      [],
+    ),
+  ).toThrow("expression_monetary_float_unsupported");
+  expect(
+    compileRowExpression(
+      {
+        kind: "literal",
+        type: "decimal",
+        value: "0.1",
+        unit: "currency",
+        currency: "EUR",
+      },
+      [],
+    ).evaluate({}).value,
+  ).toBe("0.1");
+});

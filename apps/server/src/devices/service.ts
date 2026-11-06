@@ -29,6 +29,7 @@ import {
   countRecentPairings,
   findDashboard,
   findDashboardVersion,
+  dashboardHasModelWidgets,
   findDevice,
   findPendingPairing,
   findWorkspace,
@@ -192,6 +193,7 @@ export const MAX_DEVICE_ERROR_LENGTH = 500;
 
 export interface DeviceServiceDeps {
   db: Database;
+  dataPolicy?: import("@netrics/domain").DataPolicy;
   pairingUrl: string;
   now?: () => Date;
   /** NETRICS_EXCHANGE_RATES: display-currency conversion (#191). */
@@ -604,72 +606,89 @@ export function createDeviceService(deps: DeviceServiceDeps) {
       schema: DeviceDashboardSchema = 1,
     ): Promise<Result<DeviceDashboardPayload>> {
       const { workspaceId } = principal;
-      return withWorkspace(db, { workspaceId }, async (tx) => {
-        const device = await findDevice(tx, workspaceId, principal.deviceId);
-        if (!device || device.revokedAt) {
-          return fail<DeviceDashboardPayload>(401, "unauthorized");
-        }
-        const workspace = await findWorkspace(tx, workspaceId);
-        const locale = resolveLocale([
-          workspace?.screenLocale,
-          deps.defaultLocale,
-        ]);
-        const keyring = deps.credentialKeyring;
-        const options = {
-          now: now(),
-          locale,
-          exchangeRates: deps.exchangeRates ?? false,
-          ...(log ? { log } : {}),
-          ...(keyring
-            ? {
-                reviewsKey: (row: Parameters<typeof storedReviewsKey>[0]) =>
-                  storedReviewsKey(row, keyring),
-              }
-            : {}),
-        };
-        const build = (): Promise<
-          | DeviceDashboardResponse
-          | DeviceDashboardV2Response
-          | DeviceDashboardV3Content
-        > =>
-          schema === 3
-            ? buildDeviceDashboardV3(
-                tx,
-                workspaceId,
-                device.dashboardId,
-                options,
-              )
-            : schema === 2
-              ? buildDeviceDashboardV2(
+      return withWorkspace(
+        db,
+        { workspaceId },
+        async (tx) => {
+          const device = await findDevice(tx, workspaceId, principal.deviceId);
+          if (!device || device.revokedAt) {
+            return fail<DeviceDashboardPayload>(401, "unauthorized");
+          }
+          const workspace = await findWorkspace(tx, workspaceId);
+          const locale = resolveLocale([
+            workspace?.screenLocale,
+            deps.defaultLocale,
+          ]);
+          const keyring = deps.credentialKeyring;
+          const options = {
+            now: now(),
+            locale,
+            exchangeRates: deps.exchangeRates ?? false,
+            ...(deps.dataPolicy ? { dataPolicy: deps.dataPolicy } : {}),
+            ...(log ? { log } : {}),
+            ...(keyring
+              ? {
+                  reviewsKey: (row: Parameters<typeof storedReviewsKey>[0]) =>
+                    storedReviewsKey(row, keyring),
+                }
+              : {}),
+          };
+          const build = (): Promise<
+            | DeviceDashboardResponse
+            | DeviceDashboardV2Response
+            | DeviceDashboardV3Content
+          > =>
+            schema === 3
+              ? buildDeviceDashboardV3(
                   tx,
                   workspaceId,
                   device.dashboardId,
                   options,
                 )
-              : buildDeviceDashboard(
-                  tx,
-                  workspaceId,
-                  device.dashboardId,
-                  options,
-                );
-        const version = device.dashboardId
-          ? await findDashboardVersion(tx, workspaceId, device.dashboardId)
-          : null;
-        const key = [
-          workspaceId,
-          device.dashboardId,
-          version,
-          schema,
-          locale,
-        ].join(":");
-        const payload =
-          version === null ? await build() : await payloads.get(key, build);
-        return ok<DeviceDashboardPayload>(
-          "schema" in payload && payload.schema === 3
-            ? withDevice(payload, deviceSettings(device))
-            : payload,
-        );
-      });
+              : schema === 2
+                ? buildDeviceDashboardV2(
+                    tx,
+                    workspaceId,
+                    device.dashboardId,
+                    options,
+                  )
+                : buildDeviceDashboard(
+                    tx,
+                    workspaceId,
+                    device.dashboardId,
+                    options,
+                  );
+          const version = device.dashboardId
+            ? await findDashboardVersion(tx, workspaceId, device.dashboardId)
+            : null;
+          const key = [
+            workspaceId,
+            device.dashboardId,
+            version,
+            schema,
+            locale,
+          ].join(":");
+          // Semantic payloads carry expiring source generations and live model releases.
+          // Bypass the legacy TTL cache until it can key and expire by the full source vector.
+          const semantic = device.dashboardId
+            ? await dashboardHasModelWidgets(
+                tx,
+                workspaceId,
+                device.dashboardId,
+              )
+            : false;
+          const payload =
+            version === null || semantic
+              ? await build()
+              : await payloads.get(key, build);
+          return ok<DeviceDashboardPayload>(
+            "schema" in payload && payload.schema === 3
+              ? withDevice(payload, deviceSettings(device))
+              : payload,
+          );
+        },
+        { isolationLevel: "repeatable read" },
+      );
     },
 
     /**

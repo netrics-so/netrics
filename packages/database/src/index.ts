@@ -158,6 +158,7 @@ export {
   deleteDashboard,
   findDashboard,
   findDashboardVersion,
+  dashboardHasModelWidgets,
   insertDashboard,
   listDashboards,
   metricWidgets,

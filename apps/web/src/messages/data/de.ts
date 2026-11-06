@@ -2,6 +2,96 @@ import type { Catalog } from "@netrics/domain";
 import type { dataEn } from "./en";
 export const dataDe: Catalog<typeof dataEn> = {
   data: {
+    dashboard: {
+      partialResult:
+        "Einige Quelldaten fehlen. Prüfe das Modell, bevor du dieses Ergebnis verwendest.",
+      done: "Fertig",
+      applyBeforeSave:
+        "Übernimm oder verwirf den offenen Widget-Filter, bevor du das Dashboard speicherst.",
+      discardFilter: "Filteränderungen verwerfen",
+      filterProblem:
+        "{name}: Ordne den Filter {filter} diesem Modell zu oder begründe, warum er hier nicht gilt.",
+      receivedAt: "Älteste Quellenaktualisierung: {at}",
+      browseValues: "Werte durchsuchen",
+      searchValues: "Verfügbare Werte suchen",
+      loadingValues: "Werte werden geladen…",
+      choicesFailed: "Verfügbare Werte konnten nicht geladen werden.",
+      noValues: "Keine passenden Werte.",
+      previousValues: "Vorherige Werte",
+      nextValues: "Weitere Werte",
+
+      shownRows: "{shown} von {total} Gruppen werden angezeigt.",
+      binding: "Veröffentlichte Kennzahl",
+      model: "Modell",
+      missingModel: "Modell nicht verfügbar",
+      publishedOnly:
+        "Verwendet die veröffentlichte Definition. Entwürfe wirken sich erst nach der Veröffentlichung aus.",
+      editModels: "Modelle bearbeiten",
+      view: "Darstellung",
+      measures: "Kennzahlen",
+      groupBy: "Gruppieren nach",
+      limit: "Maximale Zeilen",
+      widgetFilter: "Zusätzlicher Widget-Filter",
+      formulaPlaceholder: '[Land] = "DE"',
+      applyFilter: "Filter anwenden",
+      applicability: "Anwendbarkeit gemeinsamer Filter",
+      applicabilityHint:
+        "Deaktiviere Filter nur für unabhängige Ergebnisse und begründe es. Feste Bereiche gelten immer.",
+      independentTotal:
+        "Unabhängiger Gesamtwert; dieser Filter gilt hier nicht.",
+      exclusionReason: "Warum {name} hier nicht gilt",
+      sharedFilters: "Gemeinsame Filter",
+      sharedFiltersHint:
+        "Ordne jedem Filter eine passende Dimension je Modell zu. Widgets teilen diese Auswahl.",
+      filterNumber: "Filter {number}",
+      name: "Name",
+      type: "Werttyp",
+      control: "Bedienelement",
+      values: "Werte auswählen",
+      range: "Bereich",
+      mapModels: "Dimensionen je Modell",
+      notMapped: "Nicht zugeordnet",
+      defaultValue: "Standardauswahl",
+      fixedScope: "Fester Bereich",
+      fixedScopeHint:
+        "Gilt immer zusätzlich zur Auswahl der Betrachter, auch auf verbundenen Bildschirmen.",
+      removeFilter: "Filter entfernen",
+      addFilter: "Gemeinsamen Filter hinzufügen",
+      from: "Von",
+      to: "Bis (einschließlich)",
+      invalidValue: "Gib einen gültigen Wert für diesen Filter ein.",
+      removeValue: "{value} entfernen",
+      unmatched: "Nicht zugeordnet / fehlend",
+      yes: "Wahr",
+      no: "Falsch",
+      chooseValue: "Wert auswählen",
+      enterValue: "Wert eingeben",
+      addValue: "Hinzufügen",
+      allValues: "Alle Werte",
+      fixedScopeActive: "Zusätzlich gilt ein fester Bereich.",
+      resetFilters: "Filter zurücksetzen",
+      catalogFailed: "Veröffentlichte Modelle konnten nicht geladen werden.",
+      retry: "Erneut versuchen",
+      staleModel:
+        "Letzte gültige Daten werden angezeigt. Prüfe das Modell und seine Quellen.",
+      resultWarnings:
+        "{count, plural, one {# Datenhinweis. Prüfe die Modellvorschau.} other {# Datenhinweise. Prüfe die Modellvorschau.}}",
+      views: {
+        value: "Wert",
+        table: "Tabelle",
+        bar: "Balkendiagramm",
+        line: "Liniendiagramm",
+      },
+      types: {
+        string: "Text",
+        boolean: "Wahr / falsch",
+        date: "Berichtsdatum",
+        timestamp: "UTC-Zeitstempel",
+        integer: "Ganze Zahl",
+        decimal: "Exakte Dezimalzahl",
+        number: "Zahl",
+      },
+    },
     title: "Daten & Kennzahlen",
     subtitle:
       "Bereite deine Daten vor und definiere wiederverwendbare Kennzahlen.",

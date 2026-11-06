@@ -1,4 +1,6 @@
 "use client";
+import { MeasureFields } from "./measure-fields";
+import { FilterExclusions } from "./shared-filters";
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -150,6 +152,10 @@ export function positionLine(
 }
 
 export interface WidgetPanelProps {
+  filterDraft?: string;
+  onFilterDraftChange?: (value: string | undefined) => void;
+  models?: import("@netrics/contracts").PublishedModelCatalog["models"];
+  dataFilters?: import("@netrics/domain").DashboardDataFilter[];
   widget: DashboardWidget;
   workspaceId: string;
   metrics: readonly WorkspaceMetric[];
@@ -284,6 +290,26 @@ export function WidgetPanel(props: WidgetPanelProps) {
       {widget.type === "review" ? (
         <ReviewFields {...props} widget={widget} />
       ) : null}
+      {widget.type === "measure" ? (
+        <MeasureFields
+          key={widget.id}
+          widget={widget}
+          filterDraft={props.filterDraft}
+          onFilterDraftChange={props.onFilterDraftChange}
+          models={props.models ?? []}
+          filters={props.dataFilters ?? []}
+          workspaceId={props.workspaceId}
+          dispatch={dispatch}
+        />
+      ) : isDataWidgetType(widget.type) ||
+        widget.type === "gauge" ||
+        widget.type === "review" ? (
+        <FilterExclusions
+          filters={props.dataFilters ?? []}
+          exclusions={widget.filterExclusions ?? []}
+          onChange={(filterExclusions) => update({ filterExclusions })}
+        />
+      ) : null}
       <StyleFields {...props} />
 
       <div className="actions inspector-actions">
@@ -346,10 +372,12 @@ function TypeField({
   goals,
   dispatch,
   connections,
+  models,
 }: WidgetPanelProps) {
   const locale = useLocale();
   const t = useT("studio.widgetPanel");
   const context = {
+    models,
     metrics,
     imageIds: images.map((image) => image.id),
     locale,

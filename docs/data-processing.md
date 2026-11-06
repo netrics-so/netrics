@@ -2,9 +2,10 @@
 
 The architecture is [ADR 0022](./decisions/0022-reusable-data-model-and-processing.md).
 Implementation is tracked in [#439](https://github.com/netrics-so/netrics/issues/439).
-The dataset foundation, processing engine and first data authoring workspace
-are implemented in stacked draft pull requests. Dashboard integration and
-connector templates remain separate delivery gates.
+The dataset foundation, processing engine, data authoring workspace and first
+published-measure dashboard bindings are implemented in stacked draft pull
+requests. Advanced interactions and connector templates remain
+separate delivery work.
 
 ## Typed source datasets
 
@@ -245,10 +246,59 @@ and explicit version history/rollback controls remain tracked in
 [#442](https://github.com/netrics-so/netrics/issues/442). The engine already
 accepts multi-key joins and versioned definitions through the API.
 
+## Published measures on dashboards
+
+Studio includes a **Measure** widget with value, table, bar and time-series
+views. Bind it to a published model, select named measures and shared grouping
+dimensions, and optionally apply an additional typed formula filter. Boolean
+values remain boolean; exact money strings never pass through floating-point
+formatting. Minor-unit currencies use their ISO exponent. Unsafe chart
+magnitudes use a readable table instead of silently rounding the shown value.
+
+Dashboard settings define shared typed filters, their model/dimension mappings,
+defaults and optional fixed scopes. Viewers search available dimension values,
+select multiple values, choose date/numeric ranges, or reset to the saved
+defaults. Viewer choices are conjoined with fixed scope and widget predicates.
+Every affected model needs a mapping. Independent widgets require an explicit
+exclusion and explanation; fixed scopes cannot be excluded. Older observation
+widgets require explicit exclusions before a shared filter can be saved.
+
+`dashboards/published-models` exposes the published measure/dimension catalog
+without raw source fields or drafts. `dashboards/data/preview` evaluates unsaved
+widget bindings against published models only, and `dashboards/:id/data`
+evaluates saved bindings. Workspace authorization and forced RLS apply to each
+path. One dashboard request uses a repeatable-read transaction, with individual
+widget failures isolated by savepoints. Responses include release/generation
+identities, applied predicates, scope, source refresh time when known, expiry,
+warnings and explicit exclusions. Source refresh time describes ingestion, not
+the provider's reporting coverage or delay.
+
+Semantic queries support ordered result pages with `limit` and `offset`, up to
+1,000 groups per response. This bounds one response rather than the number of
+groups in a model. Each request pins its own current generations; clients that
+page a changing model must compare provenance and restart if it changes. An
+immutable cursor spanning several requests remains future work. Multi-select
+filters use typed list membership without growing a deep expression tree.
+
+Device schemas 2/3 include server-computed measure results. The shared native
+and browser renderers support values, tables and charts without calculating
+measures on the device; native cached payloads preserve decimal strings,
+publication/source identities and scope. Expired results are hidden offline.
+Semantic dashboards bypass the legacy device TTL cache so model publication,
+source corrections and retention changes are checked on each payload request.
+Existing observation dashboards keep their existing cache and payload behavior.
+Older native builds keep their existing unknown-widget fallback and need an
+update to display the new measure type.
+
+Chart-driven filter interactions, saving a compare widget as a reusable measure,
+advanced device-specific scope controls and remaining authoring/history work
+stay in [#443](https://github.com/netrics-so/netrics/issues/443) and the other
+milestone 11 gates. This first dashboard slice does not close that entire gate.
+
 The current executor evaluates typed JSONB rows in memory and materializes
 prepared outputs in JSONB. Removing policy ceilings does not yet provide a
 streaming or SQL execution path. Representative-volume checks and a scalable
 execution/storage path remain release work; this implementation does not claim
 a tested unbounded workload. Rolling/previous-period calculations, explicit
-rollback/history controls, advanced authoring controls, widget integration
+rollback/history controls, advanced authoring controls, dashboard interactions
 and connector templates remain tracked in milestone 11.

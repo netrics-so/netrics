@@ -1,4 +1,6 @@
 "use client";
+import { DashboardDataProvider } from "@/components/studio/dashboard-data-provider";
+import { DashboardFilters } from "@/components/studio/shared-filters";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -74,6 +76,9 @@ export function DashboardView({
   const router = useRouter();
   useServerRefresh();
   const [dashboard, setDashboard] = useState(initial);
+  const [filterValues, setFilterValues] = useState<
+    Record<string, import("@netrics/domain").DashboardFilterValue>
+  >({});
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useDisplayMode(initialMode);
@@ -92,6 +97,8 @@ export function DashboardView({
   const env: StudioEnv = useMemo(
     () => ({
       workspaceId,
+      dataFilters: dashboard.settings.dataFilters ?? [],
+      filterValues,
       timeZone,
       fontScale: theme.tokens.fontScale,
       showHeader: dashboard.settings.showHeader,
@@ -104,6 +111,8 @@ export function DashboardView({
       timeZone,
       theme.tokens.fontScale,
       dashboard.settings.showHeader,
+      dashboard.settings.dataFilters,
+      filterValues,
       metricsById,
       connections,
       images,
@@ -174,6 +183,14 @@ export function DashboardView({
       ) : null}
     </div>
   );
+  const filterBar = (
+    <DashboardFilters
+      workspaceId={workspaceId}
+      filters={dashboard.settings.dataFilters ?? []}
+      values={filterValues}
+      onChange={setFilterValues}
+    />
+  );
   const errorBox = error ? (
     <div className="error" role="alert">
       {error}
@@ -219,17 +236,25 @@ export function DashboardView({
     return (
       <>
         {errorBox}
-        <ScrollView
-          name={dashboard.name}
-          logoImageId={logoImageId(dashboard.settings)}
-          slides={dashboard.slides}
-          tokens={theme.tokens}
-          images={env.images}
-          toolbar={actions}
-          renderWidget={(widget, size) => (
-            <LiveScrollWidget widget={widget} env={env} size={size} />
-          )}
-        />
+        {filterBar}
+        <DashboardDataProvider
+          workspaceId={workspaceId}
+          widgets={dashboard.slides.flatMap((slide) => slide.widgets)}
+          filters={dashboard.settings.dataFilters ?? []}
+          values={filterValues}
+        >
+          <ScrollView
+            name={dashboard.name}
+            logoImageId={logoImageId(dashboard.settings)}
+            slides={dashboard.slides}
+            tokens={theme.tokens}
+            images={env.images}
+            toolbar={actions}
+            renderWidget={(widget, size) => (
+              <LiveScrollWidget widget={widget} env={env} size={size} />
+            )}
+          />
+        </DashboardDataProvider>
       </>
     );
   }
@@ -241,8 +266,16 @@ export function DashboardView({
         {actions}
       </div>
       {errorBox}
+      {filterBar}
       {mode === "screen" ? (
-        <SlideViewer dashboard={dashboard} tokens={theme.tokens} env={env} />
+        <DashboardDataProvider
+          workspaceId={workspaceId}
+          widgets={dashboard.slides.flatMap((slide) => slide.widgets)}
+          filters={dashboard.settings.dataFilters ?? []}
+          values={filterValues}
+        >
+          <SlideViewer dashboard={dashboard} tokens={theme.tokens} env={env} />
+        </DashboardDataProvider>
       ) : (
         // Until the browser's default is known (after mount).
         <div className="display-mode-pending" aria-busy="true" />

@@ -338,6 +338,14 @@ describe("add widget", () => {
   it("makes every type with defaults the API accepts", () => {
     for (const type of WIDGET_TYPES) {
       const made = newWidget(type, {
+        models: [
+          {
+            modelId: ID(80),
+            modelName: "Published portfolio",
+            measures: [{ id: "income", name: "Income" }],
+            dimensions: [],
+          },
+        ],
         metrics: [metric],
         imageIds: [ID(50)],
         locale: "en",

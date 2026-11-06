@@ -346,6 +346,7 @@ export const DEFAULT_WIDGET_SIZE: Readonly<
   // Its minimum (ADR 0019 section 5): the ring with the target line.
   gauge: { w: 3, h: 3 },
   review: { w: 4, h: 3 },
+  measure: { w: 4, h: 3 },
 };
 
 /**
@@ -531,6 +532,30 @@ export function documentProblems(
       const at = (message: string) =>
         atSlide(t("problems.atSlide", { slide: title, message }), widget.id);
       const name = widgetName(widget, locale);
+      for (const filter of document.settings.dataFilters ?? []) {
+        const exclusions =
+          widget.type === "measure"
+            ? widget.binding.exclusions
+            : (widget.filterExclusions ?? []);
+        const excluded = exclusions.find(
+          (exclusion) => exclusion.filterId === filter.id,
+        );
+        if (
+          dataWidgetCost(widget.type) > 0 &&
+          ((!excluded &&
+            (widget.type !== "measure" ||
+              !filter.mappings.some(
+                (mapping) => mapping.modelId === widget.binding.modelId,
+              ))) ||
+            (excluded && (!excluded.reason.trim() || filter.fixedValue)))
+        )
+          at(
+            webTranslator(locale, "data.dashboard")("filterProblem", {
+              name,
+              filter: filter.name,
+            }),
+          );
+      }
       if (!isInsideFormatGrid(widget, primaryOf(document))) {
         at(t("problems.outside", { name }));
       } else if (!meetsMinimumSize(widget.type, widget)) {
@@ -674,6 +699,9 @@ function settingsInput(settings: DashboardSettings) {
       : null;
   const themeId = builtin ? null : settings.themeId;
   return {
+    ...(settings.dataFilters !== undefined
+      ? { dataFilters: settings.dataFilters }
+      : {}),
     showHeader: settings.showHeader,
     autoAdvance: settings.autoAdvance,
     defaultSlideSeconds: settings.defaultSlideSeconds,
@@ -938,7 +966,40 @@ export function createStudioReducer(newId: () => string) {
         const keys = Object.keys(action.patch).sort().join(",");
         return edit(
           state,
-          { ...draft, settings: { ...draft.settings, ...action.patch } },
+          {
+            ...draft,
+            settings: { ...draft.settings, ...action.patch },
+            ...(action.patch.dataFilters
+              ? {
+                  slides: draft.slides.map((slide) => ({
+                    ...slide,
+                    widgets: slide.widgets.map((widget) => {
+                      const ids = new Set(
+                        action.patch.dataFilters!.map((filter) => filter.id),
+                      );
+                      return widget.type === "measure"
+                        ? {
+                            ...widget,
+                            binding: {
+                              ...widget.binding,
+                              exclusions: widget.binding.exclusions.filter(
+                                (exclusion) => ids.has(exclusion.filterId),
+                              ),
+                            },
+                          }
+                        : widget.filterExclusions
+                          ? {
+                              ...widget,
+                              filterExclusions: widget.filterExclusions.filter(
+                                (exclusion) => ids.has(exclusion.filterId),
+                              ),
+                            }
+                          : widget;
+                    }),
+                  })),
+                }
+              : {}),
+          },
           `settings:${keys}`,
         );
       }

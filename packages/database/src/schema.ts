@@ -829,6 +829,7 @@ export const dashboards = pgTable(
     version: integer("version").notNull().default(1),
     // Studio settings (ADR 0015 section 1): the header band above the
     // grid, and how screens rotate through the slides.
+    dataFilters: jsonb("data_filters").notNull().default([]),
     showHeader: boolean("show_header").notNull().default(true),
     /** False: screens show only the first enabled slide. */
     autoAdvance: boolean("auto_advance").notNull().default(true),
@@ -972,6 +973,9 @@ export const dashboardWidgets = pgTable(
     dashboardId: uuid("dashboard_id").notNull(),
     workspaceId: uuid("workspace_id").notNull(),
     type: text("type").notNull(),
+    modelId: uuid("model_id"),
+    modelBinding: jsonb("model_binding"),
+    filterExclusions: jsonb("filter_exclusions").notNull().default([]),
     x: smallint("x").notNull(),
     y: smallint("y").notNull(),
     w: smallint("w").notNull(),
@@ -1057,7 +1061,17 @@ export const dashboardWidgets = pgTable(
     index("dashboard_widgets_goal_idx").on(table.goalId),
     check(
       "dashboard_widgets_type_valid",
-      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table', 'status', 'compare', 'countdown', 'gauge', 'review')`,
+      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table', 'status', 'compare', 'countdown', 'gauge', 'review', 'measure')`,
+    ),
+    foreignKey({
+      name: "dashboard_widgets_model_fk",
+      columns: [table.modelId, table.workspaceId],
+      foreignColumns: [dataModels.id, dataModels.workspaceId],
+    }),
+    index("dashboard_widgets_model_idx").on(table.modelId),
+    check(
+      "dashboard_widgets_model_valid",
+      sql`case when ${table.type} = 'measure' then ${table.modelId} is not null and ${table.modelBinding} is not null else ${table.modelId} is null and ${table.modelBinding} is null end`,
     ),
     // Only goal widgets name a goal (theirs may be null: deleted).
     check(

@@ -73,7 +73,7 @@ export const studioEn = {
       add: "Add widget",
       hint: "Click to add it in the first free spot, or drag it onto the slide",
       addType:
-        "Add {type, select, metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} other {widget}}",
+        "Add {type, select, measure {measure} metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} other {widget}}",
     },
     assignTvs: {
       title: "Show “{name}” on TVs",
@@ -344,6 +344,7 @@ export const studioEn = {
       noReviewShown: "No review is shown right now.",
     },
     newWidget: {
+      noModels: "Publish a model in Data & measures first.",
       noMetrics: "Add a connection with metrics first.",
       noBreakdown: "No metric can be broken down yet.",
       noImage: "Upload an image first (dashboard settings, Logo).",
@@ -534,9 +535,9 @@ export const studioEn = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, metric {Metric} line {Line chart} bar {Bar chart} table {Table} review {Latest review} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} countdown {Countdown} gauge {Goal} other {Widget}}",
+        "{type, select, measure {Measure} metric {Metric} line {Line chart} bar {Bar chart} table {Table} review {Latest review} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} countdown {Countdown} gauge {Goal} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} gauge {goal} other {widget}})",
+        "{title} ({type, select, measure {measure} metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} gauge {goal} other {widget}})",
       copyOf: "{name} (copy)",
       continued: "{name} ({part})",
       slide: "Slide {number}",

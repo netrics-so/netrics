@@ -1,4 +1,5 @@
 "use client";
+import { LiveMeasureWidget } from "@/components/studio/measure-widget";
 
 import { useRef } from "react";
 
@@ -1186,6 +1187,8 @@ export function LiveScrollWidget({
   size: ScrollCardSize;
 }) {
   switch (widget.type) {
+    case "measure":
+      return <LiveMeasureWidget widget={widget} env={env} />;
     case "metric":
       return <LiveScrollMetric widget={widget} env={env} size={size} />;
     case "line":

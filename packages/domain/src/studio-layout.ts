@@ -26,7 +26,8 @@ export type StudioWidgetType =
   | "compare"
   | "countdown"
   | "gauge"
-  | "review";
+  | "review"
+  | "measure";
 
 export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "metric",
@@ -41,6 +42,7 @@ export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "countdown",
   "gauge",
   "review",
+  "measure",
 ];
 
 /** A widget's cells: 0-based column and row, width and height in cells. */
@@ -102,6 +104,7 @@ export const STUDIO_MIN_WIDGET_SIZE: Readonly<
   countdown: { w: 3, h: 2 },
   gauge: { w: 3, h: 3 },
   review: { w: 4, h: 3 },
+  measure: { w: 4, h: 3 },
 };
 
 /** Widgets with a title and resource line (bound to a metric). */
@@ -585,6 +588,7 @@ export function widgetTypeScale(
         heading: m.heading * scale,
         display: m.display * scale,
       };
+    case "measure":
     case "table":
       return {
         any,

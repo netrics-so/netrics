@@ -1,5 +1,13 @@
 import {
+  publishedModel,
+  validateDashboardMeasure,
+  safeDataError,
+} from "./data.js";
+import {
   barWidgetOptionsSchema,
+  dashboardDataFiltersSchema,
+  measureWidgetBindingSchema,
+  measureWidgetOptionsSchema,
   compareWidgetOptionsSchema,
   gaugeWidgetOptionsSchema,
   tableWidgetOptionsSchema,
@@ -192,6 +200,9 @@ function optionsOf(widget: DashboardWidgetRow) {
 
 function settingsOf(dashboard: Dashboard): DashboardSettingsView {
   return {
+    ...(Array.isArray(dashboard.dataFilters) && dashboard.dataFilters.length
+      ? { dataFilters: dashboardDataFiltersSchema.parse(dashboard.dataFilters) }
+      : {}),
     showHeader: dashboard.showHeader,
     autoAdvance: dashboard.autoAdvance,
     defaultSlideSeconds: dashboard.defaultSlideSeconds,
@@ -304,6 +315,13 @@ export async function presentDashboard(
   const warnings = dashboardFormatWarnings(dashboard, readability);
   const present = (widget: DashboardWidgetRow): DashboardWidget => {
     const base = {
+      ...(Array.isArray(widget.filterExclusions) &&
+      widget.filterExclusions.length
+        ? {
+            filterExclusions:
+              widget.filterExclusions as import("@netrics/domain").DashboardFilterExclusion[],
+          }
+        : {}),
       id: widget.id,
       x: widget.x,
       y: widget.y,
@@ -311,6 +329,13 @@ export async function presentDashboard(
       h: widget.h,
       title: widget.title,
     };
+    if (widget.type === "measure")
+      return {
+        ...base,
+        type: "measure",
+        binding: measureWidgetBindingSchema.parse(widget.modelBinding),
+        options: measureWidgetOptionsSchema.parse(widget.options),
+      };
     if (isDataRow(widget)) {
       const denominator = denominatorOf(widget);
       if (widget.type === "compare" && denominator) {
@@ -609,6 +634,7 @@ async function validateWidget(
   sources: StatusSources,
 ): Promise<Result<WidgetInput>> {
   const base = {
+    filterExclusions: widget.filterExclusions ?? [],
     id: widget.id ?? null,
     type: widget.type,
     x: widget.x,
@@ -617,6 +643,15 @@ async function validateWidget(
     h: widget.h,
     title: widget.title ?? null,
   };
+  if (widget.type === "measure") {
+    return ok({
+      ...base,
+      ...EMPTY_WIDGET_DATA,
+      modelId: widget.binding.modelId,
+      modelBinding: widget.binding,
+      options: widget.options,
+    });
+  }
   if (widget.type === "image") {
     // That the image is one of this workspace is checked with the
     // dashboard's other images (checkImages).
@@ -1137,6 +1172,68 @@ function denominatorInputOf(
     : null;
 }
 
+async function validateDataBindings(
+  tx: Transaction,
+  workspaceId: string,
+  slides: readonly SlideInput[],
+  filters: import("@netrics/domain").DashboardDataFilter[],
+): Promise<Result<null>> {
+  try {
+    const ids = new Set(filters.map((filter) => filter.id));
+    if (ids.size !== filters.length)
+      return fail(400, "dashboard_filter_ids_not_unique");
+    for (const filter of filters) {
+      if (
+        !filter.mappings.length ||
+        new Set(filter.mappings.map((mapping) => mapping.modelId)).size !==
+          filter.mappings.length
+      )
+        return fail(400, "dashboard_filter_mapping_invalid");
+      for (const mapping of filter.mappings) {
+        const model = await publishedModel(tx, workspaceId, mapping.modelId);
+        if (
+          model.metadata.dimensions.find(
+            (dimension) => dimension.id === mapping.dimensionId,
+          )?.type !== filter.type
+        )
+          return fail(400, "dashboard_filter_type_changed");
+      }
+    }
+    for (const widget of slides.flatMap((slide) => slide.widgets)) {
+      if (widget.type === "measure") {
+        await validateDashboardMeasure(
+          tx,
+          workspaceId,
+          filters,
+          measureWidgetBindingSchema.parse(widget.modelBinding),
+          measureWidgetOptionsSchema.parse(widget.options),
+        );
+      } else if (dataWidgetCost(widget.type) > 0) {
+        const exclusions = widget.filterExclusions ?? [];
+        if (
+          new Set(exclusions.map((exclusion) => exclusion.filterId)).size !==
+            exclusions.length ||
+          exclusions.some((exclusion) => !ids.has(exclusion.filterId))
+        )
+          return fail(400, "dashboard_filter_exclusion_invalid");
+        for (const filter of filters) {
+          if (
+            filter.fixedValue ||
+            !exclusions.some(
+              (exclusion) =>
+                exclusion.filterId === filter.id && exclusion.reason.trim(),
+            )
+          )
+            return fail(400, "dashboard_filter_not_applicable");
+        }
+      }
+    }
+    return ok(null);
+  } catch (error) {
+    return fail(400, safeDataError(error));
+  }
+}
+
 function counts(dashboard: Dashboard) {
   return {
     tileCount: metricWidgets(dashboard.slides, { enabledOnly: false }).length,
@@ -1224,6 +1321,13 @@ export function createDashboardService(deps: { db: Database }) {
         if (!slides.ok) {
           return slides;
         }
+        const bindings = await validateDataBindings(
+          tx,
+          actor.workspaceId,
+          slides.value,
+          body.settings?.dataFilters ?? [],
+        );
+        if (!bindings.ok) return bindings;
         const { rest, theme: themeRequest } = splitSettings(body.settings);
         const theme = await chooseTheme(
           tx,
@@ -1320,6 +1424,14 @@ export function createDashboardService(deps: { db: Database }) {
         if (!slides.ok) {
           return slides;
         }
+        const bindings = await validateDataBindings(
+          tx,
+          actor.workspaceId,
+          slides.value,
+          body.settings?.dataFilters ??
+            dashboardDataFiltersSchema.parse(current.dataFilters),
+        );
+        if (!bindings.ok) return bindings;
         const { rest, theme: themeRequest } = splitSettings(body.settings);
         let themeSettings: Partial<ThemeSettings> = {};
         if (Object.values(themeRequest).some((value) => value !== undefined)) {
@@ -1421,6 +1533,11 @@ export function createDashboardService(deps: { db: Database }) {
             backgroundDim: slide.backgroundDim,
             widgets: slide.widgets.map((widget) => ({
               type: widget.type,
+              modelId: widget.modelId,
+              modelBinding: widget.modelBinding as
+                import("@netrics/domain").MeasureWidgetBinding | null,
+              filterExclusions:
+                widget.filterExclusions as import("@netrics/domain").DashboardFilterExclusion[],
               x: widget.x,
               y: widget.y,
               w: widget.w,

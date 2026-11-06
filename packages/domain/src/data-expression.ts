@@ -1,5 +1,5 @@
 /** Portable, bounded expressions shared by data preparation and model measures. */
-export const DATA_EXECUTION_VERSION = 1;
+export const DATA_EXECUTION_VERSION = 2;
 export const DATA_TYPES = [
   "string",
   "boolean",
@@ -38,6 +38,7 @@ export const DATA_FUNCTIONS = [
   "abs",
   "round",
   "eq",
+  "in",
   "ne",
   "lt",
   "lte",
@@ -478,6 +479,13 @@ export function compileRowExpression(
       };
     }
     if (expr.kind === "literal") {
+      if (
+        expr.type === "number" &&
+        (expr.currency ||
+          expr.unit === "currency" ||
+          expr.unit === "currency_minor")
+      )
+        dataFail("expression_monetary_float_unsupported");
       validateDataValue(expr.type, expr.value, true);
       if (expr.currency && (!/^[A-Z]{3}$/.test(expr.currency) || !expr.unit))
         dataFail("expression_literal_unit_invalid");
@@ -577,6 +585,11 @@ export function compileRowExpression(
         !types[1]!.scalar
       )
         dataFail("expression_units_incompatible");
+    } else if (fn === "in") {
+      arity(2);
+      required(1, "json");
+      if (types[0]!.type === "json") dataFail("expression_json_not_comparable");
+      result = { type: "boolean", nullable: true };
     } else if (fn === "and" || fn === "or") {
       arity(2);
       required(0, "boolean");
@@ -734,6 +747,22 @@ export function compileRowExpression(
                 : false,
           );
         if (cells.some((c) => c.value === null)) return out(null);
+        if (fn === "in") {
+          if (!Array.isArray(b!.value)) dataFail("expression_list_required");
+          let missing = false,
+            matched = false;
+          for (const candidate of b!.value) {
+            budget.tick();
+            if (candidate === null) {
+              missing = true;
+              continue;
+            }
+            validateDataValue(a.type, candidate, false);
+            if (compareDataValues(a.type, a.value, candidate) === 0)
+              matched = true;
+          }
+          return out(matched ? true : missing ? null : false);
+        }
         if (["add", "subtract", "multiply", "divide"].includes(fn)) {
           if (["add", "subtract"].includes(fn)) sameUnit(a, b!);
           if (fn === "multiply" && a.currency && b?.currency)
