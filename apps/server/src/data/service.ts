@@ -44,7 +44,7 @@ import {
   withWorkspace,
   schema,
   ingestDatasetPage,
-  listObservationDatasets,
+  listObservationCatalog,
   readObservationDataset,
   insertAuditEvent,
   DatasetStoreError,
@@ -64,6 +64,11 @@ export class DataServiceError extends Error {
   }
 }
 const MAX_SNAPSHOT_EXPIRY = Date.parse("9999-12-31T23:59:59Z");
+/**
+ * Source-picker bound for the legacy observation catalog, independent of the
+ * query row budget. A larger catalog is listed truncated, never refused.
+ */
+export const DATA_SOURCE_CATALOG_ENTRIES = 10_000;
 const LEGACY_PAGE_KEY_PATTERN =
   "^page:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{64}$";
 function fail(code: string, status: 400 | 404 | 409 | 413 | 503 = 400): never {
@@ -139,6 +144,8 @@ interface SourceView {
   aggregated: boolean;
   expiresAt: string | null;
   connectionId: string | null;
+  /** Listed, but larger than the workspace query row budget can load. */
+  rowLimitExceeded?: boolean;
 }
 function stable(value: unknown): string {
   if (Array.isArray(value)) return "[" + value.map(stable).join(",") + "]";
@@ -377,27 +384,35 @@ async function resourceCatalog(
     : query.limit(policy.queryRows + 1));
   if (exceedsDataPolicy(rows.length, policy.queryRows))
     fail("data_source_row_limit", 413);
-  const id = "resources:" + connectionId;
   const generationId =
     "resources:" + createHash("sha256").update(stable(rows)).digest("hex");
-  const table: DataTable = {
-    fields: RESOURCE_FIELDS.map((field) => ({ ...field })),
-    rows,
-    provenance: [{ datasetId: id, generationId }],
-  };
-  const view: SourceView = {
-    id,
-    name: connection.name + " / Resources",
-    kind: "resources",
-    fields: table.fields,
+  const view = resourceView(connectionId, connection.name, {
     generationId,
     rowCount: rows.length,
+  });
+  const table: DataTable = {
+    fields: view.fields,
+    rows,
+    provenance: [{ datasetId: view.id, generationId }],
+  };
+  return { table, view };
+}
+function resourceView(
+  connectionId: string,
+  connectionName: string,
+  state: Pick<SourceView, "generationId" | "rowCount" | "rowLimitExceeded">,
+): SourceView {
+  return {
+    id: "resources:" + connectionId,
+    name: connectionName + " / Resources",
+    kind: "resources",
+    fields: RESOURCE_FIELDS.map((field) => ({ ...field })),
     schemaVersion: 1,
     aggregated: false,
     expiresAt: null,
     connectionId,
+    ...state,
   };
-  return { table, view };
 }
 
 /** One loader per serializable transaction pins each source generation once. */
@@ -414,6 +429,11 @@ export function createDataLoader(
     allowPendingSchemas?: boolean;
     /** Queries may expose known values as partial, with pending input identities. */
     allowPendingResults?: boolean;
+    /** Last-valid fallback only: resource catalogs are current metadata with
+     * no retained history, so a changed catalog fingerprint reads the current
+     * catalog instead of refusing the pinned vector. Page continuations keep
+     * the strict check. */
+    currentResources?: boolean;
   } = {},
 ) {
   const tables = new Map<string, DataTable>(),
@@ -556,60 +576,73 @@ export function createDataLoader(
           const byteSize = Buffer.byteLength(JSON.stringify(execution.outputs));
           // The immutable key remains unique after its cache deadline. Reclaim
           // only this expired entry before rebuilding the same input vector.
-          await tx
-            .delete(schema.dataPreparedGenerations)
-            .where(
-              and(
-                eq(schema.dataPreparedGenerations.workspaceId, workspaceId),
-                eq(schema.dataPreparedGenerations.preparationId, preparationId),
-                eq(schema.dataPreparedGenerations.version, version),
-                eq(schema.dataPreparedGenerations.inputKey, inputKey),
-                lte(schema.dataPreparedGenerations.expiresAt, now),
-              ),
-            );
-          const [usage] = await tx
-            .select({
-              bytes: sql<string>`coalesce(sum(${schema.dataPreparedGenerations.byteSize}),0)`,
-            })
-            .from(schema.dataPreparedGenerations)
-            .where(eq(schema.dataPreparedGenerations.workspaceId, workspaceId));
-          if (
-            !exceedsDataPolicy(byteSize, policy.maxPreparedGenerationBytes) &&
-            !exceedsDataPolicy(
-              Number(usage?.bytes ?? 0) + byteSize,
-              policy.maxPreparedBytes,
-            )
-          ) {
-            const expiresAt = Object.values(execution.outputs).reduce(
-              (expiry, table) =>
-                table.expiresAt && new Date(table.expiresAt) < expiry
-                  ? new Date(table.expiresAt)
-                  : expiry,
-              new Date(
-                policy.preparedCacheSeconds === null
-                  ? "9999-12-31T23:59:59Z"
-                  : now.getTime() + policy.preparedCacheSeconds * 1000,
-              ),
-            );
-            const [created] = await tx
-              .insert(schema.dataPreparedGenerations)
-              .values({
-                workspaceId,
-                preparationId,
-                version,
-                inputKey,
-                generations: { ...generations },
-                outputs: {
-                  tables: execution.outputs,
-                  warnings: execution.warnings,
-                },
-                byteSize,
-                expiresAt,
-                createdAt: now,
+          // Concurrent readers may build the same entry; one of them caches it
+          // and the others return their equal result uncached.
+          const stored = await cacheWrite(tx, async (tx) => {
+            await tx
+              .delete(schema.dataPreparedGenerations)
+              .where(
+                and(
+                  eq(schema.dataPreparedGenerations.workspaceId, workspaceId),
+                  eq(
+                    schema.dataPreparedGenerations.preparationId,
+                    preparationId,
+                  ),
+                  eq(schema.dataPreparedGenerations.version, version),
+                  eq(schema.dataPreparedGenerations.inputKey, inputKey),
+                  lte(schema.dataPreparedGenerations.expiresAt, now),
+                ),
+              );
+            const [usage] = await tx
+              .select({
+                bytes: sql<string>`coalesce(sum(${schema.dataPreparedGenerations.byteSize}),0)`,
               })
-              .returning({ id: schema.dataPreparedGenerations.id });
-            preparedGenerationId = created!.id;
-          } else warnings.add("prepared_cache_capacity_reached");
+              .from(schema.dataPreparedGenerations)
+              .where(
+                eq(schema.dataPreparedGenerations.workspaceId, workspaceId),
+              );
+            if (
+              !exceedsDataPolicy(byteSize, policy.maxPreparedGenerationBytes) &&
+              !exceedsDataPolicy(
+                Number(usage?.bytes ?? 0) + byteSize,
+                policy.maxPreparedBytes,
+              )
+            ) {
+              const expiresAt = Object.values(execution.outputs).reduce(
+                (expiry, table) =>
+                  table.expiresAt && new Date(table.expiresAt) < expiry
+                    ? new Date(table.expiresAt)
+                    : expiry,
+                new Date(
+                  policy.preparedCacheSeconds === null
+                    ? "9999-12-31T23:59:59Z"
+                    : now.getTime() + policy.preparedCacheSeconds * 1000,
+                ),
+              );
+              const [created] = await tx
+                .insert(schema.dataPreparedGenerations)
+                .values({
+                  workspaceId,
+                  preparationId,
+                  version,
+                  inputKey,
+                  generations: { ...generations },
+                  outputs: {
+                    tables: execution.outputs,
+                    warnings: execution.warnings,
+                  },
+                  byteSize,
+                  expiresAt,
+                  createdAt: now,
+                })
+                .returning({ id: schema.dataPreparedGenerations.id });
+              return created!.id;
+            }
+            return "capacity" as const;
+          });
+          if (stored === "capacity")
+            warnings.add("prepared_cache_capacity_reached");
+          else if (stored) preparedGenerationId = stored;
         }
       }
       if (preparedGenerationId)
@@ -645,7 +678,8 @@ export function createDataLoader(
       generations[id] = catalog.view.generationId!;
       if (
         options.generations?.[id] &&
-        options.generations[id] !== generations[id]
+        options.generations[id] !== generations[id] &&
+        !options.currentResources
       )
         fail("data_snapshot_unavailable", 409);
       result = catalog.table;
@@ -1026,26 +1060,49 @@ export function createDataService(
           connectionId: d.connectionId,
         });
       }
+      // Listing counts resource names instead of loading them, so one
+      // oversized catalog is flagged rather than failing the whole picker.
       const namedConnections = await tx
-        .selectDistinct({ id: schema.connectionResources.connectionId })
+        .select({
+          id: schema.connectionResources.connectionId,
+          name: schema.connections.name,
+          rows: sql<number>`count(*)::int`,
+        })
         .from(schema.connectionResources)
-        .where(eq(schema.connectionResources.workspaceId, actor.workspaceId));
-      for (const connection of namedConnections)
+        .innerJoin(
+          schema.connections,
+          and(
+            eq(schema.connections.id, schema.connectionResources.connectionId),
+            eq(
+              schema.connections.workspaceId,
+              schema.connectionResources.workspaceId,
+            ),
+          ),
+        )
+        .where(eq(schema.connectionResources.workspaceId, actor.workspaceId))
+        .groupBy(
+          schema.connectionResources.connectionId,
+          schema.connections.name,
+        )
+        .orderBy(asc(schema.connectionResources.connectionId));
+      for (const connection of namedConnections) {
+        const rowCount = Number(connection.rows);
         items.push(
-          (
-            await resourceCatalog(
-              tx,
-              actor.workspaceId,
-              connection.id,
-              policyFor(tx),
-            )
-          ).view,
+          resourceView(connection.id, connection.name, {
+            generationId: null,
+            rowCount,
+            ...(exceedsDataPolicy(rowCount, policyFor(tx).queryRows)
+              ? { rowLimitExceeded: true }
+              : {}),
+          }),
         );
-      for (const legacy of await listObservationDatasets(
+      }
+      const legacyCatalog = await listObservationCatalog(
         tx,
         actor.workspaceId,
-        { limit: policyFor(tx).queryRows },
-      ))
+        DATA_SOURCE_CATALOG_ENTRIES,
+      );
+      for (const legacy of legacyCatalog.entries)
         items.push({
           id: legacy.id,
           name: legacy.definition.name,
@@ -1103,7 +1160,10 @@ export function createDataService(
             connectionId: null,
           });
       void now;
-      return { sources: items };
+      return {
+        sources: items,
+        ...(legacyCatalog.truncated ? { truncated: true } : {}),
+      };
     });
   const findPreparation = async (
     tx: Transaction,
@@ -2139,6 +2199,27 @@ async function findDataModel(
  * Internal query entry for authorized workspace transactions. Pinned paging
  * additionally requires a trusted principal identity, never a request field.
  */
+/** Best-effort write to the last-valid snapshot cache. Read paths (dashboards,
+ * devices) run under repeatable read without retries; concurrent readers of
+ * the same query update the same row, and the loser's serialization failure is
+ * rolled back to a savepoint instead of failing the read. */
+async function cacheWrite<T>(
+  tx: Transaction,
+  write: (tx: Transaction) => Promise<T>,
+): Promise<T | undefined> {
+  try {
+    return await tx.transaction((savepoint) => write(savepoint));
+  } catch (error) {
+    if (
+      !hasSqlstate(error, "40001") &&
+      !hasSqlstate(error, "40P01") &&
+      !hasSqlstate(error, "23505")
+    )
+      throw error;
+    return undefined;
+  }
+}
+
 export async function queryDataModel(
   tx: Transaction,
   workspaceId: string,
@@ -2226,10 +2307,14 @@ export async function queryDataModel(
   const definition = semanticModelDefinitionSchema.parse(
     preview ? model.definition : release!.definition,
   );
-  const evaluate = async (generations?: Record<string, string>) => {
+  const evaluate = async (
+    generations?: Record<string, string>,
+    currentResources = false,
+  ) => {
     const loader = createDataLoader(tx, workspaceId, now, {
       policy,
       allowPendingResults: true,
+      currentResources,
       ...(generations ? { generations } : {}),
       ...(release || restored
         ? { dependencies: (release ?? restored)!.dependencies as Dependencies }
@@ -2409,6 +2494,7 @@ export async function queryDataModel(
       throw error;
     const fallback = await evaluate(
       snapshot.generations as Record<string, string>,
+      true,
     );
     return {
       ...fallback.result,
@@ -2428,31 +2514,34 @@ export async function queryDataModel(
     // Reclaim expired identities before admission, including deadlines shortened
     // by the current policy. Old unowned sessions cannot be resumed safely;
     // retire only their exact known key format, preserving versioned formats.
-    await tx
-      .delete(schema.dataModelQuerySnapshots)
-      .where(
-        and(
-          eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
-          eq(schema.dataModelQuerySnapshots.releaseId, release.id),
-          or(
-            sql`${schema.dataModelQuerySnapshots.queryKey} ~ ${LEGACY_PAGE_KEY_PATTERN}`,
-            lte(schema.dataModelQuerySnapshots.expiresAt, now),
-            ...(policy.querySnapshotSeconds !== null
-              ? [
-                  lte(
-                    schema.dataModelQuerySnapshots.updatedAt,
-                    new Date(
-                      Math.max(
-                        -62135596800000,
-                        now.getTime() - policy.querySnapshotSeconds * 1000,
+    // Concurrent readers race on this maintenance; whichever commits first does it.
+    await cacheWrite(tx, (tx) =>
+      tx
+        .delete(schema.dataModelQuerySnapshots)
+        .where(
+          and(
+            eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
+            eq(schema.dataModelQuerySnapshots.releaseId, release.id),
+            or(
+              sql`${schema.dataModelQuerySnapshots.queryKey} ~ ${LEGACY_PAGE_KEY_PATTERN}`,
+              lte(schema.dataModelQuerySnapshots.expiresAt, now),
+              ...(policy.querySnapshotSeconds !== null
+                ? [
+                    lte(
+                      schema.dataModelQuerySnapshots.updatedAt,
+                      new Date(
+                        Math.max(
+                          -62135596800000,
+                          now.getTime() - policy.querySnapshotSeconds * 1000,
+                        ),
                       ),
                     ),
-                  ),
-                ]
-              : []),
+                  ]
+                : []),
+            ),
           ),
         ),
-      );
+    );
     const existing = await tx
       .select({ queryKey: schema.dataModelQuerySnapshots.queryKey })
       .from(schema.dataModelQuerySnapshots)
@@ -2553,28 +2642,35 @@ export async function queryDataModel(
             : expiry,
         snapshotDeadline(),
       );
-      await tx
-        .insert(schema.dataModelQuerySnapshots)
-        .values({
-          workspaceId: workspaceId,
-          releaseId: release.id,
-          queryKey,
-          generations: execution.loader.generations,
-          expiresAt,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [
-            schema.dataModelQuerySnapshots.releaseId,
-            schema.dataModelQuerySnapshots.queryKey,
-          ],
-          set: {
+      // A concurrent reader of the same query records an equivalent fallback,
+      // so a serialization conflict here must not fail this read.
+      await cacheWrite(tx, (tx) =>
+        tx
+          .insert(schema.dataModelQuerySnapshots)
+          .values({
+            workspaceId: workspaceId,
+            releaseId: release.id,
+            queryKey,
             generations: execution.loader.generations,
             expiresAt,
             updatedAt: now,
-          },
-          setWhere: eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
-        });
+          })
+          .onConflictDoUpdate({
+            target: [
+              schema.dataModelQuerySnapshots.releaseId,
+              schema.dataModelQuerySnapshots.queryKey,
+            ],
+            set: {
+              generations: execution.loader.generations,
+              expiresAt,
+              updatedAt: now,
+            },
+            setWhere: eq(
+              schema.dataModelQuerySnapshots.workspaceId,
+              workspaceId,
+            ),
+          }),
+      );
     }
   }
   if (

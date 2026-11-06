@@ -12,7 +12,11 @@ import {
   type SourceDatasetDefinition,
 } from "@netrics/contracts";
 import type { Db, Transaction } from "./context.js";
-import { exceedsDataPolicy, type DataPolicy } from "@netrics/domain";
+import {
+  datasetGenerationRowLimit,
+  exceedsDataPolicy,
+  type DataPolicy,
+} from "@netrics/domain";
 import { datasetWorkspaceBytes } from "./data-usage.js";
 import { resolveDataPolicy } from "./data-policy.js";
 import {
@@ -249,6 +253,7 @@ export interface IngestDatasetPageInput {
 async function ingestPage(
   tx: Transaction,
   input: IngestDatasetPageInput,
+  scope: { previousTimeout?: string },
 ): Promise<{
   datasetId: string;
   generationId: string | null;
@@ -265,6 +270,7 @@ async function ingestPage(
       : input.maxWorkspaceBytes;
   if (quota !== null && (!Number.isSafeInteger(quota) || quota < 1))
     return fail("dataset_quota_invalid");
+  const generationRows = datasetGenerationRowLimit(policy);
   const definitionResult = sourceDatasetSchema.safeParse(input.definition);
   if (!definitionResult.success) return fail("dataset_schema_invalid");
   const definition = definitionResult.data;
@@ -275,9 +281,11 @@ async function ingestPage(
     return fail("dataset_page_invalid");
   }
   const { workspaceId, connectionId } = input;
-  await tx.execute(
-    sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
+  // Scoped to this page: ingestDatasetPage restores the caller's value.
+  const [timeout] = await tx.execute<{ previous: string }>(
+    sql`select current_setting('statement_timeout') as previous, set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? DATASET_INGEST_TIMEOUT_MS)}, true)`,
   );
+  scope.previousTimeout = timeout?.previous ?? "0";
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}, 440))`,
   );
@@ -375,10 +383,7 @@ async function ingestPage(
     fail("dataset_page_out_of_order");
   if (
     exceedsDataPolicy(refresh.pageCount + 1, policy.maxRefreshPages) ||
-    exceedsDataPolicy(
-      refresh.rowCount + page.records.length,
-      policy.maxGenerationRows,
-    )
+    exceedsDataPolicy(refresh.rowCount + page.records.length, generationRows)
   )
     fail("dataset_refresh_limit");
   await tx.insert(dataPages).values({
@@ -406,7 +411,10 @@ async function ingestPage(
   if (!page.complete) {
     if (
       quota !== null &&
-      exceedsDataPolicy(await datasetWorkspaceBytes(tx, workspaceId), quota)
+      exceedsDataPolicy(
+        await datasetWorkspaceBytes(tx, workspaceId, now),
+        quota,
+      )
     )
       fail("dataset_workspace_quota");
     assertFreshRefresh();
@@ -447,10 +455,10 @@ async function ingestPage(
           or(isNull(dataRecords.expiresAt), gt(dataRecords.expiresAt, now)),
         ),
       );
-    const old = await (policy.maxGenerationRows === null
+    const old = await (generationRows === null
       ? oldQuery
-      : oldQuery.limit(policy.maxGenerationRows + 1));
-    if (exceedsDataPolicy(old.length, policy.maxGenerationRows))
+      : oldQuery.limit(generationRows + 1));
+    if (exceedsDataPolicy(old.length, generationRows))
       fail("dataset_generation_limit");
     for (const row of old) {
       const values = { ...(row.values as Record<string, unknown>) };
@@ -532,7 +540,7 @@ async function ingestPage(
       });
     }
   }
-  if (exceedsDataPolicy(rows.size, policy.maxGenerationRows))
+  if (exceedsDataPolicy(rows.size, generationRows))
     fail("dataset_generation_limit");
   let bytes = 0;
   let generationExpiresAt = expiresAt;
@@ -571,7 +579,7 @@ async function ingestPage(
     await tx.insert(dataRecords).values(entries.slice(offset, offset + 1000));
   if (
     quota !== null &&
-    exceedsDataPolicy(await datasetWorkspaceBytes(tx, workspaceId), quota)
+    exceedsDataPolicy(await datasetWorkspaceBytes(tx, workspaceId, now), quota)
   )
     fail("dataset_workspace_quota");
   await tx
@@ -647,16 +655,38 @@ export async function previewDataset(
   };
 }
 
+/**
+ * Per-statement ingest bound when the query policy sets none (`null`).
+ * Ingestion still needs a bound so a stuck statement cannot hold the
+ * workspace ingest lock indefinitely.
+ */
+export const DATASET_INGEST_TIMEOUT_MS = 300_000;
+
 /** Hide driver SQL/parameters from worker logs and API error paths. */
 export async function ingestDatasetPage(
   tx: Transaction,
   input: IngestDatasetPageInput,
 ) {
+  // The ingest timeout must not leak into the rest of the caller's
+  // transaction (checkpoint, audit and later sync work).
+  const scope: { previousTimeout?: string } = {};
+  let failed = false;
   try {
-    return await ingestPage(tx, input);
+    return await ingestPage(tx, input, scope);
   } catch (error) {
+    failed = true;
     if (error instanceof DatasetStoreError) throw error;
     throw new DatasetStoreError("dataset_storage_failed");
+  } finally {
+    if (scope.previousTimeout !== undefined) {
+      const reset = tx.execute(
+        sql`select set_config('statement_timeout', ${scope.previousTimeout}, true)`,
+      );
+      // After a database error the transaction (or the caller's savepoint) is
+      // aborted and rolling it back resets the setting; keep the original error.
+      if (failed) await reset.catch(() => undefined);
+      else await reset;
+    }
   }
 }
 
@@ -684,10 +714,40 @@ export async function listObservationDatasets(
     metricDefinitionId?: string;
   } = {},
 ) {
+  const { entries, truncated } = await observationDescriptors(
+    tx,
+    workspaceId,
+    options,
+  );
+  if (truncated) return fail("dataset_catalog_limit");
+  return entries;
+}
+
+/**
+ * Bounded source-picker listing: an oversized legacy catalog returns its
+ * first `limit` entries and `truncated: true` instead of failing.
+ */
+export async function listObservationCatalog(
+  tx: Transaction,
+  workspaceId: string,
+  limit: number,
+) {
+  return observationDescriptors(tx, workspaceId, { limit });
+}
+
+async function observationDescriptors(
+  tx: Transaction,
+  workspaceId: string,
+  options: {
+    limit?: number | null;
+    connectionId?: string;
+    metricDefinitionId?: string;
+  },
+) {
   const limit = options.limit ?? null;
   if (limit !== null && (!Number.isSafeInteger(limit) || limit < 1))
     return fail("dataset_catalog_limit_invalid");
-  const rows = await tx.execute<{
+  const found = await tx.execute<{
     connection_id: string;
     metric_id: string;
     key: string;
@@ -702,9 +762,9 @@ export async function listObservationDatasets(
     ${options.connectionId ? sql`and c.id=${options.connectionId}` : sql``}
     ${options.metricDefinitionId ? sql`and m.id=${options.metricDefinitionId}` : sql``}
     order by c.id,m.key ${limit === null ? sql`` : sql`limit ${limit + 1}`}`);
-  if (limit !== null && rows.length > limit)
-    return fail("dataset_catalog_limit");
-  return rows.map((row) => ({
+  const truncated = limit !== null && found.length > limit;
+  const rows = truncated ? found.slice(0, limit) : found;
+  const entries = rows.map((row) => ({
     id: `observation:${row.connection_id}:${row.metric_id}`,
     connectionId: row.connection_id,
     metricDefinitionId: row.metric_id,
@@ -754,6 +814,7 @@ export async function listObservationDatasets(
       ],
     }),
   }));
+  return { entries, truncated };
 }
 
 /** Rebuild a retained refresh without another network call. Bounded and tenant scoped. */

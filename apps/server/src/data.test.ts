@@ -22,6 +22,7 @@ import { createTestDatabase } from "./test-db.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
 
 let app: FastifyInstance, db: Database;
+let appConfig: ReturnType<typeof loadConfig>;
 let owner: string, editor: string, viewer: string, stranger: string;
 let workspaceId: string, datasetId: string, modelId: string;
 const base = () => `/v1/workspaces/${workspaceId}/data`;
@@ -59,6 +60,7 @@ beforeAll(async () => {
     BETTER_AUTH_URL: "http://localhost:3001",
     WEB_ORIGIN: "http://localhost:3000",
   });
+  appConfig = config;
   db = createDatabase(test.appUrl);
   app = await buildApp(config, {
     db,
@@ -1257,5 +1259,319 @@ describe("published dashboard measure bindings", () => {
     expect((await run("value", [])).json().widgets[0].error).toBe(
       "aggregate_currency_mixed",
     );
+  });
+  it("shows the most recent points of time-ordered charts on dashboards and devices", async () => {
+    const days = Array.from(
+      { length: 30 },
+      (_, index) => `2026-01-${String(index + 1).padStart(2, "0")}`,
+    );
+    const sourceId = await source(
+      "daily-units",
+      [
+        { id: "id", type: "string" },
+        { id: "day", type: "date" },
+        { id: "units", type: "integer" },
+      ],
+      days.map((day, index) => ({ id: day, day, units: index + 1 })),
+    );
+    const created = await call("POST", "/models", editor, {
+      name: "Daily units",
+      definition: {
+        version: 1,
+        datasets: [sourceId],
+        relationships: [],
+        dimensions: [
+          {
+            id: "day",
+            name: "Day",
+            datasetId: sourceId,
+            fieldId: "day",
+            timeAlignment: "reporting_date",
+          },
+        ],
+        measures: [
+          {
+            id: "units",
+            name: "Units",
+            kind: "aggregate",
+            datasetId: sourceId,
+            aggregate: {
+              id: "units",
+              name: "Units",
+              op: "sum",
+              fieldId: "units",
+            },
+          },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const id = created.json().model.id as string;
+    const published = await call("POST", `/models/${id}/publish`, editor, {
+      version: 1,
+    });
+    expect(published.statusCode, published.body).toBe(200);
+    const measure = (view: string, x: number) => ({
+      type: "measure",
+      x,
+      y: 0,
+      w: 4,
+      h: 3,
+      binding: {
+        modelId: id,
+        measureIds: ["units"],
+        groupBy: ["day"],
+        exclusions: [],
+      },
+      options: { view, limit: 5 },
+    });
+    const dashboard = await dataCall("POST", "", editor, {
+      name: "Daily",
+      slides: [
+        {
+          widgets: [measure("line", 0), measure("bar", 4), measure("table", 8)],
+        },
+      ],
+    });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    const daily = dashboard.json().dashboard.id as string;
+    type Result = {
+      totalRows: number;
+      offset: number;
+      rows: Array<{ dimensions: Record<string, unknown> }>;
+    };
+    const shown = (result: Result) => ({
+      days: result.rows.map((row) => row.dimensions.day),
+      totalRows: result.totalRows,
+      offset: result.offset,
+    });
+    const latest = { days: days.slice(25), totalRows: 30, offset: 25 };
+    const first = { days: days.slice(0, 5), totalRows: 30, offset: 0 };
+    const query = await dataCall("POST", `/${daily}/data`, viewer, {
+      values: {},
+    });
+    expect(query.statusCode, query.body).toBe(200);
+    expect(
+      query
+        .json()
+        .widgets.map((widget: { result: Result }) => shown(widget.result)),
+    ).toEqual([latest, latest, first]);
+    const payload = await withWorkspace(
+      db,
+      { workspaceId },
+      (tx) =>
+        buildDeviceDashboardV3(tx, workspaceId, daily, { now: new Date() }),
+      { isolationLevel: "repeatable read" },
+    );
+    expect(
+      payload.slides[0]!.widgets.map(
+        (widget) =>
+          widget.type === "measure" && shown(widget.data.result as Result),
+      ),
+    ).toEqual([latest, latest, first]);
+  });
+  it("serves concurrent reads of the same dashboard without spurious outages", async () => {
+    const created = await dataCall("POST", "", editor, {
+      name: "Concurrent",
+      settings: { dataFilters: [filter()] },
+      slides: [
+        {
+          widgets: [widget("income"), widget("spend", 4), widget("margin", 8)],
+        },
+      ],
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const id = created.json().dashboard.id as string;
+    for (let round = 0; round < 3; round++) {
+      const responses = await Promise.all(
+        Array.from({ length: 8 }, (_, index) =>
+          index % 2
+            ? dataCall("POST", `/${id}/data`, viewer, { values: {} })
+            : dataCall("POST", "/data/preview", viewer, {
+                filters: [filter()],
+                values: {},
+                widgets: [
+                  {
+                    ...widget("income"),
+                    id: "51bb53cb-3540-4b70-a287-151c5fa16803",
+                  },
+                ].map(({ id, binding, options }) => ({ id, binding, options })),
+              }),
+        ),
+      );
+      for (const response of responses) {
+        expect(response.statusCode, response.body).toBe(200);
+        expect(
+          response
+            .json()
+            .widgets.map((widget: { status: string }) => widget.status),
+          response.body,
+        ).not.toContain("outage");
+      }
+    }
+  });
+  it("evaluates unsaved previews at the application clock", async () => {
+    const at = new Date("2031-02-03T04:05:06Z");
+    const clocked = await buildApp(appConfig, {
+      db,
+      authService: createAuthService(appConfig, db, {
+        logger: pino({ level: "silent" }),
+      }),
+      checkDb: async () => true,
+      now: () => at,
+    });
+    try {
+      const preview = await clocked.inject({
+        method: "POST",
+        url: `/v1/workspaces/${workspaceId}/dashboards/data/preview`,
+        headers: { cookie: viewer },
+        payload: {
+          filters: [],
+          values: {},
+          widgets: [
+            {
+              id: "51bb53cb-3540-4b70-a287-151c5fa16803",
+              binding: { ...widget("spend").binding, groupBy: ["country"] },
+              options: { view: "table", limit: 20 },
+            },
+          ],
+        },
+      });
+      expect(preview.statusCode, preview.body).toBe(200);
+      const snapshots = await withWorkspace(db, { workspaceId }, (tx) =>
+        tx
+          .select({ updatedAt: schema.dataModelQuerySnapshots.updatedAt })
+          .from(schema.dataModelQuerySnapshots),
+      );
+      expect(
+        snapshots.some((row) => row.updatedAt.getTime() === at.getTime()),
+      ).toBe(true);
+    } finally {
+      await clocked.close();
+    }
+  });
+  it("saves unrelated edits while an unchanged binding has gone stale, and validates a changed one", async () => {
+    const sourceId = await source(
+      "stale-binding",
+      [
+        { id: "id", type: "string" },
+        { id: "country", type: "string" },
+        { id: "units", type: "integer" },
+      ],
+      [{ id: "a", country: "DE", units: 1 }],
+    );
+    const definition = (dimensionId: string) => ({
+      version: 1,
+      datasets: [sourceId],
+      relationships: [],
+      dimensions: [
+        {
+          id: dimensionId,
+          name: "Country",
+          datasetId: sourceId,
+          fieldId: "country",
+        },
+      ],
+      measures: [
+        {
+          id: "units",
+          name: "Units",
+          kind: "aggregate",
+          datasetId: sourceId,
+          aggregate: {
+            id: "units",
+            name: "Units",
+            op: "sum",
+            fieldId: "units",
+          },
+        },
+      ],
+    });
+    const created = await call("POST", "/models", editor, {
+      name: "Stale binding",
+      definition: definition("country"),
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const id = created.json().model.id as string;
+    const publish = async (version: number) => {
+      const published = await call("POST", `/models/${id}/publish`, editor, {
+        version,
+      });
+      expect(published.statusCode, published.body).toBe(200);
+    };
+    await publish(created.json().model.version as number);
+    const dashboard = await dataCall("POST", "", editor, {
+      name: "Stale",
+      settings: {
+        dataFilters: [
+          {
+            id: "market",
+            name: "Market",
+            type: "string",
+            mode: "values",
+            mappings: [{ modelId: id, dimensionId: "country" }],
+            defaultValue: null,
+          },
+        ],
+      },
+      slides: [
+        {
+          widgets: [
+            {
+              type: "measure",
+              x: 0,
+              y: 0,
+              w: 4,
+              h: 3,
+              binding: {
+                modelId: id,
+                measureIds: ["units"],
+                groupBy: ["country"],
+                exclusions: [],
+              },
+              options: { view: "table", limit: 20 },
+            },
+          ],
+        },
+      ],
+    });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    const stale = dashboard.json().dashboard.id as string;
+    const saved = await call("PUT", `/models/${id}`, editor, {
+      name: "Stale binding",
+      definition: definition("market"),
+      version: created.json().model.version,
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    await publish(saved.json().model.version as number);
+    const current = (await dataCall("GET", `/${stale}`, editor)).json()
+      .dashboard;
+    const save = (widgets: unknown[], version: number) =>
+      dataCall("PUT", `/${stale}`, editor, {
+        name: "Stale, renamed",
+        version,
+        projectId: current.projectId,
+        slides: [{ ...current.slides[0], widgets }],
+        settings: current.settings,
+      });
+    const moved = await save(
+      [{ ...current.slides[0].widgets[0], x: 4 }],
+      current.version,
+    );
+    expect(moved.statusCode, moved.body).toBe(200);
+    const query = await dataCall("POST", `/${stale}/data`, viewer, {
+      values: {},
+    });
+    expect(query.json().widgets[0].status).toBe("outage");
+    const changed = await save(
+      [
+        {
+          ...current.slides[0].widgets[0],
+          options: { view: "table", limit: 10 },
+        },
+      ],
+      moved.json().dashboard.version,
+    );
+    expect(changed.statusCode, changed.body).toBe(400);
   });
 });

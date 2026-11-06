@@ -107,7 +107,38 @@ export interface SyncEngineDeps {
   imageQuota?: ImageQuota;
 }
 
-type ErrorClass = "auth" | "transient" | "contract";
+type ErrorClass = "auth" | "transient" | "contract" | "budget";
+
+/**
+ * Dataset store failures that are not the connector's fault. Storage
+ * failures (the store redacts every database error, including
+ * serialization failures, deadlocks, timeouts and lost connections, to
+ * dataset_storage_failed) and a refresh superseded by a concurrent newer one
+ * are retried like an outage.
+ */
+const TRANSIENT_DATASET_ERRORS = new Set([
+  "dataset_storage_failed",
+  "dataset_refresh_superseded",
+]);
+/**
+ * Quotas and size limits of the data policy: the job ends without retries
+ * until space is freed or the policy changes (the next scheduled sync tries
+ * again), recorded as "budget" rather than a connector contract failure.
+ */
+const BUDGET_DATASET_ERRORS = new Set([
+  "dataset_workspace_quota",
+  "dataset_source_quota",
+  "dataset_refresh_limit",
+  "dataset_generation_limit",
+]);
+
+/** A dataset page that does not fit the workspace's data policy. */
+class DatasetBudgetError extends Error {
+  constructor(code: string) {
+    super(`Data storage limit reached (${code})`);
+    this.name = "DatasetBudgetError";
+  }
+}
 
 interface StateRow {
   cursor: string | null;
@@ -334,17 +365,6 @@ async function runSync(
   const startCursor = fresh ? null : (state?.cursor ?? null);
   const backfillMarker = mode === "backfill" ? { backfillJobId: job.id } : {};
 
-  // Optional resource subset chosen at creation time (stored in config under
-  // a reserved key so it cannot clash with manifest config properties, whose
-  // validation rejects additionalProperties before this merge happens).
-  const rawSelection = connection.config.resourceSelection;
-  const selectedResources =
-    Array.isArray(rawSelection) &&
-    rawSelection.length > 0 &&
-    rawSelection.every((entry) => typeof entry === "string" && entry !== "")
-      ? (rawSelection as string[])
-      : undefined;
-
   let window = computeWindow(
     mode,
     state,
@@ -461,6 +481,22 @@ async function runSync(
     throw new NonRetryableJobError(error.message);
   }
   const { connector, manifest } = registered;
+
+  // Optional resource subset (stored in config under a reserved key so it
+  // cannot clash with manifest config properties, whose validation rejects
+  // additionalProperties before this merge happens). Never configured means
+  // every resource. For a connector that honors a selection, an explicit
+  // empty one means collection is paused: the connector receives
+  // `resources: []` and collects no resource-scoped data, while the
+  // credential check still runs and the run succeeds (the connection stays
+  // healthy; the dashboard shows it as paused).
+  const rawSelection = connection.config.resourceSelection;
+  const selectedResources =
+    Array.isArray(rawSelection) &&
+    (rawSelection.length > 0 || manifest.supportsResourceSelection === true) &&
+    rawSelection.every((entry) => typeof entry === "string" && entry !== "")
+      ? (rawSelection as string[])
+      : undefined;
 
   if (mode === "backfill" && !manifest.supportsBackfill) {
     const error = new Error(
@@ -762,6 +798,11 @@ async function runSync(
                 error.code === "dataset_refresh_expired")
             )
               throw new DatasetStageUnavailableError();
+            // The store's error carries only its code: nothing of the
+            // database error reaches logs or sync_runs.
+            if (TRANSIENT_DATASET_ERRORS.has(error.code)) throw error;
+            if (BUDGET_DATASET_ERRORS.has(error.code))
+              throw new DatasetBudgetError(error.code);
             throw new ContractViolationError(error.code);
           }
           throw error;
@@ -926,6 +967,10 @@ async function runSync(
     const authError = await authFailure(error);
     if (authError) {
       throw authError;
+    }
+    if (error instanceof DatasetBudgetError) {
+      await recordFailure("budget", error);
+      throw new TerminalJobError(safeMessage(error));
     }
     const errorClass: ErrorClass =
       error instanceof ContractViolationError ? "contract" : "transient";

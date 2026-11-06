@@ -55,6 +55,10 @@ export interface ModelQuery {
   now?: string;
   limit?: number;
   offset?: number;
+  /** "last" pages from the end of the ordered groups: offset counts groups
+   * skipped from the end, and rows are still returned in ascending order, so a
+   * time series shows its most recent points. */
+  window?: "first" | "last";
 }
 export interface ModelMeasureResult extends DataCell {
   status: "ok" | "missing" | "partial";
@@ -206,6 +210,8 @@ export function querySemanticModel(
     dataFail("model_result_offset_invalid");
   if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
     dataFail("model_result_limit_invalid");
+  if (query.window !== undefined && !["first", "last"].includes(query.window))
+    dataFail("model_result_window_invalid");
   const usedDatasets = new Set<string>();
   const now = query.now ?? new Date().toISOString();
   validateDataValue("timestamp", now, false);
@@ -438,7 +444,15 @@ export function querySemanticModel(
     }
     return 0;
   });
-  for (const [key, values] of orderedGroups.slice(offset, offset + limit)) {
+  const start =
+    query.window === "last"
+      ? Math.max(0, orderedGroups.length - offset - limit)
+      : offset;
+  const end =
+    query.window === "last"
+      ? Math.max(0, orderedGroups.length - offset)
+      : offset + limit;
+  for (const [key, values] of orderedGroups.slice(start, end)) {
     const computed = new Map<string, ModelMeasureResult>();
     const evaluate = (id: string): ModelMeasureResult => {
       const cached = computed.get(id);
@@ -579,7 +593,7 @@ export function querySemanticModel(
         }
       : {}),
     totalRows: orderedGroups.length,
-    offset,
+    offset: start,
     warnings: [...budget.warnings],
     operations: budget.operations,
     provenance: [...lineage.values()],

@@ -8,6 +8,7 @@ import {
 } from "@netrics/contracts";
 import {
   dashboardModelQuery,
+  measureViewWindow,
   compareDataValues,
   dimensionValueLabels,
   dataKey,
@@ -305,6 +306,12 @@ export async function queryDashboardMeasure(
         values,
         input.binding,
         input.options.limit,
+        measureViewWindow(
+          input.options.view,
+          metadata.dimensions.find(
+            (dimension) => dimension.id === input.binding.groupBy[0],
+          )?.type,
+        ),
       );
       const result = await queryDataModel(
         savepoint,

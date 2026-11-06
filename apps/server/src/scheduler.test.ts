@@ -5,6 +5,7 @@ import {
   createDatabase,
   createRawSqlClient,
   createWorkspace,
+  DEFAULT_RETENTION,
   schema,
   withWorkspace,
   type Database,
@@ -355,6 +356,44 @@ describe("createScheduler loop", () => {
           const authorizations = await admin`
             select 1 from oauth_authorizations where id = ${expired!.id}`;
           return jobs.length === 0 && authorizations.length === 0;
+        });
+      } finally {
+        await scheduler.stop();
+      }
+    } finally {
+      await admin.end({ timeout: 5 }).catch(() => undefined);
+    }
+  });
+
+  it("drains dataset history beyond one batch per maintenance window", async () => {
+    // Released dataset storage no longer counts toward the workspace quota,
+    // so one bounded batch an hour would let it accumulate unseen.
+    const admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+    try {
+      const [stage] = await admin`
+        insert into data_connector_stages (workspace_id, connection_id,
+          connector_id, key, dataset_key, schema_version, metadata, digest,
+          byte_size, source_collected_at, expires_at)
+        values (${workspaceId}, ${connFuture}, 'demo', 'drain', 'orders', 1,
+          '{}'::jsonb, 'd', 0, now(), now() - interval '1 minute')
+        returning id`;
+      await admin`
+        insert into data_connector_stage_pages
+          (stage_id, workspace_id, page_key, payload, digest)
+        select ${stage!.id}, ${workspaceId}, 'p' || i, '{}'::jsonb, 'd'
+        from generate_series(1, 25) i`;
+      const scheduler = createScheduler({
+        schedulerDb,
+        pollMs: 50,
+        schedulerId: "scheduler-dataset-drain-test",
+        retention: { ...DEFAULT_RETENTION, batch: 2 },
+      });
+      scheduler.start();
+      try {
+        await waitFor(async () => {
+          const rows = await admin`
+            select 1 from data_connector_stages where id = ${stage!.id}`;
+          return rows.length === 0;
         });
       } finally {
         await scheduler.stop();

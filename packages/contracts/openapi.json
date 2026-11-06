@@ -30463,6 +30463,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "rowLimitExceeded": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -30479,6 +30482,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "truncated": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -43959,6 +43965,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "rowLimitExceeded": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -43975,6 +43984,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "truncated": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -45368,6 +45380,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "rowLimitExceeded": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -45384,6 +45399,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "truncated": {
+                      "type": "boolean"
                     }
                   },
                   "required": [

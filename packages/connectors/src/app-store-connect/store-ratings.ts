@@ -159,33 +159,35 @@ export async function readStoreRatings(
       throw new Error("App Store rating lookup cancelled");
     // Do not retain provider errors or fail the independent sales/analytics.
   }
+  // A failed lookup (status, transport error, unexpected envelope) is no
+  // observation: a record would replace the day's earlier good snapshot
+  // under the upsert key, so none is emitted and that value stays.
+  if (results === undefined) return [];
   const byId = new Map<string, unknown[]>();
-  for (const result of results ?? []) {
+  for (const result of results) {
     if (typeof result !== "object" || result === null || !("trackId" in result))
       continue;
     const id = String(result.trackId);
     byId.set(id, [...(byId.get(id) ?? []), result]);
   }
-  return appIds.map((appId) => {
+  return appIds.flatMap((appId) => {
     const entries = byId.get(appId) ?? [];
     const parsed =
       entries.length === 1 ? ratingEntry.safeParse(entries[0]) : null;
     const item = parsed?.success ? parsed.data : undefined;
+    // An ambiguous or malformed answer for one app is no observation either.
+    if (entries.length > 1 || (entries.length === 1 && !item)) return [];
     const count = item?.userRatingCount ?? null;
     const score = item?.averageUserRating;
     const rating = score !== undefined && score > 0 ? String(score) : null;
     const availability =
-      results === undefined ||
-      entries.length > 1 ||
-      (entries.length === 1 && !item)
-        ? "temporarily_unavailable"
-        : entries.length === 0
-          ? "not_listed"
-          : count === 0 && rating === null
-            ? "unrated"
-            : count !== null && count > 0 && rating !== null
-              ? "available"
-              : "incomplete";
+      entries.length === 0
+        ? "not_listed"
+        : count === 0 && rating === null
+          ? "unrated"
+          : count !== null && count > 0 && rating !== null
+            ? "available"
+            : "incomplete";
     return {
       values: {
         app_id: appId,

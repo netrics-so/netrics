@@ -267,6 +267,8 @@ export const dataDe: Catalog<typeof dataEn> = {
         "Diese Eingabe würde eine Schleife erzeugen. Wähle einen früheren oder unabhängigen Schritt.",
       identityChanged:
         "Behalte beim Bearbeiten die Identitäten bestehender Schritte, berechneter und verbundener Spalten.",
+      appendDuplicate:
+        "Dadurch würde derselbe Schritt zweimal angefügt und seine Zeilen verdoppelt. Ändere oder entferne zuerst die Anfügung.",
     },
     addStep: "Schritt hinzufügen",
     applyStep: "Schritt anwenden",

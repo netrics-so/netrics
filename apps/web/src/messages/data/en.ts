@@ -258,6 +258,8 @@ export const dataEn = {
         "This input would create a loop. Choose an earlier or independent step.",
       identityChanged:
         "Keep existing step, calculated-column and merged-column identities when editing.",
+      appendDuplicate:
+        "This would append the same step twice and duplicate its rows. Change or remove the append first.",
     },
     addStep: "Add a step",
     applyStep: "Apply step",

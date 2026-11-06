@@ -397,6 +397,46 @@ it("pages deterministic groups without a permanent result-count ceiling", () => 
   ).toEqual([]);
 });
 
+it("pages from the end in ascending order for a last window", () => {
+  const expanded: DataTable = {
+    fields: apps.fields,
+    rows: Array.from({ length: 30 }, (_, index) => ({
+      id: `app-${index}`,
+      name: `App ${String(index).padStart(2, "0")}`,
+      country: "DE",
+    })),
+  };
+  const inputs = new Map(sources)
+    .set("apps", expanded)
+    .set("apple", {
+      fields: apple.fields,
+      rows: expanded.rows.map((row) => ({ app: row.id, downloads: 1 })),
+    })
+    .set("play", { ...play, rows: [] });
+  const query = {
+    measureIds: ["apple-downloads"],
+    groupBy: ["app"],
+    limit: 3,
+    window: "last" as const,
+  };
+  const latest = querySemanticModel(model, inputs, query);
+  expect(latest.rows.map((row) => row.dimensions.app)).toEqual([
+    "App 27",
+    "App 28",
+    "App 29",
+  ]);
+  expect([latest.totalRows, latest.offset]).toEqual([30, 27]);
+  const earlier = querySemanticModel(model, inputs, { ...query, offset: 28 });
+  expect(earlier.rows.map((row) => row.dimensions.app)).toEqual([
+    "App 00",
+    "App 01",
+  ]);
+  expect(earlier.offset).toBe(0);
+  expect(
+    querySemanticModel(model, inputs, { ...query, offset: 30 }).rows,
+  ).toEqual([]);
+});
+
 describe("dimension display names", () => {
   const named: SemanticModelDefinition = {
     ...model,

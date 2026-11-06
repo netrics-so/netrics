@@ -1172,16 +1172,43 @@ function denominatorInputOf(
     : null;
 }
 
+/**
+ * Validates the data bindings a save introduces or changes against the
+ * current published models. Bindings stored unchanged are left as they are:
+ * a later model change must not block unrelated edits (layout, other widgets);
+ * a stale binding reports its problem when it is queried.
+ */
 async function validateDataBindings(
   tx: Transaction,
   workspaceId: string,
   slides: readonly SlideInput[],
   filters: import("@netrics/domain").DashboardDataFilter[],
+  stored: Dashboard | null = null,
 ): Promise<Result<null>> {
   try {
     const ids = new Set(filters.map((filter) => filter.id));
     if (ids.size !== filters.length)
       return fail(400, "dashboard_filter_ids_not_unique");
+    const storedFilters = new Map(
+      (stored ? dashboardDataFiltersSchema.parse(stored.dataFilters) : []).map(
+        (filter) => [filter.id, filter],
+      ),
+    );
+    const storedWidgets = new Map(
+      (stored?.slides ?? [])
+        .flatMap((slide) => slide.widgets)
+        .map((widget) => [widget.id, widget]),
+    );
+    // Filters added, removed or edited by this save; widgets of an affected
+    // model are re-validated against them.
+    const changedFilters = [
+      ...filters.filter(
+        (filter) =>
+          JSON.stringify(storedFilters.get(filter.id)) !==
+          JSON.stringify(filter),
+      ),
+      ...[...storedFilters.values()].filter((filter) => !ids.has(filter.id)),
+    ];
     for (const filter of filters) {
       if (
         !filter.mappings.length ||
@@ -1189,7 +1216,17 @@ async function validateDataBindings(
           filter.mappings.length
       )
         return fail(400, "dashboard_filter_mapping_invalid");
+      const previous = storedFilters.get(filter.id);
       for (const mapping of filter.mappings) {
+        if (
+          previous?.type === filter.type &&
+          previous.mappings.some(
+            (old) =>
+              old.modelId === mapping.modelId &&
+              old.dimensionId === mapping.dimensionId,
+          )
+        )
+          continue;
         const model = await publishedModel(tx, workspaceId, mapping.modelId);
         if (
           model.metadata.dimensions.find(
@@ -1201,13 +1238,38 @@ async function validateDataBindings(
     }
     for (const widget of slides.flatMap((slide) => slide.widgets)) {
       if (widget.type === "measure") {
-        await validateDashboardMeasure(
-          tx,
-          workspaceId,
-          filters,
-          measureWidgetBindingSchema.parse(widget.modelBinding),
-          measureWidgetOptionsSchema.parse(widget.options),
-        );
+        const binding = measureWidgetBindingSchema.parse(widget.modelBinding),
+          options = measureWidgetOptionsSchema.parse(widget.options);
+        const previous = widget.id ? storedWidgets.get(widget.id) : undefined;
+        const unchanged =
+          previous?.type === "measure" &&
+          JSON.stringify(
+            measureWidgetBindingSchema.safeParse(previous.modelBinding).data,
+          ) === JSON.stringify(binding) &&
+          JSON.stringify(
+            measureWidgetOptionsSchema.safeParse(previous.options).data,
+          ) === JSON.stringify(options) &&
+          !changedFilters.some(
+            (filter) =>
+              !storedFilters.has(filter.id) ||
+              !ids.has(filter.id) ||
+              binding.exclusions.some(
+                (exclusion) => exclusion.filterId === filter.id,
+              ) ||
+              [filter, storedFilters.get(filter.id)!].some((version) =>
+                version.mappings.some(
+                  (mapping) => mapping.modelId === binding.modelId,
+                ),
+              ),
+          );
+        if (!unchanged)
+          await validateDashboardMeasure(
+            tx,
+            workspaceId,
+            filters,
+            binding,
+            options,
+          );
       } else if (dataWidgetCost(widget.type) > 0) {
         const exclusions = widget.filterExclusions ?? [];
         if (
@@ -1432,6 +1494,7 @@ export function createDashboardService(deps: {
           slides.value,
           body.settings?.dataFilters ??
             dashboardDataFiltersSchema.parse(current.dataFilters),
+          current,
         );
         if (!bindings.ok) return bindings;
         const { rest, theme: themeRequest } = splitSettings(body.settings);

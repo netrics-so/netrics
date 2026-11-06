@@ -90,7 +90,9 @@ report bodies may use the existing storage abstraction, but dashboard queries
 read prepared relations rather than reparsing report files.
 
 Retained batches and published generations are immutable during their retention
-window. Provider revisions produce new batches/generations. The current source
+window. A superseded generation's window ends once no unexpired query
+snapshot or page session pins it (after a short in-flight grace); see
+`docs/data-processing.md`. Provider revisions produce new batches/generations. The current source
 view resolves corrections by the declared identity and revision rules. Purging
 personal data or a workspace overrides historical reproducibility. Show the
 available replay window; never promise to rebuild history already purged or

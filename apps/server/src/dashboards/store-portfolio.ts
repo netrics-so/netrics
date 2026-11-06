@@ -397,6 +397,8 @@ export function buildStoreModel(
           name: t.proceeds,
           kind: "aggregate",
           datasetId,
+          // Currencies never add up: group by currency or fix it to one value.
+          requiredDimensions: ["currency"],
           aggregate: {
             id: "proceeds",
             name: t.proceeds,

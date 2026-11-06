@@ -186,7 +186,7 @@ export function registerDashboardRoutes(
             async (tx) => ({
               widgets: await (async () => {
                 const results = [];
-                const now = new Date();
+                const now = deps.now?.() ?? new Date();
                 for (const widget of body.widgets)
                   results.push(
                     await queryDashboardMeasure(

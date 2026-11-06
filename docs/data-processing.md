@@ -173,7 +173,7 @@ in-progress snapshot cannot overwrite a newer published refresh.
 
 The database exports `previewDataset` (bounded, workspace-scoped) and
 `replayDatasetRefresh` (rebuild from retained complete pages without network
-access). Replay preserves the original collection time and expiry. Published
+access; available for the refresh behind the current generation). Replay preserves the original collection time and expiry. Published
 row values remain typed JSONB source views; prepared analytical relations,
 expression graphs and semantic queries are described below.
 
@@ -231,11 +231,17 @@ budgets without an SDK or database schema change. The individual 128 MiB stage,
 1 MiB metadata and page/record safeguards remain in force even when the
 aggregate cache budget is `null`.
 
-Retained raw storage and source-count policy defaults are uncapped. Execution
+Retained raw storage and source-count policy defaults are uncapped. One source
+generation holds at most the smaller of `maxGenerationRows` and `queryRows`, since
+no read could load a larger one; see `docs/data-scale-validation.md`. Execution
 defaults are 100,000 rows, 5 million operations and 128 MiB of output per evaluation, 15
 seconds per database statement and 100 connector pages per sync attempt. All
 are configurable, including `null`. They govern an individual execution, not
-the amount of retained history. Page sessions and ordinary last-valid query
+the amount of retained history. Dataset ingestion applies the statement timeout
+only to its own statements and restores the caller's setting afterwards, so
+checkpoint and other sync work in the same transaction keep their own bound.
+With `queryTimeoutMs: null`, ingestion statements still stop after 5 minutes
+(`DATASET_INGEST_TIMEOUT_MS`). Page sessions and ordinary last-valid query
 snapshots each default to 100 identities per release and a one-day lifetime.
 The additional `queryPageSessionsPerCaller` policy defaults to 10 page sessions
 per authenticated user/release; users share that limit across tabs and login
@@ -275,8 +281,34 @@ Credentials, headers and tokens never belong in datasets.
 
 Expired rows are excluded at read time. Hourly scheduler maintenance removes
 expired rows, pages, prepared outputs and query snapshots in batches through
-`prune_dataset_history`. The scheduler has no direct read access to source
+`prune_dataset_history`, repeating bounded batches until one comes back short
+or a 10-second budget is spent; a drain that ends with work left resumes on the
+next scheduler tick rather than an hour later. The scheduler has no direct read access to source
 records. Dataset/model tables use forced RLS and explicit tenant predicates.
+
+Retention bounds the current generation, not every copy of it. Each upsert,
+append or replacement refresh publishes a complete new generation, so a
+superseded generation is released once nothing can legitimately read it: no
+unexpired last-valid query snapshot or pinned page session names it, and its
+successor is at least 15 minutes old. That grace covers request transactions
+that read a generation before committing the snapshot that pins it. Nothing else
+pins raw generations: ingestion reads only the latest one, prepared caches hold
+their own output rows and are reachable only through the current input vector,
+and published definition history and restore store no generation identities.
+A pinned generation stays readable until the last snapshot or session naming it
+expires, even with `retentionDays: null`; source retention still ends it sooner.
+Maintenance marks a released generation expired (readers that still name it fail
+with an explicit expiry error, never a partial read) and then removes its records.
+Raw pages of a complete refresh are kept only while its generation is current,
+for `replayDatasetRefresh`; an incomplete refresh that a newer published refresh
+has made unpublishable also loses its pages. Their metadata rows remain until
+source retention so a late retry is still rejected rather than republished.
+`maxWorkspaceBytes` counts only current and pinned generations and the pages of
+live refreshes. Superseded copies awaiting maintenance do not count, so
+frequent refreshes of the same dataset do not accumulate quota usage; physical
+storage carries the copies published within the grace period plus one
+maintenance interval, and a larger backlog is drained tick by tick instead of
+growing unseen.
 
 ## Preparations and semantic models
 
@@ -349,7 +381,9 @@ Append can explicitly match independently authored columns with different field
 IDs. `columnMappings` maps each input node's source-field IDs to output-field IDs;
 a mapped input projects only the confirmed columns, including required currency
 companions. The form proposes matches by name and requires an explicit matching
-choice. Omitted mappings keep the existing union-by-ID behavior. Missing values
+choice. Omitted mappings keep the existing union-by-ID behavior. An append cannot read the
+same step twice (that would duplicate its rows); the editor refuses a removal
+that would produce one. Missing values
 remain null; schema/unit/currency incompatibilities still fail validation.
 [#470](https://github.com/netrics-so/netrics/issues/470) adds paged published
 definition history for preparations and models. **Restore as draft** creates a
@@ -410,13 +444,19 @@ defaults. Viewer choices are conjoined with fixed scope and widget predicates.
 Every affected model needs a mapping. Independent widgets require an explicit
 exclusion and explanation; fixed scopes cannot be excluded. Older observation
 widgets require explicit exclusions before a shared filter can be saved.
+Saving validates only the filter mappings and measure widgets it adds or
+changes (including widgets of a model whose filters changed). A binding left
+unchanged after its model was republished does not block unrelated edits; it
+reports its problem when queried.
 
 `dashboards/published-models` exposes the published measure/dimension catalog
 without raw source fields or drafts. `dashboards/data/preview` evaluates unsaved
 widget bindings against published models only, and `dashboards/:id/data`
 evaluates saved bindings. Workspace authorization and forced RLS apply to each
 path. One dashboard request uses a repeatable-read transaction, with individual
-widget failures isolated by savepoints. Responses include release/generation
+widget failures isolated by savepoints. Reads write only caches (last-valid
+snapshots, prepared outputs); when concurrent reads of the same query race on
+those writes, the losing read skips caching instead of failing its widget. Responses include release/generation
 identities, applied predicates, scope, source refresh time when known, expiry,
 warnings and explicit exclusions. Source refresh time describes ingestion, not
 the provider's reporting coverage or delay.
@@ -436,6 +476,9 @@ requests do not allocate page sessions. The caller-bound key namespace requires
 older unowned tokens to restart, without a SQL schema migration. See [the API,
 capacity and upgrade rules](./data-query-pagination.md).
 Multi-select filters use typed list membership without growing a deep expression tree.
+Line charts and date-grouped bar charts show the most recent `limit` points,
+still in ascending order; `offset` and `totalRows` in the result say how many
+earlier points were left out. Tables and other charts show the first groups.
 
 Device schemas 2/3 include server-computed measure results. The shared native
 and browser renderers support values, tables and charts without calculating
@@ -474,11 +517,15 @@ Rename a product once in Products; change a listing's product ID in the mapping
 table. Future apps retain their source identity until explicitly linked. Resource
 names are exposed as a tenant-scoped `resources:<connectionId>` dataset whose
 content fingerprint invalidates dependent outputs when names change. It is current
-metadata, not a retained historical resource-name snapshot. It is excluded from
+metadata, not a retained historical resource-name snapshot: a last-valid
+fallback reads the current catalog with its retained report/reference
+generations rather than failing once apps are added or renamed. It is excluded from
 report freshness timestamps; retained report/reference generations determine those.
 
 Apple first-download units and Google daily user installs stay separated by store.
-Proceeds include signed refunds, fees and adjustments, with currencies kept apart.
+Proceeds include signed refunds, fees and adjustments, with currencies kept apart:
+new installations declare currency as a required dimension of proceeds, as
+downloads require store.
 Ratings use the latest snapshot per listing and rating country; linking products
 never combines listing scores. Measures can declare required dimensions: group by
 those dimensions or fix each to a single value in a conjunctive filter. Formula

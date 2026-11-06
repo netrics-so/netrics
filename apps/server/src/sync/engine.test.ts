@@ -30,7 +30,12 @@ import {
 } from "@netrics/database";
 
 import { createCredentialKeyring, encryptCredentials } from "../credentials.js";
-import { createJobHandlers } from "../jobs/handlers.js";
+import {
+  createJobHandlers,
+  NonRetryableJobError,
+  TerminalJobError,
+} from "../jobs/handlers.js";
+import { DEFAULT_DATA_POLICY, type DataPolicy } from "@netrics/domain";
 import { syncCatalog } from "./catalog.js";
 import { createTestDatabase, type TestDatabase } from "../test-db.js";
 import { createWorker, type WorkerHandle } from "../worker.js";
@@ -156,6 +161,42 @@ const flakyConnector: Connector = {
           previousPageKey: "p1",
           complete: true,
           records: [{ values: { id: "two", amount: "20.00" } }],
+        },
+      ],
+      done: true,
+    };
+  },
+};
+
+/**
+ * Emits one dataset page whose record the database refuses (a NUL byte in a
+ * string field): a storage failure the engine sees only as the redacted
+ * dataset_storage_failed.
+ */
+let datasetFaultRecord = "a\u0000b";
+const datasetFaultConnector: Connector = {
+  manifest: {
+    ...testManifest("dataset-faults", "dataset-faults.hits"),
+    datasets: [flakyDataset],
+  },
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    return [];
+  },
+  async sync() {
+    return {
+      observations: [],
+      datasetPages: [
+        {
+          datasetKey: "events",
+          schemaVersion: 1,
+          refreshKey: randomUUID(),
+          pageKey: "p1",
+          previousPageKey: null,
+          complete: true,
+          records: [{ values: { id: datasetFaultRecord, amount: "1.00" } }],
         },
       ],
       done: true,
@@ -546,6 +587,7 @@ beforeAll(async () => {
   registry.register(probeConnector);
   registry.register(revisingConnector);
   registry.register(namingConnector);
+  registry.register(datasetFaultConnector);
   activityProbe = createRawSqlClient(testDb.adminUrl, { max: 1 });
 
   // Explicit catalog sync (production does this at process startup).
@@ -594,6 +636,7 @@ describe("catalog sync", () => {
       "app-store-connect",
       "apple-ads",
       "broken",
+      "dataset-faults",
       "demo",
       "endless",
       "flaky-pages",
@@ -927,10 +970,13 @@ function runAttempt(
   connectionId: string,
   attempts: number,
   jobId: string = randomUUID(),
+  dataPolicy?: DataPolicy,
 ): Promise<void> {
-  const handler = createJobHandlers({ registry, credentialKeyring: KEYRING })[
-    kind
-  ]!;
+  const handler = createJobHandlers({
+    registry,
+    credentialKeyring: KEYRING,
+    ...(dataPolicy ? { dataPolicy } : {}),
+  })[kind]!;
   const job = {
     id: jobId,
     kind,
@@ -962,6 +1008,52 @@ async function committed(connectionId: string) {
   `;
   return row!;
 }
+
+describe("dataset storage failures", () => {
+  it("a storage failure is a retryable outage with a redacted message, not a contract failure", async () => {
+    datasetFaultRecord = "a\u0000b";
+    const connectionId = await seedConnection(workspaceA, "dataset-faults");
+    const error = await runAttempt(
+      "connection.sync",
+      workspaceA,
+      connectionId,
+      1,
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(NonRetryableJobError);
+    expect(error).not.toBeInstanceOf(TerminalJobError);
+    expect((error as Error).message).toBe("dataset_storage_failed");
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs[0]).toMatchObject({
+      status: "failed",
+      error_class: "transient",
+      error_message: "dataset_storage_failed",
+    });
+    expect((await stateFor(workspaceA, connectionId))?.authState).toBe(
+      "outage",
+    );
+  });
+
+  it("a full storage quota fails as budget, without retries or dead-lettering", async () => {
+    datasetFaultRecord = "fits";
+    const connectionId = await seedConnection(workspaceA, "dataset-faults");
+    const error = await runAttempt(
+      "connection.sync",
+      workspaceA,
+      connectionId,
+      1,
+      randomUUID(),
+      { ...DEFAULT_DATA_POLICY, maxWorkspaceBytes: 1 },
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(TerminalJobError);
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs[0]).toMatchObject({
+      status: "failed",
+      error_class: "budget",
+    });
+    expect(String(runs[0]!.error_message)).toContain("dataset_workspace_quota");
+  });
+});
 
 describe("page-wise ingest (#145)", () => {
   it("commits a large backfill page by page, checkpointing the cursor", async () => {

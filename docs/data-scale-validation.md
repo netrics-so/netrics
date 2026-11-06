@@ -120,6 +120,20 @@ output and a 15-second SQL statement timeout; these are configurable, including
 `null`. The default 100 sync pages per worker turn is a cooperative yield budget,
 not a total import limit: the cursor continues in another turn.
 
+Ingestion and query row limits are consistent. Every read of a raw generation
+(preview, preparation, publication and model query) loads at most `queryRows`,
+so a source generation may hold at most the smaller of `maxGenerationRows` and
+`queryRows`; `null` in one defers to the other, and only `null` in both removes
+the bound. With the defaults (`maxGenerationRows: null`, `queryRows: 100000`) a
+refresh whose staged or published rows exceed 100,000 fails at ingestion with
+`dataset_refresh_limit` or `dataset_generation_limit`, and the previous generation
+stays current. Previously such a source ingested successfully and then every
+preview, publication and query failed with `data_source_row_limit`. The same
+bound caps how many prior rows an incremental upsert/append/window refresh loads
+into worker memory. Raising `queryRows` for a workspace raises its ingest bound
+too. Generations already stored above the bound remain readable only under a
+larger `queryRows`; their next incremental refresh is rejected until then.
+
 Some limits bound one message or definition rather than a customer's total data:
 
 | Safeguard                     | Current behavior                                                                                                                                        |
@@ -143,6 +157,16 @@ uncapped policy. The integration change for #466 removes that fixed ceiling,
 applies the configured query-row policy and fetches only the requested identity
 when reading an observation adapter. Its regression check covers more than 1,000
 catalog entries. This was an account-size ceiling, not a necessary page boundary.
+
+Reusing the query-row policy for the source listing made one oversized catalog
+fail the whole source picker, and a `null` row policy left the listing unbounded.
+The listing now has its own bound. The legacy observation catalog lists at most
+10,000 entries (`DATA_SOURCE_CATALOG_ENTRIES`); beyond that the response sets
+`truncated: true` instead of failing. Resource-name catalogs are counted rather
+than loaded: an entry larger than the workspace `queryRows` is listed with its
+`rowCount` and `rowLimitExceeded: true`, and only reading that source reports
+`data_source_row_limit`. Listed resource entries carry no generation identity;
+preview and queries still fingerprint the names they load.
 
 The older `listNamedResources` helper still returns at most 500 choices in legacy
 resource/widget listing paths. The store template options and `resources:` dataset

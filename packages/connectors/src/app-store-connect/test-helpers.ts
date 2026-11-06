@@ -37,6 +37,11 @@ export interface FakeTeam {
   reports?: Record<string, string | Uint8Array>;
   /** Days whose report is not published yet (404 "not available yet"). */
   pendingDays?: string[];
+  /**
+   * Days before this one (YYYY-MM-DD) are past Apple's retention: a 400
+   * naming filter[reportDate].
+   */
+  expiredBefore?: string;
   /** The Analytics Reports API of this team (#174). */
   analytics?: FakeAnalytics;
 }
@@ -212,6 +217,23 @@ export function createFakeAppStoreConnect(
         return jsonResponse(400, fixture("error-invalid-vendor"), rate());
       }
       const date = url.searchParams.get("filter[reportDate]") ?? "";
+      if (team.expiredBefore !== undefined && date < team.expiredBefore) {
+        return jsonResponse(
+          400,
+          {
+            errors: [
+              {
+                status: "400",
+                code: "PARAMETER_ERROR.INVALID",
+                title: "A parameter has an invalid value",
+                detail: "Invalid date specified.",
+                source: { parameter: "filter[reportDate]" },
+              },
+            ],
+          },
+          rate(),
+        );
+      }
       if ((team.pendingDays ?? []).includes(date)) {
         return jsonResponse(
           404,

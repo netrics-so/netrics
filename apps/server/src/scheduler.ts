@@ -140,6 +140,14 @@ export interface SchedulerDeps {
   securityRetention?: SecurityRetentionPolicy;
   /** Retention of App Store review text (ADR 0019 §11). */
   appReviewRetention?: AppReviewRetentionPolicy;
+  /**
+   * Wall-clock budget of one dataset-history drain (default 10 s). While a
+   * drain ends with work left, the next tick drains again instead of waiting
+   * for the next maintenance window, so released storage (which the quota
+   * no longer counts) is reclaimed at a bounded rate per tick but without a
+   * standing backlog.
+   */
+  datasetPruneBudgetMs?: number;
   /** Clock for security-record and review retention (tests pin it). */
   now?: () => Date;
   schedulerId?: string;
@@ -174,16 +182,47 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
   // History retention (DEFAULT_RETENTION in @netrics/database). Deletes are
   // bounded per call and idempotent, so a second scheduler doing the same is
   // harmless.
+  const datasetPruneBudgetMs = deps.datasetPruneBudgetMs ?? 10_000;
+  let datasetBacklog = false;
+
+  // Storage accounting excludes released superseded generations and raw
+  // pages (datasetWorkspaceBytes), so their deletion must keep up with
+  // ingestion: one bounded batch an hour would let them pile up unseen.
+  // Each call is one bounded batch; repeat until a batch comes back short
+  // (nothing left) or the budget is spent, and resume on the next tick.
+  async function drainDatasetHistory(): Promise<void> {
+    const batch = (deps.retention ?? DEFAULT_RETENTION).batch;
+    const deadline = Date.now() + datasetPruneBudgetMs;
+    let deleted = 0;
+    for (;;) {
+      const n = await pruneDatasetHistory(schedulerDb, now(), batch);
+      deleted += n;
+      if (n < batch) {
+        datasetBacklog = false;
+        break;
+      }
+      if (Date.now() >= deadline) {
+        datasetBacklog = true;
+        break;
+      }
+    }
+    if (deleted > 0) {
+      logger.info(
+        { datasetRowsDeleted: deleted, backlog: datasetBacklog },
+        "pruned dataset history",
+      );
+    }
+  }
+
   async function maintain(): Promise<void> {
     if (Date.now() - lastMaintenance < maintenanceEveryMs) {
+      if (datasetBacklog) {
+        await drainDatasetHistory();
+      }
       return;
     }
     lastMaintenance = Date.now();
-    await pruneDatasetHistory(
-      schedulerDb,
-      now(),
-      (deps.retention ?? DEFAULT_RETENTION).batch,
-    );
+    await drainDatasetHistory();
     const result = await pruneHistory(schedulerDb, deps.retention);
     if (result.jobsDeleted > 0 || result.syncRunsDeleted > 0) {
       logger.info(result, "pruned finished history");

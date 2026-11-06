@@ -19,7 +19,11 @@ import {
   type DataExpression,
 } from "@netrics/domain";
 import { createTestDatabase } from "../test-db.js";
-import { createDataService, type DataActor } from "./service.js";
+import {
+  createDataService,
+  DATA_SOURCE_CATALOG_ENTRIES,
+  type DataActor,
+} from "./service.js";
 
 const NOW = new Date("2026-11-05T12:00:00Z");
 let db: Database,
@@ -773,6 +777,50 @@ describe("persistent reusable data processing", () => {
       expect(rows).toHaveLength(0);
     }
   });
+  it("lists oversized catalogs under their own bound instead of failing the source picker", async () => {
+    const [workspace] =
+      await admin`insert into workspaces(name) values ('Catalogs') returning id`;
+    const scoped = { ...actor, workspaceId: workspace!.id as string };
+    await admin`insert into connectors(id,version,manifest) values ('catalog-fixture','1.0.0','{}')`;
+    const [large, small] =
+      await admin`insert into connections(workspace_id,connector_id,name) values (${scoped.workspaceId},'catalog-fixture','Large'),(${scoped.workspaceId},'catalog-fixture','Small') returning id`;
+    await admin`insert into connection_resources(connection_id,workspace_id,resource_id,name,kind)
+      select ${large!.id},${scoped.workspaceId},'app-' || n,'App ' || n,'app' from generate_series(1,3) n`;
+    await admin`insert into connection_resources(connection_id,workspace_id,resource_id,name,kind) values (${small!.id},${scoped.workspaceId},'only','Only','app')`;
+    await admin`insert into metric_definitions(connector_id,key,name,description,kind,unit,granularity,dimensions,aggregations)
+      select 'catalog-fixture','metric_' || n,'Metric ' || n,'Count','delta','count','day','[]','["sum"]' from generate_series(1,2) n`;
+    await adminSetDataPolicy(db, scoped.workspaceId, { queryRows: 2 });
+    const listed = await service.listSources(scoped);
+    const byId = new Map(listed.sources.map((source) => [source.id, source]));
+    // The oversized resource catalog is flagged; the rest still lists.
+    expect(byId.get("resources:" + large!.id)).toMatchObject({
+      rowCount: 3,
+      rowLimitExceeded: true,
+    });
+    expect(byId.get("resources:" + small!.id)).toMatchObject({ rowCount: 1 });
+    expect(
+      byId.get("resources:" + small!.id)?.rowLimitExceeded,
+    ).toBeUndefined();
+    // Four legacy entries (two connections x two metrics) exceed queryRows
+    // but not the catalog's own bound.
+    expect(
+      listed.sources.filter((source) => source.kind === "observations"),
+    ).toHaveLength(4);
+    expect(listed.truncated).toBeUndefined();
+    await expect(
+      service.preview(scoped, "resources:" + large!.id),
+    ).rejects.toThrow("data_source_row_limit");
+
+    // An uncapped query budget no longer makes the catalog unbounded.
+    await adminSetDataPolicy(db, scoped.workspaceId, { queryRows: null });
+    await admin`insert into metric_definitions(connector_id,key,name,description,kind,unit,granularity,dimensions,aggregations)
+      select 'catalog-fixture','bulk_' || n,'Bulk ' || n,'Count','delta','count','day','[]','["sum"]' from generate_series(1,${DATA_SOURCE_CATALOG_ENTRIES / 2}) n`;
+    const bounded = await service.listSources(scoped);
+    expect(bounded.truncated).toBe(true);
+    expect(
+      bounded.sources.filter((source) => source.kind === "observations"),
+    ).toHaveLength(DATA_SOURCE_CATALOG_ENTRIES);
+  }, 30_000);
   it("applies tier policy, permits uncapped retention, and never revives expired data", async () => {
     const [workspace] =
       await admin`insert into workspaces(name) values ('Policy') returning id`;
@@ -891,6 +939,70 @@ describe("persistent reusable data processing", () => {
       () => new Date(NOW.getTime() + 2 * 86400000),
     );
     await expect(later.query(actor, model.model.id, query)).rejects.toThrow();
+  });
+  it("keeps the last-valid fallback when a resource catalog changes", async () => {
+    const [connection] =
+      await admin`select id from connections where workspace_id = ${actor.workspaceId} limit 1`;
+    const connectionId = connection!.id as string;
+    await admin`insert into connection_resources(connection_id,workspace_id,resource_id,name,kind) values (${connectionId},${actor.workspaceId},'a','App A','app')`;
+    const resources = "resources:" + connectionId;
+    const mappingDefinition = definition("resource-fallback-mapping", [
+      { id: "id", type: "string" },
+      { id: "app", type: "string" },
+    ]);
+    const mapping = await service.saveManual(actor, {
+      definition: mappingDefinition,
+      records: [{ values: { id: "p1", app: "a" } }],
+    });
+    const model = await service.saveModel(actor, {
+      name: "Resource fallback",
+      definition: {
+        ...initialModel,
+        datasets: [salesId, mapping.datasetId, resources],
+        relationships: [
+          {
+            id: "mapping",
+            from: { datasetId: salesId, fieldId: "app" },
+            to: { datasetId: mapping.datasetId, fieldId: "app" },
+            cardinality: "many_to_one",
+          },
+          {
+            id: "resource",
+            from: { datasetId: mapping.datasetId, fieldId: "app" },
+            to: { datasetId: resources, fieldId: "resource_id" },
+            cardinality: "many_to_one",
+          },
+        ],
+        dimensions: [
+          { id: "app", name: "App", datasetId: resources, fieldId: "name" },
+        ],
+        measures: [initialModel.measures[0]!],
+      },
+    });
+    await service.publishModel(actor, model.model.id, 1);
+    const query = { measureIds: ["income"], groupBy: ["app"] };
+    const first = await service.query(actor, model.model.id, query);
+    expect(first.stale).toBe(false);
+    // An app appears in the catalog and the mapping becomes invalid at once.
+    await admin`insert into connection_resources(connection_id,workspace_id,resource_id,name,kind) values (${connectionId},${actor.workspaceId},'z','App Z','app')`;
+    await service.saveManual(
+      actor,
+      {
+        definition: mappingDefinition,
+        generationId: mapping.generationId,
+        records: [
+          { values: { id: "p1", app: "a" } },
+          { values: { id: "p2", app: "a" } },
+        ],
+      },
+      mapping.datasetId,
+    );
+    const fallback = await service.query(actor, model.model.id, query);
+    expect(fallback).toMatchObject({
+      stale: true,
+      warnings: ["using_last_valid_source_snapshot"],
+    });
+    expect(fallback.rows).toEqual(first.rows);
   });
 });
 

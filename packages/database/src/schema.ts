@@ -1975,6 +1975,8 @@ export const dataModelQuerySnapshots = pgTable(
       name: "data_model_query_snapshots_release_fk",
     }).onDelete("cascade"),
     index("data_model_query_snapshots_expiry_idx").on(t.expiresAt),
+    // Retained-generation pin checks (prune and storage accounting).
+    index("data_model_query_snapshots_workspace_idx").on(t.workspaceId),
   ],
 );
 
