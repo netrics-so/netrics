@@ -479,6 +479,7 @@ export type { IngestDatasetPageInput } from "./datasets.js";
 export { resolveDataPolicy, adminSetDataPolicy } from "./data-policy.js";
 
 export {
+  DatasetStageUnavailableError,
   findConnectorStage,
   readConnectorStagePage,
   storeConnectorStage,

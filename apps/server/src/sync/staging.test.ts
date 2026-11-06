@@ -77,7 +77,7 @@ function staging(
   return createDatasetStaging({
     db,
     manifest,
-    now: at,
+    clock: () => at,
     signal,
     workspaceId: workspace,
     connectionId: connection,
@@ -369,6 +369,42 @@ function retainedPage(): DatasetPage {
 }
 
 describe("host staging storage boundaries", () => {
+  it("checks fresh personal-data retention with the same adapter across operations", async () => {
+    let time = now;
+    const store = createDatasetStaging({
+      db,
+      workspaceId,
+      connectionId,
+      manifest: retainedManifest(),
+      signal: new AbortController().signal,
+      clock: () => time,
+    });
+    const key = randomUUID();
+    const stage = await store.put({
+      key,
+      metadata: {},
+      pages: [retainedPage()],
+    });
+    expect(await store.get(key)).toEqual(stage);
+    time = new Date(TEST_NOW + 3 * 86_400_000);
+    expect(await store.get(key)).toBeNull();
+    await expect(store.getPage(stage.id, "0")).rejects.toThrow(
+      "dataset_stage_unavailable",
+    );
+    const fresh = await store.put({
+      key,
+      metadata: {},
+      pages: [retainedPage()],
+    });
+    expect(fresh.id).not.toBe(stage.id);
+    const [header] =
+      await owner`select source_collected_at,source_expires_at from data_connector_stages where id=${fresh.id}`;
+    expect(header).toMatchObject({
+      source_collected_at: time,
+      source_expires_at: new Date(time.getTime() + 2 * 86_400_000),
+    });
+  });
+
   it("keeps metadata digests independent of database collation", async () => {
     const store = staging(retainedManifest());
     const value = {

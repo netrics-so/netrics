@@ -235,6 +235,8 @@ export interface IngestDatasetPageInput {
   definition: SourceDatasetDefinition;
   page: DatasetPage;
   now?: Date;
+  /** Host clock for admission after database lock waits. */
+  clock?: () => Date;
   /** Host-only replay provenance; never extend a retained source deadline. */
   retainedSource?: { collectedAt: Date; expiresAt: Date | null };
   /** Instance defaults; workspace/tier overrides resolve in the tenant transaction. */
@@ -273,7 +275,13 @@ async function ingestPage(
     return fail("dataset_page_invalid");
   }
   const { workspaceId, connectionId } = input;
-  const now = input.now ?? new Date();
+  await tx.execute(
+    sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
+  );
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}, 440))`,
+  );
+  const now = input.clock?.() ?? input.now ?? new Date();
   const requestedRetention = datasetRetentionDays(definition);
   const retentionDays =
     policy.maxRetentionDays === null
@@ -286,12 +294,6 @@ async function ingestPage(
   );
   if ((expiresAt !== null && expiresAt <= now) || sourceCollectedAt > now)
     return fail("dataset_replay_unavailable");
-  await tx.execute(
-    sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
-  );
-  await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}, 440))`,
-  );
   const dataset = await register(
     tx,
     workspaceId,
@@ -325,8 +327,14 @@ async function ingestPage(
     )
     .for("update");
   if (!refresh) return fail("dataset_refresh_not_found");
-  if (refresh.expiresAt !== null && refresh.expiresAt <= now)
-    fail("dataset_refresh_expired");
+  // Later unstaged pages must not outlive the first page's retained deadline.
+  // Recheck after waits/writes, including an idempotent replay's read path.
+  const admissionExpiry = earlier(expiresAt, refresh.expiresAt);
+  const assertFreshRefresh = () => {
+    if (admissionExpiry !== null && admissionExpiry <= (input.clock?.() ?? now))
+      fail("dataset_refresh_expired");
+  };
+  assertFreshRefresh();
   if (
     refresh.schemaVersion !== definition.version ||
     stable(refresh.replacementWindow) !== stable(page.window ?? null)
@@ -355,6 +363,7 @@ async function ingestPage(
           eq(dataGenerations.refreshKey, page.refreshKey),
         ),
       );
+    assertFreshRefresh();
     return {
       datasetId: dataset.id,
       generationId: generation?.id ?? null,
@@ -403,6 +412,7 @@ async function ingestPage(
       )
     )
       fail("dataset_workspace_quota");
+    assertFreshRefresh();
     return { datasetId: dataset.id, generationId: null, replayed: false };
   }
 
@@ -576,6 +586,7 @@ async function ingestPage(
         eq(dataDatasets.id, dataset.id),
       ),
     );
+  assertFreshRefresh();
   return {
     datasetId: dataset.id,
     generationId: generation.id,

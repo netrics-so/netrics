@@ -3,6 +3,8 @@ import type {
   ConnectorManifest,
 } from "@netrics/connector-sdk";
 import {
+  DatasetStoreError,
+  DatasetStageUnavailableError,
   findConnectorStage,
   readConnectorStagePage,
   storeConnectorStage,
@@ -10,6 +12,7 @@ import {
   type Db,
   type Transaction,
 } from "@netrics/database";
+import { ContractViolationError } from "@netrics/connector-runtime";
 import type { DataPolicy } from "@netrics/domain";
 
 /** Host binds scope once; connector-controlled keys never choose another tenant. */
@@ -18,7 +21,7 @@ export function createDatasetStaging(input: {
   workspaceId: string;
   connectionId: string;
   manifest: ConnectorManifest;
-  now: Date;
+  clock?: () => Date;
   policyDefaults?: DataPolicy;
   signal: AbortSignal;
 }): ConnectorDatasetStaging {
@@ -26,17 +29,26 @@ export function createDatasetStaging(input: {
     workspaceId: input.workspaceId,
     connectionId: input.connectionId,
     connectorId: input.manifest.id,
-    now: input.now,
+    clock: input.clock ?? (() => new Date()),
     policyDefaults: input.policyDefaults,
   };
   const transaction = async <T>(call: (tx: Transaction) => Promise<T>) => {
     input.signal.throwIfAborted();
-    return withWorkspace(input.db, scope, async (tx) => {
-      input.signal.throwIfAborted();
-      const result = await call(tx);
-      input.signal.throwIfAborted();
-      return result;
-    });
+    try {
+      return await withWorkspace(input.db, scope, async (tx) => {
+        input.signal.throwIfAborted();
+        const result = await call(tx);
+        input.signal.throwIfAborted();
+        return result;
+      });
+    } catch (error) {
+      if (
+        error instanceof DatasetStoreError &&
+        !(error instanceof DatasetStageUnavailableError)
+      )
+        throw new ContractViolationError(error.code);
+      throw error;
+    }
   };
   return {
     get: (key) => transaction((tx) => findConnectorStage(tx, scope, key)),
