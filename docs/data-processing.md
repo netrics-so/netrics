@@ -410,6 +410,10 @@ defaults. Viewer choices are conjoined with fixed scope and widget predicates.
 Every affected model needs a mapping. Independent widgets require an explicit
 exclusion and explanation; fixed scopes cannot be excluded. Older observation
 widgets require explicit exclusions before a shared filter can be saved.
+Saving validates only the filter mappings and measure widgets it adds or
+changes (including widgets of a model whose filters changed). A binding left
+unchanged after its model was republished does not block unrelated edits; it
+reports its problem when queried.
 
 `dashboards/published-models` exposes the published measure/dimension catalog
 without raw source fields or drafts. `dashboards/data/preview` evaluates unsaved

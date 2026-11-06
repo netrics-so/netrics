@@ -1450,4 +1450,128 @@ describe("published dashboard measure bindings", () => {
       await clocked.close();
     }
   });
+  it("saves unrelated edits while an unchanged binding has gone stale, and validates a changed one", async () => {
+    const sourceId = await source(
+      "stale-binding",
+      [
+        { id: "id", type: "string" },
+        { id: "country", type: "string" },
+        { id: "units", type: "integer" },
+      ],
+      [{ id: "a", country: "DE", units: 1 }],
+    );
+    const definition = (dimensionId: string) => ({
+      version: 1,
+      datasets: [sourceId],
+      relationships: [],
+      dimensions: [
+        {
+          id: dimensionId,
+          name: "Country",
+          datasetId: sourceId,
+          fieldId: "country",
+        },
+      ],
+      measures: [
+        {
+          id: "units",
+          name: "Units",
+          kind: "aggregate",
+          datasetId: sourceId,
+          aggregate: {
+            id: "units",
+            name: "Units",
+            op: "sum",
+            fieldId: "units",
+          },
+        },
+      ],
+    });
+    const created = await call("POST", "/models", editor, {
+      name: "Stale binding",
+      definition: definition("country"),
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const id = created.json().model.id as string;
+    const publish = async (version: number) => {
+      const published = await call("POST", `/models/${id}/publish`, editor, {
+        version,
+      });
+      expect(published.statusCode, published.body).toBe(200);
+    };
+    await publish(created.json().model.version as number);
+    const dashboard = await dataCall("POST", "", editor, {
+      name: "Stale",
+      settings: {
+        dataFilters: [
+          {
+            id: "market",
+            name: "Market",
+            type: "string",
+            mode: "values",
+            mappings: [{ modelId: id, dimensionId: "country" }],
+            defaultValue: null,
+          },
+        ],
+      },
+      slides: [
+        {
+          widgets: [
+            {
+              type: "measure",
+              x: 0,
+              y: 0,
+              w: 4,
+              h: 3,
+              binding: {
+                modelId: id,
+                measureIds: ["units"],
+                groupBy: ["country"],
+                exclusions: [],
+              },
+              options: { view: "table", limit: 20 },
+            },
+          ],
+        },
+      ],
+    });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    const stale = dashboard.json().dashboard.id as string;
+    const saved = await call("PUT", `/models/${id}`, editor, {
+      name: "Stale binding",
+      definition: definition("market"),
+      version: created.json().model.version,
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    await publish(saved.json().model.version as number);
+    const current = (await dataCall("GET", `/${stale}`, editor)).json()
+      .dashboard;
+    const save = (widgets: unknown[], version: number) =>
+      dataCall("PUT", `/${stale}`, editor, {
+        name: "Stale, renamed",
+        version,
+        projectId: current.projectId,
+        slides: [{ ...current.slides[0], widgets }],
+        settings: current.settings,
+      });
+    const moved = await save(
+      [{ ...current.slides[0].widgets[0], x: 4 }],
+      current.version,
+    );
+    expect(moved.statusCode, moved.body).toBe(200);
+    const query = await dataCall("POST", `/${stale}/data`, viewer, {
+      values: {},
+    });
+    expect(query.json().widgets[0].status).toBe("outage");
+    const changed = await save(
+      [
+        {
+          ...current.slides[0].widgets[0],
+          options: { view: "table", limit: 10 },
+        },
+      ],
+      moved.json().dashboard.version,
+    );
+    expect(changed.statusCode, changed.body).toBe(400);
+  });
 });
