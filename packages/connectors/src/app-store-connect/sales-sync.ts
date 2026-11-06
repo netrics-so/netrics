@@ -22,6 +22,11 @@ import {
   toMinorUnits,
   type SalesRow,
 } from "./sales-report.js";
+import {
+  retainSalesRows,
+  syncSalesDataset,
+  type SalesDatasetScope,
+} from "./sales-dataset.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PREFIX = "app_store_connect";
@@ -60,6 +65,8 @@ export interface SalesSyncOptions {
   listAppSkus: () => Promise<Map<string, string>>;
   /** Product type codes the mapping does not know (code only, no data). */
   log: (message: string) => void;
+  rawData?: boolean;
+  listAppIds?: () => Promise<string[]>;
 }
 
 function day(ms: number): string {
@@ -226,6 +233,26 @@ export async function syncSalesPage(
   request: SyncRequest,
   options: SalesSyncOptions,
 ): Promise<SyncResult> {
+  if (!options.rawData) return readSalesPage(client, request, options);
+  return syncSalesDataset(request, async (pinned) => {
+    let scope: SalesDatasetScope | undefined;
+    const result = await readSalesPage(client, pinned, {
+      ...options,
+      retained: (value) => {
+        scope = value;
+      },
+    });
+    return { result, ...(scope ? { scope } : {}) };
+  });
+}
+
+async function readSalesPage(
+  client: AppStoreConnectClient,
+  request: SyncRequest,
+  options: SalesSyncOptions & {
+    retained?: (scope: SalesDatasetScope | undefined) => void;
+  },
+): Promise<SyncResult> {
   const todayMs = pacificToday(options.now);
   // Yesterday (PT) is the newest day that can be published; before noon PT
   // it may not be yet (then it is "pending").
@@ -293,7 +320,8 @@ export async function syncSalesPage(
   const needsListing = [...published.values()].some((rows) =>
     rows.some(
       (row) =>
-        productCategory(row.productType) === "iap" &&
+        (productCategory(row.productType) === "iap" ||
+          (options.rawData && row.parentId !== "")) &&
         !appBySku.has(row.parentId),
     ),
   );
@@ -380,6 +408,16 @@ export async function syncSalesPage(
   );
   const apps = selected ? [...selected] : [...totals.keys()];
   apps.sort();
+  if (options.retained) {
+    const rawApps = selected
+      ? apps
+      : options.listAppIds
+        ? await options.listAppIds()
+        : [...new Set([...apps, ...appBySku.values()])];
+    options.retained(
+      retainSalesRows(published, emitFrom, emitTo, appBySku, rawApps, selected),
+    );
+  }
 
   const observations: Observation[] = [];
   for (const appId of apps) {

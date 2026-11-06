@@ -73,6 +73,7 @@ function connector(now = NOW, log: string[] = []) {
   // Sales pages alone; analytics.test.ts covers the analytics pages.
   return createAppStoreConnectConnector({
     ratings: false,
+    rawSales: false,
     now: () => now,
     log: (message) => log.push(message),
     analytics: false,
@@ -167,6 +168,7 @@ for (let day = 1; day <= 24; day += 1) {
 runConnectorContractTests(
   createAppStoreConnectConnector({
     ratings: false,
+    rawSales: false,
     now: () => CONTRACT_NOW,
     log: () => {},
   }),
@@ -274,6 +276,10 @@ describe("sales report parsing", () => {
       appleId: FIELD_NOTES,
       parentId: "",
       device: "iPhone",
+      providerFields: expect.objectContaining({
+        Units: "6",
+        "Developer Proceeds": "0",
+      }),
     });
     expect(rows[2]).toMatchObject({
       productType: "IA1",

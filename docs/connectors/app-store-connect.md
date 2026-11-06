@@ -55,6 +55,53 @@ app-count ceiling. Large-history storage and workload acceptance remain part
 of the shared data engine's open scale work; uncapped policy is not a claim of
 unlimited hardware capacity.
 
+## Prepare sales data and define your own measures
+
+**App Store sales report rows** in Data & measures retains unaggregated
+[summary sales report](https://developer.apple.com/help/app-store-connect/reference/reporting/summary-sales-report)
+records before the connector's fixed product classification and territory
+ranking. Fields include app ID, Pacific reporting day, SKU, product code,
+exact decimal units, exact developer proceeds per unit, proceeds currency,
+country and device. `provider_fields` retains every original report column,
+including columns the fixed metrics do not use. It contains report data,
+never request headers, signed tokens or keys.
+
+For proceeds, add a calculation `Units * Developer proceeds per unit`, then
+sum that field grouped by currency. Refund factors remain signed. No currency
+conversion is implied. A blank currency is represented as `XXX` (unspecified),
+with the original blank retained; it is never assigned your workspace currency.
+Downloads can be a separate measure over units filtered by the product codes
+you choose. Unknown codes remain inspectable in the source even when the
+legacy connector metrics do not classify them. Templates remain separate work
+in [#444](https://github.com/netrics-so/netrics/issues/444); this source does not
+automatically install a portfolio model or dashboard.
+
+Report rows are replaced authoritatively per app and reporting window, after
+every page of that partition is durable. A corrected report can remove old
+rows; identity-based upserts alone would leave those rows double-counted.
+Identical duplicate provider rows stay distinct. Different apps can finish
+their partitions at different times. Incomplete partitions never replace
+published data. Removing an app from selection stops refreshing it and keeps
+previously collected rows under the retention policy. A selected app's
+published empty report clears that app/window; pending reports do not.
+
+Purchase rows are mapped through their parent app SKU. Rows that cannot be
+mapped are excluded from a selected-app import; with account-wide scope they
+are retained under `__unmapped` for inspection. Original provider identifiers
+remain available to repair a mapping. Snapshots have no connector-imposed
+expiry; installation/workspace retention and deletion policies apply. The
+provider's available reporting history still limits backfill. Previously
+discarded fields cannot be recovered from legacy observations alone.
+
+The current implementation rereads the month's report files to resume a large
+app partition. If its contents changed, that pending partition restarts with a
+new refresh identity. Records do not travel in cursors. This keeps retries and
+corrections safe but adds provider requests for large reports. Retaining
+report objects for efficient range reads and reducing full-copy generation
+storage remain shared-engine scale work; these are not tested warehouse-scale
+claims. Per-call byte/record budgets bound transport, while policy controls
+retention, storage and sync execution budgets.
+
 ## Connect
 
 Apple offers no "Sign in with Apple" for its API. You create an API key in

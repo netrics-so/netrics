@@ -496,6 +496,7 @@ async function runAll(
 ) {
   const connector = createAppStoreConnectConnector({
     ratings: false,
+    rawSales: false,
     now: () => NOW,
     log: (message) => log.push(message),
   });

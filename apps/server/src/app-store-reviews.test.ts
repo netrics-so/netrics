@@ -223,6 +223,7 @@ function registry(): ConnectorRegistry {
     towardsFake(
       createAppStoreConnectConnector({
         ratings: false,
+        rawSales: false,
         now: () => NOW,
         analytics: false,
         log: (message) => connectorLogs.push(message),
