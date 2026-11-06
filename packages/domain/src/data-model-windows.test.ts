@@ -872,3 +872,72 @@ describe("rolling and period-offset measures", () => {
     );
   });
 });
+
+describe("windowed measure validation and edge cases", () => {
+  const lastApp: ModelMeasure = {
+    id: "lastApp",
+    name: "lastApp",
+    kind: "aggregate",
+    datasetId: "sales",
+    aggregate: { id: "lastApp", name: "lastApp", op: "max", fieldId: "app" },
+  };
+  const formula = (id: string, expression: DataExpression): ModelMeasure => ({
+    id,
+    name: id,
+    kind: "formula",
+    expression,
+  });
+
+  it("type-checks formulas over windowed measures at publish", () => {
+    const extra = [
+      lastApp,
+      formula("bad", call("add", field("rev7"), field("lastApp"))),
+    ];
+    expect(() =>
+      run(
+        {
+          measureIds: ["bad"],
+          groupBy: ["date"],
+          filter: between("2026-10-01", "2026-10-31"),
+        },
+        { extra },
+      ),
+    ).toThrow("expression_numeric_required");
+    expect(() => validateSemanticModel(model(extra), sources(), NOW)).toThrow(
+      "expression_numeric_required",
+    );
+    // A formula over an offset's output, and an offset of a bad formula.
+    expect(() =>
+      validateSemanticModel(
+        model([
+          lastApp,
+          formula("bad", call("add", field("pctDay"), field("lastApp"))),
+        ]),
+        sources(),
+        NOW,
+      ),
+    ).toThrow("expression_numeric_required");
+    expect(() =>
+      validateSemanticModel(
+        model([
+          lastApp,
+          formula("bad", call("add", field("units"), field("lastApp"))),
+          offset("prevBad", "bad", "range"),
+        ]),
+        sources(),
+        NOW,
+      ),
+    ).toThrow("expression_numeric_required");
+    // Valid formulas over windowed measures still publish.
+    expect(() =>
+      validateSemanticModel(
+        model([
+          formula("ratio", call("divide", field("units7"), field("users7"))),
+          formula("pctPlus", call("add", field("pctDay"), field("pctDay"))),
+        ]),
+        sources(),
+        NOW,
+      ),
+    ).not.toThrow();
+  });
+});

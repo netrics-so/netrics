@@ -168,6 +168,100 @@ function singleValueDimensions(expression?: DataExpression): Set<string> {
   return result;
 }
 
+/** A formula over its dependencies' cells; currencies become currency fields. */
+function evaluateFormula(
+  expression: DataExpression,
+  dependencies: ReadonlyArray<readonly [string, DataCell]>,
+  nameOf: (id: string) => string,
+  budget: ProcessingBudget,
+): DataCell {
+  const row: DataRow = {},
+    fields: DataField[] = [];
+  const usedIds = new Set(dependencies.map(([ref]) => ref));
+  for (const [ref, result] of dependencies) {
+    const f: DataField = {
+      id: ref,
+      name: nameOf(ref),
+      type: result.type,
+      nullable: true,
+      ...(result.unit ? { unit: result.unit } : {}),
+    };
+    if (result.currency) {
+      let currencyId = ref + ".currency";
+      while (usedIds.has(currencyId)) currencyId += ".currency";
+      usedIds.add(currencyId);
+      f.currencyField = currencyId;
+      row[currencyId] = result.currency;
+      fields.push({
+        id: currencyId,
+        name: "Currency",
+        type: "string",
+        nullable: false,
+      });
+    }
+    fields.push(f);
+    row[ref] = result.value;
+  }
+  return compileRowExpression(expression, fields).evaluate(row, budget);
+}
+
+/**
+ * The type, unit and currency each measure has over no rows. Windowed outputs
+ * derive theirs from the base, so formulas over rolling and offset measures
+ * type-check without a date to evaluate them at.
+ */
+export function measureTypeProbe(
+  model: SemanticModelDefinition,
+  sources: ReadonlyMap<string, Pick<DataTable, "fields">>,
+  ids: readonly string[],
+  budget = new ProcessingBudget(),
+): Map<string, DataCell> {
+  const measures = new Map(model.measures.map((m) => [m.id, m]));
+  const cells = new Map<string, DataCell>(),
+    visiting = new Set<string>();
+  const visit = (id: string): DataCell => {
+    const cached = cells.get(id);
+    if (cached) return cached;
+    if (visiting.has(id)) dataFail("model_measure_cycle");
+    const m = measures.get(id);
+    if (!m) return dataFail("model_measure_not_found", id);
+    visiting.add(id);
+    budget.tick();
+    let cell: DataCell;
+    if (m.kind === "aggregate") {
+      if (!model.datasets.includes(m.datasetId))
+        dataFail("model_dataset_not_declared");
+      const source = sources.get(m.datasetId);
+      if (!source) dataFail("model_dataset_unavailable");
+      const { partial: _partial, ...aggregated } = aggregateData(
+        { fields: source.fields, rows: [] },
+        m.aggregate,
+        budget,
+      );
+      cell = aggregated;
+    } else if (m.kind === "formula")
+      cell = evaluateFormula(
+        m.expression,
+        [...references(m.expression)].map((ref) => [ref, visit(ref)] as const),
+        (ref) => measures.get(ref)!.name,
+        budget,
+      );
+    else {
+      validateWindowDefinition(m);
+      const base = visit(m.baseMeasureId);
+      cell =
+        m.kind === "period_offset" && m.output === "percent_change"
+          ? { value: null, type: base.type === "number" ? "number" : "decimal" }
+          : windowCell(base);
+    }
+    visiting.delete(id);
+    cells.set(id, cell);
+    return cell;
+  };
+  ids.forEach(visit);
+  return cells;
+}
+
 /** Include the grain of formula dependencies when describing a reusable measure. */
 export function measureRequiredDimensions(
   model: SemanticModelDefinition,
@@ -583,36 +677,13 @@ export function querySemanticModel(
   const formulaCell = (
     expression: DataExpression,
     dependencies: ReadonlyArray<readonly [string, ModelMeasureResult]>,
-  ): DataCell => {
-    const row: DataRow = {},
-      fields: DataField[] = [];
-    const usedIds = new Set(dependencies.map(([ref]) => ref));
-    for (const [ref, result] of dependencies) {
-      const f: DataField = {
-        id: ref,
-        name: measures.get(ref)!.name,
-        type: result.type,
-        nullable: true,
-        ...(result.unit ? { unit: result.unit } : {}),
-      };
-      if (result.currency) {
-        let currencyId = ref + ".currency";
-        while (usedIds.has(currencyId)) currencyId += ".currency";
-        usedIds.add(currencyId);
-        f.currencyField = currencyId;
-        row[currencyId] = result.currency;
-        fields.push({
-          id: currencyId,
-          name: "Currency",
-          type: "string",
-          nullable: false,
-        });
-      }
-      fields.push(f);
-      row[ref] = result.value;
-    }
-    return compileRowExpression(expression, fields).evaluate(row, budget);
-  };
+  ): DataCell =>
+    evaluateFormula(
+      expression,
+      dependencies,
+      (id) => measures.get(id)!.name,
+      budget,
+    );
   // Windowed evaluation: each measure at (partition, interval), cached across
   // groups so neighbouring dates and offsets reuse results.
   type WindowedResult = ModelMeasureResult & { incomplete?: true };
@@ -978,6 +1049,15 @@ export function validateSemanticModel(
         },
         budget,
       );
+  // The grouped probes above see no dates over empty tables, so type-check
+  // windowed measures and formulas over them statically.
+  if (windowedModel)
+    measureTypeProbe(
+      unguarded,
+      schemas,
+      model.measures.map((measure) => measure.id),
+      budget,
+    );
   for (const table of sources.values()) validateDataTable(table, budget);
   const datasetId = model.datasets[0];
   if (!datasetId) dataFail("model_dataset_not_declared");
