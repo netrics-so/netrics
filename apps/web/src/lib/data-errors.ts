@@ -7,6 +7,10 @@ export function dataErrorCodeKey(code: string) {
   if (code === "version_conflict") return "conflict";
   if (/cardinality|not_unique|identity_conflict/.test(code))
     return "cardinality";
+  if (/model_window_time_(grouping|range)_required/.test(code))
+    return "windowGrouping";
+  if (/model_window_time_(filter_unsupported|dimension_conflict)/.test(code))
+    return "windowFilter";
   if (/model_window_/.test(code)) return "window";
   if (/quota|limit|budget|capacity/.test(code)) return "limit";
   if (code === "data_source_pending") return "pending";

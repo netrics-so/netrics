@@ -282,15 +282,23 @@ describe("windowed measure editing", () => {
     for (const code of [
       "model_window_base_aggregate_required",
       "model_window_date_dimension_required",
-      "model_window_time_grouping_required",
-      "model_window_time_range_required",
-      "model_window_time_dimension_conflict",
-      "model_window_time_filter_unsupported",
       "model_window_length_invalid",
       "model_window_lookback_limit",
       "model_window_currency_mismatch",
     ])
       expect(dataErrorCodeKey(code)).toBe("window");
+    expect(dataErrorCodeKey("model_window_time_grouping_required")).toBe(
+      "windowGrouping",
+    );
+    expect(dataErrorCodeKey("model_window_time_range_required")).toBe(
+      "windowGrouping",
+    );
+    expect(dataErrorCodeKey("model_window_time_filter_unsupported")).toBe(
+      "windowFilter",
+    );
+    expect(dataErrorCodeKey("model_window_time_dimension_conflict")).toBe(
+      "windowFilter",
+    );
     expect(dataErrorCodeKey("aggregate_currency_mixed")).toBe("units");
     expect(dataErrorCodeKey("model_measure_cycle")).toBe("cycle");
     expect(dataErrorCodeKey("data_query_row_limit")).toBe("limit");

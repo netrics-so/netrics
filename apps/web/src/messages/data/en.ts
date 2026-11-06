@@ -444,7 +444,11 @@ export const dataEn = {
     previewOutdated: "The draft changed. Preview it again before publishing.",
     errors: {
       window:
-        "Check the rolling and comparison measures. Each needs a date dimension on the provider reporting date and a length within the allowed range. Show results by that date, or filter it to one closed date range.",
+        "Check the rolling and comparison measures. Each needs a base measure, a date dimension on the provider reporting date and a length within the allowed range.",
+      windowGrouping:
+        "Rolling and comparison measures have one value per date. Show them by their date dimension, for example as a line chart or table. Only comparisons with the previous month, year or period of equal length can show a single value, and only for one closed date range.",
+      windowFilter:
+        "Filter the date of rolling and comparison measures only with from and to conditions joined by AND, and use the same date dimension for all of them.",
       history:
         "This published version is unavailable. Reload its history and choose another version.",
       unavailable:

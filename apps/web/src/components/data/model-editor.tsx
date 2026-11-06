@@ -104,6 +104,8 @@ export function ModelEditor({
     "preview" | "save" | "publish" | "history" | null
   >(null);
   const [error, setError] = useState<string | null>(null),
+    // Shown beside the Preview button, which sits far below the page header.
+    [previewError, setPreviewError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
   const current = JSON.stringify({ name, definition, formulaTexts }),
     queryState = JSON.stringify({ measureIds, groupBy, filterText });
@@ -147,6 +149,7 @@ export function ModelEditor({
     if (inputMetadata.loading || inputMetadata.error || !valid()) return;
     setBusy("preview");
     setError(null);
+    setPreviewError(null);
     setNotice(null);
     try {
       const model = build();
@@ -185,7 +188,7 @@ export function ModelEditor({
       ]);
       setPreviewState(current + queryState);
     } catch (failure) {
-      setError(t(`errors.${dataErrorKey(failure)}`));
+      setPreviewError(t(`errors.${dataErrorKey(failure)}`));
       setResult(null);
     } finally {
       setBusy(null);
@@ -195,6 +198,7 @@ export function ModelEditor({
     if (inputMetadata.loading || inputMetadata.error || !valid()) return;
     setBusy(publish ? "publish" : "save");
     setError(null);
+    setPreviewError(null);
     setNotice(null);
     try {
       const model = build();
@@ -243,6 +247,7 @@ export function ModelEditor({
     if (!record) return;
     setBusy("history");
     setError(null);
+    setPreviewError(null);
     setNotice(null);
     try {
       const saved =
@@ -1068,6 +1073,11 @@ export function ModelEditor({
             {t("sharedFilterHelp")}
           </p>
         </div>
+        {previewError ? (
+          <p role="alert" className="error">
+            {previewError}
+          </p>
+        ) : null}
         {result?.stale ? <p className="notice">{t("stale")}</p> : null}
         {result ? <PreviewNotes warnings={result.warnings} /> : null}
         {result ? (
