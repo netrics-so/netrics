@@ -118,7 +118,7 @@ describe("overall storefront rating snapshots", () => {
     expect(storeRatingsDataset.retentionDays).toBeNull();
   });
 
-  it("isolates malformed or incomplete app results without fabricating zeros", async () => {
+  it("isolates malformed or incomplete app results without fabricating zeros or replacing the day's value", async () => {
     const rt = runtime({
       results: [
         { trackId: 101, averageUserRating: 8, userRatingCount: 4 },
@@ -141,29 +141,38 @@ describe("overall storefront rating snapshots", () => {
         r.values.availability,
       ]),
     ).toEqual([
-      [null, null, "temporarily_unavailable"],
       ["4.5", null, "incomplete"],
       ["4.6", 10, "available"],
-      [null, null, "temporarily_unavailable"],
     ]);
+    // Apps 101 and 104 have no usable answer: no record, so a value
+    // collected earlier the same day stays (the key includes the day).
+    expect(records.map((r) => r.values.app_id)).toEqual(["102", "103"]);
   });
 
-  it("records safe missing states for rate limits, outages, invalid envelopes and thrown errors", async () => {
+  it("records nothing for rate limits, outages, invalid envelopes and thrown errors, keeping the day's earlier value", async () => {
     for (const rt of [
       runtime({}, 429),
       runtime({}, 503),
       runtime({ unexpected: true }),
-      runtime({ results: [] }),
     ]) {
-      const result = await readStoreRatings(rt, ["101"], "US", CAPTURED);
-      expect(result[0]?.values.rating).toBeNull();
-      expect(result[0]?.values.rating_count).toBeNull();
+      expect(await readStoreRatings(rt, ["101"], "US", CAPTURED)).toEqual([]);
     }
+    // An answer without the app is a fact (not listed), not a failure.
+    const [missing] = await readStoreRatings(
+      runtime({ results: [] }),
+      ["101"],
+      "US",
+      CAPTURED,
+    );
+    expect(missing?.values).toMatchObject({
+      rating: null,
+      rating_count: null,
+      availability: "not_listed",
+    });
     const rt = runtime({});
     rt.fetch.mockRejectedValue(new Error("sensitive provider text"));
     const result = await readStoreRatings(rt, ["101"], "US", CAPTURED);
-    expect(result[0]?.values.availability).toBe("temporarily_unavailable");
-    expect(JSON.stringify(result)).not.toContain("sensitive");
+    expect(result).toEqual([]);
     const controller = new AbortController();
     controller.abort();
     await expect(
@@ -330,9 +339,10 @@ describe("rating checkpoint protocol", () => {
     const first = syncResultSchema.parse(
       await connector.sync(context, request, fake.runtime),
     );
-    expect(
-      first.datasetPages?.[0]?.records.map((r) => r.values.availability),
-    ).toEqual(["temporarily_unavailable", "temporarily_unavailable"]);
+    expect(first.datasetPages?.[0]).toMatchObject({
+      complete: true,
+      records: [],
+    });
     expect(
       fake.requests.every((r) => r.url.hostname === "itunes.apple.com"),
     ).toBe(true);

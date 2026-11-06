@@ -32,9 +32,11 @@ the storefront starts collecting that country's values and retains existing
 history under its original country.
 
 The availability field distinguishes `available`, `unrated` (a returned count
-of zero), `not_listed`, `incomplete` and `temporarily_unavailable`. A failed
-lookup produces missing rating/count values, never a synthetic zero; it does
-not stop independent sales, analytics or review ingestion. Provider rate
+of zero), `not_listed` and `incomplete` (rows collected by earlier versions may
+also say `temporarily_unavailable`). A failed lookup, or an ambiguous answer for
+one app, records nothing: a value collected earlier the same day is kept, and
+no synthetic zero is stored. It does not stop independent sales, analytics or
+review ingestion. Provider rate
 limits and outages can make this data unavailable until a later sync. An app
 that is not public in the selected storefront may be absent from lookup.
 
