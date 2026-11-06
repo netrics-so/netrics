@@ -2007,4 +2007,130 @@ describe("rolling and period-offset model measures", () => {
       });
     }
   });
+
+  it("type-checks dashboard charts with the units windowed measures return", async () => {
+    const source = await call("POST", "/manual", editor, {
+      definition: {
+        key: "daily-windowed-weights",
+        name: "Daily weights",
+        version: 1,
+        mode: "snapshot",
+        grain: "one reporting day",
+        keyFields: ["id"],
+        retentionDays: null,
+        fields: [
+          { id: "id", type: "string" },
+          { id: "day", type: "date" },
+          { id: "kg", type: "integer", unit: "kg" },
+        ].map((field) => ({
+          ...field,
+          name: field.id,
+          nullable: false,
+          classification: "internal",
+        })),
+      },
+      records: days.map((day, index) => ({
+        values: { id: day, day, kg: index + 1 },
+      })),
+    });
+    expect(source.statusCode, source.body).toBe(200);
+    const weights = source.json().datasetId as string;
+    const field = (fieldId: string) => ({ kind: "field", fieldId });
+    const created = await call("POST", "/models", editor, {
+      name: "Weight change",
+      definition: {
+        version: 1,
+        datasets: [weights],
+        relationships: [],
+        dimensions: [
+          {
+            id: "day",
+            name: "Day",
+            datasetId: weights,
+            fieldId: "day",
+            timeAlignment: "reporting_date",
+          },
+        ],
+        measures: [
+          {
+            id: "kg",
+            name: "Weight",
+            kind: "aggregate",
+            datasetId: weights,
+            aggregate: { id: "kg", name: "Weight", op: "sum", fieldId: "kg" },
+          },
+          {
+            ...weekChange,
+            id: "kg_pct",
+            baseMeasureId: "kg",
+            output: "percent_change",
+          },
+          {
+            id: "share",
+            name: "Share",
+            kind: "formula",
+            expression: {
+              kind: "call",
+              fn: "divide",
+              args: [field("kg"), field("kg")],
+            },
+          },
+          // A unitless ratio plus another: kilograms only in the base.
+          {
+            id: "pct_and_share",
+            name: "Change and share",
+            kind: "formula",
+            expression: {
+              kind: "call",
+              fn: "add",
+              args: [field("kg_pct"), field("share")],
+            },
+          },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const model = modelResponseSchema.parse(created.json()).model;
+    const published = await publish(model);
+    expect(published.statusCode, published.body).toBe(200);
+    const dashboard = await dashboards("POST", "", editor, {
+      name: "Weight change",
+      settings: { dataFilters: [] },
+      slides: [
+        {
+          widgets: [
+            {
+              type: "measure",
+              x: 0,
+              y: 0,
+              w: 6,
+              h: 3,
+              binding: {
+                modelId: model.id,
+                measureIds: ["pct_and_share"],
+                groupBy: ["day"],
+                exclusions: [],
+              },
+              options: { view: "line", limit: 20 },
+            },
+          ],
+        },
+      ],
+    });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    const read = await dashboards(
+      "POST",
+      `/${dashboard.json().dashboard.id as string}/data`,
+      viewer,
+      { values: {} },
+    );
+    expect(read.statusCode, read.body).toBe(200);
+    const [line] = read.json().widgets;
+    expect(line.error).toBeNull();
+    // 2026-10-05 (11 kg) against 2026-09-28 (4 kg): +175%, plus a share of 1.
+    expect(line.result.rows.at(-1).measures.pct_and_share).toMatchObject({
+      value: "2.75",
+      status: "ok",
+    });
+  });
 });

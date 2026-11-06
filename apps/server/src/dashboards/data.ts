@@ -14,6 +14,7 @@ import {
   dataKey,
   measureLookbackDays,
   measureRequiredDimensions,
+  measureTypeProbe,
   querySemanticModel,
   validateMeasureView,
   DataProcessingError,
@@ -23,8 +24,6 @@ import {
   type DashboardDataFilter,
   type DashboardFilterValue,
   type MeasureWidgetBinding,
-  type ModelMeasure,
-  type SemanticModelDefinition,
 } from "@netrics/domain";
 import {
   schema,
@@ -198,38 +197,6 @@ async function modelSourceHealth(
     };
   });
 }
-/**
- * Type probe without grain: windowed measures need a time grouping or a closed
- * range, so the probe reads each one's non-windowed base, whose numeric type
- * the windowed output shares (percent_change requires a numeric base).
- */
-function ungroupedTypeProbe(
-  definition: SemanticModelDefinition,
-): SemanticModelDefinition {
-  const byId = new Map(definition.measures.map((m) => [m.id, m]));
-  const base = (measure: ModelMeasure): ModelMeasure => {
-    let current = measure;
-    for (
-      let steps = 0;
-      (current.kind === "rolling" || current.kind === "period_offset") &&
-      steps < definition.measures.length;
-      steps++
-    )
-      current = byId.get(current.baseMeasureId) ?? current;
-    return current;
-  };
-  return {
-    ...definition,
-    measures: definition.measures.map((measure) => {
-      const { requiredDimensions: _grain, ...probe } = {
-        ...base(measure),
-        id: measure.id,
-        name: measure.name,
-      };
-      return probe;
-    }),
-  };
-}
 export async function validateDashboardMeasure(
   tx: Transaction,
   workspaceId: string,
@@ -284,15 +251,12 @@ export async function validateDashboardMeasure(
   );
   querySemanticModel(model.definition, tables, query);
   if (options.view === "bar" || options.view === "line") {
-    const ungrouped = querySemanticModel(
-      ungroupedTypeProbe(model.definition),
-      tables,
-      {
-        ...query,
-        groupBy: [],
-      },
+    // The model's own static probe: types, units and currencies as queries
+    // return them, without a grain or the time grouping windows need.
+    const measureId = binding.measureIds[0]!;
+    const measure = measureTypeProbe(model.definition, tables, [measureId]).get(
+      measureId,
     );
-    const measure = ungrouped.rows[0]?.measures[binding.measureIds[0]!];
     if (measure && !["integer", "number", "decimal"].includes(measure.type))
       throw new DataServiceError("dashboard_measure_numeric_required");
     if (options.view === "line") {
