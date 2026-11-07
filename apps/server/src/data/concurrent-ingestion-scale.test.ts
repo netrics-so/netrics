@@ -18,7 +18,10 @@ import {
   sourceDatasetSchema,
   type SourceDatasetDefinition,
 } from "@netrics/contracts";
-import type { SemanticModelDefinition } from "@netrics/domain";
+import {
+  DEFAULT_DATA_POLICY,
+  type SemanticModelDefinition,
+} from "@netrics/domain";
 import { createTestDatabase } from "../test-db.js";
 import {
   createDataService,
@@ -161,6 +164,11 @@ async function ingestPage(
   const start = performance.now();
   let lockWaitMs = 0;
   await withWorkspace(db, { workspaceId }, async (tx) => {
+    // Ingestion sets its statement timeout before it waits for the lock, so
+    // a wait beyond queryTimeoutMs fails the page; keep that for the probe.
+    await tx.execute(
+      sql`select set_config('statement_timeout', ${String(DEFAULT_DATA_POLICY.queryTimeoutMs)}, true)`,
+    );
     const lock = performance.now();
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}::uuid::text, 440))`,

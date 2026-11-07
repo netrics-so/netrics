@@ -266,7 +266,10 @@ syncs, four loops run:
 Every deadlock in the server log was `prune_dataset_history` against
 `admin_set_data_policy` or `apply_connection_retention`, on `data_records`
 ([#517](https://github.com/netrics-so/netrics/issues/517)). No sync page
-failed, deadlocked or retried. Ingestion did not slow model queries.
+failed, deadlocked or retried. Ingestion did not slow model queries. Each page
+transaction sets the ingestion statement timeout (`queryTimeoutMs`, 15 s) before
+the lock probe, as `ingestDatasetPage` does. The longest lock wait, 9.8 s under
+churn, stayed below it; a longer wait fails the page and the sync retries.
 
 **Pinned first pages.** Since #505, pinned first pages of one model are
 admitted one at a time, through an in-process queue with a wait bounded by
