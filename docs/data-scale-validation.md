@@ -271,6 +271,32 @@ transaction sets the ingestion statement timeout (`queryTimeoutMs`, 15 s) before
 the lock probe, as `ingestDatasetPage` does. The longest lock wait, 9.8 s under
 churn, stayed below it; a longer wait fails the page and the sync retries.
 
+**After #517.** Prune locks every row with `SKIP LOCKED` (records of a
+generation whose first record is held are skipped as a whole, probed with
+`NOWAIT`), so it never waits for a policy or retention change and leaves held
+rows for a later call (migration 0065). The churn scenario, rerun on 2026-11-07
+on the same machine and settings (the concurrency suite, three fresh
+processes; the prune loop calls `prune_dataset_history_batch` through the
+`prune_dataset_history` entry point):
+
+| Concurrent operation      | Calls per run | p50 (ms)            | p95 (ms)            | Failures over 3 runs          |
+| ------------------------- | ------------: | ------------------- | ------------------- | ----------------------------- |
+| `admin_set_data_policy`   |         25–26 | 3,612 [3,571–4,594] | 6,802 [6,781–7,582] | none                          |
+| `setConnectionRetention`  |         25–26 | 3,661 [3,462–4,525] | 7,980 [7,763–8,598] | none                          |
+| `prune_dataset_history`   |       354–557 | 7.5 [4.2–211]       | 445 [255–476]       | none                          |
+| Model query (10,000 rows) |       397–548 | 112 [110–142]       | 178 [150–191]       | none; 0 serialization retries |
+
+Deadlocks (`pg_stat_database.deadlocks`): 0 in every run, against 2–5 before.
+No call of any loop failed and no transaction rolled back. The syncs ran as
+before: 2,221 records/s [2,019–2,427], page p50 3,368 ms [3,266–3,905], lock
+wait p95 6,590 ms [6,380–7,690]. Prune calls take
+longer than the 3.4 ms p50 before. The suite does not record rows per call, so
+the cause is not measured; calls that release generations and delete a batch
+of their records while the policy loop runs, instead of waiting or losing a
+deadlock, would explain it. Before the generation probe, a call passed over every
+held record again; with 400,000 held records that took about 250 ms per call
+in a separate check, and about 3 ms with the probe.
+
 **Pinned first pages.** Since #505, pinned first pages of one model are
 admitted one at a time, through an in-process queue with a wait bounded by
 `queryTimeoutMs` (15 s by default). To measure only the queue and the wait, the
@@ -292,8 +318,29 @@ For one model this is what #505 intended. There are no errors. Once the queue
 is longer than the wait allows, a request gets the documented refusal with its
 first page. With separate models, the refusals at 50,000 rows came from waiting
 for one of the 24 pool connections. First pages of different models, and of
-different workspaces, fail with `version_conflict` (409)
+different workspaces, failed with `version_conflict` (409)
 ([#516](https://github.com/netrics-so/netrics/issues/516)).
+
+**After #516.** Admission now counts and inserts the session in a short
+read-committed step after the page's serializable transaction, under the same
+per-model lock, so admissions of different models no longer abort each other.
+The same bursts, rerun on 2026-11-07 on the same machine and settings (the
+pinned test of the concurrency suite only, three fresh processes):
+
+| Source rows | Burst | One model: admitted / refused, wall time | Separate models, one workspace: admitted / refused, wall time | Separate workspaces: admitted / refused, wall time | Unpinned, one model: wall time |
+| ----------: | ----: | ---------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------- | ------------------------------ |
+|      10,000 |     1 | 1 / 0, 108 ms [105–133]                  | 1 / 0, 97 ms [93–113]                                         | 1 / 0, 108 ms [101–120]                            | 98 ms [92–110]                 |
+|      10,000 |    10 | 10 / 0, 1.1 s [1.1–1.1]                  | 10 / 0, 784 ms [782–800]                                      | 10 / 0, 791 ms [775–798]                           | 772 ms [752–776]               |
+|      10,000 |    25 | 25 / 0, 2.7 s [2.6–3.0]                  | 25 / 0, 1.9 s [1.9–1.9]                                       | 25 / 0, 1.9 s [1.9–1.9]                            | 1.9 s [1.9–1.9]                |
+|      10,000 |    50 | 50 / 0, 5.1 s [4.9–5.5]                  | 50 / 0, 3.8 s [3.8–4.0]                                       | 50 / 0, 3.9 s [3.9–4.0]                            | 3.9 s [3.8–3.9]                |
+|      50,000 |    10 | 10 / 0, 4.0 s [4.0–4.6]                  | 10 / 0, 3.7 s [3.7–3.9]                                       | not run                                            | 3.8 s [3.6–3.9]                |
+|      50,000 |    25 | 25 / 0, 10.0 s [10.0–11.7]               | 25 / 0, 9.3 s [9.2–9.5]                                       | not run                                            | 9.3 s [9.3–9.6]                |
+|      50,000 |    50 | 33–36 / 14–17, 20.8 s [20.6–21.9]        | 48 / 2, 19.3 s [18.6–19.8]                                    | not run                                            | 18.9 s [18.6–19.6]             |
+
+No request failed in any run. First pages of separate models or workspaces
+now take about as long as unpinned queries. The two refusals with separate
+models at 50,000 rows are waits for one of the 24 pool connections that
+exceeded `queryTimeoutMs`, as before.
 
 ### Google Play first-read memory
 
@@ -371,11 +418,13 @@ At the measured sizes, these are expected behaviour, not defects:
 
 ### Follow-ups
 
-- [#516](https://github.com/netrics-so/netrics/issues/516): concurrent pinned
-  first pages of different models or workspaces fail with `version_conflict`.
-- [#517](https://github.com/netrics-so/netrics/issues/517):
-  `prune_dataset_history` deadlocks with policy and connection-retention
-  changes, and the policy change can be the one that fails.
+- [#516](https://github.com/netrics-so/netrics/issues/516) (fixed): concurrent
+  pinned first pages of different models or workspaces failed with
+  `version_conflict`; see "After #516" above.
+- [#517](https://github.com/netrics-so/netrics/issues/517) (fixed):
+  `prune_dataset_history` deadlocked with policy and connection-retention
+  changes, and the policy change could be the one that failed; see "After
+  #517" above.
 - [#518](https://github.com/netrics-so/netrics/issues/518):
   every `admin_set_data_policy` call with a retention ceiling rewrites all
   records of the workspace while holding the ingestion lock, and finds them by
@@ -480,9 +529,9 @@ from discovery or collection.
    listing instead of silently restricting its choices.
 5. **Retained history and concurrent customers.** Measured in #501 (above) with
    synthetic sources up to 4.16 M retained records, eight concurrent syncs and
-   bursts of 50 pinned first pages. Still open: the follow-ups
-   [#516](https://github.com/netrics-so/netrics/issues/516),
-   [#517](https://github.com/netrics-so/netrics/issues/517),
+   bursts of 50 pinned first pages; [#516](https://github.com/netrics-so/netrics/issues/516)
+   and [#517](https://github.com/netrics-so/netrics/issues/517) are fixed.
+   Still open: the follow-ups
    [#518](https://github.com/netrics-so/netrics/issues/518) and
    [#519](https://github.com/netrics-so/netrics/issues/519), real-account report
    shapes, and hosted or self-hosted resource sizes, which this repository does

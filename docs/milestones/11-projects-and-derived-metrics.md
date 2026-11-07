@@ -179,19 +179,26 @@ implementation work; this plan does not create or complete issue records.
     drains keep up within the 10-second budget; syncs of one workspace
     serialize on the ingestion lock. Limits found and left open as follow-ups:
     pinned first pages conflict across models and workspaces
-    ([#516](https://github.com/netrics-so/netrics/issues/516)), prune
+    ([#516](https://github.com/netrics-so/netrics/issues/516), since fixed), prune
     deadlocks with retention changes
     ([#517](https://github.com/netrics-so/netrics/issues/517)), policy
     ceilings rewrite every record under the ingestion lock
     ([#518](https://github.com/netrics-so/netrics/issues/518)), and Google Play
     first reads need streaming staging above about 23 MiB of report text
     ([#519](https://github.com/netrics-so/netrics/issues/519)).
+  - Pinned first pages of different models or workspaces without
+    `version_conflict`:
+    [#516](https://github.com/netrics-so/netrics/issues/516). A first page is
+    computed in its serializable transaction, then admitted (sessions counted,
+    one inserted) in a short read-committed step under the model's admission
+    lock. Both session caps count one release, so they stay exact; admissions
+    of other models no longer abort it.
   - Prune without deadlocks against policy and connection-retention changes:
     [#517](https://github.com/netrics-so/netrics/issues/517). Prune locks
     every row with `SKIP LOCKED` (or `NOWAIT`) and never waits, leaves held
     rows for a later call and reports that work remains, so the drain does
-    not stop early (migration 0065). Hourly maintenance tasks run independently: a failed
-    drain no longer skips the rest of the hour.
+    not stop early (migration 0065). Hourly maintenance tasks run
+    independently: a failed drain no longer skips the rest of the hour.
   - Rolling-window and period-offset measures:
     [#486](https://github.com/netrics-so/netrics/issues/486). Date-only
     anchors, windows recomputed from rows, capped month/year offsets, lookback

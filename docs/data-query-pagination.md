@@ -96,6 +96,18 @@ admitted until a limit is full, the rest are refused as above, and none fails
 with `409 version_conflict` because of the others. Continuations and ordinary
 queries do not wait for this lock.
 
+A first page runs in two steps under that lock. Its result is computed in a
+serializable transaction that does not touch the session table, and commits.
+Admission then counts the release's sessions and inserts one in a short
+read-committed transaction. Both limits count one release, and every admission
+to a release holds its model's lock, so the counts are exact. First pages of
+different models, also in different workspaces, no longer abort each other
+through the serializable transactions' read tracking and are all admitted
+while their limits have room. If the admission step fails, none of it is kept:
+the request fails (a storage error with `503 data_storage_failed`) and no
+session is left behind. A session therefore never exists without the first page that pinned
+it.
+
 Within one server instance, waiting first pages queue in memory and hold no
 database connection: a burst on one model uses at most one connection of the
 instance's pool, so other models and workspaces keep being served. The wait for

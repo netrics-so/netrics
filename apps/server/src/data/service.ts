@@ -959,13 +959,15 @@ export function createDataService(
       policy: policyFor(tx),
     });
   /**
-   * Runs `fn` in a serializable workspace transaction on `handle`, retrying
-   * serialization failures.
+   * Runs `fn` in a workspace transaction on `handle`, serializable unless
+   * `isolationLevel` says otherwise, retrying serialization failures and
+   * deadlocks.
    */
   const run = async <T>(
     actor: DataActor,
     fn: (tx: Transaction, now: Date) => Promise<T>,
     handle: Pick<Database, "transaction"> = db,
+    isolationLevel: "serializable" | "read committed" = "serializable",
   ): Promise<T> => {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
@@ -984,7 +986,7 @@ export function createDataService(
             );
             return fn(tx, clock());
           },
-          { isolationLevel: "serializable" },
+          { isolationLevel },
         );
       } catch (error) {
         if (
@@ -2186,7 +2188,7 @@ export function createDataService(
       preview = false,
     ) => {
       const execute =
-        (admit: boolean) =>
+        (admit: boolean | DeferredPageAdmission) =>
         (tx: Transaction, now: Date): Promise<DataModelQueryResult> =>
           queryDataModel(
             tx,
@@ -2202,11 +2204,26 @@ export function createDataService(
       // A new pinned query may admit a page session: it counts the release's
       // sessions, then inserts one. Serializable transactions doing that
       // concurrently aborted each other and could exhaust their retries with
-      // version_conflict (#495). One admission per model at a time, locked
-      // before the snapshot, makes every count exact: requests are admitted
-      // until a limit is full and refused after. Waiters of this process
-      // queue in memory and hold no pool connection; a wait longer than the
-      // workspace's query timeout ends in the refusal instead.
+      // version_conflict (#495), also across models and workspaces: reading
+      // the snapshot table takes an SSI predicate lock that every other
+      // admission's insert conflicts with (#516).
+      //
+      // So a first page runs in two steps under a database lock per model,
+      // taken before either starts. The page is computed in a serializable
+      // transaction that does not touch the snapshot table and commits first.
+      // Admission then counts and inserts in a short read-committed
+      // transaction: it sees every session committed by an earlier holder of
+      // the lock, and both caps count only this model's release, so counts
+      // stay exact while admissions of other models never conflict with it.
+      // If admission fails, nothing of it commits and the request fails; a
+      // session never exists without the page that pinned it. Generations
+      // read by the page but pinned only by the later admission are kept by
+      // prune's grace period, as for any request that reads a generation
+      // before it commits the snapshot naming it.
+      //
+      // Waiters of this process queue in memory and hold no pool connection;
+      // a wait longer than the workspace's query timeout ends in the refusal
+      // instead.
       if (
         !query.pinPages ||
         query.pageToken ||
@@ -2221,7 +2238,13 @@ export function createDataService(
         return await withSessionAdvisoryLock(
           db,
           "data_page_sessions:" + id,
-          (lockedDb) => run(actor, execute(true), lockedDb),
+          async (lockedDb) => {
+            const deferred: DeferredPageAdmission = {};
+            const page = await run(actor, execute(deferred), lockedDb);
+            const admit = deferred.admit;
+            if (!admit) return page;
+            return run(actor, (tx) => admit(tx), lockedDb, "read committed");
+          },
           { timeoutMs, queue: pageAdmissions },
         );
       } catch (error) {
@@ -2277,6 +2300,16 @@ async function cacheWrite<T>(
   }
 }
 
+/**
+ * Lets queryDataModel leave page-session admission to a later transaction.
+ * When the first page can start a session, `admit` is set; it counts the
+ * release's sessions, inserts one when both caps allow it and returns the
+ * final result. queryDataModel then returns the result without a token.
+ */
+export interface DeferredPageAdmission {
+  admit?: (tx: Transaction) => Promise<DataModelQueryResult>;
+}
+
 export async function queryDataModel(
   tx: Transaction,
   workspaceId: string,
@@ -2286,8 +2319,9 @@ export async function queryDataModel(
   policy: DataPolicy,
   preview = false,
   pageOwner?: string,
-  admit = true,
+  admit: boolean | DeferredPageAdmission = true,
 ): Promise<DataModelQueryResult> {
+  if (typeof admit === "object") admit.admit = undefined;
   if ((query.pageToken || query.pinPages) && !pageOwner)
     fail("data_page_unavailable", 409);
   const continuation = query.pageToken ? readPageToken(query.pageToken) : null;
@@ -2565,6 +2599,18 @@ export async function queryDataModel(
       ],
     };
   }
+  const finishPinned = (
+    result: ReturnType<typeof pageResult>,
+  ): DataModelQueryResult =>
+    query.pinPages &&
+    result.offset + result.rows.length < result.totalRows &&
+    !result.nextPageToken &&
+    !result.warnings.includes("immutable_pagination_unavailable")
+      ? {
+          ...result,
+          warnings: [...result.warnings, "immutable_pagination_unavailable"],
+        }
+      : result;
   let result: ReturnType<typeof pageResult> = execution.result;
   if (release && !execution.result.pendingSources?.length) {
     // Cache only generation identities, never a second copy of source rows.
@@ -2573,51 +2619,59 @@ export async function queryDataModel(
     // by the current policy. Old unowned sessions cannot be resumed safely;
     // retire only their exact known key format, preserving versioned formats.
     // Concurrent readers race on this maintenance; whichever commits first does it.
-    await cacheWrite(tx, (tx) =>
+    const reclaim = (tx: Transaction) =>
+      cacheWrite(tx, (tx) =>
+        tx
+          .delete(schema.dataModelQuerySnapshots)
+          .where(
+            and(
+              eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
+              eq(schema.dataModelQuerySnapshots.releaseId, release.id),
+              or(
+                sql`${schema.dataModelQuerySnapshots.queryKey} ~ ${LEGACY_PAGE_KEY_PATTERN}`,
+                lte(schema.dataModelQuerySnapshots.expiresAt, now),
+                ...(policy.querySnapshotSeconds !== null
+                  ? [
+                      lte(
+                        schema.dataModelQuerySnapshots.updatedAt,
+                        new Date(
+                          Math.max(
+                            -62135596800000,
+                            now.getTime() - policy.querySnapshotSeconds * 1000,
+                          ),
+                        ),
+                      ),
+                    ]
+                  : []),
+              ),
+            ),
+          ),
+      );
+    const identities = (tx: Transaction) =>
       tx
-        .delete(schema.dataModelQuerySnapshots)
+        .select({ queryKey: schema.dataModelQuerySnapshots.queryKey })
+        .from(schema.dataModelQuerySnapshots)
         .where(
           and(
             eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
             eq(schema.dataModelQuerySnapshots.releaseId, release.id),
-            or(
-              sql`${schema.dataModelQuerySnapshots.queryKey} ~ ${LEGACY_PAGE_KEY_PATTERN}`,
-              lte(schema.dataModelQuerySnapshots.expiresAt, now),
-              ...(policy.querySnapshotSeconds !== null
-                ? [
-                    lte(
-                      schema.dataModelQuerySnapshots.updatedAt,
-                      new Date(
-                        Math.max(
-                          -62135596800000,
-                          now.getTime() - policy.querySnapshotSeconds * 1000,
-                        ),
-                      ),
-                    ),
-                  ]
-                : []),
-            ),
           ),
-        ),
-    );
-    const existing = await tx
-      .select({ queryKey: schema.dataModelQuerySnapshots.queryKey })
-      .from(schema.dataModelQuerySnapshots)
-      .where(
-        and(
-          eq(schema.dataModelQuerySnapshots.workspaceId, workspaceId),
-          eq(schema.dataModelQuerySnapshots.releaseId, release.id),
-        ),
-      );
-    // Both pools have their own per-release aggregate cap. Owned sessions also
-    // have a per-caller cap; neither count implies a reserved share of capacity.
-    const sessionCount = existing.filter((s) =>
-      s.queryKey.startsWith("page:"),
+        );
+    const refused = () => ({
+      ...execution.result,
+      warnings: [
+        ...execution.result.warnings,
+        "immutable_pagination_unavailable",
+      ],
+    });
+    const deferred = typeof admit === "object";
+    // A deferred admission (#516) leaves the snapshot table to its own
+    // transaction: reading it here would make this serializable transaction
+    // conflict with every other admission (SSI predicate locks).
+    const existing = deferred ? [] : (await reclaim(tx), await identities(tx));
+    const snapshotCount = existing.filter(
+      (s) => !s.queryKey.startsWith("page:"),
     ).length;
-    const callerSessionCount = callerPagePrefix
-      ? existing.filter((s) => s.queryKey.startsWith(callerPagePrefix)).length
-      : 0;
-    const snapshotCount = existing.length - sessionCount;
     if (
       query.pinPages &&
       execution.result.offset + execution.result.rows.length <
@@ -2631,14 +2685,8 @@ export async function queryDataModel(
           (source) =>
             source.kind !== "prepared" || source.generationId !== null,
         ) &&
-        !exceedsDataPolicy(
-          callerSessionCount + 1,
-          policy.queryPageSessionsPerCaller,
-        ) &&
-        !exceedsDataPolicy(sessionCount + 1, policy.querySnapshotCount) &&
         policy.querySnapshotSeconds !== 0
       ) {
-        const sessionId = randomUUID();
         const generations = { ...execution.loader.generations };
         for (const table of execution.loader.tables.values())
           for (const source of table.provenance ?? [])
@@ -2668,23 +2716,49 @@ export async function queryDataModel(
         for (const prepared of preparedExpiries)
           if (prepared.expiresAt < expiresAt)
             expiresAt.setTime(prepared.expiresAt.getTime());
-        await tx.insert(schema.dataModelQuerySnapshots).values({
-          workspaceId,
-          releaseId: release.id,
-          queryKey: pageSessionKey(sessionId),
-          generations,
-          expiresAt,
-          updatedAt: now,
-        });
-        result = pageResult(execution.result, sessionId, expiresAt);
-      } else {
-        result = {
-          ...execution.result,
-          warnings: [
-            ...execution.result.warnings,
-            "immutable_pagination_unavailable",
-          ],
+        // Counts the release's sessions and inserts one. Both caps count this
+        // one release, so whoever orders admissions of the release (the
+        // serializable transaction itself, or the caller's per-model lock for
+        // a deferred admission) makes them exact.
+        const admitSession = async (
+          tx: Transaction,
+          existing: { queryKey: string }[],
+        ) => {
+          const sessionCount = existing.filter((s) =>
+            s.queryKey.startsWith("page:"),
+          ).length;
+          const callerSessionCount = existing.filter((s) =>
+            s.queryKey.startsWith(callerPagePrefix!),
+          ).length;
+          if (
+            exceedsDataPolicy(
+              callerSessionCount + 1,
+              policy.queryPageSessionsPerCaller,
+            ) ||
+            exceedsDataPolicy(sessionCount + 1, policy.querySnapshotCount)
+          )
+            return refused();
+          const sessionId = randomUUID();
+          await tx.insert(schema.dataModelQuerySnapshots).values({
+            workspaceId,
+            releaseId: release.id,
+            queryKey: pageSessionKey(sessionId),
+            generations,
+            expiresAt,
+            updatedAt: now,
+          });
+          return pageResult(execution.result, sessionId, expiresAt);
         };
+        if (typeof admit === "object") {
+          admit.admit = async (tx) =>
+            finishPinned(
+              await admitSession(tx, (await reclaim(tx), await identities(tx))),
+            );
+          return execution.result;
+        }
+        result = await admitSession(tx, existing);
+      } else {
+        result = refused();
       }
     }
     if (
@@ -2732,15 +2806,5 @@ export async function queryDataModel(
       );
     }
   }
-  if (
-    query.pinPages &&
-    result.offset + result.rows.length < result.totalRows &&
-    !result.nextPageToken &&
-    !result.warnings.includes("immutable_pagination_unavailable")
-  )
-    return {
-      ...result,
-      warnings: [...result.warnings, "immutable_pagination_unavailable"],
-    };
-  return result;
+  return finishPinned(result);
 }
