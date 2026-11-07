@@ -64,6 +64,7 @@ import {
   resourcePatch,
   scopePatch,
 } from "@/lib/studio-inspector";
+import { compareMeasureSource } from "@/lib/compare-measure";
 import { fitCheck } from "@/lib/studio-fit-check";
 import type { UnreadableLabel } from "@/lib/studio-readability";
 import type {
@@ -91,6 +92,10 @@ import {
   resourceOptionLabel,
 } from "@/lib/tile-resource";
 
+import {
+  CompareMeasureBound,
+  CompareMeasureSave,
+} from "./compare-measure-fields";
 import { GoalFields } from "./goal-fields";
 import { ImageLibrary, ImagePicker, type PickableImage } from "./image-picker";
 import {
@@ -192,6 +197,13 @@ export interface WidgetPanelProps {
   canCreateGoals?: boolean;
   /** A goal made from the inspector joins the list. */
   onGoalCreated?: (goal: Goal) => void;
+  /**
+   * Whether the author may create and publish models (data:publish), for
+   * a compare widget's "Save as measure" (#508).
+   */
+  canPublishData?: boolean;
+  /** Loads the published models again (after publishing elsewhere). */
+  onRefreshModels?: () => void;
 }
 
 function Problems({ problems }: { problems: StudioProblem[] }) {
@@ -648,17 +660,94 @@ function CompareFields(
     },
     [dispatch, widget],
   );
+  const denominatorMetric = findMetric(metrics, denominator);
+  const bindMeasure = (measure: CompareWidget["measure"]) =>
+    dispatch({
+      type: "updateWidget",
+      widgetId: widget.id,
+      patch: { measure } as WidgetPatch,
+    });
+  const refreshModels = props.onRefreshModels ?? noop;
+  if (widget.measure) {
+    // Bound (#507): the measures decide the numbers; the metrics are kept
+    // for undoing the binding, and the widget keeps its own period.
+    return (
+      <>
+        <CompareMeasureBound
+          widget={{ ...widget, measure: widget.measure }}
+          workspaceId={props.workspaceId}
+          models={props.models ?? []}
+          numerator={props.metric}
+          denominator={denominatorMetric}
+          onUnbind={() => bindMeasure(undefined)}
+        />
+        <PeriodField
+          period={widget.period}
+          onChange={(period) =>
+            dispatch({
+              type: "updateWidget",
+              widgetId: widget.id,
+              patch: { period },
+            })
+          }
+        />
+      </>
+    );
+  }
   return (
     <>
       <DataFields {...props} widget={widget} side="numerator" />
       <DataFields
         {...props}
         widget={denominator}
-        metric={findMetric(metrics, denominator)}
+        metric={denominatorMetric}
         side="denominator"
         dispatch={denominatorDispatch}
       />
+      <CompareMeasureSave
+        // By the widget's sides, not its id: a new widget gets its id from
+        // the server on save, and the typed name and preview stay.
+        key={compareMeasureSource(widget)}
+        widget={widget}
+        numerator={props.metric}
+        denominator={denominatorMetric}
+        workspaceId={props.workspaceId}
+        canPublish={props.canPublishData ?? false}
+        models={props.models ?? []}
+        onRefreshModels={refreshModels}
+        onBind={(saved) => bindMeasure(saved.binding)}
+      />
     </>
+  );
+}
+
+const noop = () => undefined;
+
+/** A bound compare widget's period, as the numerator's field sets it. */
+function PeriodField({
+  period,
+  onChange,
+}: {
+  period: MetricPeriod;
+  onChange: (period: MetricPeriod) => void;
+}) {
+  const locale = useLocale();
+  const t = useT("studio.widgetPanel");
+  return (
+    <div className="field">
+      <label htmlFor="widget-period">{t("period")}</label>
+      <select
+        id="widget-period"
+        value={period}
+        onChange={(event) => onChange(event.target.value as MetricPeriod)}
+      >
+        {PERIODS.map((option) => (
+          <option key={option} value={option}>
+            {periodLabel(option, locale)}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 

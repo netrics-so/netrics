@@ -2,6 +2,7 @@ import type { FastifyInstance, InjectOptions } from "fastify";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  compareMeasurePreviewResponseSchema,
   compareMeasureResponseSchema,
   modelQueryResponseSchema,
   workspaceResponseSchema,
@@ -554,6 +555,15 @@ describe("compare widgets as measures: refusals (#506)", () => {
     const response = await call("POST", "/compare-measures", owner, body);
     expect(response.statusCode, response.body).toBe(status);
     expect(response.json()).toEqual({ error });
+    // The preview (#508) refuses the same way, before anything is created.
+    const preview = await call(
+      "POST",
+      "/compare-measures/preview",
+      owner,
+      body,
+    );
+    expect(preview.statusCode, preview.body).toBe(status);
+    expect(preview.json()).toEqual({ error });
   };
   const base = (overrides: Partial<CompareMeasureRequest> = {}) =>
     ({
@@ -648,17 +658,16 @@ describe("compare widgets as measures: refusals (#506)", () => {
     );
   });
 
-  it("needs a member who may publish data", async () => {
-    expect(
-      (await call("POST", "/compare-measures", undefined, base())).statusCode,
-    ).toBe(401);
-    expect(
-      (await call("POST", "/compare-measures", viewer, base())).statusCode,
-    ).toBe(403);
-    expect(
-      (await call("POST", "/compare-measures", stranger, base())).statusCode,
-    ).toBe(404);
-  });
+  it.each(["/compare-measures", "/compare-measures/preview"])(
+    "needs a member who may publish data (%s)",
+    async (path) => {
+      expect((await call("POST", path, undefined, base())).statusCode).toBe(
+        401,
+      );
+      expect((await call("POST", path, viewer, base())).statusCode).toBe(403);
+      expect((await call("POST", path, stranger, base())).statusCode).toBe(404);
+    },
+  );
 });
 
 describe("compare widgets as measures: drafts (#506)", () => {
@@ -725,5 +734,108 @@ describe("compare widgets as measures: drafts (#506)", () => {
       { isolationLevel: "repeatable read" },
     );
     expect(after.slides[0]!.widgets[0]).toEqual(before.get("last_7_days"));
+  });
+});
+
+describe("compare widgets as measures: preview (#508)", () => {
+  const counts = async () =>
+    raw`select
+      (select count(*)::int from data_preparations
+        where workspace_id = ${workspaceId}) as preparations,
+      (select count(*)::int from data_models
+        where workspace_id = ${workspaceId}) as models`;
+
+  it("shows what would be created, and creates nothing", async () => {
+    const body = request(
+      {
+        name: "Proceeds per signup",
+        numerator: { metricKey: "cmp.proceeds" },
+        denominator: { metricKey: "cmp.signups", aggregation: "avg" },
+        format: "ratio",
+        currency: "EUR",
+      },
+      "last_30_days",
+    );
+    const before = await counts();
+    const response = await call(
+      "POST",
+      "/compare-measures/preview",
+      owner,
+      body,
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    const preview = compareMeasurePreviewResponseSchema.parse(response.json());
+    expect(await counts()).toEqual(before);
+    expect(preview).toEqual({
+      preparation: {
+        name: "Proceeds per signup",
+        steps: [
+          { id: "numerator_source", type: "source" },
+          { id: "numerator_scope", type: "filter" },
+          { id: "numerator_tag", type: "calculate" },
+          { id: "denominator_source", type: "source" },
+          { id: "denominator_tag", type: "calculate" },
+          { id: "compare", type: "append" },
+        ],
+      },
+      model: { name: "Proceeds per signup" },
+      dateDimensionId: "date",
+      measures: {
+        numerator: { id: "numerator", name: "Proceeds" },
+        denominator: { id: "denominator", name: "Signups" },
+        ratio: { id: "ratio", name: "Proceeds per signup" },
+        previous: {
+          id: "ratio_previous",
+          name: "Proceeds per signup · previous period",
+        },
+        change: { id: "ratio_change", name: "Proceeds per signup · change" },
+      },
+      currency: "EUR",
+    });
+    // The save creates exactly what the preview named.
+    const created = await call("POST", "/compare-measures", owner, body);
+    expect(created.statusCode, created.body).toBe(200);
+    const result = compareMeasureResponseSchema.parse(created.json());
+    const model = (await call("GET", `/models/${result.modelId}`, owner)).json()
+      .model as {
+      name: string;
+      definition: { measures: Array<{ id: string; name: string }> };
+    };
+    expect(model.name).toBe(preview.model.name);
+    for (const measure of Object.values(preview.measures))
+      expect(model.definition.measures).toContainEqual(
+        expect.objectContaining(measure),
+      );
+    const preparation = (
+      await call("GET", `/preparations/${result.preparationId}`, owner)
+    ).json().preparation as {
+      name: string;
+      graph: { nodes: Array<{ id: string; type: string }> };
+    };
+    expect(preparation.name).toBe(preview.preparation.name);
+    expect(
+      preparation.graph.nodes.map(({ id, type }) => ({ id, type })),
+    ).toEqual(preview.preparation.steps);
+  });
+
+  it("names no currency when no side needs one", async () => {
+    const response = await call("POST", "/compare-measures/preview", owner, {
+      ...request(
+        {
+          name: "Conversion",
+          numerator: { metricKey: "cmp.signups" },
+          denominator: { metricKey: "cmp.visits" },
+          format: "percent",
+        },
+        "last_7_days",
+      ),
+      // Ignored: neither side is an amount per currency.
+      currency: "EUR",
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const preview = compareMeasurePreviewResponseSchema.parse(response.json());
+    expect(preview.currency).toBeNull();
+    expect(preview.measures.change.name).toBe("Conversion · change (pt)");
   });
 });

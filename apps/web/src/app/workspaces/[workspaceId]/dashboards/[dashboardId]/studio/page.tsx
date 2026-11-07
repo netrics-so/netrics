@@ -110,6 +110,7 @@ export default async function StudioPage({ params }: StudioPageProps) {
         }}
         goals={goals}
         canCreateGoals={can(role, "dashboards:create")}
+        canPublishData={can(role, "data:publish")}
         dashboardNames={Object.fromEntries(
           dashboards.map((dashboard) => [dashboard.id, dashboard.name]),
         )}

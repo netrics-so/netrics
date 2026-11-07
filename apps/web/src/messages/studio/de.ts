@@ -347,6 +347,92 @@ export const studioDe: Catalog<typeof studioEn> = {
       reviewHidden: "Bewertung ausgeblendet.",
       noReviewShown: "Gerade wird keine Bewertung gezeigt.",
     },
+    compareMeasure: {
+      legend: "Wiederverwendbare Kennzahl",
+      intro:
+        "Speichere dieses Verhältnis als Kennzahl unter Daten & Kennzahlen, damit andere Dashboards dieselbe Definition nutzen können.",
+      nameLabel: "Name der Kennzahl",
+      nameHelp:
+        "Benennt das Modell, sein Verhältnis und die erzeugte Aufbereitung.",
+      preview: "Als Kennzahl speichern…",
+      previewing: "Wird geprüft…",
+      blockedSave:
+        "Zum Speichern als Kennzahl brauchst du die Berechtigung „Daten veröffentlichen“ (Bearbeiter, Admins und Inhaber haben sie). Frag jemanden mit dieser Berechtigung.",
+      willCreate: "Das wird erstellt:",
+      preparationLine:
+        "Aufbereitung „{name}“ ({steps} Schritte), veröffentlicht",
+      modelLine: "Modell „{name}“, als Entwurf gespeichert",
+      measuresLine: "Kennzahlen: {names}",
+      allPeriods:
+        "Funktioniert mit jedem Zeitraum: Das Widget behält seinen Zeitraum, sein Format und sein Layout.",
+      pinnedNote:
+        "Nur Beträge in {currency} werden gezählt; andere Währungen bleiben außen vor.",
+      create: "Entwurf erstellen",
+      creating: "Wird erstellt…",
+      back: "Zurück",
+      refusedTitle:
+        "Dieser Vergleich kann nicht als Kennzahl gespeichert werden",
+      refusals: {
+        compare_aggregation_unsupported:
+          "Minimum, Maximum und letzter Wert können keine Kennzahlen sein. Zeige auf beiden Seiten die Summe oder den Durchschnitt.",
+        compare_currency_unpinned:
+          "Ein Betrag in mehreren Währungen wird umgerechnet oder in seiner größten Währung gezeigt; das kann eine Kennzahl nicht. Wähle eine Währung, die gezählt wird.",
+        compare_granularity_unsupported:
+          "Nur tägliche Metriken können Kennzahlen sein, stündliche nicht.",
+        compare_source_unavailable:
+          "Eine Metrik dieses Vergleichs hat noch keine Daten als Grundlage. Warte auf ihre erste Synchronisierung oder wähle eine andere Metrik.",
+        compare_dimension_unknown:
+          "Ein Filter dieses Vergleichs bezieht sich auf etwas, das die Daten der Metrik nicht haben. Entferne den Filter und versuche es erneut.",
+        compare_units_incompatible:
+          "Aus diesen beiden Metriken lässt sich dieses Verhältnis nicht als Kennzahl bilden: Eine Währung wird nur durch dieselbe Währung geteilt, und Prozent braucht zwei Seiten ohne Währung.",
+        other: "Dieser Vergleich konnte nicht geprüft werden ({message}).",
+      },
+      pinLabel: "Gezählte Währung",
+      pinLoading: "Währungen werden geladen…",
+      pinNone:
+        "In diesem Zeitraum gibt es keine Beträge, aus denen du eine Währung wählen kannst.",
+      retry: "Mit {currency} erneut versuchen",
+      draftTitle: "Modellentwurf „{name}“ erstellt",
+      draftHelp:
+        "Die Aufbereitung ist veröffentlicht, das Modell ist ein Entwurf. Öffne es unter Daten & Kennzahlen, sieh dir die Vorschau an und veröffentliche es; komm dann zurück, um es hier zu nutzen.",
+      openModel: "Modell zum Veröffentlichen öffnen",
+      checkAgain: "Veröffentlicht, erneut prüfen",
+      stillDraft: "Das Modell ist noch nicht veröffentlicht.",
+      publishBlocked:
+        "Du kannst keine Modelle veröffentlichen: Dafür braucht es die Berechtigung „Daten veröffentlichen“ (Bearbeiter, Admins und Inhaber haben sie). Bitte jemanden mit dieser Berechtigung, „{name}“ zu veröffentlichen.",
+      publishedTitle: "Modell „{name}“ ist veröffentlicht",
+      publishedHelp:
+        "Nutze seine Kennzahlen in diesem Widget. Bildschirme zeigen die Änderung erst, wenn du das Dashboard speicherst, und du kannst jederzeit zu den Metriken zurück.",
+      bind: "Kennzahl in diesem Widget nutzen",
+      boundLegend: "Kennzahl",
+      boundAs: "Nutzt die Kennzahl {measure} aus {model}",
+      openBoundModel: "Modell öffnen",
+      boundHelp:
+        "Das Widget liest die veröffentlichten Kennzahlen über seinen eigenen Zeitraum. Seine Metriken bleiben erhalten und kommen zurück, wenn du die Kennzahl nicht mehr nutzt.",
+      keptDefinition: "Erhalten: {numerator} / {denominator}",
+      unbind: "Wieder die Metriken nutzen",
+      unbindHelp:
+        "Entfernt die Bindung; nach dem Speichern zeigt das Widget wieder seine eigenen Metriken.",
+      dirtyHelp: "Speichere das Dashboard, um das auf Bildschirmen zu zeigen.",
+      checking: "Kennzahl wird geprüft…",
+      errors: {
+        unpublished:
+          "Das Modell ist nicht veröffentlicht, deshalb zeigt dieses Widget keine Zahlen. Veröffentliche es unter Daten & Kennzahlen.",
+        modelRemoved:
+          "Das Modell dieses Widgets wurde gelöscht. Nutze wieder die Metriken oder binde eine andere Kennzahl.",
+        measureRemoved:
+          "Eine Kennzahl dieses Widgets wurde aus dem veröffentlichten Modell entfernt. Nutze wieder die Metriken oder stelle die Kennzahl wieder her und veröffentliche das Modell.",
+        dimensionRemoved:
+          "Die Datumsdimension des Modells wurde entfernt. Stelle sie wieder her und veröffentliche das Modell oder nutze wieder die Metriken.",
+        dateRequired:
+          "Die Datumsdimension des Modells ist kein Datum mehr. Korrigiere sie und veröffentliche das Modell oder nutze wieder die Metriken.",
+        notNumeric: "Eine Kennzahl dieses Widgets liefert keine Zahl.",
+        units:
+          "Aus den veröffentlichten Kennzahlen lässt sich dieses Verhältnis nicht bilden. Prüfe ihre Einheiten oder das Format des Widgets.",
+        invalid:
+          "Die Bindung kann nicht gelesen werden. Nutze wieder die Metriken.",
+      },
+    },
     newWidget: {
       noModels: "Veröffentliche zuerst ein Modell unter Daten & Kennzahlen.",
       noMetrics: "Füg zuerst eine Verbindung mit Metriken hinzu.",

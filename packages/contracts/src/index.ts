@@ -2027,6 +2027,43 @@ export type CompareMeasureResponse = z.infer<
   typeof compareMeasureResponseSchema
 >;
 
+const compareMeasureNamedSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+
+/**
+ * What saving a compare widget as a measure would create (#508), from the
+ * same request, without creating anything: the preparation with its steps,
+ * the model and its measures, and the source currency amounts are counted
+ * in when one is pinned. A compare that cannot be one is refused with the
+ * same typed errors as the save.
+ */
+export const compareMeasurePreviewResponseSchema = z.object({
+  preparation: z.object({
+    name: z.string(),
+    /** The generated steps in order ("source", "filter", "calculate", …). */
+    steps: z.array(z.object({ id: z.string(), type: z.string() })),
+  }),
+  model: z.object({ name: z.string() }),
+  dateDimensionId: z.string(),
+  measures: z.object({
+    numerator: compareMeasureNamedSchema,
+    denominator: compareMeasureNamedSchema,
+    ratio: compareMeasureNamedSchema,
+    previous: compareMeasureNamedSchema,
+    change: compareMeasureNamedSchema,
+  }),
+  /**
+   * The pinned currency, when a per-currency amount is counted in it
+   * only; null when no side needs one.
+   */
+  currency: z.string().nullable(),
+});
+export type CompareMeasurePreview = z.infer<
+  typeof compareMeasurePreviewResponseSchema
+>;
+
 const modelItemIdSchema = z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$/);
 
 /**

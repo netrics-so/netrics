@@ -1,4 +1,5 @@
 import type {
+  CompareMeasurePreview,
   CompareMeasureRequest,
   CompareMeasureResponse,
 } from "@netrics/contracts";
@@ -16,9 +17,11 @@ import {
   COMPARE_DATE_DIMENSION,
   COMPARE_MEASURE_IDS,
   COMPARE_PREPARATION_OUTPUT,
+  CURRENCY_DIMENSION,
   DEFAULT_DATA_POLICY,
   compatibleAggregations,
   compileCompareMeasure,
+  isPerCurrencyUnit,
   type Aggregation,
   type CompareMeasureSide,
   type DataPolicy,
@@ -90,6 +93,32 @@ async function compareSide(
   };
 }
 
+/** Both sides read and compiled, or the typed refusal thrown. */
+async function compileRequest(
+  tx: Transaction,
+  workspaceId: string,
+  input: ReturnType<typeof compareMeasureRequestSchema.parse>,
+) {
+  const numerator = await compareSide(tx, workspaceId, input);
+  const denominator = await compareSide(tx, workspaceId, input.denominator);
+  const compiled = compileCompareMeasure({
+    name: input.name,
+    period: input.period,
+    format: input.format,
+    numerator,
+    denominator,
+    currency: input.currency ?? null,
+  });
+  if (!compiled.ok) reject(compiled.error);
+  // The pinned currency counts only where a side has no currency filter.
+  const pinned = [numerator, denominator].some(
+    (side) =>
+      isPerCurrencyUnit(side.unit) &&
+      side.dimensions[CURRENCY_DIMENSION] === undefined,
+  );
+  return { compiled, currency: pinned ? (input.currency ?? null) : null };
+}
+
 /**
  * Save a compare widget as a reusable measure (#506): a generated
  * preparation, published so a model can read it, and a draft model with
@@ -104,6 +133,54 @@ export function createCompareMeasureService(deps: {
   const now = deps.now ?? (() => new Date()),
     defaults = deps.policy ?? DEFAULT_DATA_POLICY;
   return {
+    /**
+     * What `create` would make of the request (#508), read in a read-only
+     * transaction: nothing is saved, and a refusal is the same.
+     */
+    async preview(
+      actor: DataActor,
+      request: CompareMeasureRequest,
+    ): Promise<CompareMeasurePreview> {
+      const input = compareMeasureRequestSchema.parse(request);
+      return withWorkspace(
+        deps.db,
+        { workspaceId: actor.workspaceId, userId: actor.callerId },
+        async (tx) => {
+          const { compiled, currency } = await compileRequest(
+            tx,
+            actor.workspaceId,
+            input,
+          );
+          const model = compiled.model(
+            `prepared:preview:${COMPARE_PREPARATION_OUTPUT}`,
+          );
+          const named = (id: string) => ({
+            id,
+            name: model.measures.find((measure) => measure.id === id)!.name,
+          });
+          return {
+            preparation: {
+              name: input.name,
+              steps: compiled.preparation.nodes.map((node) => ({
+                id: node.id,
+                type: node.type,
+              })),
+            },
+            model: { name: input.name },
+            dateDimensionId: COMPARE_DATE_DIMENSION,
+            measures: {
+              numerator: named(COMPARE_MEASURE_IDS.numerator),
+              denominator: named(COMPARE_MEASURE_IDS.denominator),
+              ratio: named(COMPARE_MEASURE_IDS.ratio),
+              previous: named(COMPARE_MEASURE_IDS.previous),
+              change: named(COMPARE_MEASURE_IDS.change),
+            },
+            currency,
+          };
+        },
+        { isolationLevel: "repeatable read", accessMode: "read only" },
+      );
+    },
     async create(
       actor: DataActor,
       request: CompareMeasureRequest,
@@ -115,21 +192,11 @@ export function createCompareMeasureService(deps: {
             deps.db,
             { workspaceId: actor.workspaceId, userId: actor.callerId },
             async (tx) => {
-              const numerator = await compareSide(tx, actor.workspaceId, input);
-              const denominator = await compareSide(
+              const { compiled } = await compileRequest(
                 tx,
                 actor.workspaceId,
-                input.denominator,
+                input,
               );
-              const compiled = compileCompareMeasure({
-                name: input.name,
-                period: input.period,
-                format: input.format,
-                numerator,
-                denominator,
-                currency: input.currency ?? null,
-              });
-              if (!compiled.ok) reject(compiled.error);
               const data = createDataService(tx, now, defaults);
               const saved = await data.savePreparation(actor, {
                 name: input.name,

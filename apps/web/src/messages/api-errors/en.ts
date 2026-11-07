@@ -129,6 +129,10 @@ export const apiErrorsEn = {
       "Pick a currency for this amount: amounts in different currencies are not added up.",
     metric_not_per_currency:
       "This metric is not an amount in several currencies.",
+    compare_measure_model_not_found:
+      "A compare widget uses a model this workspace doesn’t have. Use its metrics again.",
+    compare_measure_not_found:
+      "A compare widget uses a measure its model doesn’t have. Use its metrics again or publish the measure.",
     compare_units_incompatible:
       "These two metrics cannot form this ratio: a currency is divided only by the same currency, and a percentage needs two sides without currency.",
     currency_choice_conflict:

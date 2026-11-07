@@ -343,6 +343,87 @@ export const studioEn = {
       reviewHidden: "Review hidden.",
       noReviewShown: "No review is shown right now.",
     },
+    compareMeasure: {
+      legend: "Reusable measure",
+      intro:
+        "Save this ratio as a measure in Data & measures, so other dashboards can use the same definition.",
+      nameLabel: "Measure name",
+      nameHelp: "Names the model, its ratio and the generated preparation.",
+      preview: "Save as measure…",
+      previewing: "Checking…",
+      blockedSave:
+        "Saving as a measure needs the “publish data” permission (editors, admins and owners have it). Ask someone with it.",
+      willCreate: "This creates:",
+      preparationLine: "Preparation “{name}” ({steps} steps), published",
+      modelLine: "Model “{name}”, saved as a draft",
+      measuresLine: "Measures: {names}",
+      allPeriods:
+        "Works with every period: the widget keeps its own period, format and layout.",
+      pinnedNote:
+        "Only amounts in {currency} are counted; other currencies are left out.",
+      create: "Create the draft",
+      creating: "Creating…",
+      back: "Back",
+      refusedTitle: "This compare can’t be saved as a measure",
+      refusals: {
+        compare_aggregation_unsupported:
+          "Minimum, maximum and latest can’t be measures. Show the sum or the average on both sides.",
+        compare_currency_unpinned:
+          "An amount in several currencies is converted or shown in its largest currency, which a measure can’t do. Pick one currency to count.",
+        compare_granularity_unsupported:
+          "Only daily metrics can be measures; hourly ones can’t.",
+        compare_source_unavailable:
+          "A metric of this compare has no data to build on yet. Wait for its first sync, or pick another metric.",
+        compare_dimension_unknown:
+          "A filter of this compare is on something the metric’s data doesn’t have. Remove the filter and try again.",
+        compare_units_incompatible:
+          "These two metrics can’t form this ratio as a measure: a currency is divided only by the same currency, and a percentage needs two sides without currency.",
+        other: "This compare couldn’t be checked ({message}).",
+      },
+      pinLabel: "Currency to count",
+      pinLoading: "Loading currencies…",
+      pinNone: "No amounts in this period to pick a currency from.",
+      retry: "Try again with {currency}",
+      draftTitle: "Draft model “{name}” created",
+      draftHelp:
+        "The preparation is published; the model is a draft. Open it in Data & measures, preview it and publish it, then come back to use it here.",
+      openModel: "Open the model to publish it",
+      checkAgain: "I published it, check again",
+      stillDraft: "The model isn’t published yet.",
+      publishBlocked:
+        "You can’t publish models: that needs the “publish data” permission (editors, admins and owners have it). Ask someone with it to publish “{name}”.",
+      publishedTitle: "Model “{name}” is published",
+      publishedHelp:
+        "Use its measures in this widget. Screens show the change only after you save the dashboard, and you can go back to the metrics at any time.",
+      bind: "Use the measure in this widget",
+      boundLegend: "Measure",
+      boundAs: "Uses measure {measure} from {model}",
+      openBoundModel: "Open the model",
+      boundHelp:
+        "The widget reads the published measures over its own period. Its metrics are kept and come back when you stop using the measure.",
+      keptDefinition: "Kept: {numerator} / {denominator}",
+      unbind: "Use the metrics again",
+      unbindHelp:
+        "Removes the binding; the widget shows its own metrics again after you save.",
+      dirtyHelp: "Save the dashboard to show this on screens.",
+      checking: "Checking the measure…",
+      errors: {
+        unpublished:
+          "The model isn’t published, so this widget shows no numbers. Publish it in Data & measures.",
+        modelRemoved:
+          "The model this widget uses was deleted. Use the metrics again or bind another measure.",
+        measureRemoved:
+          "A measure this widget uses was removed from the published model. Use the metrics again, or restore the measure and publish the model.",
+        dimensionRemoved:
+          "The model’s date dimension was removed. Restore it and publish the model, or use the metrics again.",
+        dateRequired:
+          "The model’s date dimension is no longer a date. Fix it and publish the model, or use the metrics again.",
+        notNumeric: "A measure this widget uses doesn’t give a number.",
+        units:
+          "The published measures can’t form this ratio. Check their units or the widget’s format.",
+        invalid: "The binding can’t be read. Use the metrics again.",
+      },
+    },
     newWidget: {
       noModels: "Publish a model in Data & measures first.",
       noMetrics: "Add a connection with metrics first.",
