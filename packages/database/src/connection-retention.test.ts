@@ -450,6 +450,59 @@ describe("choosing a connection's retention", () => {
     );
   });
 
+  it("caps deadlines by the workspace maximum in fixed 24-hour days, whatever the session time zone (#498)", async () => {
+    const workspace = (
+      await admin`insert into workspaces(name) values ('Berlin cap') returning id`
+    )[0]!.id as string;
+    const connectionId = await connection(workspace);
+    const definition = personalDataset();
+    // Berlin leaves summer time on 2026-10-25: a calendar day there is 25 hours.
+    const collected = new Date("2026-10-24T12:00:00Z");
+    await ingest(
+      db,
+      workspace,
+      connectionId,
+      definition,
+      page(definition, "r1", ["x"]),
+      collected,
+    );
+    const berlin = postgres(test.appUrl, {
+      max: 1,
+      connection: { TimeZone: "Europe/Berlin" },
+    });
+    try {
+      const local = drizzle(berlin, { schema: { ...schema, ...auth } });
+      await withWorkspace(local, { workspaceId: workspace }, (tx) =>
+        adminSetDataPolicy(tx, workspace, { maxRetentionDays: 30 }),
+      );
+    } finally {
+      await berlin.end({ timeout: 5 });
+    }
+    const deadline = new Date(collected.getTime() + 30 * DAY);
+    expect((await deadlines(admin, connectionId)).x!.expiresAt).toEqual(
+      deadline,
+    );
+    const generations = await admin`
+      select g.created_at, g.expires_at from data_generations g
+      join data_datasets d on d.id = g.dataset_id
+      where d.connection_id = ${connectionId}`;
+    expect(generations.length).toBeGreaterThan(0);
+    for (const g of generations) {
+      expect(g.expires_at).toEqual(
+        new Date((g.created_at as Date).getTime() + 30 * DAY),
+      );
+    }
+    const refreshes = await admin`
+      select r.source_collected_at, r.expires_at from data_refreshes r
+      join data_datasets d on d.id = r.dataset_id
+      where d.connection_id = ${connectionId}`;
+    for (const r of refreshes) {
+      expect(r.expires_at).toEqual(
+        new Date((r.source_collected_at as Date).getTime() + 30 * DAY),
+      );
+    }
+  });
+
   it("applies to staged reports of datasets not registered yet", async () => {
     const connectionId = await connection(a);
     const definition = personalDataset();

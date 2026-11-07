@@ -435,6 +435,13 @@
       "when": 1794003276942,
       "tag": "0061_connection_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1794038620410,
+      "tag": "0062_policy_deadline_fixed_days",
+      "breakpoints": true
     }
   ]
 }
