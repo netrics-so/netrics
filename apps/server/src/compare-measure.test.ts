@@ -17,7 +17,9 @@ import {
 import {
   COMPARE_MEASURE_REFUSALS,
   addDays,
+  amountCurrency,
   compareChange,
+  compareRatioUnit,
   resolvePeriod,
   type CompareFormat,
   type DataExpression,
@@ -494,6 +496,25 @@ describe("compare widgets as measures: parity (#506)", () => {
         expect(cells[result.measures.previous]!.comparedTo).toEqual(
           window.previousDates,
         );
+        // The ratio keeps the widget's unit: an amount per unit stays in the
+        // numerator's currency; otherwise it has none.
+        const ratioUnit = compareRatioUnit(
+          widget.data.numerator.unit,
+          widget.data.denominator.unit,
+        );
+        for (const id of [result.measures.ratio, result.measures.previous]) {
+          const cell = cells[id]!;
+          if (ratioUnit === null)
+            expect(cell.currency, `${period} ${id}`).toBeUndefined();
+          else
+            expect(
+              { unit: cell.unit, currency: cell.currency },
+              `${period} ${id}`,
+            ).toEqual({
+              unit: "currency_minor",
+              currency: amountCurrency(ratioUnit),
+            });
+        }
       }
     },
     60_000,

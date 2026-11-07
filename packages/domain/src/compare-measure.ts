@@ -256,13 +256,15 @@ export function compileCompareMeasure(
   };
 
   // Amounts per currency are integers whose sums are decimals; the other
-  // side's numbers are not. An amount over a count divides as numbers,
-  // as the widget does.
+  // side's numbers are not. Only an amount over a count mixes them (the
+  // unit rule above refuses a count over an amount): the count becomes a
+  // plain decimal, so the ratio stays an amount per unit in the numerator's
+  // currency, as the widget's `compareRatioUnit`.
   const decimal = (side: Side) => sides[side].currencyFieldId !== null;
   const mixed = decimal("numerator") !== decimal("denominator");
   const operand = (side: Side) =>
-    mixed && decimal(side)
-      ? call("to_number", field(COMPARE_MEASURE_IDS[side]))
+    mixed && !decimal(side)
+      ? call("to_decimal", field(COMPARE_MEASURE_IDS[side]))
       : field(COMPARE_MEASURE_IDS[side]);
   const model = (datasetId: string): SemanticModelDefinition => {
     const measures: ModelMeasure[] = [];

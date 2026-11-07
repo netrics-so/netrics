@@ -539,6 +539,17 @@ describe("compiled compare measures match the widget (#506)", () => {
       expect(result[COMPARE_MEASURE_IDS.previous]!.comparedTo).toEqual(
         window.previousDates,
       );
+      // An amount per unit keeps the numerator's currency (compareRatioUnit).
+      for (const id of [
+        COMPARE_MEASURE_IDS.ratio,
+        COMPARE_MEASURE_IDS.previous,
+      ])
+        if (numerator.unit === "currency_minor")
+          expect({
+            unit: result[id]!.unit,
+            currency: result[id]!.currency,
+          }).toEqual({ unit: "currency_minor", currency: "EUR" });
+        else expect(result[id]!.currency).toBeUndefined();
     }
   });
 });
