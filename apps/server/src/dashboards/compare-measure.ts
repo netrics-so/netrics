@@ -245,7 +245,9 @@ function operandOf(
   // metric queries give them: an amount in major units ("currency") is
   // scaled, one in minor units relabelled. Any other number without a unit
   // is a plain count, so screens show it (a null unit is a failed query).
-  const major = cell?.unit === "currency" && Boolean(cell.currency);
+  // Also an amount per unit ("currency/count"): its scale is the amount's.
+  const major =
+    cell?.unit?.split("/")[0] === "currency" && Boolean(cell.currency);
   const unit = cell?.currency
     ? `${cell.currency}_minor`
     : (cell?.unit ?? "count");

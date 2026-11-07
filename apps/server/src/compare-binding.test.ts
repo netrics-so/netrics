@@ -13,6 +13,7 @@ import {
 import {
   createDatabase,
   createRawSqlClient,
+  dashboardHasModelWidgets,
   withWorkspace,
   type Database,
   type Sql,
@@ -1077,6 +1078,8 @@ describe("bound compare widgets: source retention (#507)", () => {
 async function revenueModel(
   key: string,
   currencyOf: (day: number) => string,
+  /** The orders' unit; with one, the ratio is "currency/<unit>". */
+  ordersUnit?: string,
 ): Promise<CompareMeasureBinding> {
   const field = (id: string, type: string, extra: object = {}) => ({
     id,
@@ -1095,7 +1098,7 @@ async function revenueModel(
         day: addDays(TODAY, -day),
         amount: "150",
         currency: currencyOf(day),
-        orders: 4,
+        orders: ordersUnit ? "4" : 4,
       },
     });
   const manual = await call("POST", "/data/manual", owner, {
@@ -1114,7 +1117,11 @@ async function revenueModel(
           currencyField: "currency",
         }),
         field("currency", "string"),
-        field("orders", "number"),
+        field(
+          "orders",
+          ordersUnit ? "decimal" : "number",
+          ordersUnit ? { unit: ordersUnit } : {},
+        ),
       ],
     },
     records,
@@ -1155,11 +1162,14 @@ async function revenueModel(
             fn: "divide",
             args: [
               { kind: "field", fieldId: "numerator" },
-              {
-                kind: "call",
-                fn: "to_decimal",
-                args: [{ kind: "field", fieldId: "denominator" }],
-              },
+              // With a unit the orders keep it: "currency/<unit>".
+              ordersUnit
+                ? { kind: "field", fieldId: "denominator" }
+                : {
+                    kind: "call",
+                    fn: "to_decimal",
+                    args: [{ kind: "field", fieldId: "denominator" }],
+                  },
             ],
           },
         },
@@ -1264,5 +1274,38 @@ describe("bound compare widgets: currencies across windows (#507)", () => {
       status: "outage",
       ratio: { value: null, previousValue: null },
     });
+  }, 60_000);
+});
+
+describe("bound compare widgets: compound units and payload caching (#507)", () => {
+  it("scales an amount per unit in major units, whatever the unit", async () => {
+    const measure = await revenueModel("per_count", () => "EUR", "count");
+    const read = await readInBrowser([
+      { id: uuid(94, 1), period: "last_7_days", measure, format: "ratio" },
+    ]);
+    // €37.50 per order, in cents: never €0.38.
+    expect(read.json().widgets[0]).toMatchObject({
+      error: null,
+      numerator: { value: 105_000, unit: "EUR_minor" },
+      denominator: { value: 28, unit: "count" },
+      ratio: { value: 3750, previousValue: 3750 },
+      unit: "EUR_minor",
+    });
+  }, 60_000);
+
+  it("counts a dashboard with bound compares as semantic, so its payload is not cached", async () => {
+    const binding = bindingOf(await compile(SIGNUP_RATE));
+    const unbound = await insertCompares(++group, [
+      { period: "this_month", ...inline(SIGNUP_RATE) },
+    ]);
+    const bound = await insertCompares(++group, [
+      { period: "this_month", ...inline(SIGNUP_RATE), measure: binding },
+    ]);
+    const semantic = (dashboardId: string) =>
+      asWorkspace((tx) =>
+        dashboardHasModelWidgets(tx, workspaceId, dashboardId),
+      );
+    expect(await semantic(unbound.dashboardId)).toBe(false);
+    expect(await semantic(bound.dashboardId)).toBe(true);
   }, 60_000);
 });
