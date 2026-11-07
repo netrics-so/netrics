@@ -10,6 +10,7 @@ import type {
 import { ScrollCompareCard } from "@/components/scroll/scroll-widgets";
 import { renderI18n } from "@/lib/i18n/test-render";
 import type { StudioEnv } from "@/lib/studio-widgets";
+import { deviceTileNotice } from "@/lib/tile-status";
 import {
   compareChangeText,
   compareFooterCandidates,
@@ -362,6 +363,12 @@ describe("compare widget bound to measures (#507)", () => {
     expect(
       renderI18n(<LiveCompareWidget widget={unbound} env={env} />),
     ).not.toContain("257");
+  });
+
+  it("says when a source fails, beside the numbers it still has", async () => {
+    const html = await render(reading({ status: "outage" }));
+    expect(html).toContain("13.9%");
+    expect(html).toContain(deviceTileNotice("outage", null, "en")!);
   });
 
   it("hides a reading whose retained data has expired", async () => {

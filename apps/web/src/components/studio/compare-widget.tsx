@@ -26,6 +26,7 @@ import {
   type CompareReading,
 } from "@/lib/studio-compare";
 import { footerLine, u } from "@/lib/studio-render";
+import { deviceTileNotice } from "@/lib/tile-status";
 import {
   metricKeyOf,
   type DataWidget,
@@ -360,7 +361,10 @@ export function useLiveCompare(
           : null,
       notice:
         failed === null
-          ? null
+          ? // The sources' health, as a payload compare widget says it.
+            data
+            ? deviceTileNotice(data.status, data.updatedAt, locale)
+            : null
           : data?.error
             ? tData(`errors.${dataErrorCodeKey(data.error)}`)
             : failed,

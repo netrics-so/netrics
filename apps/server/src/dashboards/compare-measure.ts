@@ -19,6 +19,7 @@ import {
   compareMeasureFilter,
   compareMeasureWindows,
   compareRatioUnit,
+  currencyExponent,
   type CompareMeasureBinding,
   type DataPolicy,
   type Period,
@@ -237,18 +238,23 @@ function operandOf(
   measureId: string,
 ): Cell | "not_numeric" {
   const cell = data.result?.rows[0]?.measures[measureId];
+  // Compare amounts are minor units of their currency ("EUR_minor"), as
+  // metric queries give them: an amount in major units ("currency") is
+  // scaled, one in minor units relabelled. Any other number without a unit
+  // is a plain count, so screens show it (a null unit is a failed query).
+  const major = cell?.unit === "currency" && Boolean(cell.currency);
+  const unit = cell?.currency
+    ? `${cell.currency}_minor`
+    : (cell?.unit ?? "count");
   if (!cell || cell.value === null || cell.value === undefined)
-    return {
-      value: null,
-      unit: cell?.currency ? `${cell.currency}_minor` : (cell?.unit ?? null),
-    };
+    return { value: null, unit };
   if (!["integer", "number", "decimal"].includes(cell.type))
     return "not_numeric";
   const value = Number(cell.value);
   if (!Number.isFinite(value)) return "not_numeric";
   return {
-    value,
-    unit: cell.currency ? `${cell.currency}_minor` : (cell.unit ?? null),
+    value: major ? value * 10 ** currencyExponent(cell.currency!) : value,
+    unit,
   };
 }
 

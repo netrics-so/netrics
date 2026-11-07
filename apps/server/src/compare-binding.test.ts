@@ -1061,3 +1061,142 @@ describe("bound compare widgets: source retention (#507)", () => {
     );
   }, 60_000);
 });
+
+describe("bound compare widgets: units of any model (#507)", () => {
+  it("shows major-unit amounts in minor units and unitless operands as counts", async () => {
+    const field = (id: string, type: string, extra: object = {}) => ({
+      id,
+      name: id,
+      type,
+      nullable: false,
+      classification: "internal",
+      ...extra,
+    });
+    // 150 EUR (major units) and 4 orders on each of the last 10 days.
+    const records = [];
+    for (let day = 0; day < 10; day++)
+      records.push({
+        values: {
+          id: `o${day}`,
+          day: addDays(TODAY, -day),
+          amount: "150",
+          currency: "EUR",
+          orders: 4,
+        },
+      });
+    const manual = await call("POST", "/data/manual", owner, {
+      definition: {
+        key: "orders",
+        name: "Orders",
+        version: 1,
+        mode: "snapshot",
+        grain: "one day",
+        keyFields: ["id"],
+        fields: [
+          field("id", "string"),
+          field("day", "date"),
+          field("amount", "decimal", {
+            unit: "currency",
+            currencyField: "currency",
+          }),
+          field("currency", "string"),
+          field("orders", "number"),
+        ],
+      },
+      records,
+    });
+    expect(manual.statusCode, manual.body).toBe(200);
+    const datasetId = manual.json().datasetId as string;
+    const sum = (id: string, fieldId: string) => ({
+      id,
+      name: id === "numerator" ? "Revenue" : "Orders",
+      kind: "aggregate",
+      datasetId,
+      aggregate: { id, name: id, op: "sum", fieldId },
+    });
+    const model = await call("POST", "/data/models", owner, {
+      name: "Revenue per order",
+      definition: {
+        version: 1,
+        datasets: [datasetId],
+        relationships: [],
+        dimensions: [
+          {
+            id: "date",
+            name: "Date",
+            datasetId,
+            fieldId: "day",
+            timeAlignment: "reporting_date",
+          },
+        ],
+        measures: [
+          sum("numerator", "amount"),
+          sum("denominator", "orders"),
+          {
+            id: "ratio",
+            name: "Revenue per order",
+            kind: "formula",
+            expression: {
+              kind: "call",
+              fn: "divide",
+              args: [
+                { kind: "field", fieldId: "numerator" },
+                {
+                  kind: "call",
+                  fn: "to_decimal",
+                  args: [{ kind: "field", fieldId: "denominator" }],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(model.statusCode, model.body).toBe(200);
+    const { id: modelId, version } = model.json().model;
+    const published = await call(
+      "POST",
+      `/data/models/${modelId}/publish`,
+      owner,
+      { version },
+    );
+    expect(published.statusCode, published.body).toBe(200);
+    const measure = {
+      modelId,
+      dateDimensionId: "date",
+      measureIds: {
+        numerator: "numerator",
+        denominator: "denominator",
+        ratio: "ratio",
+      },
+    };
+    const read = await readInBrowser([
+      { id: uuid(96, 1), period: "last_7_days", measure },
+    ]);
+    expect(read.statusCode, read.body).toBe(200);
+    const [reading] = compareMeasureReadingsResponseSchema.parse(
+      read.json(),
+    ).widgets;
+    // 7 days × 150 EUR = 1050 EUR, in cents as every compare amount is.
+    expect(reading).toMatchObject({
+      error: null,
+      numerator: { value: 105_000, unit: "EUR_minor" },
+      denominator: { value: 28, unit: "count" },
+      ratio: { value: 3750, previousValue: 3750 },
+      unit: "EUR_minor",
+    });
+    // Screens get the same reading, which they can show (units not null).
+    const { dashboardId } = await insertCompares(++group, [
+      { period: "last_7_days", ...inline(SIGNUP_RATE), measure },
+    ]);
+    const [bound] = compares(
+      (await screen(dashboardId, NOW)).slides[0]!.widgets,
+    );
+    expect(bound!.data).toMatchObject({
+      numerator: reading!.numerator,
+      denominator: reading!.denominator,
+      ratio: reading!.ratio,
+      unit: "EUR_minor",
+    });
+  }, 60_000);
+});
