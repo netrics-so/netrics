@@ -2509,6 +2509,21 @@ export async function queryDataModel(
   }
   let result: ReturnType<typeof pageResult> = execution.result;
   if (release && !execution.result.pendingSources?.length) {
+    // Page-session admission counts the release's sessions and then inserts
+    // one. Two serializable readers doing that at once abort each other, and
+    // the loser's retry lands behind the next admission, so under load it
+    // could exhaust its retries and fail with version_conflict (#495). Admit
+    // one session per release at a time: a waiter that started before the
+    // holder committed fails once on its stale count, and its retry then sees
+    // the holder's session and is admitted or refused.
+    if (
+      query.pinPages &&
+      execution.result.offset + execution.result.rows.length <
+        execution.result.totalRows
+    )
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${"data_page_sessions:" + release.id}, 0))`,
+      );
     // Cache only generation identities, never a second copy of source rows.
     // Limit cache cardinality and lifetime independently of source retention.
     // Reclaim expired identities before admission, including deadlines shortened

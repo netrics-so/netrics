@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   adminSetDataPolicy,
@@ -21,6 +21,7 @@ import {
   queryDataModel,
   type DataActor,
   type DataModelQuery,
+  type DataModelQueryResult,
 } from "./service.js";
 
 const NOW = new Date("2026-11-05T12:00:00Z");
@@ -712,6 +713,134 @@ describe("immutable semantic result pagination", () => {
       expect(counts).toEqual({ sessions: 1, snapshots: 0 });
     },
   );
+
+  it("admits or refuses every overlapping first page, never a conflict (#495)", async () => {
+    // Forces the interleaving behind the flaky concurrent-admission test. A
+    // trigger parks every session insert of this workspace, uncommitted, on an
+    // advisory lock the test holds (one lock per insert, owner and viewer
+    // numbered separately). The viewer counts the sessions, inserts and parks;
+    // a rival owner request then counts, inserts and commits first, so the
+    // viewer's serializable transaction fails. Before the fix its retry raced
+    // the next rival in the same way, and after three rivals the viewer got
+    // version_conflict although it should have been admitted or refused.
+    const f = await fixture();
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 3,
+      queryPageSessionsPerCaller: null,
+    });
+    const ownerKey =
+      "page:v2:" +
+      createHash("sha256")
+        .update("user:" + f.actor.callerId)
+        .digest("hex") +
+      ":%";
+    const base = { owner: 495_000, viewer: 495_100 };
+    const ownerGates = Array.from({ length: 20 }, (_, i) => base.owner + i + 1);
+    const viewerGates = Array.from(
+      { length: 20 },
+      (_, i) => base.viewer + i + 1,
+    );
+    const gates = [...ownerGates, ...viewerGates];
+    await admin.unsafe(`
+      create sequence pagination_test_owner;
+      create sequence pagination_test_viewer;
+      create function pagination_test_park() returns trigger
+      language plpgsql security definer as $$
+      begin
+        perform pg_advisory_xact_lock_shared(case
+          when new.query_key like '${ownerKey}'
+            then ${base.owner} + nextval('pagination_test_owner')
+          else ${base.viewer} + nextval('pagination_test_viewer') end);
+        return new;
+      end $$;
+      create trigger pagination_test_park after insert on data_model_query_snapshots
+      for each row when (new.workspace_id = '${f.actor.workspaceId}' and new.query_key like 'page:%')
+      execute function pagination_test_park();`);
+    // Advisory locks that backends of this database are waiting for.
+    const waiting = async () =>
+      (
+        await admin`select l.objid::int as key from pg_locks l join pg_database d on d.oid = l.database where d.datname = current_database() and l.locktype = 'advisory' and not l.granted`
+      ).map((row) => row.key as number);
+    const until = async (done: (keys: number[]) => boolean) => {
+      for (let i = 0; i < 1000; i++) {
+        if (done(await waiting())) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error("pagination interleaving did not settle");
+    };
+    const requests: {
+      state: { settled: boolean };
+      result: Promise<{ value: DataModelQueryResult } | { error: unknown }>;
+    }[] = [];
+    const start = (actor: DataActor) => {
+      const state = { settled: false };
+      const result = f.service
+        .query(actor, f.model.id, { ...query, pinPages: true })
+        .then(
+          (value) => ((state.settled = true), { value }),
+          (error: unknown) => ((state.settled = true), { error }),
+        );
+      requests.push({ state, result });
+    };
+    // Every open request waits on a lock: a gate, or with the fix, the
+    // admission lock behind another request.
+    const quiescent = () =>
+      until(
+        (keys) =>
+          keys.length ===
+          requests.filter((request) => !request.state.settled).length,
+      );
+    const held = new Set(gates);
+    const release = async (candidates: number[]) => {
+      await quiescent();
+      const keys = await waiting();
+      const gate = candidates.find(
+        (key) => held.has(key) && keys.includes(key),
+      );
+      if (gate === undefined) return false;
+      await admin`select pg_advisory_unlock(${gate})`;
+      held.delete(gate);
+      await until((keys) => !keys.includes(gate));
+      await quiescent();
+      return true;
+    };
+    try {
+      for (const gate of gates) await admin`select pg_advisory_lock(${gate})`;
+      start(f.viewer);
+      await quiescent();
+      for (let rival = 0; rival < 3; rival++) {
+        start(f.actor);
+        await quiescent();
+        await release(ownerGates);
+        await release(viewerGates);
+      }
+      while (await release(gates));
+      const results = await Promise.all(
+        requests.map((request) => request.result),
+      );
+      expect(
+        results.map((result) => "error" in result && String(result.error)),
+      ).toEqual([false, false, false, false]);
+      const values = results.map(
+        (result) => (result as { value: DataModelQueryResult }).value,
+      );
+      expect(values.filter((value) => value.nextPageToken)).toHaveLength(3);
+      expect(values.filter((value) => !value.nextPageToken)).toMatchObject([
+        {
+          warnings: expect.arrayContaining([
+            "immutable_pagination_unavailable",
+          ]),
+        },
+      ]);
+    } finally {
+      await admin`select pg_advisory_unlock_all()`;
+      await admin.unsafe(`
+        drop trigger if exists pagination_test_park on data_model_query_snapshots;
+        drop function if exists pagination_test_park();
+        drop sequence if exists pagination_test_owner;
+        drop sequence if exists pagination_test_viewer;`);
+    }
+  });
 
   it("supports null caller limits without removing the global cap, and zero disables only page sessions", async () => {
     const f = await fixture();
