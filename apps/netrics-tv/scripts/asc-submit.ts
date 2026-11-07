@@ -1,6 +1,6 @@
 /**
  * App Store Connect step of the netrics TV release (#434,
- * `.github/workflows/netrics-tv-release.yml`). Dependency-free: Node 24 runs
+ * `.github/workflows/netrics-tv-release.yml`). Dependency-free: Node 26 runs
  * this file as is (type stripping), with the built-in `crypto` for the ES256
  * token and the built-in `fetch`. It talks to the App Store Connect API v1.
  *

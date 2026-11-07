@@ -39,7 +39,7 @@ updates:
     cooldown:
       default-days: 7
     # Node follows the LTS line (ADR 0003): digest and patch updates within
-    # 24-alpine arrive here; moving to the next LTS is a deliberate change.
+    # 26-alpine arrive here; moving to the next LTS is a deliberate change.
     ignore:
       - dependency-name: node
         update-types: [version-update:semver-major]
