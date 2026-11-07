@@ -10,6 +10,7 @@ import {
 } from "@netrics/domain";
 import type { Database } from "@netrics/database";
 import type { AuthService } from "../auth/index.js";
+import { createCompareMeasureService } from "../data/compare-measure.js";
 import { createDataService, DataServiceError } from "../data/service.js";
 import {
   parseBody,
@@ -30,6 +31,11 @@ export function registerDataRoutes(
   },
 ) {
   const service = createDataService(deps.db, deps.now, deps.policy);
+  const compareMeasures = createCompareMeasureService({
+    db: deps.db,
+    ...(deps.now ? { now: deps.now } : {}),
+    ...(deps.policy ? { policy: deps.policy } : {}),
+  });
   const execute = async (
     request: FastifyRequest,
     reply: FastifyReply,
@@ -420,6 +426,34 @@ export function registerDataRoutes(
               );
             if (!model || !body) return;
             return service.publishModel(a, model, body.version);
+          }),
+      );
+      scope.post(
+        "/workspaces/:workspaceId/data/compare-measures",
+        {
+          schema: routeSchema({
+            summary:
+              "Save a compare widget as a generated preparation and a draft measure model",
+            tags: ["data"],
+            body: contracts.compareMeasureRequestSchema,
+            response: contracts.compareMeasureResponseSchema,
+            errors: [400, 403, 404, 409, 413, 503],
+            errorSchemas: {
+              400: contracts.compareMeasureErrorResponseSchema,
+              404: contracts.compareMeasureErrorResponseSchema,
+            },
+          }),
+        },
+        (request, reply) =>
+          execute(request, reply, "data:publish", async (a) => {
+            const body = parseBody(
+              contracts.compareMeasureRequestSchema,
+              request,
+              reply,
+            );
+            if (!body) return;
+            reply.header("cache-control", "no-store");
+            return compareMeasures.create(a, body);
           }),
       );
       scope.post(

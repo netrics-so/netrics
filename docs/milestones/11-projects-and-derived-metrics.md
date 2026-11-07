@@ -191,6 +191,16 @@ implementation work; this plan does not create or complete issue records.
     widgets set one shared filter from a clicked value, validated at save and in
     Studio; browser-only, device payloads unchanged. Compare-to-measure, device
     scope controls and the rest of the 11D gate remain open.
+  - Compare widget compiled into a generated preparation and draft measure
+    (step 1 of [#499](https://github.com/netrics-so/netrics/issues/499)):
+    [#506](https://github.com/netrics-so/netrics/issues/506). Both observation
+    datasets are scoped, tagged and appended; the ratio and its change compare
+    with the previous range, equal to the widget for today and the last 7, 30
+    and 90 days of daily sum or average metrics. Other periods, min/max/last,
+    hourly metrics and unpinned currencies are refused with typed errors. The
+    measure binding on compare widgets ([#507](https://github.com/netrics-so/netrics/issues/507))
+    and the Studio flow ([#508](https://github.com/netrics-so/netrics/issues/508))
+    remain open.
 - 11E: [#444](https://github.com/netrics-so/netrics/issues/444)
   - Apple storefront rating snapshots: [#452](https://github.com/netrics-so/netrics/issues/452).
     Implements the scoped raw rating/count source, not the complete portfolio
