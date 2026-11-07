@@ -292,8 +292,29 @@ For one model this is what #505 intended. There are no errors. Once the queue
 is longer than the wait allows, a request gets the documented refusal with its
 first page. With separate models, the refusals at 50,000 rows came from waiting
 for one of the 24 pool connections. First pages of different models, and of
-different workspaces, fail with `version_conflict` (409)
+different workspaces, failed with `version_conflict` (409)
 ([#516](https://github.com/netrics-so/netrics/issues/516)).
+
+**After #516.** Admission now counts and inserts the session in a short
+read-committed step after the page's serializable transaction, under the same
+per-model lock, so admissions of different models no longer abort each other.
+The same bursts, rerun on 2026-11-07 on the same machine and settings (the
+pinned test of the concurrency suite only, three fresh processes):
+
+| Source rows | Burst | One model: admitted / refused, wall time | Separate models, one workspace: admitted / refused, wall time | Separate workspaces: admitted / refused, wall time | Unpinned, one model: wall time |
+| ----------: | ----: | ---------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------- | ------------------------------ |
+|      10,000 |     1 | 1 / 0, 108 ms [105–133]                  | 1 / 0, 97 ms [93–113]                                         | 1 / 0, 108 ms [101–120]                            | 98 ms [92–110]                 |
+|      10,000 |    10 | 10 / 0, 1.1 s [1.1–1.1]                  | 10 / 0, 784 ms [782–800]                                      | 10 / 0, 791 ms [775–798]                           | 772 ms [752–776]               |
+|      10,000 |    25 | 25 / 0, 2.7 s [2.6–3.0]                  | 25 / 0, 1.9 s [1.9–1.9]                                       | 25 / 0, 1.9 s [1.9–1.9]                            | 1.9 s [1.9–1.9]                |
+|      10,000 |    50 | 50 / 0, 5.1 s [4.9–5.5]                  | 50 / 0, 3.8 s [3.8–4.0]                                       | 50 / 0, 3.9 s [3.9–4.0]                            | 3.9 s [3.8–3.9]                |
+|      50,000 |    10 | 10 / 0, 4.0 s [4.0–4.6]                  | 10 / 0, 3.7 s [3.7–3.9]                                       | not run                                            | 3.8 s [3.6–3.9]                |
+|      50,000 |    25 | 25 / 0, 10.0 s [10.0–11.7]               | 25 / 0, 9.3 s [9.2–9.5]                                       | not run                                            | 9.3 s [9.3–9.6]                |
+|      50,000 |    50 | 33–36 / 14–17, 20.8 s [20.6–21.9]        | 48 / 2, 19.3 s [18.6–19.8]                                    | not run                                            | 18.9 s [18.6–19.6]             |
+
+No request failed in any run. First pages of separate models or workspaces
+now take about as long as unpinned queries. The two refusals with separate
+models at 50,000 rows are waits for one of the 24 pool connections that
+exceeded `queryTimeoutMs`, as before.
 
 ### Google Play first-read memory
 
@@ -371,8 +392,9 @@ At the measured sizes, these are expected behaviour, not defects:
 
 ### Follow-ups
 
-- [#516](https://github.com/netrics-so/netrics/issues/516): concurrent pinned
-  first pages of different models or workspaces fail with `version_conflict`.
+- [#516](https://github.com/netrics-so/netrics/issues/516) (fixed): concurrent
+  pinned first pages of different models or workspaces failed with
+  `version_conflict`; see "After #516" above.
 - [#517](https://github.com/netrics-so/netrics/issues/517):
   `prune_dataset_history` deadlocks with policy and connection-retention
   changes, and the policy change can be the one that fails.
@@ -480,8 +502,8 @@ from discovery or collection.
    listing instead of silently restricting its choices.
 5. **Retained history and concurrent customers.** Measured in #501 (above) with
    synthetic sources up to 4.16 M retained records, eight concurrent syncs and
-   bursts of 50 pinned first pages. Still open: the follow-ups
-   [#516](https://github.com/netrics-so/netrics/issues/516),
+   bursts of 50 pinned first pages; [#516](https://github.com/netrics-so/netrics/issues/516)
+   is fixed. Still open: the follow-ups
    [#517](https://github.com/netrics-so/netrics/issues/517),
    [#518](https://github.com/netrics-so/netrics/issues/518) and
    [#519](https://github.com/netrics-so/netrics/issues/519), real-account report

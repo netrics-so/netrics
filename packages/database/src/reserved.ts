@@ -54,14 +54,19 @@ export function reservedDatabase(
     },
     begin: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
       await unsafe("begin");
+      let result: T;
       try {
-        const result = await fn(scope());
-        await unsafe("commit");
-        return result;
+        result = await fn(scope());
       } catch (error) {
         await unsafe("rollback").catch(() => undefined);
         throw error;
       }
+      // A COMMIT that fails (a serialization failure, a deferred constraint)
+      // has already ended the transaction; a ROLLBACK after it would run
+      // outside one and draw WARNING 25P01 (#516). A connection that broke
+      // during COMMIT is cleaned up by releaseReserved.
+      await unsafe("commit");
+      return result;
     },
   };
   return drizzle(shim as unknown as postgres.Sql, {
