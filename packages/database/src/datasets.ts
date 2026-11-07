@@ -729,6 +729,7 @@ export async function listObservationDatasets(
     limit?: number | null;
     connectionId?: string;
     metricDefinitionId?: string;
+    metricKey?: string;
   } = {},
 ) {
   const { entries, truncated } = await observationDescriptors(
@@ -759,6 +760,7 @@ async function observationDescriptors(
     limit?: number | null;
     connectionId?: string;
     metricDefinitionId?: string;
+    metricKey?: string;
   },
 ) {
   const limit = options.limit ?? null;
@@ -778,6 +780,7 @@ async function observationDescriptors(
     where c.workspace_id=${workspaceId}
     ${options.connectionId ? sql`and c.id=${options.connectionId}` : sql``}
     ${options.metricDefinitionId ? sql`and m.id=${options.metricDefinitionId}` : sql``}
+    ${options.metricKey ? sql`and m.key=${options.metricKey}` : sql``}
     order by c.id,m.key ${limit === null ? sql`` : sql`limit ${limit + 1}`}`);
   const truncated = limit !== null && found.length > limit;
   const rows = truncated ? found.slice(0, limit) : found;
@@ -785,6 +788,7 @@ async function observationDescriptors(
     id: `observation:${row.connection_id}:${row.metric_id}`,
     connectionId: row.connection_id,
     metricDefinitionId: row.metric_id,
+    metricKey: row.key,
     aggregated: true as const,
     retentionManagedBy: "legacy-observations" as const,
     kind: row.kind,

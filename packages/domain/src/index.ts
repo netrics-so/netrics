@@ -7,6 +7,7 @@ export * from "./resource.js";
 export * from "./exchange-rates.js";
 export * from "./studio-layout.js";
 export * from "./compare.js";
+export * from "./compare-measure.js";
 export * from "./screen-formats.js";
 export * from "./format-readability.js";
 export * from "./studio.js";

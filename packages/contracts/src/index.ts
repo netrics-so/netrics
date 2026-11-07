@@ -4,6 +4,7 @@ import {
   AGGREGATIONS,
   BUILTIN_THEME_KEYS,
   COMPARE_FORMATS,
+  COMPARE_MEASURE_REFUSALS,
   GRANULARITIES,
   METRIC_KINDS,
   PERIODS,
@@ -1971,6 +1972,63 @@ export const compareDenominatorInputSchema = z.object({
   /** Defaults to the metric's first compatible aggregation. */
   aggregation: metricAggregationSchema.optional(),
   dimensions: dimensionFilterSchema.optional(),
+});
+
+/**
+ * A compare widget saved as a reusable measure (#506): the widget's
+ * numerator, denominator, period and format. The server generates an
+ * editable preparation (each side scoped, tagged and appended into one
+ * dataset), publishes it, and saves a draft model with the ratio and its
+ * change against the previous period.
+ */
+export const compareMeasureRequestSchema = z.strictObject({
+  /** The model's and the ratio's name ("Conversion"). */
+  name: z.string().trim().min(1).max(100),
+  /** The numerator (A), as on the widget. */
+  connectionId: z.uuid(),
+  metricKey: z.string().min(1).max(200),
+  /** Defaults to the metric's first compatible aggregation. */
+  aggregation: metricAggregationSchema.optional(),
+  period: metricPeriodSchema,
+  dimensions: dimensionFilterSchema.optional(),
+  denominator: compareDenominatorInputSchema,
+  format: z.enum(COMPARE_FORMATS).default("percent"),
+  /**
+   * One source currency for per-currency amounts without a `currency`
+   * filter. Without it such a compare is refused
+   * (`compare_currency_unpinned`): models do not convert currencies.
+   */
+  currency: currencyCodeSchema.optional(),
+});
+export type CompareMeasureRequest = z.input<typeof compareMeasureRequestSchema>;
+
+export const compareMeasureResponseSchema = z.object({
+  /** The generated preparation, published so the model can read it. */
+  preparationId: z.uuid(),
+  /** `prepared:<preparationId>:compare`, the model's one dataset. */
+  datasetId: z.string(),
+  /** The draft model; publish it with POST …/data/models/:id/publish. */
+  modelId: z.uuid(),
+  modelVersion: z.number().int().positive(),
+  /** Query with a closed range on `dateDimensionId`, ungrouped. */
+  dateDimensionId: z.string(),
+  measures: z.object({
+    numerator: z.string(),
+    denominator: z.string(),
+    ratio: z.string(),
+    /** The ratio over the previous period of the same length. */
+    previous: z.string(),
+    /** Relative change (`ratio`) or percentage points (`percent`). */
+    change: z.string(),
+  }),
+});
+export type CompareMeasureResponse = z.infer<
+  typeof compareMeasureResponseSchema
+>;
+
+/** A refused compare names why; other failures are the data API's codes. */
+export const compareMeasureErrorResponseSchema = z.object({
+  error: z.union([z.enum(COMPARE_MEASURE_REFUSALS), z.string().min(1)]),
 });
 
 const widgetInputShape = {

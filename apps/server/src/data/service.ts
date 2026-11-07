@@ -416,6 +416,31 @@ function resourceView(
 }
 
 /** One loader per serializable transaction pins each source generation once. */
+/**
+ * The typed fields of a legacy observation dataset: amounts per currency
+ * are integers in minor units bound to their `currency` dimension, other
+ * values carry the metric's unit.
+ */
+export function observationFields(dataset: {
+  unit: string;
+  definition: { fields: readonly DataField[] };
+}): DataField[] {
+  const fields: DataField[] = dataset.definition.fields.map((f) => ({ ...f }));
+  if (dataset.unit === "currency_minor") {
+    const amount = fields.find((f) => f.id === "value")!,
+      currency = fields.find((f) => f.name === "currency");
+    if (currency) {
+      amount.type = "integer";
+      amount.unit = "currency_minor";
+      amount.currencyField = currency.id;
+      currency.nullable = false;
+    }
+  } else {
+    fields.find((f) => f.id === "value")!.unit = dataset.unit;
+  }
+  return fields;
+}
+
 export function createDataLoader(
   tx: Transaction,
   workspaceId: string,
@@ -702,21 +727,7 @@ export function createDataLoader(
       });
       if (!read) fail("data_source_not_found", 404);
       if (read.truncated) fail("data_source_row_limit", 413);
-      const fields: DataField[] = read.dataset.definition.fields.map((f) => ({
-        ...f,
-      }));
-      if (read.dataset.unit === "currency_minor") {
-        const amount = fields.find((f) => f.id === "value")!,
-          currency = fields.find((f) => f.name === "currency");
-        if (currency) {
-          amount.type = "integer";
-          amount.unit = "currency_minor";
-          amount.currencyField = currency.id;
-          currency.nullable = false;
-        }
-      } else {
-        fields.find((f) => f.id === "value")!.unit = read.dataset.unit;
-      }
+      const fields = observationFields(read.dataset);
       const fingerprint = createHash("sha256")
         .update(stable(read.rows))
         .digest("hex");
