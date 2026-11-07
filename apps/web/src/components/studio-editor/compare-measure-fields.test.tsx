@@ -619,6 +619,17 @@ describe("compare measure helpers", () => {
     expect(compareMeasureSource({ ...widget, period: "this_month" })).toBe(
       compareMeasureSource(widget),
     );
+    // Filters come back from the database in another key order (JSONB).
+    const twoFilters = (dimensions: Record<string, string>) => ({
+      ...widget,
+      dimensions,
+      denominator: { ...widget.denominator, dimensions },
+    });
+    expect(
+      compareMeasureSource(twoFilters({ resource: "app-1", currency: "EUR" })),
+    ).toBe(
+      compareMeasureSource(twoFilters({ currency: "EUR", resource: "app-1" })),
+    );
     // Other sides do not.
     expect(
       readSavedMeasure(WORKSPACE, { ...widget, metricKey: "shop.orders" }),

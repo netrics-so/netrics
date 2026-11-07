@@ -32,8 +32,14 @@ export function compareMeasureRequestOf(
   name: string,
   currency: string | null,
 ): CompareMeasureRequest {
-  const dimensions = (filters: Readonly<Record<string, string>>) =>
-    Object.keys(filters).length > 0 ? { dimensions: { ...filters } } : {};
+  // In key order: the database returns filters in its own order (JSONB),
+  // and the request also keys the compiled draft (compareMeasureSource).
+  const dimensions = (filters: Readonly<Record<string, string>>) => {
+    const keys = Object.keys(filters).sort();
+    return keys.length > 0
+      ? { dimensions: Object.fromEntries(keys.map((k) => [k, filters[k]!])) }
+      : {};
+  };
   return {
     name: name.trim(),
     connectionId: widget.connectionId,
