@@ -71,6 +71,10 @@ const MAX_SNAPSHOT_EXPIRY = Date.parse("9999-12-31T23:59:59Z");
 export const DATA_SOURCE_CATALOG_ENTRIES = 10_000;
 const LEGACY_PAGE_KEY_PATTERN =
   "^page:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{64}$";
+/** Transactions that took the page-session admission lock of a release. */
+const pageAdmissions = new WeakSet<Transaction>();
+/** Lost admission races a new pinned query retries before it is refused. */
+const PAGE_ADMISSION_RETRIES = 5;
 function fail(code: string, status: 400 | 404 | 409 | 413 | 503 = 400): never {
   throw new DataServiceError(code, status);
 }
@@ -938,16 +942,33 @@ export function createDataService(
       ...options,
       policy: policyFor(tx),
     });
+  /**
+   * Runs `fn` in a serializable workspace transaction, retrying serialization
+   * failures. With `withoutAdmission`, a failure of an attempt that held the
+   * page-session admission lock does not use up the ordinary retries: another
+   * admission committed first, so the next attempt sees it. After
+   * PAGE_ADMISSION_RETRIES such failures the request runs `withoutAdmission`,
+   * which answers with the documented refusal instead of a conflict (#495).
+   */
   const run = async <T>(
     actor: DataActor,
     fn: (tx: Transaction, now: Date) => Promise<T>,
+    withoutAdmission?: (tx: Transaction, now: Date) => Promise<T>,
   ) => {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    let attempt = 0,
+      admissionConflicts = 0;
+    for (;;) {
+      let current: Transaction | undefined;
+      const body =
+        withoutAdmission && admissionConflicts >= PAGE_ADMISSION_RETRIES
+          ? withoutAdmission
+          : fn;
       try {
         return await withWorkspace(
           db,
           { workspaceId: actor.workspaceId, userId: actor.callerId },
           async (tx) => {
+            current = tx;
             const { policy } = await resolveDataPolicy(
               tx,
               actor.workspaceId,
@@ -957,16 +978,23 @@ export function createDataService(
             await tx.execute(
               sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
             );
-            return fn(tx, clock());
+            return body(tx, clock());
           },
           { isolationLevel: "serializable" },
         );
       } catch (error) {
+        const serialization =
+          hasSqlstate(error, "40001") || hasSqlstate(error, "40P01");
         if (
-          attempt < 2 &&
-          (hasSqlstate(error, "40001") || hasSqlstate(error, "40P01"))
-        )
+          serialization &&
+          withoutAdmission &&
+          current &&
+          pageAdmissions.has(current)
+        ) {
+          admissionConflicts++;
           continue;
+        }
+        if (serialization && ++attempt < 3) continue;
         if (
           error instanceof DataServiceError ||
           error instanceof DataProcessingError
@@ -990,7 +1018,6 @@ export function createDataService(
         fail("data_storage_failed", 503);
       }
     }
-    return fail("version_conflict", 409);
   };
   const audit = async (
     tx: Transaction,
@@ -2159,19 +2186,27 @@ export function createDataService(
       id: string,
       query: DataModelQuery,
       preview = false,
-    ) =>
-      run(actor, async (tx, now) => {
-        return queryDataModel(
-          tx,
-          actor.workspaceId,
-          id,
-          query,
-          now,
-          policyFor(tx),
-          preview,
-          "user:" + actor.callerId,
-        );
-      }),
+    ) => {
+      const execute =
+        (admit: boolean) =>
+        (tx: Transaction, now: Date): Promise<DataModelQueryResult> =>
+          queryDataModel(
+            tx,
+            actor.workspaceId,
+            id,
+            query,
+            now,
+            policyFor(tx),
+            preview,
+            "user:" + actor.callerId,
+            admit,
+          );
+      return run(
+        actor,
+        execute(true),
+        query.pinPages && !query.pageToken ? execute(false) : undefined,
+      );
+    },
   };
 }
 
@@ -2229,6 +2264,7 @@ export async function queryDataModel(
   policy: DataPolicy,
   preview = false,
   pageOwner?: string,
+  admit = true,
 ): Promise<DataModelQueryResult> {
   if ((query.pageToken || query.pinPages) && !pageOwner)
     fail("data_page_unavailable", 409);
@@ -2513,17 +2549,22 @@ export async function queryDataModel(
     // one. Two serializable readers doing that at once abort each other, and
     // the loser's retry lands behind the next admission, so under load it
     // could exhaust its retries and fail with version_conflict (#495). Admit
-    // one session per release at a time: a waiter that started before the
-    // holder committed fails once on its stale count, and its retry then sees
-    // the holder's session and is admitted or refused.
+    // one session per release at a time, so the holder is never aborted by
+    // another admission. A waiter whose snapshot predates the holder's commit
+    // still fails on its stale count; `run` retries it outside the ordinary
+    // budget, since each such failure means another admission committed, and
+    // after PAGE_ADMISSION_RETRIES answers without admission (refusal).
     if (
+      admit &&
       query.pinPages &&
       execution.result.offset + execution.result.rows.length <
         execution.result.totalRows
-    )
+    ) {
+      pageAdmissions.add(tx);
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${"data_page_sessions:" + release.id}, 0))`,
       );
+    }
     // Cache only generation identities, never a second copy of source rows.
     // Limit cache cardinality and lifetime independently of source retention.
     // Reclaim expired identities before admission, including deadlines shortened
@@ -2581,6 +2622,7 @@ export async function queryDataModel(
         execution.result.totalRows
     ) {
       if (
+        admit &&
         !execution.loader.warnings.has("data_source_pending") &&
         !execution.loader.warnings.has("retained_source_history_incomplete") &&
         [...execution.loader.views.values()].every(

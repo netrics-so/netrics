@@ -842,6 +842,39 @@ describe("immutable semantic result pagination", () => {
     }
   });
 
+  it("answers a burst of first pages with sessions or refusals, never a conflict (#495)", async () => {
+    for (let round = 0; round < 3; round++) {
+      const f = await fixture();
+      await adminSetDataPolicy(db, f.actor.workspaceId, {
+        querySnapshotCount: 100,
+        queryPageSessionsPerCaller: null,
+      });
+      const results = await Promise.allSettled(
+        Array.from({ length: 10 }, () => f.read()),
+      );
+      expect(
+        results.flatMap((result) =>
+          result.status === "rejected" ? [String(result.reason)] : [],
+        ),
+      ).toEqual([]);
+      const values = results.map(
+        (result) =>
+          (result as PromiseFulfilledResult<DataModelQueryResult>).value,
+      );
+      for (const value of values) {
+        expect(value.rows[0]!.dimensions.id).toBe("a");
+        if (!value.nextPageToken)
+          expect(value.warnings).toContain("immutable_pagination_unavailable");
+      }
+      const [counts] =
+        await admin`select count(*)::int as sessions from data_model_query_snapshots where workspace_id=${f.actor.workspaceId} and query_key like 'page:%'`;
+      expect(counts!.sessions).toBe(
+        values.filter((value) => value.nextPageToken).length,
+      );
+      expect(counts!.sessions).toBeGreaterThan(0);
+    }
+  });
+
   it("supports null caller limits without removing the global cap, and zero disables only page sessions", async () => {
     const f = await fixture();
     await adminSetDataPolicy(db, f.actor.workspaceId, {
