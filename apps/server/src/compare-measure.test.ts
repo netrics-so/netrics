@@ -612,8 +612,15 @@ describe("compare widgets as measures: refusals (#506)", () => {
     "this_month",
     "this_year",
     "last_12_months",
-  ] as const)("refuses %s", async (period) => {
-    await refused(base({ period }), "compare_period_unsupported");
+  ] as const)("compiles %s (#507)", async (period) => {
+    // A bound widget reads `ratio` over its own two windows, so no period
+    // is refused any more.
+    const response = await call("POST", "/compare-measures", owner, {
+      ...base({ period }),
+      name: `Every period ${period}`,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    compareMeasureResponseSchema.parse(response.json());
   });
 
   it("refuses an unavailable source", async () => {

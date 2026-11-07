@@ -1,0 +1,1494 @@
+{
+  "schema1": {
+    "version": "nz9DpCosinmIBOgFTDNq3BU6RnyNJHKY",
+    "refreshAfterSec": 60,
+    "timeZone": "Europe/Berlin",
+    "dashboard": {
+      "id": "00000001-0000-4000-8000-000000000000",
+      "name": "Compares 1"
+    },
+    "tiles": [
+      {
+        "id": "00000001-0000-4000-8000-000000000900",
+        "label": "Visits · All resources",
+        "period": "last_7_days",
+        "aggregation": "sum",
+        "value": 1035,
+        "unit": "count",
+        "conversion": null,
+        "change": {
+          "previousValue": 1041,
+          "delta": -6,
+          "ratio": -0.005763688760806916
+        },
+        "spark": [165, 157, 105, 164, 156, 148, 140],
+        "kind": "delta",
+        "granularity": "day",
+        "better": "higher",
+        "status": "stale",
+        "updatedAt": null
+      }
+    ]
+  },
+  "schema2": {
+    "version": "eLJvVRZ3xMa9RO0tlXVaEovQSK9kk9Zi",
+    "schema": 2,
+    "refreshAfterSec": 60,
+    "timeZone": "Europe/Berlin",
+    "locale": "en",
+    "dashboard": {
+      "id": "00000001-0000-4000-8000-000000000000",
+      "name": "Compares 1",
+      "showHeader": true,
+      "logo": null
+    },
+    "theme": {
+      "name": "netrics Dark",
+      "tokens": {
+        "background": "#07090c",
+        "surface": "#11141a",
+        "border": "#23272e",
+        "text": "#e6e9ed",
+        "label": "#c5cad3",
+        "muted": "#8a919c",
+        "accent": "#7aa2f7",
+        "up": "#9fd6a8",
+        "down": "#f0a3a3",
+        "warning": "#e3b341",
+        "chartLine": "#7aa2f7",
+        "chartFill": "#7aa2f7",
+        "fontScale": 1
+      }
+    },
+    "rotation": {
+      "autoAdvance": true,
+      "transition": "fade"
+    },
+    "grid": {
+      "columns": 12,
+      "rows": 8
+    },
+    "slides": [
+      {
+        "id": "00000001-0000-4000-8000-000000000001",
+        "name": null,
+        "durationSec": 20,
+        "background": null,
+        "widgets": [
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000100",
+            "x": 0,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Signups · All resources",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "today",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Signups",
+                "value": 3,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 140,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.02142857142857143,
+                "previousValue": 0.04054054054054054,
+                "format": "percent"
+              }
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000101",
+            "x": 3,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Proceeds",
+            "options": {
+              "format": "ratio",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "this_week",
+              "aggregation": "avg",
+              "unit": "EUR_minor",
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Proceeds",
+                "value": 1980,
+                "unit": "EUR_minor"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 145,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 13.655172413793103,
+                "previousValue": 13.577142857142857,
+                "format": "ratio"
+              }
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000102",
+            "x": 6,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Visits · app-2",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "this_month",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Visits",
+                "value": 257,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 1846,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.13921993499458288,
+                "previousValue": 0.14301191765980498,
+                "format": "percent"
+              }
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000103",
+            "x": 9,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Signups · All resources",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "this_quarter",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Signups",
+                "value": 189,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 146.6578947368421,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 1.288713439799031,
+                "previousValue": 1.3183953740513192,
+                "format": "percent"
+              }
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000104",
+            "x": 12,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Proceeds",
+            "options": {
+              "format": "ratio",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "this_year",
+              "aggregation": "avg",
+              "unit": "EUR_minor",
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Proceeds",
+                "value": 1976.8167202572347,
+                "unit": "EUR_minor"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 45352,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.04358830305735656,
+                "previousValue": 0.043546152323561106,
+                "format": "ratio"
+              }
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000105",
+            "x": 0,
+            "y": 3,
+            "w": 3,
+            "h": 3,
+            "label": "Visits · app-2",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_7_days",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Visits",
+                "value": 257,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 1846,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.13921993499458288,
+                "previousValue": 0.14270328486806677,
+                "format": "percent"
+              }
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000106",
+            "x": 3,
+            "y": 3,
+            "w": 3,
+            "h": 3,
+            "label": "Signups · All resources",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_30_days",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Signups",
+                "value": 153,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 4384,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.03489963503649635,
+                "previousValue": 0.034361851332398316,
+                "format": "percent"
+              }
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000107",
+            "x": 6,
+            "y": 3,
+            "w": 3,
+            "h": 3,
+            "label": "Proceeds",
+            "options": {
+              "format": "ratio",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_90_days",
+              "aggregation": "avg",
+              "unit": "EUR_minor",
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Proceeds",
+                "value": 1980,
+                "unit": "EUR_minor"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 145.01111111111112,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 13.654126120603784,
+                "previousValue": 13.541033434650455,
+                "format": "ratio"
+              }
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000108",
+            "x": 9,
+            "y": 3,
+            "w": 3,
+            "h": 3,
+            "label": "Visits · app-2",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_12_months",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Visits",
+                "value": 12060,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 87778,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.13739205723529813,
+                "previousValue": 0.1374038844905166,
+                "format": "percent"
+              }
+            }
+          },
+          {
+            "type": "metric",
+            "id": "00000001-0000-4000-8000-000000000900",
+            "x": 0,
+            "y": 9,
+            "w": 3,
+            "h": 3,
+            "label": "Visits · All resources",
+            "options": {
+              "showSparkline": true,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_7_days",
+              "aggregation": "sum",
+              "value": 1035,
+              "unit": "count",
+              "conversion": null,
+              "change": {
+                "previousValue": 1041,
+                "delta": -6,
+                "ratio": -0.005763688760806916
+              },
+              "spark": [165, 157, 105, 164, 156, 148, 140],
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null
+            }
+          }
+        ]
+      }
+    ],
+    "images": []
+  },
+  "schema3": {
+    "version": "4rPj8Ty-5F-2klMSK4kLV13oXwH9D6Fj",
+    "schema": 3,
+    "refreshAfterSec": 60,
+    "timeZone": "Europe/Berlin",
+    "locale": "en",
+    "primaryFormat": "16x9",
+    "formats": {
+      "16x9": {
+        "columns": 12,
+        "rows": 8,
+        "reference": [1920, 1080]
+      },
+      "21x9": {
+        "columns": 16,
+        "rows": 8,
+        "reference": [2520, 1080]
+      },
+      "4x3": {
+        "columns": 9,
+        "rows": 8,
+        "reference": [1440, 1080]
+      },
+      "3x4": {
+        "columns": 6,
+        "rows": 10,
+        "reference": [1080, 1440]
+      },
+      "9x16": {
+        "columns": 6,
+        "rows": 14,
+        "reference": [1080, 1920]
+      }
+    },
+    "device": {
+      "rotation": 0,
+      "displayMode": "screen"
+    },
+    "dashboard": {
+      "id": "00000001-0000-4000-8000-000000000000",
+      "name": "Compares 1",
+      "showHeader": true,
+      "logo": null
+    },
+    "theme": {
+      "name": "netrics Dark",
+      "tokens": {
+        "background": "#07090c",
+        "surface": "#11141a",
+        "border": "#23272e",
+        "text": "#e6e9ed",
+        "label": "#c5cad3",
+        "muted": "#8a919c",
+        "accent": "#7aa2f7",
+        "up": "#9fd6a8",
+        "down": "#f0a3a3",
+        "warning": "#e3b341",
+        "chartLine": "#7aa2f7",
+        "chartFill": "#7aa2f7",
+        "fontScale": 1
+      }
+    },
+    "rotation": {
+      "autoAdvance": true,
+      "transition": "fade"
+    },
+    "slides": [
+      {
+        "id": "00000001-0000-4000-8000-000000000001",
+        "name": null,
+        "durationSec": 20,
+        "background": null,
+        "widgets": [
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000100",
+            "x": 0,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Signups · All resources",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "today",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Signups",
+                "value": 3,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 140,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.02142857142857143,
+                "previousValue": 0.04054054054054054,
+                "format": "percent"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000101",
+            "x": 3,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Proceeds",
+            "options": {
+              "format": "ratio",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "this_week",
+              "aggregation": "avg",
+              "unit": "EUR_minor",
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Proceeds",
+                "value": 1980,
+                "unit": "EUR_minor"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 145,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 13.655172413793103,
+                "previousValue": 13.577142857142857,
+                "format": "ratio"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000102",
+            "x": 6,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Visits · app-2",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "this_month",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Visits",
+                "value": 257,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 1846,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.13921993499458288,
+                "previousValue": 0.14301191765980498,
+                "format": "percent"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000103",
+            "x": 9,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Signups · All resources",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "this_quarter",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Signups",
+                "value": 189,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 146.6578947368421,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 1.288713439799031,
+                "previousValue": 1.3183953740513192,
+                "format": "percent"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000104",
+            "x": 12,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Proceeds",
+            "options": {
+              "format": "ratio",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "this_year",
+              "aggregation": "avg",
+              "unit": "EUR_minor",
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Proceeds",
+                "value": 1976.8167202572347,
+                "unit": "EUR_minor"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 45352,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.04358830305735656,
+                "previousValue": 0.043546152323561106,
+                "format": "ratio"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000105",
+            "x": 0,
+            "y": 3,
+            "w": 3,
+            "h": 3,
+            "label": "Visits · app-2",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_7_days",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Visits",
+                "value": 257,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 1846,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.13921993499458288,
+                "previousValue": 0.14270328486806677,
+                "format": "percent"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000106",
+            "x": 3,
+            "y": 3,
+            "w": 3,
+            "h": 3,
+            "label": "Signups · All resources",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_30_days",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Signups",
+                "value": 153,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 4384,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.03489963503649635,
+                "previousValue": 0.034361851332398316,
+                "format": "percent"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000107",
+            "x": 6,
+            "y": 3,
+            "w": 3,
+            "h": 3,
+            "label": "Proceeds",
+            "options": {
+              "format": "ratio",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_90_days",
+              "aggregation": "avg",
+              "unit": "EUR_minor",
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Proceeds",
+                "value": 1980,
+                "unit": "EUR_minor"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 145.01111111111112,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 13.654126120603784,
+                "previousValue": 13.541033434650455,
+                "format": "ratio"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000108",
+            "x": 9,
+            "y": 3,
+            "w": 3,
+            "h": 3,
+            "label": "Visits · app-2",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_12_months",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Visits",
+                "value": 12060,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 87778,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.13739205723529813,
+                "previousValue": 0.1374038844905166,
+                "format": "percent"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "metric",
+            "id": "00000001-0000-4000-8000-000000000900",
+            "x": 0,
+            "y": 9,
+            "w": 3,
+            "h": 3,
+            "label": "Visits · All resources",
+            "options": {
+              "showSparkline": true,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_7_days",
+              "aggregation": "sum",
+              "value": 1035,
+              "unit": "count",
+              "conversion": null,
+              "change": {
+                "previousValue": 1041,
+                "delta": -6,
+                "ratio": -0.005763688760806916
+              },
+              "spark": [165, 157, 105, 164, 156, 148, 140],
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null
+            },
+            "min": {
+              "w": 3,
+              "h": 2
+            }
+          }
+        ],
+        "layouts": []
+      }
+    ],
+    "images": []
+  },
+  "german": {
+    "version": "W9h5_5WeTtNMyrKlwGH5teLP0-iJ366u",
+    "schema": 3,
+    "refreshAfterSec": 60,
+    "timeZone": "Europe/Berlin",
+    "locale": "de",
+    "primaryFormat": "16x9",
+    "formats": {
+      "16x9": {
+        "columns": 12,
+        "rows": 8,
+        "reference": [1920, 1080]
+      },
+      "21x9": {
+        "columns": 16,
+        "rows": 8,
+        "reference": [2520, 1080]
+      },
+      "4x3": {
+        "columns": 9,
+        "rows": 8,
+        "reference": [1440, 1080]
+      },
+      "3x4": {
+        "columns": 6,
+        "rows": 10,
+        "reference": [1080, 1440]
+      },
+      "9x16": {
+        "columns": 6,
+        "rows": 14,
+        "reference": [1080, 1920]
+      }
+    },
+    "device": {
+      "rotation": 90,
+      "displayMode": "scroll"
+    },
+    "dashboard": {
+      "id": "00000001-0000-4000-8000-000000000000",
+      "name": "Compares 1",
+      "showHeader": true,
+      "logo": null
+    },
+    "theme": {
+      "name": "netrics Dark",
+      "tokens": {
+        "background": "#07090c",
+        "surface": "#11141a",
+        "border": "#23272e",
+        "text": "#e6e9ed",
+        "label": "#c5cad3",
+        "muted": "#8a919c",
+        "accent": "#7aa2f7",
+        "up": "#9fd6a8",
+        "down": "#f0a3a3",
+        "warning": "#e3b341",
+        "chartLine": "#7aa2f7",
+        "chartFill": "#7aa2f7",
+        "fontScale": 1
+      }
+    },
+    "rotation": {
+      "autoAdvance": true,
+      "transition": "fade"
+    },
+    "slides": [
+      {
+        "id": "00000001-0000-4000-8000-000000000001",
+        "name": null,
+        "durationSec": 20,
+        "background": null,
+        "widgets": [
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000100",
+            "x": 0,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Signups · Alle Ressourcen",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "today",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Signups",
+                "value": 3,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 140,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.02142857142857143,
+                "previousValue": 0.04054054054054054,
+                "format": "percent"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000101",
+            "x": 3,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Proceeds",
+            "options": {
+              "format": "ratio",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "this_week",
+              "aggregation": "avg",
+              "unit": "EUR_minor",
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Proceeds",
+                "value": 1980,
+                "unit": "EUR_minor"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 145,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 13.655172413793103,
+                "previousValue": 13.577142857142857,
+                "format": "ratio"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000102",
+            "x": 6,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Visits · app-2",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "this_month",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Visits",
+                "value": 257,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 1846,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.13921993499458288,
+                "previousValue": 0.14301191765980498,
+                "format": "percent"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000103",
+            "x": 9,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Signups · Alle Ressourcen",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "this_quarter",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Signups",
+                "value": 189,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 146.6578947368421,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 1.288713439799031,
+                "previousValue": 1.3183953740513192,
+                "format": "percent"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000104",
+            "x": 12,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "label": "Proceeds",
+            "options": {
+              "format": "ratio",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "this_year",
+              "aggregation": "avg",
+              "unit": "EUR_minor",
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Proceeds",
+                "value": 1976.8167202572347,
+                "unit": "EUR_minor"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 45352,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.04358830305735656,
+                "previousValue": 0.043546152323561106,
+                "format": "ratio"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000105",
+            "x": 0,
+            "y": 3,
+            "w": 3,
+            "h": 3,
+            "label": "Visits · app-2",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_7_days",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Visits",
+                "value": 257,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 1846,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.13921993499458288,
+                "previousValue": 0.14270328486806677,
+                "format": "percent"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000106",
+            "x": 3,
+            "y": 3,
+            "w": 3,
+            "h": 3,
+            "label": "Signups · Alle Ressourcen",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_30_days",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Signups",
+                "value": 153,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 4384,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.03489963503649635,
+                "previousValue": 0.034361851332398316,
+                "format": "percent"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000107",
+            "x": 6,
+            "y": 3,
+            "w": 3,
+            "h": 3,
+            "label": "Proceeds",
+            "options": {
+              "format": "ratio",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_90_days",
+              "aggregation": "avg",
+              "unit": "EUR_minor",
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Proceeds",
+                "value": 1980,
+                "unit": "EUR_minor"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 145.01111111111112,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 13.654126120603784,
+                "previousValue": 13.541033434650455,
+                "format": "ratio"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "compare",
+            "id": "00000001-0000-4000-8000-000000000108",
+            "x": 9,
+            "y": 3,
+            "w": 3,
+            "h": 3,
+            "label": "Visits · app-2",
+            "options": {
+              "format": "percent",
+              "ratioLabel": null,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_12_months",
+              "aggregation": "sum",
+              "unit": null,
+              "conversion": null,
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null,
+              "numerator": {
+                "label": "Visits",
+                "value": 12060,
+                "unit": "count"
+              },
+              "denominator": {
+                "label": "Visits",
+                "value": 87778,
+                "unit": "count"
+              },
+              "ratio": {
+                "value": 0.13739205723529813,
+                "previousValue": 0.1374038844905166,
+                "format": "percent"
+              }
+            },
+            "min": {
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "type": "metric",
+            "id": "00000001-0000-4000-8000-000000000900",
+            "x": 0,
+            "y": 9,
+            "w": 3,
+            "h": 3,
+            "label": "Visits · Alle Ressourcen",
+            "options": {
+              "showSparkline": true,
+              "showChange": true
+            },
+            "data": {
+              "period": "last_7_days",
+              "aggregation": "sum",
+              "value": 1035,
+              "unit": "count",
+              "conversion": null,
+              "change": {
+                "previousValue": 1041,
+                "delta": -6,
+                "ratio": -0.005763688760806916
+              },
+              "spark": [165, 157, 105, 164, 156, 148, 140],
+              "kind": "delta",
+              "granularity": "day",
+              "better": "higher",
+              "status": "stale",
+              "updatedAt": null
+            },
+            "min": {
+              "w": 3,
+              "h": 2
+            }
+          }
+        ],
+        "layouts": []
+      }
+    ],
+    "images": []
+  }
+}

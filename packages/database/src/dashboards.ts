@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import * as schema from "./schema.js";
@@ -117,7 +117,11 @@ export interface WidgetInput {
   goalId: string | null;
   options: Record<string, unknown>;
   modelId?: string | null;
-  modelBinding?: import("@netrics/domain").MeasureWidgetBinding | null;
+  /** A measure widget's binding, or a compare widget's measures (#507). */
+  modelBinding?:
+    | import("@netrics/domain").MeasureWidgetBinding
+    | import("@netrics/domain").CompareMeasureBinding
+    | null;
   filterExclusions?: import("@netrics/domain").DashboardFilterExclusion[];
   /**
    * Compare widgets: the denominator's binding (ADR 0019 section 10);
@@ -740,7 +744,11 @@ export async function deleteDashboard(
   return rows.length === 1;
 }
 
-/** A cheap cache dependency check, scoped on top of RLS. */
+/**
+ * A cheap cache dependency check, scoped on top of RLS: whether a widget
+ * reads a model, a measure widget or a compare widget bound to measures
+ * (#507). Exactly those name a model.
+ */
 export async function dashboardHasModelWidgets(
   tx: Transaction,
   workspaceId: string,
@@ -753,7 +761,7 @@ export async function dashboardHasModelWidgets(
       and(
         eq(schema.dashboardWidgets.workspaceId, workspaceId),
         eq(schema.dashboardWidgets.dashboardId, dashboardId),
-        eq(schema.dashboardWidgets.type, "measure"),
+        isNotNull(schema.dashboardWidgets.modelId),
       ),
     )
     .limit(1);
