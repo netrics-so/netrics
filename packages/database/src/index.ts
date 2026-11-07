@@ -476,6 +476,7 @@ export async function checkDatabaseConnection(
 export {
   ingestDatasetPage,
   pruneDatasetHistory,
+  pruneDatasetHistoryBatch,
   replayDatasetRefresh,
   listObservationDatasets,
   listObservationCatalog,

@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -399,6 +400,80 @@ describe("createScheduler loop", () => {
         await scheduler.stop();
       }
     } finally {
+      await admin.end({ timeout: 5 }).catch(() => undefined);
+    }
+  });
+
+  it("runs the rest of the hour's maintenance when the drain fails, and retries the drain (#517)", async () => {
+    const now = new Date("2031-03-15T12:00:00.000Z");
+    const admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+    const lines: string[] = [];
+    const logger = pino(
+      { level: "error" },
+      { write: (line: string) => void lines.push(line) },
+    );
+    try {
+      const [stage] = await admin`
+        insert into data_connector_stages (workspace_id, connection_id,
+          connector_id, key, dataset_key, schema_version, metadata, digest,
+          byte_size, source_collected_at, expires_at)
+        values (${workspaceId}, ${connFuture}, 'demo', 'drain-fails', 'orders', 1,
+          '{}'::jsonb, 'd', 0, now(), now() - interval '1 minute')
+        returning id`;
+      await admin`
+        insert into data_connector_stage_pages
+          (stage_id, workspace_id, page_key, payload, digest)
+        values (${stage!.id}, ${workspaceId}, 'p1', '{}'::jsonb, 'd')`;
+      const [old] = await admin`
+        insert into audit_events (workspace_id, action, created_at)
+        values (${workspaceId}, 'auth.login', '2030-03-01T00:00:00Z')
+        returning id`;
+      // Every dataset prune call fails until the trigger is dropped.
+      await admin.unsafe(`
+        create function scheduler_test_refuse() returns trigger
+        language plpgsql as $$ begin raise exception 'prune refused'; end $$;
+        create trigger scheduler_test_refuse before delete on data_connector_stage_pages
+        for each statement execute function scheduler_test_refuse();`);
+      const scheduler = createScheduler({
+        schedulerDb,
+        pollMs: 50,
+        schedulerId: "scheduler-drain-failure-test",
+        now: () => now,
+        logger,
+      });
+      scheduler.start();
+      try {
+        // The hourly window continues after the failed drain.
+        await waitFor(async () => {
+          const rows = await admin`
+            select 1 from audit_events where id = ${old!.id}`;
+          return rows.length === 0;
+        }, 3_000);
+        expect(
+          lines.some((line) => {
+            const entry = JSON.parse(line) as Record<string, unknown>;
+            return (
+              entry.msg === "maintenance task failed" &&
+              entry.task === "dataset_history"
+            );
+          }),
+        ).toBe(true);
+        // The failed drain is retried on a later tick, within the same hour.
+        await admin.unsafe(`
+          drop trigger scheduler_test_refuse on data_connector_stage_pages;
+          drop function scheduler_test_refuse();`);
+        await waitFor(async () => {
+          const rows = await admin`
+            select 1 from data_connector_stages where id = ${stage!.id}`;
+          return rows.length === 0;
+        });
+      } finally {
+        await scheduler.stop();
+      }
+    } finally {
+      await admin.unsafe(`
+        drop trigger if exists scheduler_test_refuse on data_connector_stage_pages;
+        drop function if exists scheduler_test_refuse();`);
       await admin.end({ timeout: 5 }).catch(() => undefined);
     }
   });

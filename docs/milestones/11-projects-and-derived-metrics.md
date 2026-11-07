@@ -186,6 +186,12 @@ implementation work; this plan does not create or complete issue records.
     ([#518](https://github.com/netrics-so/netrics/issues/518)), and Google Play
     first reads need streaming staging above about 23 MiB of report text
     ([#519](https://github.com/netrics-so/netrics/issues/519)).
+  - Prune without deadlocks against policy and connection-retention changes:
+    [#517](https://github.com/netrics-so/netrics/issues/517). Prune locks
+    every row with `SKIP LOCKED` and never waits, leaves held rows for a later
+    call and reports that work remains, so the drain does not stop early
+    (migration 0065). Hourly maintenance tasks run independently: a failed
+    drain no longer skips the rest of the hour.
   - Rolling-window and period-offset measures:
     [#486](https://github.com/netrics-so/netrics/issues/486). Date-only
     anchors, windows recomputed from rows, capped month/year offsets, lookback
