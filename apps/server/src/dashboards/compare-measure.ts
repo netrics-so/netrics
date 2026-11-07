@@ -19,6 +19,8 @@ import {
   compareMeasureFilter,
   compareMeasureWindows,
   compareRatioUnit,
+  compareUnitsProblem,
+  type CompareFormat,
   currencyExponent,
   type CompareMeasureBinding,
   type DataPolicy,
@@ -268,7 +270,13 @@ export async function readCompareMeasure(
   tx: Transaction,
   workspaceId: string,
   /** `measure` as stored; one that does not parse is an error. */
-  widget: { id: string; period: Period; measure: unknown },
+  widget: {
+    id: string;
+    period: Period;
+    measure: unknown;
+    /** The widget's format, which the measures' units must suit. */
+    format: CompareFormat;
+  },
   now: Date,
   options: {
     policy?: DataPolicy;
@@ -359,6 +367,17 @@ export async function readCompareMeasure(
     previousRatio === "not_numeric"
   )
     return failed("compare_measure_not_numeric");
+  // The units rule of the widget (ADR 0019 section 10) on the measures it
+  // reads: the inline metrics it was checked with on save are not them.
+  if (
+    compareUnitsProblem({
+      numerator: { unit: numerator.unit ?? "count", dimensions: {} },
+      denominator: { unit: denominator.unit ?? "count", dimensions: {} },
+      displayCurrency: null,
+      format: widget.format,
+    }) !== null
+  )
+    return failed("compare_units_incompatible");
 
   const sources =
     options.sources ?? (await loadCompareSources(tx, workspaceId));

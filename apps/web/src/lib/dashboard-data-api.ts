@@ -6,6 +6,7 @@ import {
   type MetricPeriod,
 } from "@netrics/contracts";
 import type {
+  CompareFormat,
   CompareMeasureBinding,
   DashboardDataFilter,
   DashboardFilterValue,
@@ -42,6 +43,7 @@ export const readCompareMeasures = (
     id: string;
     period: MetricPeriod;
     measure: CompareMeasureBinding;
+    format: CompareFormat;
   }>,
 ) =>
   browserSend(

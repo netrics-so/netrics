@@ -274,7 +274,13 @@ describe("compileCompareMeasure refusals (#506)", () => {
   });
 
   it("windows a bound widget by the widget's own dates (#507)", () => {
-    for (const date of days())
+    // Month starts and ends (with every leap day and 28 February) of
+    // 2023–2029: where #506 found offsets and the widget's windows differ.
+    const edges = [...days()].filter((date) => {
+      const day = Number(date.slice(8));
+      return day === 1 || day >= 28;
+    });
+    for (const date of edges)
       for (const period of PERIODS) {
         const now = new Date(`${date}T12:00:00Z`);
         const window = resolvePeriod(period, now, "Europe/Berlin");

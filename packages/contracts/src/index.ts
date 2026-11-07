@@ -3147,6 +3147,8 @@ export const compareMeasureQuerySchema = z.strictObject({
         id: z.uuid(),
         period: metricPeriodSchema,
         measure: compareMeasureBindingSchema,
+        /** The widget's format: the measures' units must suit it. */
+        format: z.enum(COMPARE_FORMATS),
       }),
     )
     .max(48),

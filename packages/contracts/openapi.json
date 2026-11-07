@@ -13280,12 +13280,20 @@
                             "measureIds"
                           ],
                           "additionalProperties": false
+                        },
+                        "format": {
+                          "type": "string",
+                          "enum": [
+                            "percent",
+                            "ratio"
+                          ]
                         }
                       },
                       "required": [
                         "id",
                         "period",
-                        "measure"
+                        "measure",
+                        "format"
                       ],
                       "additionalProperties": false
                     }

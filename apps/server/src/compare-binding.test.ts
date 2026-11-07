@@ -629,9 +629,17 @@ const saveDashboard = (widgets: unknown[], cookie = owner) =>
 
 /** Reads bound widgets as a signed-in page does. */
 const readInBrowser = (
-  widgets: Array<{ id: string; period: Period; measure: unknown }>,
+  widgets: Array<{
+    id: string;
+    period: Period;
+    measure: unknown;
+    format?: "percent" | "ratio";
+  }>,
   cookie: string | undefined = owner,
-) => call("POST", "/dashboards/data/compare", cookie, { widgets });
+) =>
+  call("POST", "/dashboards/data/compare", cookie, {
+    widgets: widgets.map((widget) => ({ format: "percent", ...widget })),
+  });
 
 /** A bound widget on a screen: an outage without values, never metrics. */
 async function expectVisibleFailure(
@@ -1171,7 +1179,7 @@ describe("bound compare widgets: units of any model (#507)", () => {
       },
     };
     const read = await readInBrowser([
-      { id: uuid(96, 1), period: "last_7_days", measure },
+      { id: uuid(96, 1), period: "last_7_days", measure, format: "ratio" },
     ]);
     expect(read.statusCode, read.body).toBe(200);
     const [reading] = compareMeasureReadingsResponseSchema.parse(
@@ -1187,7 +1195,11 @@ describe("bound compare widgets: units of any model (#507)", () => {
     });
     // Screens get the same reading, which they can show (units not null).
     const { dashboardId } = await insertCompares(++group, [
-      { period: "last_7_days", ...inline(SIGNUP_RATE), measure },
+      {
+        period: "last_7_days",
+        ...inline({ ...SIGNUP_RATE, format: "ratio" }),
+        measure,
+      },
     ]);
     const [bound] = compares(
       (await screen(dashboardId, NOW)).slides[0]!.widgets,
@@ -1197,6 +1209,18 @@ describe("bound compare widgets: units of any model (#507)", () => {
       denominator: reading!.denominator,
       ratio: reading!.ratio,
       unit: "EUR_minor",
+    });
+    // An amount per order is no percentage: a percent widget bound to it
+    // fails (the units rule of ADR 0019 section 10), it never shows cents
+    // as percent.
+    await expectVisibleFailure(measure);
+    const percent = await readInBrowser([
+      { id: uuid(96, 2), period: "last_7_days", measure, format: "percent" },
+    ]);
+    expect(percent.json().widgets[0]).toMatchObject({
+      status: "outage",
+      error: "compare_units_incompatible",
+      ratio: { value: null, previousValue: null },
     });
   }, 60_000);
 });

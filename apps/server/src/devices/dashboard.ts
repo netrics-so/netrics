@@ -920,7 +920,12 @@ async function boundCompareWidgetOf(
   const reading = await readCompareMeasure(
     tx,
     context.workspaceId,
-    { id: widget.id, period: request.period, measure: widget.modelBinding },
+    {
+      id: widget.id,
+      period: request.period,
+      measure: widget.modelBinding,
+      format: options.format,
+    },
     context.options.now,
     {
       ...(context.options.dataPolicy

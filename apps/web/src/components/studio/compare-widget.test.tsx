@@ -344,6 +344,7 @@ describe("compare widget bound to measures (#507)", () => {
         `compare-measure|${env.workspaceId}|${widget.id}|${JSON.stringify({
           period: widget.period,
           measure,
+          format: widget.options.format,
         })}`,
         () => Promise.resolve(bound),
       );

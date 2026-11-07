@@ -17,7 +17,7 @@ import type {
   MetricPeriod,
   MetricQueryResponse,
 } from "@netrics/contracts";
-import type { CompareMeasureBinding } from "@netrics/domain";
+import type { CompareFormat, CompareMeasureBinding } from "@netrics/domain";
 
 import {
   apiErrorMessage,
@@ -216,11 +216,20 @@ export function useMetricData(
  */
 export function useCompareMeasureData(
   workspaceId: string,
-  widget: { id: string; period: MetricPeriod; measure?: CompareMeasureBinding },
+  widget: {
+    id: string;
+    period: MetricPeriod;
+    measure?: CompareMeasureBinding;
+    options: { format: CompareFormat };
+  },
   refreshMs = WIDGET_REFRESH_MS,
 ): WidgetData<CompareMeasureReading> {
   const key = widget.measure
-    ? JSON.stringify({ period: widget.period, measure: widget.measure })
+    ? JSON.stringify({
+        period: widget.period,
+        measure: widget.measure,
+        format: widget.options.format,
+      })
     : null;
   const id = widget.id;
   const load = useCallback(
