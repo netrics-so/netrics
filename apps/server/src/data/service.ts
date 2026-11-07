@@ -50,6 +50,11 @@ import {
   DatasetStoreError,
   hasSqlstate,
   resolveDataPolicy,
+  isPooledDatabase,
+  processSessionLocks,
+  SessionLockQueue,
+  SessionLockTimeoutError,
+  withSessionAdvisoryLock,
   type Database,
   type Transaction,
 } from "@netrics/database";
@@ -71,6 +76,8 @@ const MAX_SNAPSHOT_EXPIRY = Date.parse("9999-12-31T23:59:59Z");
 export const DATA_SOURCE_CATALOG_ENTRIES = 10_000;
 const LEGACY_PAGE_KEY_PATTERN =
   "^page:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{64}$";
+/** Longest wait for page-session admission when the policy has no query timeout. */
+const PAGE_ADMISSION_WAIT_MS = 30_000;
 function fail(code: string, status: 400 | 404 | 409 | 413 | 503 = 400): never {
   throw new DataServiceError(code, status);
 }
@@ -936,6 +943,8 @@ export function createDataService(
   db: Pick<Database, "transaction">,
   clock: () => Date = () => new Date(),
   defaults: DataPolicy = { ...DEFAULT_DATA_POLICY },
+  /** In-memory queue for page-session admission; one per process by default. */
+  pageAdmissions: SessionLockQueue = processSessionLocks,
 ) {
   const policies = new WeakMap<Transaction, DataPolicy>();
   const policyFor = (tx: Transaction) => policies.get(tx)!;
@@ -949,14 +958,19 @@ export function createDataService(
       ...options,
       policy: policyFor(tx),
     });
+  /**
+   * Runs `fn` in a serializable workspace transaction on `handle`, retrying
+   * serialization failures.
+   */
   const run = async <T>(
     actor: DataActor,
     fn: (tx: Transaction, now: Date) => Promise<T>,
-  ) => {
+    handle: Pick<Database, "transaction"> = db,
+  ): Promise<T> => {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         return await withWorkspace(
-          db,
+          handle,
           { workspaceId: actor.workspaceId, userId: actor.callerId },
           async (tx) => {
             const { policy } = await resolveDataPolicy(
@@ -2165,24 +2179,56 @@ export function createDataService(
         await audit(tx, actor, "data.model_published", id);
         return { model: modelView(updated!) };
       }),
-    query: (
+    query: async (
       actor: DataActor,
       id: string,
       query: DataModelQuery,
       preview = false,
-    ) =>
-      run(actor, async (tx, now) => {
-        return queryDataModel(
-          tx,
-          actor.workspaceId,
-          id,
-          query,
-          now,
-          policyFor(tx),
-          preview,
-          "user:" + actor.callerId,
+    ) => {
+      const execute =
+        (admit: boolean) =>
+        (tx: Transaction, now: Date): Promise<DataModelQueryResult> =>
+          queryDataModel(
+            tx,
+            actor.workspaceId,
+            id,
+            query,
+            now,
+            policyFor(tx),
+            preview,
+            "user:" + actor.callerId,
+            admit,
+          );
+      // A new pinned query may admit a page session: it counts the release's
+      // sessions, then inserts one. Serializable transactions doing that
+      // concurrently aborted each other and could exhaust their retries with
+      // version_conflict (#495). One admission per model at a time, locked
+      // before the snapshot, makes every count exact: requests are admitted
+      // until a limit is full and refused after. Waiters of this process
+      // queue in memory and hold no pool connection; a wait longer than the
+      // workspace's query timeout ends in the refusal instead.
+      if (
+        !query.pinPages ||
+        query.pageToken ||
+        preview ||
+        !isPooledDatabase(db)
+      )
+        return run(actor, execute(true));
+      const timeoutMs =
+        (await run(actor, async (tx) => policyFor(tx).queryTimeoutMs)) ??
+        PAGE_ADMISSION_WAIT_MS;
+      try {
+        return await withSessionAdvisoryLock(
+          db,
+          "data_page_sessions:" + id,
+          (lockedDb) => run(actor, execute(true), lockedDb),
+          { timeoutMs, queue: pageAdmissions },
         );
-      }),
+      } catch (error) {
+        if (!(error instanceof SessionLockTimeoutError)) throw error;
+        return run(actor, execute(false));
+      }
+    },
   };
 }
 
@@ -2240,6 +2286,7 @@ export async function queryDataModel(
   policy: DataPolicy,
   preview = false,
   pageOwner?: string,
+  admit = true,
 ): Promise<DataModelQueryResult> {
   if ((query.pageToken || query.pinPages) && !pageOwner)
     fail("data_page_unavailable", 409);
@@ -2577,6 +2624,7 @@ export async function queryDataModel(
         execution.result.totalRows
     ) {
       if (
+        admit &&
         !execution.loader.warnings.has("data_source_pending") &&
         !execution.loader.warnings.has("retained_source_history_incomplete") &&
         [...execution.loader.views.values()].every(

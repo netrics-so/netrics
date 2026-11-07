@@ -1,9 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import type postgres from "postgres";
-
-import * as authSchema from "./auth-schema.js";
 import type { Db, Transaction } from "./context.js";
+import { reservedDatabase, type PooledDb } from "./reserved.js";
 import * as schema from "./schema.js";
 
 // OAuth records (ADR 0012) for the API and the token service (netrics_app).
@@ -364,49 +361,6 @@ function lockOrder(keys: readonly OAuthGrantKey[]): OAuthGrantKey[] {
         ? -1
         : 1,
   );
-}
-
-type ReservedSql = Awaited<ReturnType<postgres.Sql["reserve"]>>;
-
-/** A pooled database handle (createDatabase). */
-type PooledDb = Db & { $client: postgres.Sql };
-
-/**
- * A drizzle handle over one reserved connection. postgres.js gives a
- * reserved connection no begin(), so transactions are opened here with
- * BEGIN/COMMIT on that connection; nested transactions (savepoints) are not
- * needed by the callers and refused.
- */
-function reservedDatabase(parent: PooledDb, reserved: ReservedSql): PooledDb {
-  const client = parent.$client;
-  const noSavepoints = () => {
-    throw new Error(
-      "withOAuthGrantLocks: nested transactions are not supported",
-    );
-  };
-  const shim = {
-    options: client.options,
-    unsafe: reserved.unsafe.bind(reserved),
-    savepoint: noSavepoints,
-    begin: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
-      await reserved.unsafe("begin");
-      try {
-        const result = await fn({
-          options: client.options,
-          unsafe: reserved.unsafe.bind(reserved),
-          savepoint: noSavepoints,
-        });
-        await reserved.unsafe("commit");
-        return result;
-      } catch (error) {
-        await reserved.unsafe("rollback").catch(() => undefined);
-        throw error;
-      }
-    },
-  };
-  return drizzle(shim as unknown as postgres.Sql, {
-    schema: { ...schema, ...authSchema },
-  });
 }
 
 /**

@@ -307,6 +307,14 @@ export {
   upsertConnectionOAuth,
   withOAuthGrantLocks,
 } from "./oauth.js";
+export {
+  isPooledDatabase,
+  processSessionLocks,
+  SessionLockQueue,
+  SessionLockTimeoutError,
+  withSessionAdvisoryLock,
+  type PooledDb,
+} from "./reserved.js";
 export type {
   ConnectionOAuthInput,
   ConnectionOAuthRow,
