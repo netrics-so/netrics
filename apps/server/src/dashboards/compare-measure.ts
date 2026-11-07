@@ -376,28 +376,39 @@ export async function readCompareMeasure(
   )
     return failed("compare_measure_not_numeric");
   // The units rule of the widget (ADR 0019 section 10) on the measures it
-  // reads: the inline metrics it was checked with on save are not them.
-  if (
-    compareUnitsProblem({
-      numerator: { unit: numerator.unit ?? "count", dimensions: {} },
-      denominator: { unit: denominator.unit ?? "count", dimensions: {} },
-      displayCurrency: null,
-      format: widget.format,
-    }) !== null
-  )
-    return failed("compare_units_incompatible");
-  // The ratio measure must be the operands' ratio in kind: an amount per
-  // unit in the numerator's currency, else no amount (a percent widget
-  // would show cents as percent). The change compares it with itself over
-  // the previous window, so that one too.
-  const ratioUnit = compareRatioUnit(numerator.unit, denominator.unit);
-  const ratioCurrency = ratioUnit === null ? null : amountCurrency(ratioUnit);
-  if (
-    [ratio, previousRatio].some(
-      (cell) =>
-        cell.value !== null &&
-        amountCurrency(cell.unit ?? "") !== ratioCurrency,
+  // reads: the inline metrics it was checked with on save are not them. An
+  // empty operand has no currency yet, so only operands with values say
+  // what the ratio must be: an amount per unit in the numerator's currency,
+  // else no amount (a percent widget would show cents as percent).
+  const operandsKnown = numerator.value !== null && denominator.value !== null;
+  if (operandsKnown) {
+    if (
+      compareUnitsProblem({
+        numerator: { unit: numerator.unit ?? "count", dimensions: {} },
+        denominator: { unit: denominator.unit ?? "count", dimensions: {} },
+        displayCurrency: null,
+        format: widget.format,
+      }) !== null
     )
+      return failed("compare_units_incompatible");
+    const ratioUnit = compareRatioUnit(numerator.unit, denominator.unit);
+    const ratioCurrency = ratioUnit === null ? null : amountCurrency(ratioUnit);
+    if (
+      [ratio, previousRatio].some(
+        (cell) =>
+          cell.value !== null &&
+          amountCurrency(cell.unit ?? "") !== ratioCurrency,
+      )
+    )
+      return failed("compare_units_incompatible");
+  }
+  // The change compares the ratio with itself over the previous window:
+  // amounts in another currency there cannot be compared.
+  if (
+    ratio.value !== null &&
+    previousRatio.value !== null &&
+    amountCurrency(ratio.unit ?? "") !==
+      amountCurrency(previousRatio.unit ?? "")
   )
     return failed("compare_units_incompatible");
 
@@ -422,10 +433,11 @@ export async function readCompareMeasure(
     .map((id) => sourceStatus(id, true))
     .reduce(worse, "ok");
   if (numerator.value === null && denominator.value === null)
-    // Both empty: every source has no data here, as both inline sides.
-    status = connections
-      .map((id) => sourceStatus(id, false))
-      .reduce(worse, worse(status, "no_data"));
+    // Both empty: every source has no data here, as both inline sides; no
+    // data itself only without sources.
+    status = connections.length
+      ? connections.map((id) => sourceStatus(id, false)).reduce(worse, status)
+      : worse(status, "no_data");
   else if (numerator.value === null || denominator.value === null)
     status = worse(
       status,

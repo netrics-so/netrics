@@ -1080,6 +1080,8 @@ async function revenueModel(
   currencyOf: (day: number) => string,
   /** The orders' unit; with one, the ratio is "currency/<unit>". */
   ordersUnit?: string,
+  /** The day's amount; null: none that day. */
+  amountOf: (day: number) => string | null = () => "150",
 ): Promise<CompareMeasureBinding> {
   const field = (id: string, type: string, extra: object = {}) => ({
     id,
@@ -1096,7 +1098,7 @@ async function revenueModel(
       values: {
         id: `o${day}`,
         day: addDays(TODAY, -day),
-        amount: "150",
+        amount: amountOf(day),
         currency: currencyOf(day),
         orders: ordersUnit ? "4" : 4,
       },
@@ -1113,6 +1115,7 @@ async function revenueModel(
         field("id", "string"),
         field("day", "date"),
         field("amount", "decimal", {
+          nullable: true,
           unit: "currency",
           currencyField: "currency",
         }),
@@ -1386,6 +1389,56 @@ describe("bound compare widgets: empty operands (#507)", () => {
     expect(unbound!.data.numerator.value).toBeNull();
     expect(unbound!.data.denominator.value).toBeNull();
     expect(unbound!.data.status).toBe("no_data");
+    expect(bound!.data.status).toBe(unbound!.data.status);
+  }, 60_000);
+});
+
+describe("bound compare widgets: empty windows (#507)", () => {
+  it("shows an empty current amount as no data, not a currency mismatch", async () => {
+    // Revenue only the week before; orders every day.
+    const measure = await revenueModel(
+      "late_revenue",
+      () => "EUR",
+      undefined,
+      (day) => (day < 7 ? null : "150"),
+    );
+    const read = await readInBrowser([
+      { id: uuid(92, 1), period: "last_7_days", measure, format: "ratio" },
+    ]);
+    expect(read.json().widgets[0]).toMatchObject({
+      error: null,
+      numerator: { value: null },
+      denominator: { value: 28 },
+      ratio: { value: null, previousValue: 3750 },
+    });
+  }, 60_000);
+
+  it("says backfilling when both are empty and every source is loading", async () => {
+    const FIRST = "0c000000-0000-4000-8000-000000000007";
+    const SECOND = "0c000000-0000-4000-8000-000000000008";
+    await raw`
+      insert into connections (id, workspace_id, connector_id, name) values
+        (${FIRST}, ${workspaceId}, 'cmb', 'First'),
+        (${SECOND}, ${workspaceId}, 'cmb', 'Second')`;
+    for (const connection of [FIRST, SECOND])
+      await observe(connection, "cmb.visits", { resource: "old" }, (d) =>
+        d > 1300 ? 10 : null,
+      );
+    const compare: Compare = {
+      name: "Two pending sources",
+      numerator: { metricKey: "cmb.visits", connectionId: FIRST },
+      denominator: { metricKey: "cmb.visits", connectionId: SECOND },
+      format: "ratio",
+    };
+    const binding = bindingOf(await compile(compare));
+    const { dashboardId } = await insertCompares(++group, [
+      { period: "last_7_days", ...inline(compare) },
+      { period: "last_7_days", ...inline(compare), measure: binding },
+    ]);
+    const [unbound, bound] = compares(
+      (await screen(dashboardId, NOW)).slides[0]!.widgets,
+    );
+    expect(unbound!.data.status).toBe("backfilling");
     expect(bound!.data.status).toBe(unbound!.data.status);
   }, 60_000);
 });
