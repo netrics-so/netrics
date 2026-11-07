@@ -181,6 +181,37 @@ export class SessionLockQueue {
 export const processSessionLocks = new SessionLockQueue();
 
 /**
+ * Reserves a pool connection, waiting for a free one no later than
+ * `deadline`. A reservation that arrives after the deadline is handed
+ * straight back to the pool.
+ */
+async function reserveBefore(
+  db: PooledDb,
+  name: string,
+  deadline: number,
+): Promise<ReservedSql> {
+  const reservation = db.$client.reserve();
+  if (deadline === Infinity) return reservation;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const reserved = await Promise.race([
+    reservation,
+    new Promise<undefined>((resolve) => {
+      timer = setTimeout(
+        () => resolve(undefined),
+        Math.max(0, deadline - Date.now()),
+      );
+    }),
+  ]);
+  clearTimeout(timer);
+  if (reserved) return reserved;
+  void reservation.then(
+    (late) => late.release(),
+    () => undefined,
+  );
+  throw new SessionLockTimeoutError(name);
+}
+
+/**
  * Runs `fn` while this session holds the session-level advisory lock
  * `name`, taken on a reserved connection before `fn` starts any
  * transaction. A serializable transaction that `fn` opens on `lockedDb`
@@ -210,10 +241,11 @@ export async function withSessionAdvisoryLock<T>(
     deadline,
   );
   try {
-    const reserved = await db.$client.reserve();
+    const reserved = await reserveBefore(db, name, deadline);
     try {
       if (deadline !== Infinity) {
-        const remaining = Math.max(1, Math.ceil(deadline - Date.now()));
+        const remaining = Math.ceil(deadline - Date.now());
+        if (remaining <= 0) throw new SessionLockTimeoutError(name);
         await reserved.unsafe(`set lock_timeout = ${remaining}`);
       }
       await reserved`select pg_advisory_lock(hashtextextended(${name}, 0))`.catch(

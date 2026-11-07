@@ -231,6 +231,29 @@ describe("SessionLockQueue", () => {
 });
 
 describe("withSessionAdvisoryLock timeout", () => {
+  it("gives up while the pool has no free connection before the deadline", async () => {
+    // The pool's only connection is busy for longer than the budget.
+    const busy = await client.reserve();
+    let ran = false;
+    const attempt = withSessionAdvisoryLock(
+      db,
+      "reserved-pool",
+      async () => {
+        ran = true;
+      },
+      { timeoutMs: 50, queue: new SessionLockQueue() },
+    );
+    const outcome = attempt.then(
+      () => "ran",
+      (error: unknown) => error,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    busy.release();
+    expect(await outcome).toBeInstanceOf(SessionLockTimeoutError);
+    expect(ran).toBe(false);
+    await expectClean();
+  });
+
   it("gives up on a held database lock, leaving no lock or lock_timeout behind", async () => {
     const name = "reserved-timeout";
     await observer`select pg_advisory_lock(hashtextextended(${name}, 0))`;
