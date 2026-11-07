@@ -246,11 +246,15 @@ function operandOf(
   // scaled, one in minor units relabelled. Any other number without a unit
   // is a plain count, so screens show it (a null unit is a failed query).
   // Also an amount per unit ("currency/count"): its scale is the amount's.
-  const major =
-    cell?.unit?.split("/")[0] === "currency" && Boolean(cell.currency);
-  const unit = cell?.currency
-    ? `${cell.currency}_minor`
-    : (cell?.unit ?? "count");
+  // An amount per amount ("currency/currency") is a plain number.
+  const [base, per] = cell?.unit?.split("/") ?? [];
+  const amount = Boolean(cell?.currency) && !(per ?? "").startsWith("currency");
+  const major = amount && base === "currency";
+  const unit = amount
+    ? `${cell!.currency}_minor`
+    : per !== undefined && per.startsWith("currency")
+      ? "count"
+      : (cell?.unit ?? "count");
   if (!cell || cell.value === null || cell.value === undefined)
     return { value: null, unit };
   if (!["integer", "number", "decimal"].includes(cell.type))
@@ -311,7 +315,8 @@ export async function readCompareMeasure(
         id: widget.id,
         binding: {
           modelId: measure.modelId,
-          measureIds: [ids.numerator, ids.denominator, ids.ratio],
+          // One measure may serve two roles; a query names it once.
+          measureIds: [...new Set([ids.numerator, ids.denominator, ids.ratio])],
           groupBy: [],
           filter: compareMeasureFilter(measure.dateDimensionId, range),
           exclusions: [],
@@ -381,13 +386,18 @@ export async function readCompareMeasure(
     }) !== null
   )
     return failed("compare_units_incompatible");
-  // The change compares the ratio with itself over the previous window:
-  // amounts in another currency there cannot be compared.
+  // The ratio measure must be the operands' ratio in kind: an amount per
+  // unit in the numerator's currency, else no amount (a percent widget
+  // would show cents as percent). The change compares it with itself over
+  // the previous window, so that one too.
+  const ratioUnit = compareRatioUnit(numerator.unit, denominator.unit);
+  const ratioCurrency = ratioUnit === null ? null : amountCurrency(ratioUnit);
   if (
-    ratio.value !== null &&
-    previousRatio.value !== null &&
-    amountCurrency(ratio.unit ?? "") !==
-      amountCurrency(previousRatio.unit ?? "")
+    [ratio, previousRatio].some(
+      (cell) =>
+        cell.value !== null &&
+        amountCurrency(cell.unit ?? "") !== ratioCurrency,
+    )
   )
     return failed("compare_units_incompatible");
 
@@ -411,7 +421,12 @@ export async function readCompareMeasure(
   let status: DeviceTileStatus = connections
     .map((id) => sourceStatus(id, true))
     .reduce(worse, "ok");
-  if (numerator.value === null || denominator.value === null)
+  if (numerator.value === null && denominator.value === null)
+    // Both empty: every source has no data here, as both inline sides.
+    status = connections
+      .map((id) => sourceStatus(id, false))
+      .reduce(worse, worse(status, "no_data"));
+  else if (numerator.value === null || denominator.value === null)
     status = worse(
       status,
       connections.some((id) => sourceStatus(id, false) === "backfilling")

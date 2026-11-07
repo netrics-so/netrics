@@ -1153,6 +1153,8 @@ async function revenueModel(
       measures: [
         sum("numerator", "amount"),
         sum("denominator", "orders"),
+        // Another count, so operands can both be counts.
+        { ...sum("orders_again", "orders"), name: "Orders again" },
         {
           id: "ratio",
           name: "Revenue per order",
@@ -1307,5 +1309,83 @@ describe("bound compare widgets: compound units and payload caching (#507)", () 
       );
     expect(await semantic(unbound.dashboardId)).toBe(false);
     expect(await semantic(bound.dashboardId)).toBe(true);
+  }, 60_000);
+});
+
+describe("bound compare widgets: measures shared and ratio units (#507)", () => {
+  it("reads a measure used for both operands once", async () => {
+    const binding = bindingOf(await compile(SIGNUP_RATE));
+    const same = {
+      ...binding,
+      measureIds: { ...binding.measureIds, denominator: "numerator" },
+    };
+    const read = await readInBrowser([
+      { id: uuid(93, 1), period: "last_7_days", measure: same },
+    ]);
+    const [reading] = compareMeasureReadingsResponseSchema.parse(
+      read.json(),
+    ).widgets;
+    expect(reading!.error).toBeNull();
+    expect(reading!.numerator.value).not.toBeNull();
+    expect(reading!.denominator.value).toBe(reading!.numerator.value);
+  }, 60_000);
+
+  it("refuses a ratio measure whose unit is not the operands' ratio", async () => {
+    // Orders over orders as operands, but revenue per order as the ratio:
+    // a percent widget would show cents as percent.
+    const model = await revenueModel("mixed_ratio", () => "EUR");
+    const measure = {
+      ...model,
+      measureIds: {
+        numerator: "denominator",
+        denominator: "orders_again",
+        ratio: "ratio",
+      },
+    };
+    const read = await readInBrowser([
+      { id: uuid(93, 2), period: "last_7_days", measure, format: "percent" },
+    ]);
+    expect(read.json().widgets[0]).toMatchObject({
+      status: "outage",
+      error: "compare_units_incompatible",
+    });
+  }, 60_000);
+});
+
+describe("bound compare widgets: empty operands (#507)", () => {
+  it("says no data when both are empty and one source has synced", async () => {
+    // A synced source and a pending one, neither with values this week:
+    // the inline widget's sides say no data and backfilling; no data wins.
+    const SYNCED = "0c000000-0000-4000-8000-000000000005";
+    const PENDING = "0c000000-0000-4000-8000-000000000006";
+    await raw`
+      insert into connections (id, workspace_id, connector_id, name) values
+        (${SYNCED}, ${workspaceId}, 'cmb', 'Synced'),
+        (${PENDING}, ${workspaceId}, 'cmb', 'Pending')`;
+    await raw`
+      insert into connection_state (connection_id, workspace_id, last_success_at)
+      values (${SYNCED}, ${workspaceId}, ${NOW.toISOString()})`;
+    for (const connection of [SYNCED, PENDING])
+      await observe(connection, "cmb.visits", { resource: "old" }, (d) =>
+        d > 1300 ? 10 : null,
+      );
+    const compare: Compare = {
+      name: "Synced over pending visits",
+      numerator: { metricKey: "cmb.visits", connectionId: SYNCED },
+      denominator: { metricKey: "cmb.visits", connectionId: PENDING },
+      format: "ratio",
+    };
+    const binding = bindingOf(await compile(compare));
+    const { dashboardId } = await insertCompares(++group, [
+      { period: "last_7_days", ...inline(compare) },
+      { period: "last_7_days", ...inline(compare), measure: binding },
+    ]);
+    const [unbound, bound] = compares(
+      (await screen(dashboardId, NOW)).slides[0]!.widgets,
+    );
+    expect(unbound!.data.numerator.value).toBeNull();
+    expect(unbound!.data.denominator.value).toBeNull();
+    expect(unbound!.data.status).toBe("no_data");
+    expect(bound!.data.status).toBe(unbound!.data.status);
   }, 60_000);
 });
