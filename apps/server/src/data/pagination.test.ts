@@ -1,10 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   adminSetDataPolicy,
   createDatabase,
   createRawSqlClient,
   pruneDatasetHistory,
+  processSessionLocks,
+  SessionLockQueue,
   withWorkspace,
   type Database,
   type Sql,
@@ -21,6 +23,7 @@ import {
   queryDataModel,
   type DataActor,
   type DataModelQuery,
+  type DataModelQueryResult,
 } from "./service.js";
 
 const NOW = new Date("2026-11-05T12:00:00Z");
@@ -51,13 +54,15 @@ const definition = sourceDatasetSchema.parse({
   ],
 });
 let db: Database,
+  appUrl: string,
   scheduler: Database,
   admin: Sql,
   callerId: string,
   viewerId: string;
 beforeAll(async () => {
   const test = await createTestDatabase();
-  db = createDatabase(test.appUrl);
+  appUrl = test.appUrl;
+  db = createDatabase(appUrl);
   admin = createRawSqlClient(test.adminUrl, { max: 1 });
   const schedulerUrl = new URL(test.adminUrl);
   schedulerUrl.username = "netrics_scheduler";
@@ -712,6 +717,305 @@ describe("immutable semantic result pagination", () => {
       expect(counts).toEqual({ sessions: 1, snapshots: 0 });
     },
   );
+
+  it("admits or refuses every overlapping first page, never a conflict (#495)", async () => {
+    // Forces the interleaving behind the flaky concurrent-admission test. A
+    // trigger parks every session insert of this workspace, uncommitted, on an
+    // advisory lock the test holds (one lock per insert, owner and viewer
+    // numbered separately). The viewer counts the sessions, inserts and parks;
+    // a rival owner request then counts, inserts and commits first, so the
+    // viewer's serializable transaction fails. Before the fix its retry raced
+    // the next rival in the same way, and after three rivals the viewer got
+    // version_conflict although it should have been admitted or refused.
+    const f = await fixture();
+    await adminSetDataPolicy(db, f.actor.workspaceId, {
+      querySnapshotCount: 3,
+      queryPageSessionsPerCaller: null,
+    });
+    const ownerKey =
+      "page:v2:" +
+      createHash("sha256")
+        .update("user:" + f.actor.callerId)
+        .digest("hex") +
+      ":%";
+    const base = { owner: 495_000, viewer: 495_100 };
+    const ownerGates = Array.from({ length: 20 }, (_, i) => base.owner + i + 1);
+    const viewerGates = Array.from(
+      { length: 20 },
+      (_, i) => base.viewer + i + 1,
+    );
+    const gates = [...ownerGates, ...viewerGates];
+    await admin.unsafe(`
+      create sequence pagination_test_owner;
+      create sequence pagination_test_viewer;
+      create function pagination_test_park() returns trigger
+      language plpgsql security definer as $$
+      begin
+        perform pg_advisory_xact_lock_shared(case
+          when new.query_key like '${ownerKey}'
+            then ${base.owner} + nextval('pagination_test_owner')
+          else ${base.viewer} + nextval('pagination_test_viewer') end);
+        return new;
+      end $$;
+      create trigger pagination_test_park after insert on data_model_query_snapshots
+      for each row when (new.workspace_id = '${f.actor.workspaceId}' and new.query_key like 'page:%')
+      execute function pagination_test_park();`);
+    // Advisory locks that backends of this database are waiting for.
+    const waiting = async () =>
+      (
+        await admin`select l.objid::int as key from pg_locks l join pg_database d on d.oid = l.database where d.datname = current_database() and l.locktype = 'advisory' and not l.granted`
+      ).map((row) => row.key as number);
+    const until = async (done: (keys: number[]) => boolean) => {
+      for (let i = 0; i < 1000; i++) {
+        if (done(await waiting())) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error("pagination interleaving did not settle");
+    };
+    const requests: {
+      state: { settled: boolean };
+      result: Promise<{ value: DataModelQueryResult } | { error: unknown }>;
+    }[] = [];
+    // Each request comes from its own server instance (its own in-memory
+    // admission queue), so only the database lock orders them.
+    const start = (actor: DataActor) => {
+      const state = { settled: false };
+      const result = createDataService(
+        db,
+        () => NOW,
+        DEFAULT_DATA_POLICY,
+        new SessionLockQueue(),
+      )
+        .query(actor, f.model.id, { ...query, pinPages: true })
+        .then(
+          (value) => ((state.settled = true), { value }),
+          (error: unknown) => ((state.settled = true), { error }),
+        );
+      requests.push({ state, result });
+    };
+    // Every open request waits on a lock: a gate, or with the fix, the
+    // admission lock behind another request.
+    const quiescent = () =>
+      until(
+        (keys) =>
+          keys.length ===
+          requests.filter((request) => !request.state.settled).length,
+      );
+    const held = new Set(gates);
+    const release = async (candidates: number[]) => {
+      await quiescent();
+      const keys = await waiting();
+      const gate = candidates.find(
+        (key) => held.has(key) && keys.includes(key),
+      );
+      if (gate === undefined) return false;
+      await admin`select pg_advisory_unlock(${gate})`;
+      held.delete(gate);
+      await until((keys) => !keys.includes(gate));
+      await quiescent();
+      return true;
+    };
+    try {
+      for (const gate of gates) await admin`select pg_advisory_lock(${gate})`;
+      start(f.viewer);
+      await quiescent();
+      for (let rival = 0; rival < 3; rival++) {
+        start(f.actor);
+        await quiescent();
+        await release(ownerGates);
+        await release(viewerGates);
+      }
+      while (await release(gates));
+      const results = await Promise.all(
+        requests.map((request) => request.result),
+      );
+      expect(
+        results.map((result) => "error" in result && String(result.error)),
+      ).toEqual([false, false, false, false]);
+      const values = results.map(
+        (result) => (result as { value: DataModelQueryResult }).value,
+      );
+      expect(values.filter((value) => value.nextPageToken)).toHaveLength(3);
+      expect(values.filter((value) => !value.nextPageToken)).toMatchObject([
+        {
+          warnings: expect.arrayContaining([
+            "immutable_pagination_unavailable",
+          ]),
+        },
+      ]);
+    } finally {
+      await admin`select pg_advisory_unlock_all()`;
+      await admin.unsafe(`
+        drop trigger if exists pagination_test_park on data_model_query_snapshots;
+        drop function if exists pagination_test_park();
+        drop sequence if exists pagination_test_owner;
+        drop sequence if exists pagination_test_viewer;`);
+    }
+  });
+
+  it.each([
+    {
+      name: "admits every request while the cap has room",
+      cap: 100,
+      admitted: 10,
+    },
+    {
+      name: "admits exactly the cap and refuses the rest",
+      cap: 3,
+      admitted: 3,
+    },
+  ])("a burst of first pages $name (#495)", async ({ cap, admitted }) => {
+    for (let round = 0; round < 3; round++) {
+      const f = await fixture();
+      await adminSetDataPolicy(db, f.actor.workspaceId, {
+        querySnapshotCount: cap,
+        queryPageSessionsPerCaller: null,
+      });
+      const results = await Promise.allSettled(
+        Array.from({ length: 10 }, (_, i) =>
+          f.service.query(i % 2 ? f.viewer : f.actor, f.model.id, {
+            ...query,
+            pinPages: true,
+          }),
+        ),
+      );
+      expect(
+        results.flatMap((result) =>
+          result.status === "rejected" ? [String(result.reason)] : [],
+        ),
+      ).toEqual([]);
+      const values = results.map(
+        (result) =>
+          (result as PromiseFulfilledResult<DataModelQueryResult>).value,
+      );
+      expect(
+        values.every((value) => value.rows[0]!.dimensions.id === "a"),
+      ).toBe(true);
+      expect(values.filter((value) => value.nextPageToken)).toHaveLength(
+        admitted,
+      );
+      for (const value of values.filter((value) => !value.nextPageToken))
+        expect(value.warnings).toContain("immutable_pagination_unavailable");
+      const [counts] =
+        await admin`select count(*)::int as sessions from data_model_query_snapshots where workspace_id=${f.actor.workspaceId} and query_key like 'page:%'`;
+      expect(counts!.sessions).toBe(admitted);
+    }
+  });
+
+  it("releases the admission lock when a pinned first page fails (#495)", async () => {
+    const f = await fixture();
+    const heldAdvisoryLocks = async () =>
+      (
+        await admin`select count(*)::int as n from pg_locks l join pg_database d on d.oid = l.database where d.datname = current_database() and l.locktype = 'advisory' and l.granted and l.pid <> pg_backend_pid()`
+      )[0]!.n as number;
+    // A failure in JavaScript inside the transaction, and an SQL error that
+    // aborts it (a trigger refusing the session insert).
+    await expect(
+      f.service.query(f.actor, randomUUID(), { ...query, pinPages: true }),
+    ).rejects.toThrow("data_model_not_found");
+    expect(await heldAdvisoryLocks()).toBe(0);
+    await admin.unsafe(`
+      create function pagination_test_refuse() returns trigger language plpgsql as $$
+      begin raise exception 'refused by test'; end $$;
+      create trigger pagination_test_refuse before insert on data_model_query_snapshots
+      for each row when (new.workspace_id = '${f.actor.workspaceId}' and new.query_key like 'page:%')
+      execute function pagination_test_refuse();`);
+    try {
+      await expect(f.read()).rejects.toThrow("data_storage_failed");
+      expect(await heldAdvisoryLocks()).toBe(0);
+    } finally {
+      await admin.unsafe(`
+        drop trigger if exists pagination_test_refuse on data_model_query_snapshots;
+        drop function if exists pagination_test_refuse();`);
+    }
+    // The pool's connections are clean: pinned first pages still admit.
+    const reads = await Promise.all(Array.from({ length: 3 }, () => f.read()));
+    expect(reads.filter((read) => read.nextPageToken)).toHaveLength(3);
+    expect(await heldAdvisoryLocks()).toBe(0);
+  });
+
+  it("queues a burst of first pages in memory, so other models keep their connections (#495)", async () => {
+    // A small pool, as a busy server would have left. The test holds the
+    // model's admission lock, so the whole burst has to wait.
+    const small = createDatabase(appUrl, { max: 3 });
+    try {
+      const service = createDataService(small, () => NOW, DEFAULT_DATA_POLICY);
+      const [busy, other] = [await fixture(), await fixture()];
+      const lockName = "data_page_sessions:" + busy.model.id;
+      await admin`select pg_advisory_lock(hashtextextended(${lockName}, 0))`;
+      let burst: Promise<DataModelQueryResult[]> | undefined;
+      try {
+        burst = Promise.all(
+          Array.from({ length: 10 }, () =>
+            service.query(busy.actor, busy.model.id, {
+              ...query,
+              pinPages: true,
+            }),
+          ),
+        );
+        // Wait until the burst queues behind the lock.
+        for (
+          let i = 0;
+          i < 500 &&
+          (
+            await admin`select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted`
+          )[0]!.n === 0;
+          i++
+        )
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        const unrelated = await Promise.race([
+          service.query(other.actor, other.model.id, query),
+          new Promise<"stalled">((resolve) =>
+            setTimeout(() => resolve("stalled"), 2000),
+          ),
+        ]);
+        expect(unrelated).not.toBe("stalled");
+        expect((unrelated as DataModelQueryResult).rows[0]!.dimensions.id).toBe(
+          "a",
+        );
+      } finally {
+        await admin`select pg_advisory_unlock(hashtextextended(${lockName}, 0))`;
+      }
+      const results = await burst!;
+      expect(results.filter((result) => result.nextPageToken)).toHaveLength(10);
+      expect(processSessionLocks.size).toBe(0);
+    } finally {
+      await small.$client.end({ timeout: 5 });
+    }
+  });
+
+  it("refuses a pinned first page whose admission wait exceeds the query timeout (#495)", async () => {
+    const f = await fixture();
+    await adminSetDataPolicy(db, f.actor.workspaceId, { queryTimeoutMs: 300 });
+    const lockName = "data_page_sessions:" + f.model.id;
+    const heldByOthers = async () =>
+      (
+        await admin`select count(*)::int as n from pg_locks l join pg_database d on d.oid = l.database where d.datname = current_database() and l.locktype = 'advisory' and l.granted and l.pid <> pg_backend_pid()`
+      )[0]!.n as number;
+    await admin`select pg_advisory_lock(hashtextextended(${lockName}, 0))`;
+    try {
+      // One waits on the database lock, the other in the in-process queue.
+      const started = Date.now();
+      const results = await Promise.all([f.read(), f.read()]);
+      expect(Date.now() - started).toBeLessThan(5000);
+      for (const result of results) {
+        expect(result.nextPageToken).toBeUndefined();
+        expect(result.rows[0]!.dimensions.id).toBe("a");
+        expect(result.warnings).toContain("immutable_pagination_unavailable");
+      }
+      expect(await heldByOthers()).toBe(0);
+      expect(processSessionLocks.size).toBe(0);
+    } finally {
+      await admin`select pg_advisory_unlock(hashtextextended(${lockName}, 0))`;
+    }
+    const [counts] =
+      await admin`select count(*)::int as sessions from data_model_query_snapshots where workspace_id=${f.actor.workspaceId} and query_key like 'page:%'`;
+    expect(counts!.sessions).toBe(0);
+    // The released connections carry no lock_timeout or lock: admission works.
+    expect((await f.read()).nextPageToken).toBeDefined();
+    expect(await heldByOthers()).toBe(0);
+  });
 
   it("supports null caller limits without removing the global cap, and zero disables only page sessions", async () => {
     const f = await fixture();

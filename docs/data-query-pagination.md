@@ -89,6 +89,20 @@ needs a retained cache identity; a prepared-cache refusal prevents admission.
 Expired snapshot identities free capacity on the next successful query without
 waiting for scheduled maintenance.
 
+New pinned requests (first pages) for one model run one at a time. Each holds a
+database lock from before its transaction starts, so it counts every session
+admitted before it, also across server instances. Concurrent first pages are
+admitted until a limit is full, the rest are refused as above, and none fails
+with `409 version_conflict` because of the others. Continuations and ordinary
+queries do not wait for this lock.
+
+Within one server instance, waiting first pages queue in memory and hold no
+database connection: a burst on one model uses at most one connection of the
+instance's pool, so other models and workspaces keep being served. The wait for
+admission is bounded by the workspace's `queryTimeoutMs` (30 seconds when that
+is `null`). A request that waits longer gets its ordinary first result with
+`immutable_pagination_unavailable` and no token, like a full pool.
+
 Setting `querySnapshotCount` or `querySnapshotSeconds` to `0` disables storing
 and reusing both query snapshot pools, including last-valid fallback. Other
 data/execution quotas remain positive or `null`.
