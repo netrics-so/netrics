@@ -424,7 +424,13 @@ export async function reportZipStream(
   {
     maxOutputBytes = REPORT_MAX_BYTES,
     readBytes = ZIP_READ_BYTES,
-  }: { maxOutputBytes?: number; readBytes?: number } = {},
+    drain,
+  }: {
+    maxOutputBytes?: number;
+    readBytes?: number;
+    /** Awaited after every inflated piece, so the consumer can write out rows. */
+    drain?: () => Promise<void>;
+  } = {},
 ): Promise<void> {
   const base = Math.max(0, source.size - ZIP_TAIL_BYTES);
   const tail = Buffer.from(await source.read(base, source.size - base));
@@ -463,14 +469,20 @@ export async function reportZipStream(
         );
     }
     if (member.method === 0) {
-      for await (const chunk of compressed()) take(chunk);
+      for await (const chunk of compressed()) {
+        take(chunk);
+        await drain?.();
+      }
     } else {
       try {
         await pipeline(
           Readable.from(compressed()),
           createInflateRaw(),
           async (output: AsyncIterable<Buffer>) => {
-            for await (const chunk of output) take(chunk);
+            for await (const chunk of output) {
+              take(chunk);
+              await drain?.();
+            }
           },
         );
       } catch (error) {

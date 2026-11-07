@@ -2,9 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 
 import {
   DATASET_LIMITS,
+  type ConnectorDatasetStaging,
   type ConnectorRuntime,
   type DatasetPage,
   type DatasetRecord,
+  type DatasetStageWriter,
   type SourceDatasetDefinition,
   type SyncRequest,
   type SyncResult,
@@ -20,14 +22,25 @@ import {
   earningsDataset,
   installDataset,
   listingRatingDataset,
+  readEarningsReport,
+  readInstallReport,
   reportStatusDataset,
-  streamEarningsRows,
-  streamInstallRows,
+  type Drain,
+  type RowSink,
 } from "./datasets.js";
+import {
+  RowsDigest,
+  StageBuilder,
+  WindowReader,
+  type AppWindow,
+  type StagedPart,
+} from "./partitions.js";
 import { listingSnapshot, type ListingSnapshot } from "./ratings.js";
 import type { ReportSource } from "./tabular.js";
 
 const PREFIX = "google-play-data:";
+/** Staged pages one turn emits at most, within one page's worth of bytes. */
+const STAGED_TURN_PAGES = 16;
 const taskSchema = z.object({
   key: z.string(),
   kind: z.enum(["installs", "earnings"]),
@@ -54,6 +67,8 @@ const stateSchema = z.object({
   refresh: z.uuid(),
   digest: z.string().nullable(),
   stageId: z.uuid().optional(),
+  /** The pending task's report objects and generations (#519). */
+  source: z.string().optional(),
 });
 type State = z.infer<typeof stateSchema>;
 interface Catalog {
@@ -73,19 +88,9 @@ export function rowsDigest(
   rows: DatasetRecord[],
   objects: ReportObject[],
 ): string {
-  const digest = createHash("sha256").update("[[");
-  rows.forEach((row, index) =>
-    digest.update((index ? "," : "") + JSON.stringify(row)),
-  );
-  return digest
-    .update(
-      "]," +
-        JSON.stringify(
-          objects.map((object) => [object.name, object.generation]),
-        ) +
-        "]",
-    )
-    .digest("hex");
+  const digest = new RowsDigest();
+  for (const row of rows) digest.add(JSON.stringify(row));
+  return digest.digest(objects);
 }
 function encode(state: State): string {
   return PREFIX + Buffer.from(JSON.stringify(state)).toString("base64url");
@@ -201,16 +206,38 @@ function tasksFor(state: State, apps: string[], catalog: Catalog): Task[] {
 
 interface Frame {
   definition: SourceDatasetDefinition;
-  rows: Map<string, DatasetRecord[]>;
   apps: string[];
   availability:
     "available" | "not_published" | "permission_missing" | "invalid_report";
   objects: ReportObject[];
   unmapped: number;
-  stage?: { id: string; parts: StagedFrame["parts"] };
+  /** The task's rows are staged: turns read their page from the stage. */
+  stage?: { id: string; parts: StagedPart[] };
+  /** Not staged: this turn's pages of one app, read from the report again. */
+  window?: AppWindow;
+}
+/**
+ * A part's page index in one string, "key.count.bytes" per page and comma
+ * separated; offsets follow from the counts. Stage metadata is bounded JSON
+ * (10,000 values), and a report staged in short pages has thousands of pages.
+ */
+const PAGE_INDEX = /^\d+\.\d+\.\d+(,\d+\.\d+\.\d+)*$/;
+function encodePages(pages: StagedPart["pages"]): string {
+  return pages
+    .map((page) => `${page.key}.${page.count}.${page.bytes}`)
+    .join(",");
+}
+function decodePages(index: string): StagedPart["pages"] {
+  let offset = 0;
+  return index.split(",").map((entry) => {
+    const [key, count, bytes] = entry.split(".") as [string, string, string];
+    const page = { key, offset, count: Number(count), bytes: Number(bytes) };
+    offset += page.count;
+    return page;
+  });
 }
 const stagedFrameSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   apps: z.array(z.string()),
   unmapped: z.number().int().nonnegative(),
   parts: z.array(
@@ -218,169 +245,30 @@ const stagedFrameSchema = z.object({
       app: z.string(),
       totalRows: z.number().int().nonnegative(),
       digest: z.string().regex(/^[0-9a-f]{64}$/),
-      pages: z.array(
-        z.object({
-          key: z.string(),
-          offset: z.number().int().nonnegative(),
-          count: z.number().int().nonnegative(),
-        }),
-      ),
+      pages: z.string().regex(PAGE_INDEX).transform(decodePages),
     }),
   ),
 });
-type StagedFrame = z.infer<typeof stagedFrameSchema>;
+type StagedFrame = z.input<typeof stagedFrameSchema>;
 function frameObjects(task: Task, catalog: Catalog): ReportObject[] {
-  return (
-    task.kind === "installs" ? catalog.installs : catalog.earnings
-  ).filter((object) => {
-    const match =
-      task.kind === "installs"
-        ? INSTALL_FILE.exec(object.name)
-        : EARNING_FILE.exec(object.name);
-    return !!(
-      match &&
-      nameMonth(match[match.length - 1]!) === task.month &&
-      (task.kind !== "installs" || match[1] === task.appId)
-    );
-  });
-}
-function recordPage(rows: DatasetRecord[], offset: number): DatasetRecord[] {
-  const records: DatasetRecord[] = [];
-  let bytes = 4096;
-  for (
-    let index = offset;
-    index < Math.min(rows.length, offset + DATASET_LIMITS.pageRows);
-    index++
-  ) {
-    const row = rows[index]!;
-    const size = Buffer.byteLength(JSON.stringify(row));
-    if (size > DATASET_LIMITS.rowBytes)
-      throw new Error(
-        "Google Play report row exceeds the transport record budget",
+  return (task.kind === "installs" ? catalog.installs : catalog.earnings)
+    .filter((object) => {
+      const match =
+        task.kind === "installs"
+          ? INSTALL_FILE.exec(object.name)
+          : EARNING_FILE.exec(object.name);
+      return !!(
+        match &&
+        nameMonth(match[match.length - 1]!) === task.month &&
+        (task.kind !== "installs" || match[1] === task.appId)
       );
-    if (bytes + size + 1 > DATASET_LIMITS.pageBytes) break;
-    records.push(row);
-    bytes += size + 1;
-  }
-  return records;
+    })
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
-async function reusableFrame(
-  task: Task,
-  apps: string[],
-  selected: boolean,
-  catalog: Catalog,
-  client: PlayReportsClient,
-  store: ConnectorRuntime["datasetStaging"],
-  signature: string,
-): Promise<Frame> {
-  if (!store) return readFrame(task, apps, selected, catalog, client);
-  const objects = frameObjects(task, catalog);
-  const permitted =
-    task.kind === "installs"
-      ? catalog.installPermission
-      : catalog.earningsPermission;
-  const key =
-    "play-v1:" + hash([signature, task, apps, selected, permitted, objects]);
-  const stage = permitted && objects.length ? await store.get(key) : null;
-  if (stage) {
-    // Listing permission does not imply object permission; verify the exact pinned
-    // object generation before reusing retained private rows.
-    try {
-      for (const object of objects) await client.validate(object);
-    } catch (error) {
-      if (error instanceof PlayReportError && [403, 404].includes(error.status))
-        return {
-          definition:
-            task.kind === "installs" ? installDataset : earningsDataset,
-          rows: new Map(),
-          apps: task.kind === "installs" ? [task.appId!] : [...apps],
-          availability:
-            error.status === 403 ? "permission_missing" : "not_published",
-          objects,
-          unmapped: 0,
-        };
-      throw error;
-    }
-    const metadata = stagedFrameSchema.parse(stage.metadata);
-    return {
-      definition: task.kind === "installs" ? installDataset : earningsDataset,
-      rows: new Map(),
-      apps: metadata.apps,
-      availability: "available",
-      objects,
-      unmapped: metadata.unmapped,
-      stage: { id: stage.id, parts: metadata.parts },
-    };
-  }
-  const frame = await readFrame(task, apps, selected, catalog, client);
-  if (frame.availability !== "available") return frame;
-  const pages: DatasetPage[] = [];
-  const parts: StagedFrame["parts"] = [];
-  for (let index = 0; index < frame.apps.length; index++) {
-    const app = frame.apps[index]!;
-    const rows = frame.rows.get(app) ?? [];
-    const part: StagedFrame["parts"][number] = {
-      app,
-      totalRows: rows.length,
-      digest: rowsDigest(rows, objects),
-      pages: [],
-    };
-    let offset = 0;
-    do {
-      const records = recordPage(rows, offset);
-      const pageKey = `${index}-${offset}`;
-      part.pages.push({ key: pageKey, offset, count: records.length });
-      pages.push({
-        datasetKey: frame.definition.key,
-        schemaVersion: frame.definition.version,
-        refreshKey: "staging",
-        pageKey,
-        previousPageKey: null,
-        complete: offset + records.length === rows.length,
-        records,
-        window: {
-          from: task.month,
-          toExclusive: nextMonth(task.month),
-          partition: { app_id: app },
-        },
-      });
-      offset += records.length;
-    } while (offset < rows.length);
-    parts.push(part);
-  }
-  const metadata: StagedFrame = {
-    version: 1,
-    apps: frame.apps,
-    unmapped: frame.unmapped,
-    parts,
-  };
-  let stored: { id: string };
-  try {
-    stored = await store.put({ key, metadata, pages });
-  } catch {
-    // Staging is an optimization. Stage-size, quota or storage refusals keep the
-    // buffered frame, as a host without the capability would; ingestion still
-    // enforces the workspace quota on the rows themselves.
-    return frame;
-  }
-  return { ...frame, rows: new Map(), stage: { id: stored.id, parts } };
-}
-class ReportDownloadError extends Error {
-  constructor(readonly original: unknown) {
-    super("Google Play report download failed");
-  }
-}
-async function readFrame(
-  task: Task,
-  apps: string[],
-  selected: boolean,
-  catalog: Catalog,
-  client: PlayReportsClient,
-): Promise<Frame> {
+function baseFrame(task: Task, apps: string[], catalog: Catalog): Frame {
   const objects = frameObjects(task, catalog);
   const frame: Frame = {
     definition: task.kind === "installs" ? installDataset : earningsDataset,
-    rows: new Map(),
     apps: task.kind === "installs" ? [task.appId!] : [...apps],
     availability: "available",
     objects,
@@ -393,7 +281,30 @@ async function readFrame(
   )
     frame.availability = "permission_missing";
   else if (objects.length === 0) frame.availability = "not_published";
-  if (frame.availability !== "available") return frame;
+  return frame;
+}
+
+class ReportDownloadError extends Error {
+  constructor(readonly original: unknown) {
+    super("Google Play report download failed");
+  }
+}
+/**
+ * Reads the task's report objects once, handing every typed row to `emit`
+ * and awaiting `drain` between pieces. Sets the frame's app roster, unmapped
+ * count and availability; returns false when the report is not available,
+ * in which case every row emitted so far must be discarded.
+ */
+async function readReport(
+  frame: Frame,
+  task: Task,
+  apps: string[],
+  selected: boolean,
+  client: PlayReportsClient,
+  emit: RowSink,
+  drain?: Drain,
+): Promise<boolean> {
+  if (frame.availability !== "available") return false;
   // Report bodies are read in bounded ranges while they are parsed; a failed
   // provider read keeps its own meaning instead of reading as a bad report.
   const download = (object: ReportObject): ReportSource => {
@@ -409,48 +320,44 @@ async function readFrame(
       },
     };
   };
+  const seen = new Set<string>();
   try {
     if (task.kind === "installs") {
-      if (objects.length !== 1)
+      if (frame.objects.length !== 1)
         throw new Error(
           "Google Play returned duplicate country install reports",
         );
-      const object = objects[0]!;
-      frame.rows.set(
+      const object = frame.objects[0]!;
+      await readInstallReport(
+        download(object),
         task.appId!,
-        await streamInstallRows(
-          download(object),
-          task.appId!,
-          task.month,
-          object.name,
-          object.generation,
-        ),
+        task.month,
+        object.name,
+        object.generation,
+        emit,
+        drain,
       );
     } else {
-      for (const object of objects) {
-        const parsed = await streamEarningsRows(
+      const wanted = selected ? new Set(apps) : undefined;
+      for (const object of frame.objects) {
+        const parsed = await readEarningsReport(
           download(object),
           task.month,
           object.name,
           object.generation,
-          selected ? new Set(apps) : undefined,
+          wanted,
+          (app, row) => {
+            seen.add(app);
+            emit(app, row);
+          },
+          drain,
         );
         frame.unmapped += parsed.unmapped;
-        for (const [appId, rows] of parsed.records) {
-          const list = frame.rows.get(appId);
-          if (list) for (const row of rows) list.push(row);
-          else frame.rows.set(appId, rows);
-        }
       }
       if (!selected)
-        frame.apps = [
-          ...new Set([...apps, ...frame.rows.keys(), "__unmapped"]),
-        ].sort();
+        frame.apps = [...new Set([...apps, ...seen, "__unmapped"])].sort();
     }
-    for (const rows of frame.rows.values())
-      rows.sort((a, b) =>
-        JSON.stringify(a.values).localeCompare(JSON.stringify(b.values)),
-      );
+    return true;
   } catch (error) {
     if (error instanceof ReportDownloadError) {
       const cause = error.original;
@@ -459,10 +366,177 @@ async function readFrame(
       else if (cause instanceof PlayReportError && cause.status === 404)
         frame.availability = "not_published";
       else throw cause;
-    } else frame.availability = "invalid_report";
-    frame.rows = new Map();
+    } else if (error instanceof StagingRefusedError) throw error;
+    else frame.availability = "invalid_report";
+    frame.unmapped = 0;
+    return false;
   }
-  return frame;
+}
+
+/** The host refused (or could not take) a staging write. */
+class StagingRefusedError extends Error {
+  constructor(readonly original: unknown) {
+    super("Google Play report staging was refused");
+  }
+}
+/**
+ * The task's frame: an existing stage, a stage written while the report is
+ * read (SDK 0.2.11 `begin`), or, when there is no staging, a refusal or a task
+ * that started without a stage, one app's pages read from the report again.
+ */
+async function taskFrame(
+  task: Task,
+  apps: string[],
+  selected: boolean,
+  catalog: Catalog,
+  client: PlayReportsClient,
+  store: ConnectorRuntime["datasetStaging"],
+  signature: string,
+  position: { app?: string; offset: number },
+): Promise<Frame> {
+  const frame = baseFrame(task, apps, catalog);
+  const permitted = frame.availability !== "permission_missing";
+  const key =
+    "play-v2:" +
+    hash([signature, task, apps, selected, permitted, frame.objects]);
+  const stage =
+    store && frame.availability === "available" ? await store.get(key) : null;
+  if (stage) {
+    // Listing permission does not imply object permission; verify the exact pinned
+    // object generation before reusing retained private rows.
+    try {
+      for (const object of frame.objects) await client.validate(object);
+    } catch (error) {
+      if (error instanceof PlayReportError && [403, 404].includes(error.status))
+        return {
+          ...frame,
+          availability:
+            error.status === 403 ? "permission_missing" : "not_published",
+        };
+      throw error;
+    }
+    const metadata = stagedFrameSchema.parse(stage.metadata);
+    return {
+      ...frame,
+      apps: metadata.apps,
+      unmapped: metadata.unmapped,
+      stage: { id: stage.id, parts: metadata.parts },
+    };
+  }
+  if (store?.begin && frame.availability === "available") {
+    const staged = await stageFrame(
+      frame,
+      task,
+      apps,
+      selected,
+      client,
+      store.begin,
+      key,
+    );
+    if (staged) return staged;
+  }
+  return windowFrame(
+    baseFrame(task, apps, catalog),
+    task,
+    apps,
+    selected,
+    client,
+    position,
+  );
+}
+
+/** Stages the task while reading its report; null when the host refuses. */
+async function stageFrame(
+  frame: Frame,
+  task: Task,
+  apps: string[],
+  selected: boolean,
+  client: PlayReportsClient,
+  begin: NonNullable<ConnectorDatasetStaging["begin"]>,
+  key: string,
+): Promise<Frame | null> {
+  // Staging is an optimization. Stage-size, quota or storage refusals fall
+  // back to reading one app per turn; ingestion still enforces the workspace
+  // quota on the rows themselves.
+  const refused = async <T>(call: () => Promise<T>): Promise<T> => {
+    try {
+      return await call();
+    } catch (error) {
+      throw new StagingRefusedError(error);
+    }
+  };
+  let writer: DatasetStageWriter;
+  try {
+    writer = await begin({
+      key,
+      datasetKey: frame.definition.key,
+      schemaVersion: frame.definition.version,
+    });
+  } catch {
+    return null;
+  }
+  const builder = new StageBuilder(writer, frame.definition, {
+    from: task.month,
+    toExclusive: nextMonth(task.month),
+  });
+  try {
+    const available = await readReport(
+      frame,
+      task,
+      apps,
+      selected,
+      client,
+      (app, row) => builder.add(app, row),
+      () => refused(() => builder.drain()),
+    );
+    if (!available) {
+      await writer.abort();
+      return frame;
+    }
+    const parts = await refused(() =>
+      builder.finish(frame.apps, frame.objects),
+    );
+    const metadata: StagedFrame = {
+      version: 2,
+      apps: frame.apps,
+      unmapped: frame.unmapped,
+      parts: parts.map((part) => ({ ...part, pages: encodePages(part.pages) })),
+    };
+    const stored = await refused(() => writer.commit({ metadata }));
+    return { ...frame, stage: { id: stored.id, parts } };
+  } catch (error) {
+    await writer.abort().catch(() => undefined);
+    if (error instanceof StagingRefusedError) return null;
+    throw error;
+  }
+}
+
+/** Reads the report again for up to UNSTAGED_TURN_PAGES pages of one app. */
+async function windowFrame(
+  frame: Frame,
+  task: Task,
+  apps: string[],
+  selected: boolean,
+  client: PlayReportsClient,
+  position: { app?: string; offset: number },
+): Promise<Frame> {
+  const reader = new WindowReader(
+    position.app,
+    position.app === undefined ? 0 : position.offset,
+    frame.apps.concat(
+      task.kind === "earnings" && !selected ? ["__unmapped"] : [],
+    ),
+  );
+  const available = await readReport(
+    frame,
+    task,
+    apps,
+    selected,
+    client,
+    (app, row) => reader.add(app, row),
+  );
+  if (!available) return frame;
+  return { ...frame, window: reader.result(frame.objects) };
 }
 
 function statusPage(
@@ -594,18 +668,45 @@ export async function syncPlayReports(
     );
   if (!task || apps.length === 0)
     return { observations: [], nextCursor: state.to, done: true };
-  const frame = await reusableFrame(
+  const source = hash(
+    frameObjects(task, catalog).map((object) => [
+      object.name,
+      object.generation,
+    ]),
+  );
+  const continuing = state.task?.key === task.key && state.app !== undefined;
+  // A changed report (new object generations) restarts the pending app from
+  // its first row; otherwise the turn continues at the checkpoint.
+  const position = continuing
+    ? {
+        app: state.app,
+        offset:
+          state.source === undefined || state.source === source
+            ? state.offset
+            : 0,
+      }
+    : { offset: 0 };
+  const frame = await taskFrame(
     task,
     apps,
     request.resources !== undefined,
     catalog,
     options.client,
-    // Once a task starts buffered, keep that choice through its continuation.
-    // Admitting a cache later would change stage identity and abandon the
-    // partially committed refresh even though the provider report is unchanged.
+    // Once a task starts without a stage, keep that choice through its
+    // continuation. Admitting a cache later would change stage identity and
+    // abandon the partially committed refresh even though the report is unchanged.
     state.task && !state.stageId ? undefined : runtime.datasetStaging,
     options.signature,
+    position,
   );
+  const restart = (from: State): State => ({
+    ...from,
+    offset: 0,
+    previous: null,
+    refresh: randomUUID(),
+    digest: null,
+    source,
+  });
   const roster = hash(frame.apps);
   if (
     !state.task ||
@@ -613,106 +714,121 @@ export async function syncPlayReports(
     !state.app ||
     !frame.apps.includes(state.app)
   )
-    state = {
+    state = restart({
       ...state,
       task,
       stageId: frame.stage?.id,
       roster,
       app: frame.apps[0]!,
-      offset: 0,
-      previous: null,
-      refresh: randomUUID(),
-      digest: null,
-    };
+    });
   else if (state.stageId !== frame.stage?.id)
     // A rebuilt or expired stage restarts only the pending app partition, so one
     // refresh never mixes pages (and collection times) from two stages. Apps
     // already completed in this task are not emitted again.
-    state = {
-      ...state,
-      stageId: frame.stage?.id,
-      offset: 0,
-      previous: null,
-      refresh: randomUUID(),
-      digest: null,
-    };
+    state = restart({ ...state, stageId: frame.stage?.id });
+  else if (position.offset !== state.offset) state = restart(state);
   const app = state.app!;
-  const rows = frame.rows.get(app) ?? [];
   const part = frame.stage?.parts.find((part) => part.app === app);
   if (frame.stage && !part)
     throw new Error("Invalid Google Play staged report index");
-  const digest = part?.digest ?? rowsDigest(rows, frame.objects);
-  if (state.digest !== null && state.digest !== digest)
-    state = {
-      ...state,
-      offset: 0,
-      previous: null,
-      refresh: randomUUID(),
-      digest: null,
+  const window = frame.availability === "available" ? frame.window : undefined;
+  const digest = part?.digest ?? window?.digest ?? null;
+  if (
+    (frame.availability === "available" &&
+      !frame.stage &&
+      (window?.app !== app || window.offset !== state.offset)) ||
+    (!frame.stage &&
+      state.digest !== null &&
+      digest !== null &&
+      state.digest !== digest)
+  )
+    // The rows read again this turn are not the ones the checkpoint needs:
+    // the app roster changed, or the report's rows did. Start the pending app
+    // over on the next turn, without emitting anything.
+    return {
+      observations: [],
+      datasetPages: [],
+      nextCursor: encode(restart(state)),
+      done: false,
     };
-  const totalRows = part?.totalRows ?? rows.length;
-  if (state.offset > totalRows)
+  if (state.digest !== null && digest !== null && state.digest !== digest)
+    state = restart(state);
+  const totalRows = part?.totalRows ?? window?.totalRows ?? 0;
+  if (frame.availability === "available" && state.offset > totalRows)
     throw new Error("Invalid Google Play report checkpoint");
-  const stagedPage = part?.pages.find((page) => page.offset === state.offset);
-  if (part && !stagedPage)
-    throw new Error("Invalid Google Play staged report checkpoint");
-  const staged = stagedPage
-    ? await runtime.datasetStaging!.getPage(frame.stage!.id, stagedPage.key)
-    : null;
-  const records =
-    frame.availability === "available"
-      ? (staged?.records ?? recordPage(rows, state.offset))
-      : [];
-  const end = state.offset + records.length;
-  const complete = frame.availability !== "available" || end === totalRows;
-  const pages: DatasetPage[] =
-    frame.availability === "available"
-      ? [
-          {
-            datasetKey: frame.definition.key,
-            schemaVersion: 1,
-            refreshKey: state.refresh,
-            pageKey: String(state.offset),
-            previousPageKey: state.previous,
-            records,
-            complete,
-            ...(frame.stage && stagedPage
-              ? { stagingId: frame.stage.id, stagingPageKey: stagedPage.key }
-              : {}),
-            window: {
-              from: task.month,
-              toExclusive: nextMonth(task.month),
-              partition: { app_id: app },
-            },
-          },
-        ]
-      : [];
+  const pages: DatasetPage[] = [];
+  let offset = state.offset,
+    previous = state.previous,
+    complete = frame.availability !== "available";
+  const dataPage = (records: DatasetRecord[], last: boolean) => {
+    const page: DatasetPage = {
+      datasetKey: frame.definition.key,
+      schemaVersion: 1,
+      refreshKey: state.refresh,
+      pageKey: String(offset),
+      previousPageKey: previous,
+      records,
+      complete: last,
+      window: {
+        from: task.month,
+        toExclusive: nextMonth(task.month),
+        partition: { app_id: app },
+      },
+    };
+    previous = String(offset);
+    offset += records.length;
+    return page;
+  };
+  if (part) {
+    const first = part.pages.findIndex((page) => page.offset === state.offset);
+    if (first < 0)
+      throw new Error("Invalid Google Play staged report checkpoint");
+    // Staged pages can be short (cut early to bound memory while staging), so
+    // a turn takes consecutive pages up to about one full page of rows.
+    let bytes = 0;
+    for (const stagedPage of part.pages.slice(
+      first,
+      first + STAGED_TURN_PAGES,
+    )) {
+      if (pages.length && bytes + stagedPage.bytes > DATASET_LIMITS.pageBytes)
+        break;
+      bytes += stagedPage.bytes;
+      const staged = await runtime.datasetStaging!.getPage(
+        frame.stage!.id,
+        stagedPage.key,
+      );
+      // A page cut early is never complete, even when it ends the app's
+      // rows: the app's (empty) final page follows.
+      complete = staged.complete;
+      pages.push({
+        ...dataPage(staged.records, complete),
+        stagingId: frame.stage!.id,
+        stagingPageKey: stagedPage.key,
+      });
+      if (complete) break;
+    }
+  } else if (window)
+    for (const records of window.pages) {
+      complete = offset + records.length === totalRows;
+      pages.push(dataPage(records, complete));
+      if (complete) break;
+    }
   if (complete) pages.push(statusPage(task, app, frame, capturedAt));
   const nextApp = complete
     ? frame.apps[frame.apps.indexOf(app) + 1]
     : undefined;
   const next: State = !complete
-    ? { ...state, offset: end, previous: String(state.offset), digest }
+    ? { ...state, offset, previous, digest, source }
     : nextApp
-      ? {
-          ...state,
-          app: nextApp,
-          offset: 0,
-          previous: null,
-          refresh: randomUUID(),
-          digest: null,
-        }
+      ? restart({ ...state, app: nextApp })
       : {
-          ...state,
+          ...restart(state),
           task: undefined,
           app: undefined,
           roster: undefined,
           stageId: undefined,
+          source: undefined,
           afterTask: task.key,
-          offset: 0,
-          previous: null,
-          refresh: randomUUID(),
-          digest: null,
         };
   return {
     observations: [],

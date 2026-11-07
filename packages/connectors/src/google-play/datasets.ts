@@ -190,10 +190,20 @@ function rowIdentity(
       ),
     )
     .digest("hex");
-  const ordinal = duplicates.get(hash) ?? 0;
-  duplicates.set(hash, ordinal + 1);
+  // Ordinals only have to tell identical lines of one file apart, so they are
+  // counted per 96-bit prefix: a third of the memory of the full hash per
+  // line. Two different lines with the same prefix only get different
+  // ordinals; their row_id still differs by the full hash.
+  const prefix = hash.slice(0, 24);
+  const ordinal = duplicates.get(prefix) ?? 0;
+  duplicates.set(prefix, ordinal + 1);
   return `${hash}-${ordinal}`;
 }
+
+/** Receives each typed row as it is parsed, with the app it belongs to. */
+export type RowSink = (appId: string, row: DatasetRecord) => void;
+/** Awaited between pieces of a report, so a consumer can write out what it holds. */
+export type Drain = () => Promise<void>;
 
 /** Typed install rows from one country install report, pushed as bytes. */
 function installSink(
@@ -201,7 +211,7 @@ function installSink(
   reportMonth: string,
   name: string,
   generation: string,
-  rows: DatasetRecord[],
+  emit: RowSink,
 ): ByteSink {
   const duplicates = new Map<string, number>();
   return reportCsv(
@@ -222,7 +232,7 @@ function installSink(
         throw new Error(
           "Google Play install report has a row outside its app/month scope",
         );
-      rows.push({
+      emit(appId, {
         values: {
           app_id: appId,
           day,
@@ -247,7 +257,9 @@ export function installRows(
   generation: string,
 ): DatasetRecord[] {
   const rows: DatasetRecord[] = [];
-  const sink = installSink(appId, reportMonth, name, generation, rows);
+  const sink = installSink(appId, reportMonth, name, generation, (_, row) =>
+    rows.push(row),
+  );
   sink.push(bytes);
   sink.end();
   return rows;
@@ -264,18 +276,43 @@ export async function streamInstallRows(
   name: string,
   generation: string,
 ): Promise<DatasetRecord[]> {
-  reportSize(source);
   const rows: DatasetRecord[] = [];
-  const sink = installSink(appId, reportMonth, name, generation, rows);
+  await readInstallReport(
+    source,
+    appId,
+    reportMonth,
+    name,
+    generation,
+    (_, row) => rows.push(row),
+  );
+  return rows;
+}
+
+/**
+ * Parses an install report piece by piece, handing each typed row to `emit`
+ * and awaiting `drain` after every piece; nothing is retained here.
+ */
+export async function readInstallReport(
+  source: ReportSource,
+  appId: string,
+  reportMonth: string,
+  name: string,
+  generation: string,
+  emit: RowSink,
+  drain?: Drain,
+): Promise<void> {
+  reportSize(source);
+  const sink = installSink(appId, reportMonth, name, generation, emit);
   // Even an empty object is requested, so access and generation still verify.
   let at = 0;
   do {
     const length = Math.min(REPORT_READ_BYTES, source.size - at);
     sink.push(await source.read(at, length));
     at += length;
+    await drain?.();
   } while (at < source.size);
   sink.end();
-  return rows;
+  await drain?.();
 }
 
 /** Largest piece of a plain report pushed through the parser at once. */
@@ -327,13 +364,14 @@ interface EarningsRows {
   records: Map<string, DatasetRecord[]>;
   unmapped: number;
 }
-/** One earnings archive member's CSV, typed into `result` as it is parsed. */
+/** One earnings archive member's CSV, typed into `emit` as it is parsed. */
 function earningsSink(
-  result: EarningsRows,
+  result: { unmapped: number },
   reportMonth: string,
   file: string,
   generation: string,
   selected: Set<string> | undefined,
+  emit: RowSink,
 ): ByteSink {
   const duplicates = new Map<string, number>();
   return reportCsv(
@@ -371,11 +409,16 @@ function earningsSink(
           provider_fields: original,
         },
       };
-      const list = result.records.get(appId);
-      if (list) list.push(row);
-      else result.records.set(appId, [row]);
+      emit(appId, row);
     },
   );
+}
+function collect(records: Map<string, DatasetRecord[]>): RowSink {
+  return (appId, row) => {
+    const list = records.get(appId);
+    if (list) list.push(row);
+    else records.set(appId, [row]);
+  };
 }
 
 export function earningsRows(
@@ -393,6 +436,7 @@ export function earningsRows(
       `${name}/${file.name}`,
       generation,
       selected,
+      collect(result.records),
     );
     sink.push(file.bytes);
     sink.end();
@@ -412,16 +456,48 @@ export async function streamEarningsRows(
   generation: string,
   selected?: Set<string>,
 ): Promise<EarningsRows> {
-  reportSize(source);
-  const result: EarningsRows = { records: new Map(), unmapped: 0 };
-  await reportZipStream(source, (member) =>
-    earningsSink(
-      result,
-      reportMonth,
-      `${name}/${member}`,
-      generation,
-      selected,
-    ),
+  const records = new Map<string, DatasetRecord[]>();
+  const { unmapped } = await readEarningsReport(
+    source,
+    reportMonth,
+    name,
+    generation,
+    selected,
+    collect(records),
   );
+  return { records, unmapped };
+}
+
+/**
+ * Parses an earnings archive piece by piece, handing each typed row to `emit`
+ * and awaiting `drain` after every inflated piece; nothing is retained here.
+ * Rows reach `emit` before the archive's final checks: a failure means every
+ * row emitted so far must be discarded.
+ */
+export async function readEarningsReport(
+  source: ReportSource,
+  reportMonth: string,
+  name: string,
+  generation: string,
+  selected: Set<string> | undefined,
+  emit: RowSink,
+  drain?: Drain,
+): Promise<{ unmapped: number }> {
+  reportSize(source);
+  const result = { unmapped: 0 };
+  await reportZipStream(
+    source,
+    (member) =>
+      earningsSink(
+        result,
+        reportMonth,
+        `${name}/${member}`,
+        generation,
+        selected,
+        emit,
+      ),
+    { drain },
+  );
+  await drain?.();
   return result;
 }

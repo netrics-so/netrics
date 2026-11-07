@@ -430,8 +430,11 @@ describe("independent connector cache and retained-data budgets", () => {
           call.url.searchParams.get("alt") === "media" &&
           call.url.pathname.endsWith(encodeURIComponent(alphaName)),
       ).length;
+    // Without a stage, one turn carries all three pages of an app (#519), so
+    // the report is not read again for every page. A refused stage costs the
+    // read that was staging it.
     expect(media(cached.fake)).toBe(2);
-    expect(media(disabled.fake)).toBe(6);
-    expect(media(refused.fake)).toBe(6);
+    expect(media(disabled.fake)).toBe(2);
+    expect(media(refused.fake)).toBe(4);
   }, 60000);
 });

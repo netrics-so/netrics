@@ -104,28 +104,32 @@ dropped as they are read. A report object above 64 MiB is refused before any of
 its body is transferred and recorded as `invalid_report`; the 64 MiB inflation
 budget per archive, CRC/size checks and explicit ZIP64 rejection still apply.
 
-Typed rows of one report task are still collected in memory before they are
-sorted and staged, because `datasetStaging.put` takes a complete page set; that
-set, not the provider file, now bounds a first read. Measured locally on
-2026-11-06 with Node 24 (historical; Node 26 numbers for #501 follow) for a
-synthetic 40 MiB earnings archive (3.7 MiB deflated, 626,205 lines): peak RSS for one selected app holding a tenth of the
-lines fell from 1.19 GB to 321 MB, and for all apps from 2.19 GB to 1.30 GB.
+Since [#519](https://github.com/netrics-so/netrics/issues/519)
+([ADR 0024](../decisions/0024-streaming-connector-staging.md)) typed rows are
+written to the stage while the report is read, per app in parse order, and are
+no longer collected and sorted first. Each app holds at most one pending page,
+and all pending pages together stay under 8 MiB of row JSON (the largest is
+written out early as a shorter page). Measured locally on 2026-11-06 with
+Node 24 before this change (historical) for a synthetic 40 MiB earnings archive
+(3.7 MiB deflated, 626,205 lines), incremental parsing had lowered peak RSS for
+one selected app holding a tenth of the lines from 1.19 GB to 321 MB, and for
+all apps from 2.19 GB to 1.30 GB.
 `stream.test.ts` checks that streaming 48 MiB of report text or inflated
 archive retains under 8 MiB of live memory.
 
-Measured again with Node 26 for #501 (synthetic earnings archives in UTF-8 with
-26 columns, real host staging, three runs each, see
+Measured with Node 26 for #501 and again after #519 (synthetic earnings archives
+in UTF-8 with 26 columns, real host staging, three runs each, see
 [data workload validation](../data-scale-validation.md#google-play-first-read-memory)):
-peak heap for an all-apps first read is about 22 times the inflated CSV (173 MiB
-at 8 MiB, 1.4 GiB at 63 MiB), and the staged JSON is about 5.5 times the CSV.
-Above about 23 MiB of CSV the 128 MiB stage is refused, and every continuation
-turn then reads the whole report again (17.5 s per page turn at 63 MiB). A
-selected app holding a tenth of the lines stays below 150 MiB of heap at
-63 MiB. Streaming staging is
-[#519](https://github.com/netrics-so/netrics/issues/519).
+before #519, peak heap for an all-apps first read was about 22 times the
+inflated CSV (1.4 GiB at 63 MiB), a stage was refused above about 23 MiB of CSV,
+and every later turn then read the whole report again. Now every measured size
+is staged: the 63 MiB all-apps archive takes 22.4 MiB of compressed stage and
+17.8 s to read, retains at most 45 MiB above the baseline (162 MiB sampled heap
+including uncollected garbage), and later turns read only the stage.
 
 The worker durably stages parsed report sets as per-app transport pages. A
-continuation reads only its required page, including after a worker/connector
+continuation reads only its required pages (consecutive staged pages up to about
+one full page of rows), including after a worker/connector
 restart, while the pinned stage remains available. Earnings archives are shared
 across the selected apps in that report task. Every continuation still lists
 current metadata and re-authorizes exact object generations through metadata-only
@@ -143,8 +147,10 @@ separate workspace connector-cache admission budget until the stage expires.
 stages and `null` removes the aggregate ceiling. Lowering it does not evict
 already admitted live stages. Raw pages and records count toward
 `maxWorkspaceBytes`; total raw, staging and prepared storage can exceed that raw
-cap. If the host refuses a stage (size, quota or storage error), the report task
-stays buffered through its remaining app/page continuations. A rebuilt stage
+cap. If the host has no incremental staging or refuses a stage (size, quota or
+storage error), the report task continues without one: each turn reads the
+report again and emits up to eight pages of its app, keeping only those rows,
+so a task costs about one read per app plus one per eight pages. A rebuilt stage
 restarts only the pending app partition; apps already
 completed in the task are not emitted again. A stage is bounded to 128 MiB of stored bytes, which since
 [ADR 0024](../decisions/0024-streaming-connector-staging.md) are gzip-compressed

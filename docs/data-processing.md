@@ -159,9 +159,10 @@ the same steps. Stage pages are stored gzip-compressed, and the stage limit and
 Google continuations read the needed parsed page instead of downloading and
 parsing each report again. Each turn still discovers current reports and checks
 object-level access to the pinned generations. Corrections or expired staging
-restart the pending partition. The initial download/parse remains buffered under
-the existing HTTP and decompression safeguards; this does not establish support
-for arbitrarily large provider files.
+restart the pending partition. Since #519 the initial read streams the report
+into the stage page by page, within the existing HTTP and decompression
+safeguards (64 MiB per report); this does not establish support for
+arbitrarily large provider files.
 
 ## Publication and replay
 
@@ -233,8 +234,9 @@ including to `0`, leaves already admitted live stages usable until their
 existing expiry. Reads and repeated identical writes do not renew retention.
 Expired stages stop consuming admission capacity before scheduled pruning.
 
-Stage admission refusal makes Google Play use its buffered ingestion path;
-the raw import still has to fit `maxWorkspaceBytes`. This is an explicit change
+Stage admission refusal makes Google Play continue without a stage, reading
+the report again for up to eight pages of one app per turn (#519); the raw
+import still has to fit `maxWorkspaceBytes`. This is an explicit change
 from the initial shared raw/staging quota. Connector staging and prepared caches
 have separate budgets, so total managed storage can exceed the raw storage cap.
 Installation defaults and the existing workspace policy API configure these
