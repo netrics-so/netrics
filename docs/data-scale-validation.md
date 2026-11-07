@@ -234,6 +234,53 @@ records):
 All of these hold the workspace ingestion lock while they run
 ([#518](https://github.com/netrics-so/netrics/issues/518)).
 
+**After #518.** A policy call with a ceiling (and a connection-retention
+save) now writes only the rows whose deadline moves, and reaches a
+workspace's records through its generations and the record primary key
+(migration 0066). The history suite, rerun on 2026-11-07 on the same machine
+and settings (three fresh processes). The suite now counts the
+`data_records` rows each call updates:
+
+| Call                                                                             | Before #518        | After #518                  | Records updated |
+| -------------------------------------------------------------------------------- | ------------------ | --------------------------- | --------------: |
+| First `maxRetentionDays: 3650` on the large workspace                            | 37.6 s [34.2–39.1] | 38.6 s [36.1–41.7]          |       4,160,000 |
+| `{maxRetentionDays: 3650, queryRows: 100000}` right afterwards                   | 43.4 s [36.9–46.1] | 683 ms [626–692]            |               0 |
+| The same call again                                                              | not measured       | 590 ms [580–675]            |               0 |
+| `{queryRows: 100000}` without a ceiling                                          | 4.6 ms             | 2.4 ms [1.2–333]            |               0 |
+| `maxRetentionDays: 3650` on the 1,000-record neighbour, then the same call again | 3.4 s [2.7–5.1]    | 16.7 ms [15.2–63.2], 5.3 ms |        1,000, 0 |
+| `maxRetentionDays: 1`, after the superseded half was drained (2.16 M records)    | 20.0 s [18.2–20.9] | 18.7 s [18.1–19.0]          |       2,160,000 |
+
+- The first ceiling still writes every record: they were all kept until
+  deleted, and each one now gets a deadline. A shortening writes each record
+  it moves. Both happen in one statement under the ingestion lock, so no
+  record stays readable past its new deadline.
+- A call that moves nothing writes nothing. It still reads the workspace's
+  records once under the lock: about 0.6 s for 4.16 M records, instead of a
+  full rewrite of 37–50 s.
+- `data_records` heap: 1.36 GB, then 2.78 GB after the first ceiling. It is
+  still 2.78 GB (+0.3 MB) after the calls that changed nothing; before, the
+  same sequence reached 4.20 GB. One run on `main` with the three large calls
+  above reached 5.62 GB.
+- Plan of the record update for the neighbour: a nested loop over its
+  generations into a `Bitmap Index Scan` on
+  `data_records_generation_id_record_key_pk`. Before, it was a `Seq Scan` over
+  all 4.16 M records. For the large workspace, which holds 99.9% of the table,
+  the planner keeps a hash join over a sequential scan.
+
+Drains in the same runs: the expired history (2.16 M rows after the one-day
+ceiling) drained in 19.5 s [18.8–19.7] over 2 ticks, against 46.6 s over 5
+before #517. The superseded generations (2.0 M rows) took 101.7 s
+[100.8–109.3] over 10–11 ticks (call p50 515 ms), against 13.4 s before #517.
+A single run on `main` after #517, without this change, took 76.2 s over 8
+ticks (call p50 78 ms, p95 888 ms). This slowdown comes from prune itself
+(0065), not from the policy change. After its fifth call in a session,
+PL/pgSQL caches a generic plan for prune's check for remaining expired
+records, `EXISTS (SELECT 1 FROM data_records WHERE expires_at <= p_now)`.
+That plan is a sequential scan of the whole table, about 0.5 s per call at
+this size. Whether the generic plan wins depends on table statistics, so
+runs differ in how many calls pay for it. It is listed under the follow-ups
+below.
+
 ### Concurrent syncs and policy changes
 
 Eight sync workers each ingest three refreshes of ten 1,000-record pages into
@@ -296,6 +343,34 @@ of their records while the policy loop runs, instead of waiting or losing a
 deadlock, would explain it. Before the generation probe, a call passed over every
 held record again; with 400,000 held records that took about 250 ms per call
 in a separate check, and about 3 ms with the probe.
+
+**After #518.** The policy loop now writes only the records whose deadline
+moves. Between two calls that set 3650, the loop sets 3651, which moves
+nothing. A call that sets 3650 again shortens only the records ingested
+meanwhile. The churn scenario, rerun on 2026-11-07 on the same machine and
+settings (three fresh processes):
+
+| Concurrent operation      | Calls per run | p50 (ms)      | p95 (ms)            | Failures over 3 runs          |
+| ------------------------- | ------------: | ------------- | ------------------- | ----------------------------- |
+| `admin_set_data_policy`   |         23–24 | 522 [515–569] | 5,502 [3,716–5,619] | none                          |
+| `setConnectionRetention`  |         23–25 | 545 [522–592] | 4,429 [4,155–5,416] | none                          |
+| `prune_dataset_history`   |       120–128 | 108 [105–110] | 309 [294–310]       | none                          |
+| Model query (10,000 rows) |       150–158 | 109 [106–109] | 140 [132–142]       | none; 0 serialization retries |
+
+| Syncs (8 workers, one workspace, with churn) | After #517              | After #518                                |
+| -------------------------------------------- | ----------------------- | ----------------------------------------- |
+| Records/s                                    | 2,221 [2,019–2,427]     | 7,178 [7,112–7,622]                       |
+| Page p50 / p95 (ms)                          | 3,368 [3,266–3,905] / – | 466 [420–490] / 3,748 [3,463–3,787]       |
+| Lock wait p95 / max (ms)                     | 6,590 [6,380–7,690] / – | 3,792 [3,513–3,808] / 5,026 [4,897–5,143] |
+
+Deadlocks: 0 in every run, and no transaction rolled back. The scenario
+finishes in about 33 s instead of about 108 s, so every loop makes fewer
+calls in that time. Policy and connection-retention calls still wait for the
+ingestion lock behind the sync pages, so their p95 includes that wait. Prune
+calls take about 108 ms because of the generic-plan sequential scan described
+under "Retained history" (see the follow-ups).
+The two scenarios without churn are unchanged: 33,224 records/s
+[33,086–33,680] in eight workspaces, and 16,135 [15,949–16,374] in one.
 
 **Pinned first pages.** Since #505, pinned first pages of one model are
 admitted one at a time, through an in-process queue with a wait bounded by
@@ -425,10 +500,15 @@ At the measured sizes, these are expected behaviour, not defects:
   `prune_dataset_history` deadlocked with policy and connection-retention
   changes, and the policy change could be the one that failed; see "After
   #517" above.
-- [#518](https://github.com/netrics-so/netrics/issues/518):
-  every `admin_set_data_policy` call with a retention ceiling rewrites all
-  records of the workspace while holding the ingestion lock, and finds them by
-  scanning every workspace's records.
+- [#518](https://github.com/netrics-so/netrics/issues/518) (fixed):
+  every `admin_set_data_policy` call with a retention ceiling rewrote all
+  records of the workspace while holding the ingestion lock, and found them by
+  scanning every workspace's records; see "After #518" above. A call that
+  moves nothing still reads the workspace's records once under the lock.
+- Not filed yet: after five calls in a session, prune's checks for remaining
+  expired records (`EXISTS ... WHERE expires_at <= p_now`) can switch to a
+  cached generic plan that scans all of `data_records`, about 0.5 s per call
+  at 4.16 M records (0065); see "After #518".
 - [#519](https://github.com/netrics-so/netrics/issues/519): stream Google Play
   report staging instead of buffering a whole report task.
 

@@ -286,7 +286,7 @@ the record primary key, so it does not read other workspaces' records. It runs
 as one statement per table under the workspace ingestion lock, so a deadline
 that moves into the past is stored before any reader or later page sees the old
 one; a call that moves nothing still reads the workspace's records once under
-that lock (about 0.4 s per million records locally), and a call that sets a
+that lock (about 0.6 s for 4.16 M records in the scale suite), and a call that sets a
 first ceiling on records kept until deleted writes each of them. Replay
 preserves original collection time and deadlines.
 Credentials, headers and tokens never belong in datasets.
