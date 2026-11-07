@@ -115,13 +115,14 @@ export async function compareBindingProblem(
 /**
  * The connections a published model reads, also through the preparations
  * it depends on (a compiled compare reads two observation datasets through
- * its generated preparation).
+ * its generated preparation), and those of each preparation source node by
+ * its id (a compiled compare's `numerator_source`, `denominator_source`).
  */
 async function modelConnections(
   tx: Transaction,
   workspaceId: string,
   modelId: string,
-): Promise<string[]> {
+): Promise<{ all: string[]; bySourceNode: Map<string, string[]> }> {
   const [release] = await tx
     .select({
       bindings: schema.dataModelReleases.schemaBindings,
@@ -145,7 +146,7 @@ async function modelConnections(
         eq(schema.dataModels.id, modelId),
       ),
     );
-  if (!release) return [];
+  if (!release) return { all: [], bySourceNode: new Map() };
   const datasets = new Set(
     Object.keys(release.bindings as Record<string, unknown>),
   );
@@ -153,6 +154,7 @@ async function modelConnections(
     (release.dependencies as { prepared?: Record<string, number> }).prepared ??
       {},
   );
+  const sourceNodes = new Map<string, Set<string>>();
   for (const [preparationId, version] of prepared) {
     const [row] = await tx
       .select({ graph: schema.dataPreparationVersions.graph })
@@ -173,22 +175,31 @@ async function modelConnections(
         node.type === "source" &&
         "datasetId" in node &&
         typeof node.datasetId === "string"
-      )
+      ) {
         datasets.add(node.datasetId);
+        if ("id" in node && typeof node.id === "string")
+          sourceNodes.set(
+            node.id,
+            (sourceNodes.get(node.id) ?? new Set()).add(node.datasetId),
+          );
+      }
   }
   const uuid = /^[0-9a-f-]{36}$/i;
-  const connections = new Set<string>();
+  const connectionOf = new Map<string, string>();
   const raw: string[] = [];
   for (const id of datasets) {
     if (id.startsWith("observation:") || id.startsWith("resources:")) {
       const connectionId = id.split(":")[1];
       if (connectionId && uuid.test(connectionId))
-        connections.add(connectionId);
+        connectionOf.set(id, connectionId);
     } else if (uuid.test(id)) raw.push(id);
   }
   if (raw.length)
     for (const dataset of await tx
-      .select({ connectionId: schema.dataDatasets.connectionId })
+      .select({
+        id: schema.dataDatasets.id,
+        connectionId: schema.dataDatasets.connectionId,
+      })
       .from(schema.dataDatasets)
       .where(
         and(
@@ -196,8 +207,22 @@ async function modelConnections(
           inArray(schema.dataDatasets.id, raw),
         ),
       ))
-      if (dataset.connectionId) connections.add(dataset.connectionId);
-  return [...connections];
+      if (dataset.connectionId)
+        connectionOf.set(dataset.id, dataset.connectionId);
+  const connectionsOf = (ids: Iterable<string>) => [
+    ...new Set(
+      [...ids].flatMap((id) => {
+        const connection = connectionOf.get(id);
+        return connection ? [connection] : [];
+      }),
+    ),
+  ];
+  return {
+    all: connectionsOf(datasets),
+    bySourceNode: new Map(
+      [...sourceNodes].map(([node, ids]) => [node, connectionsOf(ids)]),
+    ),
+  };
 }
 
 /** The workspace's connection health, loaded once per payload. */
@@ -434,9 +459,14 @@ export async function readCompareMeasure(
 
   const sources =
     options.sources ?? (await loadCompareSources(tx, workspaceId));
-  const connections = (
-    await modelConnections(tx, workspaceId, measure.modelId)
-  ).filter((id) => sources.states.has(id));
+  const model = await modelConnections(tx, workspaceId, measure.modelId);
+  const connections = model.all.filter((id) => sources.states.has(id));
+  // The sources of one operand, where the model says (a compiled compare's
+  // `<side>_source` nodes); else every source.
+  const sourcesOf = (measureId: string) =>
+    (model.bySourceNode.get(`${measureId}_source`) ?? connections).filter(
+      (id) => sources.states.has(id),
+    );
   // Which source supplies which operand is the model's business, so each
   // source is ranked by its health alone (as one with data), and a missing
   // operand is the loading history of a source that has none yet, or else no
@@ -458,13 +488,18 @@ export async function readCompareMeasure(
     status = connections.length
       ? connections.map((id) => sourceStatus(id, false)).reduce(worse, status)
       : worse(status, "no_data");
-  else if (numerator.value === null || denominator.value === null)
+  else if (numerator.value === null || denominator.value === null) {
+    // The empty operand waits for its own sources only.
+    const missing = sourcesOf(
+      numerator.value === null ? ids.numerator : ids.denominator,
+    );
     status = worse(
       status,
-      connections.some((id) => sourceStatus(id, false) === "backfilling")
+      missing.some((id) => sourceStatus(id, false) === "backfilling")
         ? "backfilling"
         : "no_data",
     );
+  }
   if (current.status === "stale" || previous.status === "stale")
     status = worse(status, "stale");
   const synced = connections.map(

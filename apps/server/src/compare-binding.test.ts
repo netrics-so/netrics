@@ -1574,3 +1574,51 @@ describe("bound compare widgets: inverse amounts and empty non-numbers (#507)", 
     });
   }, 60_000);
 });
+
+describe("bound compare widgets: which source an empty operand waits for (#507)", () => {
+  it("says no data when the empty side has synced, though the other is backfilling", async () => {
+    // The numerator's source has data and a backfill running; the
+    // denominator's has synced but nothing this week. The inline sides say
+    // ok and no data: the backfill is not why the denominator is empty.
+    const FULL = "0c000000-0000-4000-8000-000000000009";
+    const EMPTY = "0c000000-0000-4000-8000-000000000010";
+    await raw`
+      insert into connections (id, workspace_id, connector_id, name) values
+        (${FULL}, ${workspaceId}, 'cmb', 'Full'),
+        (${EMPTY}, ${workspaceId}, 'cmb', 'Empty')`;
+    await raw`
+      insert into connection_state (connection_id, workspace_id, last_success_at)
+      values (${FULL}, ${workspaceId}, ${NOW.toISOString()}),
+             (${EMPTY}, ${workspaceId}, ${NOW.toISOString()})`;
+    await raw`
+      insert into jobs (kind, workspace_id, connection_id, status)
+      values ('connection.backfill', ${workspaceId}, ${FULL}, 'running')`;
+    await observe(
+      FULL,
+      "cmb.visits",
+      { resource: "full" },
+      (d) => 20 + (d % 3),
+    );
+    await observe(EMPTY, "cmb.visits", { resource: "old" }, (d) =>
+      d > 1300 ? 10 : null,
+    );
+    const compare: Compare = {
+      name: "Full over empty visits",
+      numerator: { metricKey: "cmb.visits", connectionId: FULL },
+      denominator: { metricKey: "cmb.visits", connectionId: EMPTY },
+      format: "ratio",
+    };
+    const binding = bindingOf(await compile(compare));
+    const { dashboardId } = await insertCompares(++group, [
+      { period: "last_7_days", ...inline(compare) },
+      { period: "last_7_days", ...inline(compare), measure: binding },
+    ]);
+    const [unbound, bound] = compares(
+      (await screen(dashboardId, NOW)).slides[0]!.widgets,
+    );
+    expect(unbound!.data.numerator.value).not.toBeNull();
+    expect(unbound!.data.denominator.value).toBeNull();
+    expect(unbound!.data.status).toBe("no_data");
+    expect(bound!.data.status).toBe(unbound!.data.status);
+  }, 60_000);
+});
