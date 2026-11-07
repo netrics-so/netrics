@@ -16,6 +16,7 @@ import {
 } from "@netrics/database";
 import {
   DEFAULT_DATA_POLICY,
+  amountCurrency,
   compareMeasureFilter,
   compareMeasureWindows,
   compareRatioUnit,
@@ -376,6 +377,15 @@ export async function readCompareMeasure(
       displayCurrency: null,
       format: widget.format,
     }) !== null
+  )
+    return failed("compare_units_incompatible");
+  // The change compares the ratio with itself over the previous window:
+  // amounts in another currency there cannot be compared.
+  if (
+    ratio.value !== null &&
+    previousRatio.value !== null &&
+    amountCurrency(ratio.unit ?? "") !==
+      amountCurrency(previousRatio.unit ?? "")
   )
     return failed("compare_units_incompatible");
 

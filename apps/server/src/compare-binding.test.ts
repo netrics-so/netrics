@@ -1070,114 +1070,125 @@ describe("bound compare widgets: source retention (#507)", () => {
   }, 60_000);
 });
 
+/**
+ * A published "revenue per order" model over a manual dataset: amounts in
+ * major units of `currencyOf(day)`, 4 orders a day, for the last 14 days.
+ */
+async function revenueModel(
+  key: string,
+  currencyOf: (day: number) => string,
+): Promise<CompareMeasureBinding> {
+  const field = (id: string, type: string, extra: object = {}) => ({
+    id,
+    name: id,
+    type,
+    nullable: false,
+    classification: "internal",
+    ...extra,
+  });
+  // 150 (major units) and 4 orders on each of the last 14 days.
+  const records = [];
+  for (let day = 0; day < 14; day++)
+    records.push({
+      values: {
+        id: `o${day}`,
+        day: addDays(TODAY, -day),
+        amount: "150",
+        currency: currencyOf(day),
+        orders: 4,
+      },
+    });
+  const manual = await call("POST", "/data/manual", owner, {
+    definition: {
+      key,
+      name: "Orders",
+      version: 1,
+      mode: "snapshot",
+      grain: "one day",
+      keyFields: ["id"],
+      fields: [
+        field("id", "string"),
+        field("day", "date"),
+        field("amount", "decimal", {
+          unit: "currency",
+          currencyField: "currency",
+        }),
+        field("currency", "string"),
+        field("orders", "number"),
+      ],
+    },
+    records,
+  });
+  expect(manual.statusCode, manual.body).toBe(200);
+  const datasetId = manual.json().datasetId as string;
+  const sum = (id: string, fieldId: string) => ({
+    id,
+    name: id === "numerator" ? "Revenue" : "Orders",
+    kind: "aggregate",
+    datasetId,
+    aggregate: { id, name: id, op: "sum", fieldId },
+  });
+  const model = await call("POST", "/data/models", owner, {
+    name: "Revenue per order",
+    definition: {
+      version: 1,
+      datasets: [datasetId],
+      relationships: [],
+      dimensions: [
+        {
+          id: "date",
+          name: "Date",
+          datasetId,
+          fieldId: "day",
+          timeAlignment: "reporting_date",
+        },
+      ],
+      measures: [
+        sum("numerator", "amount"),
+        sum("denominator", "orders"),
+        {
+          id: "ratio",
+          name: "Revenue per order",
+          kind: "formula",
+          expression: {
+            kind: "call",
+            fn: "divide",
+            args: [
+              { kind: "field", fieldId: "numerator" },
+              {
+                kind: "call",
+                fn: "to_decimal",
+                args: [{ kind: "field", fieldId: "denominator" }],
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  expect(model.statusCode, model.body).toBe(200);
+  const { id: modelId, version } = model.json().model;
+  const published = await call(
+    "POST",
+    `/data/models/${modelId}/publish`,
+    owner,
+    { version },
+  );
+  expect(published.statusCode, published.body).toBe(200);
+  return {
+    modelId,
+    dateDimensionId: "date",
+    measureIds: {
+      numerator: "numerator",
+      denominator: "denominator",
+      ratio: "ratio",
+    },
+  };
+}
+
 describe("bound compare widgets: units of any model (#507)", () => {
   it("shows major-unit amounts in minor units and unitless operands as counts", async () => {
-    const field = (id: string, type: string, extra: object = {}) => ({
-      id,
-      name: id,
-      type,
-      nullable: false,
-      classification: "internal",
-      ...extra,
-    });
-    // 150 EUR (major units) and 4 orders on each of the last 10 days.
-    const records = [];
-    for (let day = 0; day < 10; day++)
-      records.push({
-        values: {
-          id: `o${day}`,
-          day: addDays(TODAY, -day),
-          amount: "150",
-          currency: "EUR",
-          orders: 4,
-        },
-      });
-    const manual = await call("POST", "/data/manual", owner, {
-      definition: {
-        key: "orders",
-        name: "Orders",
-        version: 1,
-        mode: "snapshot",
-        grain: "one day",
-        keyFields: ["id"],
-        fields: [
-          field("id", "string"),
-          field("day", "date"),
-          field("amount", "decimal", {
-            unit: "currency",
-            currencyField: "currency",
-          }),
-          field("currency", "string"),
-          field("orders", "number"),
-        ],
-      },
-      records,
-    });
-    expect(manual.statusCode, manual.body).toBe(200);
-    const datasetId = manual.json().datasetId as string;
-    const sum = (id: string, fieldId: string) => ({
-      id,
-      name: id === "numerator" ? "Revenue" : "Orders",
-      kind: "aggregate",
-      datasetId,
-      aggregate: { id, name: id, op: "sum", fieldId },
-    });
-    const model = await call("POST", "/data/models", owner, {
-      name: "Revenue per order",
-      definition: {
-        version: 1,
-        datasets: [datasetId],
-        relationships: [],
-        dimensions: [
-          {
-            id: "date",
-            name: "Date",
-            datasetId,
-            fieldId: "day",
-            timeAlignment: "reporting_date",
-          },
-        ],
-        measures: [
-          sum("numerator", "amount"),
-          sum("denominator", "orders"),
-          {
-            id: "ratio",
-            name: "Revenue per order",
-            kind: "formula",
-            expression: {
-              kind: "call",
-              fn: "divide",
-              args: [
-                { kind: "field", fieldId: "numerator" },
-                {
-                  kind: "call",
-                  fn: "to_decimal",
-                  args: [{ kind: "field", fieldId: "denominator" }],
-                },
-              ],
-            },
-          },
-        ],
-      },
-    });
-    expect(model.statusCode, model.body).toBe(200);
-    const { id: modelId, version } = model.json().model;
-    const published = await call(
-      "POST",
-      `/data/models/${modelId}/publish`,
-      owner,
-      { version },
-    );
-    expect(published.statusCode, published.body).toBe(200);
-    const measure = {
-      modelId,
-      dateDimensionId: "date",
-      measureIds: {
-        numerator: "numerator",
-        denominator: "denominator",
-        ratio: "ratio",
-      },
-    };
+    const measure = await revenueModel("orders", () => "EUR");
     const read = await readInBrowser([
       { id: uuid(96, 1), period: "last_7_days", measure, format: "ratio" },
     ]);
@@ -1220,6 +1231,37 @@ describe("bound compare widgets: units of any model (#507)", () => {
     expect(percent.json().widgets[0]).toMatchObject({
       status: "outage",
       error: "compare_units_incompatible",
+      ratio: { value: null, previousValue: null },
+    });
+  }, 60_000);
+});
+
+describe("bound compare widgets: currencies across windows (#507)", () => {
+  it("refuses a ratio whose previous window is in another currency", async () => {
+    // EUR this week, JPY the week before: no change can be formed.
+    const measure = await revenueModel("mixed", (day) =>
+      day < 7 ? "EUR" : "JPY",
+    );
+    const read = await readInBrowser([
+      { id: uuid(95, 1), period: "last_7_days", measure, format: "ratio" },
+    ]);
+    expect(read.json().widgets[0]).toMatchObject({
+      status: "outage",
+      error: "compare_units_incompatible",
+      ratio: { value: null, previousValue: null },
+    });
+    const { dashboardId } = await insertCompares(++group, [
+      {
+        period: "last_7_days",
+        ...inline({ ...SIGNUP_RATE, format: "ratio" }),
+        measure,
+      },
+    ]);
+    const [bound] = compares(
+      (await screen(dashboardId, NOW)).slides[0]!.widgets,
+    );
+    expect(bound!.data).toMatchObject({
+      status: "outage",
       ratio: { value: null, previousValue: null },
     });
   }, 60_000);
