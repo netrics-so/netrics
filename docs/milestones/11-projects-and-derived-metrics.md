@@ -170,6 +170,22 @@ implementation work; this plan does not create or complete issue records.
     fetch limit are read as pinned byte ranges and parsed row by row; typed rows
     of one report task are still collected before staging, and the wider scale
     acceptance remains open.
+  - Wider scale acceptance for retained history and concurrent ingestion:
+    [#501](https://github.com/netrics-so/netrics/issues/501). Reproducible
+    opt-in measurements on synthetic data with the spread over three runs
+    ([data workload validation](../data-scale-validation.md#wider-scale-acceptance-501)).
+    Confirmed: query latency follows the queried generation (about 1 s at the
+    100,000-row default) and not the retained history (4.2 M records); prune
+    drains keep up within the 10-second budget; syncs of one workspace
+    serialize on the ingestion lock. Limits found and left open as follow-ups:
+    pinned first pages conflict across models and workspaces
+    ([#516](https://github.com/netrics-so/netrics/issues/516)), prune
+    deadlocks with retention changes
+    ([#517](https://github.com/netrics-so/netrics/issues/517)), policy
+    ceilings rewrite every record under the ingestion lock
+    ([#518](https://github.com/netrics-so/netrics/issues/518)), and Google Play
+    first reads need streaming staging above about 23 MiB of report text
+    ([#519](https://github.com/netrics-so/netrics/issues/519)).
   - Rolling-window and period-offset measures:
     [#486](https://github.com/netrics-so/netrics/issues/486). Date-only
     anchors, windows recomputed from rows, capped month/year offsets, lookback

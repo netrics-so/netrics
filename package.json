@@ -14,7 +14,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc -b && pnpm --filter @netrics/web typecheck && tsc -p apps/netrics-tv/scripts",
+    "typecheck": "tsc -b && pnpm --filter @netrics/web typecheck && tsc -p apps/netrics-tv/scripts && tsc -p scripts/scale",
     "test": "vitest run",
     "db:up": "docker compose up -d --wait postgres",
     "db:down": "docker compose down",
