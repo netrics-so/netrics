@@ -189,8 +189,13 @@ implementation work; this plan does not create or complete issue records.
   - Declared chart-to-filter interactions:
     [#490](https://github.com/netrics-so/netrics/issues/490). Table, bar and line
     widgets set one shared filter from a clicked value, validated at save and in
-    Studio; browser-only, device payloads unchanged. Compare-to-measure, device
-    scope controls and the rest of the 11D gate remain open.
+    Studio; browser-only, device payloads unchanged.
+  - Fixed device scope controls and query-path scope tests:
+    [#500](https://github.com/netrics-so/netrics/issues/500). Per-filter values or
+    ranges set on a paired screen and conjoined on the server with every choice;
+    widgets that cannot follow it fail or are withheld, never shown unscoped.
+    Dashboard data, model queries, paged sessions and device payloads are tested
+    for cross-workspace and device-scope isolation; payload schemas unchanged.
   - Compare widget compiled into a generated preparation and draft measure
     (step 1 of [#499](https://github.com/netrics-so/netrics/issues/499)):
     [#506](https://github.com/netrics-so/netrics/issues/506). Both observation
@@ -200,7 +205,7 @@ implementation work; this plan does not create or complete issue records.
     hourly metrics and unpinned currencies are refused with typed errors. The
     measure binding on compare widgets ([#507](https://github.com/netrics-so/netrics/issues/507))
     and the Studio flow ([#508](https://github.com/netrics-so/netrics/issues/508))
-    remain open.
+    and the rest of the 11D gate remain open.
 - 11E: [#444](https://github.com/netrics-so/netrics/issues/444)
   - Apple storefront rating snapshots: [#452](https://github.com/netrics-so/netrics/issues/452).
     Implements the scoped raw rating/count source, not the complete portfolio

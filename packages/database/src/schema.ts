@@ -1320,6 +1320,11 @@ export interface DeviceScreenColumn {
   format?: string;
   mode: string;
 }
+/** `devices.scope` as stored: a screen's fixed scope (#500). */
+export interface DeviceScopeColumn {
+  dashboardId: string;
+  values: Record<string, unknown>;
+}
 
 export const devices = pgTable(
   "devices",
@@ -1359,6 +1364,11 @@ export const devices = pgTable(
     // never did (apps before #406). Self-reported: it steers defaults and
     // labels only, never access.
     platform: text("platform"),
+    // The screen's fixed scope (#500): the dashboard it was set for and,
+    // per shared filter of that dashboard, the values or range the screen
+    // may show (validated by the contracts' deviceScopeSchema before it is
+    // stored). Null: the dashboard as saved.
+    scope: jsonb("scope").$type<DeviceScopeColumn>(),
   },
   (table) => [
     unique("devices_id_workspace_unique").on(table.id, table.workspaceId),
@@ -1378,6 +1388,10 @@ export const devices = pgTable(
     check(
       "devices_platform_valid",
       sql`${table.platform} is null or ${table.platform} in ('tvos', 'ipados', 'ios', 'web')`,
+    ),
+    check(
+      "devices_scope_shape",
+      sql`${table.scope} is null or coalesce(jsonb_typeof(${table.scope} -> 'dashboardId') = 'string' and jsonb_typeof(${table.scope} -> 'values') = 'object', false)`,
     ),
   ],
 );

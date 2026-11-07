@@ -551,6 +551,27 @@ scopes. The interaction is browser-only: the Studio canvas, the web TV view and
 paired screens stay non-interactive, and device payloads never include the
 binding, so native and cached clients are unchanged.
 
+A paired screen can have a fixed scope
+([#500](https://github.com/netrics-so/netrics/issues/500)): owners and admins
+choose, per shared filter of the screen's dashboard, the values or range the
+screen may show (Screens → a screen → Fixed scope). It is stored on the device
+with the dashboard it was set for and read from the device row, never from the
+request; a device cannot send filter values at all. `dashboardModelQuery`, the
+one place every dashboard widget query is built (saved data, preview and device
+payloads), conjoins it with the saved choice and the dashboard's own fixed scope,
+so it can only narrow. Like a dashboard fixed scope it cannot be excluded: a
+scope that names an unknown filter, restricts nothing (an empty list or open
+range) or meets a widget that excludes the filter fails, on save with a
+`device_scope_*` code and, if the dashboard changes later, per widget on the
+screen instead of an unscoped result. Older observation, goal and review widgets
+cannot follow shared filters: a scope cannot be set while the dashboard has
+them, and a scoped screen does not get them. Changing a scoped screen's
+dashboard requires a new scope (or removing it) in the same request. The scope
+appears in each widget's `scope` labels and in `appliedFilter`, next to the
+release and generation identities; the server's payload memo is keyed by it,
+and payloads keep their released schemas, so older and offline-cached screens
+read them unchanged.
+
 `dashboards/published-models` exposes the published measure/dimension catalog
 without raw source fields or drafts. `dashboards/data/preview` evaluates unsaved
 widget bindings against published models only, and `dashboards/:id/data`

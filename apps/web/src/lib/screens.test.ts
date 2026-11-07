@@ -7,6 +7,7 @@ import {
   assignedDashboardIds,
   countScreens,
   firstSlide,
+  scopeSummary,
   screenPreview,
 } from "./screens";
 
@@ -148,5 +149,40 @@ describe("countScreens", () => {
         NOW,
       ),
     ).toEqual({ total: 4, online: 2, revoked: 1 });
+  });
+});
+
+describe("scopeSummary", () => {
+  const words = { true: "Yes", false: "No", missing: "—" };
+  it("names each scoped filter with its values or range", () => {
+    expect(
+      scopeSummary(
+        [
+          { id: "country", name: "Country" },
+          { id: "day", name: "Date" },
+        ],
+        {
+          dashboardId: "d",
+          values: {
+            country: { kind: "values", values: ["DE", "FR", null] },
+            day: { kind: "range", from: "2026-01-01", to: null },
+          },
+        },
+        words,
+      ),
+    ).toBe("Country: DE, FR, — · Date: 2026-01-01 – …");
+  });
+  it("keeps a filter the dashboard no longer has and reads no scope as null", () => {
+    expect(
+      scopeSummary(
+        [],
+        {
+          dashboardId: "d",
+          values: { paid: { kind: "values", values: [true] } },
+        },
+        words,
+      ),
+    ).toBe("paid: Yes");
+    expect(scopeSummary([], null, words)).toBeNull();
   });
 });

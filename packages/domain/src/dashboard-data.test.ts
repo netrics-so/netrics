@@ -6,8 +6,10 @@ import {
   measureInteractionSelected,
   measureInteractionValue,
   measureViewWindow,
+  validateDeviceFilterScope,
   validateMeasureView,
   type DashboardDataFilter,
+  type DeviceFilterScope,
   type MeasureWidgetBinding,
 } from "./dashboard-data.js";
 const binding: MeasureWidgetBinding = {
@@ -123,6 +125,94 @@ describe("shared dashboard filters", () => {
         { ...excluded, exclusions: excluded.exclusions.slice(0, 1) },
       ),
     ).toThrow("dashboard_filter_fixed_scope_required");
+  });
+  it("intersects every viewer choice with a screen's fixed scope", () => {
+    const scope: DeviceFilterScope = {
+      country: { kind: "values", values: ["DE"] },
+    };
+    const scoped = (
+      values: Parameters<typeof dashboardModelQuery>[1],
+      row: Record<string, unknown>,
+    ) => {
+      const query = dashboardModelQuery(
+        filters,
+        values,
+        binding,
+        1000,
+        "first",
+        scope,
+      );
+      return compileRowExpression(query.filter!, [
+        { id: "territory", name: "Country", type: "string", nullable: true },
+        { id: "day", name: "Date", type: "date", nullable: false },
+      ]).evaluate(row).value;
+    };
+    // "All values", a wider list and another value never widen it.
+    for (const values of <Parameters<typeof dashboardModelQuery>[1][]>[
+      {},
+      { country: null },
+      { country: { kind: "values" as const, values: ["DE", "FR"] } },
+      { country: { kind: "values" as const, values: [] } },
+    ]) {
+      expect(scoped(values, { territory: "DE", day: "2026-11-01" })).toBe(true);
+      expect(scoped(values, { territory: "FR", day: "2026-11-01" })).toBe(
+        false,
+      );
+    }
+    expect(
+      scoped(
+        { country: { kind: "values", values: ["FR"] } },
+        { territory: "DE", day: "2026-11-01" },
+      ),
+    ).toBe(false);
+    // A scoped range filter keeps its bounds whatever the choice.
+    const days = dashboardModelQuery(
+      filters,
+      { day: null },
+      binding,
+      10,
+      "first",
+      {
+        day: { kind: "range", from: "2026-11-01", to: null },
+      },
+    );
+    expect(JSON.stringify(days.filter)).toContain("2026-11-01");
+  });
+  it("refuses a screen scope that cannot be applied instead of dropping it", () => {
+    const de = { kind: "values" as const, values: ["DE"] };
+    expect(() =>
+      dashboardModelQuery(filters, {}, binding, 10, "first", { gone: de }),
+    ).toThrow("device_scope_filter_unknown");
+    expect(() =>
+      dashboardModelQuery(
+        filters,
+        {},
+        {
+          ...binding,
+          exclusions: [{ filterId: "country", reason: "All markets" }],
+        },
+        10,
+        "first",
+        { country: de },
+      ),
+    ).toThrow("device_scope_not_applicable");
+    for (const value of [
+      { kind: "values" as const, values: [] },
+      { kind: "range" as const, from: null, to: null },
+      { kind: "range" as const, from: "DE", to: null },
+      { kind: "values" as const, values: [1] },
+    ])
+      expect(() =>
+        validateDeviceFilterScope(filters, { country: value }),
+      ).toThrow("device_scope_value_invalid");
+    expect(() =>
+      validateDeviceFilterScope(filters, {
+        day: { kind: "range", from: "2026-11-04", to: "2026-11-01" },
+      }),
+    ).toThrow("device_scope_value_invalid");
+    expect(() =>
+      validateDeviceFilterScope(filters, { country: de }),
+    ).not.toThrow();
   });
   it("validates types and ordered ranges before executing", () => {
     expect(() =>

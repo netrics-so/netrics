@@ -24,6 +24,7 @@ import { relativeTime } from "@/lib/relative-time";
 import {
   assignedDashboardIds,
   countScreens,
+  scopeSummary,
   screenPreview,
 } from "@/lib/screens";
 import { requireSession } from "@/lib/session";
@@ -112,6 +113,7 @@ export default async function ScreensPage({ params }: ScreensPageProps) {
         ? (shownById.get(device.dashboardId) ?? null)
         : null;
     const themeId = dashboard?.settings.themeId;
+    const filters = dashboard?.settings.dataFilters ?? [];
     return {
       device,
       online: isScreenOnline(device, now),
@@ -134,6 +136,12 @@ export default async function ScreensPage({ params }: ScreensPageProps) {
       heartbeat: summarizeHeartbeat(device.heartbeat, locale),
       screenLine: parts.length > 0 ? parts.join(" · ") : null,
       paired: pairedFormat.format(new Date(device.createdAt)),
+      scopeLine: scopeSummary(filters, device.scope, {
+        true: deviceT("yes"),
+        false: deviceT("no"),
+        missing: "—",
+      }),
+      filters,
     };
   });
 

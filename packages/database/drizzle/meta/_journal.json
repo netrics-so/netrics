@@ -442,6 +442,13 @@
       "when": 1794038620410,
       "tag": "0062_policy_deadline_fixed_days",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1794040501298,
+      "tag": "0063_device_scope",
+      "breakpoints": true
     }
   ]
 }

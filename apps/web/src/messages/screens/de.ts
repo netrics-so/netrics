@@ -44,6 +44,8 @@ export const screensDe: Catalog<typeof screensEn> = {
     screenSize: "{width} × {height}",
     paired: "Verbunden",
     dashboard: "Dashboard",
+    scope: "Fester Bereich",
+    noScope: "Ganzes Dashboard",
     revokedNote: "Widerrufen {time}. Dieser Bildschirm zeigt keine Daten mehr.",
     readOnly:
       "Nur Inhaber und Admins ändern die Einstellungen eines Bildschirms.",
