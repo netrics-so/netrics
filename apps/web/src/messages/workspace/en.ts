@@ -166,6 +166,7 @@ export const workspaceEn = {
     scopeLoading: "Loading the dashboard’s filters…",
     scopeLoadFailed: "The dashboard’s filters could not be loaded.",
     scopeLimit: "Limit {name}",
+    scopeFilterGone: "This filter is no longer on the dashboard.",
     scopeOlderWidgets:
       "Older widgets that cannot follow shared filters are not shown on a screen with a fixed scope.",
     scopeSave: "Save scope",

@@ -289,6 +289,29 @@ describe("Screens page", () => {
     const none = render({ ...props, initialSelected: "s2" });
     expect(none).toMatch(/<dt>Fixed scope<\/dt><dd>Whole dashboard<\/dd>/);
     expect(none).toContain("This dashboard has no shared filters");
+    // A scoped filter the dashboard no longer has stays visible and can be
+    // unticked, so the rest of the scope can be saved without it.
+    const stale = render({
+      screens: [
+        item({
+          device: device({
+            id: "s3",
+            scope: {
+              dashboardId: "x",
+              values: {
+                country: { kind: "values", values: ["DE"] },
+                region: { kind: "values", values: ["EU"] },
+              },
+            },
+          }),
+          scopeLine: "Country: DE · region: EU",
+          filters: [country],
+        }),
+      ],
+      initialSelected: "s3",
+    });
+    expect(stale).toContain("Limit region");
+    expect(stale).toContain("This filter is no longer on the dashboard.");
     // Viewers review it but get no form.
     const viewer = render({
       ...props,

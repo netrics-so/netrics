@@ -821,7 +821,9 @@ export function createDeviceService(deps: DeviceServiceDeps) {
           ) {
             return fail<Device>(404, "dashboard_not_found");
           }
-          const current = await findDevice(tx, actor.workspaceId, deviceId);
+          const current = await findDevice(tx, actor.workspaceId, deviceId, {
+            forUpdate: true,
+          });
           if (!current) {
             return fail<Device>(404, "device_not_found");
           }

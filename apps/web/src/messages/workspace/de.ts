@@ -178,6 +178,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     scopeLoading: "Filter des Dashboards werden geladen …",
     scopeLoadFailed: "Die Filter des Dashboards konnten nicht geladen werden.",
     scopeLimit: "{name} einschränken",
+    scopeFilterGone: "Dieser Filter ist nicht mehr auf dem Dashboard.",
     scopeOlderWidgets:
       "Ältere Widgets, die gemeinsamen Filtern nicht folgen können, werden auf einem Bildschirm mit festem Bereich nicht gezeigt.",
     scopeSave: "Bereich speichern",

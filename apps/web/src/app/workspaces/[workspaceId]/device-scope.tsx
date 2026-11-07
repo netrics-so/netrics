@@ -131,6 +131,31 @@ export function DeviceScope({
           </fieldset>
         );
       })}
+      {
+        // Scoped filters the dashboard no longer has: shown so they can be
+        // unticked; saving them as they are fails on the server.
+        Object.keys(saved)
+          .filter((filterId) => !filters.some((f) => f.id === filterId))
+          .map((filterId) => (
+            <fieldset key={filterId} className="device-scope-filter">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={limited.has(filterId)}
+                  disabled={pending}
+                  onChange={(event) => {
+                    const next = new Set(limited);
+                    if (event.target.checked) next.add(filterId);
+                    else next.delete(filterId);
+                    setLimited(next);
+                  }}
+                />
+                {t("scopeLimit", { name: filterId })}
+              </label>
+              <p className="muted">{t("scopeFilterGone")}</p>
+            </fieldset>
+          ))
+      }
       <p className="muted">{t("scopeOlderWidgets")}</p>
       <div className="actions">
         <button type="submit" disabled={pending}>

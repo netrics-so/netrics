@@ -226,8 +226,9 @@ export async function findDevice(
   tx: Transaction,
   workspaceId: string,
   deviceId: string,
+  options: { forUpdate?: boolean } = {},
 ): Promise<DeviceRow | null> {
-  const [row] = await tx
+  const query = tx
     .select()
     .from(schema.devices)
     .where(
@@ -237,6 +238,9 @@ export async function findDevice(
       ),
     )
     .limit(1);
+  // Changes derived from the row (a scope bound to its dashboard, #500)
+  // lock it, so concurrent updates apply one after the other.
+  const [row] = options.forUpdate ? await query.for("update") : await query;
   return row ?? null;
 }
 

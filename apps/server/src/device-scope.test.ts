@@ -549,6 +549,24 @@ describe("setting and reviewing a screen's fixed scope", () => {
     expect(after).toMatchObject({ dashboardId, scope: null });
   });
 
+  it("keeps a scope on its dashboard when a scope and a dashboard change race", async () => {
+    const other = await createDashboard("Racing", [{ widgets: [measure()] }]);
+    const racer = await pair(workspaceId, owner, dashboardId);
+    for (let round = 0; round < 8; round += 1) {
+      await admin`update devices set scope = null, dashboard_id = ${dashboardId}
+        where id = ${racer.id}`;
+      await Promise.all([
+        patchDevice(racer, { scope: { values: DE } }),
+        patchDevice(racer, { dashboardId: other }),
+      ]);
+      const [row] = await admin`
+        select dashboard_id, scope from devices where id = ${racer.id}`;
+      const scope = row!.scope as { dashboardId: string } | null;
+      // Either order is fine; a scope recorded for another dashboard is not.
+      if (scope !== null) expect(scope.dashboardId).toBe(row!.dashboard_id);
+    }
+  });
+
   it("never carries a scope to another dashboard silently", async () => {
     const other = await createDashboard("Other", [{ widgets: [measure()] }]);
     expectError(
