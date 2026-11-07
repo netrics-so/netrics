@@ -26,6 +26,7 @@ import {
   type DataPolicy,
   type DashboardDataFilter,
   type DashboardFilterValue,
+  type DeviceFilterScope,
   type MeasureWidgetBinding,
 } from "@netrics/domain";
 import {
@@ -293,6 +294,8 @@ export async function queryDashboardMeasure(
   now: Date,
   defaults: DataPolicy = DEFAULT_DATA_POLICY,
   locale: "en" | "de" = "en",
+  /** A paired screen's fixed scope (#500); browsers have none. */
+  deviceScope: DeviceFilterScope = {},
 ): Promise<DashboardWidgetData> {
   let sourceHealth: DashboardWidgetData["sourceHealth"];
   const exclusions = input.binding.exclusions.filter((exclusion) => {
@@ -342,6 +345,7 @@ export async function queryDashboardMeasure(
             (dimension) => dimension.id === input.binding.groupBy[0],
           )?.type,
         ),
+        deviceScope,
       );
       const result = await queryDataModel(
         savepoint,
@@ -410,8 +414,14 @@ export async function queryDashboardMeasure(
                 : filter.defaultValue,
               dimensionId,
             ),
-            fixed = selection(filter.fixedValue, dimensionId);
-          const text = [chosen, fixed].filter(Boolean).join(" ∩ ");
+            fixed = selection(filter.fixedValue, dimensionId),
+            screen = selection(
+              Object.hasOwn(deviceScope, filter.id)
+                ? deviceScope[filter.id]
+                : undefined,
+              dimensionId,
+            );
+          const text = [chosen, fixed, screen].filter(Boolean).join(" ∩ ");
           return text ? [`${filter.name}: ${text}`] : [];
         });
       return {

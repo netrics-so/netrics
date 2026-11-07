@@ -120,6 +120,16 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     template_unsupported:
       "Für diese Verbindung gibt es noch keine Brand-Vorlage.",
     device_not_found: "Dieser TV existiert nicht mehr.",
+    device_scope_filter_unknown:
+      "Der Bereich nennt einen Filter, den dieses Dashboard nicht (mehr) hat.",
+    device_scope_value_invalid:
+      "Wähl mindestens einen Wert oder einen Zeitraum mit Anfang oder Ende im Typ des Filters.",
+    device_scope_not_applicable:
+      "Dieses Dashboard hat Widgets, die dem Bereich nicht folgen können: ältere Widgets oder Widgets, die diesen Filter ignorieren. Ändere sie zuerst im Studio.",
+    device_scope_dashboard_required:
+      "Ein fester Bereich braucht ein Dashboard: Wähl zuerst eines.",
+    device_scope_dashboard_changed:
+      "Dieser Bildschirm hat einen festen Bereich für sein Dashboard. Entferne den Bereich oder leg einen neuen fest, um das Dashboard zu wechseln.",
     pairing_not_found:
       "Dieser Code ist ungültig. Prüf den Code auf dem TV; Codes laufen nach 10 Minuten ab, der TV zeigt dann vielleicht einen neuen.",
     too_many_attempts:

@@ -24,6 +24,7 @@ function device(overrides: Partial<Device>): Device {
     lastSeenAt: "2026-10-04T11:58:00Z",
     revokedAt: null,
     heartbeat: null,
+    scope: null,
     ...overrides,
   };
 }
@@ -41,6 +42,8 @@ function item(overrides: Partial<ScreenItem> & { device: Device }): ScreenItem {
     heartbeat: null,
     screenLine: null,
     paired: "Sep 1, 2026",
+    scopeLine: null,
+    filters: [],
     ...overrides,
   };
 }
@@ -250,5 +253,72 @@ describe("Screens page", () => {
     expect(html).toContain("Karten");
     expect(html).toContain("Details zum Bildschirm");
     expect(html).toContain("1 widerrufener Bildschirm");
+  });
+
+  it("reviews and edits a screen's fixed scope in English and German (#500)", () => {
+    const country = {
+      id: "country",
+      name: "Country",
+      type: "string" as const,
+      mode: "values" as const,
+      mappings: [{ modelId: "m", dimensionId: "country" }],
+      defaultValue: null,
+    };
+    const scoped = item({
+      device: device({
+        id: "s1",
+        scope: {
+          dashboardId: "x",
+          values: { country: { kind: "values", values: ["DE"] } },
+        },
+      }),
+      scopeLine: "Country: DE",
+      filters: [country],
+    });
+    const plain = item({ device: device({ id: "s2" }), filters: [] });
+    const props = { screens: [scoped, plain] };
+    const en = render({ ...props, initialSelected: "s1" });
+    expect(en).toMatch(/<dt>Fixed scope<\/dt><dd>Country: DE<\/dd>/);
+    expect(en).toContain("Limit Country");
+    expect(en).toMatch(/type="checkbox"[^>]*checked=""/);
+    expect(en).toContain(">Remove scope<");
+    const de = render({ ...props, initialSelected: "s1" }, "de");
+    expect(de).toMatch(/<dt>Fester Bereich<\/dt><dd>Country: DE<\/dd>/);
+    expect(de).toContain("Country einschränken");
+    expect(de).toContain(">Bereich entfernen<");
+    const none = render({ ...props, initialSelected: "s2" });
+    expect(none).toMatch(/<dt>Fixed scope<\/dt><dd>Whole dashboard<\/dd>/);
+    expect(none).toContain("This dashboard has no shared filters");
+    // A scoped filter the dashboard no longer has stays visible and can be
+    // unticked, so the rest of the scope can be saved without it.
+    const stale = render({
+      screens: [
+        item({
+          device: device({
+            id: "s3",
+            scope: {
+              dashboardId: "x",
+              values: {
+                country: { kind: "values", values: ["DE"] },
+                region: { kind: "values", values: ["EU"] },
+              },
+            },
+          }),
+          scopeLine: "Country: DE · region: EU",
+          filters: [country],
+        }),
+      ],
+      initialSelected: "s3",
+    });
+    expect(stale).toContain("Limit region");
+    expect(stale).toContain("This filter is no longer on the dashboard.");
+    // Viewers review it but get no form.
+    const viewer = render({
+      ...props,
+      initialSelected: "s1",
+      canManage: false,
+    });
+    expect(viewer).toContain("Country: DE");
+    expect(viewer).not.toContain("Limit Country");
   });
 });

@@ -1,4 +1,4 @@
-import { randomInt } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 
 import type {
   ApproveDeviceRequest,
@@ -17,10 +17,14 @@ import type {
   UpdateDeviceRequest,
 } from "@netrics/contracts";
 import {
+  dashboardDataFiltersSchema,
+  deviceFilterScopeSchema,
   devicePlatformSchema,
   deviceRotationSchema,
+  deviceScopeSchema,
   deviceScreenSchema,
   displayModeSchema,
+  measureWidgetBindingSchema,
 } from "@netrics/contracts";
 import {
   approvePairing,
@@ -49,7 +53,15 @@ import {
   type Database,
   type DeviceRow,
 } from "@netrics/database";
-import { resolveLocale, type Locale } from "@netrics/domain";
+import {
+  dashboardModelQuery,
+  dataWidgetCost,
+  resolveLocale,
+  validateDeviceFilterScope,
+  DataProcessingError,
+  type DeviceFilterScope,
+  type Locale,
+} from "@netrics/domain";
 
 import { generatePrincipalToken, generateToken, hashToken } from "../tokens.js";
 import type { CredentialKeyring } from "../credentials.js";
@@ -90,7 +102,7 @@ const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 export const CODE_ALPHABET = "ACDEFGHJKMNPQRTUVWXY34679";
 const CODE_LENGTH = 8;
 
-type ErrorStatus = 400 | 401 | 404 | 410 | 429;
+type ErrorStatus = 400 | 401 | 404 | 409 | 410 | 429;
 
 export type Result<T> =
   { ok: true; value: T } | { ok: false; status: ErrorStatus; error: string };
@@ -163,6 +175,73 @@ function storedPlatform(value: string | null): DevicePlatform | null {
   return platform.success ? platform.data : null;
 }
 
+/**
+ * The stored fixed scope of a screen (#500); {} for none. A stored scope
+ * that no longer reads is never treated as "no scope": computing the
+ * payload fails instead.
+ */
+export function storedScope(row: DeviceRow): DeviceFilterScope {
+  if (row.scope === null) {
+    return {};
+  }
+  const scope = deviceScopeSchema.safeParse(row.scope);
+  if (!scope.success) {
+    throw new Error("device scope unreadable");
+  }
+  return scope.data.values as DeviceFilterScope;
+}
+
+/**
+ * Whether `values` can be the fixed scope of a screen on `dashboard`: every
+ * entry names one of its shared filters, restricts something of the right
+ * type, and every widget that reads data follows it. Widgets that cannot
+ * follow shared filters (older observation, goal and review widgets) or
+ * measure widgets that exclude a scoped filter make the scope inapplicable,
+ * as for a dashboard's own fixed scope; disabled slides count, since they
+ * can be enabled later.
+ */
+function validateScope(
+  dashboard: NonNullable<Awaited<ReturnType<typeof findDashboard>>>,
+  values: DeviceFilterScope,
+): string | null {
+  const filters = dashboardDataFiltersSchema.safeParse(
+    dashboard.dataFilters ?? [],
+  );
+  if (!filters.success) {
+    return "device_scope_filter_unknown";
+  }
+  try {
+    validateDeviceFilterScope(filters.data, values);
+    for (const widget of dashboard.slides.flatMap((slide) => slide.widgets)) {
+      if (widget.type === "measure") {
+        dashboardModelQuery(
+          filters.data,
+          {},
+          measureWidgetBindingSchema.parse(widget.modelBinding),
+          1,
+          "first",
+          values,
+        );
+      } else if (dataWidgetCost(widget.type) > 0) {
+        return "device_scope_not_applicable";
+      }
+    }
+  } catch (error) {
+    return error instanceof DataProcessingError &&
+      error.code.startsWith("device_scope_")
+      ? error.code
+      : "device_scope_not_applicable";
+  }
+  return null;
+}
+
+/** Part of the payload memo key: screens with different scopes never share. */
+function scopeKey(scope: DeviceFilterScope): string {
+  return Object.keys(scope).length === 0
+    ? "-"
+    : createHash("sha256").update(JSON.stringify(scope)).digest("hex");
+}
+
 export function presentDevice(row: DeviceRow): Device {
   const screen =
     row.screen === null ? null : deviceScreenSchema.safeParse(row.screen);
@@ -173,6 +252,7 @@ export function presentDevice(row: DeviceRow): Device {
     ...deviceSettings(row),
     screen: screen?.success ? screen.data : null,
     platform: storedPlatform(row.platform),
+    scope: deviceScopeSchema.safeParse(row.scope).data ?? null,
     createdAt: row.createdAt.toISOString(),
     lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
     revokedAt: row.revokedAt?.toISOString() ?? null,
@@ -620,8 +700,11 @@ export function createDeviceService(deps: DeviceServiceDeps) {
             deps.defaultLocale,
           ]);
           const keyring = deps.credentialKeyring;
+          // From the device row only: a device cannot send or widen it.
+          const scope = storedScope(device);
           const options = {
             now: now(),
+            scope,
             locale,
             exchangeRates: deps.exchangeRates ?? false,
             ...(deps.dataPolicy ? { dataPolicy: deps.dataPolicy } : {}),
@@ -667,6 +750,7 @@ export function createDeviceService(deps: DeviceServiceDeps) {
             version,
             schema,
             locale,
+            scopeKey(scope),
           ].join(":");
           // Semantic payloads carry expiring source generations and live model releases.
           // Bypass the legacy TTL cache until it can key and expire by the full source vector.
@@ -737,6 +821,44 @@ export function createDeviceService(deps: DeviceServiceDeps) {
           ) {
             return fail<Device>(404, "dashboard_not_found");
           }
+          const current = await findDevice(tx, actor.workspaceId, deviceId, {
+            forUpdate: true,
+          });
+          if (!current) {
+            return fail<Device>(404, "device_not_found");
+          }
+          const dashboardId =
+            body.dashboardId !== undefined
+              ? body.dashboardId
+              : current.dashboardId;
+          // A scope belongs to its dashboard: another dashboard's filters
+          // are other filters, so the scope is never carried over silently.
+          if (
+            body.scope === undefined &&
+            current.scope !== null &&
+            dashboardId !== current.dashboardId
+          ) {
+            return fail<Device>(409, "device_scope_dashboard_changed");
+          }
+          let scope: DeviceRow["scope"] | undefined;
+          if (body.scope === null) {
+            scope = null;
+          } else if (body.scope !== undefined) {
+            const dashboard = dashboardId
+              ? await findDashboard(tx, actor.workspaceId, dashboardId)
+              : null;
+            if (!dashboard) {
+              return fail<Device>(400, "device_scope_dashboard_required");
+            }
+            const values = deviceFilterScopeSchema.parse(
+              body.scope.values,
+            ) as DeviceFilterScope;
+            const problem = validateScope(dashboard, values);
+            if (problem) {
+              return fail<Device>(400, problem);
+            }
+            scope = { dashboardId: dashboard.id, values };
+          }
           const changes = {
             ...(body.name !== undefined ? { name: body.name } : {}),
             ...(body.dashboardId !== undefined
@@ -746,6 +868,7 @@ export function createDeviceService(deps: DeviceServiceDeps) {
             ...(body.displayMode !== undefined
               ? { displayMode: body.displayMode }
               : {}),
+            ...(scope !== undefined ? { scope } : {}),
           };
           const device = await updateDevice(
             tx,

@@ -72,6 +72,7 @@ import {
   type LayoutWidget,
   type ScreenFormat,
   isDataWidgetType,
+  dataWidgetCost,
   sortSourceItems,
   sourceItemStatus,
   sourcesLabel,
@@ -83,6 +84,7 @@ import {
   zonedIsoString,
   type GoalAggregation,
   type GoalPeriod,
+  type DeviceFilterScope,
   type Locale,
   type ThemeTokens,
 } from "@netrics/domain";
@@ -145,6 +147,34 @@ export interface BuildOptions {
     workspaceId: string;
     credentialsEncrypted: Buffer | null;
   }) => boolean;
+  /**
+   * The screen's fixed scope (#500), from the device row and never from the
+   * request: conjoined with every shared-filter choice of measure widgets.
+   * Widgets that cannot follow shared filters (older observation, goal and
+   * review widgets) are withheld from a scoped screen rather than shown
+   * unscoped.
+   */
+  scope?: DeviceFilterScope;
+}
+
+/** Whether a screen has a fixed scope that restricts something. */
+export function hasDeviceScope(scope: DeviceFilterScope | undefined): boolean {
+  return scope !== undefined && Object.keys(scope).length > 0;
+}
+
+/**
+ * Whether a widget is shown on a screen with this scope: only measure
+ * widgets follow shared filters, so a scoped screen gets no other widget
+ * that reads data. Text, images, clocks, countdowns and connection status
+ * stay.
+ */
+export function followsDeviceScope(
+  type: string,
+  scope: DeviceFilterScope | undefined,
+): boolean {
+  return (
+    !hasDeviceScope(scope) || type === "measure" || dataWidgetCost(type) === 0
+  );
 }
 
 export function tileStatus(
@@ -475,7 +505,8 @@ export async function buildDeviceDashboard(
     ? await findDashboard(tx, workspaceId, dashboardId)
     : null;
   const tiles: DeviceTile[] = [];
-  if (dashboard) {
+  // Tiles cannot follow shared filters: a scoped screen gets none (#500).
+  if (dashboard && !hasDeviceScope(options.scope)) {
     const sources = schema1Tiles(dashboard.slides).filter(isDataWidget);
     const context = await loadDataContext(tx, workspaceId, sources, options);
     for (const tile of sources) {
@@ -979,7 +1010,15 @@ async function buildSlides(
   const dashboard = dashboardId
     ? await findDashboard(tx, workspaceId, dashboardId)
     : null;
-  const slides = (dashboard?.slides ?? []).filter((slide) => slide.enabled);
+  // A scoped screen gets only widgets that follow its scope (#500).
+  const slides = (dashboard?.slides ?? [])
+    .filter((slide) => slide.enabled)
+    .map((slide) => ({
+      ...slide,
+      widgets: slide.widgets.filter((widget) =>
+        followsDeviceScope(widget.type, options.scope),
+      ),
+    }));
 
   // Only images that exist in the workspace are referenced (the foreign
   // keys make that certain; this keeps the payload consistent regardless).
@@ -1069,6 +1108,7 @@ async function buildSlides(
           options.now,
           options.dataPolicy,
           options.locale,
+          options.scope,
         );
         widgets.push({
           type: "measure",

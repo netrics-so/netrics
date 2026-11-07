@@ -420,6 +420,36 @@ button.screen-panel-close:hover:not(:disabled) {
   font-size: var(--size-13);
 }
 
+/* A screen's fixed scope (#500): one block per shared filter. */
+.screen-panel-settings .device-scope {
+  margin-top: 20px;
+}
+
+.screen-panel-settings .device-scope h4 {
+  margin: 0 0 4px;
+  font-size: var(--size-14);
+}
+
+.screen-panel-settings .device-scope p {
+  margin: 0 0 12px;
+  font-size: var(--size-13);
+}
+
+.screen-panel-settings .device-scope-filter {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.screen-panel-settings .device-scope-filter .checkbox {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: var(--size-14);
+}
+
 /* Empty: what a screen is and how to connect one. */
 .screens-empty {
   max-width: 560px;

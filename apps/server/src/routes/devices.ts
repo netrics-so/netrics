@@ -438,11 +438,13 @@ export function registerDeviceRoutes(
         {
           schema: routeSchema({
             summary:
-              "Rename a device, change its dashboard, rotation or display mode",
+              "Rename a device, change its dashboard, rotation, display mode " +
+              "or fixed scope (the filter values its screen may show; 409 " +
+              "when a scoped screen changes dashboard without a new scope)",
             tags: ["devices"],
             body: updateDeviceRequestSchema,
             response: deviceResponseSchema,
-            errors: [403, 404],
+            errors: [403, 404, 409],
           }),
         },
         async (request, reply) => {

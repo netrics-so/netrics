@@ -69,6 +69,30 @@ export const dashboardFilterValuesSchema = z.record(
   id,
   dashboardFilterValueSchema,
 );
+/**
+ * A paired screen's fixed scope (#500): per shared filter of its dashboard,
+ * the values or range it may show. Every entry must restrict something.
+ */
+export const deviceFilterScopeSchema = z
+  .record(
+    id,
+    z.discriminatedUnion("kind", [
+      z.strictObject({
+        kind: z.literal("values"),
+        values: z.array(scalar).min(1).max(100),
+      }),
+      z.strictObject({ kind: z.literal("range"), from: scalar, to: scalar }),
+    ]),
+  )
+  .refine((scope) => Object.keys(scope).length <= 30, {
+    message: "at most 30 filters",
+  });
+/** As stored and shown: the dashboard the scope was set for, and its values. */
+export const deviceScopeSchema = z.object({
+  dashboardId: z.uuid(),
+  values: deviceFilterScopeSchema,
+});
+export type DeviceScope = z.infer<typeof deviceScopeSchema>;
 export const dashboardDataQuerySchema = z.strictObject({
   values: dashboardFilterValuesSchema.default({}),
 });

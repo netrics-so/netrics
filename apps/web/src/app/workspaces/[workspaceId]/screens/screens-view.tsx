@@ -11,8 +11,10 @@ import {
 } from "react";
 
 import type { Device } from "@netrics/contracts";
+import type { DashboardDataFilter } from "@netrics/domain";
 
 import { DeviceControls } from "../device-controls";
+import { DeviceScope } from "../device-scope";
 import type { HeartbeatSummary } from "@/lib/device-heartbeat";
 import { useT } from "@/lib/i18n/client";
 import type { ScreenCounts, ScreenPreview } from "@/lib/screens";
@@ -40,6 +42,10 @@ export interface ScreenItem {
   screenLine: string | null;
   /** The day it was paired, as a date. */
   paired: string;
+  /** Its fixed scope by filter name ("Country: DE"), or null (#500). */
+  scopeLine: string | null;
+  /** The shared filters of the dashboard it shows, for its scope. */
+  filters: DashboardDataFilter[];
 }
 
 export type ScreensViewMode = "cards" | "table";
@@ -480,6 +486,8 @@ function ScreenPanel({
           <dd>{screen.platform ?? t("platformNotReported")}</dd>
           <dt>{t("dashboard")}</dt>
           <dd>{screen.dashboardName ?? t("noDashboard")}</dd>
+          <dt>{t("scope")}</dt>
+          <dd>{screen.scopeLine ?? t("noScope")}</dd>
           <dt>{t("app")}</dt>
           <dd>
             {heartbeat
@@ -511,9 +519,15 @@ function ScreenPanel({
           <DeviceControls
             key={device.id}
             workspaceId={workspaceId}
-            device={device}
+            device={{ ...device, scoped: device.scope !== null }}
             appleTv={screen.appleTv}
             dashboards={dashboards}
+          />
+          <DeviceScope
+            key={`${device.id}:${JSON.stringify(device.scope)}:${device.dashboardId}`}
+            workspaceId={workspaceId}
+            device={device}
+            filters={screen.filters}
           />
         </section>
       ) : (

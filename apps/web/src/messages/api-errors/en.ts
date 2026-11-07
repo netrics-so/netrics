@@ -109,6 +109,16 @@ export const apiErrorsEn = {
       "Connect a source first: the Overview shows the numbers of your connections.",
     template_unsupported: "There is no Brand template for this connection yet.",
     device_not_found: "That TV no longer exists.",
+    device_scope_filter_unknown:
+      "The scope names a filter this dashboard does not have (any more).",
+    device_scope_value_invalid:
+      "Choose at least one value, or a range with a start or an end, of the filter’s type.",
+    device_scope_not_applicable:
+      "This dashboard has widgets that cannot follow the scope: older widgets, or widgets that ignore this filter. Change them in the Studio first.",
+    device_scope_dashboard_required:
+      "A fixed scope needs a dashboard: choose one first.",
+    device_scope_dashboard_changed:
+      "This screen has a fixed scope for its dashboard. Remove the scope, or set a new one, to change the dashboard.",
     pairing_not_found:
       "That code is not valid. Check the code on the TV; codes expire after 10 minutes, so the TV may show a new one.",
     too_many_attempts: "Too many wrong codes. Wait 15 minutes, then try again.",
