@@ -120,6 +120,44 @@ describe("withSessionAdvisoryLock", () => {
     await expectClean();
   });
 
+  it("sends no ROLLBACK after a failed COMMIT, which already ended the transaction (#516)", async () => {
+    // A COMMIT that fails (a serialization failure, here a deferred unique
+    // check) ends the transaction on the server. A ROLLBACK after it ran
+    // outside a transaction and the server answered with WARNING 25P01.
+    const notices: string[] = [];
+    const pool = postgres(testDb.appUrl, {
+      max: 1,
+      onnotice: (notice) => notices.push(String(notice.code)),
+    });
+    const pooled = drizzle(pool, {
+      schema: { ...schema, ...authSchema },
+    }) as unknown as PooledDb;
+    try {
+      await expect(
+        withSessionAdvisoryLock(pooled, "reserved-commit", (locked) =>
+          locked.transaction(
+            async (tx) => {
+              await tx.execute(
+                sql`create temp table reserved_commit (id int unique deferrable initially deferred) on commit drop`,
+              );
+              await tx.execute(
+                sql`insert into reserved_commit values (1), (1)`,
+              );
+            },
+            { isolationLevel: "serializable" },
+          ),
+        ),
+      ).rejects.toMatchObject({ code: "23505" });
+      // The connection is usable and clean afterwards.
+      const [row] = await pool`select 1 as one`;
+      expect(row!.one).toBe(1);
+      expect(notices).toEqual([]);
+    } finally {
+      await pool.end({ timeout: 5 });
+    }
+    expect(await advisoryLocks()).toBe(0);
+  });
+
   it("makes a waiter's first snapshot see the holder's commit", async () => {
     const pool = postgres(testDb.appUrl, { max: 2 });
     const pooled = drizzle(pool, {
