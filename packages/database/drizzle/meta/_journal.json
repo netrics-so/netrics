@@ -449,6 +449,13 @@
       "when": 1794040501298,
       "tag": "0063_device_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1794043171926,
+      "tag": "0064_compare_measure_binding",
+      "breakpoints": true
     }
   ]
 }

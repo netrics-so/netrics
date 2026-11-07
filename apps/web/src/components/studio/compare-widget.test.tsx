@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import type { DeviceWidget } from "@netrics/contracts";
+import type {
+  CompareMeasureReading,
+  ConnectionStateView,
+  DeviceWidget,
+  MetricQueryResponse,
+} from "@netrics/contracts";
 
 import { ScrollCompareCard } from "@/components/scroll/scroll-widgets";
 import { renderI18n } from "@/lib/i18n/test-render";
+import type { StudioEnv } from "@/lib/studio-widgets";
+import { deviceTileNotice } from "@/lib/tile-status";
 import {
   compareChangeText,
   compareFooterCandidates,
@@ -13,7 +20,12 @@ import {
 } from "@/lib/studio-compare";
 
 import { olderSync, worseStatus } from "./compare-widget";
-import { CompareWidgetView } from "./compare-widget";
+import {
+  CompareWidgetView,
+  LiveCompareWidget,
+  type CompareWidget,
+} from "./compare-widget";
+import { clearSharedLoads, metricRequest, sharedLoad } from "./use-widget-data";
 import { DeviceWidgetView, deviceCompareReading } from "./device-widget";
 
 // The compare widget (ADR 0019 section 10, #336).
@@ -232,5 +244,159 @@ describe("compare card in scroll view", () => {
     expect(html).toContain(">32.7%</span>");
     expect(html).toContain("▲ 1.9 pt");
     expect(html).toContain(">Visitors</span>");
+  });
+});
+
+describe("compare widget bound to measures (#507)", () => {
+  const ID = (n: number) =>
+    `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const state: ConnectionStateView = {
+    health: "ok",
+    authState: "ok",
+    authReason: null,
+    lastSuccessAt: new Date().toISOString(),
+    nextDueAt: null,
+    consecutiveFailures: 0,
+    pollIntervalSeconds: 300,
+  };
+  const env: StudioEnv = {
+    workspaceId: ID(1),
+    timeZone: "Europe/Berlin",
+    fontScale: 1,
+    showHeader: true,
+    metrics: new Map(),
+    connections: { [ID(9)]: { name: "Shop", state } },
+    images: new Map(),
+  };
+  const measure = {
+    modelId: ID(70),
+    dateDimensionId: "date",
+    measureIds: {
+      numerator: "numerator",
+      denominator: "denominator",
+      ratio: "ratio",
+    },
+  };
+  const widget: CompareWidget = {
+    type: "compare",
+    id: ID(20),
+    x: 0,
+    y: 0,
+    w: 4,
+    h: 3,
+    title: null,
+    connectionId: ID(9),
+    metricKey: "shop.signups",
+    aggregation: "sum",
+    period: "this_month",
+    dimensions: {},
+    displayCurrency: null,
+    resourceName: null,
+    allResourcesName: null,
+    denominator: {
+      connectionId: ID(9),
+      metricKey: "shop.visits",
+      aggregation: "sum",
+      dimensions: {},
+      resourceName: null,
+      allResourcesName: null,
+    },
+    measure,
+    options: { format: "percent", ratioLabel: "conversion", showChange: true },
+  };
+  const reading = (
+    overrides: Partial<CompareMeasureReading> = {},
+  ): CompareMeasureReading => ({
+    widgetId: widget.id,
+    status: "ok",
+    error: null,
+    updatedAt: state.lastSuccessAt,
+    expiresAt: null,
+    sources: ["Shop"],
+    numerator: { label: "Signups", value: 257, unit: "count" },
+    denominator: { label: "Visits", value: 1846, unit: "count" },
+    ratio: { value: 257 / 1846, previousValue: 0.143 },
+    unit: null,
+    dates: {
+      current: { from: "2026-11-01", to: "2026-11-07" },
+      previous: { from: "2026-10-01", to: "2026-10-07" },
+    },
+    ...overrides,
+  });
+  const metric = (value: number): MetricQueryResponse =>
+    ({
+      metric: { name: "Metric", unit: "count", better: "higher" },
+      value,
+      previousValue: value,
+    }) as MetricQueryResponse;
+
+  /** Seeds what the hooks share, then renders as a page does first. */
+  async function render(bound: CompareMeasureReading | null) {
+    clearSharedLoads();
+    // The metrics answer differently: a fallback would show 999 / 1000.
+    for (const side of [widget, { ...widget, ...widget.denominator }])
+      await sharedLoad(
+        `metric|${env.workspaceId}|${JSON.stringify(metricRequest(side))}`,
+        () => Promise.resolve(metric(side === widget ? 999 : 1000)),
+      );
+    if (bound)
+      await sharedLoad(
+        `compare-measure|${env.workspaceId}|${widget.id}|${JSON.stringify({
+          period: widget.period,
+          measure,
+          format: widget.options.format,
+        })}`,
+        () => Promise.resolve(bound),
+      );
+    return renderI18n(<LiveCompareWidget widget={widget} env={env} />);
+  }
+
+  it("shows the measures' numbers, never the metrics'", async () => {
+    const html = await render(reading());
+    expect(html).toContain("257");
+    expect(html).toContain("1,846");
+    expect(html).toContain("13.9%");
+    expect(html).not.toContain("999");
+    expect(html).not.toContain("99.9%");
+    // The unbound widget does read its metrics.
+    const { measure: _measure, ...unbound } = widget;
+    clearSharedLoads();
+    expect(
+      renderI18n(<LiveCompareWidget widget={unbound} env={env} />),
+    ).not.toContain("257");
+  });
+
+  it("says when a source fails, beside the numbers it still has", async () => {
+    const html = await render(reading({ status: "outage" }));
+    expect(html).toContain("13.9%");
+    expect(html).toContain(deviceTileNotice("outage", null, "en")!);
+  });
+
+  it("hides a reading whose retained data has expired", async () => {
+    const live = await render(
+      reading({ expiresAt: new Date(Date.now() + 3_600_000).toISOString() }),
+    );
+    expect(live).toContain("13.9%");
+    const html = await render(
+      reading({ expiresAt: new Date(Date.now() - 1000).toISOString() }),
+    );
+    expect(html).toContain("retained data has expired");
+    expect(html).not.toContain("13.9%");
+    expect(html).not.toContain("1,846");
+  });
+
+  it("shows a typed error as an outage, without values", async () => {
+    const html = await render(
+      reading({
+        status: "outage",
+        error: "data_model_not_published",
+        numerator: { label: "numerator", value: null, unit: null },
+        denominator: { label: "denominator", value: null, unit: null },
+        ratio: { value: null, previousValue: null },
+      }),
+    );
+    expect(html).toContain("Publish the referenced");
+    expect(html).not.toContain("999");
+    expect(html).not.toContain("1,000");
   });
 });

@@ -9,12 +9,15 @@ import {
 } from "react";
 
 import type {
+  CompareMeasureReading,
   Goal,
   LatestReviewRequest,
   LatestReviewResponse,
   MetricBreakdownResponse,
+  MetricPeriod,
   MetricQueryResponse,
 } from "@netrics/contracts";
+import type { CompareFormat, CompareMeasureBinding } from "@netrics/domain";
 
 import {
   apiErrorMessage,
@@ -23,6 +26,7 @@ import {
   queryMetric,
   queryMetricBreakdown,
 } from "@/lib/api";
+import { readCompareMeasures } from "@/lib/dashboard-data-api";
 import type { RefreshCycle } from "@/lib/refresh-countdown";
 import type { DataWidget, ReviewWidget } from "@/lib/studio-widgets";
 import { useLocale } from "@/lib/i18n/client";
@@ -181,18 +185,67 @@ export function metricRequest(widget: DataWidget) {
   };
 }
 
-/** A metric or line widget's numbers (value, series, previous series). */
+/**
+ * A metric or line widget's numbers (value, series, previous series).
+ * Disabled (a compare widget bound to measures, #507): no query, no data.
+ */
 export function useMetricData(
   workspaceId: string,
   widget: DataWidget,
   refreshMs = WIDGET_REFRESH_MS,
+  enabled = true,
 ): WidgetData<MetricQueryResponse> {
   const key = JSON.stringify(metricRequest(widget));
   const load = useCallback(
-    () => queryMetric(workspaceId, JSON.parse(key)),
-    [workspaceId, key],
+    () =>
+      enabled
+        ? queryMetric(workspaceId, JSON.parse(key))
+        : Promise.resolve(null),
+    [workspaceId, key, enabled],
   );
-  return usePolled(load, refreshMs, `metric|${workspaceId}|${key}`);
+  return usePolled(
+    load,
+    refreshMs,
+    enabled ? `metric|${workspaceId}|${key}` : undefined,
+  ) as WidgetData<MetricQueryResponse>;
+}
+
+/**
+ * A compare widget's numbers from the measures it is bound to (#507); no
+ * query and no data without a binding.
+ */
+export function useCompareMeasureData(
+  workspaceId: string,
+  widget: {
+    id: string;
+    period: MetricPeriod;
+    measure?: CompareMeasureBinding;
+    options: { format: CompareFormat };
+  },
+  refreshMs = WIDGET_REFRESH_MS,
+): WidgetData<CompareMeasureReading> {
+  const key = widget.measure
+    ? JSON.stringify({
+        period: widget.period,
+        measure: widget.measure,
+        format: widget.options.format,
+      })
+    : null;
+  const id = widget.id;
+  const load = useCallback(
+    () =>
+      key === null
+        ? Promise.resolve(null)
+        : readCompareMeasures(workspaceId, [{ id, ...JSON.parse(key) }]).then(
+            (response) => response.widgets[0] ?? null,
+          ),
+    [workspaceId, key, id],
+  );
+  return usePolled(
+    load,
+    refreshMs,
+    key === null ? undefined : `compare-measure|${workspaceId}|${id}|${key}`,
+  ) as WidgetData<CompareMeasureReading>;
 }
 
 /**

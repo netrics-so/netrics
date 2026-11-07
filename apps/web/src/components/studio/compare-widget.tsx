@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { DeviceTileStatus, MetricPeriod } from "@netrics/contracts";
 import {
@@ -17,7 +17,8 @@ import {
   formatCompactValue,
   formatValue,
 } from "@/lib/format-metric";
-import { useLocale } from "@/lib/i18n/client";
+import { dataErrorCodeKey } from "@/lib/data-errors";
+import { useLocale, useT } from "@/lib/i18n/client";
 import {
   compareFooterCandidates,
   compareRatioText,
@@ -25,6 +26,7 @@ import {
   type CompareReading,
 } from "@/lib/studio-compare";
 import { footerLine, u } from "@/lib/studio-render";
+import { deviceTileNotice } from "@/lib/tile-status";
 import {
   metricKeyOf,
   type DataWidget,
@@ -33,7 +35,7 @@ import {
 
 import { useCountUp } from "./enter-motion";
 import { dataWidgetLabel, liveDataState } from "./metric-widget";
-import { useMetricData } from "./use-widget-data";
+import { useCompareMeasureData, useMetricData } from "./use-widget-data";
 import {
   DataStateWidget,
   WidgetFooter,
@@ -297,6 +299,7 @@ export function useLiveCompare(
   env: StudioEnv,
 ): CompareReadingProps {
   const locale = useLocale();
+  const tData = useT("data");
   const denominatorWidget = {
     ...widget,
     connectionId: widget.denominator.connectionId,
@@ -304,8 +307,73 @@ export function useLiveCompare(
     aggregation: widget.denominator.aggregation,
     dimensions: widget.denominator.dimensions,
   };
-  const a = useMetricData(env.workspaceId, widget);
-  const b = useMetricData(env.workspaceId, denominatorWidget);
+  // Bound to measures (#507): those numbers only, never the metrics'.
+  const bound = widget.measure !== undefined;
+  const measures = useCompareMeasureData(env.workspaceId, widget);
+  const a = useMetricData(env.workspaceId, widget, undefined, !bound);
+  const b = useMetricData(
+    env.workspaceId,
+    denominatorWidget,
+    undefined,
+    !bound,
+  );
+  // A reading over retained data is hidden once that data expired, also
+  // when the page keeps its last good reading after failed polls.
+  const [now, setNow] = useState(() => Date.now());
+  const expiry = measures.data?.expiresAt ?? null;
+  useEffect(() => {
+    if (!expiry) return;
+    const remaining = new Date(expiry).getTime() - Date.now();
+    if (remaining <= 0) {
+      if (now < new Date(expiry).getTime()) setNow(Date.now());
+      return;
+    }
+    const timer = setTimeout(
+      () => setNow(Date.now()),
+      Math.min(remaining + 1, 86_400_000),
+    );
+    return () => clearTimeout(timer);
+  }, [expiry, now]);
+  if (bound) {
+    const { error, loading } = measures;
+    const expired = expiry !== null && new Date(expiry).getTime() <= now;
+    const data =
+      measures.data && expired
+        ? { ...measures.data, error: "data_snapshot_expired" }
+        : measures.data;
+    const failed = error ?? (data?.error ? data.error : null);
+    return {
+      label: widget.title ?? data?.numerator.label ?? widget.metricKey,
+      period: widget.period,
+      options: widget.options,
+      reading:
+        data && !data.error
+          ? {
+              numerator: { ...data.numerator, unit: data.numerator.unit ?? "" },
+              denominator: {
+                ...data.denominator,
+                unit: data.denominator.unit ?? "",
+              },
+              ratio: data.ratio,
+              unit: data.unit,
+              better: "higher",
+            }
+          : null,
+      notice:
+        failed === null
+          ? // The sources' health, as a payload compare widget says it.
+            data
+            ? deviceTileNotice(data.status, data.updatedAt, locale)
+            : null
+          : data?.error
+            ? tData(`errors.${dataErrorCodeKey(data.error)}`)
+            : failed,
+      status: failed !== null ? "outage" : (data?.status ?? "ok"),
+      source: data?.sources.join(" · ") || null,
+      updatedAt: data?.updatedAt ?? null,
+      loading,
+    };
+  }
   const metricA = env.metrics.get(metricKeyOf(widget));
   const metricB = env.metrics.get(metricKeyOf(denominatorWidget));
   const unitA = displayUnit(

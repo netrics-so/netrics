@@ -24,11 +24,13 @@ import {
 import type { DataExpression } from "./data-expression.js";
 import type { ModelMeasure, SemanticModelDefinition } from "./data-model.js";
 import type { PreparationGraph, PreparationNode } from "./data-preparation.js";
-import type {
-  Aggregation,
-  Granularity,
-  MetricKind,
-  Period,
+import {
+  resolvePeriod,
+  type Aggregation,
+  type DateRange,
+  type Granularity,
+  type MetricKind,
+  type Period,
 } from "./metrics.js";
 
 /** Why a compare widget cannot be saved as a measure. */
@@ -40,8 +42,6 @@ export const COMPARE_MEASURE_REFUSALS = [
   "compare_currency_unpinned",
   /** Only daily metrics: hourly and instant ones (also hourly today). */
   "compare_granularity_unsupported",
-  /** A period whose previous window no offset reproduces exactly. */
-  "compare_period_unsupported",
   /** A side's metric or observation dataset is not available. */
   "compare_source_unavailable",
   /** A dimension filter the side's dataset does not have. */
@@ -86,19 +86,66 @@ const SIDES: readonly Side[] = ["numerator", "denominator"];
  * - this year and the last 12 months: `year 1` does the same on 28
  *   February after a leap year (→ 29 February).
  * - this quarter: its days so far and the calendar offset differ.
+ *
+ * The compiled model's `ratio_previous` and `ratio_change` therefore always
+ * use `range`: the same number of days just before the queried range, so
+ * the model does not depend on a period. A compare widget bound to the
+ * model (#507) does not read them; it queries `ratio` over its period's
+ * current and previous windows (`compareMeasureWindows`), which is exact
+ * for every period.
  */
 export function compareMeasureOffset(
   period: Period,
-): { unit: "range"; length: 1 } | null {
+): typeof COMPARE_MEASURE_OFFSET | null {
   switch (period) {
     case "today":
     case "last_7_days":
     case "last_30_days":
     case "last_90_days":
-      return { unit: "range", length: 1 };
+      return COMPARE_MEASURE_OFFSET;
     default:
       return null;
   }
+}
+
+/** The offset of `ratio_previous` and `ratio_change`. */
+const COMPARE_MEASURE_OFFSET = { unit: "range", length: 1 } as const;
+
+/**
+ * A compare widget's binding to the measures a compare was compiled into
+ * (#507): the published model, its date dimension, and the measures the
+ * widget reads instead of its own two metric queries. The widget keeps its
+ * period, format and layout.
+ */
+export interface CompareMeasureBinding {
+  modelId: string;
+  /** The date dimension the period's windows are closed ranges on. */
+  dateDimensionId: string;
+  measureIds: { numerator: string; denominator: string; ratio: string };
+}
+
+/**
+ * The closed date ranges a bound compare widget queries: its period's
+ * current window and the previous one, exactly the dates the widget's
+ * metric queries read for a daily metric (`resolvePeriod`).
+ */
+export function compareMeasureWindows(
+  period: Period,
+  now: Date,
+  timeZone: string,
+): { current: DateRange; previous: DateRange } {
+  const window = resolvePeriod(period, now, timeZone);
+  return { current: window.dates, previous: window.previousDates };
+}
+
+/** `from <= date <= to` on the binding's date dimension. */
+export function compareMeasureFilter(
+  dateDimensionId: string,
+  range: DateRange,
+): DataExpression {
+  const bound = (fn: "gte" | "lte", value: string): DataExpression =>
+    call(fn, field(dateDimensionId), { kind: "literal", type: "date", value });
+  return call("and", bound("gte", range.from), bound("lte", range.to));
 }
 
 /** One side of a compare as its observation dataset describes it. */
@@ -170,8 +217,7 @@ export function compileCompareMeasure(
   const sides = { numerator: input.numerator, denominator: input.denominator };
   if (SIDES.some((side) => sides[side].granularity !== "day"))
     return fail("compare_granularity_unsupported");
-  const offset = compareMeasureOffset(input.period);
-  if (!offset) return fail("compare_period_unsupported");
+  const offset = COMPARE_MEASURE_OFFSET;
   if (
     SIDES.some(
       (side) =>

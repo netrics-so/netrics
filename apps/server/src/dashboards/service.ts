@@ -8,6 +8,7 @@ import {
   dashboardDataFiltersSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
+  compareMeasureBindingSchema,
   compareWidgetOptionsSchema,
   gaugeWidgetOptionsSchema,
   tableWidgetOptionsSchema,
@@ -86,6 +87,7 @@ import {
 } from "@netrics/domain";
 
 import { resolveThemeTokens } from "../themes/service.js";
+import { compareBindingProblem } from "./compare-measure.js";
 import { presentSummaries } from "./summaries.js";
 import { copyLayouts, rebaseSlides, resolveSlideLayouts } from "./layouts.js";
 import {
@@ -352,6 +354,11 @@ export async function presentDashboard(
             resourceName: side.resourceName,
             allResourcesName: side.allResourcesName,
           },
+          ...(widget.modelBinding !== null
+            ? {
+                measure: compareMeasureBindingSchema.parse(widget.modelBinding),
+              }
+            : {}),
           options: compareWidgetOptionsSchema.parse(widget.options),
         };
       }
@@ -780,6 +787,14 @@ async function validateCompare(
   if (problem) {
     return fail(400, problem);
   }
+  // The measures it reads instead (#507): the workspace's model and its
+  // own measures. The metrics above stay as they are: the binding does not
+  // replace them, and removing it shows them again.
+  const measure = widget.measure ?? null;
+  if (measure) {
+    const unbound = await compareBindingProblem(tx, workspaceId, measure);
+    if (unbound) return fail(400, unbound);
+  }
   const {
     metricDimensions: _numeratorDimensions,
     unit: _numeratorUnit,
@@ -793,6 +808,8 @@ async function validateCompare(
     imageId: null,
     goalId: null,
     options: widget.options,
+    modelId: measure?.modelId ?? null,
+    modelBinding: measure,
     denominator: {
       connectionId: denominator.value.connectionId,
       metricKey: denominator.value.metricKey,
