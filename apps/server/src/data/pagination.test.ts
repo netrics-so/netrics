@@ -842,15 +842,31 @@ describe("immutable semantic result pagination", () => {
     }
   });
 
-  it("answers a burst of first pages with sessions or refusals, never a conflict (#495)", async () => {
+  it.each([
+    {
+      name: "admits every request while the cap has room",
+      cap: 100,
+      admitted: 10,
+    },
+    {
+      name: "admits exactly the cap and refuses the rest",
+      cap: 3,
+      admitted: 3,
+    },
+  ])("a burst of first pages $name (#495)", async ({ cap, admitted }) => {
     for (let round = 0; round < 3; round++) {
       const f = await fixture();
       await adminSetDataPolicy(db, f.actor.workspaceId, {
-        querySnapshotCount: 100,
+        querySnapshotCount: cap,
         queryPageSessionsPerCaller: null,
       });
       const results = await Promise.allSettled(
-        Array.from({ length: 10 }, () => f.read()),
+        Array.from({ length: 10 }, (_, i) =>
+          f.service.query(i % 2 ? f.viewer : f.actor, f.model.id, {
+            ...query,
+            pinPages: true,
+          }),
+        ),
       );
       expect(
         results.flatMap((result) =>
@@ -861,18 +877,50 @@ describe("immutable semantic result pagination", () => {
         (result) =>
           (result as PromiseFulfilledResult<DataModelQueryResult>).value,
       );
-      for (const value of values) {
-        expect(value.rows[0]!.dimensions.id).toBe("a");
-        if (!value.nextPageToken)
-          expect(value.warnings).toContain("immutable_pagination_unavailable");
-      }
+      expect(
+        values.every((value) => value.rows[0]!.dimensions.id === "a"),
+      ).toBe(true);
+      expect(values.filter((value) => value.nextPageToken)).toHaveLength(
+        admitted,
+      );
+      for (const value of values.filter((value) => !value.nextPageToken))
+        expect(value.warnings).toContain("immutable_pagination_unavailable");
       const [counts] =
         await admin`select count(*)::int as sessions from data_model_query_snapshots where workspace_id=${f.actor.workspaceId} and query_key like 'page:%'`;
-      expect(counts!.sessions).toBe(
-        values.filter((value) => value.nextPageToken).length,
-      );
-      expect(counts!.sessions).toBeGreaterThan(0);
+      expect(counts!.sessions).toBe(admitted);
     }
+  });
+
+  it("releases the admission lock when a pinned first page fails (#495)", async () => {
+    const f = await fixture();
+    const heldAdvisoryLocks = async () =>
+      (
+        await admin`select count(*)::int as n from pg_locks l join pg_database d on d.oid = l.database where d.datname = current_database() and l.locktype = 'advisory' and l.granted and l.pid <> pg_backend_pid()`
+      )[0]!.n as number;
+    // A failure in JavaScript inside the transaction, and an SQL error that
+    // aborts it (a trigger refusing the session insert).
+    await expect(
+      f.service.query(f.actor, randomUUID(), { ...query, pinPages: true }),
+    ).rejects.toThrow("data_model_not_found");
+    expect(await heldAdvisoryLocks()).toBe(0);
+    await admin.unsafe(`
+      create function pagination_test_refuse() returns trigger language plpgsql as $$
+      begin raise exception 'refused by test'; end $$;
+      create trigger pagination_test_refuse before insert on data_model_query_snapshots
+      for each row when (new.workspace_id = '${f.actor.workspaceId}' and new.query_key like 'page:%')
+      execute function pagination_test_refuse();`);
+    try {
+      await expect(f.read()).rejects.toThrow("data_storage_failed");
+      expect(await heldAdvisoryLocks()).toBe(0);
+    } finally {
+      await admin.unsafe(`
+        drop trigger if exists pagination_test_refuse on data_model_query_snapshots;
+        drop function if exists pagination_test_refuse();`);
+    }
+    // The pool's connections are clean: pinned first pages still admit.
+    const reads = await Promise.all(Array.from({ length: 3 }, () => f.read()));
+    expect(reads.filter((read) => read.nextPageToken)).toHaveLength(3);
+    expect(await heldAdvisoryLocks()).toBe(0);
   });
 
   it("supports null caller limits without removing the global cap, and zero disables only page sessions", async () => {

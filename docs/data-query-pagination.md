@@ -89,11 +89,12 @@ needs a retained cache identity; a prepared-cache refusal prevents admission.
 Expired snapshot identities free capacity on the next successful query without
 waiting for scheduled maintenance.
 
-New pinned requests for one release are admitted one at a time, so concurrent
-first pages never fail with `409 version_conflict` because of each other. A
-request that keeps losing the admission race to other new sessions (a burst of
-first pages) is retried a few times and then answered like a full pool: its
-ordinary first result with `immutable_pagination_unavailable` and no token.
+New pinned requests (first pages) for one model run one at a time. Each holds a
+lock from before its transaction starts, so it counts every session admitted
+before it. Concurrent first pages are admitted until a limit is full, the rest
+are refused as above, and none fails with `409 version_conflict` because of the
+others. Continuations and ordinary queries do not wait for this lock. A waiting
+request holds a database connection from the server's pool.
 
 Setting `querySnapshotCount` or `querySnapshotSeconds` to `0` disables storing
 and reusing both query snapshot pools, including last-valid fallback. Other
