@@ -159,8 +159,10 @@ beforeAll(async () => {
        '["resource"]', '["sum","avg","min","max"]'),
       ('cmp', 'cmp.signups', 'Signups', '', 'delta', 'count', 'day',
        '["resource"]', '["sum","avg","min","max"]'),
-      ('cmp', 'cmp.users', 'Active users', '', 'gauge', 'count', 'day',
+      ('cmp', 'cmp.users', 'Active users', '', 'gauge', 'users', 'day',
        '["resource"]', '["last","avg","min","max"]'),
+      ('cmp', 'cmp.spend', 'Spend', '', 'delta', 'EUR_minor', 'day',
+       '["resource"]', '["sum","avg"]'),
       ('cmp', 'cmp.proceeds', 'Proceeds', '', 'delta', 'currency_minor',
        'day', '["resource","currency"]', '["sum","avg"]'),
       ('cmp', 'cmp.hourly', 'Requests', '', 'delta', 'count', 'hour',
@@ -206,6 +208,9 @@ beforeAll(async () => {
     "cmp.proceeds",
     { resource: "app-1", currency: "USD" },
     (d) => 1290 * (1 + (d % 2)),
+  );
+  await observe(connectionId, "cmp.spend", { resource: "app-1" }, (d) =>
+    d % 8 === 7 ? null : 2500 + ((d * 31) % 700),
   );
   await observe(secondId, "cmp.visits", { resource: "blog" }, (d) =>
     d % 6 === 5 ? null : 300 + ((d * 5) % 17),
@@ -419,6 +424,26 @@ describe("compare widgets as measures: parity (#506)", () => {
       denominator: { metricKey: "cmp.visits", aggregation: "avg" },
       format: "ratio",
     },
+    {
+      name: "Spend per signup",
+      numerator: { metricKey: "cmp.spend" },
+      denominator: { metricKey: "cmp.signups" },
+      format: "ratio",
+    },
+    {
+      name: "Return on spend",
+      numerator: { metricKey: "cmp.proceeds" },
+      denominator: { metricKey: "cmp.spend" },
+      format: "ratio",
+      currency: "EUR",
+    },
+    {
+      name: "Spend per proceeds",
+      numerator: { metricKey: "cmp.spend" },
+      denominator: { metricKey: "cmp.proceeds" },
+      format: "ratio",
+      currency: "EUR",
+    },
   ];
 
   it.each(cases)(
@@ -496,24 +521,23 @@ describe("compare widgets as measures: parity (#506)", () => {
         expect(cells[result.measures.previous]!.comparedTo).toEqual(
           window.previousDates,
         );
-        // The ratio keeps the widget's unit: an amount per unit stays in the
-        // numerator's currency; otherwise it has none.
+        // The ratio has the widget's unit (compareRatioUnit): an amount per
+        // unit in the numerator's currency, else none. A per-currency
+        // amount reads as `currency_minor` with its currency ("EUR_minor").
         const ratioUnit = compareRatioUnit(
           widget.data.numerator.unit,
           widget.data.denominator.unit,
         );
         for (const id of [result.measures.ratio, result.measures.previous]) {
           const cell = cells[id]!;
-          if (ratioUnit === null)
-            expect(cell.currency, `${period} ${id}`).toBeUndefined();
-          else
-            expect(
-              { unit: cell.unit, currency: cell.currency },
-              `${period} ${id}`,
-            ).toEqual({
-              unit: "currency_minor",
-              currency: amountCurrency(ratioUnit),
-            });
+          if (cell.currency !== undefined)
+            expect(cell.unit, `${period} ${id}`).toBe("currency_minor");
+          expect(
+            cell.currency ? `${cell.currency}_minor` : (cell.unit ?? null),
+            `${period} ${id}`,
+          ).toBe(ratioUnit);
+          if (ratioUnit !== null)
+            expect(amountCurrency(ratioUnit)).not.toBeNull();
         }
       }
     },

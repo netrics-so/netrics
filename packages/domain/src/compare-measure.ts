@@ -11,8 +11,16 @@
  * unchanged: anything it cannot express exactly is refused with a typed
  * error instead of approximated.
  */
-import { compareUnitsProblem, type CompareFormat } from "./compare.js";
-import { CURRENCY_DIMENSION, isPerCurrencyUnit } from "./currency.js";
+import {
+  compareRatioUnit,
+  compareUnitsProblem,
+  type CompareFormat,
+} from "./compare.js";
+import {
+  CURRENCY_DIMENSION,
+  amountCurrency,
+  isPerCurrencyUnit,
+} from "./currency.js";
 import type { DataExpression } from "./data-expression.js";
 import type { ModelMeasure, SemanticModelDefinition } from "./data-model.js";
 import type { PreparationGraph, PreparationNode } from "./data-preparation.js";
@@ -255,17 +263,30 @@ export function compileCompareMeasure(
     outputs: [COMPARE_PREPARATION_OUTPUT],
   };
 
-  // Amounts per currency are integers whose sums are decimals; the other
-  // side's numbers are not. Only an amount over a count mixes them (the
-  // unit rule above refuses a count over an amount): the count becomes a
-  // plain decimal, so the ratio stays an amount per unit in the numerator's
-  // currency, as the widget's `compareRatioUnit`.
-  const decimal = (side: Side) => sides[side].currencyFieldId !== null;
-  const mixed = decimal("numerator") !== decimal("denominator");
+  // The ratio has the widget's unit (`compareRatioUnit` over the queried
+  // units, "EUR_minor" for an amount in euros): an amount per unit keeps
+  // the numerator's unit and currency, anything else is unitless. Operands
+  // that must not carry a unit are cast to plain values, decimals when
+  // either side is an amount per currency (integers summed as decimals),
+  // numbers otherwise.
+  const queriedUnit = (side: Side) => {
+    const currency = amountCurrency(
+      sides[side].unit,
+      filters[side][CURRENCY_DIMENSION],
+    );
+    return currency === null ? sides[side].unit : `${currency}_minor`;
+  };
+  const amountPerUnit =
+    compareRatioUnit(queriedUnit("numerator"), queriedUnit("denominator")) !==
+    null;
+  const decimals = SIDES.some((side) => sides[side].currencyFieldId !== null);
   const operand = (side: Side) =>
-    mixed && !decimal(side)
-      ? call("to_decimal", field(COMPARE_MEASURE_IDS[side]))
-      : field(COMPARE_MEASURE_IDS[side]);
+    amountPerUnit && side === "numerator"
+      ? field(COMPARE_MEASURE_IDS[side])
+      : call(
+          decimals ? "to_decimal" : "to_number",
+          field(COMPARE_MEASURE_IDS[side]),
+        );
   const model = (datasetId: string): SemanticModelDefinition => {
     const measures: ModelMeasure[] = [];
     for (const side of SIDES) {
