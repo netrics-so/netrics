@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { DeviceTileStatus, MetricPeriod } from "@netrics/contracts";
 import {
@@ -316,8 +316,30 @@ export function useLiveCompare(
     undefined,
     !bound,
   );
+  // A reading over retained data is hidden once that data expired, also
+  // when the page keeps its last good reading after failed polls.
+  const [now, setNow] = useState(() => Date.now());
+  const expiry = measures.data?.expiresAt ?? null;
+  useEffect(() => {
+    if (!expiry) return;
+    const remaining = new Date(expiry).getTime() - Date.now();
+    if (remaining <= 0) {
+      if (now < new Date(expiry).getTime()) setNow(Date.now());
+      return;
+    }
+    const timer = setTimeout(
+      () => setNow(Date.now()),
+      Math.min(remaining + 1, 86_400_000),
+    );
+    return () => clearTimeout(timer);
+  }, [expiry, now]);
   if (bound) {
-    const { data, error, loading } = measures;
+    const { error, loading } = measures;
+    const expired = expiry !== null && new Date(expiry).getTime() <= now;
+    const data =
+      measures.data && expired
+        ? { ...measures.data, error: "data_snapshot_expired" }
+        : measures.data;
     const failed = error ?? (data?.error ? data.error : null);
     return {
       label: widget.title ?? data?.numerator.label ?? widget.metricKey,

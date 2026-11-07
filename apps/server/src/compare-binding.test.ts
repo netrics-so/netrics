@@ -20,6 +20,7 @@ import {
 import {
   addDays,
   compareChange,
+  compareMeasureFilter,
   type CompareMeasureBinding,
   type Period,
 } from "@netrics/domain";
@@ -927,5 +928,136 @@ describe("bound compare widgets: source health (#507)", () => {
     expect(unbound!.data.status).toBe("backfilling");
     expect(bound!.data.status).toBe(unbound!.data.status);
     expect(bound!.data.numerator.value).toBe(unbound!.data.numerator.value);
+  }, 60_000);
+});
+
+describe("bound compare widgets: source retention (#507)", () => {
+  it("carries the earliest expiry of its two windows to browsers", async () => {
+    // Any model with these three measures can be bound; one over records
+    // kept for 30 days expires with them.
+    const field = (id: string, type: string) => ({
+      id,
+      name: id,
+      type,
+      nullable: false,
+      classification: "internal",
+    });
+    const records = [];
+    for (let day = 0; day < 70; day++)
+      records.push({
+        values: {
+          id: `r${day}`,
+          day: addDays(TODAY, -day),
+          num: 1 + (day % 4),
+          den: 10 + (day % 3),
+        },
+      });
+    const manual = await call("POST", "/data/manual", owner, {
+      definition: {
+        key: "kept",
+        name: "Kept",
+        version: 1,
+        mode: "snapshot",
+        grain: "one day",
+        keyFields: ["id"],
+        retentionDays: 30,
+        fields: [
+          field("id", "string"),
+          field("day", "date"),
+          field("num", "number"),
+          field("den", "number"),
+        ],
+      },
+      records,
+    });
+    expect(manual.statusCode, manual.body).toBe(200);
+    const datasetId = manual.json().datasetId as string;
+    const sum = (id: string, fieldId: string) => ({
+      id,
+      name: id,
+      kind: "aggregate",
+      datasetId,
+      aggregate: { id, name: id, op: "sum", fieldId },
+    });
+    const model = await call("POST", "/data/models", owner, {
+      name: "Kept ratio",
+      definition: {
+        version: 1,
+        datasets: [datasetId],
+        relationships: [],
+        dimensions: [
+          {
+            id: "date",
+            name: "Date",
+            datasetId,
+            fieldId: "day",
+            timeAlignment: "reporting_date",
+          },
+        ],
+        measures: [
+          sum("numerator", "num"),
+          sum("denominator", "den"),
+          {
+            id: "ratio",
+            name: "Ratio",
+            kind: "formula",
+            expression: {
+              kind: "call",
+              fn: "divide",
+              args: [
+                { kind: "field", fieldId: "numerator" },
+                { kind: "field", fieldId: "denominator" },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(model.statusCode, model.body).toBe(200);
+    const { id: modelId, version } = model.json().model;
+    const published = await call(
+      "POST",
+      `/data/models/${modelId}/publish`,
+      owner,
+      { version },
+    );
+    expect(published.statusCode, published.body).toBe(200);
+    const measure = {
+      modelId,
+      dateDimensionId: "date",
+      measureIds: {
+        numerator: "numerator",
+        denominator: "denominator",
+        ratio: "ratio",
+      },
+    };
+    const read = await readInBrowser([
+      { id: uuid(97, 1), period: "last_7_days", measure },
+    ]);
+    expect(read.statusCode, read.body).toBe(200);
+    const [reading] = compareMeasureReadingsResponseSchema.parse(
+      read.json(),
+    ).widgets;
+    expect(reading!.error).toBeNull();
+    expect(reading!.ratio.value).not.toBeNull();
+    // The same model queried for each window: the earlier expiry wins.
+    const expiries = [];
+    for (const range of [reading!.dates.current, reading!.dates.previous]) {
+      const queried = await call(
+        "POST",
+        `/data/models/${modelId}/query`,
+        owner,
+        {
+          measureIds: ["numerator", "denominator", "ratio"],
+          groupBy: [],
+          filter: compareMeasureFilter("date", range),
+        },
+      );
+      expiries.push(queried.json().expiresAt as string);
+    }
+    expect(expiries.every((at) => typeof at === "string")).toBe(true);
+    expect(reading!.expiresAt).toBe(
+      [...expiries].sort((a, b) => Date.parse(a) - Date.parse(b))[0],
+    );
   }, 60_000);
 });

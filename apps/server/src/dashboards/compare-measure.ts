@@ -314,6 +314,7 @@ export async function readCompareMeasure(
     status: "outage",
     error,
     updatedAt: null,
+    expiresAt: null,
     sources: [],
     numerator: { label: ids.numerator, value: null, unit: null },
     denominator: { label: ids.denominator, value: null, unit: null },
@@ -397,6 +398,11 @@ export async function readCompareMeasure(
         : synced.reduce((a, b) =>
             new Date(a!).getTime() <= new Date(b!).getTime() ? a : b,
           )!,
+    // Values over retention-limited data go with it (#507 review).
+    expiresAt:
+      [current.result?.expiresAt, previous.result?.expiresAt]
+        .filter((at): at is string => typeof at === "string")
+        .sort((a, b) => Date.parse(a) - Date.parse(b))[0] ?? null,
     sources: connections
       .map((id) => sources.names.get(id)!)
       .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),

@@ -904,7 +904,10 @@ async function compareWidgetOf(
  * period's two windows (`readCompareMeasure`). Measures carry no metric
  * kind, granularity, conversion or direction: those are null, null, null
  * and "higher". A binding that cannot be read is an outage without values,
- * never the widget's metrics.
+ * never the widget's metrics. The payload keeps its shape, so it carries no
+ * retention expiry: the server reads only unexpired data on every poll, and
+ * a cached payload on an offline screen is not enforced here (as for unbound
+ * compare widgets). Browsers get `expiresAt` and hide expired readings.
  */
 async function boundCompareWidgetOf(
   tx: Transaction,

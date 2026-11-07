@@ -3168,6 +3168,12 @@ export const compareMeasureReadingSchema = z.object({
   error: z.string().nullable(),
   /** The older last successful sync of the model's sources. */
   updatedAt: z.iso.datetime().nullable(),
+  /**
+   * When the values must no longer be shown: the earlier retention
+   * deadline of the two windows' results, as on measure widgets. Null:
+   * none. A page that keeps its last good reading hides it after this.
+   */
+  expiresAt: z.iso.datetime().nullable(),
   /** The model's sources by name, for the footer. */
   sources: z.array(z.string()),
   numerator: deviceCompareOperandSchema,

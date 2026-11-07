@@ -310,6 +310,7 @@ describe("compare widget bound to measures (#507)", () => {
     status: "ok",
     error: null,
     updatedAt: state.lastSuccessAt,
+    expiresAt: null,
     sources: ["Shop"],
     numerator: { label: "Signups", value: 257, unit: "count" },
     denominator: { label: "Visits", value: 1846, unit: "count" },
@@ -361,6 +362,19 @@ describe("compare widget bound to measures (#507)", () => {
     expect(
       renderI18n(<LiveCompareWidget widget={unbound} env={env} />),
     ).not.toContain("257");
+  });
+
+  it("hides a reading whose retained data has expired", async () => {
+    const live = await render(
+      reading({ expiresAt: new Date(Date.now() + 3_600_000).toISOString() }),
+    );
+    expect(live).toContain("13.9%");
+    const html = await render(
+      reading({ expiresAt: new Date(Date.now() - 1000).toISOString() }),
+    );
+    expect(html).toContain("retained data has expired");
+    expect(html).not.toContain("13.9%");
+    expect(html).not.toContain("1,846");
   });
 
   it("shows a typed error as an outage, without values", async () => {
