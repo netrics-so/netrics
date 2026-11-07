@@ -193,6 +193,12 @@ implementation work; this plan does not create or complete issue records.
     one inserted) in a short read-committed step under the model's admission
     lock. Both session caps count one release, so they stay exact; admissions
     of other models no longer abort it.
+  - Prune without deadlocks against policy and connection-retention changes:
+    [#517](https://github.com/netrics-so/netrics/issues/517). Prune locks
+    every row with `SKIP LOCKED` (or `NOWAIT`) and never waits, leaves held
+    rows for a later call and reports that work remains, so the drain does
+    not stop early (migration 0065). Hourly maintenance tasks run
+    independently: a failed drain no longer skips the rest of the hour.
   - Rolling-window and period-offset measures:
     [#486](https://github.com/netrics-so/netrics/issues/486). Date-only
     anchors, windows recomputed from rows, capped month/year offsets, lookback

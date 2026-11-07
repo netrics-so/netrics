@@ -707,18 +707,33 @@ export async function ingestDatasetPage(
   }
 }
 
-/** Scheduler-only bounded maintenance; no raw records are returned to its role. */
+/**
+ * Scheduler-only bounded maintenance; no raw records are returned to its role.
+ * One call prunes at most `batch` rows per step and never waits for a row
+ * lock (#517): rows a concurrent transaction holds are left for a later
+ * call. `more` is true while a step filled its batch or rows it would prune
+ * remain, so a short batch alone does not mean the history is drained.
+ */
+export async function pruneDatasetHistoryBatch(
+  db: Db | Transaction,
+  now = new Date(),
+  batch = 10_000,
+): Promise<{ deleted: number; more: boolean }> {
+  if (!Number.isInteger(batch) || batch < 1 || batch > 10_000)
+    return fail("dataset_prune_limit");
+  const [row] = await db.execute<{ deleted: number; more: boolean }>(
+    sql`select deleted, more from prune_dataset_history_batch(${now.toISOString()}::timestamptz, ${batch})`,
+  );
+  return { deleted: row?.deleted ?? 0, more: row?.more ?? false };
+}
+
+/** Rows deleted by one pruneDatasetHistoryBatch call. */
 export async function pruneDatasetHistory(
   db: Db | Transaction,
   now = new Date(),
   batch = 10_000,
 ): Promise<number> {
-  if (!Number.isInteger(batch) || batch < 1 || batch > 10_000)
-    return fail("dataset_prune_limit");
-  const [row] = await db.execute<{ deleted: number }>(
-    sql`select prune_dataset_history(${now.toISOString()}::timestamptz, ${batch}) as deleted`,
-  );
-  return row?.deleted ?? 0;
+  return (await pruneDatasetHistoryBatch(db, now, batch)).deleted;
 }
 
 /** Legacy values remain aggregated facts; no fabricated raw events or loss of dimensions. */

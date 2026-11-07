@@ -324,9 +324,24 @@ not cover them.
 
 Expired rows are excluded at read time. Hourly scheduler maintenance removes
 expired rows, pages, prepared outputs and query snapshots in batches through
-`prune_dataset_history`, repeating bounded batches until one comes back short
-or a 10-second budget is spent; a drain that ends with work left resumes on the
-next scheduler tick rather than an hour later. The scheduler has no direct read access to source
+`prune_dataset_history_batch`, repeating bounded batches until one comes back
+short or a 10-second budget is spent; a drain that ends with work left resumes
+on the next scheduler tick rather than an hour later. Prune never waits for a
+row lock (#517): it locks every row it changes or deletes with `SKIP LOCKED`,
+so rows that a policy change, a connection-retention change or ingestion holds
+are left for a later call. Records of a released generation are taken
+generation by generation, and a generation whose first record is held (tried
+with `NOWAIT`, which fails at once) is skipped as a whole, so a call does not
+pass over every held record again. Prune deletes a stage, refresh or generation only
+once a snapshot taken after its lock shows no child rows for the cascade to
+lock. A transaction that never waits cannot be part of a deadlock, so prune and
+those changes no longer abort each other; a change waits at most for one prune
+call. Each call also reports whether rows it would prune remain (skipped or
+newly eligible), and a short batch with rows remaining keeps the drain going on
+the next tick. Each hourly maintenance task (dataset history, finished jobs,
+OAuth authorizations, pending keys, security records, review text) runs on its
+own; a failure is logged and the others still run, and a failed dataset drain
+is retried on the next tick. The scheduler has no direct read access to source
 records. Dataset/model tables use forced RLS and explicit tenant predicates.
 
 Retention bounds the current generation, not every copy of it. Each upsert,

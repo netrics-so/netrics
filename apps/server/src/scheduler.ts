@@ -15,7 +15,7 @@ import {
   listDueConnections,
   pruneAppReviews,
   pruneHistory,
-  pruneDatasetHistory,
+  pruneDatasetHistoryBatch,
   pruneOAuthAuthorizations,
   prunePendingKeys,
   pruneSecurityRecords,
@@ -188,23 +188,25 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
   // Storage accounting excludes released superseded generations and raw
   // pages (datasetWorkspaceBytes), so their deletion must keep up with
   // ingestion: one bounded batch an hour would let them pile up unseen.
-  // Each call is one bounded batch; repeat until a batch comes back short
-  // (nothing left) or the budget is spent, and resume on the next tick.
+  // Each call is one bounded batch; repeat until a batch comes back short or
+  // the budget is spent, and resume on the next tick. Prune skips rows a
+  // concurrent policy or retention change holds (#517), so a short batch can
+  // leave work behind; the call then reports `more` and the next tick drains
+  // again.
   async function drainDatasetHistory(): Promise<void> {
     const batch = (deps.retention ?? DEFAULT_RETENTION).batch;
     const deadline = Date.now() + datasetPruneBudgetMs;
     let deleted = 0;
+    // A failed call leaves the backlog unknown: drain again next tick.
+    datasetBacklog = true;
     for (;;) {
-      const n = await pruneDatasetHistory(schedulerDb, now(), batch);
-      deleted += n;
-      if (n < batch) {
-        datasetBacklog = false;
+      const result = await pruneDatasetHistoryBatch(schedulerDb, now(), batch);
+      deleted += result.deleted;
+      if (result.deleted < batch) {
+        datasetBacklog = result.more;
         break;
       }
-      if (Date.now() >= deadline) {
-        datasetBacklog = true;
-        break;
-      }
+      if (Date.now() >= deadline) break;
     }
     if (deleted > 0) {
       logger.info(
@@ -214,59 +216,90 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
     }
   }
 
+  /**
+   * Runs one maintenance task. A failure is logged and does not stop the
+   * others: a failed drain used to skip the rest of the hour (#517).
+   */
+  async function runTask(
+    task: string,
+    work: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await work();
+    } catch (error) {
+      logger.error(
+        { task, err: error instanceof Error ? error.message : String(error) },
+        "maintenance task failed",
+      );
+    }
+  }
+
   async function maintain(): Promise<void> {
     if (Date.now() - lastMaintenance < maintenanceEveryMs) {
       if (datasetBacklog) {
-        await drainDatasetHistory();
+        await runTask("dataset_history", drainDatasetHistory);
       }
       return;
     }
     lastMaintenance = Date.now();
-    await drainDatasetHistory();
-    const result = await pruneHistory(schedulerDb, deps.retention);
-    if (result.jobsDeleted > 0 || result.syncRunsDeleted > 0) {
-      logger.info(result, "pruned finished history");
-    }
+    await runTask("dataset_history", drainDatasetHistory);
+    await runTask("finished_history", async () => {
+      const result = await pruneHistory(schedulerDb, deps.retention);
+      if (result.jobsDeleted > 0 || result.syncRunsDeleted > 0) {
+        logger.info(result, "pruned finished history");
+      }
+    });
     // OAuth authorizations live 10 minutes and work once (ADR 0012).
-    const oauthAuthorizationsDeleted = await pruneOAuthAuthorizations(
-      schedulerDb,
-      (deps.retention ?? DEFAULT_RETENTION).batch,
-    );
-    if (oauthAuthorizationsDeleted > 0) {
-      logger.info(
-        { oauthAuthorizationsDeleted },
-        "pruned finished oauth authorizations",
+    await runTask("oauth_authorizations", async () => {
+      const oauthAuthorizationsDeleted = await pruneOAuthAuthorizations(
+        schedulerDb,
+        (deps.retention ?? DEFAULT_RETENTION).batch,
       );
-    }
+      if (oauthAuthorizationsDeleted > 0) {
+        logger.info(
+          { oauthAuthorizationsDeleted },
+          "pruned finished oauth authorizations",
+        );
+      }
+    });
     // Generated private keys never used for a connection, 24 hours after
     // they were generated (ADR 0020 §3).
-    const pendingKeysDeleted = await prunePendingKeys(
-      schedulerDb,
-      (deps.retention ?? DEFAULT_RETENTION).batch,
-    );
-    if (pendingKeysDeleted > 0) {
-      logger.info({ pendingKeysDeleted }, "pruned expired pending signed keys");
-    }
+    await runTask("pending_keys", async () => {
+      const pendingKeysDeleted = await prunePendingKeys(
+        schedulerDb,
+        (deps.retention ?? DEFAULT_RETENTION).batch,
+      );
+      if (pendingKeysDeleted > 0) {
+        logger.info(
+          { pendingKeysDeleted },
+          "pruned expired pending signed keys",
+        );
+      }
+    });
     // Audit events after 12 months; expired sessions, rate-limit counters and
     // pairings soon after (privacy policy; SECURITY_RETENTION).
-    const security = await pruneSecurityRecords(
-      schedulerDb,
-      now(),
-      deps.securityRetention ?? SECURITY_RETENTION,
-    );
-    if (Object.values(security).some((count) => count > 0)) {
-      logger.info(security, "pruned security records");
-    }
+    await runTask("security_records", async () => {
+      const security = await pruneSecurityRecords(
+        schedulerDb,
+        now(),
+        deps.securityRetention ?? SECURITY_RETENTION,
+      );
+      if (Object.values(security).some((count) => count > 0)) {
+        logger.info(security, "pruned security records");
+      }
+    });
     // Review text (ADR 0019 §11): per app the newest 50, none older than
     // 90 days (APP_REVIEW_RETENTION). Counts only in the log.
-    const reviews = await pruneAppReviews(
-      schedulerDb,
-      now(),
-      deps.appReviewRetention ?? APP_REVIEW_RETENTION,
-    );
-    if (Object.values(reviews).some((count) => count > 0)) {
-      logger.info(reviews, "pruned app review text");
-    }
+    await runTask("app_reviews", async () => {
+      const reviews = await pruneAppReviews(
+        schedulerDb,
+        now(),
+        deps.appReviewRetention ?? APP_REVIEW_RETENTION,
+      );
+      if (Object.values(reviews).some((count) => count > 0)) {
+        logger.info(reviews, "pruned app review text");
+      }
+    });
   }
 
   async function loop(): Promise<void> {
