@@ -146,6 +146,9 @@ beforeAll(async () => {
       logger: pino({ level: "silent" }),
     }),
     checkDb: async () => true,
+    // The seeded days end on TODAY, so browser reads resolve their windows
+    // on NOW like the screens do, not on the real date in the workspace zone.
+    now: () => NOW,
   });
   owner = await signup("binding-owner@example.com");
   const created = await app.inject({
@@ -696,7 +699,7 @@ describe("bound compare widgets: saving and reading (#507)", () => {
     const dashboardId = dashboardResponseSchema.parse(saved.json()).dashboard
       .id;
     const [onScreen] = compares(
-      (await screen(dashboardId, new Date())).slides[0]!.widgets,
+      (await screen(dashboardId, NOW)).slides[0]!.widgets,
     );
     expect(reading).toMatchObject({
       widgetId: bound!.id,
