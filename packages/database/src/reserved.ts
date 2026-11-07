@@ -88,6 +88,7 @@ export async function releaseReserved(reserved: ReservedSql): Promise<void> {
       },
     );
     if (open) await reserved.unsafe("rollback");
+    await reserved.unsafe("reset lock_timeout");
     await reserved.unsafe("select pg_advisory_unlock_all()");
   } catch {
     // Cleanup fails when the connection is gone; the server has then ended
@@ -103,24 +104,131 @@ function sqlstate(error: unknown): string | undefined {
   return (error as { code?: unknown } | null)?.code as string | undefined;
 }
 
+/** The wait for a session advisory lock exceeded its time limit. */
+export class SessionLockTimeoutError extends Error {
+  constructor(name: string) {
+    super("session lock wait timed out: " + name);
+    this.name = "SessionLockTimeoutError";
+  }
+}
+
+interface Turns {
+  tail: Promise<void>;
+  size: number;
+}
+
+/**
+ * Waiters for session locks within one process, per lock name: a keyed
+ * promise chain. Waiting here holds no pool connection, so a process holds
+ * at most one connection per lock name. An entry is deleted as soon as its
+ * last waiter is done.
+ */
+export class SessionLockQueue {
+  readonly #names = new Map<string, Turns>();
+
+  /** Lock names with holders or waiters in this queue. */
+  get size(): number {
+    return this.#names.size;
+  }
+
+  /**
+   * Waits for the turn on `name`; the returned function passes it on. A
+   * waiter that gives up at `deadline` passes its turn on as soon as its
+   * predecessor does.
+   */
+  async take(name: string, deadline: number): Promise<() => void> {
+    const turns = this.#names.get(name) ?? {
+      tail: Promise.resolve(),
+      size: 0,
+    };
+    this.#names.set(name, turns);
+    const previous = turns.tail;
+    let pass!: () => void;
+    const mine = new Promise<void>((resolve) => (pass = resolve));
+    turns.tail = previous.then(() => mine);
+    turns.size++;
+    let passed = false;
+    const done = () => {
+      if (passed) return;
+      passed = true;
+      pass();
+      if (--turns.size === 0 && this.#names.get(name) === turns)
+        this.#names.delete(name);
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut =
+      deadline === Infinity
+        ? await previous.then(() => false)
+        : await Promise.race([
+            previous.then(() => false),
+            new Promise<boolean>((resolve) => {
+              timer = setTimeout(
+                () => resolve(true),
+                Math.max(0, deadline - Date.now()),
+              );
+            }),
+          ]);
+    clearTimeout(timer);
+    if (timedOut) {
+      void previous.then(done);
+      throw new SessionLockTimeoutError(name);
+    }
+    return done;
+  }
+}
+
+/** The queue of this process, used unless a caller passes its own. */
+export const processSessionLocks = new SessionLockQueue();
+
 /**
  * Runs `fn` while this session holds the session-level advisory lock
  * `name`, taken on a reserved connection before `fn` starts any
  * transaction. A serializable transaction that `fn` opens on `lockedDb`
  * takes its snapshot only after the lock is granted, so it sees every
- * transaction committed by an earlier holder. The lock is released on that
- * connection before it returns to the pool, also when `fn` throws.
+ * transaction committed by an earlier holder.
+ *
+ * Waiters queue in memory first (`queue`, by default the process-wide
+ * one), so a burst on one name holds one pool connection, not one per
+ * waiter. With `timeoutMs`, waiting
+ * in that queue and for the database lock together may take that long;
+ * then SessionLockTimeoutError is thrown and nothing is held. The lock is
+ * released on the connection before it returns to the pool, also when `fn`
+ * throws.
  */
 export async function withSessionAdvisoryLock<T>(
   db: PooledDb,
   name: string,
   fn: (lockedDb: PooledDb) => Promise<T>,
+  options: { timeoutMs?: number; queue?: SessionLockQueue } = {},
 ): Promise<T> {
-  const reserved = await db.$client.reserve();
+  const deadline =
+    options.timeoutMs === undefined
+      ? Infinity
+      : Date.now() + Math.max(1, options.timeoutMs);
+  const done = await (options.queue ?? processSessionLocks).take(
+    name,
+    deadline,
+  );
   try {
-    await reserved`select pg_advisory_lock(hashtextextended(${name}, 0))`;
-    return await fn(reservedDatabase(db, reserved));
+    const reserved = await db.$client.reserve();
+    try {
+      if (deadline !== Infinity) {
+        const remaining = Math.max(1, Math.ceil(deadline - Date.now()));
+        await reserved.unsafe(`set lock_timeout = ${remaining}`);
+      }
+      await reserved`select pg_advisory_lock(hashtextextended(${name}, 0))`.catch(
+        (error: unknown) => {
+          if (sqlstate(error) === "55P03")
+            throw new SessionLockTimeoutError(name);
+          throw error;
+        },
+      );
+      await reserved.unsafe("reset lock_timeout");
+      return await fn(reservedDatabase(db, reserved));
+    } finally {
+      await releaseReserved(reserved);
+    }
   } finally {
-    await releaseReserved(reserved);
+    done();
   }
 }

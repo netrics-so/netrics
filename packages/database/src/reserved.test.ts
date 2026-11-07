@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as authSchema from "./auth-schema.js";
 import {
   releaseReserved,
+  SessionLockQueue,
+  SessionLockTimeoutError,
   withSessionAdvisoryLock,
   type PooledDb,
 } from "./reserved.js";
@@ -155,6 +157,8 @@ describe("withSessionAdvisoryLock", () => {
             },
             { isolationLevel: "serializable" },
           ),
+        // Another server instance: it waits on the database lock itself.
+        { queue: new SessionLockQueue() },
       );
       for (
         let i = 0;
@@ -192,6 +196,64 @@ describe("releaseReserved", () => {
     await reserved.unsafe("begin");
     await reserved`select pg_advisory_lock(495), pg_advisory_xact_lock(496)`;
     await releaseReserved(reserved);
+    await expectClean();
+  });
+});
+
+describe("SessionLockQueue", () => {
+  it("runs holders of one name in order and forgets the name afterwards", async () => {
+    const queue = new SessionLockQueue();
+    const order: number[] = [];
+    await Promise.all(
+      [1, 2, 3].map(async (n) => {
+        const done = await queue.take("q", Infinity);
+        order.push(n);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        order.push(-n);
+        done();
+      }),
+    );
+    expect(order).toEqual([1, -1, 2, -2, 3, -3]);
+    expect(queue.size).toBe(0);
+  });
+
+  it("lets a waiter give up without blocking the ones behind it", async () => {
+    const queue = new SessionLockQueue();
+    const first = await queue.take("q", Infinity);
+    const late = queue.take("q", Date.now() + 20);
+    const third = queue.take("q", Infinity);
+    await expect(late).rejects.toBeInstanceOf(SessionLockTimeoutError);
+    expect(queue.size).toBe(1);
+    first();
+    (await third)();
+    expect(queue.size).toBe(0);
+  });
+});
+
+describe("withSessionAdvisoryLock timeout", () => {
+  it("gives up on a held database lock, leaving no lock or lock_timeout behind", async () => {
+    const name = "reserved-timeout";
+    await observer`select pg_advisory_lock(hashtextextended(${name}, 0))`;
+    try {
+      const queue = new SessionLockQueue();
+      await expect(
+        withSessionAdvisoryLock(db, name, async () => "ran", {
+          timeoutMs: 100,
+          queue,
+        }),
+      ).rejects.toBeInstanceOf(SessionLockTimeoutError);
+      expect(queue.size).toBe(0);
+      const [own] =
+        await client`select current_setting('lock_timeout') as timeout, (select count(*)::int from pg_locks where pid = pg_backend_pid() and locktype = 'advisory') as locks`;
+      expect(own).toEqual({ timeout: "0", locks: 0 });
+    } finally {
+      await observer`select pg_advisory_unlock(hashtextextended(${name}, 0))`;
+    }
+    expect(
+      await withSessionAdvisoryLock(db, name, async () => "ran", {
+        timeoutMs: 1000,
+      }),
+    ).toBe("ran");
     await expectClean();
   });
 });

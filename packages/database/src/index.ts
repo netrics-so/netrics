@@ -309,6 +309,9 @@ export {
 } from "./oauth.js";
 export {
   isPooledDatabase,
+  processSessionLocks,
+  SessionLockQueue,
+  SessionLockTimeoutError,
   withSessionAdvisoryLock,
   type PooledDb,
 } from "./reserved.js";
