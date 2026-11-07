@@ -271,6 +271,37 @@ describe("incremental connector staging (ADR 0024)", () => {
     );
   });
 
+  it("commits a stage across a daylight-saving change in the session time zone", async () => {
+    const f = await fixture();
+    const name = new URL(test.adminUrl).pathname.slice(1);
+    await owner.unsafe(
+      `alter database ${name} set timezone to 'America/New_York'`,
+    );
+    const local = createDatabase(test.appUrl, { max: 1 });
+    try {
+      // 2026-03-08 has 23 hours in New York; the deadline is 24 hours later.
+      const at = new Date("2026-03-07T12:00:00.000Z");
+      const store = createDatasetStaging({
+        db: local,
+        ...f,
+        manifest,
+        clock: () => at,
+        signal: new AbortController().signal,
+      });
+      const stage = await store.put({
+        key: "dst",
+        metadata: {},
+        pages: [page(0)],
+      });
+      const [row] =
+        await owner`select expires_at from data_connector_stages where id=${stage.id}`;
+      expect(row!.expires_at).toEqual(new Date(at.getTime() + DAY));
+    } finally {
+      await local.$client.end({ timeout: 5 });
+      await owner.unsafe(`alter database ${name} reset timezone`);
+    }
+  });
+
   it("refuses a page key that an earlier append already stored as a contract error", async () => {
     const f = await fixture();
     const writer = await staging(f).begin!({ key: "duplicate", ...identity });

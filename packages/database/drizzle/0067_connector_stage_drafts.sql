@@ -37,6 +37,6 @@ CREATE POLICY data_connector_stages_draft_update ON data_connector_stages
  AS RESTRICTIVE FOR UPDATE TO netrics_app
  USING (committed_at IS NULL)
  WITH CHECK (
-   expires_at <= source_collected_at + interval '1 day'
+   expires_at <= source_collected_at + interval '24 hours'
    AND (source_expires_at IS NULL OR expires_at <= source_expires_at)
  );
