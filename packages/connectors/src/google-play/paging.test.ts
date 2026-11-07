@@ -68,60 +68,75 @@ async function firstRaw(
 }
 
 describe("Google Play checkpoint consistency", () => {
-  it("keeps a buffered refresh when staging capacity becomes available between turns", async () => {
+  it("keeps an unstaged refresh when staging capacity becomes available between turns", async () => {
     const fake = fakePlay();
     fake.put(
       `stats/installs/installs_${ALPHA}_202610_country.csv`,
-      installFile(2001),
+      installFile(9001),
       "1",
     );
     let available = false;
-    let cached: Parameters<ConnectorDatasetStaging["put"]>[0] | undefined;
-    const id = "00000000-0000-4000-8000-000000000001";
     const store: ConnectorDatasetStaging = {
-      get: vi.fn(async (key) =>
-        cached ? { id, key, metadata: cached.metadata } : null,
-      ),
-      put: vi.fn(async (value) => {
-        if (!available) throw new Error("Staging cache is full");
-        cached = value;
-        return { id, key: value.key, metadata: value.metadata };
+      get: vi.fn(async () => null),
+      put: vi.fn(async () => {
+        throw new Error("Not used: the connector stages through begin");
       }),
-      getPage: vi.fn(async (_id, key) => {
-        const page = cached?.pages.find((page) => page.pageKey === key);
-        if (!page) throw new Error("Missing test stage page");
-        return page;
+      begin: vi.fn(async () => {
+        if (!available) throw new Error("Staging cache is full");
+        throw new Error("Not reached: the task stays unstaged");
+      }),
+      getPage: vi.fn(async () => {
+        throw new Error("Missing test stage page");
       }),
     };
     fake.runtime.datasetStaging = store;
     const { page: first } = await firstRaw(fake);
-    expect(first.datasetPages?.[0]?.stagingId).toBeUndefined();
+    const installs = (result: SyncResult) =>
+      (result.datasetPages ?? []).filter(
+        (p) => p.datasetKey === "install_rows",
+      );
+    // Without a stage a turn carries up to eight pages of its app.
+    expect(installs(first).map((p) => p.pageKey)).toEqual([
+      "0",
+      "1000",
+      "2000",
+      "3000",
+      "4000",
+      "5000",
+      "6000",
+      "7000",
+    ]);
+    expect(installs(first).every((p) => !p.complete && !p.stagingId)).toBe(
+      true,
+    );
     available = true;
-    let cursor = first.nextCursor;
-    for (const [offset, complete] of [
-      [1000, false],
-      [2000, true],
-    ] as const) {
-      const next = await createGooglePlayConnector({
-        now: () => TEST_NOW,
-      }).sync(context, { ...request, cursor }, fake.runtime);
-      expect(next.datasetPages?.[0]).toMatchObject({
+    const next = await createGooglePlayConnector({
+      now: () => TEST_NOW,
+    }).sync(context, { ...request, cursor: first.nextCursor }, fake.runtime);
+    expect(installs(next)).toMatchObject([
+      {
         refreshKey: first.datasetPages?.[0]?.refreshKey,
-        pageKey: String(offset),
-        previousPageKey: String(offset - 1000),
-        complete,
-      });
-      expect(next.datasetPages?.[0]?.stagingId).toBeUndefined();
-      cursor = next.nextCursor;
-    }
+        pageKey: "8000",
+        previousPageKey: "7000",
+        complete: false,
+      },
+      {
+        refreshKey: first.datasetPages?.[0]?.refreshKey,
+        pageKey: "9000",
+        previousPageKey: "8000",
+        complete: true,
+      },
+    ]);
+    expect(installs(next).every((p) => !p.stagingId)).toBe(true);
     expect(store.get).toHaveBeenCalledTimes(1);
-    expect(store.put).toHaveBeenCalledTimes(1);
+    expect(store.begin).toHaveBeenCalledTimes(1);
+    expect(store.put).not.toHaveBeenCalled();
     expect(store.getPage).not.toHaveBeenCalled();
   });
   it("restarts a changed pending object, pins the reporting window and never puts provider records in checkpoints", async () => {
     const fake = fakePlay(),
       name = `stats/installs/installs_${ALPHA}_202610_country.csv`;
-    fake.put(name, installFile(1001), "1");
+    fake.put(name, installFile(8001), "1");
     const { page: first, connector } = await firstRaw(fake);
     expect(first.datasetPages?.[0]).toMatchObject({
       records: expect.any(Array),
@@ -130,15 +145,20 @@ describe("Google Play checkpoint consistency", () => {
       previousPageKey: null,
     });
     expect(first.datasetPages?.[0]?.records).toHaveLength(1000);
+    expect(first.datasetPages).toHaveLength(8);
+    expect(first.datasetPages?.at(-1)).toMatchObject({
+      pageKey: "7000",
+      complete: false,
+    });
     const state = JSON.parse(
       Buffer.from(first.nextCursor!.split(":")[1]!, "base64url").toString(
         "utf8",
       ),
     ) as Record<string, unknown>;
-    expect(state.offset).toBe(1000);
+    expect(state.offset).toBe(8000);
     expect(state.to).toBe(request.to);
     expect(JSON.stringify(state)).not.toContain("provider_fields");
-    fake.put(name, installFile(1001, true), "2");
+    fake.put(name, installFile(8001, true), "2");
     const reset = await connector.sync(
       context,
       { ...request, cursor: first.nextCursor, to: "2027-01-01T00:00:00.000Z" },
@@ -163,8 +183,8 @@ describe("Google Play checkpoint consistency", () => {
       fake.runtime,
     );
     expect(complete.datasetPages?.[0]).toMatchObject({
-      pageKey: "1000",
-      previousPageKey: "0",
+      pageKey: "8000",
+      previousPageKey: "7000",
       complete: true,
       refreshKey: reset.datasetPages?.[0]?.refreshKey,
     });
@@ -183,7 +203,7 @@ describe("Google Play checkpoint consistency", () => {
   it("does not publish a partial replacement when a report becomes unreadable or forbidden", async () => {
     const fake = fakePlay(),
       name = `stats/installs/installs_${ALPHA}_202610_country.csv`;
-    fake.put(name, installFile(1001), "1");
+    fake.put(name, installFile(8001), "1");
     const { page, connector } = await firstRaw(fake);
     fake.privateStatus.set(name, 403);
     const next = await connector.sync(

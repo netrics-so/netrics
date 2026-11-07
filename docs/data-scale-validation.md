@@ -459,6 +459,57 @@ Streaming staging, a staged form that fits the report budget and a fallback
 without re-reading are proposed in
 [#519](https://github.com/netrics-so/netrics/issues/519) and not built here.
 
+#### After #519
+
+Since [#525](https://github.com/netrics-so/netrics/issues/525) and
+[#519](https://github.com/netrics-so/netrics/issues/519)
+([ADR 0024](./decisions/0024-streaming-connector-staging.md)) the connector
+writes a report task to the stage while it reads the report
+(`datasetStaging.begin`, `append`, `commit`). Rows stay in parse order per app,
+each app holds at most one pending page, and all pending pages together are
+kept under 8 MiB of row JSON by writing the largest one out early. The host
+stores pages gzip-compressed and counts those bytes against the stage limit and
+`maxConnectorStagingBytes`. A later turn takes consecutive staged pages of its
+app, up to about one full page of rows.
+
+Same synthetic archives, environment and method as above (2026-11-07, three
+runs each, `node scripts/scale/run.ts play --runs 3`). "Stored stage" is the
+compressed page bytes of the stage.
+
+| Inflated CSV (lines) | Scope    | First read         | Peak heap above baseline | Peak RSS          | Stored stage     | Each later page turn                 |
+| -------------------- | -------- | ------------------ | ------------------------ | ----------------- | ---------------- | ------------------------------------ |
+| 8 MiB (41,112)       | all apps | 2.4 s [2.3–2.4]    | 107 MiB [100–111]        | 308 MiB [295–312] | 2.9 MiB, staged  | 41 ms [28–49], 889 rows, no download |
+| 8 MiB (4,112 rows)   | one app  | 0.5 s [0.5–0.5]    | 47 MiB [46–54]           | 226 MiB [224–227] | 0.3 MiB, staged  | 21 ms [19–29], 981 rows, no download |
+| 16 MiB (82,225)      | all apps | 4.6 s [4.6–4.6]    | 101 MiB [101–112]        | 294 MiB [290–310] | 5.7 MiB, staged  | 43 ms [28–55], 889 rows, no download |
+| 16 MiB (8,223 rows)  | one app  | 0.8 s [0.8–0.8]    | 57 MiB [53–63]           | 241 MiB [232–242] | 0.5 MiB, staged  | 21 ms [20–22], 981 rows, no download |
+| 32 MiB (164,451)     | all apps | 9.0 s [9.0–10.3]   | 116 MiB [102–117]        | 328 MiB [327–333] | 11.4 MiB, staged | 41 ms [29–49], 889 rows, no download |
+| 32 MiB (16,446 rows) | one app  | 1.6 s [1.6–1.6]    | 64 MiB [63–91]           | 265 MiB [263–286] | 1.1 MiB, staged  | 20 ms [19–23], 981 rows, no download |
+| 63 MiB (323,763)     | all apps | 17.8 s [17.6–17.8] | 162 MiB [153–162]        | 374 MiB [361–395] | 22.4 MiB, staged | 46 ms [32–54], 889 rows, no download |
+| 63 MiB (32,377 rows) | one app  | 3.1 s [3.1–3.2]    | 96 MiB [73–96]           | 338 MiB [334–343] | 2.2 MiB, staged  | 21 ms [19–23], 981 rows, no download |
+
+Every size is now staged; the 63 MiB all-apps archive takes 22.4 MiB of the
+128 MiB stage limit (1,942 pages) instead of being refused, and no later turn
+downloads the report again. The first read is 30% faster at 63 MiB and twice as
+fast at 8 MiB, because nothing is sorted or held until the end.
+
+The heap column samples `heapUsed + arrayBuffers` every 5 ms, as above. It
+includes garbage the collector has not reached yet, and it no longer grows
+with the report: 101–162 MiB from 8 to 63 MiB, against 173 MiB to 1.4 GiB
+before. Memory that is actually retained is smaller. Rerun with
+`NETRICS_SCALE_PLAY_LIVE=1`, which collects garbage before a sample every
+100 ms, the 63 MiB all-apps first read retains at most 45 MiB above the
+baseline (45 in all three runs; 15 MiB [14–16] for one app). With those
+collections, the 5 ms samples peak at 75 MiB and the first read takes 19.6 s.
+#519's acceptance (a constant number of pages per app, well under 100 MiB
+above baseline) holds for retained memory; the sampled peak, which includes
+uncollected garbage, is 162 MiB.
+
+Without a stage (a host without `begin`, or a refused stage), a turn reads the
+report again and keeps only its app's rows from the checkpoint, up to eight
+pages. A report task then costs about one read per app plus one per eight
+pages, instead of one per page (`staging-quota.test.ts` and the connector's
+`staging.test.ts` check this).
+
 ### Confirmed boundaries
 
 At the measured sizes, these are expected behaviour, not defects:
@@ -509,8 +560,10 @@ At the measured sizes, these are expected behaviour, not defects:
   expired records (`EXISTS ... WHERE expires_at <= p_now`) can switch to a
   cached generic plan that scans all of `data_records`, about 0.5 s per call
   at 4.16 M records (0065); see "After #518".
-- [#519](https://github.com/netrics-so/netrics/issues/519): stream Google Play
-  report staging instead of buffering a whole report task.
+- [#519](https://github.com/netrics-so/netrics/issues/519) (fixed, with
+  [#525](https://github.com/netrics-so/netrics/issues/525)): Google Play report
+  staging is streamed instead of buffering a whole report task; see "After
+  #519" above.
 
 ## Configurable policy versus implementation safeguards
 

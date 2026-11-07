@@ -20,12 +20,13 @@ import {
   zipArchive,
 } from "../../../../packages/connectors/src/google-play/test-helpers.js";
 
-// Google Play first-read memory (#501). The connector parses a report
-// incrementally, but collects the typed rows of one report task before it
-// sorts and stages them (datasetStaging.put takes a complete page set). This
-// measures that buffer on synthetic earnings archives through the real host
+// Google Play first-read memory (#501, #519). Since #519 the connector
+// stages a report while reading it (datasetStaging.begin/append/commit), per
+// app in parse order, holding a bounded number of pending pages; the host
+// stores pages gzip-compressed. This measures one report task's first read
+// and the turns after it on synthetic earnings archives through the real host
 // staging adapter. One size per process, so peak RSS belongs to that size:
-// scripts/scale/run.mjs runs each size and scope in a fresh process.
+// scripts/scale/run.ts runs each size and scope in a fresh process.
 const inflatedMiB = Number(process.env.NETRICS_SCALE_PLAY_MIB ?? 0);
 const scope = process.env.NETRICS_SCALE_PLAY_SCOPE ?? "all";
 const enabled = inflatedMiB > 0;
@@ -159,7 +160,7 @@ afterAll(async () => {
 });
 
 describe.runIf(enabled)("Google Play first-read memory (#501)", () => {
-  it("measures peak memory of one buffered report task before staging", async () => {
+  it("measures peak memory of one report task's first read and later turns", async () => {
     const fake = fakePlay({ maxResponseBytes: 10 * MIB });
     const report = earningsArchive(inflatedMiB * MIB);
     fake.objects.delete("earnings/earnings_202610_adjustment.zip");
@@ -199,11 +200,20 @@ describe.runIf(enabled)("Google Play first-read memory (#501)", () => {
       const media = fake.mediaBytes.length;
       let peakRss = before.rss,
         peakHeap = before.heapUsed + before.arrayBuffers;
+      let peakLive = 0;
       const sampler = setInterval(() => {
         const now = process.memoryUsage();
         peakRss = Math.max(peakRss, now.rss);
         peakHeap = Math.max(peakHeap, now.heapUsed + now.arrayBuffers);
       }, 5);
+      // Opt-in: live memory, collected before each sample (slows the turn).
+      const live = process.env.NETRICS_SCALE_PLAY_LIVE
+        ? setInterval(() => {
+            gc();
+            const now = process.memoryUsage();
+            peakLive = Math.max(peakLive, now.heapUsed + now.arrayBuffers);
+          }, 100)
+        : undefined;
       const start = performance.now();
       const page = await connector.sync(
         context,
@@ -212,6 +222,7 @@ describe.runIf(enabled)("Google Play first-read memory (#501)", () => {
       );
       const elapsed = performance.now() - start;
       clearInterval(sampler);
+      clearInterval(live);
       const after = process.memoryUsage();
       peakRss = Math.max(peakRss, after.rss);
       peakHeap = Math.max(peakHeap, after.heapUsed + after.arrayBuffers);
@@ -238,13 +249,27 @@ describe.runIf(enabled)("Google Play first-read memory (#501)", () => {
           heapAboveBaselineMiB: Math.round(
             (peakHeap - baseline.heapUsed - baseline.arrayBuffers) / MIB,
           ),
+          ...(live
+            ? {
+                liveHeapAboveBaselineMiB: Math.round(
+                  (peakLive - baseline.heapUsed - baseline.arrayBuffers) / MIB,
+                ),
+              }
+            : {}),
         });
       if (page.done) break;
       cursor = page.nextCursor;
     }
     expect(earningsTurns).toBeGreaterThan(0);
+    // #519 acceptance, as correctness: the report is staged at every size,
+    // and later turns read only the stage.
+    const earningsPages = turns.filter((turn) => turn.earningsPage);
+    expect(earningsPages.every((turn) => turn.staged)).toBe(true);
+    expect(
+      earningsPages.slice(1).every((turn) => turn.mediaDownloads === 0),
+    ).toBe(true);
     const [stages] =
-      await owner`select count(distinct s.id)::int as stages, coalesce(sum(octet_length(p.payload::text)), 0)::bigint as staged_bytes, count(p.*)::int as staged_pages from data_connector_stages s left join data_connector_stage_pages p on p.stage_id = s.id where s.workspace_id = ${workspaceId}`;
+      await owner`select count(distinct s.id)::int as stages, coalesce(sum(octet_length(p.payload_gzip)), 0)::bigint as staged_bytes, count(p.*)::int as staged_pages from data_connector_stages s left join data_connector_stage_pages p on p.stage_id = s.id where s.workspace_id = ${workspaceId} and s.committed_at is not null`;
     Object.assign(result, {
       scope,
       apps: scope === "selected" ? 1 : APPS + 2,
@@ -268,7 +293,7 @@ describe.runIf(enabled)("Google Play first-read memory (#501)", () => {
       stage: {
         stages: stages!.stages,
         pages: stages!.staged_pages,
-        jsonMiB: Math.round((Number(stages!.staged_bytes) / MIB) * 10) / 10,
+        storedMiB: Math.round((Number(stages!.staged_bytes) / MIB) * 10) / 10,
       },
       turns,
     });

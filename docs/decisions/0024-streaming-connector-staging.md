@@ -80,11 +80,33 @@ JSONB. The default stays 128 MiB, so the same setting admits several times more
 parsed rows than before. Operators who sized it to their storage keep that
 meaning; operators who used it to bound report size get larger reports staged.
 
+## Google Play use (#519)
+
+The Google Play connector stages a report task through `begin` while it reads
+the report. Rows go to their app partition in parse order (object name, archive
+member, line); the global sort is gone, and row identity stays the `row_id`
+hash with a duplicate ordinal (counted per 96-bit hash prefix). Each app holds
+at most one pending page, kept as JSON text. When all pending pages together
+exceed 8 MiB, the largest one is written as a shorter page, so memory does not
+grow with the number of apps. Page boundaries depend only on the report, and
+only an app's final page (possibly empty) is complete. The page index lives in
+the stage metadata as one compact string per app, because stage metadata is
+bounded JSON. A turn emits consecutive staged pages of its app up to about one
+full page of rows (at most 16 pages). Stage keys start with `play-v2`; stages
+written by the previous connector are not reused.
+
+Without a stage (a host without `begin`, a refused `begin`, append or commit,
+or a task that started without one), the connector no longer holds the whole
+task. Each turn reads the report again and keeps only its app's rows from the
+checkpoint, up to eight pages, while it counts and digests all of that app's
+rows. A report task then costs about one read per app plus one per eight pages,
+instead of one read per page, and a turn holds at most eight pages. A task that
+starts without a stage keeps that mode through its continuation, as before.
+
 ## Consequences and boundaries
 
 A connector can stage a report while reading it and keep only a bounded number
-of pages in memory; the Google Play connector moves to this in the second part
-of #519. Reports within the 64 MiB inflation budget fit a stage at measured
+of pages in memory; the Google Play connector does so since #519 (above). Reports within the 64 MiB inflation budget fit a stage at measured
 compression ratios. Compression costs CPU on append and on every page read
 (each page is at most 1 MiB of JSON). A draft never spans connector calls, so a
 first read that takes longer than one call still starts over; the draft TTL

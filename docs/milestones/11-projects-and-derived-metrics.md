@@ -186,7 +186,7 @@ implementation work; this plan does not create or complete issue records.
     ([#518](https://github.com/netrics-so/netrics/issues/518), since fixed),
     and Google Play
     first reads need streaming staging above about 23 MiB of report text
-    ([#519](https://github.com/netrics-so/netrics/issues/519)).
+    ([#519](https://github.com/netrics-so/netrics/issues/519), since fixed).
   - Pinned first pages of different models or workspaces without
     `version_conflict`:
     [#516](https://github.com/netrics-so/netrics/issues/516). A first page is
@@ -215,8 +215,18 @@ implementation work; this plan does not create or complete issue records.
     abort); drafts are unreadable until commit, budgeted on every append
     under a separate staging lock (441), and expire after 15 minutes when
     abandoned. Pages are stored gzip-compressed, and `maxConnectorStagingBytes`
-    now counts those stored bytes (migration 0067). The Google Play connector
-    still stages through `put`; streaming it is the second part of #519.
+    now counts those stored bytes (migration 0067).
+  - Streaming Google Play report staging:
+    [#519](https://github.com/netrics-so/netrics/issues/519). The connector
+    writes a report task to the stage while reading it, per app in parse
+    order (no global sort), with at most one pending page per app and 8 MiB of
+    pending rows in all; stage keys move to `play-v2`. Without a stage a turn
+    reads the report again for up to eight pages of its app instead of one.
+    Measured: the 63 MiB all-apps earnings archive is now staged (22.4 MiB
+    compressed) in 17.8 s instead of refused after 25.3 s, retains at most
+    45 MiB above the baseline instead of 1.4 GiB, and later turns read only
+    the stage
+    ([after #519](../data-scale-validation.md#after-519)).
   - Rolling-window and period-offset measures:
     [#486](https://github.com/netrics-so/netrics/issues/486). Date-only
     anchors, windows recomputed from rows, capped month/year offsets, lookback

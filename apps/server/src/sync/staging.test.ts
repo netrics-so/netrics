@@ -216,14 +216,14 @@ describe("durable parsed Google Play report staging", () => {
   it("restarts corrected or expired pending stages and re-authorizes cached object reads", async () => {
     const fake = fakePlay();
     const name = `stats/installs/installs_${ALPHA}_202610_country.csv`;
-    fake.put(name, installFile(1001), "200");
+    fake.put(name, installFile(5001), "200");
     const connector = createGooglePlayConnector({ now: () => TEST_NOW });
     let runtime: ConnectorRuntime = {
       ...fake.runtime,
       datasetStaging: staging(connector.manifest),
     };
     const first = await firstRaw(runtime);
-    fake.put(name, installFile(1001, true), "201");
+    fake.put(name, installFile(5001, true), "201");
     const corrected = await connector.sync(
       context(),
       { ...request, cursor: first.nextCursor },
@@ -316,7 +316,7 @@ describe("durable parsed Google Play report staging", () => {
     expect(earning).toMatchObject({ pageKey: "0", previousPageKey: null });
   });
 
-  it("falls back to the buffered report when staging refuses a stage", async () => {
+  it("falls back to reading the report again when staging refuses a stage", async () => {
     const fake = fakePlay();
     const name = `stats/installs/installs_${ALPHA}_202610_country.csv`;
     fake.put(name, installFile(3), "300");
@@ -325,7 +325,7 @@ describe("durable parsed Google Play report staging", () => {
       ...fake.runtime,
       datasetStaging: {
         ...store,
-        put: () => Promise.reject(new Error("dataset_stage_limit")),
+        begin: () => Promise.reject(new Error("dataset_stage_limit")),
       },
     };
     const raw = await firstRaw(runtime);
