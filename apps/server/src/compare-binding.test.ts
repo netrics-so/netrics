@@ -1161,6 +1161,45 @@ async function revenueModel(
         sum("denominator", "orders"),
         // Another count, so operands can both be counts.
         { ...sum("orders_again", "orders"), name: "Orders again" },
+        // Not numbers: a string, empty here (no currency is "XXX").
+        {
+          id: "no_currency",
+          name: "No currency",
+          kind: "aggregate",
+          datasetId,
+          aggregate: {
+            id: "no_currency",
+            name: "no_currency",
+            op: "max",
+            fieldId: "currency",
+            filter: {
+              kind: "call",
+              fn: "eq",
+              args: [
+                { kind: "field", fieldId: "currency" },
+                { kind: "literal", type: "string", value: "XXX" },
+              ],
+            },
+          },
+        },
+        // Orders per revenue, an inverse amount, with units on both.
+        ...(ordersUnit
+          ? [
+              {
+                id: "orders_per_revenue",
+                name: "Orders per revenue",
+                kind: "formula",
+                expression: {
+                  kind: "call",
+                  fn: "divide",
+                  args: [
+                    { kind: "field", fieldId: "denominator" },
+                    { kind: "field", fieldId: "numerator" },
+                  ],
+                },
+              },
+            ]
+          : []),
         {
           id: "ratio",
           name: "Revenue per order",
@@ -1486,6 +1525,52 @@ describe("bound compare widgets: amounts per amount in two scales (#507)", () =>
       denominator: { value: 28, unit: "EUR_minor" },
       ratio: { value: 3750, previousValue: 3750 },
       unit: null,
+    });
+  }, 60_000);
+});
+
+describe("bound compare widgets: inverse amounts and empty non-numbers (#507)", () => {
+  it("refuses an amount in the denominator of the ratio's unit", async () => {
+    const model = await revenueModel(
+      "inverse",
+      () => "EUR",
+      "count",
+      () => "15000",
+      "EUR_minor",
+    );
+    const measure = {
+      ...model,
+      measureIds: {
+        numerator: "denominator",
+        denominator: "orders_again",
+        ratio: "orders_per_revenue",
+      },
+    };
+    const read = await readInBrowser([
+      { id: uuid(89, 1), period: "last_7_days", measure, format: "percent" },
+    ]);
+    expect(read.json().widgets[0]).toMatchObject({
+      status: "outage",
+      error: "compare_units_incompatible",
+    });
+  }, 60_000);
+
+  it("refuses a measure that is not a number, also when it is empty", async () => {
+    const model = await revenueModel("not_a_number", () => "EUR");
+    const measure = {
+      ...model,
+      measureIds: {
+        numerator: "denominator",
+        denominator: "orders_again",
+        ratio: "no_currency",
+      },
+    };
+    const read = await readInBrowser([
+      { id: uuid(89, 2), period: "last_7_days", measure },
+    ]);
+    expect(read.json().widgets[0]).toMatchObject({
+      status: "outage",
+      error: "compare_measure_not_numeric",
     });
   }, 60_000);
 });

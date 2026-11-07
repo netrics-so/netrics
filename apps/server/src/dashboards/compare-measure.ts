@@ -239,18 +239,23 @@ type Cell = { value: number | null; unit: string | null };
 function operandOf(
   data: DashboardWidgetData,
   measureId: string,
-): Cell | "not_numeric" {
+): Cell | "not_numeric" | "units_unsupported" {
   const cell = data.result?.rows[0]?.measures[measureId];
+  // Its type is known also when it is empty.
+  if (cell && !["integer", "number", "decimal"].includes(cell.type))
+    return "not_numeric";
   // Compare amounts are minor units of their currency ("EUR_minor"), as
   // metric queries give them: an amount in major units ("currency") is
   // scaled, one in minor units relabelled. Any other number without a unit
   // is a plain count, so screens show it (a null unit is a failed query).
   // Also an amount per unit ("currency/count", "EUR_minor/count"): its
-  // scale is the amount's. An amount per amount is a plain number.
+  // scale is the amount's. An amount per amount is a plain number; a unit
+  // per amount ("count/EUR_minor") is no compare unit at all.
   const [base = "", per] = cell?.unit?.split("/") ?? [];
   const isAmount = (part: string) =>
     part.startsWith("currency") || amountCurrency(part) !== null;
   const perAmount = per !== undefined && isAmount(per);
+  if (perAmount && !isAmount(base)) return "units_unsupported";
   const perCurrency =
     !perAmount && Boolean(cell?.currency) && base.startsWith("currency");
   // Major units ("currency") of the cell's currency are 10^exponent minor
@@ -270,8 +275,6 @@ function operandOf(
         : (cell?.unit ?? "count");
   if (!cell || cell.value === null || cell.value === undefined)
     return { value: null, unit };
-  if (!["integer", "number", "decimal"].includes(cell.type))
-    return "not_numeric";
   const value = Number(cell.value);
   if (!Number.isFinite(value)) return "not_numeric";
   return {
@@ -382,12 +385,16 @@ export async function readCompareMeasure(
   const ratio = operandOf(current, ids.ratio);
   const previousRatio = operandOf(previous, ids.ratio);
   if (
-    numerator === "not_numeric" ||
-    denominator === "not_numeric" ||
-    ratio === "not_numeric" ||
-    previousRatio === "not_numeric"
+    typeof numerator === "string" ||
+    typeof denominator === "string" ||
+    typeof ratio === "string" ||
+    typeof previousRatio === "string"
   )
-    return failed("compare_measure_not_numeric");
+    return failed(
+      [numerator, denominator, ratio, previousRatio].includes("not_numeric")
+        ? "compare_measure_not_numeric"
+        : "compare_units_incompatible",
+    );
   // The units rule of the widget (ADR 0019 section 10) on the measures it
   // reads: the inline metrics it was checked with on save are not them. An
   // empty operand has no currency yet, so only operands with values say
