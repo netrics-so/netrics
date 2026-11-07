@@ -329,7 +329,10 @@ short or a 10-second budget is spent; a drain that ends with work left resumes
 on the next scheduler tick rather than an hour later. Prune never waits for a
 row lock (#517): it locks every row it changes or deletes with `SKIP LOCKED`,
 so rows that a policy change, a connection-retention change or ingestion holds
-are left for a later call, and it deletes a stage, refresh or generation only
+are left for a later call. Records of a released generation are taken
+generation by generation, and a generation whose first record is held (tried
+with `NOWAIT`, which fails at once) is skipped as a whole, so a call does not
+pass over every held record again. Prune deletes a stage, refresh or generation only
 once a snapshot taken after its lock shows no child rows for the cascade to
 lock. A transaction that never waits cannot be part of a deadlock, so prune and
 those changes no longer abort each other; a change waits at most for one prune

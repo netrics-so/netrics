@@ -4,9 +4,9 @@
 -- apply_connection_retention update data_records first and data_generations
 -- afterwards: a deadlock, and either side could be the one aborted.
 --
--- Every row prune changes or deletes is now first locked with SKIP LOCKED,
--- so a row another transaction holds is left for a later call instead of
--- waited for. Deleting a parent row (stage, refresh, generation) would also
+-- Every row prune changes or deletes is now first locked with SKIP LOCKED
+-- (or probed with NOWAIT, which fails at once instead of queueing), so a row
+-- another transaction holds is left for a later call instead of waited for. Deleting a parent row (stage, refresh, generation) would also
 -- lock its children through ON DELETE CASCADE; prune deletes only parents it
 -- has locked and that, in a snapshot taken after the lock, have no children.
 -- A child can only be added under a KEY SHARE lock on the parent, which the
@@ -22,7 +22,7 @@ CREATE FUNCTION prune_dataset_history_batch(p_now timestamptz, p_batch integer,
   OUT deleted integer, OUT more boolean)
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path = public, pg_temp AS $$
-DECLARE n integer; ids uuid[];
+DECLARE n integer; m integer; ids uuid[]; gen record; held boolean;
 BEGIN
   IF p_batch < 1 OR p_batch > 10000 THEN RAISE EXCEPTION 'invalid dataset prune batch'; END IF;
   deleted := 0; more := false;
@@ -89,17 +89,38 @@ BEGIN
   IF NOT more THEN more := n = p_batch OR EXISTS (
     SELECT 1 FROM data_records WHERE expires_at <= p_now); END IF;
 
-  DELETE FROM data_records WHERE (generation_id,record_key) IN (
-    SELECT r.generation_id,r.record_key FROM data_generations g
-    JOIN data_records r ON r.generation_id=g.id AND r.workspace_id=g.workspace_id
-    WHERE g.expires_at <= p_now
-    FOR UPDATE OF r SKIP LOCKED LIMIT p_batch
-  );
-  GET DIAGNOSTICS n = ROW_COUNT; deleted := deleted+n;
-  IF NOT more THEN more := n = p_batch OR EXISTS (
-    SELECT 1 FROM data_generations g
-    JOIN data_records r ON r.generation_id=g.id AND r.workspace_id=g.workspace_id
-    WHERE g.expires_at <= p_now); END IF;
+  -- Records of released or expired generations, generation by generation.
+  -- A policy or retention change updates every record of a generation, so
+  -- when the first one is held the rest usually are too: try it without
+  -- waiting (NOWAIT fails at once, it never queues) and skip the generation,
+  -- instead of passing over all its held records on every call.
+  -- Expired generations are few (released ones are deleted once empty), and
+  -- each is looked up by its own key, never by scanning all records.
+  n := 0;
+  FOR gen IN
+    SELECT g.id, g.workspace_id FROM data_generations g WHERE g.expires_at <= p_now
+  LOOP
+    IF n >= p_batch THEN more := true; EXIT; END IF;
+    held := false;
+    BEGIN
+      PERFORM 1 FROM data_records r WHERE r.generation_id=gen.id AND r.workspace_id=gen.workspace_id
+        ORDER BY r.record_key LIMIT 1 FOR UPDATE NOWAIT;
+    EXCEPTION WHEN lock_not_available THEN held := true;
+    END;
+    IF held THEN more := true;
+    ELSE
+      DELETE FROM data_records WHERE (generation_id,record_key) IN (
+        SELECT r.generation_id,r.record_key FROM data_records r
+        WHERE r.generation_id=gen.id AND r.workspace_id=gen.workspace_id
+        FOR UPDATE SKIP LOCKED LIMIT p_batch - n
+      );
+      GET DIAGNOSTICS m = ROW_COUNT; n := n+m;
+      IF NOT more THEN more := EXISTS (
+        SELECT 1 FROM data_records r
+        WHERE r.generation_id=gen.id AND r.workspace_id=gen.workspace_id); END IF;
+    END IF;
+  END LOOP;
+  deleted := deleted+n;
 
   DELETE FROM data_pages WHERE id IN (
     WITH expired AS (
