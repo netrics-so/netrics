@@ -110,3 +110,36 @@ export function countScreens(
     revoked,
   };
 }
+
+/**
+ * A screen's fixed scope (#500) in one line, by filter name: "Country: DE,
+ * FR · Date: 2026-01-01 – …"; null for a screen without one. A scoped
+ * filter the dashboard no longer has keeps its id, so the line never hides
+ * part of the scope.
+ */
+export function scopeSummary(
+  filters: ReadonlyArray<{ id: string; name: string }>,
+  scope: Device["scope"],
+  booleans: { true: string; false: string; missing: string },
+): string | null {
+  if (!scope) {
+    return null;
+  }
+  const text = (raw: unknown) =>
+    raw === null
+      ? booleans.missing
+      : typeof raw === "boolean"
+        ? booleans[raw ? "true" : "false"]
+        : String(raw);
+  const parts = Object.entries(scope.values).map(([id, value]) => {
+    const name = filters.find((filter) => filter.id === id)?.name ?? id;
+    const shown =
+      value.kind === "values"
+        ? value.values.map(text).join(", ")
+        : `${value.from === null ? "…" : text(value.from)} – ${
+            value.to === null ? "…" : text(value.to)
+          }`;
+    return `${name}: ${shown}`;
+  });
+  return parts.length > 0 ? parts.join(" · ") : null;
+}

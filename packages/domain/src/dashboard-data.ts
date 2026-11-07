@@ -24,6 +24,15 @@ export interface DashboardDataFilter {
   /** Fixed scopes are conjoined with viewer choices, never replaced by them. */
   fixedValue?: DashboardFilterValue;
 }
+/**
+ * A paired screen's fixed scope (#500): per shared dashboard filter, the
+ * values or range the screen may show. Conjoined with the filter's saved
+ * choice and its dashboard-wide fixed scope, like `fixedValue`; it can only
+ * narrow what the screen shows, never widen it.
+ */
+export type DeviceFilterScope = Readonly<
+  Record<string, Exclude<DashboardFilterValue, null>>
+>;
 export interface DashboardFilterExclusion {
   filterId: string;
   reason: string;
@@ -128,18 +137,48 @@ function predicate(
   return combine("and", parts);
 }
 
-/** No filter disappears silently. Unmapped widgets must declare an exclusion. */
+/**
+ * Checks a screen's fixed scope against the dashboard's filters: every
+ * entry names a filter, matches its mode and type, and restricts something.
+ * An entry that would not restrict (an empty list, an open range) is refused
+ * rather than read as "everything".
+ */
+export function validateDeviceFilterScope(
+  filters: readonly DashboardDataFilter[],
+  scope: DeviceFilterScope,
+): void {
+  for (const [filterId, value] of Object.entries(scope)) {
+    const filter = filters.find((filter) => filter.id === filterId);
+    if (!filter) dataFail("device_scope_filter_unknown", filterId);
+    let restricts: DataExpression | undefined;
+    try {
+      restricts = predicate(filter, filter.id, value);
+    } catch {
+      dataFail("device_scope_value_invalid", filterId);
+    }
+    if (!restricts) dataFail("device_scope_value_invalid", filterId);
+  }
+}
+
+/**
+ * No filter disappears silently. Unmapped widgets must declare an exclusion.
+ * `scope` is a paired screen's fixed scope: like a fixed value it is
+ * conjoined with every choice and can never be excluded, and a scope the
+ * dashboard's filters no longer support fails instead of being dropped.
+ */
 export function dashboardModelQuery(
   filters: readonly DashboardDataFilter[],
   values: Readonly<Record<string, DashboardFilterValue>>,
   binding: MeasureWidgetBinding,
   limit = 1000,
   window: ModelQuery["window"] = "first",
+  scope: DeviceFilterScope = {},
 ): Omit<ModelQuery, "now"> {
   const ids = new Set(filters.map((filter) => filter.id));
   if (ids.size !== filters.length) dataFail("dashboard_filter_ids_not_unique");
   if (Object.keys(values).some((id) => !ids.has(id)))
     dataFail("dashboard_filter_unknown");
+  validateDeviceFilterScope(filters, scope);
   const exclusions = new Set<string>();
   for (const exclusion of binding.exclusions) {
     if (
@@ -157,9 +196,13 @@ export function dashboardModelQuery(
     );
     if (mappings.length > 1)
       dataFail("dashboard_filter_mapping_ambiguous", filter.id);
+    const screen = Object.hasOwn(scope, filter.id)
+      ? scope[filter.id]
+      : undefined;
     if (exclusions.has(filter.id)) {
       if (filter.fixedValue !== undefined && filter.fixedValue !== null)
         dataFail("dashboard_filter_fixed_scope_required", filter.id);
+      if (screen) dataFail("device_scope_not_applicable", filter.id);
       continue;
     }
     const mapping = mappings[0];
@@ -175,6 +218,7 @@ export function dashboardModelQuery(
       const fixed = predicate(filter, mapping.dimensionId, filter.fixedValue);
       if (fixed) parts.push(fixed);
     }
+    if (screen) parts.push(predicate(filter, mapping.dimensionId, screen)!);
   }
   const filter = combine("and", parts);
   return {

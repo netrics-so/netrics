@@ -30,6 +30,8 @@ import {
 import {
   dashboardWidgetDataSchema,
   dashboardDataFiltersSchema,
+  deviceFilterScopeSchema,
+  deviceScopeSchema,
   dashboardFilterExclusionSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
@@ -2663,6 +2665,12 @@ export const deviceSchema = z.object({
    * heartbeat (#406); null when it never did.
    */
   platform: devicePlatformSchema.nullable(),
+  /**
+   * The screen's fixed scope (#500): what it may show of its dashboard's
+   * shared filters, intersected with every choice on the server. Null when
+   * the screen shows the dashboard as saved.
+   */
+  scope: deviceScopeSchema.nullable(),
   createdAt: z.iso.datetime(),
   lastSeenAt: z.iso.datetime().nullable(),
   revokedAt: z.iso.datetime().nullable(),
@@ -2720,13 +2728,23 @@ export const updateDeviceRequestSchema = z
     dashboardId: z.uuid().nullable().optional(),
     rotation: deviceRotationSchema.optional(),
     displayMode: displayModeSchema.optional(),
+    /**
+     * Sets the screen's fixed scope for its (new) dashboard; null removes
+     * it. A scoped screen keeps its scope only on its dashboard: changing
+     * the dashboard of a scoped screen needs `scope` in the same request.
+     */
+    scope: z
+      .strictObject({ values: deviceFilterScopeSchema })
+      .nullable()
+      .optional(),
   })
   .refine(
     (body) =>
       body.name !== undefined ||
       body.dashboardId !== undefined ||
       body.rotation !== undefined ||
-      body.displayMode !== undefined,
+      body.displayMode !== undefined ||
+      body.scope !== undefined,
     { message: "nothing to change" },
   );
 export type UpdateDeviceRequest = z.infer<typeof updateDeviceRequestSchema>;

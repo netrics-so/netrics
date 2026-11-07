@@ -404,6 +404,7 @@ export async function updateDevice(
     dashboardId?: string | null;
     rotation?: number;
     displayMode?: string;
+    scope?: DeviceRow["scope"];
   },
 ): Promise<DeviceRow | null> {
   const [row] = await tx

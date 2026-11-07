@@ -169,6 +169,23 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       scroll: "Scroll-Ansicht",
     },
     appleTvMode: "Apple TV nutzt immer die Bildschirm-Ansicht.",
+    scopeTitle: "Fester Bereich",
+    scopeHelp:
+      "Leg fest, was dieser Bildschirm zeigen darf. Der Server wendet den Bereich auf jedes Widget des Bildschirms an; die Filter des Dashboards können ihn nur weiter einschränken.",
+    scopeNoFilters:
+      "Dieses Dashboard hat keine gemeinsamen Filter, daher zeigt der Bildschirm es wie gespeichert. Füg im Studio einen gemeinsamen Filter hinzu, um einen Bildschirm einzuschränken.",
+    scopeNoDashboard: "Wähl zuerst ein Dashboard.",
+    scopeLoading: "Filter des Dashboards werden geladen …",
+    scopeLoadFailed: "Die Filter des Dashboards konnten nicht geladen werden.",
+    scopeLimit: "{name} einschränken",
+    scopeOlderWidgets:
+      "Ältere Widgets, die gemeinsamen Filtern nicht folgen können, werden auf einem Bildschirm mit festem Bereich nicht gezeigt.",
+    scopeSave: "Bereich speichern",
+    scopeRemove: "Bereich entfernen",
+    scopeDashboardChange:
+      "Wenn du das Dashboard wechselst, wird der feste Bereich dieses Bildschirms entfernt.",
+    yes: "Ja",
+    no: "Nein",
     platforms: {
       tvos: "Apple TV",
       ipados: "iPad",

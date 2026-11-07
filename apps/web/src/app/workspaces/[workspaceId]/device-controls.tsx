@@ -26,6 +26,8 @@ interface DeviceControlsProps {
     displayMode: DisplayMode;
     /** iPads and iPhones turn by themselves: no rotation setting (#406). */
     platform: DevicePlatform | null;
+    /** Whether the screen has a fixed scope (#500) for its dashboard. */
+    scoped?: boolean;
   };
   /** The Apple TV app shows Screen view only: no mode to choose. */
   appleTv: boolean;
@@ -57,6 +59,7 @@ export function DeviceControls({
   const [error, setError] = useState<string | null>(null);
 
   const trimmed = name.trim();
+  const dashboardChanged = dashboardId !== (device.dashboardId ?? "");
   const changed =
     (trimmed !== "" && trimmed !== device.name) ||
     dashboardId !== (device.dashboardId ?? "") ||
@@ -82,9 +85,9 @@ export function DeviceControls({
     void run(() =>
       updateDevice(workspaceId, device.id, {
         ...(trimmed !== "" && trimmed !== device.name ? { name: trimmed } : {}),
-        ...(dashboardId !== (device.dashboardId ?? "")
-          ? { dashboardId: dashboardId || null }
-          : {}),
+        ...(dashboardChanged ? { dashboardId: dashboardId || null } : {}),
+        // A scope belongs to its dashboard (#500): the notice below says so.
+        ...(dashboardChanged && device.scoped ? { scope: null } : {}),
         ...(rotation !== device.rotation ? { rotation } : {}),
         ...(displayMode !== device.displayMode ? { displayMode } : {}),
       }),
@@ -128,6 +131,11 @@ export function DeviceControls({
             ))}
             <option value="">{t("noDashboard")}</option>
           </select>
+          {dashboardChanged && device.scoped ? (
+            <p className="field-hint" role="status">
+              {t("scopeDashboardChange")}
+            </p>
+          ) : null}
         </div>
         {hasRotationSetting(device.platform) ? (
           <div className="field">

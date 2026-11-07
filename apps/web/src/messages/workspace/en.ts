@@ -157,6 +157,23 @@ export const workspaceEn = {
       scroll: "Scroll view",
     },
     appleTvMode: "Apple TV always uses Screen view.",
+    scopeTitle: "Fixed scope",
+    scopeHelp:
+      "Limit what this screen may show. The server applies the scope to every widget on the screen; the dashboard’s own filters can only narrow it further.",
+    scopeNoFilters:
+      "This dashboard has no shared filters, so the screen shows it as saved. Add a shared filter in the Studio to limit a screen.",
+    scopeNoDashboard: "Choose a dashboard first.",
+    scopeLoading: "Loading the dashboard’s filters…",
+    scopeLoadFailed: "The dashboard’s filters could not be loaded.",
+    scopeLimit: "Limit {name}",
+    scopeOlderWidgets:
+      "Older widgets that cannot follow shared filters are not shown on a screen with a fixed scope.",
+    scopeSave: "Save scope",
+    scopeRemove: "Remove scope",
+    scopeDashboardChange:
+      "Changing the dashboard removes this screen’s fixed scope.",
+    yes: "Yes",
+    no: "No",
     platforms: {
       tvos: "Apple TV",
       ipados: "iPad",

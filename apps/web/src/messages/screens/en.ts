@@ -39,6 +39,8 @@ export const screensEn = {
     screenSize: "{width} × {height}",
     paired: "Paired",
     dashboard: "Dashboard",
+    scope: "Fixed scope",
+    noScope: "Whole dashboard",
     revokedNote: "Revoked {time}. This screen no longer shows data.",
     readOnly: "Only owners and admins change a screen’s settings.",
     columns: {
