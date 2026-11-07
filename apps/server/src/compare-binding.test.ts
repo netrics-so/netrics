@@ -1082,6 +1082,8 @@ async function revenueModel(
   ordersUnit?: string,
   /** The day's amount; null: none that day. */
   amountOf: (day: number) => string | null = () => "150",
+  /** A fixed unit of the amount ("EUR_minor") instead of a currency field. */
+  amountUnit?: string,
 ): Promise<CompareMeasureBinding> {
   const field = (id: string, type: string, extra: object = {}) => ({
     id,
@@ -1116,8 +1118,9 @@ async function revenueModel(
         field("day", "date"),
         field("amount", "decimal", {
           nullable: true,
-          unit: "currency",
-          currencyField: "currency",
+          ...(amountUnit
+            ? { unit: amountUnit }
+            : { unit: "currency", currencyField: "currency" }),
         }),
         field("currency", "string"),
         field(
@@ -1440,5 +1443,28 @@ describe("bound compare widgets: empty windows (#507)", () => {
     );
     expect(unbound!.data.status).toBe("backfilling");
     expect(bound!.data.status).toBe(unbound!.data.status);
+  }, 60_000);
+});
+
+describe("bound compare widgets: fixed-currency amounts per unit (#507)", () => {
+  it("reads EUR_minor per count as an amount per unit", async () => {
+    // 15000 cents and 4 orders a day: €37.50 per order.
+    const measure = await revenueModel(
+      "fixed_per_count",
+      () => "EUR",
+      "count",
+      () => "15000",
+      "EUR_minor",
+    );
+    const read = await readInBrowser([
+      { id: uuid(91, 1), period: "last_7_days", measure, format: "ratio" },
+    ]);
+    expect(read.json().widgets[0]).toMatchObject({
+      error: null,
+      numerator: { value: 105_000, unit: "EUR_minor" },
+      denominator: { value: 28, unit: "count" },
+      ratio: { value: 3750, previousValue: 3750 },
+      unit: "EUR_minor",
+    });
   }, 60_000);
 });

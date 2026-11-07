@@ -245,16 +245,22 @@ function operandOf(
   // metric queries give them: an amount in major units ("currency") is
   // scaled, one in minor units relabelled. Any other number without a unit
   // is a plain count, so screens show it (a null unit is a failed query).
-  // Also an amount per unit ("currency/count"): its scale is the amount's.
-  // An amount per amount ("currency/currency") is a plain number.
-  const [base, per] = cell?.unit?.split("/") ?? [];
-  const amount = Boolean(cell?.currency) && !(per ?? "").startsWith("currency");
-  const major = amount && base === "currency";
-  const unit = amount
-    ? `${cell!.currency}_minor`
-    : per !== undefined && per.startsWith("currency")
-      ? "count"
-      : (cell?.unit ?? "count");
+  // Also an amount per unit ("currency/count", "EUR_minor/count"): its
+  // scale is the amount's. An amount per amount is a plain number.
+  const [base = "", per] = cell?.unit?.split("/") ?? [];
+  const isAmount = (part: string) =>
+    part.startsWith("currency") || amountCurrency(part) !== null;
+  const perAmount = per !== undefined && isAmount(per);
+  const perCurrency =
+    !perAmount && Boolean(cell?.currency) && base.startsWith("currency");
+  const major = perCurrency && base === "currency";
+  const unit = perAmount
+    ? "count"
+    : perCurrency
+      ? `${cell!.currency}_minor`
+      : per !== undefined && amountCurrency(base) !== null
+        ? base
+        : (cell?.unit ?? "count");
   if (!cell || cell.value === null || cell.value === undefined)
     return { value: null, unit };
   if (!["integer", "number", "decimal"].includes(cell.type))
