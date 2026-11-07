@@ -253,7 +253,14 @@ function operandOf(
   const perAmount = per !== undefined && isAmount(per);
   const perCurrency =
     !perAmount && Boolean(cell?.currency) && base.startsWith("currency");
-  const major = perCurrency && base === "currency";
+  // Major units ("currency") of the cell's currency are 10^exponent minor
+  // units; a ratio's scale is its numerator part's over its denominator
+  // part's (euros over cents is a plain number, but a hundred times more).
+  const scale = (part: string | undefined) =>
+    part === "currency" && cell?.currency
+      ? 10 ** currencyExponent(cell.currency)
+      : 1;
+  const factor = scale(base) / (perAmount ? scale(per) : 1);
   const unit = perAmount
     ? "count"
     : perCurrency
@@ -268,7 +275,7 @@ function operandOf(
   const value = Number(cell.value);
   if (!Number.isFinite(value)) return "not_numeric";
   return {
-    value: major ? value * 10 ** currencyExponent(cell.currency!) : value,
+    value: value * factor,
     unit,
   };
 }

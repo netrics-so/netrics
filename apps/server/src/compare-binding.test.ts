@@ -1468,3 +1468,24 @@ describe("bound compare widgets: fixed-currency amounts per unit (#507)", () => 
     });
   }, 60_000);
 });
+
+describe("bound compare widgets: amounts per amount in two scales (#507)", () => {
+  it("scales euros over cents to a plain number", async () => {
+    // 150 EUR (major) over 4 cents a day (minor): 1050 EUR / 28 cents.
+    const measure = await revenueModel(
+      "major_per_minor",
+      () => "EUR",
+      "EUR_minor",
+    );
+    const read = await readInBrowser([
+      { id: uuid(90, 1), period: "last_7_days", measure, format: "ratio" },
+    ]);
+    expect(read.json().widgets[0]).toMatchObject({
+      error: null,
+      numerator: { value: 105_000, unit: "EUR_minor" },
+      denominator: { value: 28, unit: "EUR_minor" },
+      ratio: { value: 3750, previousValue: 3750 },
+      unit: null,
+    });
+  }, 60_000);
+});
