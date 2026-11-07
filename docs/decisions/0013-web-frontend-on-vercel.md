@@ -112,7 +112,7 @@ The guarantees behind it:
    off, so no other commit or branch can reach production, and there are no
    automatic preview deployments.
 2. **Same lockfile and toolchain.** `pnpm install --frozen-lockfile` with
-   the pinned pnpm (`packageManager`), Node 24 (ADR 0003), and the same
+   the pinned pnpm (`packageManager`), Node 26 (ADR 0003), and the same
    `pnpm --filter @netrics/web... build` as the Dockerfile.
 3. **No environment-specific build inputs.** The build gets exactly two
    variables, `NEXT_PUBLIC_APP_VERSION` and `NEXT_PUBLIC_GIT_SHA`, with the

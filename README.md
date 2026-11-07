@@ -5,9 +5,9 @@ the public monorepo: product app, API, and shared packages.
 
 ## Prerequisites
 
-- **Node.js >= 24** (`.nvmrc` pins 24; `nvm use` or any Node 24+ works)
-- **pnpm 10.34.5** — activate with `corepack enable` (the `packageManager`
-  field pins the exact version)
+- **Node.js >= 26** (`.nvmrc` pins 26; `nvm use` or any Node 26+ works)
+- **pnpm 10.34.5** — `npm install -g pnpm@10.34.5` (Node 26 no longer ships
+  corepack; the `packageManager` field pins the exact version)
 - **Docker** with the compose plugin (local PostgreSQL)
 
 ## Quick start
@@ -403,7 +403,7 @@ Single App Mode, power, mounting), follow
 
 ## Docker
 
-Production images (multi-stage, `node:24-alpine`, no dev dependencies):
+Production images (multi-stage, `node:26-alpine`, no dev dependencies):
 
 ```sh
 docker build -f apps/server/Dockerfile -t netrics-server .

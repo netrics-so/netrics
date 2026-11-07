@@ -191,7 +191,7 @@ The workflow archives with `MARKETING_VERSION` from the tag and a build
 number from the UTC start time (`YYYYMMDD.HHMM`, for example
 `20261030.1530`), signs with cloud-managed certificates through an App Store
 Connect API key, and uploads with `Config/ExportOptions.plist`.
-`scripts/asc-submit.ts` (Node 24, no dependencies, tests in
+`scripts/asc-submit.ts` (Node 26, no dependencies, tests in
 `asc-submit.test.ts` under `pnpm test`) waits for processing and, on a full
 release, attaches the build, sets "What's New" and submits both platforms.
 The key, its ID, the issuer ID and the team ID are secrets of the GitHub
