@@ -528,27 +528,54 @@ describe.runIf(enabled)("retained history at scale (#501)", () => {
       initialRefreshMs: stats(initials),
       oneRecordCorrectionMs: stats(corrections),
     };
-    // A small neighbour workspace: its own policy change scans shared tables.
+    // A small neighbour workspace: its policy change must not read the
+    // large workspace's records (#518).
     const neighbour = await connection(smallActor.workspaceId, "Neighbour");
     await ingest(smallActor.workspaceId, neighbour, "facts", "initial", 1000);
     await admin`analyze`;
     await storage("large_history");
     await latency("large_history");
 
-    // Policy changes that set a retention ceiling rewrite stored deadlines
-    // under the workspace ingestion lock (admin_set_data_policy, 0062).
+    // Policy changes that set a retention ceiling shorten stored deadlines
+    // under the workspace ingestion lock (admin_set_data_policy). Since
+    // #518 (0066) only the deadlines that move are written.
     const policy: Record<string, unknown> = {};
-    let start = performance.now();
-    await adminSetDataPolicy(db, actor.workspaceId, {
+    // One call on the admin session, with the data_records rows it updated:
+    // the xact view holds this backend's counts not yet flushed, and a
+    // backend never flushes inside a transaction.
+    const policyCall = (workspaceId: string, overrides: object) =>
+      admin.begin(async (tx) => {
+        const count = async () => {
+          const [row] = await tx`
+            select n_tup_upd::bigint as n from pg_stat_xact_user_tables
+            where relname = 'data_records'`;
+          return Number(row?.n ?? 0);
+        };
+        const before = await count();
+        const start = performance.now();
+        await tx`select admin_set_data_policy(${workspaceId}::uuid, ${JSON.stringify(overrides)}::text::jsonb)`;
+        const took = ms(start);
+        return { ms: took, updatedRecords: (await count()) - before };
+      });
+    // Every record was kept until deleted, so each one takes the ceiling.
+    policy.largeFirstCeiling = await policyCall(actor.workspaceId, {
       maxRetentionDays: 3650,
     });
-    policy.largeFirstCeilingMs = ms(start);
-    start = performance.now();
+    policy.largeFirstCeilingMs = (
+      policy.largeFirstCeiling as { ms: number }
+    ).ms;
+    await storage("after_first_ceiling");
+    let start = performance.now();
     await adminSetDataPolicy(db, actor.workspaceId, {
       maxRetentionDays: 3650,
       queryRows: 100_000,
     });
     policy.largeUnrelatedChangeWithCeilingMs = ms(start);
+    // The same ceiling again moves no deadline.
+    policy.largeSameCeiling = await policyCall(actor.workspaceId, {
+      maxRetentionDays: 3650,
+      queryRows: 100_000,
+    });
     start = performance.now();
     await adminSetDataPolicy(db, actor.workspaceId, { queryRows: 100_000 });
     policy.largeChangeWithoutCeilingMs = ms(start);
@@ -557,16 +584,32 @@ describe.runIf(enabled)("retained history at scale (#501)", () => {
       maxRetentionDays: 3650,
     });
     policy.smallNeighbourCeilingMs = ms(start);
-    // How the function's record update finds one workspace's rows.
-    policy.recordsUpdatePlan = (
-      await admin.unsafe(
-        `explain update data_records set expires_at = expires_at where workspace_id = '${smallActor.workspaceId}'`,
+    policy.smallNeighbourSameCeiling = await policyCall(
+      smallActor.workspaceId,
+      { maxRetentionDays: 3650 },
+    );
+    // How the function's record update (0066) finds one workspace's rows.
+    const plan = async (workspaceId: string) =>
+      (
+        await admin.unsafe(
+          `explain update data_records r
+             set expires_at = least(r.expires_at, retention_deadline(r.collected_at, 3650))
+             from data_generations g
+             where g.workspace_id = '${workspaceId}' and r.generation_id = g.id
+               and r.workspace_id = '${workspaceId}'
+               and (r.expires_at is null or r.expires_at - r.collected_at > interval '3650 days')
+               and r.expires_at is distinct from least(r.expires_at, retention_deadline(r.collected_at, 3650))`,
+        )
       )
-    )
-      .map((row) => String(row["QUERY PLAN"]).trim())
-      .find(
-        (line) => line.includes("on data_records") && !/^Update/.test(line),
-      );
+        .map((row) => String(row["QUERY PLAN"]).trim())
+        .filter((line) => / on data_records| Join|Nested Loop/.test(line))
+        .map((line) => line.replace(/\s+\(cost=.*$/, ""));
+    expect(policy.largeSameCeiling).toMatchObject({ updatedRecords: 0 });
+    expect(policy.smallNeighbourSameCeiling).toMatchObject({
+      updatedRecords: 0,
+    });
+    policy.recordsUpdatePlan = await plan(smallActor.workspaceId);
+    policy.largeRecordsUpdatePlan = await plan(actor.workspaceId);
     result.policy = policy;
     await storage("after_policy_rewrites");
 
@@ -582,9 +625,10 @@ describe.runIf(enabled)("retained history at scale (#501)", () => {
 
     // Drain 2: a retention ceiling of one day expires the whole history.
     clock = new Date(T0.getTime() + 20 * MINUTE);
-    start = performance.now();
-    await adminSetDataPolicy(db, actor.workspaceId, { maxRetentionDays: 1 });
-    policy.largeShorteningMs = ms(start);
+    policy.largeShortening = await policyCall(actor.workspaceId, {
+      maxRetentionDays: 1,
+    });
+    policy.largeShorteningMs = (policy.largeShortening as { ms: number }).ms;
     clock = new Date(T0.getTime() + 2 * DAY);
     await drain("expired_history", clock);
     await storage("after_expiry_drain");

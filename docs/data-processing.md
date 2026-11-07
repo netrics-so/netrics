@@ -276,7 +276,19 @@ until deleted. Personal fields require an explicit retention declaration in the
 connector. The shortest finite source/field/tier retention applies to the
 complete record. A shorter workspace retention policy immediately reduces
 stored deadlines and clears derived caches; increasing it later cannot revive
-expired data. Replay preserves original collection time and deadlines.
+expired data. After a policy change with `maxRetentionDays`, every deadline is
+the earlier of its stored value and the new ceiling, counted in fixed
+86,400-second days. Only the records, generations, refreshes and stages whose
+deadline moves are written (#518): repeating a ceiling, raising it, or changing
+another policy value while a ceiling is set writes no record and keeps derived
+caches. The change reaches a workspace's records through its generations and
+the record primary key, so it does not read other workspaces' records. It runs
+as one statement per table under the workspace ingestion lock, so a deadline
+that moves into the past is stored before any reader or later page sees the old
+one; a call that moves nothing still reads the workspace's records once under
+that lock (about 0.6 s for 4.16 M records in the scale suite), and a call that sets a
+first ceiling on records kept until deleted writes each of them. Replay
+preserves original collection time and deadlines.
 Credentials, headers and tokens never belong in datasets.
 
 ### Retention per connection
@@ -301,7 +313,10 @@ connection:
   access immediately and clears derived caches (query snapshots and prepared
   outputs), as the workspace policy does. A longer period only extends data
   that has not expired yet; expired, superseded or released data is never
-  revived. Later ingestion and staging use the choice as well.
+  revived. Later ingestion and staging use the choice as well. As with the
+  workspace policy, only rows whose deadline changes are written, and derived
+  caches are cleared only when one did (#518); saving the same choice again
+  writes nothing.
 - Ingestion, connector staging, connection retention saves and workspace
   policy changes take the same workspace lock before they read or apply
   retention, so a sync page in flight during a change either commits first
