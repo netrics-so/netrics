@@ -183,7 +183,12 @@ export function createDatasetStaging(input: {
       const definition = definitionOf(first?.datasetKey, first?.schemaVersion);
       const prepared = prepare(value.pages, definition);
       const existing = await transaction((tx) =>
-        matchConnectorStage(tx, scope, value, definition),
+        matchConnectorStage(
+          tx,
+          scope,
+          { key: value.key, metadata: value.metadata, pages: prepared },
+          definition,
+        ),
       );
       if (existing) return existing;
       const writer = await draft(value.key, definition);

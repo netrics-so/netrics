@@ -57,9 +57,28 @@ const definition = sourceDatasetSchema.parse({
     },
   ],
 });
+const windowed = sourceDatasetSchema.parse({
+  key: "window_fixture",
+  name: "Window fixture",
+  version: 1,
+  mode: "replace_window",
+  grain: "One row per day",
+  keyFields: ["day"],
+  reportingField: "day",
+  retentionDays: null,
+  fields: [
+    {
+      id: "day",
+      name: "Day",
+      type: "date",
+      nullable: false,
+      classification: "internal",
+    },
+  ],
+});
 const manifest: ConnectorManifest = {
   ...createGooglePlayConnector().manifest,
-  datasets: [definition],
+  datasets: [definition, windowed],
 };
 function page(index: number, salt = ""): DatasetPage {
   return {
@@ -228,6 +247,39 @@ describe("incremental connector staging (ADR 0024)", () => {
     await expect(staging(f).begin!({ key: "c", ...identity })).rejects.toThrow(
       "dataset_stage_quota",
     );
+  });
+
+  it("returns an identical stage on a repeated put of pages the host normalizes", async () => {
+    const f = await fixture(),
+      store = staging(f);
+    // No window.partition: validation fills in {} before storing and hashing.
+    const pages: DatasetPage[] = [
+      {
+        datasetKey: windowed.key,
+        schemaVersion: 1,
+        refreshKey: "staging",
+        pageKey: "0",
+        previousPageKey: null,
+        complete: true,
+        records: [{ values: { day: "2026-10-01" } }],
+        window: { from: "2026-10-01", toExclusive: "2026-11-01" } as never,
+      },
+    ];
+    const stage = await store.put({ key: "window", metadata: {}, pages });
+    expect(await store.put({ key: "window", metadata: {}, pages })).toEqual(
+      stage,
+    );
+  });
+
+  it("refuses a page key that an earlier append already stored as a contract error", async () => {
+    const f = await fixture();
+    const writer = await staging(f).begin!({ key: "duplicate", ...identity });
+    await writer.append([page(0)]);
+    await expect(writer.append([page(0)])).rejects.toMatchObject({
+      name: "ContractViolationError",
+      message: "dataset_stage_invalid",
+    });
+    expect(await stages(f)).toHaveLength(0);
   });
 
   it("refuses an append beyond the per-stage limit", async () => {

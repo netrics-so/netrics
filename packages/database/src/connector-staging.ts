@@ -10,7 +10,7 @@ import {
 } from "@netrics/contracts";
 import { exceedsDataPolicy, type DataPolicy } from "@netrics/domain";
 
-import type { Transaction } from "./context.js";
+import { hasSqlstate, type Transaction } from "./context.js";
 import { connectorStagingWorkspaceBytes } from "./data-usage.js";
 import { resolveDataPolicy } from "./data-policy.js";
 import {
@@ -225,7 +225,10 @@ export async function readConnectorStagePage(
 /** Digest of one stored page, independent of its storage encoding. */
 export const connectorStagePageDigest = (page: DatasetPage) => digest(page);
 
-/** Content digest of a complete page set, as commit would compute it. */
+/**
+ * Content digest of a complete page set, as commit would compute it. Pages
+ * must already be in their validated form (see prepareConnectorStagePages).
+ */
 export function connectorStageDigest(
   metadata: unknown,
   pages: DatasetPage[],
@@ -244,14 +247,23 @@ export function connectorStageDigest(
 export async function matchConnectorStage(
   tx: Transaction,
   scope: ConnectorStageScope,
-  input: { key: string; metadata: unknown; pages: DatasetPage[] },
+  input: {
+    key: string;
+    metadata: unknown;
+    /** Validated pages: their digests are what commit would store. */
+    pages: PreparedConnectorStagePages;
+  },
   definition: SourceDatasetDefinition,
 ) {
   if (!KEY.test(input.key)) return fail("dataset_stage_invalid");
   const existing = await live(tx, scope, undefined, input.key);
   if (!existing) return null;
   if (
-    existing.digest !== connectorStageDigest(input.metadata, input.pages) ||
+    existing.digest !==
+      contentDigest(
+        input.metadata,
+        input.pages.map((page) => [page.pageKey, page.digest]),
+      ) ||
     existing.datasetKey !== definition.key ||
     existing.schemaVersion !== definition.version
   )
@@ -439,8 +451,7 @@ export async function appendConnectorStagePages(
       });
     } catch (error) {
       // A page key the draft already holds.
-      if ((error as { code?: string }).code === "23505")
-        return fail("dataset_stage_invalid");
+      if (hasSqlstate(error, "23505")) return fail("dataset_stage_invalid");
       throw error;
     }
   }
@@ -612,7 +623,12 @@ export async function storeConnectorStage(
   if (!KEY.test(input.key) || !validMetadata(input.metadata))
     return fail("dataset_stage_invalid");
   const pages = prepareConnectorStagePages(input.pages, definition);
-  const existing = await matchConnectorStage(tx, scope, input, definition);
+  const existing = await matchConnectorStage(
+    tx,
+    scope,
+    { ...input, pages },
+    definition,
+  );
   if (existing) return existing;
   const { id } = await beginConnectorStage(tx, scope, input, definition);
   await appendConnectorStagePages(tx, scope, id, pages, signal);
