@@ -144,6 +144,7 @@ export function StudioEditor({
   currency,
   goals: initialGoals = [],
   canCreateGoals = false,
+  canPublishData = false,
 }: {
   workspaceId: string;
   dashboard: Dashboard;
@@ -163,6 +164,8 @@ export function StudioEditor({
   goals?: Goal[];
   /** Whether the inspector's "New goal…" may create one. */
   canCreateGoals?: boolean;
+  /** Whether a compare widget may be saved as a measure (data:publish). */
+  canPublishData?: boolean;
 }) {
   const locale = useLocale();
   const dataText = useT("data.dashboard");
@@ -1068,6 +1071,8 @@ export function StudioEditor({
                 goals={goals}
                 canCreateGoals={canCreateGoals}
                 onGoalCreated={onGoalCreated}
+                canPublishData={canPublishData}
+                onRefreshModels={catalog.retry}
               />
             ) : (
               <>

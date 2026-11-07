@@ -1155,3 +1155,38 @@
 .rail-confirm .actions {
   margin: 8px 0 0;
 }
+
+/* A compare widget saved as a measure, and its binding (#508). */
+.studio-inspector .compare-measure p {
+  margin: 0;
+}
+
+.studio-inspector .compare-measure-title {
+  font-weight: 600;
+}
+
+.studio-inspector .compare-measure-preview ul {
+  margin: 6px 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.studio-inspector .compare-measure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.studio-inspector .compare-measure-refusal {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+
+.studio-inspector .compare-measure-blocked {
+  border-left: 3px solid var(--muted);
+  padding-left: 8px;
+}

@@ -212,9 +212,17 @@ implementation work; this plan does not create or complete issue records.
     the inline widget for all nine periods, so no period is refused any more.
     Unpublished, removed, foreign or mismatched measures fail with typed errors
     and never fall back to the metrics; unbound payloads are unchanged, and
-    scoped screens still withhold compare widgets. The Studio flow
-    ([#508](https://github.com/netrics-so/netrics/issues/508)) and the rest of
-    the 11D gate remain open.
+    scoped screens still withhold compare widgets.
+  - Studio "Save as measure" and rebind for compare widgets (step 3, closing
+    [#499](https://github.com/netrics-so/netrics/issues/499)):
+    [#508](https://github.com/netrics-so/netrics/issues/508). A preview names
+    the preparation, model and measures before anything is created, and words
+    each typed refusal; an unpinned per-currency amount can be retried with a
+    picked currency. The draft model is published in Data & measures (the
+    existing flow, `data:publish`), then the widget is rebound as a normal
+    draft edit and can be unbound to its kept metrics. Bound widgets name
+    their measure and show its typed errors, in English and German.
+    Compare-to-measure is complete; the rest of the 11D gate remains open.
 - 11E: [#444](https://github.com/netrics-so/netrics/issues/444)
   - Apple storefront rating snapshots: [#452](https://github.com/netrics-so/netrics/issues/452).
     Implements the scoped raw rating/count source, not the complete portfolio

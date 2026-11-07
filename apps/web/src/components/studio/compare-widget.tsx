@@ -17,6 +17,7 @@ import {
   formatCompactValue,
   formatValue,
 } from "@/lib/format-metric";
+import { boundErrorKey } from "@/lib/compare-measure";
 import { dataErrorCodeKey } from "@/lib/data-errors";
 import { useLocale, useT } from "@/lib/i18n/client";
 import {
@@ -300,6 +301,14 @@ export function useLiveCompare(
 ): CompareReadingProps {
   const locale = useLocale();
   const tData = useT("data");
+  const tMeasure = useT("studio.compareMeasure");
+  // A binding's typed errors in its own words (#508), else the data API's.
+  const boundErrorText = (code: string) => {
+    const key = boundErrorKey(code);
+    return key
+      ? tMeasure(`errors.${key}`)
+      : tData(`errors.${dataErrorCodeKey(code)}`);
+  };
   const denominatorWidget = {
     ...widget,
     connectionId: widget.denominator.connectionId,
@@ -366,7 +375,7 @@ export function useLiveCompare(
             ? deviceTileNotice(data.status, data.updatedAt, locale)
             : null
           : data?.error
-            ? tData(`errors.${dataErrorCodeKey(data.error)}`)
+            ? boundErrorText(data.error)
             : failed,
       status: failed !== null ? "outage" : (data?.status ?? "ok"),
       source: data?.sources.join(" · ") || null,

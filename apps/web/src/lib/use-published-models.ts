@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { PublishedModelCatalog } from "@netrics/contracts";
 import { loadPublishedModels } from "./dashboard-data-api";
 export function usePublishedModels(workspaceId: string) {
@@ -20,5 +20,6 @@ export function usePublishedModels(workspaceId: string) {
       alive = false;
     };
   }, [workspaceId, revision]);
-  return { models, error, retry: () => setRevision((value) => value + 1) };
+  const retry = useCallback(() => setRevision((value) => value + 1), []);
+  return { models, error, retry };
 }

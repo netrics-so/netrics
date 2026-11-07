@@ -141,6 +141,10 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Wähl eine Währung für diesen Betrag: Beträge in verschiedenen Währungen werden nicht addiert.",
     metric_not_per_currency:
       "Diese Metrik ist kein Betrag in mehreren Währungen.",
+    compare_measure_model_not_found:
+      "Ein Vergleichs-Widget nutzt ein Modell, das es in diesem Workspace nicht gibt. Nutze wieder seine Metriken.",
+    compare_measure_not_found:
+      "Ein Vergleichs-Widget nutzt eine Kennzahl, die sein Modell nicht hat. Nutze wieder seine Metriken oder veröffentliche die Kennzahl.",
     compare_units_incompatible:
       "Aus diesen beiden Metriken lässt sich dieses Verhältnis nicht bilden: Eine Währung wird nur durch dieselbe Währung geteilt, und Prozent braucht zwei Seiten ohne Währung.",
     currency_choice_conflict:

@@ -429,6 +429,34 @@ export function registerDataRoutes(
           }),
       );
       scope.post(
+        "/workspaces/:workspaceId/data/compare-measures/preview",
+        {
+          schema: routeSchema({
+            summary:
+              "Show what saving a compare widget as a measure would create, without creating it",
+            tags: ["data"],
+            body: contracts.compareMeasureRequestSchema,
+            response: contracts.compareMeasurePreviewResponseSchema,
+            errors: [400, 403, 404, 503],
+            errorSchemas: {
+              400: contracts.compareMeasureErrorResponseSchema,
+              404: contracts.compareMeasureErrorResponseSchema,
+            },
+          }),
+        },
+        (request, reply) =>
+          execute(request, reply, "data:publish", async (a) => {
+            const body = parseBody(
+              contracts.compareMeasureRequestSchema,
+              request,
+              reply,
+            );
+            if (!body) return;
+            reply.header("cache-control", "no-store");
+            return compareMeasures.preview(a, body);
+          }),
+      );
+      scope.post(
         "/workspaces/:workspaceId/data/compare-measures",
         {
           schema: routeSchema({

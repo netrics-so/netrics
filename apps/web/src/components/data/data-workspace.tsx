@@ -29,17 +29,29 @@ type Editor = { key: string } & (
 export function DataWorkspace({
   workspaceId,
   initial,
+  openModelId,
 }: {
   workspaceId: string;
   initial: WorkspaceData;
+  /** A model to open first (the Studio links here to publish one). */
+  openModelId?: string;
 }) {
   const t = useT("data"),
     locale = useLocale(),
     searchId = useId(),
     sourceSelectId = useId();
+  const linkedModel = openModelId
+    ? initial.models.find((model) => model.id === openModelId)
+    : undefined;
   const [data, setData] = useState(initial),
-    [section, setSection] = useState<Section>("datasets");
-  const [editor, setEditor] = useState<Editor | null>(null),
+    [section, setSection] = useState<Section>(
+      linkedModel ? "models" : "datasets",
+    );
+  const [editor, setEditor] = useState<Editor | null>(() =>
+      linkedModel
+        ? { kind: "model", initial: linkedModel, key: newDataId() }
+        : null,
+    ),
     [dirty, setDirty] = useState(false);
   const [selected, setSelected] = useState(initial.sources[0]?.id ?? ""),
     [search, setSearch] = useState("");

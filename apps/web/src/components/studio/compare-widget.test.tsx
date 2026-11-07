@@ -331,7 +331,10 @@ describe("compare widget bound to measures (#507)", () => {
     }) as MetricQueryResponse;
 
   /** Seeds what the hooks share, then renders as a page does first. */
-  async function render(bound: CompareMeasureReading | null) {
+  async function render(
+    bound: CompareMeasureReading | null,
+    locale: "en" | "de" = "en",
+  ) {
     clearSharedLoads();
     // The metrics answer differently: a fallback would show 999 / 1000.
     for (const side of [widget, { ...widget, ...widget.denominator }])
@@ -348,7 +351,7 @@ describe("compare widget bound to measures (#507)", () => {
         })}`,
         () => Promise.resolve(bound),
       );
-    return renderI18n(<LiveCompareWidget widget={widget} env={env} />);
+    return renderI18n(<LiveCompareWidget widget={widget} env={env} />, locale);
   }
 
   it("shows the measures' numbers, never the metrics'", async () => {
@@ -395,8 +398,43 @@ describe("compare widget bound to measures (#507)", () => {
         ratio: { value: null, previousValue: null },
       }),
     );
-    expect(html).toContain("Publish the referenced");
+    expect(html).toContain(
+      "The model isn’t published, so this widget shows no numbers.",
+    );
     expect(html).not.toContain("999");
     expect(html).not.toContain("1,000");
+  });
+
+  it.each([
+    [
+      "model_measure_not_found",
+      "A measure this widget uses was removed from the published model.",
+      "Eine Kennzahl dieses Widgets wurde aus dem veröffentlichten Modell entfernt.",
+    ],
+    [
+      "data_model_not_published",
+      "The model isn’t published",
+      "Das Modell ist nicht veröffentlicht",
+    ],
+    [
+      "model_dimension_not_found",
+      "The model’s date dimension was removed.",
+      "Die Datumsdimension des Modells wurde entfernt.",
+    ],
+    [
+      "compare_measure_date_required",
+      "is no longer a date",
+      "ist kein Datum mehr",
+    ],
+  ])("words the binding error %s (#508)", async (error, en, de) => {
+    const failed = reading({
+      status: "outage",
+      error,
+      numerator: { label: "numerator", value: null, unit: null },
+      denominator: { label: "denominator", value: null, unit: null },
+      ratio: { value: null, previousValue: null },
+    });
+    expect(await render(failed)).toContain(en);
+    expect(await render(failed, "de")).toContain(de);
   });
 });

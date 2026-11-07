@@ -14,14 +14,24 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 export default async function DataPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ workspaceId: string }>;
+  searchParams: Promise<{ model?: string | string[] }>;
 }) {
   const { workspaceId } = await params,
+    { model } = await searchParams,
     { cookieHeader } = await requireSession();
   const { workspaces } = await listWorkspaces(cookieHeader);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership || !can(membership.role, "data:edit")) notFound();
   const initial = await getDataWorkspace(workspaceId, cookieHeader);
-  return <DataWorkspace workspaceId={workspaceId} initial={initial} />;
+  // ?model=<id> opens that model, e.g. from the Studio to publish it (#508).
+  return (
+    <DataWorkspace
+      workspaceId={workspaceId}
+      initial={initial}
+      {...(typeof model === "string" ? { openModelId: model } : {})}
+    />
+  );
 }
