@@ -107,11 +107,22 @@ budget per archive, CRC/size checks and explicit ZIP64 rejection still apply.
 Typed rows of one report task are still collected in memory before they are
 sorted and staged, because `datasetStaging.put` takes a complete page set; that
 set, not the provider file, now bounds a first read. Measured locally on
-2026-11-06 with Node 24 for a synthetic 40 MiB earnings archive (3.7 MiB
-deflated, 626,205 lines): peak RSS for one selected app holding a tenth of the
+2026-11-06 with Node 24 (historical; Node 26 numbers for #501 follow) for a
+synthetic 40 MiB earnings archive (3.7 MiB deflated, 626,205 lines): peak RSS for one selected app holding a tenth of the
 lines fell from 1.19 GB to 321 MB, and for all apps from 2.19 GB to 1.30 GB.
 `stream.test.ts` checks that streaming 48 MiB of report text or inflated
 archive retains under 8 MiB of live memory.
+
+Measured again with Node 26 for #501 (synthetic earnings archives in UTF-8 with
+26 columns, real host staging, three runs each, see
+[data workload validation](../data-scale-validation.md#google-play-first-read-memory)):
+peak heap for an all-apps first read is about 22 times the inflated CSV (173 MiB
+at 8 MiB, 1.4 GiB at 63 MiB), and the staged JSON is about 5.5 times the CSV.
+Above about 23 MiB of CSV the 128 MiB stage is refused, and every continuation
+turn then reads the whole report again (17.5 s per page turn at 63 MiB). A
+selected app holding a tenth of the lines stays below 150 MiB of heap at
+63 MiB. Streaming staging is
+[#519](https://github.com/netrics-so/netrics/issues/519).
 
 The worker durably stages parsed report sets as per-app transport pages. A
 continuation reads only its required page, including after a worker/connector
