@@ -15,6 +15,7 @@ import {
   compareMeasureSource,
   compareRefusalOf,
   defaultMeasureName,
+  forgetSavedMeasure,
   readSavedMeasure,
   savedMeasureOf,
   unpinnedSides,
@@ -179,6 +180,7 @@ const text = (html: string) =>
   html
     .replace(/<[^>]+>/g, " ")
     .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ");
 
 describe("save as measure: states", () => {
@@ -197,6 +199,15 @@ describe("save as measure: states", () => {
     );
   });
 
+  it("checking: the name is fixed while the preview loads", () => {
+    expect(save({ step: "checking", currency: null })).toMatch(
+      /<input id="widget-measure-name"[^>]* disabled=""/,
+    );
+    expect(save({ step: "idle" })).not.toMatch(
+      /<input id="widget-measure-name"[^>]* disabled=""/,
+    );
+  });
+
   it("checking: the button waits", () => {
     expect(save({ step: "checking", currency: null })).toMatch(
       /<button type="button" disabled="">Checking…/,
@@ -207,7 +218,12 @@ describe("save as measure: states", () => {
   });
 
   it("preview: what will be created, before creating anything", () => {
-    const flow: SaveFlow = { step: "preview", currency: null, preview };
+    const flow: SaveFlow = {
+      step: "preview",
+      currency: null,
+      request: compareMeasureRequestOf(widget, "Conversion", null),
+      preview,
+    };
     const en = text(save(flow));
     expect(en).toContain("This creates:");
     expect(en).toContain("Preparation “Conversion” (6 steps), published");
@@ -301,6 +317,7 @@ describe("save as measure: states", () => {
       save({
         step: "preview",
         currency: "USD",
+        request: compareMeasureRequestOf(widget, "Conversion", "USD"),
         preview: { ...preview, currency: "USD" },
       }),
     );
@@ -311,6 +328,7 @@ describe("save as measure: states", () => {
           {
             step: "preview",
             currency: "USD",
+            request: compareMeasureRequestOf(widget, "Conversion", "USD"),
             preview: { ...preview, currency: "USD" },
           },
           {},
@@ -380,6 +398,17 @@ describe("save as measure: states", () => {
     const de = text(save({ step: "draft", saved }, {}, "de"));
     expect(de).toContain("Modellentwurf „Conversion“ erstellt");
     expect(de).toContain("Modell zum Veröffentlichen öffnen");
+  });
+
+  it("a compiled draft can be started over (another name or currency)", () => {
+    for (const published of [null, { modelName: "Conversion" }]) {
+      const en = text(save({ step: "draft", saved }, { published }));
+      expect(en).toContain("Start over");
+      expect(en).toContain("The model stays in Data & measures.");
+      expect(
+        text(save({ step: "draft", saved }, { published }, "de")),
+      ).toContain("Neu beginnen");
+    }
   });
 
   it("publish blocked without data:publish: says why", () => {
@@ -630,6 +659,10 @@ describe("compare measure helpers", () => {
     ).toBe(
       compareMeasureSource(twoFilters({ currency: "EUR", resource: "app-1" })),
     );
+    // Starting over forgets it.
+    forgetSavedMeasure(WORKSPACE, compareMeasureSource(widget));
+    expect(readSavedMeasure(WORKSPACE, widget)).toBeNull();
+    writeSavedMeasure(WORKSPACE, saved);
     // Other sides do not.
     expect(
       readSavedMeasure(WORKSPACE, { ...widget, metricKey: "shop.orders" }),

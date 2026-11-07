@@ -216,6 +216,15 @@ export function writeSavedMeasure(
   }
 }
 
+/** Forgets the compiled draft of these sides; the model itself stays. */
+export function forgetSavedMeasure(workspaceId: string, source: string): void {
+  try {
+    sessionStorage.removeItem(storageKey(workspaceId, source));
+  } catch {
+    // Nothing kept.
+  }
+}
+
 /** A bound widget's binding against the published catalog. */
 export type BoundMeasure =
   | {

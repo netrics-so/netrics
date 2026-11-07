@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import type {
   CompareMeasurePreview,
+  CompareMeasureRequest,
   PublishedModelCatalog,
   WorkspaceMetric,
 } from "@netrics/contracts";
@@ -24,6 +25,7 @@ import {
   readSavedMeasure,
   savedMeasureOf,
   unpinnedSides,
+  forgetSavedMeasure,
   writeSavedMeasure,
   type BoundMeasure,
   type CompareWidget,
@@ -48,6 +50,8 @@ export type SaveFlow =
   | {
       step: "preview";
       currency: string | null;
+      /** The request previewed: creating sends exactly this. */
+      request: CompareMeasureRequest;
       preview: CompareMeasurePreview;
       creating?: boolean;
     }
@@ -79,6 +83,8 @@ export interface CompareMeasureSaveViewProps {
   onPin: (currency: string) => void;
   onCreate: () => void;
   onBack: () => void;
+  /** Forgets a compiled draft, to start again (another name or currency). */
+  onStartOver?: () => void;
   onCheckAgain: () => void;
   onBind: () => void;
 }
@@ -96,9 +102,15 @@ export function CompareMeasureSaveView(props: CompareMeasureSaveViewProps) {
             {t("publishedTitle", { name: props.published.modelName })}
           </p>
           <p className="help">{t("publishedHelp")}</p>
-          <button type="button" className="primary" onClick={props.onBind}>
-            {t("bind")}
-          </button>
+          <div className="compare-measure-actions">
+            <button type="button" className="primary" onClick={props.onBind}>
+              {t("bind")}
+            </button>
+            <button type="button" onClick={props.onStartOver}>
+              {t("startOver")}
+            </button>
+          </div>
+          <p className="help">{t("startOverHelp")}</p>
         </fieldset>
       );
     return (
@@ -122,7 +134,11 @@ export function CompareMeasureSaveView(props: CompareMeasureSaveViewProps) {
               <button type="button" onClick={props.onCheckAgain}>
                 {t("checkAgain")}
               </button>
+              <button type="button" onClick={props.onStartOver}>
+                {t("startOver")}
+              </button>
             </div>
+            <p className="help">{t("startOverHelp")}</p>
             {flow.stillDraft ? (
               <p className="help" role="status">
                 {t("stillDraft")}
@@ -159,6 +175,7 @@ export function CompareMeasureSaveView(props: CompareMeasureSaveViewProps) {
               maxLength={100}
               value={props.name}
               aria-describedby="widget-measure-name-help"
+              disabled={busy}
               onChange={(event) => props.onName(event.target.value)}
             />
             <p id="widget-measure-name-help" className="help">
@@ -375,24 +392,21 @@ export function CompareMeasureSave({
     );
   };
   const preview = (currency: string | null) => {
+    const request = compareMeasureRequestOf(widget, name, currency);
     setFlow({ step: "checking", currency });
-    previewCompareMeasure(
-      workspaceId,
-      compareMeasureRequestOf(widget, name, currency),
-    )
-      .then((result) => setFlow({ step: "preview", currency, preview: result }))
+    previewCompareMeasure(workspaceId, request)
+      .then((result) =>
+        setFlow({ step: "preview", currency, request, preview: result }),
+      )
       .catch((cause: unknown) => fail(cause, currency));
   };
   const create = () => {
     if (flow.step !== "preview") return;
-    const { currency } = flow;
+    const { currency, request } = flow;
     setFlow({ ...flow, creating: true });
-    createCompareMeasure(
-      workspaceId,
-      compareMeasureRequestOf(widget, name, currency),
-    )
+    createCompareMeasure(workspaceId, request)
       .then((result) => {
-        const saved = savedMeasureOf(result, widget, name.trim());
+        const saved = savedMeasureOf(result, widget, request.name);
         writeSavedMeasure(workspaceId, saved);
         setFlow({ step: "draft", saved });
       })
@@ -417,6 +431,10 @@ export function CompareMeasureSave({
       onPin={setPin}
       onCreate={create}
       onBack={() => setFlow({ step: "idle" })}
+      onStartOver={() => {
+        forgetSavedMeasure(workspaceId, source);
+        setFlow({ step: "idle" });
+      }}
       onCheckAgain={() => {
         if (flow.step === "draft") setFlow({ ...flow, stillDraft: true });
         onRefreshModels();

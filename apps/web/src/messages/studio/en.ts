@@ -390,6 +390,9 @@ export const studioEn = {
         "The preparation is published; the model is a draft. Open it in Data & measures, preview it and publish it, then come back to use it here.",
       openModel: "Open the model to publish it",
       checkAgain: "I published it, check again",
+      startOver: "Start over",
+      startOverHelp:
+        "Starting over forgets this model here, to save the compare again with another name or currency. The model stays in Data & measures.",
       stillDraft: "The model isn’t published yet.",
       publishBlocked:
         "You can’t publish models: that needs the “publish data” permission (editors, admins and owners have it). Ask someone with it to publish “{name}”.",

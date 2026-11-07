@@ -398,6 +398,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         "Die Aufbereitung ist veröffentlicht, das Modell ist ein Entwurf. Öffne es unter Daten & Kennzahlen, sieh dir die Vorschau an und veröffentliche es; komm dann zurück, um es hier zu nutzen.",
       openModel: "Modell zum Veröffentlichen öffnen",
       checkAgain: "Veröffentlicht, erneut prüfen",
+      startOver: "Neu beginnen",
+      startOverHelp:
+        "Neu beginnen vergisst dieses Modell hier, damit du den Vergleich mit einem anderen Namen oder einer anderen Währung erneut speichern kannst. Das Modell bleibt unter Daten & Kennzahlen.",
       stillDraft: "Das Modell ist noch nicht veröffentlicht.",
       publishBlocked:
         "Du kannst keine Modelle veröffentlichen: Dafür braucht es die Berechtigung „Daten veröffentlichen“ (Bearbeiter, Admins und Inhaber haben sie). Bitte jemanden mit dieser Berechtigung, „{name}“ zu veröffentlichen.",
