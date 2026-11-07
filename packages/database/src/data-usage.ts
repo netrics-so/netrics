@@ -29,14 +29,20 @@ export async function datasetWorkspaceBytes(
   return Number(usage?.bytes ?? 0);
 }
 
-/** Actual live cache bytes; callers serialize admission with workspace lock 440. */
+/**
+ * Stored bytes of live connector stages (compressed pages plus accounting
+ * overhead, ADR 0024): committed stages and unexpired drafts, or only
+ * committed ones. Callers serialize admission with the workspace staging
+ * lock (lockWorkspaceStaging).
+ */
 export async function connectorStagingWorkspaceBytes(
   tx: Transaction,
   workspaceId: string,
   now: Date,
+  options: { committedOnly?: boolean } = {},
 ): Promise<number> {
   const [usage] = await tx.execute<{ bytes: string }>(
-    sql`select coalesce(sum(byte_size),0)::text as bytes from data_connector_stages where workspace_id=${workspaceId} and expires_at > ${now.toISOString()}::timestamptz`,
+    sql`select coalesce(sum(byte_size),0)::text as bytes from data_connector_stages where workspace_id=${workspaceId} and expires_at > ${now.toISOString()}::timestamptz${options.committedOnly ? sql` and committed_at is not null` : sql``}`,
   );
   return Number(usage?.bytes ?? 0);
 }

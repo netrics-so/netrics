@@ -490,6 +490,7 @@ export {
   connectionDatasetRetentionDays,
   findConnectionRetention,
   lockWorkspaceIngestion,
+  lockWorkspaceStaging,
   setConnectionRetention,
 } from "./connection-retention.js";
 export type {
@@ -499,8 +500,17 @@ export type {
 export { resolveDataPolicy, adminSetDataPolicy } from "./data-policy.js";
 
 export {
+  CONNECTOR_STAGE_DRAFT_TTL_MS,
   DatasetStageUnavailableError,
+  abortConnectorStage,
+  appendConnectorStagePages,
+  beginConnectorStage,
+  commitConnectorStage,
+  connectorStageDigest,
+  connectorStagePageDigest,
   findConnectorStage,
+  matchConnectorStage,
+  prepareConnectorStagePages,
   readConnectorStagePage,
   storeConnectorStage,
   connectorStageProvenance,

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { z } from "zod";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   datasetRecordSchema,
   validateDatasetPage,
@@ -12,7 +13,11 @@ import { exceedsDataPolicy, type DataPolicy } from "@netrics/domain";
 import type { Transaction } from "./context.js";
 import { connectorStagingWorkspaceBytes } from "./data-usage.js";
 import { resolveDataPolicy } from "./data-policy.js";
-import { connectionDatasetRetentionDays } from "./connection-retention.js";
+import {
+  connectionDatasetRetentionDays,
+  lockWorkspaceIngestion,
+  lockWorkspaceStaging,
+} from "./connection-retention.js";
 import { DatasetStoreError } from "./datasets.js";
 import {
   connections,
@@ -21,7 +26,17 @@ import {
 } from "./schema.js";
 
 const DAY = 86_400_000;
+/** Stored bytes of one stage: compressed pages, metadata and overhead. */
 const MAX_STAGE_BYTES = 128 * 1024 * 1024;
+/** A draft lives within one connector call; this bounds an abandoned one. */
+export const CONNECTOR_STAGE_DRAFT_TTL_MS = 15 * 60_000;
+/** Accounting overhead per stored page and per stage header. */
+const PAGE_OVERHEAD = 512;
+const HEADER_OVERHEAD = 512;
+/** JSON text of one stored page (the 0058 payload check, now before compression). */
+const MAX_PAGE_TEXT = 2_097_152;
+const KEY = /^[a-zA-Z0-9:_-]{1,200}$/;
+
 export interface ConnectorStageScope {
   workspaceId: string;
   connectionId: string;
@@ -72,6 +87,10 @@ function stable(value: unknown): string {
 }
 const digest = (value: unknown) =>
   createHash("sha256").update(stable(value)).digest("hex");
+const byKey = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+/** Header digest over metadata and page digests, ordered without the database collation. */
+const contentDigest = (metadata: unknown, pages: Array<[string, string]>) =>
+  digest([metadata, [...pages].sort(([a], [b]) => byKey(a, b))]);
 function expiry(at: Date, days: number | null) {
   if (days === null) return null;
   const millis = at.getTime() + days * DAY;
@@ -87,6 +106,13 @@ function scopeWhere(scope: ConnectorStageScope) {
     eq(dataConnectorStages.connectorId, scope.connectorId),
   );
 }
+function validMetadata(metadata: unknown): boolean {
+  return (
+    datasetRecordSchema.safeParse({ values: { metadata } }).success &&
+    Buffer.byteLength(JSON.stringify(metadata)) <= 1_048_576
+  );
+}
+/** A committed, unexpired stage; drafts are never visible here. */
 async function live(
   tx: Transaction,
   scope: ConnectorStageScope,
@@ -99,6 +125,7 @@ async function live(
     .where(
       and(
         scopeWhere(scope),
+        isNotNull(dataConnectorStages.committedAt),
         id ? eq(dataConnectorStages.id, id) : undefined,
         key ? eq(dataConnectorStages.key, key) : undefined,
       ),
@@ -122,8 +149,7 @@ export async function findConnectorStage(
   scope: ConnectorStageScope,
   key: string,
 ) {
-  if (!/^[a-zA-Z0-9:_-]{1,200}$/.test(key))
-    return fail("dataset_stage_key_invalid");
+  if (!KEY.test(key)) return fail("dataset_stage_key_invalid");
   const row = await live(tx, scope, undefined, key);
   if (!row) return null;
   const pages = await tx
@@ -137,19 +163,33 @@ export async function findConnectorStage(
         eq(dataConnectorStagePages.workspaceId, scope.workspaceId),
         eq(dataConnectorStagePages.stageId, row.id),
       ),
-    )
-    .orderBy(dataConnectorStagePages.pageKey);
+    );
   if (expired(row, scope)) return null;
   if (
-    digest([
+    contentDigest(
       row.metadata,
-      pages
-        .map((p) => [p.key, p.digest])
-        .sort(([a], [b]) => (a! < b! ? -1 : a! > b! ? 1 : 0)),
-    ]) !== row.digest
+      pages.map((p) => [p.key, p.digest]),
+    ) !== row.digest
   )
     return fail("dataset_stage_integrity");
   return { id: row.id, key: row.key, metadata: row.metadata };
+}
+
+/** A stored page: compressed JSON text since 0067, JSONB before. */
+function storedPage(row: {
+  payload: unknown;
+  payloadGzip: Buffer | null;
+}): unknown {
+  if (!row.payloadGzip) return row.payload;
+  try {
+    return JSON.parse(
+      gunzipSync(row.payloadGzip, { maxOutputLength: MAX_PAGE_TEXT }).toString(
+        "utf8",
+      ),
+    );
+  } catch {
+    return fail("dataset_stage_integrity");
+  }
 }
 
 export async function readConnectorStagePage(
@@ -158,10 +198,7 @@ export async function readConnectorStagePage(
   id: string,
   pageKey: string,
 ) {
-  if (
-    !z.uuid().safeParse(id).success ||
-    !/^[a-zA-Z0-9:_-]{1,200}$/.test(pageKey)
-  )
+  if (!z.uuid().safeParse(id).success || !KEY.test(pageKey))
     return fail("dataset_stage_reference_invalid");
   const stage = await live(tx, scope, id);
   if (!stage) return unavailable();
@@ -180,57 +217,61 @@ export async function readConnectorStagePage(
     if (!(await live(tx, scope, id))) return unavailable();
     return fail("dataset_stage_reference_invalid");
   }
-  if (digest(row.payload) !== row.digest)
-    return fail("dataset_stage_integrity");
-  return row.payload as DatasetPage;
+  const page = storedPage(row);
+  if (digest(page) !== row.digest) return fail("dataset_stage_integrity");
+  return page as DatasetPage;
 }
 
-export async function storeConnectorStage(
+/** Digest of one stored page, independent of its storage encoding. */
+export const connectorStagePageDigest = (page: DatasetPage) => digest(page);
+
+/** Content digest of a complete page set, as commit would compute it. */
+export function connectorStageDigest(
+  metadata: unknown,
+  pages: DatasetPage[],
+): string {
+  return contentDigest(
+    metadata,
+    pages.map((page) => [page.pageKey, digest(page)]),
+  );
+}
+
+/**
+ * The committed live stage under `key` if it holds exactly this content, null
+ * if there is none; different content is a conflict. Lets `put` return an
+ * admitted stage without writing (or needing budget for) a new draft.
+ */
+export async function matchConnectorStage(
   tx: Transaction,
   scope: ConnectorStageScope,
-  input: {
-    key: string;
-    metadata: unknown;
-    pages: DatasetPage[];
-  },
+  input: { key: string; metadata: unknown; pages: DatasetPage[] },
   definition: SourceDatasetDefinition,
-  signal?: AbortSignal,
 ) {
-  signal?.throwIfAborted();
+  if (!KEY.test(input.key)) return fail("dataset_stage_invalid");
+  const existing = await live(tx, scope, undefined, input.key);
+  if (!existing) return null;
   if (
-    !/^[a-zA-Z0-9:_-]{1,200}$/.test(input.key) ||
-    !datasetRecordSchema.safeParse({ values: { metadata: input.metadata } })
-      .success ||
-    Buffer.byteLength(JSON.stringify(input.metadata)) > 1_048_576 ||
-    !input.pages.length
+    existing.digest !== connectorStageDigest(input.metadata, input.pages) ||
+    existing.datasetKey !== definition.key ||
+    existing.schemaVersion !== definition.version
   )
-    return fail("dataset_stage_invalid");
-  const pages = input.pages.map((page) => {
-    if (
-      !/^[a-zA-Z0-9:_-]{1,200}$/.test(page.pageKey) ||
-      page.stagingId ||
-      page.stagingPageKey
-    )
-      return fail("dataset_stage_invalid");
-    try {
-      return validateDatasetPage(definition, page);
-    } catch {
-      return fail("dataset_stage_invalid");
-    }
-  });
-  if (new Set(pages.map((p) => p.pageKey)).size !== pages.length)
-    return fail("dataset_stage_invalid");
-  const hashes = pages
-    .map((p) => [p.pageKey, digest(p)])
-    .sort(([a], [b]) => (a! < b! ? -1 : a! > b! ? 1 : 0));
-  const contentDigest = digest([input.metadata, hashes]);
-  const byteSize =
-    Buffer.byteLength(JSON.stringify(input.metadata)) +
-    pages.reduce((n, p) => n + Buffer.byteLength(JSON.stringify(p)) + 512, 512);
-  if (byteSize > MAX_STAGE_BYTES) return fail("dataset_stage_limit");
-  await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${scope.workspaceId}::uuid::text, 440))`,
-  );
+    return fail("dataset_stage_conflict");
+  return { id: existing.id, key: existing.key, metadata: existing.metadata };
+}
+
+/**
+ * Starts a draft (ADR 0024). It fixes the collection time and deadlines under
+ * the ingestion lock (440), as retention changes do, and holds no bytes yet.
+ * The draft expires CONNECTOR_STAGE_DRAFT_TTL_MS after begin unless committed.
+ */
+export async function beginConnectorStage(
+  tx: Transaction,
+  scope: ConnectorStageScope,
+  input: { key: string },
+  definition: SourceDatasetDefinition,
+): Promise<{ id: string }> {
+  if (!KEY.test(input.key)) return fail("dataset_stage_invalid");
+  await lockWorkspaceIngestion(tx, scope.workspaceId);
   const now = currentTime(scope);
   const { policy } = await resolveDataPolicy(
     tx,
@@ -249,22 +290,9 @@ export async function storeConnectorStage(
     )
     .for("share");
   if (!connection) return fail("dataset_connection_not_found");
-  const existing = await live(tx, scope, undefined, input.key);
-  if (existing) {
-    if (
-      existing.digest !== contentDigest ||
-      existing.datasetKey !== definition.key ||
-      existing.schemaVersion !== definition.version
-    )
-      return fail("dataset_stage_conflict");
-    return { id: existing.id, key: existing.key, metadata: existing.metadata };
-  }
   // A lower cache budget never invalidates admitted continuations. Only new
   // stages consume capacity; zero disables allocation without evicting readers.
   if (policy.maxConnectorStagingBytes === 0) return fail("dataset_stage_quota");
-  await tx
-    .delete(dataConnectorStages)
-    .where(and(scopeWhere(scope), eq(dataConnectorStages.key, input.key)));
   const requested = await connectionDatasetRetentionDays(
     tx,
     scope.workspaceId,
@@ -275,7 +303,11 @@ export async function storeConnectorStage(
     expiry(now, requested),
     expiry(now, policy.maxRetentionDays),
   );
-  const expiresAt = minimum(new Date(now.getTime() + DAY), sourceExpiresAt)!;
+  const expiresAt = minimum(
+    new Date(now.getTime() + CONNECTOR_STAGE_DRAFT_TTL_MS),
+    sourceExpiresAt,
+  )!;
+  if (expiresAt <= now) return unavailable();
   const [stage] = await tx
     .insert(dataConnectorStages)
     .values({
@@ -285,48 +317,306 @@ export async function storeConnectorStage(
       key: input.key,
       datasetKey: definition.key,
       schemaVersion: definition.version,
-      metadata: input.metadata,
-      digest: contentDigest,
-      byteSize,
+      metadata: {},
+      digest: "",
+      byteSize: 0,
       sourceCollectedAt: now,
       sourceExpiresAt,
       expiresAt,
     })
-    .returning();
-  for (const page of pages) {
-    signal?.throwIfAborted();
-    await tx.insert(dataConnectorStagePages).values({
-      workspaceId: scope.workspaceId,
-      stageId: stage!.id,
+    .returning({ id: dataConnectorStages.id });
+  return { id: stage!.id };
+}
+
+/** Validated, compressed pages ready to store; done before any lock is taken. */
+export function prepareConnectorStagePages(
+  pages: DatasetPage[],
+  definition: SourceDatasetDefinition,
+) {
+  if (!pages.length) return fail("dataset_stage_invalid");
+  const prepared = pages.map((input) => {
+    if (!KEY.test(input.pageKey) || input.stagingId || input.stagingPageKey)
+      return fail("dataset_stage_invalid");
+    let page: DatasetPage;
+    try {
+      page = validateDatasetPage(definition, input);
+    } catch {
+      return fail("dataset_stage_invalid");
+    }
+    const text = Buffer.from(JSON.stringify(page), "utf8");
+    if (text.byteLength > MAX_PAGE_TEXT) return fail("dataset_stage_invalid");
+    return {
       pageKey: page.pageKey,
-      payload: page,
+      payloadGzip: gzipSync(text),
       digest: digest(page),
-    });
-  }
-  // PostgreSQL JSONB includes spacing; account actual serialized bytes, including metadata.
-  const [actual] = await tx.execute<{ bytes: string }>(
-    sql`select (octet_length(metadata::text) + 512 + coalesce((select sum(octet_length(payload::text) + 512) from data_connector_stage_pages where stage_id=${stage!.id}::uuid and workspace_id=${scope.workspaceId}::uuid),0))::text as bytes from data_connector_stages where id=${stage!.id}::uuid and workspace_id=${scope.workspaceId}::uuid`,
+    };
+  });
+  if (new Set(prepared.map((p) => p.pageKey)).size !== prepared.length)
+    return fail("dataset_stage_invalid");
+  return prepared;
+}
+export type PreparedConnectorStagePages = ReturnType<
+  typeof prepareConnectorStagePages
+>;
+
+/**
+ * Stores pages in a draft and accounts their compressed bytes. Takes only the
+ * workspace staging lock (441), never the ingestion lock. The draft and all
+ * live stages of the workspace, drafts included, must stay within the stage
+ * limit and maxConnectorStagingBytes; otherwise nothing of this call is kept.
+ */
+export async function appendConnectorStagePages(
+  tx: Transaction,
+  scope: ConnectorStageScope,
+  id: string,
+  pages: PreparedConnectorStagePages,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  if (!z.uuid().safeParse(id).success) return fail("dataset_stage_invalid");
+  await lockWorkspaceStaging(tx, scope.workspaceId);
+  const now = currentTime(scope);
+  const added = pages.reduce(
+    (n, page) => n + page.payloadGzip.byteLength + PAGE_OVERHEAD,
+    0,
   );
-  const actualBytes = Number(actual?.bytes ?? 0);
-  if (actualBytes > MAX_STAGE_BYTES) return fail("dataset_stage_limit");
-  await tx
+  const [draft] = await tx
     .update(dataConnectorStages)
-    .set({ byteSize: actualBytes })
-    .where(and(scopeWhere(scope), eq(dataConnectorStages.id, stage!.id)));
+    .set({ byteSize: sql`${dataConnectorStages.byteSize} + ${added}` })
+    .where(
+      and(
+        scopeWhere(scope),
+        eq(dataConnectorStages.id, id),
+        isNull(dataConnectorStages.committedAt),
+        gt(dataConnectorStages.expiresAt, now),
+        // Larger than a stage may be: refused below without a check violation.
+        sql`${dataConnectorStages.byteSize} + ${added} <= ${MAX_STAGE_BYTES}`,
+      ),
+    )
+    .returning({
+      byteSize: dataConnectorStages.byteSize,
+      sourceExpiresAt: dataConnectorStages.sourceExpiresAt,
+    });
+  if (!draft) {
+    const [row] = await tx
+      .select({ byteSize: dataConnectorStages.byteSize })
+      .from(dataConnectorStages)
+      .where(
+        and(
+          scopeWhere(scope),
+          eq(dataConnectorStages.id, id),
+          isNull(dataConnectorStages.committedAt),
+          gt(dataConnectorStages.expiresAt, now),
+        ),
+      );
+    return row ? fail("dataset_stage_limit") : unavailable();
+  }
+  if (draft.sourceExpiresAt !== null && draft.sourceExpiresAt <= now)
+    return unavailable();
+  if (draft.byteSize + HEADER_OVERHEAD > MAX_STAGE_BYTES)
+    return fail("dataset_stage_limit");
+  const { policy } = await resolveDataPolicy(
+    tx,
+    scope.workspaceId,
+    scope.policyDefaults,
+  );
   if (
     exceedsDataPolicy(
-      await connectorStagingWorkspaceBytes(
-        tx,
-        scope.workspaceId,
-        currentTime(scope),
+      await connectorStagingWorkspaceBytes(tx, scope.workspaceId, now),
+      policy.maxConnectorStagingBytes,
+    )
+  )
+    return fail("dataset_stage_quota");
+  for (const page of pages) {
+    signal?.throwIfAborted();
+    try {
+      await tx.insert(dataConnectorStagePages).values({
+        workspaceId: scope.workspaceId,
+        stageId: id,
+        pageKey: page.pageKey,
+        payloadGzip: page.payloadGzip,
+        digest: page.digest,
+      });
+    } catch (error) {
+      // A page key the draft already holds.
+      if ((error as { code?: string }).code === "23505")
+        return fail("dataset_stage_invalid");
+      throw error;
+    }
+  }
+  signal?.throwIfAborted();
+}
+
+/**
+ * Publishes a draft. Under the ingestion lock (440, as retention changes) it
+ * fixes the final deadline: one day after collection at most, and never past
+ * the source deadline that policy and connection-retention changes have kept
+ * up to date on the draft, nor past the current policy. An identical
+ * committed stage under the same key is returned instead; different content
+ * is a conflict. Either way the draft is removed.
+ */
+export async function commitConnectorStage(
+  tx: Transaction,
+  scope: ConnectorStageScope,
+  id: string,
+  metadata: unknown,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted();
+  if (!z.uuid().safeParse(id).success || !validMetadata(metadata))
+    return fail("dataset_stage_invalid");
+  await lockWorkspaceIngestion(tx, scope.workspaceId);
+  await lockWorkspaceStaging(tx, scope.workspaceId);
+  const now = currentTime(scope);
+  const { policy } = await resolveDataPolicy(
+    tx,
+    scope.workspaceId,
+    scope.policyDefaults,
+  );
+  const [draft] = await tx
+    .select()
+    .from(dataConnectorStages)
+    .where(
+      and(
+        scopeWhere(scope),
+        eq(dataConnectorStages.id, id),
+        isNull(dataConnectorStages.committedAt),
       ),
+    )
+    .for("update");
+  if (!draft) return unavailable();
+  const sourceExpiresAt = minimum(
+    draft.sourceExpiresAt,
+    expiry(draft.sourceCollectedAt, policy.maxRetentionDays),
+  );
+  const expiresAt = minimum(
+    new Date(draft.sourceCollectedAt.getTime() + DAY),
+    sourceExpiresAt,
+  )!;
+  if (
+    expired(draft, scope) ||
+    expiresAt <= now ||
+    (sourceExpiresAt !== null && sourceExpiresAt <= now)
+  )
+    return unavailable();
+  const pages = await tx
+    .select({
+      key: dataConnectorStagePages.pageKey,
+      digest: dataConnectorStagePages.digest,
+    })
+    .from(dataConnectorStagePages)
+    .where(
+      and(
+        eq(dataConnectorStagePages.workspaceId, scope.workspaceId),
+        eq(dataConnectorStagePages.stageId, id),
+      ),
+    );
+  if (!pages.length) return fail("dataset_stage_invalid");
+  const content = contentDigest(
+    metadata,
+    pages.map((p) => [p.key, p.digest]),
+  );
+  const discard = () =>
+    tx
+      .delete(dataConnectorStages)
+      .where(and(scopeWhere(scope), eq(dataConnectorStages.id, id)));
+  const existing = await live(tx, scope, undefined, draft.key);
+  if (existing) {
+    await discard();
+    if (
+      existing.digest !== content ||
+      existing.datasetKey !== draft.datasetKey ||
+      existing.schemaVersion !== draft.schemaVersion
+    )
+      return fail("dataset_stage_conflict");
+    return { id: existing.id, key: existing.key, metadata: existing.metadata };
+  }
+  // An expired committed stage still holds the key until pruned.
+  await tx
+    .delete(dataConnectorStages)
+    .where(
+      and(
+        scopeWhere(scope),
+        eq(dataConnectorStages.key, draft.key),
+        isNotNull(dataConnectorStages.committedAt),
+      ),
+    );
+  const [stage] = await tx
+    .update(dataConnectorStages)
+    .set({
+      metadata,
+      digest: content,
+      committedAt: now,
+      expiresAt,
+      byteSize: sql`${dataConnectorStages.byteSize} + ${HEADER_OVERHEAD} + octet_length(${JSON.stringify(metadata)}::jsonb::text)`,
+    })
+    .where(
+      and(
+        scopeWhere(scope),
+        eq(dataConnectorStages.id, id),
+        isNull(dataConnectorStages.committedAt),
+        sql`${dataConnectorStages.byteSize} + ${HEADER_OVERHEAD} + octet_length(${JSON.stringify(metadata)}::jsonb::text) <= ${MAX_STAGE_BYTES}`,
+      ),
+    )
+    .returning({ byteSize: dataConnectorStages.byteSize });
+  if (!stage) return fail("dataset_stage_limit");
+  // Other writers' drafts do not count here: they are checked on their own
+  // appends and commit, so one of several racing stages can always finish.
+  if (
+    exceedsDataPolicy(
+      await connectorStagingWorkspaceBytes(tx, scope.workspaceId, now, {
+        committedOnly: true,
+      }),
       policy.maxConnectorStagingBytes,
     )
   )
     return fail("dataset_stage_quota");
   signal?.throwIfAborted();
-  if (expired(stage!, scope)) return unavailable();
-  return { id: stage!.id, key: input.key, metadata: input.metadata };
+  return { id, key: draft.key, metadata };
+}
+
+/** Removes a draft and its pages; a committed stage is never touched. */
+export async function abortConnectorStage(
+  tx: Transaction,
+  scope: ConnectorStageScope,
+  id: string,
+): Promise<void> {
+  if (!z.uuid().safeParse(id).success) return;
+  await tx
+    .delete(dataConnectorStages)
+    .where(
+      and(
+        scopeWhere(scope),
+        eq(dataConnectorStages.id, id),
+        isNull(dataConnectorStages.committedAt),
+      ),
+    );
+}
+
+/**
+ * A complete stage in one transaction: begin, append and commit. The host's
+ * `put` writes through the same steps in separate transactions.
+ */
+export async function storeConnectorStage(
+  tx: Transaction,
+  scope: ConnectorStageScope,
+  input: {
+    key: string;
+    metadata: unknown;
+    pages: DatasetPage[];
+  },
+  definition: SourceDatasetDefinition,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted();
+  if (!KEY.test(input.key) || !validMetadata(input.metadata))
+    return fail("dataset_stage_invalid");
+  const pages = prepareConnectorStagePages(input.pages, definition);
+  const existing = await matchConnectorStage(tx, scope, input, definition);
+  if (existing) return existing;
+  const { id } = await beginConnectorStage(tx, scope, input, definition);
+  await appendConnectorStagePages(tx, scope, id, pages, signal);
+  return commitConnectorStage(tx, scope, id, input.metadata, signal);
 }
 
 /** Verify the actual returned rows/window, rather than trusting an arbitrary stage ID. */

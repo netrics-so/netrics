@@ -146,8 +146,9 @@ already admitted live stages. Raw pages and records count toward
 cap. If the host refuses a stage (size, quota or storage error), the report task
 stays buffered through its remaining app/page continuations. A rebuilt stage
 restarts only the pending app partition; apps already
-completed in the task are not emitted again. A stage is bounded to 128 MiB of serialized JSONB and
-metadata to 1 MiB, with the normal per-page/record transport limits. The scheduler
+completed in the task are not emitted again. A stage is bounded to 128 MiB of stored bytes, which since
+[ADR 0024](../decisions/0024-streaming-connector-staging.md) are gzip-compressed
+pages (as for `maxConnectorStagingBytes`), and its metadata to 1 MiB, with the normal per-page/record transport limits. The scheduler
 prunes expired pages in batches. See [ADR 0023](../decisions/0023-connector-dataset-staging.md).
 
 The persisted fixture in `apps/server/src/sync/staging.test.ts` covers 20,001

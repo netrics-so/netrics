@@ -28,3 +28,4 @@ product is built.
 | [0021](./0021-netrics-tv-on-ipad-and-iphone.md)         | netrics TV on iPad and iPhone: one product, pairing only              |
 | [0022](./0022-reusable-data-model-and-processing.md)    | Reusable datasets, preparation, semantic models and dashboard filters |
 | [0023](./0023-connector-dataset-staging.md)             | Durable parsed dataset staging for connector continuations            |
+| [0024](./0024-streaming-connector-staging.md)           | Incremental connector dataset staging with compressed pages           |
