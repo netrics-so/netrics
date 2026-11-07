@@ -3,6 +3,9 @@
 Status: accepted implementation decision (2026-11-05; #472, milestone 11).
 Extends ADR 0022 and the optional typed dataset capability.
 Quota separation revised on 2026-11-06 in [#476](https://github.com/netrics-so/netrics/issues/476).
+Revised by [ADR 0024](./0024-streaming-connector-staging.md) (2026-11-07, #525):
+stages are written incrementally, pages are stored compressed, and
+`maxConnectorStagingBytes` counts stored compressed bytes.
 
 ## Context
 

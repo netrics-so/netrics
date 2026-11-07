@@ -82,7 +82,8 @@ export async function connectionDatasetRetentionDays(
 
 /**
  * The workspace ingestion lock (440) for this transaction. Dataset ingestion,
- * connector staging, connection retention and admin_set_data_policy take it
+ * beginning and committing a connector stage (not appending to it: see
+ * lockWorkspaceStaging), connection retention and admin_set_data_policy take it
  * before reading or applying retention, so they serialize. Take it before
  * any connection row lock.
  */
@@ -92,6 +93,23 @@ export async function lockWorkspaceIngestion(
 ): Promise<void> {
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}::uuid::text, 440))`,
+  );
+}
+
+/**
+ * The workspace staging lock (441) for this transaction (ADR 0024). It
+ * serializes the byte accounting of connector staging: appending pages to a
+ * draft takes only this lock, so a large first read does not queue behind
+ * (or hold up) dataset ingestion on 440. Beginning and committing a stage
+ * read retention under 440 and then take this lock; the order is always 440
+ * before 441, and nothing takes 440 while holding 441.
+ */
+export async function lockWorkspaceStaging(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}::uuid::text, 441))`,
   );
 }
 

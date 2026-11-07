@@ -63,7 +63,10 @@ export interface ConnectorRuntime {
   fetch(url: string, init?: ConnectorFetchInit): Promise<ConnectorResponse>;
   /** Aborted when the call ends or the host's time budget runs out. */
   signal: AbortSignal;
-  /** Optional SDK 0.2.10 durable, connection-scoped parsed dataset staging. */
+  /**
+   * Optional SDK 0.2.10 durable, connection-scoped parsed dataset staging;
+   * incremental writes (`begin`) since 0.2.11.
+   */
   datasetStaging?: ConnectorDatasetStaging;
 }
 
@@ -84,11 +87,44 @@ export interface StagedDataset {
 export interface ConnectorDatasetStaging {
   get(key: string): Promise<StagedDataset | null>;
   getPage(id: string, pageKey: string): Promise<DatasetPage>;
+  /**
+   * Stages a complete page set at once. Since SDK 0.2.11 hosts write it
+   * through begin/append/commit; the stage is still only readable once all
+   * pages are stored. An identical stage under a live key is returned as is;
+   * different content under a live key is an error.
+   */
   put(input: {
     key: string;
     metadata: unknown;
     pages: DatasetPage[];
   }): Promise<StagedDataset>;
+  /**
+   * Optional (SDK 0.2.11, ADR 0024): writes a stage page by page, so a
+   * connector need not hold a whole report in memory. Pages are validated,
+   * stored and counted against the host's byte budget on every append; a
+   * refused append ends the draft. Nothing is readable before `commit`. A
+   * draft lives within the current connector call: when the call ends or is
+   * aborted the host discards it, and an uncommitted draft expires on its own.
+   */
+  begin?(input: {
+    key: string;
+    datasetKey: string;
+    schemaVersion: number;
+  }): Promise<DatasetStageWriter>;
+}
+
+/** One draft stage (SDK 0.2.11). Every page belongs to the dataset given to `begin`. */
+export interface DatasetStageWriter {
+  /** Stores pages now. Page keys are unique within the stage. */
+  append(pages: DatasetPage[]): Promise<void>;
+  /**
+   * Makes the stage readable with its final metadata (the page index, for
+   * example). Returns an identical live stage under the same key instead,
+   * and fails on different content. The writer is closed afterwards.
+   */
+  commit(input: { metadata: unknown }): Promise<StagedDataset>;
+  /** Discards the draft and its pages. Safe to call more than once. */
+  abort(): Promise<void>;
 }
 
 export interface ConnectorFetchInit {

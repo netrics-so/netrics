@@ -1,3 +1,4 @@
+import { gzipSync } from "node:zlib";
 import { randomBytes, randomUUID } from "node:crypto";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -119,7 +120,7 @@ const fixture: Connector = {
     }
     if (index === 1 && !test.spent && test.scenario === "integrity") {
       test.spent = true;
-      await owner`update data_connector_stage_pages set payload='{}'::jsonb where stage_id=${stage.id} and page_key='1'`;
+      await owner`update data_connector_stage_pages set payload_gzip=${gzipSync("{}")} where stage_id=${stage.id} and page_key='1'`;
     }
     const staged = await store.getPage(stage.id, String(index));
     test.positions.push(index);

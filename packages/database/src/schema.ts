@@ -2099,7 +2099,11 @@ export const dataTemplateInstalls = pgTable(
   ],
 );
 
-/** Disposable immutable parsed provider report, never shared across connections. */
+/**
+ * Disposable immutable parsed provider report, never shared across
+ * connections. A row with a null committedAt is a draft (ADR 0024): written
+ * page by page within one connector call, never readable, and short-lived.
+ */
 export const dataConnectorStages = pgTable(
   "data_connector_stages",
   {
@@ -2120,10 +2124,15 @@ export const dataConnectorStages = pgTable(
     }).notNull(),
     sourceExpiresAt: timestamp("source_expires_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    committedAt: timestamp("committed_at", { withTimezone: true }),
   },
   (t) => [
     unique("data_connector_stages_tenant_key").on(t.id, t.workspaceId),
-    unique("data_connector_stages_connection_key").on(t.connectionId, t.key),
+    // Drafts never claim a key: a retried call can start a new one while an
+    // abandoned draft of the same key waits for expiry.
+    uniqueIndex("data_connector_stages_connection_key")
+      .on(t.connectionId, t.key)
+      .where(sql`${t.committedAt} is not null`),
     foreignKey({
       columns: [t.connectionId, t.workspaceId],
       foreignColumns: [connections.id, connections.workspaceId],
@@ -2143,7 +2152,10 @@ export const dataConnectorStagePages = pgTable(
     stageId: uuid("stage_id").notNull(),
     workspaceId: uuid("workspace_id").notNull(),
     pageKey: text("page_key").notNull(),
-    payload: jsonb("payload").notNull(),
+    /** Pages written before 0067; new pages are stored in payloadGzip. */
+    payload: jsonb("payload"),
+    /** The page's JSON text, gzip-compressed (ADR 0024). */
+    payloadGzip: bytea("payload_gzip"),
     digest: text("digest").notNull(),
   },
   (t) => [
@@ -2156,6 +2168,14 @@ export const dataConnectorStagePages = pgTable(
     check(
       "data_connector_stage_pages_size",
       sql`octet_length(${t.payload}::text) <= 2097152`,
+    ),
+    check(
+      "data_connector_stage_pages_gzip_size",
+      sql`octet_length(${t.payloadGzip}) <= 2097152`,
+    ),
+    check(
+      "data_connector_stage_pages_one_payload",
+      sql`(${t.payload} is null) <> (${t.payloadGzip} is null)`,
     ),
   ],
 );

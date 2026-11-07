@@ -208,6 +208,15 @@ implementation work; this plan does not create or complete issue records.
     nothing. Records are reached through the workspace's generations and the
     record primary key, so a small workspace no longer scans every
     workspace's records (migration 0066, no new index).
+  - Incremental connector dataset staging with compressed pages:
+    [#525](https://github.com/netrics-so/netrics/issues/525), the first part of
+    [#519](https://github.com/netrics-so/netrics/issues/519) (ADR 0024). SDK
+    0.2.11 adds an optional `datasetStaging.begin` writer (append, commit,
+    abort); drafts are unreadable until commit, budgeted on every append
+    under a separate staging lock (441), and expire after 15 minutes when
+    abandoned. Pages are stored gzip-compressed, and `maxConnectorStagingBytes`
+    now counts those stored bytes (migration 0067). The Google Play connector
+    still stages through `put`; streaming it is the second part of #519.
   - Rolling-window and period-offset measures:
     [#486](https://github.com/netrics-so/netrics/issues/486). Date-only
     anchors, windows recomputed from rows, capped month/year offsets, lookback

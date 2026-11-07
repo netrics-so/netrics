@@ -148,6 +148,14 @@ staged page verifies its exact rows/window and preserves the original source
 collection time and retention deadline. Repeated reads cannot renew retention.
 Scheduler maintenance removes expired chunks. See [ADR 0023](./decisions/0023-connector-dataset-staging.md).
 
+SDK 0.2.11 adds optional `datasetStaging.begin`, which writes a stage page by
+page: `append` validates, stores and counts each batch against the byte budget,
+`commit` makes the stage readable with its final metadata, and `abort` (or the
+end of the connector call) discards the draft. `put` remains and writes through
+the same steps. Stage pages are stored gzip-compressed, and the stage limit and
+`maxConnectorStagingBytes` count the stored compressed bytes. See
+[ADR 0024](./decisions/0024-streaming-connector-staging.md).
+
 Google continuations read the needed parsed page instead of downloading and
 parsing each report again. Each turn still discovers current reports and checks
 object-level access to the pinned generations. Corrections or expired staging
@@ -215,8 +223,11 @@ overrides; self-hosters control the same defaults and API.
 from the optional connector cache. `maxWorkspaceBytes` now counts retained raw
 pages and records only; it no longer includes parsed connector staging.
 `maxConnectorStagingBytes` independently caps the aggregate accounted bytes of
-live stages (serialized JSONB plus accounting overhead) in each workspace, with
-a 128 MiB default. `0` refuses new stages; `null` removes that admission ceiling.
+live stages in each workspace, with a 128 MiB default. Since
+[ADR 0024](./decisions/0024-streaming-connector-staging.md) (#525) these are the
+stored gzip-compressed page bytes plus accounting overhead, counted for
+committed stages and open drafts, and no longer the serialized JSONB size: the
+same setting now admits several times more parsed rows than before. `0` refuses new stages; `null` removes that admission ceiling.
 Lowering the cache budget,
 including to `0`, leaves already admitted live stages usable until their
 existing expiry. Reads and repeated identical writes do not renew retention.

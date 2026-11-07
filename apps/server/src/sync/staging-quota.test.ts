@@ -221,11 +221,11 @@ describe("independent connector cache and retained-data budgets", () => {
     const store = staging(f);
     const first = await store.put({
       key: "first",
-      metadata: { note: "actual JSONB bytes" },
+      metadata: { note: "actual stored bytes" },
       pages: retainedPages,
     });
     const [actual] =
-      await owner`select s.byte_size,(octet_length(s.metadata::text)+512+(select sum(octet_length(p.payload::text)+512) from data_connector_stage_pages p where p.stage_id=s.id))::int as measured from data_connector_stages s where s.id=${first.id}`;
+      await owner`select s.byte_size,(octet_length(s.metadata::text)+512+(select sum(octet_length(p.payload_gzip)+512) from data_connector_stage_pages p where p.stage_id=s.id))::int as measured from data_connector_stages s where s.id=${first.id}`;
     expect(actual!.byte_size).toBe(actual!.measured);
     const size = actual!.byte_size as number;
     await adminSetDataPolicy(db, f.workspaceId, {
@@ -235,7 +235,7 @@ describe("independent connector cache and retained-data budgets", () => {
     await expect(
       staging(sameWorkspace).put({
         key: "second",
-        metadata: { note: "actual JSONB bytes" },
+        metadata: { note: "actual stored bytes" },
         pages: retainedPages,
       }),
     ).rejects.toThrow("dataset_stage_quota");
@@ -248,7 +248,7 @@ describe("independent connector cache and retained-data budgets", () => {
     expect(
       await store.put({
         key: "first",
-        metadata: { note: "actual JSONB bytes" },
+        metadata: { note: "actual stored bytes" },
         pages: retainedPages,
       }),
     ).toEqual(first);
@@ -261,7 +261,7 @@ describe("independent connector cache and retained-data budgets", () => {
     await expect(
       staging(foreign).put({
         key: "foreign",
-        metadata: { note: "actual JSONB bytes" },
+        metadata: { note: "actual stored bytes" },
         pages: retainedPages,
       }),
     ).resolves.toMatchObject({ key: "foreign" });
@@ -274,7 +274,7 @@ describe("independent connector cache and retained-data budgets", () => {
     await expect(
       staging(sameWorkspace).put({
         key: "second",
-        metadata: { note: "actual JSONB bytes" },
+        metadata: { note: "actual stored bytes" },
         pages: retainedPages,
       }),
     ).resolves.toMatchObject({ key: "second" });
@@ -290,12 +290,12 @@ describe("independent connector cache and retained-data budgets", () => {
     const admissions = await Promise.allSettled([
       staging(racing).put({
         key: "raced-one",
-        metadata: { note: "actual JSONB bytes" },
+        metadata: { note: "actual stored bytes" },
         pages: retainedPages,
       }),
       staging(peer).put({
         key: "raced-two",
-        metadata: { note: "actual JSONB bytes" },
+        metadata: { note: "actual stored bytes" },
         pages: retainedPages,
       }),
     ]);

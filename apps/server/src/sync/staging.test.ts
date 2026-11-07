@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   createDatabase,
@@ -519,10 +520,20 @@ describe("host staging storage boundaries", () => {
       metadata: {},
       pages: [retainedPage()],
     });
+    // A committed stage is immutable to the application role: the draft-only
+    // update policy (0067) leaves it untouched.
+    await withWorkspace(db, { workspaceId }, (tx) =>
+      tx.execute(
+        sql`update data_connector_stages set metadata='{"altered":true}'::jsonb, expires_at=expires_at + interval '1 hour' where id=${stage.id}::uuid`,
+      ),
+    );
+    expect(
+      await owner`select metadata from data_connector_stages where id=${stage.id}`,
+    ).toEqual([{ metadata: {} }]);
     await expect(
       withWorkspace(db, { workspaceId }, (tx) =>
         tx.execute(
-          sql`update data_connector_stages set metadata='{}'::jsonb where id=${stage.id}::uuid`,
+          sql`update data_connector_stages set key='moved' where id=${stage.id}::uuid`,
         ),
       ),
     ).rejects.toThrow();
@@ -533,7 +544,11 @@ describe("host staging storage boundaries", () => {
         ),
       ),
     ).rejects.toThrow();
-    await owner`update data_connector_stage_pages set payload='{}' where stage_id=${stage.id}`;
+    await owner`update data_connector_stage_pages set payload_gzip=${gzipSync("{}")} where stage_id=${stage.id}`;
+    await expect(store.getPage(stage.id, "0")).rejects.toThrow(
+      "dataset_stage_integrity",
+    );
+    await owner`update data_connector_stage_pages set payload_gzip=${Buffer.from("not gzip")} where stage_id=${stage.id}`;
     await expect(store.getPage(stage.id, "0")).rejects.toThrow(
       "dataset_stage_integrity",
     );
