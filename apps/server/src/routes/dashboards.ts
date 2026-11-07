@@ -6,8 +6,14 @@ import {
   dashboardDataQuerySchema,
   dashboardDataResponseSchema,
   dashboardMeasurePreviewSchema,
+  compareMeasureQuerySchema,
+  compareMeasureReadingsResponseSchema,
   publishedModelCatalogSchema,
 } from "@netrics/contracts";
+import {
+  loadCompareSources,
+  readCompareMeasure,
+} from "../dashboards/compare-measure.js";
 import {
   dashboardDimensionValues,
   queryDashboardData,
@@ -204,6 +210,51 @@ export function registerDashboardRoutes(
               })(),
               values: body.values,
             }),
+            { isolationLevel: "repeatable read" },
+          );
+        },
+      );
+      scope.post(
+        "/workspaces/:workspaceId/dashboards/data/compare",
+        {
+          schema: routeSchema({
+            summary:
+              "Read compare widgets bound to published measures, saved or not",
+            tags: ["dashboards"],
+            body: compareMeasureQuerySchema,
+            response: compareMeasureReadingsResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "data:query");
+          if (!access) return;
+          const body = parseBody(compareMeasureQuerySchema, request, reply);
+          if (!body) return;
+          reply.header("cache-control", "no-store");
+          return withWorkspace(
+            deps.db,
+            { workspaceId: access.workspaceId, userId: access.callerId },
+            async (tx) => {
+              const now = deps.now?.() ?? new Date();
+              const sources = await loadCompareSources(tx, access.workspaceId);
+              const widgets = [];
+              for (const widget of body.widgets)
+                widgets.push(
+                  await readCompareMeasure(
+                    tx,
+                    access.workspaceId,
+                    widget,
+                    now,
+                    {
+                      policy: deps.policy ?? DEFAULT_DATA_POLICY,
+                      locale: access.locale,
+                      sources,
+                    },
+                  ),
+                );
+              return { widgets };
+            },
             { isolationLevel: "repeatable read" },
           );
         },

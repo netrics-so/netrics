@@ -4,7 +4,9 @@ import {
   COMPARE_MEASURE_IDS,
   COMPARE_DATE_DIMENSION,
   COMPARE_PREPARATION_OUTPUT,
+  compareMeasureFilter,
   compareMeasureOffset,
+  compareMeasureWindows,
   compileCompareMeasure,
   type CompareMeasureInput,
   type CompareMeasureSide,
@@ -258,16 +260,52 @@ describe("compileCompareMeasure refusals (#506)", () => {
     },
   );
 
-  it.each([
-    "this_week",
-    "this_month",
-    "this_quarter",
-    "this_year",
-    "last_12_months",
-  ] as const)("refuses %s", (period) => {
-    expect(compileCompareMeasure(input({ period }))).toEqual({
-      ok: false,
-      error: "compare_period_unsupported",
+  it("compiles every period into the same model (#507)", () => {
+    // A bound widget queries `ratio` over its own windows, so no period is
+    // refused and the model does not depend on one.
+    const compiled = PERIODS.map((period) =>
+      compileCompareMeasure(input({ period })),
+    );
+    for (const result of compiled) if (!result.ok) throw new Error("refused");
+    const models = compiled.map((result) =>
+      JSON.stringify(result.ok && result.model("prepared:p:compare")),
+    );
+    expect(new Set(models).size).toBe(1);
+  });
+
+  it("windows a bound widget by the widget's own dates (#507)", () => {
+    for (const date of days())
+      for (const period of PERIODS) {
+        const now = new Date(`${date}T12:00:00Z`);
+        const window = resolvePeriod(period, now, "Europe/Berlin");
+        expect(compareMeasureWindows(period, now, "Europe/Berlin")).toEqual({
+          current: window.dates,
+          previous: window.previousDates,
+        });
+      }
+    expect(
+      compareMeasureFilter("date", { from: "2025-04-01", to: "2025-04-30" }),
+    ).toEqual({
+      kind: "call",
+      fn: "and",
+      args: [
+        {
+          kind: "call",
+          fn: "gte",
+          args: [
+            { kind: "field", fieldId: "date" },
+            { kind: "literal", type: "date", value: "2025-04-01" },
+          ],
+        },
+        {
+          kind: "call",
+          fn: "lte",
+          args: [
+            { kind: "field", fieldId: "date" },
+            { kind: "literal", type: "date", value: "2025-04-30" },
+          ],
+        },
+      ],
     });
   });
 

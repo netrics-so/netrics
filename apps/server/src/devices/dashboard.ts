@@ -1,3 +1,7 @@
+import {
+  readCompareMeasure,
+  type CompareSourceContext,
+} from "../dashboards/compare-measure.js";
 import { queryDashboardMeasure } from "../dashboards/data.js";
 import { createHash } from "node:crypto";
 
@@ -259,6 +263,8 @@ interface DataContext {
   /** Connections that hold a reviews key (asked once per connection). */
   reviewsKey(connectionId: string): boolean;
   label(widget: DataWidget, metricName: string | undefined): string;
+  /** The same connections for bound compare widgets (#507). */
+  compareSources: CompareSourceContext;
 }
 
 async function loadDataContext(
@@ -323,6 +329,11 @@ async function loadDataContext(
     states,
     sources,
     backfilling,
+    compareSources: {
+      states,
+      names: new Map(connections.map(({ row }) => [row.id, row.name])),
+      backfilling,
+    },
     reviewsKey(connectionId) {
       let held = reviewsKeys.get(connectionId);
       if (held === undefined) {
@@ -806,6 +817,9 @@ async function compareWidgetOf(
   placement: { id: string; x: number; y: number; w: number; h: number },
 ): Promise<DeviceWidget> {
   const options = parsedOptions(compareWidgetOptionsSchema, widget.options);
+  if (widget.modelBinding !== null) {
+    return boundCompareWidgetOf(tx, widget, context, placement, options);
+  }
   const denominatorWidget: DataWidget | null =
     widget.denominatorConnectionId !== null &&
     widget.denominatorMetricKey !== null &&
@@ -878,6 +892,68 @@ async function compareWidgetOf(
         previousValue: comparable
           ? ratioOf(a.previousValue, b.previousValue)
           : null,
+        format: options.format,
+      },
+    },
+  };
+}
+
+/**
+ * A compare widget bound to measures (#507): the same payload, its numbers
+ * read from the published numerator, denominator and ratio over the
+ * period's two windows (`readCompareMeasure`). Measures carry no metric
+ * kind, granularity, conversion or direction: those are null, null, null
+ * and "higher". A binding that cannot be read is an outage without values,
+ * never the widget's metrics.
+ */
+async function boundCompareWidgetOf(
+  tx: Transaction,
+  widget: DataWidget,
+  context: DataContext,
+  placement: { id: string; x: number; y: number; w: number; h: number },
+  options: ReturnType<typeof compareWidgetOptionsSchema.parse>,
+): Promise<DeviceWidget> {
+  const request = metricRequest(widget);
+  const reading = await readCompareMeasure(
+    tx,
+    context.workspaceId,
+    { id: widget.id, period: request.period, measure: widget.modelBinding },
+    context.options.now,
+    {
+      ...(context.options.dataPolicy
+        ? { policy: context.options.dataPolicy }
+        : {}),
+      ...(context.options.locale ? { locale: context.options.locale } : {}),
+      sources: context.compareSources,
+    },
+  );
+  if (reading.error !== null) {
+    context.options.log?.warn(
+      { tileId: widget.id, err: reading.error },
+      "device tile failed",
+    );
+  }
+  return {
+    type: "compare",
+    ...placement,
+    // The measure's name: the widget's metrics are not what it shows.
+    label: widget.title ?? reading.numerator.label,
+    options,
+    data: {
+      period: request.period,
+      aggregation: request.aggregation,
+      unit: reading.unit,
+      conversion: null,
+      kind: null,
+      granularity: null,
+      better: "higher",
+      status: reading.status,
+      updatedAt: reading.updatedAt,
+      numerator: reading.numerator,
+      denominator: reading.denominator,
+      ratio: {
+        value: reading.ratio.value,
+        previousValue: reading.ratio.previousValue,
         format: options.format,
       },
     },

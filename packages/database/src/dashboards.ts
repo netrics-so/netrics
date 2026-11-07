@@ -117,7 +117,11 @@ export interface WidgetInput {
   goalId: string | null;
   options: Record<string, unknown>;
   modelId?: string | null;
-  modelBinding?: import("@netrics/domain").MeasureWidgetBinding | null;
+  /** A measure widget's binding, or a compare widget's measures (#507). */
+  modelBinding?:
+    | import("@netrics/domain").MeasureWidgetBinding
+    | import("@netrics/domain").CompareMeasureBinding
+    | null;
   filterExclusions?: import("@netrics/domain").DashboardFilterExclusion[];
   /**
    * Compare widgets: the denominator's binding (ADR 0019 section 10);

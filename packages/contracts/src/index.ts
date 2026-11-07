@@ -25,6 +25,7 @@ import {
   WORKSPACE_ROLES,
   isValidTimeZone,
   parseCountdownTarget,
+  type CompareMeasureBinding,
   type ThemeColorToken,
 } from "@netrics/domain";
 
@@ -2026,6 +2027,29 @@ export type CompareMeasureResponse = z.infer<
   typeof compareMeasureResponseSchema
 >;
 
+const modelItemIdSchema = z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$/);
+
+/**
+ * A compare widget bound to the measures its compare was compiled into
+ * (#507), as POST …/data/compare-measures returns them: `modelId`,
+ * `dateDimensionId` and the numerator, denominator and ratio measure ids.
+ * The widget keeps its period, format and layout, and reads `ratio` (with
+ * its operands) over the period's current and previous windows, each a
+ * closed date range on `dateDimensionId`. Validated on save: the model is
+ * one of the workspace's and the measures and the date dimension are its
+ * own.
+ */
+export const compareMeasureBindingSchema: z.ZodType<CompareMeasureBinding> =
+  z.strictObject({
+    modelId: z.uuid(),
+    dateDimensionId: modelItemIdSchema,
+    measureIds: z.strictObject({
+      numerator: modelItemIdSchema,
+      denominator: modelItemIdSchema,
+      ratio: modelItemIdSchema,
+    }),
+  });
+
 /** A refused compare names why; other failures are the data API's codes. */
 export const compareMeasureErrorResponseSchema = z.object({
   error: z.union([z.enum(COMPARE_MEASURE_REFUSALS), z.string().min(1)]),
@@ -2091,6 +2115,11 @@ export const dashboardWidgetInputSchema = z.discriminatedUnion("type", [
     /** The numerator (A); its period and display currency are shared. */
     ...dataBindingInputShape,
     denominator: compareDenominatorInputSchema,
+    /**
+     * Read the published measures a compare was compiled into instead of
+     * the two metrics (#507); null or missing: the metrics, as before.
+     */
+    measure: compareMeasureBindingSchema.nullable().optional(),
     options: compareWidgetOptionsSchema.prefault({}),
   }),
   z.object({
@@ -2265,6 +2294,8 @@ export const dashboardWidgetSchema = z.discriminatedUnion("type", [
       /** As on a tile (#208). Read-only. */
       allResourcesName: z.string().nullable(),
     }),
+    /** The measures it reads instead (#507); missing when unbound. */
+    measure: compareMeasureBindingSchema.optional(),
     options: compareWidgetOptionsSchema,
   }),
   z.object({
@@ -3104,6 +3135,59 @@ export const deviceCompareDataSchema = z.object({
   }),
 });
 export type DeviceCompareData = z.infer<typeof deviceCompareDataSchema>;
+
+/**
+ * Compare widgets bound to measures (#507), read for a signed-in page:
+ * each widget's id, period and binding, saved or not.
+ */
+export const compareMeasureQuerySchema = z.strictObject({
+  widgets: z
+    .array(
+      z.strictObject({
+        id: z.uuid(),
+        period: metricPeriodSchema,
+        measure: compareMeasureBindingSchema,
+      }),
+    )
+    .max(48),
+});
+export type CompareMeasureQuery = z.input<typeof compareMeasureQuerySchema>;
+
+/**
+ * A bound compare widget's numbers, as screens get them in a compare
+ * widget's data: the published numerator, denominator and ratio over the
+ * period's current window, and the ratio over its previous window. A
+ * measure that cannot be read (unpublished, deleted, not the model's, the
+ * wrong type) has `error`, status `outage` and no values; it never falls
+ * back to the widget's metrics.
+ */
+export const compareMeasureReadingSchema = z.object({
+  widgetId: z.uuid(),
+  status: deviceTileStatusSchema,
+  /** Why the measures could not be read ("data_model_not_published"). */
+  error: z.string().nullable(),
+  /** The older last successful sync of the model's sources. */
+  updatedAt: z.iso.datetime().nullable(),
+  /** The model's sources by name, for the footer. */
+  sources: z.array(z.string()),
+  numerator: deviceCompareOperandSchema,
+  denominator: deviceCompareOperandSchema,
+  ratio: z.object({
+    value: z.number().nullable(),
+    previousValue: z.number().nullable(),
+  }),
+  /** The ratio's unit: an amount per unit's currency, else null. */
+  unit: z.string().nullable(),
+  /** The closed date ranges read: the period's two windows. */
+  dates: z.object({
+    current: z.object({ from: z.iso.date(), to: z.iso.date() }),
+    previous: z.object({ from: z.iso.date(), to: z.iso.date() }),
+  }),
+});
+export type CompareMeasureReading = z.infer<typeof compareMeasureReadingSchema>;
+export const compareMeasureReadingsResponseSchema = z.object({
+  widgets: z.array(compareMeasureReadingSchema),
+});
 
 /**
  * A goal widget's data (ADR 0019 section 5), resolved on the server from

@@ -13200,6 +13200,417 @@
         }
       }
     },
+    "/v1/workspaces/{workspaceId}/dashboards/data/compare": {
+      "post": {
+        "summary": "Read compare widgets bound to published measures, saved or not",
+        "tags": [
+          "dashboards"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "widgets": {
+                    "maxItems": 48,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "period": {
+                          "type": "string",
+                          "enum": [
+                            "today",
+                            "this_week",
+                            "last_7_days",
+                            "this_month",
+                            "last_30_days",
+                            "this_quarter",
+                            "last_90_days",
+                            "this_year",
+                            "last_12_months"
+                          ]
+                        },
+                        "measure": {
+                          "type": "object",
+                          "properties": {
+                            "modelId": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "dateDimensionId": {
+                              "type": "string",
+                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                            },
+                            "measureIds": {
+                              "type": "object",
+                              "properties": {
+                                "numerator": {
+                                  "type": "string",
+                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                },
+                                "denominator": {
+                                  "type": "string",
+                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                },
+                                "ratio": {
+                                  "type": "string",
+                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                }
+                              },
+                              "required": [
+                                "numerator",
+                                "denominator",
+                                "ratio"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "modelId",
+                            "dateDimensionId",
+                            "measureIds"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "period",
+                        "measure"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "widgets"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "widgets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "widgetId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "ok",
+                              "stale",
+                              "auth_failed",
+                              "outage",
+                              "no_data",
+                              "backfilling"
+                            ]
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "updatedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sources": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "numerator": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "value": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "unit": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value",
+                              "unit"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "denominator": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "value": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "unit": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value",
+                              "unit"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "ratio": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "previousValue": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "value",
+                              "previousValue"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "unit": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "dates": {
+                            "type": "object",
+                            "properties": {
+                              "current": {
+                                "type": "object",
+                                "properties": {
+                                  "from": {
+                                    "type": "string",
+                                    "format": "date",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                  },
+                                  "to": {
+                                    "type": "string",
+                                    "format": "date",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                  }
+                                },
+                                "required": [
+                                  "from",
+                                  "to"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "previous": {
+                                "type": "object",
+                                "properties": {
+                                  "from": {
+                                    "type": "string",
+                                    "format": "date",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                  },
+                                  "to": {
+                                    "type": "string",
+                                    "format": "date",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                  }
+                                },
+                                "required": [
+                                  "from",
+                                  "to"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "current",
+                              "previous"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "widgetId",
+                          "status",
+                          "error",
+                          "updatedAt",
+                          "sources",
+                          "numerator",
+                          "denominator",
+                          "ratio",
+                          "unit",
+                          "dates"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "widgets"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspaceId}/dashboards/{dashboardId}/data": {
       "post": {
         "summary": "Query a dashboard with shared filters",
@@ -15860,6 +16271,56 @@
                                       "metricKey"
                                     ]
                                   },
+                                  "measure": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "modelId": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "dateDimensionId": {
+                                            "type": "string",
+                                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                          },
+                                          "measureIds": {
+                                            "type": "object",
+                                            "properties": {
+                                              "numerator": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "denominator": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "ratio": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              }
+                                            },
+                                            "required": [
+                                              "numerator",
+                                              "denominator",
+                                              "ratio"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "modelId",
+                                          "dateDimensionId",
+                                          "measureIds"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
                                   "options": {
                                     "default": {},
                                     "type": "object",
@@ -18374,6 +18835,49 @@
                                             "dimensions",
                                             "resourceName",
                                             "allResourcesName"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "measure": {
+                                          "type": "object",
+                                          "properties": {
+                                            "modelId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "dateDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "measureIds": {
+                                              "type": "object",
+                                              "properties": {
+                                                "numerator": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "denominator": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "ratio": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "numerator",
+                                                "denominator",
+                                                "ratio"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "modelId",
+                                            "dateDimensionId",
+                                            "measureIds"
                                           ],
                                           "additionalProperties": false
                                         },
@@ -21170,6 +21674,49 @@
                                           ],
                                           "additionalProperties": false
                                         },
+                                        "measure": {
+                                          "type": "object",
+                                          "properties": {
+                                            "modelId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "dateDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "measureIds": {
+                                              "type": "object",
+                                              "properties": {
+                                                "numerator": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "denominator": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "ratio": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "numerator",
+                                                "denominator",
+                                                "ratio"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "modelId",
+                                            "dateDimensionId",
+                                            "measureIds"
+                                          ],
+                                          "additionalProperties": false
+                                        },
                                         "options": {
                                           "type": "object",
                                           "properties": {
@@ -23848,6 +24395,56 @@
                                       "metricKey"
                                     ]
                                   },
+                                  "measure": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "modelId": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "dateDimensionId": {
+                                            "type": "string",
+                                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                          },
+                                          "measureIds": {
+                                            "type": "object",
+                                            "properties": {
+                                              "numerator": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "denominator": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "ratio": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              }
+                                            },
+                                            "required": [
+                                              "numerator",
+                                              "denominator",
+                                              "ratio"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "modelId",
+                                          "dateDimensionId",
+                                          "measureIds"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
                                   "options": {
                                     "default": {},
                                     "type": "object",
@@ -26372,6 +26969,49 @@
                                             "dimensions",
                                             "resourceName",
                                             "allResourcesName"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "measure": {
+                                          "type": "object",
+                                          "properties": {
+                                            "modelId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "dateDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "measureIds": {
+                                              "type": "object",
+                                              "properties": {
+                                                "numerator": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "denominator": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "ratio": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "numerator",
+                                                "denominator",
+                                                "ratio"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "modelId",
+                                            "dateDimensionId",
+                                            "measureIds"
                                           ],
                                           "additionalProperties": false
                                         },
@@ -29300,6 +29940,49 @@
                                             "dimensions",
                                             "resourceName",
                                             "allResourcesName"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "measure": {
+                                          "type": "object",
+                                          "properties": {
+                                            "modelId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "dateDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "measureIds": {
+                                              "type": "object",
+                                              "properties": {
+                                                "numerator": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "denominator": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "ratio": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "numerator",
+                                                "denominator",
+                                                "ratio"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "modelId",
+                                            "dateDimensionId",
+                                            "measureIds"
                                           ],
                                           "additionalProperties": false
                                         },
@@ -45473,7 +46156,6 @@
                             "compare_aggregation_unsupported",
                             "compare_currency_unpinned",
                             "compare_granularity_unsupported",
-                            "compare_period_unsupported",
                             "compare_source_unavailable",
                             "compare_dimension_unknown",
                             "compare_units_incompatible"
@@ -45552,7 +46234,6 @@
                             "compare_aggregation_unsupported",
                             "compare_currency_unpinned",
                             "compare_granularity_unsupported",
-                            "compare_period_unsupported",
                             "compare_source_unavailable",
                             "compare_dimension_unknown",
                             "compare_units_incompatible"
@@ -73290,6 +73971,49 @@
                                             "dimensions",
                                             "resourceName",
                                             "allResourcesName"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "measure": {
+                                          "type": "object",
+                                          "properties": {
+                                            "modelId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "dateDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "measureIds": {
+                                              "type": "object",
+                                              "properties": {
+                                                "numerator": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "denominator": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "ratio": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "numerator",
+                                                "denominator",
+                                                "ratio"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "modelId",
+                                            "dateDimensionId",
+                                            "measureIds"
                                           ],
                                           "additionalProperties": false
                                         },

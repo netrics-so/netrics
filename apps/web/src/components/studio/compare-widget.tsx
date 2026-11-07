@@ -17,7 +17,8 @@ import {
   formatCompactValue,
   formatValue,
 } from "@/lib/format-metric";
-import { useLocale } from "@/lib/i18n/client";
+import { dataErrorCodeKey } from "@/lib/data-errors";
+import { useLocale, useT } from "@/lib/i18n/client";
 import {
   compareFooterCandidates,
   compareRatioText,
@@ -33,7 +34,7 @@ import {
 
 import { useCountUp } from "./enter-motion";
 import { dataWidgetLabel, liveDataState } from "./metric-widget";
-import { useMetricData } from "./use-widget-data";
+import { useCompareMeasureData, useMetricData } from "./use-widget-data";
 import {
   DataStateWidget,
   WidgetFooter,
@@ -297,6 +298,7 @@ export function useLiveCompare(
   env: StudioEnv,
 ): CompareReadingProps {
   const locale = useLocale();
+  const tData = useT("data");
   const denominatorWidget = {
     ...widget,
     connectionId: widget.denominator.connectionId,
@@ -304,8 +306,48 @@ export function useLiveCompare(
     aggregation: widget.denominator.aggregation,
     dimensions: widget.denominator.dimensions,
   };
-  const a = useMetricData(env.workspaceId, widget);
-  const b = useMetricData(env.workspaceId, denominatorWidget);
+  // Bound to measures (#507): those numbers only, never the metrics'.
+  const bound = widget.measure !== undefined;
+  const measures = useCompareMeasureData(env.workspaceId, widget);
+  const a = useMetricData(env.workspaceId, widget, undefined, !bound);
+  const b = useMetricData(
+    env.workspaceId,
+    denominatorWidget,
+    undefined,
+    !bound,
+  );
+  if (bound) {
+    const { data, error, loading } = measures;
+    const failed = error ?? (data?.error ? data.error : null);
+    return {
+      label: widget.title ?? data?.numerator.label ?? widget.metricKey,
+      period: widget.period,
+      options: widget.options,
+      reading:
+        data && !data.error
+          ? {
+              numerator: { ...data.numerator, unit: data.numerator.unit ?? "" },
+              denominator: {
+                ...data.denominator,
+                unit: data.denominator.unit ?? "",
+              },
+              ratio: data.ratio,
+              unit: data.unit,
+              better: "higher",
+            }
+          : null,
+      notice:
+        failed === null
+          ? null
+          : data?.error
+            ? tData(`errors.${dataErrorCodeKey(data.error)}`)
+            : failed,
+      status: failed !== null ? "outage" : (data?.status ?? "ok"),
+      source: data?.sources.join(" · ") || null,
+      updatedAt: data?.updatedAt ?? null,
+      loading,
+    };
+  }
   const metricA = env.metrics.get(metricKeyOf(widget));
   const metricB = env.metrics.get(metricKeyOf(denominatorWidget));
   const unitA = displayUnit(

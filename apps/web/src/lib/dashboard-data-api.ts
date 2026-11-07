@@ -1,9 +1,12 @@
 import {
+  compareMeasureReadingsResponseSchema,
   dashboardDimensionValuesResponseSchema,
   publishedModelCatalogSchema,
   dashboardDataResponseSchema,
+  type MetricPeriod,
 } from "@netrics/contracts";
 import type {
+  CompareMeasureBinding,
   DashboardDataFilter,
   DashboardFilterValue,
   MeasureWidgetBinding,
@@ -30,6 +33,22 @@ export const previewDashboardMeasures = (
     "POST",
     `/v1/workspaces/${workspaceId}/dashboards/data/preview`,
     { filters, values, widgets },
+  );
+
+/** Compare widgets bound to published measures (#507), saved or not. */
+export const readCompareMeasures = (
+  workspaceId: string,
+  widgets: Array<{
+    id: string;
+    period: MetricPeriod;
+    measure: CompareMeasureBinding;
+  }>,
+) =>
+  browserSend(
+    compareMeasureReadingsResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/dashboards/data/compare`,
+    { widgets },
   );
 
 export const loadDimensionValues = (

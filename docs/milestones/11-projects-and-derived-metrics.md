@@ -201,11 +201,20 @@ implementation work; this plan does not create or complete issue records.
     [#506](https://github.com/netrics-so/netrics/issues/506). Both observation
     datasets are scoped, tagged and appended; the ratio and its change compare
     with the previous range, equal to the widget for today and the last 7, 30
-    and 90 days of daily sum or average metrics. Other periods, min/max/last,
-    hourly metrics and unpinned currencies are refused with typed errors. The
-    measure binding on compare widgets ([#507](https://github.com/netrics-so/netrics/issues/507))
-    and the Studio flow ([#508](https://github.com/netrics-so/netrics/issues/508))
-    and the rest of the 11D gate remain open.
+    and 90 days of daily sum or average metrics. Min/max/last, hourly metrics
+    and unpinned currencies are refused with typed errors.
+  - Optional measure binding on compare widgets (step 2 of
+    [#499](https://github.com/netrics-so/netrics/issues/499)):
+    [#507](https://github.com/netrics-so/netrics/issues/507). A bound widget
+    stays a compare widget with its period, layout and payload shape; screens,
+    kiosks and Studio read the published numerator, denominator and ratio over
+    the period's current and previous windows as closed date ranges, equal to
+    the inline widget for all nine periods, so no period is refused any more.
+    Unpublished, removed, foreign or mismatched measures fail with typed errors
+    and never fall back to the metrics; unbound payloads are unchanged, and
+    scoped screens still withhold compare widgets. The Studio flow
+    ([#508](https://github.com/netrics-so/netrics/issues/508)) and the rest of
+    the 11D gate remain open.
 - 11E: [#444](https://github.com/netrics-so/netrics/issues/444)
   - Apple storefront rating snapshots: [#452](https://github.com/netrics-so/netrics/issues/452).
     Implements the scoped raw rating/count source, not the complete portfolio
