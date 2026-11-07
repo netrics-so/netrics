@@ -104,10 +104,12 @@ export function useCurrencies(
   period: MetricPeriod,
   /** The widget's resource: its currencies only. */
   resourceId: string | null,
+  /** A new value loads them again (after a failure). */
+  revision = 0,
 ): { totals: CurrencyTotals | null; error: string | null } {
   const key =
     metric && needsCurrency(metric)
-      ? `${metricIdOf(metric)}|${period}|${resourceId ?? ""}`
+      ? `${metricIdOf(metric)}|${period}|${resourceId ?? ""}|${revision}`
       : "";
   const loaded = useLoaded(key, () =>
     listMetricCurrencies(workspaceId, {

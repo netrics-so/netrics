@@ -382,6 +382,7 @@ export const studioEn = {
       },
       pinLabel: "Currency to count",
       pinLoading: "Loading currencies…",
+      pinReload: "Load the currencies again",
       pinNone: "No amounts in this period to pick a currency from.",
       retry: "Try again with {currency}",
       draftTitle: "Draft model “{name}” created",

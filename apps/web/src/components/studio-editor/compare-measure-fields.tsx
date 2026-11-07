@@ -70,6 +70,9 @@ export interface CompareMeasureSaveViewProps {
   published: { modelName: string } | null;
   /** Currencies to pin for compare_currency_unpinned; null: loading. */
   currencies: string[] | null;
+  /** Why the currencies could not load; null when they did or are loading. */
+  currencyError?: string | null;
+  onReloadCurrencies?: () => void;
   pin: string;
   onName: (name: string) => void;
   onPreview: (currency: string | null) => void;
@@ -169,8 +172,7 @@ export function CompareMeasureSaveView(props: CompareMeasureSaveViewProps) {
               {t("refusals.other", { message: flow.message })}
             </p>
           ) : null}
-          {flow.step === "refused" &&
-          flow.code === "compare_currency_unpinned" ? null : (
+          {flow.step === "refused" && offersPin(flow) ? null : (
             <button
               type="button"
               disabled={busy || props.name.trim() === ""}
@@ -244,6 +246,14 @@ function PreviewList(
   );
 }
 
+/**
+ * Whether a refusal offers the currency picker: an unpinned amount, or a
+ * pinned retry that was refused (another currency may fit).
+ */
+export function offersPin(flow: Extract<SaveFlow, { step: "refused" }>) {
+  return flow.code === "compare_currency_unpinned" || flow.currency !== null;
+}
+
 function Refusal(
   props: CompareMeasureSaveViewProps & {
     flow: Extract<SaveFlow, { step: "refused" }>;
@@ -255,8 +265,15 @@ function Refusal(
     <div className="compare-measure-refusal" role="alert">
       <p className="compare-measure-title">{t("refusedTitle")}</p>
       <p>{t(`refusals.${code}`)}</p>
-      {code === "compare_currency_unpinned" ? (
-        props.currencies === null ? (
+      {offersPin(props.flow) ? (
+        props.currencyError ? (
+          <>
+            <p className="help">{props.currencyError}</p>
+            <button type="button" onClick={props.onReloadCurrencies}>
+              {t("pinReload")}
+            </button>
+          </>
+        ) : props.currencies === null ? (
           <p className="help">{t("pinLoading")}</p>
         ) : props.currencies.length === 0 ? (
           <p className="help">{t("pinNone")}</p>
@@ -322,15 +339,13 @@ export function CompareMeasureSave({
   }, [workspaceId, source]);
   const [pin, setPin] = useState("");
   const unpinned = unpinnedSides(widget, numerator, denominator)[0];
+  const [currencyRevision, setCurrencyRevision] = useState(0);
   const currencies = useCurrencies(
     workspaceId,
-    flow.step === "refused" && flow.code === "compare_currency_unpinned"
-      ? unpinned
-      : undefined,
+    flow.step === "refused" && offersPin(flow) ? unpinned?.metric : undefined,
     widget.period,
-    unpinned === numerator
-      ? (widget.dimensions.resource ?? null)
-      : (widget.denominator.dimensions.resource ?? null),
+    unpinned?.resourceId ?? null,
+    currencyRevision,
   );
   const options = currencies.totals?.map((total) => total.currency) ?? null;
   useEffect(() => {
@@ -394,6 +409,8 @@ export function CompareMeasureSave({
         publishedModel ? { modelName: publishedModel.modelName } : null
       }
       currencies={options}
+      currencyError={currencies.error}
+      onReloadCurrencies={() => setCurrencyRevision((value) => value + 1)}
       pin={pin}
       onName={setName}
       onPreview={preview}
@@ -432,7 +449,9 @@ export function CompareMeasureBoundView(props: CompareMeasureBoundViewProps) {
       : bound.kind === "removed"
         ? t("errors.measureRemoved")
         : null;
-  const message = problem ?? props.error;
+  // The reading's own error is the specific one; the catalog's is a guess
+  // while the reading loads.
+  const message = props.error ?? problem;
   return (
     <fieldset className="compare-measure compare-measure--bound">
       <legend>{t("boundLegend")}</legend>

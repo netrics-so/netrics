@@ -11,6 +11,7 @@ import {
 import {
   COMPARE_MEASURE_REFUSALS,
   CURRENCY_DIMENSION,
+  RESOURCE_DIMENSION,
   isPerCurrencyUnit,
   type CompareMeasureBinding,
   type CompareMeasureRefusal,
@@ -94,23 +95,31 @@ export function defaultMeasureName(
   );
 }
 
+/** A side that needs a pinned currency, with its own resource filter. */
+export interface UnpinnedSide {
+  side: "numerator" | "denominator";
+  metric: WorkspaceMetric;
+  resourceId: string | null;
+}
+
 /**
- * The metrics of the sides that need a pinned currency: per-currency
- * amounts without a currency filter.
+ * The sides that need a pinned currency: per-currency amounts without a
+ * currency filter. By side, since both sides can have the same metric.
  */
 export function unpinnedSides(
   widget: CompareWidget,
   numerator: WorkspaceMetric | undefined,
   denominator: WorkspaceMetric | undefined,
-): WorkspaceMetric[] {
-  return [
-    [numerator, widget.dimensions],
-    [denominator, widget.denominator.dimensions],
-  ].flatMap(([metric, filters]) =>
+): UnpinnedSide[] {
+  const sides = [
+    ["numerator", numerator, widget.dimensions],
+    ["denominator", denominator, widget.denominator.dimensions],
+  ] as const;
+  return sides.flatMap(([side, metric, filters]) =>
     metric &&
-    isPerCurrencyUnit((metric as WorkspaceMetric).unit) &&
-    (filters as Record<string, string>)[CURRENCY_DIMENSION] === undefined
-      ? [metric as WorkspaceMetric]
+    isPerCurrencyUnit(metric.unit) &&
+    filters[CURRENCY_DIMENSION] === undefined
+      ? [{ side, metric, resourceId: filters[RESOURCE_DIMENSION] ?? null }]
       : [],
   );
 }

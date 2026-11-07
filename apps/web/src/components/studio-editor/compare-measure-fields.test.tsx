@@ -320,6 +320,44 @@ describe("save as measure: states", () => {
     ).toContain("Nur Beträge in USD werden gezählt");
   });
 
+  it("keeps the currency picker after a pinned retry is refused", () => {
+    const flow: SaveFlow = {
+      step: "refused",
+      code: "compare_units_incompatible",
+      currency: "USD",
+    };
+    const html = text(save(flow, { currencies: ["EUR", "USD"], pin: "EUR" }));
+    expect(html).toContain("can’t form this ratio as a measure");
+    expect(html).toContain("Currency to count");
+    expect(html).toContain("Try again with EUR");
+    // A refusal without a pin offers no picker.
+    expect(
+      text(
+        save(
+          { ...flow, currency: null },
+          { currencies: ["EUR", "USD"], pin: "EUR" },
+        ),
+      ),
+    ).not.toContain("Currency to count");
+  });
+
+  it("says when the currencies can't load, and offers to try again", () => {
+    const flow: SaveFlow = {
+      step: "refused",
+      code: "compare_currency_unpinned",
+      currency: null,
+    };
+    const html = text(
+      save(flow, { currencies: null, currencyError: "Network down." }),
+    );
+    expect(html).toContain("Network down.");
+    expect(html).not.toContain("Loading currencies…");
+    expect(html).toContain("Load the currencies again");
+    expect(
+      text(save(flow, { currencies: null, currencyError: "Netz weg." }, "de")),
+    ).toContain("Währungen erneut laden");
+  });
+
   it("other failures: the API's message", () => {
     expect(
       text(save({ step: "failed", message: "Try again later." })),
@@ -436,6 +474,15 @@ describe("bound compare widgets", () => {
     expect(
       text(bound({ error: "The published measures can’t form" })),
     ).toContain("The published measures can’t form");
+    // The reading's specific error wins over the catalog's guess.
+    const dimension = text(
+      bound({
+        bound: boundMeasureOf(binding, [{ ...catalog[0]!, dimensions: [] }]),
+        error: "The model’s date dimension was removed.",
+      }),
+    );
+    expect(dimension).toContain("The model’s date dimension was removed.");
+    expect(dimension).not.toContain("A measure this widget uses was removed");
   });
 });
 
@@ -530,7 +577,9 @@ describe("compare measure helpers", () => {
   });
 
   it("finds the sides that need a pinned currency", () => {
-    expect(unpinnedSides(widget, proceeds, visits)).toEqual([proceeds]);
+    expect(unpinnedSides(widget, proceeds, visits)).toEqual([
+      { side: "numerator", metric: proceeds, resourceId: "app-1" },
+    ]);
     expect(
       unpinnedSides(
         { ...widget, dimensions: { currency: "EUR" } },
@@ -538,6 +587,21 @@ describe("compare measure helpers", () => {
         visits,
       ),
     ).toEqual([]);
+    // The same metric on both sides: the side, and its resource, decide.
+    expect(
+      unpinnedSides(
+        {
+          ...widget,
+          dimensions: { currency: "EUR", resource: "app-1" },
+          denominator: {
+            ...widget.denominator,
+            dimensions: { resource: "app-2" },
+          },
+        },
+        proceeds,
+        proceeds,
+      ),
+    ).toEqual([{ side: "denominator", metric: proceeds, resourceId: "app-2" }]);
   });
 
   it("keeps a compiled draft for the widget's sides only", () => {

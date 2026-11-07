@@ -389,6 +389,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       },
       pinLabel: "Gezählte Währung",
       pinLoading: "Währungen werden geladen…",
+      pinReload: "Währungen erneut laden",
       pinNone:
         "In diesem Zeitraum gibt es keine Beträge, aus denen du eine Währung wählen kannst.",
       retry: "Mit {currency} erneut versuchen",
