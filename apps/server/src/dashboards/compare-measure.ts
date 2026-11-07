@@ -358,21 +358,28 @@ export async function readCompareMeasure(
   const connections = (
     await modelConnections(tx, workspaceId, measure.modelId)
   ).filter((id) => sources.states.has(id));
-  const hasData = numerator.value !== null && denominator.value !== null;
-  let status: DeviceTileStatus = connections.length
-    ? connections
-        .map((id) =>
-          tileStatus(
-            sources.states.get(id) ?? null,
-            hasData,
-            now,
-            sources.backfilling.has(id),
-          ),
-        )
-        .reduce(worse)
-    : hasData
-      ? "ok"
-      : "no_data";
+  // Which source supplies which operand is the model's business, so each
+  // source is ranked by its health alone (as one with data), and a missing
+  // operand is the loading history of a source that has none yet, or else no
+  // data: what the inline widget's side without a value shows, without
+  // marking a populated source as empty (#507 review).
+  const sourceStatus = (id: string, hasData: boolean) =>
+    tileStatus(
+      sources.states.get(id) ?? null,
+      hasData,
+      now,
+      sources.backfilling.has(id),
+    );
+  let status: DeviceTileStatus = connections
+    .map((id) => sourceStatus(id, true))
+    .reduce(worse, "ok");
+  if (numerator.value === null || denominator.value === null)
+    status = worse(
+      status,
+      connections.some((id) => sourceStatus(id, false) === "backfilling")
+        ? "backfilling"
+        : "no_data",
+    );
   if (current.status === "stale" || previous.status === "stale")
     status = worse(status, "stale");
   const synced = connections.map(

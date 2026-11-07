@@ -884,3 +884,48 @@ describe("bound compare widgets: scoped screens (#507)", () => {
     expect(scoped.slides[0]!.widgets).toEqual([]);
   }, 60_000);
 });
+
+describe("bound compare widgets: source health (#507)", () => {
+  it("ranks each source by its own data, as the inline widget's two sides", async () => {
+    // A synced source with data over a source still loading its history
+    // (pending, values only in 2023): the inline widget says backfilling,
+    // never no data.
+    const LIVE = "0c000000-0000-4000-8000-000000000003";
+    const FRESH = "0c000000-0000-4000-8000-000000000004";
+    await raw`
+      insert into connections (id, workspace_id, connector_id, name) values
+        (${LIVE}, ${workspaceId}, 'cmb', 'Live'),
+        (${FRESH}, ${workspaceId}, 'cmb', 'Fresh')`;
+    await raw`
+      insert into connection_state (connection_id, workspace_id, last_success_at)
+      values (${LIVE}, ${workspaceId}, ${NOW.toISOString()})`;
+    await observe(
+      LIVE,
+      "cmb.visits",
+      { resource: "live" },
+      (d) => 50 + (d % 7),
+    );
+    await observe(FRESH, "cmb.visits", { resource: "fresh" }, (d) =>
+      d > 1300 ? 10 : null,
+    );
+    const compare: Compare = {
+      name: "Live over fresh visits",
+      numerator: { metricKey: "cmb.visits", connectionId: LIVE },
+      denominator: { metricKey: "cmb.visits", connectionId: FRESH },
+      format: "ratio",
+    };
+    const binding = bindingOf(await compile(compare));
+    const { dashboardId } = await insertCompares(++group, [
+      { period: "last_7_days", ...inline(compare) },
+      { period: "last_7_days", ...inline(compare), measure: binding },
+    ]);
+    const [unbound, bound] = compares(
+      (await screen(dashboardId, NOW)).slides[0]!.widgets,
+    );
+    expect(unbound!.data.numerator.value).not.toBeNull();
+    expect(unbound!.data.denominator.value).toBeNull();
+    expect(unbound!.data.status).toBe("backfilling");
+    expect(bound!.data.status).toBe(unbound!.data.status);
+    expect(bound!.data.numerator.value).toBe(unbound!.data.numerator.value);
+  }, 60_000);
+});
