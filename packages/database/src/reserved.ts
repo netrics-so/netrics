@@ -70,10 +70,10 @@ export function reservedDatabase(
 }
 
 /**
- * Returns a reserved connection to the pool only once it holds no advisory
- * lock and no open transaction. If that cannot be confirmed, the session is
- * terminated instead (the server then drops its locks, and postgres.js opens
- * a new connection on next use), so a pooled connection never keeps a lock.
+ * Returns a reserved connection to the pool after ending any open or failed
+ * transaction and dropping its session advisory locks, so a pooled
+ * connection never keeps a lock. These statements fail only when the
+ * connection itself is gone, and then the server has released its locks.
  */
 export async function releaseReserved(reserved: ReservedSql): Promise<void> {
   try {
@@ -90,10 +90,10 @@ export async function releaseReserved(reserved: ReservedSql): Promise<void> {
     if (open) await reserved.unsafe("rollback");
     await reserved.unsafe("select pg_advisory_unlock_all()");
   } catch {
-    await reserved.unsafe("rollback").catch(() => undefined);
-    await reserved
-      .unsafe("select pg_terminate_backend(pg_backend_pid())")
-      .catch(() => undefined);
+    // Cleanup fails when the connection is gone; the server has then ended
+    // the session and released its locks. Terminating the backend from the
+    // client is not an option: postgres.js 3.4 crashes the process when its
+    // own connection is killed (an uncaught write on a closed socket).
   } finally {
     reserved.release();
   }
