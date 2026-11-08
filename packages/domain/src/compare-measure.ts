@@ -38,6 +38,18 @@ import {
 /** The longest name a model, measure or preparation field may have. */
 const MAX_NAME_LENGTH = 100;
 
+/**
+ * `text` cut to at most `max` UTF-16 units (as name limits count), without
+ * splitting a surrogate pair: a lone surrogate is malformed text that
+ * PostgreSQL JSONB refuses.
+ */
+function shorten(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
 /** Why a compare widget cannot be saved as a measure. */
 export const COMPARE_MEASURE_REFUSALS = [
   /** min, max and last are formed over day totals, which a model cannot. */
@@ -237,7 +249,7 @@ export function compileCompareMeasure(
     | "compareMeasure.changePoints";
   const suffixed = (key: Suffixed, name: string) =>
     t(key, {
-      name: name.slice(0, MAX_NAME_LENGTH - t(key, { name: "" }).length),
+      name: shorten(name, MAX_NAME_LENGTH - t(key, { name: "" }).length),
     });
   if (SIDES.some((side) => sides[side].granularity !== "day"))
     return fail("compare_granularity_unsupported");
@@ -364,12 +376,12 @@ export function compileCompareMeasure(
       const tagged = call("eq", field(COMPARE_SIDE_FIELD), text(side));
       const sum = (measureId: string): ModelMeasure => ({
         id: measureId,
-        name: sides[side].name.slice(0, 100),
+        name: shorten(sides[side].name, MAX_NAME_LENGTH),
         kind: "aggregate",
         datasetId,
         aggregate: {
           id: measureId,
-          name: sides[side].name.slice(0, 100),
+          name: shorten(sides[side].name, MAX_NAME_LENGTH),
           op: "sum",
           fieldId: `${side}_value`,
           filter: tagged,
@@ -381,12 +393,12 @@ export function compileCompareMeasure(
       }
       measures.push(sum(`${id}_total`), {
         id: `${id}_days`,
-        name: suffixed("compareMeasure.days", sides[side].name.slice(0, 90)),
+        name: suffixed("compareMeasure.days", shorten(sides[side].name, 90)),
         kind: "aggregate",
         datasetId,
         aggregate: {
           id: `${id}_days`,
-          name: suffixed("compareMeasure.days", sides[side].name.slice(0, 90)),
+          name: suffixed("compareMeasure.days", shorten(sides[side].name, 90)),
           op: "distinct_count",
           fieldId: COMPARE_DATE_DIMENSION,
           filter: tagged,
@@ -394,12 +406,12 @@ export function compileCompareMeasure(
       });
       measures.push({
         id,
-        name: sides[side].name.slice(0, 100),
+        name: shorten(sides[side].name, MAX_NAME_LENGTH),
         kind: "formula",
         expression: call("divide", field(`${id}_total`), field(`${id}_days`)),
       });
     }
-    const name = input.name.slice(0, 80);
+    const name = shorten(input.name, 80);
     measures.push(
       {
         id: COMPARE_MEASURE_IDS.ratio,

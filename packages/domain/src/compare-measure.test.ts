@@ -430,6 +430,10 @@ const between = (from: string, to: string): DataExpression => ({
   ],
 });
 
+/** Half of a surrogate pair without its other half. */
+const LONE_SURROGATE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
 describe("compileCompareMeasure names (#515)", () => {
   const names = (overrides: Partial<CompareMeasureInput>) => {
     const compiled = compileCompareMeasure(
@@ -511,6 +515,35 @@ describe("compileCompareMeasure names (#515)", () => {
         expect(result.measures.numerator_days).toMatch(
           locale === "de" ? / · Tage$/ : / · days$/,
         );
+      }
+    },
+  );
+
+  it.each(["en", "de"] as const)(
+    "never splits a character when it shortens a name in %s",
+    (locale) => {
+      // An emoji is two UTF-16 units; every cut point lands on its middle
+      // for one of these lengths. A lone surrogate is refused by JSONB.
+      for (let prefix = 70; prefix <= 100; prefix++) {
+        const named = (letter: string) =>
+          letter.repeat(prefix) + "🚀".repeat(5);
+        const result = names({
+          locale,
+          name: named("R"),
+          numerator: side({
+            kind: "gauge",
+            aggregation: "avg",
+            name: named("N"),
+          }),
+          denominator: side({
+            datasetId: "observation:b:visitors",
+            name: named("V"),
+          }),
+        });
+        for (const name of Object.values(result.measures)) {
+          expect(name, name).not.toMatch(LONE_SURROGATE);
+          expect(name.length).toBeLessThanOrEqual(100);
+        }
       }
     },
   );
