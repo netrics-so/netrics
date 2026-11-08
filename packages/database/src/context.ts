@@ -142,6 +142,34 @@ export function hasSqlstate(error: unknown, sqlstate: string): boolean {
   return false;
 }
 
+/**
+ * Codes for a database session that ended under a request (#538): postgres.js
+ * reports a closed or destroyed connection, PostgreSQL an administrator,
+ * crash or startup shutdown of the backend.
+ */
+const LOST_CONNECTION_CODES = new Set([
+  "CONNECTION_CLOSED",
+  "CONNECTION_DESTROYED",
+  "57P01",
+  "57P02",
+  "57P03",
+]);
+
+/**
+ * Whether an error (or one it wraps, as drizzle does) means the database
+ * connection was lost: transient, so the request may be retried.
+ */
+export function isLostConnection(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 10 && current instanceof Error; depth++) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && LOST_CONNECTION_CODES.has(code))
+      return true;
+    current = current.cause;
+  }
+  return false;
+}
+
 /** Walks the cause chain looking for a PostgreSQL error matching a predicate. */
 function findPgError(
   error: unknown,

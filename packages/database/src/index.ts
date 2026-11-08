@@ -17,6 +17,7 @@ export {
   createWorkspace,
   createWorkspaceInTransaction,
   hasSqlstate,
+  isLostConnection,
   isDuplicateMembershipError,
   isLastOwnerError,
   withUserContext,
