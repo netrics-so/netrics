@@ -30,7 +30,7 @@
   "dependencies": {
     "@netrics/domain": "workspace:*",
     "drizzle-orm": "0.45.4",
-    "postgres": "3.4.9",
+    "postgres": "4.1.0",
     "zod": "4.6.7",
     "@netrics/contracts": "workspace:*"
   },

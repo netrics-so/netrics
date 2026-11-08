@@ -98,8 +98,7 @@ export async function releaseReserved(reserved: ReservedSql): Promise<void> {
   } catch {
     // Cleanup fails when the connection is gone; the server has then ended
     // the session and released its locks. release() then leaves the
-    // connection to the pool, which reconnects it (#511, see
-    // patches/postgres@3.4.9.patch).
+    // connection to the pool, which replaces it (#511; postgres.js 4, #537).
   } finally {
     reserved.release();
   }

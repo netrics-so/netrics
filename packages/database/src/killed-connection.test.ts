@@ -19,8 +19,9 @@ import { createTestDatabase, type TestDatabase } from "./test-db.js";
 // #511: a PostgreSQL session that ends while the server uses it (the backend
 // is terminated, the database restarts or fails over, the network drops) must
 // fail only the work that ran on it. postgres.js 3.4.9 crashed the process
-// instead: an uncaught TypeError from writing to the closed socket. The fix is
-// a patch of postgres.js (patches/postgres@3.4.9.patch).
+// instead: an uncaught TypeError from writing to the closed socket. A patch
+// fixed it until postgres.js 4, which handles it upstream (#537); these tests
+// guard the behaviour across driver upgrades.
 //
 // Every backend killed here belongs to this file's own database, and is picked
 // by its pid, so concurrent test runs on the same server are never touched.
