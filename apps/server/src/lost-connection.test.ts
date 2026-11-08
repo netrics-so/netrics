@@ -65,13 +65,17 @@ describe("a database session lost under a request (#538)", () => {
     for (let i = 0; i < 500 && pid === undefined; i++) {
       const [row] = await raw<Array<{ pid: number }>>`
         select pid from pg_stat_activity
-        where query like '%lost-connection-test%' and pid <> pg_backend_pid()
-          and state = 'active'`;
+        where datname = current_database() and pid <> pg_backend_pid()
+          and state = 'active' and query like 'select pg_sleep(30)%'`;
       pid = row?.pid;
       if (pid === undefined) await new Promise((r) => setTimeout(r, 10));
     }
     expect(pid).toBeDefined();
-    await raw`select pg_terminate_backend(${pid!})`;
+    // Only a backend of this file's own database, never another run's.
+    const [terminated] = await raw<Array<{ ok: boolean }>>`
+      select pg_terminate_backend(pid) as ok from pg_stat_activity
+      where pid = ${pid!} and datname = current_database()`;
+    expect(terminated?.ok).toBe(true);
 
     const response = await pending;
     expect(response.statusCode, response.body).toBe(503);
