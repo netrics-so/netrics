@@ -838,4 +838,85 @@ describe("compare widgets as measures: preview (#508)", () => {
     expect(preview.currency).toBeNull();
     expect(preview.measures.change.name).toBe("Conversion · change (pt)");
   });
+
+  it("names the generated measures, fields and dimension in the author's language (#515)", async () => {
+    const setLocale = async (locale: string) => {
+      const response = await app.inject({
+        method: "PATCH",
+        url: "/v1/me",
+        headers: { cookie: owner },
+        payload: { locale },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+    };
+    const body = request(
+      {
+        name: "Signup-Conversion",
+        numerator: { metricKey: "cmp.signups" },
+        denominator: { metricKey: "cmp.visits" },
+        format: "percent",
+      },
+      "last_7_days",
+    );
+    await setLocale("de");
+    try {
+      const response = await call(
+        "POST",
+        "/compare-measures/preview",
+        owner,
+        body,
+      );
+      expect(response.statusCode, response.body).toBe(200);
+      const preview = compareMeasurePreviewResponseSchema.parse(
+        response.json(),
+      );
+      // The author's own names stay as typed; the generated ones are German.
+      expect(preview.model.name).toBe("Signup-Conversion");
+      expect(preview.measures.previous.name).toBe(
+        "Signup-Conversion · vorheriger Zeitraum",
+      );
+      expect(preview.measures.change.name).toBe(
+        "Signup-Conversion · Veränderung (Pp.)",
+      );
+
+      const created = await call("POST", "/compare-measures", owner, body);
+      expect(created.statusCode, created.body).toBe(200);
+      const result = compareMeasureResponseSchema.parse(created.json());
+      const model = (
+        await call("GET", `/models/${result.modelId}`, owner)
+      ).json().model as {
+        definition: {
+          dimensions: Array<{ id: string; name: string }>;
+          measures: Array<{ id: string; name: string }>;
+        };
+      };
+      expect(model.definition.dimensions).toContainEqual(
+        expect.objectContaining({ id: "date", name: "Datum" }),
+      );
+      expect(model.definition.measures).toContainEqual(
+        expect.objectContaining({
+          id: "ratio_previous",
+          name: "Signup-Conversion · vorheriger Zeitraum",
+        }),
+      );
+      const preparation = (
+        await call("GET", `/preparations/${result.preparationId}`, owner)
+      ).json().preparation as {
+        graph: { nodes: Array<{ id: string; name?: string }> };
+      };
+      expect(
+        preparation.graph.nodes.find((node) => node.id === "numerator_tag")
+          ?.name,
+      ).toBe("Vergleichsseite");
+    } finally {
+      await setLocale("en");
+    }
+    // Back in English, the same request names them in English again.
+    const english = compareMeasurePreviewResponseSchema.parse(
+      (await call("POST", "/compare-measures/preview", owner, body)).json(),
+    );
+    expect(english.measures.previous.name).toBe(
+      "Signup-Conversion · previous period",
+    );
+  });
 });

@@ -26,6 +26,7 @@ import {
   type CompareMeasureSide,
   type DataPolicy,
   type Granularity,
+  type Locale,
   type MetricKind,
 } from "@netrics/domain";
 import {
@@ -93,11 +94,15 @@ async function compareSide(
   };
 }
 
+/** The caller, with the language the generated names are created in. */
+type CompareMeasureActor = DataActor & { locale?: Locale };
+
 /** Both sides read and compiled, or the typed refusal thrown. */
 async function compileRequest(
   tx: Transaction,
   workspaceId: string,
   input: ReturnType<typeof compareMeasureRequestSchema.parse>,
+  locale: Locale | undefined,
 ) {
   const numerator = await compareSide(tx, workspaceId, input);
   const denominator = await compareSide(tx, workspaceId, input.denominator);
@@ -108,6 +113,7 @@ async function compileRequest(
     numerator,
     denominator,
     currency: input.currency ?? null,
+    locale,
   });
   if (!compiled.ok) reject(compiled.error);
   // The pinned currency counts only where a side has no currency filter.
@@ -138,7 +144,7 @@ export function createCompareMeasureService(deps: {
      * transaction: nothing is saved, and a refusal is the same.
      */
     async preview(
-      actor: DataActor,
+      actor: CompareMeasureActor,
       request: CompareMeasureRequest,
     ): Promise<CompareMeasurePreview> {
       const input = compareMeasureRequestSchema.parse(request);
@@ -150,6 +156,7 @@ export function createCompareMeasureService(deps: {
             tx,
             actor.workspaceId,
             input,
+            actor.locale,
           );
           const model = compiled.model(
             `prepared:preview:${COMPARE_PREPARATION_OUTPUT}`,
@@ -182,7 +189,7 @@ export function createCompareMeasureService(deps: {
       );
     },
     async create(
-      actor: DataActor,
+      actor: CompareMeasureActor,
       request: CompareMeasureRequest,
     ): Promise<CompareMeasureResponse> {
       const input = compareMeasureRequestSchema.parse(request);
@@ -196,6 +203,7 @@ export function createCompareMeasureService(deps: {
                 tx,
                 actor.workspaceId,
                 input,
+                actor.locale,
               );
               const data = createDataService(tx, now, defaults);
               const saved = await data.savePreparation(actor, {

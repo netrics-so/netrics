@@ -84,6 +84,23 @@ export const sharedEn = {
     source: "ECB reference rates",
     notConverted: "{source} · {currencies} not converted",
   },
+  /**
+   * Names a compare saved as a measure gets (#506, #515): stored with the
+   * generated preparation and model, in the author's language.
+   */
+  compareMeasure: {
+    /** The preparation field that tags each row with its side. */
+    side: "Compare side",
+    /** The model's date dimension. */
+    date: "Date",
+    /** A daily gauge side's count of days with data. */
+    days: "{name} · days",
+    previous: "{name} · previous period",
+    /** The ratio's percent change against the previous period. */
+    change: "{name} · change",
+    /** The ratio's change in percentage points. */
+    changePoints: "{name} · change (pt)",
+  },
 } as const;
 
 export type SharedMessages = typeof sharedEn;

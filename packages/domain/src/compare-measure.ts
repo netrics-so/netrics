@@ -24,6 +24,8 @@ import {
 import type { DataExpression } from "./data-expression.js";
 import type { ModelMeasure, SemanticModelDefinition } from "./data-model.js";
 import type { PreparationGraph, PreparationNode } from "./data-preparation.js";
+import { DEFAULT_LOCALE, type Locale } from "./i18n/locale.js";
+import { sharedTranslator } from "./i18n/shared/index.js";
 import {
   resolvePeriod,
   type Aggregation,
@@ -32,6 +34,21 @@ import {
   type MetricKind,
   type Period,
 } from "./metrics.js";
+
+/** The longest name a model, measure or preparation field may have. */
+const MAX_NAME_LENGTH = 100;
+
+/**
+ * `text` cut to at most `max` UTF-16 units (as name limits count), without
+ * splitting a surrogate pair: a lone surrogate is malformed text that
+ * PostgreSQL JSONB refuses.
+ */
+function shorten(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
 
 /** Why a compare widget cannot be saved as a measure. */
 export const COMPARE_MEASURE_REFUSALS = [
@@ -175,6 +192,12 @@ export interface CompareMeasureInput {
   denominator: CompareMeasureSide;
   /** One source currency for per-currency sides without a filter. */
   currency: string | null;
+  /**
+   * The author's language for the generated field, dimension and measure
+   * names (#515); English when absent. They are stored, so authors can
+   * rename them later.
+   */
+  locale?: Locale;
 }
 
 export type CompareMeasureCompilation =
@@ -215,6 +238,19 @@ export function compileCompareMeasure(
   const fail = (error: CompareMeasureRefusal) =>
     ({ ok: false, error }) as const;
   const sides = { numerator: input.numerator, denominator: input.denominator };
+  const t = sharedTranslator(input.locale ?? DEFAULT_LOCALE);
+  // A generated name ("… · previous period") within the 100 characters a
+  // name may have: the author's part is shortened, never the suffix, which
+  // is longer in some languages (#515).
+  type Suffixed =
+    | "compareMeasure.days"
+    | "compareMeasure.previous"
+    | "compareMeasure.change"
+    | "compareMeasure.changePoints";
+  const suffixed = (key: Suffixed, name: string) =>
+    t(key, {
+      name: shorten(name, MAX_NAME_LENGTH - t(key, { name: "" }).length),
+    });
   if (SIDES.some((side) => sides[side].granularity !== "day"))
     return fail("compare_granularity_unsupported");
   const offset = COMPARE_MEASURE_OFFSET;
@@ -285,7 +321,7 @@ export function compileCompareMeasure(
       type: "calculate",
       input: last,
       fieldId: COMPARE_SIDE_FIELD,
-      name: "Compare side",
+      name: t("compareMeasure.side"),
       expression: text(side),
     });
     columnMappings[`${side}_tag`] = {
@@ -340,12 +376,12 @@ export function compileCompareMeasure(
       const tagged = call("eq", field(COMPARE_SIDE_FIELD), text(side));
       const sum = (measureId: string): ModelMeasure => ({
         id: measureId,
-        name: sides[side].name.slice(0, 100),
+        name: shorten(sides[side].name, MAX_NAME_LENGTH),
         kind: "aggregate",
         datasetId,
         aggregate: {
           id: measureId,
-          name: sides[side].name.slice(0, 100),
+          name: shorten(sides[side].name, MAX_NAME_LENGTH),
           op: "sum",
           fieldId: `${side}_value`,
           filter: tagged,
@@ -357,12 +393,12 @@ export function compileCompareMeasure(
       }
       measures.push(sum(`${id}_total`), {
         id: `${id}_days`,
-        name: `${sides[side].name.slice(0, 90)} · days`,
+        name: suffixed("compareMeasure.days", shorten(sides[side].name, 90)),
         kind: "aggregate",
         datasetId,
         aggregate: {
           id: `${id}_days`,
-          name: `${sides[side].name.slice(0, 90)} · days`,
+          name: suffixed("compareMeasure.days", shorten(sides[side].name, 90)),
           op: "distinct_count",
           fieldId: COMPARE_DATE_DIMENSION,
           filter: tagged,
@@ -370,12 +406,12 @@ export function compileCompareMeasure(
       });
       measures.push({
         id,
-        name: sides[side].name.slice(0, 100),
+        name: shorten(sides[side].name, MAX_NAME_LENGTH),
         kind: "formula",
         expression: call("divide", field(`${id}_total`), field(`${id}_days`)),
       });
     }
-    const name = input.name.slice(0, 80);
+    const name = shorten(input.name, 80);
     measures.push(
       {
         id: COMPARE_MEASURE_IDS.ratio,
@@ -389,7 +425,7 @@ export function compileCompareMeasure(
       },
       {
         id: COMPARE_MEASURE_IDS.previous,
-        name: `${name} · previous period`,
+        name: suffixed("compareMeasure.previous", name),
         kind: "period_offset",
         baseMeasureId: COMPARE_MEASURE_IDS.ratio,
         timeDimensionId: COMPARE_DATE_DIMENSION,
@@ -399,7 +435,7 @@ export function compileCompareMeasure(
       input.format === "ratio"
         ? {
             id: COMPARE_MEASURE_IDS.change,
-            name: `${name} · change`,
+            name: suffixed("compareMeasure.change", name),
             kind: "period_offset",
             baseMeasureId: COMPARE_MEASURE_IDS.ratio,
             timeDimensionId: COMPARE_DATE_DIMENSION,
@@ -408,7 +444,7 @@ export function compileCompareMeasure(
           }
         : {
             id: COMPARE_MEASURE_IDS.change,
-            name: `${name} · change (pt)`,
+            name: suffixed("compareMeasure.changePoints", name),
             kind: "formula",
             expression: call(
               "multiply",
@@ -428,7 +464,7 @@ export function compileCompareMeasure(
       dimensions: [
         {
           id: COMPARE_DATE_DIMENSION,
-          name: "Date",
+          name: t("compareMeasure.date"),
           datasetId,
           fieldId: COMPARE_DATE_DIMENSION,
           timeAlignment: "reporting_date",

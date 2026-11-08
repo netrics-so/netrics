@@ -430,6 +430,125 @@ const between = (from: string, to: string): DataExpression => ({
   ],
 });
 
+/** Half of a surrogate pair without its other half. */
+const LONE_SURROGATE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+describe("compileCompareMeasure names (#515)", () => {
+  const names = (overrides: Partial<CompareMeasureInput>) => {
+    const compiled = compileCompareMeasure(
+      input({
+        numerator: side({ kind: "gauge", aggregation: "avg" }),
+        ...overrides,
+      }),
+    );
+    if (!compiled.ok) throw new Error(compiled.error);
+    const model = compiled.model("prepared:p:compare");
+    return {
+      side: compiled.preparation.nodes.find(
+        (node) => node.id === "numerator_tag",
+      ),
+      date: model.dimensions.map((dimension) => dimension.name),
+      measures: Object.fromEntries(
+        model.measures.map((measure) => [measure.id, measure.name]),
+      ),
+    };
+  };
+
+  it("names the generated parts in English without a locale", () => {
+    const english = names({});
+    expect(english.side).toMatchObject({ name: "Compare side" });
+    expect(english.date).toEqual(["Date"]);
+    expect(english.measures).toMatchObject({
+      numerator_days: "Downloads · days",
+      ratio: "Conversion",
+      ratio_previous: "Conversion · previous period",
+      ratio_change: "Conversion · change (pt)",
+    });
+    expect(names({ format: "ratio" }).measures.ratio_change).toBe(
+      "Conversion · change",
+    );
+    expect(names({ locale: "en" })).toEqual(english);
+  });
+
+  it("names them in German for a German author, keeping the author's own names", () => {
+    const german = names({ locale: "de" });
+    expect(german.side).toMatchObject({ name: "Vergleichsseite" });
+    expect(german.date).toEqual(["Datum"]);
+    expect(german.measures).toMatchObject({
+      numerator: "Downloads",
+      numerator_days: "Downloads · Tage",
+      ratio: "Conversion",
+      ratio_previous: "Conversion · vorheriger Zeitraum",
+      ratio_change: "Conversion · Veränderung (Pp.)",
+    });
+    expect(names({ locale: "de", format: "ratio" }).measures.ratio_change).toBe(
+      "Conversion · Veränderung",
+    );
+  });
+
+  it.each(["en", "de"] as const)(
+    "keeps every generated name within 100 characters for the longest names in %s",
+    (locale) => {
+      const long = (letter: string) => letter.repeat(100);
+      for (const format of ["percent", "ratio"] as const) {
+        const result = names({
+          locale,
+          format,
+          name: long("R"),
+          numerator: side({
+            kind: "gauge",
+            aggregation: "avg",
+            name: long("N"),
+          }),
+        });
+        const all = [
+          result.side?.type === "calculate" ? result.side.name : "",
+          ...result.date,
+          ...Object.values(result.measures),
+        ];
+        for (const name of all) expect(name.length).toBeLessThanOrEqual(100);
+        // Shortened names keep their suffix, so they stay told apart.
+        expect(result.measures.ratio_previous).toMatch(
+          locale === "de" ? / · vorheriger Zeitraum$/ : / · previous period$/,
+        );
+        expect(result.measures.numerator_days).toMatch(
+          locale === "de" ? / · Tage$/ : / · days$/,
+        );
+      }
+    },
+  );
+
+  it.each(["en", "de"] as const)(
+    "never splits a character when it shortens a name in %s",
+    (locale) => {
+      // An emoji is two UTF-16 units; every cut point lands on its middle
+      // for one of these lengths. A lone surrogate is refused by JSONB.
+      for (let prefix = 70; prefix <= 100; prefix++) {
+        const named = (letter: string) =>
+          letter.repeat(prefix) + "🚀".repeat(5);
+        const result = names({
+          locale,
+          name: named("R"),
+          numerator: side({
+            kind: "gauge",
+            aggregation: "avg",
+            name: named("N"),
+          }),
+          denominator: side({
+            datasetId: "observation:b:visitors",
+            name: named("V"),
+          }),
+        });
+        for (const name of Object.values(result.measures)) {
+          expect(name, name).not.toMatch(LONE_SURROGATE);
+          expect(name.length).toBeLessThanOrEqual(100);
+        }
+      }
+    },
+  );
+});
+
 describe("compiled compare measures match the widget (#506)", () => {
   const today = "2026-11-07";
   const series = (

@@ -64,4 +64,12 @@ export const sharedDe: Catalog<SharedMessages> = {
     source: "EZB-Referenzkurse",
     notConverted: "{source} · {currencies} nicht umgerechnet",
   },
+  compareMeasure: {
+    side: "Vergleichsseite",
+    date: "Datum",
+    days: "{name} · Tage",
+    previous: "{name} · vorheriger Zeitraum",
+    change: "{name} · Veränderung",
+    changePoints: "{name} · Veränderung (Pp.)",
+  },
 };
