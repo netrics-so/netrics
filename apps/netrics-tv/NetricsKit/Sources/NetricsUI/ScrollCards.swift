@@ -25,8 +25,9 @@ struct ScrollCardView: View {
     let image: StoredImage?
 
     var body: some View {
-        // Footers ("updated 2 min. ago"), clocks and countdowns are worded anew every minute.
-        TimelineView(.everyMinute) { context in
+        // Footers ("updated 2 min. ago"), clocks and countdowns are worded anew every minute;
+        // values past their retention deadline disappear at it (#539).
+        TimelineView(MinutesAndDeadline(deadline: widget.expirationDate)) { context in
             card(now: context.date)
         }
         .frame(width: CGFloat(width), alignment: .topLeading)

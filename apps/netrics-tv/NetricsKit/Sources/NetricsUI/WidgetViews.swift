@@ -61,9 +61,9 @@ struct WidgetView: View {
             }
             .surface(env, state: SurfaceState(data.status))
         case .compare(let options, let data):
-            // Re-checked every minute: a cached payload played offline stops
-            // showing a bound compare's values at their retention deadline (#539).
-            TimelineView(.everyMinute) { context in
+            // Redrawn every minute and at the retention deadline: a cached payload
+            // played offline stops showing a bound compare's values then (#539).
+            TimelineView(MinutesAndDeadline(deadline: data.expirationDate)) { context in
                 let shown = data.shown(at: context.date)
                 CompareWidgetView(
                     label: widget.label ?? "", placement: placement, options: options, data: shown, env: env,
