@@ -262,27 +262,52 @@ describe("pruning dataset history concurrently with retention changes (#517)", (
   });
 });
 
-describe("migration 0065 on history in the previous shape", () => {
+/**
+ * Two generations of DATASET with three records each, written in SQL: the
+ * ingestion code of this commit writes columns later migrations add (0069).
+ * Returns the superseded generation.
+ */
+async function historyInSql(admin: postgres.Sql, workspaceId: string) {
+  const [connection] = await admin`
+    insert into connections(workspace_id,connector_id,name)
+    values (${workspaceId},'prune-fixture','C') returning id`;
+  const [dataset] = await admin`
+    insert into data_datasets(workspace_id,connection_id,key,name)
+    values (${workspaceId},${connection!.id as string},${DATASET.key},${DATASET.name})
+    returning id`;
+  const datasetId = dataset!.id as string;
+  await admin`
+    insert into data_schema_versions(dataset_id,workspace_id,version,definition)
+    values (${datasetId},${workspaceId},1,${admin.json(DATASET)})`;
+  const ids: string[] = [];
+  for (const sequence of [1, 2]) {
+    const [generation] = await admin`
+      insert into data_generations(dataset_id,workspace_id,schema_version,refresh_key,source_started_at,sequence,row_count)
+      values (${datasetId},${workspaceId},1,${"r" + sequence},now(),${sequence},3) returning id`;
+    ids.push(generation!.id as string);
+    await admin`
+      insert into data_records(generation_id,workspace_id,record_key,collected_at,values)
+      select ${generation!.id as string},${workspaceId},k,now(),jsonb_build_object('id',k)
+      from unnest(array['a','b','c']) k`;
+  }
+  return ids[0]!;
+}
+
+describe("migrations 0065 and 0069 on history in the previous shape", () => {
   let test: TestDatabase, admin: postgres.Sql;
 
   afterAll(async () => {
     await admin?.end({ timeout: 5 });
   });
 
-  it("drains history written before it, through both entry points", async () => {
+  it("drains history written before them, through both entry points", async () => {
     test = await createTestDatabase({ upTo: "0064_compare_measure_binding" });
     admin = postgres(test.adminUrl, { max: 1, onnotice: () => undefined });
     const [ws] =
       await admin`insert into workspaces(name) values ('Before') returning id`;
     const workspaceId = ws!.id as string;
     await admin`insert into connectors(id,version,manifest) values ('prune-fixture','1.0.0','{}')`;
-    const { client, db } = connect(test);
-    let superseded: string;
-    try {
-      ({ superseded } = await history(admin, db, workspaceId));
-    } finally {
-      await client.end({ timeout: 5 });
-    }
+    const superseded = await historyInSql(admin, workspaceId);
     await test.migrate();
     const pruner = postgres(roleUrl(test.adminUrl, "netrics_scheduler"), {
       max: 1,
@@ -404,5 +429,183 @@ describe("prune on a large record table (#524)", () => {
       Array.from({ length: 12 }, () => ({ deleted: 250, more: true })),
     );
     expect(seqScans).toBe(0);
+  }, 60_000);
+});
+
+describe("prune with many expired current generations (#531)", () => {
+  // Generations whose dataset has no newer refresh. They stay until one
+  // replaces them, so each prune call meets them again, and once drained,
+  // every lookup of their records reads the index entries of all deleted
+  // ones until vacuum removes them.
+  const GENERATIONS = 40;
+  const RECORDS = 250;
+  let test: TestDatabase, admin: postgres.Sql, workspaceId: string;
+
+  /** A connection whose dataset has one generation with one record. */
+  async function currentGeneration(): Promise<string> {
+    const { client, db } = connect(test);
+    try {
+      const [row] = await admin`
+        insert into connections(workspace_id,connector_id,name)
+        values (${workspaceId},'prune-fixture','C') returning id`;
+      const connectionId = row!.id as string;
+      await withWorkspace(db, { workspaceId }, (tx) =>
+        ingestDatasetPage(tx, {
+          workspaceId,
+          connectionId,
+          definition: DATASET,
+          page: {
+            datasetKey: DATASET.key,
+            schemaVersion: DATASET.version,
+            refreshKey: "r1",
+            pageKey: "p1",
+            previousPageKey: null,
+            complete: true,
+            records: [{ values: { id: "a" } }],
+          },
+          now: new Date(),
+        }),
+      );
+      const [generation] = await admin`
+        select g.id from data_generations g join data_datasets d on d.id = g.dataset_id
+        where d.connection_id = ${connectionId}`;
+      return generation!.id as string;
+    } finally {
+      await client.end({ timeout: 5 });
+    }
+  }
+
+  beforeAll(async () => {
+    test = await createTestDatabase();
+    admin = postgres(test.adminUrl, { max: 1, onnotice: () => undefined });
+    const [ws] =
+      await admin`insert into workspaces(name) values ('Current') returning id`;
+    workspaceId = ws!.id as string;
+    await admin`insert into connectors(id,version,manifest) values ('prune-fixture','1.0.0','{}')`;
+    for (let i = 0; i < GENERATIONS; i++) await currentGeneration();
+    // Every dataset's only generation and its records expired, as after a
+    // retention ceiling.
+    await admin`
+      insert into data_records(generation_id,workspace_id,record_key,collected_at,values)
+      select g.id, g.workspace_id, 'k' || lpad(i::text, 6, '0'), now(), '{"id":"x"}'::jsonb
+      from data_generations g, generate_series(1, ${RECORDS}::int) i`;
+    await admin`update data_records set expires_at = now() - interval '1 day'`;
+    await admin`update data_generations set expires_at = now() - interval '1 day'`;
+    await admin`analyze data_records`;
+    await admin`analyze data_generations`;
+  }, 120_000);
+
+  afterAll(async () => {
+    await admin?.end({ timeout: 5 });
+    await test?.drop();
+  });
+
+  type Call = { deleted: number; more: boolean; scans: number; blocks: number };
+
+  /**
+   * One prune call in its own transaction, as the scheduler makes them, with
+   * the scans of the data_records primary key it made and the index blocks
+   * it read. Fails instead of waiting long for a lock.
+   */
+  async function call(pruner: postgres.Sql, batch: number): Promise<Call> {
+    return pruner.begin(async (sql) => {
+      await sql`set local lock_timeout = '5s'`;
+      const stats = async () => {
+        const [row] = await sql`
+          select pg_stat_get_xact_numscans(i.oid)::int as scans,
+                 pg_stat_get_xact_blocks_fetched(i.oid)::int as blocks
+          from pg_class i where i.relname = 'data_records_generation_id_record_key_pk'`;
+        return row as { scans: number; blocks: number };
+      };
+      const before = await stats();
+      const [row] = await sql`
+        select deleted, more from prune_dataset_history_batch(now(), ${batch})`;
+      const after = await stats();
+      return {
+        deleted: row!.deleted as number,
+        more: row!.more as boolean,
+        scans: after.scans - before.scans,
+        blocks: after.blocks - before.blocks,
+      };
+    });
+  }
+
+  function scheduler() {
+    return postgres(roleUrl(test.adminUrl, "netrics_scheduler"), { max: 1 });
+  }
+
+  it("stops looking up records of generations it has emptied", async () => {
+    const pruner = scheduler();
+    try {
+      const drain: Call[] = [];
+      for (let i = 0; i < 100; i++) {
+        const result = await call(pruner, 1000);
+        drain.push(result);
+        if (!result.more) break;
+      }
+      const deleted = drain.reduce((sum, c) => sum + c.deleted, 0);
+      expect(deleted).toBe(GENERATIONS * (RECORDS + 1));
+      expect(drain.at(-1)!.more).toBe(false);
+      const [left] = await admin`
+        select (select count(*)::int from data_records) as records,
+               (select count(*)::int from data_generations) as generations`;
+      // Current generations stay, so readers see them as expired.
+      expect(left).toEqual({ records: 0, generations: GENERATIONS });
+      // Before vacuum, with the deleted records' index entries in place.
+      // Before #531 every call looked up each expired generation's records
+      // at least once (40 scans and 150-170 index blocks per call here; 300
+      // scans and 66,000 blocks with 100 generations of 20,000 records).
+      const idle = [await call(pruner, 1000), await call(pruner, 1000)];
+      expect(idle).toEqual([
+        { deleted: 0, more: false, scans: 0, blocks: 0 },
+        { deleted: 0, more: false, scans: 0, blocks: 0 },
+      ]);
+    } finally {
+      await pruner.end({ timeout: 5 });
+    }
+  }, 120_000);
+
+  it("marks an emptied generation without waiting for its row", async () => {
+    const generationId = await currentGeneration();
+    await admin`
+      update data_generations set expires_at = now() - interval '1 day'
+      where id = ${generationId}`;
+    const holder = postgres(test.adminUrl, { max: 1 });
+    const pruner = scheduler();
+    try {
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => (release = resolve));
+      let locked!: () => void;
+      const isLocked = new Promise<void>((resolve) => (locked = resolve));
+      const holding = holder.begin(async (tx) => {
+        await tx`select 1 from data_generations where id = ${generationId} for update`;
+        locked();
+        await released;
+      });
+      await isLocked;
+      // Prune deletes its record but finds the generation row held: it
+      // skips the mark and asks to be called again.
+      let first: Call;
+      try {
+        first = await call(pruner, 1000);
+      } finally {
+        release();
+        await holding;
+      }
+      expect(first).toMatchObject({ deleted: 1, more: true });
+      const [held] = await admin`
+        select records_pruned from data_generations where id = ${generationId}`;
+      expect(held!.records_pruned).toBe(false);
+      expect(await call(pruner, 1000)).toMatchObject({
+        deleted: 0,
+        more: false,
+      });
+      const [marked] = await admin`
+        select records_pruned from data_generations where id = ${generationId}`;
+      expect(marked!.records_pruned).toBe(true);
+    } finally {
+      await pruner.end({ timeout: 5 });
+      await holder.end({ timeout: 5 });
+    }
   }, 60_000);
 });

@@ -1853,6 +1853,10 @@ export const dataGenerations = pgTable(
       .notNull()
       .defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
+    // Set by prune once an expired generation has no records left. Records
+    // are only written with their generation, so none can appear later, and
+    // prune stops looking for them (#531).
+    recordsPruned: boolean("records_pruned").notNull().default(false),
   },
   (t) => [
     unique("data_generations_tenant_key").on(t.id, t.workspaceId),

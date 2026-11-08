@@ -306,6 +306,39 @@ each call re-planned the three statements prune runs for every expired
 generation, about 100 here. One run on the same day with generic plans, as
 on `main`, took 86.6 s and 19.1 s.
 
+**After #531.** Prune marks an expired generation once it has no records
+left (`data_generations.records_pruned`, migration 0069) and no longer looks
+up records for marked ones. Records are only written with their generation,
+so a generation without records never gets any again. Superseded generations
+are deleted once marked, so that statement searches no generation for
+records. Before, every call looked up the records of every expired
+generation, including current ones, which stay until a newer refresh
+replaces them. Until vacuum, each such lookup read the index entries of all
+the generation's deleted records. The history suite ran on 2026-11-08 on the
+same machine and settings, three fresh processes each, `main` and this
+change back to back. Other agents were running tests on the machine at the
+same time:
+
+| Drain                                          | `main` (after #524)                     | After #531                             |
+| ---------------------------------------------- | --------------------------------------- | -------------------------------------- |
+| 100 superseded generations (2,002,200 rows)    | 10.8 s [10.8–11.2], 2 ticks (p50 52)    | 10.8 s [9.9–10.8], 1–2 ticks (p50 52)  |
+| Whole history after a one-day ceiling (2.16 M) | 20.5 s [20.1–21.0], 2–3 ticks (p50 185) | 11.2 s [10.0–13.4], 1–2 ticks (p50 94) |
+
+Call p50 in ms. Expired history now drains at 193,332 rows/s
+[161,209–216,334] against 105,140 [102,894–107,524] (call p95 175 ms
+[113–190] against 347 [301–364]; max 568 against 543). The superseded drain
+is unchanged. No tick ran more than 0.5 s over its budget.
+
+A fixture with 100 expired current generations of 20,000 records each
+(batch 10,000, one call per transaction) shows where the time went. On
+`main`, each call after the drain still made 300 scans of the
+`data_records` primary key, reading 66,000 index blocks (about 0.15 s), until
+vacuum. Now it makes none (8 ms). The drain itself took 15.2 s instead of
+20.6 s (call p50 135 ms against 178, p95 222 against 358). The remaining
+cost late in a drain comes from the expiry-ordered record delete and the
+per-generation loop deleting from the same generations: the loop's first
+lookup in a generation passes the records the other delete removed.
+
 ### Concurrent syncs and policy changes
 
 Eight sync workers each ingest three refreshes of ten 1,000-record pages into
@@ -669,11 +702,13 @@ At the measured sizes, these are expected behaviour, not defects:
   in short-lived copies; 41% less now, and 16–20% faster. The remaining
   sampled peak is uncollected garbage, not retained memory or RSS; see "After
   #528" above.
-- [#531](https://github.com/netrics-so/netrics/issues/531) (open): each prune
-  call checks every expired current generation for records. While a drain is
-  deleting records, that check walks primary-key entries of records already
-  deleted but not yet vacuumed (up to 0.67 s in one call of a 2 M-record
-  fixture).
+- [#531](https://github.com/netrics-so/netrics/issues/531) (fixed): each
+  prune call checked every expired generation, current ones included, for
+  records. While a drain was deleting records, and until vacuum, that check
+  walked primary-key entries of records already deleted (up to 0.67 s in one
+  call of a 2 M-record fixture). Prune now marks emptied generations and
+  skips them; the expired-history drain took 11.2 s instead of 20.5 s; see
+  "After #531" above.
 
 ## Configurable policy versus implementation safeguards
 
