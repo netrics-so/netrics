@@ -482,6 +482,38 @@ describe("compileCompareMeasure names (#515)", () => {
       "Conversion · Veränderung",
     );
   });
+
+  it.each(["en", "de"] as const)(
+    "keeps every generated name within 100 characters for the longest names in %s",
+    (locale) => {
+      const long = (letter: string) => letter.repeat(100);
+      for (const format of ["percent", "ratio"] as const) {
+        const result = names({
+          locale,
+          format,
+          name: long("R"),
+          numerator: side({
+            kind: "gauge",
+            aggregation: "avg",
+            name: long("N"),
+          }),
+        });
+        const all = [
+          result.side?.type === "calculate" ? result.side.name : "",
+          ...result.date,
+          ...Object.values(result.measures),
+        ];
+        for (const name of all) expect(name.length).toBeLessThanOrEqual(100);
+        // Shortened names keep their suffix, so they stay told apart.
+        expect(result.measures.ratio_previous).toMatch(
+          locale === "de" ? / · vorheriger Zeitraum$/ : / · previous period$/,
+        );
+        expect(result.measures.numerator_days).toMatch(
+          locale === "de" ? / · Tage$/ : / · days$/,
+        );
+      }
+    },
+  );
 });
 
 describe("compiled compare measures match the widget (#506)", () => {

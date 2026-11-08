@@ -35,6 +35,9 @@ import {
   type Period,
 } from "./metrics.js";
 
+/** The longest name a model, measure or preparation field may have. */
+const MAX_NAME_LENGTH = 100;
+
 /** Why a compare widget cannot be saved as a measure. */
 export const COMPARE_MEASURE_REFUSALS = [
   /** min, max and last are formed over day totals, which a model cannot. */
@@ -224,6 +227,18 @@ export function compileCompareMeasure(
     ({ ok: false, error }) as const;
   const sides = { numerator: input.numerator, denominator: input.denominator };
   const t = sharedTranslator(input.locale ?? DEFAULT_LOCALE);
+  // A generated name ("… · previous period") within the 100 characters a
+  // name may have: the author's part is shortened, never the suffix, which
+  // is longer in some languages (#515).
+  type Suffixed =
+    | "compareMeasure.days"
+    | "compareMeasure.previous"
+    | "compareMeasure.change"
+    | "compareMeasure.changePoints";
+  const suffixed = (key: Suffixed, name: string) =>
+    t(key, {
+      name: name.slice(0, MAX_NAME_LENGTH - t(key, { name: "" }).length),
+    });
   if (SIDES.some((side) => sides[side].granularity !== "day"))
     return fail("compare_granularity_unsupported");
   const offset = COMPARE_MEASURE_OFFSET;
@@ -366,16 +381,12 @@ export function compileCompareMeasure(
       }
       measures.push(sum(`${id}_total`), {
         id: `${id}_days`,
-        name: t("compareMeasure.days", {
-          name: sides[side].name.slice(0, 90),
-        }),
+        name: suffixed("compareMeasure.days", sides[side].name.slice(0, 90)),
         kind: "aggregate",
         datasetId,
         aggregate: {
           id: `${id}_days`,
-          name: t("compareMeasure.days", {
-            name: sides[side].name.slice(0, 90),
-          }),
+          name: suffixed("compareMeasure.days", sides[side].name.slice(0, 90)),
           op: "distinct_count",
           fieldId: COMPARE_DATE_DIMENSION,
           filter: tagged,
@@ -402,7 +413,7 @@ export function compileCompareMeasure(
       },
       {
         id: COMPARE_MEASURE_IDS.previous,
-        name: t("compareMeasure.previous", { name }),
+        name: suffixed("compareMeasure.previous", name),
         kind: "period_offset",
         baseMeasureId: COMPARE_MEASURE_IDS.ratio,
         timeDimensionId: COMPARE_DATE_DIMENSION,
@@ -412,7 +423,7 @@ export function compileCompareMeasure(
       input.format === "ratio"
         ? {
             id: COMPARE_MEASURE_IDS.change,
-            name: t("compareMeasure.change", { name }),
+            name: suffixed("compareMeasure.change", name),
             kind: "period_offset",
             baseMeasureId: COMPARE_MEASURE_IDS.ratio,
             timeDimensionId: COMPARE_DATE_DIMENSION,
@@ -421,7 +432,7 @@ export function compileCompareMeasure(
           }
         : {
             id: COMPARE_MEASURE_IDS.change,
-            name: t("compareMeasure.changePoints", { name }),
+            name: suffixed("compareMeasure.changePoints", name),
             kind: "formula",
             expression: call(
               "multiply",
