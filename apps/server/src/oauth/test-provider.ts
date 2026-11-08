@@ -158,6 +158,12 @@ export class FixtureOAuthProvider {
    */
   revokeDelayMs = 0;
   /**
+   * Hold received revocations until this settles (null: off): like
+   * `revokeDelayMs`, the request is counted at once and the account's
+   * tokens die when it answers, but the test decides when that is.
+   */
+  revokeGate: Promise<void> | null = null;
+  /**
    * Hold the next authorization_code exchanges until this many have
    * arrived, then answer them together (0: off). Forces concurrent
    * callbacks to overlap: every code is exchanged before any callback
@@ -493,6 +499,9 @@ export class FixtureOAuthProvider {
     }
     if (this.revokeDelayMs > 0) {
       await sleep(this.revokeDelayMs);
+    }
+    if (this.revokeGate) {
+      await this.revokeGate;
     }
     const issued =
       this.#refreshTokens.get(value) ?? this.#accessTokens.get(value);

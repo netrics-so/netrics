@@ -45,8 +45,9 @@ import { createTestDatabase } from "./test-db.js";
 // callbacks hold it from the liveness check of a fresh grant through its
 // store and any revocation of a refused or released grant; account changes
 // lock both accounts in a fixed order. Concurrency cases run 5 rounds, and
-// force the interleaving they assert outcomes for (a delay or barrier at the
-// provider), not rely on two concurrent requests overlapping by chance.
+// force the interleaving they assert outcomes for (a gate or barrier at the
+// provider, or a wait for the grant lock in pg_locks), not rely on two
+// concurrent requests overlapping by chance or within a delay.
 
 const ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const KEYRING = createCredentialKeyring(ENCRYPTION_KEY);
@@ -97,9 +98,12 @@ function account(sub: string) {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function until(check: () => boolean, timeoutMs = 5000): Promise<void> {
+async function until(
+  check: () => boolean | Promise<boolean>,
+  timeoutMs = 5000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (!check()) {
+  while (!(await check())) {
     if (Date.now() > deadline) {
       throw new Error("until: timed out");
     }
@@ -191,6 +195,22 @@ async function storedGrantsLive(sub: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Sessions waiting for the grant lock of `sub` (the advisory key of
+ * oauth_grant_lock, migration 0024: classid and objid are its two int4
+ * halves, objsubid 2).
+ */
+async function grantLockWaiters(sub: string): Promise<number> {
+  const [row] = await admin<{ n: number }[]>`
+    select count(*)::int as n from pg_locks l
+    join pg_database d on d.oid = l.database
+    where d.datname = current_database()
+      and l.locktype = 'advisory' and not l.granted and l.objsubid = 2
+      and l.classid::bigint = (hashtext('netrics.oauth_grant')::bigint & 4294967295)
+      and l.objid::bigint = (hashtext(${TEST_PROVIDER_ID} || chr(31) || ${sub})::bigint & 4294967295)`;
+  return row!.n;
+}
+
 async function linkedSub(connectionId: string): Promise<string | null> {
   const [row] = await admin<{ account_sub: string }[]>`
     select account_sub from connection_oauth
@@ -278,6 +298,7 @@ afterAll(async () => {
 beforeEach(() => {
   provider.tokenDelayMs = 0;
   provider.revokeDelayMs = 0;
+  provider.revokeGate = null;
   provider.codeExchangeBarrier = 0;
   provider.nextRevokeFailures.length = 0;
   provider.nextTokenErrors.length = 0;
@@ -293,17 +314,31 @@ describe("disconnect and callback of one account", () => {
       });
       // The revocation is in flight (received, not yet applied) when the
       // callback exchanges its code: the provider will kill that grant too.
-      provider.revokeDelayMs = 300;
+      // The provider holds it until the callback has exchanged its code and
+      // waits for the grant lock the disconnect holds across the call.
+      let applyRevocation!: () => void;
+      provider.revokeGate = new Promise<void>((resolve) => {
+        applyRevocation = resolve;
+      });
       const revocations = provider.revocations.length;
       const deleting = disconnect(workspaceA, last);
       await until(() => provider.revocations.length > revocations);
-      const result = await callback(query);
+      const exchanges = provider.calls.authorization_code;
+      const connecting = callback(query);
+      try {
+        await until(async () => (await grantLockWaiters(sub)) > 0);
+        expect(provider.calls.authorization_code).toBe(exchanges + 1);
+        expect(provider.isRevoked(sub)).toBe(false);
+      } finally {
+        applyRevocation();
+        provider.revokeGate = null;
+      }
+      const result = await connecting;
 
       expect(revocationOf(await deleting)).toBe("revoked");
       expect(result.outcome).toBe("failed");
       expect(await holders(sub)).toHaveLength(0);
       expect(provider.isRevoked(sub)).toBe(true);
-      provider.revokeDelayMs = 0;
     }
   });
 
