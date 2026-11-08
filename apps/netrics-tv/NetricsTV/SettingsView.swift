@@ -90,6 +90,8 @@ struct SettingsView: View {
                 }
                 Row(label: L10n.tr("This TV", language), value: state.device?.name ?? (state.phase == .pairing ? L10n.tr("Not paired yet", language) : "—"), narrow: narrow)
                 Row(label: L10n.tr("App version", language), value: DeviceSession.appVersion, narrow: narrow)
+                // No browser on Apple TV: the address to open on another device (#547).
+                Row(label: L10n.tr("Privacy policy", language), value: PrivacyPolicy.displayAddress(language), narrow: narrow)
                 if let error = state.lastError, state.offline {
                     Row(label: L10n.tr("Last error", language), value: error, small: true, narrow: narrow)
                 }

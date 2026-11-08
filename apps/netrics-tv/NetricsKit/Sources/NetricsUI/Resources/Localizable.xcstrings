@@ -852,6 +852,23 @@
         }
       }
     },
+    "Privacy policy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privacy policy"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datenschutzerklärung"
+          }
+        }
+      }
+    },
     "Progress": {
       "extractionState": "manual",
       "localizations": {
@@ -1530,6 +1547,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "netrics cloud"
+          }
+        }
+      }
+    },
+    "netrics' privacy policy covers netrics cloud. A server of your own is governed by whoever runs it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "netrics' privacy policy covers netrics cloud. A server of your own is governed by whoever runs it."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Datenschutzerklärung von netrics gilt für netrics cloud. Für einen eigenen Server ist zuständig, wer ihn betreibt."
           }
         }
       }
