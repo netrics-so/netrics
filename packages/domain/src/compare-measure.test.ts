@@ -430,6 +430,60 @@ const between = (from: string, to: string): DataExpression => ({
   ],
 });
 
+describe("compileCompareMeasure names (#515)", () => {
+  const names = (overrides: Partial<CompareMeasureInput>) => {
+    const compiled = compileCompareMeasure(
+      input({
+        numerator: side({ kind: "gauge", aggregation: "avg" }),
+        ...overrides,
+      }),
+    );
+    if (!compiled.ok) throw new Error(compiled.error);
+    const model = compiled.model("prepared:p:compare");
+    return {
+      side: compiled.preparation.nodes.find(
+        (node) => node.id === "numerator_tag",
+      ),
+      date: model.dimensions.map((dimension) => dimension.name),
+      measures: Object.fromEntries(
+        model.measures.map((measure) => [measure.id, measure.name]),
+      ),
+    };
+  };
+
+  it("names the generated parts in English without a locale", () => {
+    const english = names({});
+    expect(english.side).toMatchObject({ name: "Compare side" });
+    expect(english.date).toEqual(["Date"]);
+    expect(english.measures).toMatchObject({
+      numerator_days: "Downloads · days",
+      ratio: "Conversion",
+      ratio_previous: "Conversion · previous period",
+      ratio_change: "Conversion · change (pt)",
+    });
+    expect(names({ format: "ratio" }).measures.ratio_change).toBe(
+      "Conversion · change",
+    );
+    expect(names({ locale: "en" })).toEqual(english);
+  });
+
+  it("names them in German for a German author, keeping the author's own names", () => {
+    const german = names({ locale: "de" });
+    expect(german.side).toMatchObject({ name: "Vergleichsseite" });
+    expect(german.date).toEqual(["Datum"]);
+    expect(german.measures).toMatchObject({
+      numerator: "Downloads",
+      numerator_days: "Downloads · Tage",
+      ratio: "Conversion",
+      ratio_previous: "Conversion · vorheriger Zeitraum",
+      ratio_change: "Conversion · Veränderung (Pp.)",
+    });
+    expect(names({ locale: "de", format: "ratio" }).measures.ratio_change).toBe(
+      "Conversion · Veränderung",
+    );
+  });
+});
+
 describe("compiled compare measures match the widget (#506)", () => {
   const today = "2026-11-07";
   const series = (

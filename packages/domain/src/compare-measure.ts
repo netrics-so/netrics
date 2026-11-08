@@ -24,6 +24,8 @@ import {
 import type { DataExpression } from "./data-expression.js";
 import type { ModelMeasure, SemanticModelDefinition } from "./data-model.js";
 import type { PreparationGraph, PreparationNode } from "./data-preparation.js";
+import { DEFAULT_LOCALE, type Locale } from "./i18n/locale.js";
+import { sharedTranslator } from "./i18n/shared/index.js";
 import {
   resolvePeriod,
   type Aggregation,
@@ -175,6 +177,12 @@ export interface CompareMeasureInput {
   denominator: CompareMeasureSide;
   /** One source currency for per-currency sides without a filter. */
   currency: string | null;
+  /**
+   * The author's language for the generated field, dimension and measure
+   * names (#515); English when absent. They are stored, so authors can
+   * rename them later.
+   */
+  locale?: Locale;
 }
 
 export type CompareMeasureCompilation =
@@ -215,6 +223,7 @@ export function compileCompareMeasure(
   const fail = (error: CompareMeasureRefusal) =>
     ({ ok: false, error }) as const;
   const sides = { numerator: input.numerator, denominator: input.denominator };
+  const t = sharedTranslator(input.locale ?? DEFAULT_LOCALE);
   if (SIDES.some((side) => sides[side].granularity !== "day"))
     return fail("compare_granularity_unsupported");
   const offset = COMPARE_MEASURE_OFFSET;
@@ -285,7 +294,7 @@ export function compileCompareMeasure(
       type: "calculate",
       input: last,
       fieldId: COMPARE_SIDE_FIELD,
-      name: "Compare side",
+      name: t("compareMeasure.side"),
       expression: text(side),
     });
     columnMappings[`${side}_tag`] = {
@@ -357,12 +366,16 @@ export function compileCompareMeasure(
       }
       measures.push(sum(`${id}_total`), {
         id: `${id}_days`,
-        name: `${sides[side].name.slice(0, 90)} · days`,
+        name: t("compareMeasure.days", {
+          name: sides[side].name.slice(0, 90),
+        }),
         kind: "aggregate",
         datasetId,
         aggregate: {
           id: `${id}_days`,
-          name: `${sides[side].name.slice(0, 90)} · days`,
+          name: t("compareMeasure.days", {
+            name: sides[side].name.slice(0, 90),
+          }),
           op: "distinct_count",
           fieldId: COMPARE_DATE_DIMENSION,
           filter: tagged,
@@ -389,7 +402,7 @@ export function compileCompareMeasure(
       },
       {
         id: COMPARE_MEASURE_IDS.previous,
-        name: `${name} · previous period`,
+        name: t("compareMeasure.previous", { name }),
         kind: "period_offset",
         baseMeasureId: COMPARE_MEASURE_IDS.ratio,
         timeDimensionId: COMPARE_DATE_DIMENSION,
@@ -399,7 +412,7 @@ export function compileCompareMeasure(
       input.format === "ratio"
         ? {
             id: COMPARE_MEASURE_IDS.change,
-            name: `${name} · change`,
+            name: t("compareMeasure.change", { name }),
             kind: "period_offset",
             baseMeasureId: COMPARE_MEASURE_IDS.ratio,
             timeDimensionId: COMPARE_DATE_DIMENSION,
@@ -408,7 +421,7 @@ export function compileCompareMeasure(
           }
         : {
             id: COMPARE_MEASURE_IDS.change,
-            name: `${name} · change (pt)`,
+            name: t("compareMeasure.changePoints", { name }),
             kind: "formula",
             expression: call(
               "multiply",
@@ -428,7 +441,7 @@ export function compileCompareMeasure(
       dimensions: [
         {
           id: COMPARE_DATE_DIMENSION,
-          name: "Date",
+          name: t("compareMeasure.date"),
           datasetId,
           fieldId: COMPARE_DATE_DIMENSION,
           timeAlignment: "reporting_date",
