@@ -234,6 +234,15 @@ describe("retention changes write only the deadlines they move (#518)", () => {
       const millis = new Date(row.collectedAt).getTime() + 10 * DAY;
       return millis <= 253402300799000 ? millis : null;
     };
+    // Deadlines in microseconds, as PostgreSQL stores them: a JS Date has
+    // milliseconds only, and d-longer is one microsecond past the ceiling.
+    const micros = (iso: string) => {
+      const fraction = (/\.(\d+)Z$/.exec(iso)?.[1] ?? "").padEnd(6, "0");
+      return (
+        BigInt(Math.floor(new Date(iso).getTime() / 1000)) * 1_000_000n +
+        BigInt(fraction.slice(0, 6))
+      );
+    };
     let moved = 0;
     for (const row of rows) {
       const old = row.expiresAt === null ? null : new Date(row.expiresAt);
@@ -250,15 +259,20 @@ describe("retention changes write only the deadlines they move (#518)", () => {
         expiresAt: expected,
       });
       const changed = now.xmin !== before.get(row.key)!.xmin;
+      const limitMicros = limit === null ? null : BigInt(limit) * 1000n;
       expect({ key: row.key, changed }).toEqual({
         key: row.key,
-        changed: expected?.getTime() !== old?.getTime(),
+        changed:
+          limitMicros !== null &&
+          (row.expiresAt === null || micros(row.expiresAt) > limitMicros),
       });
       if (changed) moved++;
     }
-    // a-null, d-longer and e-year (a microsecond is enough to move).
-    expect(moved).toBe(3);
-    expect(call.records.n_tup_upd).toBe(3);
+    // a-null, d-longer (a microsecond is enough), e-year and f-expired.
+    // postgres.js 3 dropped the microsecond when it sent the fixture's
+    // deadline, so d-longer was stored equal to the ceiling and stayed.
+    expect(moved).toBe(4);
+    expect(call.records.n_tup_upd).toBe(4);
   });
 
   it("reaches a small workspace's records without reading other workspaces' records", async () => {
