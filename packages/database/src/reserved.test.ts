@@ -166,32 +166,44 @@ describe("withSessionAdvisoryLock", () => {
     try {
       let release!: () => void;
       const gate = new Promise<void>((resolve) => (release = resolve));
+      let holderXid: string | undefined;
       const holder = withSessionAdvisoryLock(
         pooled,
         "reserved-snapshot",
         (locked) =>
           locked.transaction(async (tx) => {
-            await tx.execute(
-              sql`select set_config('netrics.unused', 'x', true)`,
+            // Assigns the holder's transaction id, which the waiter's
+            // snapshot must show as committed.
+            const [row] = await tx.execute<{ xid: string }>(
+              sql`select pg_current_xact_id()::text as xid`,
             );
+            holderXid = row!.xid;
             await gate;
             await tx.execute(sql`select pg_notify('reserved_test', 'done')`);
-            return Date.now();
           }),
       );
-      // Wait until the holder has the lock, then queue a waiter behind it.
-      for (let i = 0; i < 500 && (await advisoryLocks()) === 0; i++)
+      // Wait until the holder has the lock and its transaction id, then
+      // queue a waiter behind it.
+      for (
+        let i = 0;
+        i < 500 && ((await advisoryLocks()) === 0 || holderXid === undefined);
+        i++
+      )
         await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(holderXid).toBeDefined();
       const waiter = withSessionAdvisoryLock(
         pooled,
         "reserved-snapshot",
         (locked) =>
           locked.transaction(
             async (tx) => {
-              const [row] = await tx.execute<{ started: string }>(
-                sql`select (extract(epoch from now()) * 1000)::text as started`,
+              // The first statement takes the transaction's snapshot; ask
+              // Postgres whether the holder's commit is visible in it. One
+              // database, no clocks to compare (#536).
+              const [row] = await tx.execute<{ visible: boolean }>(
+                sql`select pg_visible_in_snapshot(${holderXid!}::xid8, pg_current_snapshot()) as visible`,
               );
-              return Number(row!.started);
+              return row!.visible;
             },
             { isolationLevel: "serializable" },
           ),
@@ -208,10 +220,10 @@ describe("withSessionAdvisoryLock", () => {
       )
         await new Promise((resolve) => setTimeout(resolve, 10));
       release();
-      const committed = await holder;
-      // The waiter's transaction (and so its snapshot) began after the
-      // holder had committed and released the lock.
-      expect(await waiter).toBeGreaterThanOrEqual(committed);
+      await holder;
+      // The waiter's snapshot began after the holder had committed and
+      // released the lock.
+      expect(await waiter).toBe(true);
     } finally {
       await pool.end({ timeout: 5 });
     }
