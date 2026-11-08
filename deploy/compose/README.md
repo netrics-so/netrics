@@ -158,14 +158,27 @@ all settings and retention/deletion behavior.
 Caddy is the only proxy in front of the web app here, and the API trusts the
 Compose network's forwarded client address; sign-in and pairing rate limits
 count per visitor. If another proxy or load balancer sits in front of Caddy,
-tell the web app how many proxies there are, or which header carries the
-client address:
+Caddy sees that proxy as the visitor. Make Caddy trust it, so it keeps the
+visitor address the proxy forwards, by adding a global options block at the
+top of `Caddyfile` (with the proxy's address or range):
+
+```caddyfile
+{
+	servers {
+		trusted_proxies static 10.0.0.0/8
+	}
+}
+```
+
+Then tell the web app that two proxies forward each request:
 
 ```sh
-NETRICS_TRUSTED_PROXY_HOPS=2          # that proxy plus Caddy
-# or, if the outer proxy sets one header with the client address:
-NETRICS_CLIENT_IP_HEADER=x-real-ip
+NETRICS_TRUSTED_PROXY_HOPS=2          # the outer proxy plus Caddy
 ```
+
+Alternatively, if the outer proxy sets one header with the client address
+and overwrites any value the client sent, name it instead:
+`NETRICS_CLIENT_IP_HEADER=x-real-ip`.
 
 If the Docker network is shared with containers you do not control, limit
 which addresses the API believes (default
@@ -215,12 +228,16 @@ Expect a short downtime. `docker compose up -d` replaces the app containers
 first; they start once `migrate` has succeeded. Pulling in step 5 before
 `up` keeps that window short.
 
-If a migration fails, the app services stay stopped (`docker compose ps`
-shows them as `Created`). All migrations of an upgrade run in one
-transaction, so a failure leaves the database as it was: set the previous
-`NETRICS_VERSION` and run `docker compose up -d` to start the old release
-again, and report the failure with the `migrate` logs
-(`docker compose logs migrate`).
+If `migrate` fails, the app services stay stopped (`docker compose ps`
+shows them as `Created`); `docker compose logs migrate` says why. Either fix
+the cause and run `docker compose up -d` again, or go back: restore the
+backup taken before the upgrade, set the previous `NETRICS_VERSION` and run
+`docker compose up -d`. The schema migrations of an upgrade run in one
+transaction, so when one of them failed the database is unchanged and the
+previous release starts without the restore. `migrate` also sets role
+passwords and syncs the connector catalog after they commit, though, so
+skip the restore only when the log shows a schema migration failed. Please
+report the failure with the log.
 
 Migrations only move forward. To go back after a successful upgrade, restore
 the backup taken before it and set the previous `NETRICS_VERSION`.
