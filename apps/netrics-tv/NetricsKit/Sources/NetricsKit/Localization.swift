@@ -341,3 +341,23 @@ public enum KitStrings {
         return text(key, language)
     }
 }
+
+/**
+ * netrics' privacy policy in the screen language (App Store guideline
+ * 5.1.1(i), #547). It covers netrics cloud; a server of the customer's own is
+ * governed by whoever runs it.
+ */
+public enum PrivacyPolicy {
+    public static func url(_ language: ScreenLanguage) -> URL {
+        switch language {
+        case .en: URL(string: "https://netrics.so/en/privacy")!
+        case .de: URL(string: "https://netrics.so/de/datenschutz")!
+        }
+    }
+
+    /** The address as text, for Apple TV, which has no browser: "netrics.so/en/privacy". */
+    public static func displayAddress(_ language: ScreenLanguage) -> String {
+        let url = url(language)
+        return (url.host() ?? "") + url.path()
+    }
+}

@@ -18,6 +18,14 @@ import Testing
         #expect(ScreenLanguage.system(["fr"]) == .en)
     }
 
+    /// The privacy policy link follows the screen language (#547).
+    @Test func privacyPolicyInTheScreenLanguage() {
+        #expect(PrivacyPolicy.url(.en).absoluteString == "https://netrics.so/en/privacy")
+        #expect(PrivacyPolicy.url(.de).absoluteString == "https://netrics.so/de/datenschutz")
+        #expect(PrivacyPolicy.displayAddress(.en) == "netrics.so/en/privacy")
+        #expect(PrivacyPolicy.displayAddress(.de) == "netrics.so/de/datenschutz")
+    }
+
     @Test func everyKeyHasAnEnglishAndAGermanText() {
         for key in KitText.allCases {
             #expect(KitStrings.en[key]?.isEmpty == false, "\(key) in English")

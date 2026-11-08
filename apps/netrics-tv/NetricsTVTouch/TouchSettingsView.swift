@@ -57,6 +57,16 @@ struct TouchSettingsView: View {
                     }
                 }
                 Section {
+                    Link(destination: PrivacyPolicy.url(language)) {
+                        Label(L10n.tr("Privacy policy", language), systemImage: "hand.raised")
+                    }
+                } footer: {
+                    Text(
+                        L10n.tr(
+                            "netrics' privacy policy covers netrics cloud. A server of your own is governed by whoever runs it.",
+                            language))
+                }
+                Section {
                     Button(L10n.tr("Unpair this device", language), role: .destructive) { confirmUnpair = true }
                 } footer: {
                     Text(
