@@ -122,12 +122,16 @@ describe("a PostgreSQL session killed while it is in use (#511)", () => {
         async (tx) => {
           pid = await backendPid(tx);
           // drizzle sends a query once it is awaited; then() sends it now.
-          const slow = tx
-            .execute(sql`select pg_sleep(30)`)
-            .then(() => "finished");
+          // Both outcomes are handled at once: the kill can reject it before
+          // terminate() returns, and an unhandled rejection fails the suite.
+          const slow = tx.execute(sql`select pg_sleep(30)`).then(
+            () => ({ error: undefined }),
+            (error: unknown) => ({ error }),
+          );
           await waitUntilSleeping(pid);
           await terminate(pid);
-          await slow;
+          const { error } = await slow;
+          if (error) throw error;
         },
       ).then(
         () => undefined,
@@ -154,9 +158,16 @@ describe("a PostgreSQL session killed while it is in use (#511)", () => {
         { workspaceId: randomUUID() },
         async (tx) => {
           const pid = await backendPid(tx);
-          waiting = db.$client`select 'waiting' as w`;
+          // postgres.js queries are lazy: execute() queues this one now, so
+          // the pool reopens the connection for it once the session ends.
+          waiting = db.$client`select 'waiting' as w`.execute().then(
+            (rows) => rows,
+            (error: unknown) => code(error),
+          );
           await terminate(pid);
-          await sleep(200);
+          // The connection now serves a new session. Only the transaction's
+          // own guard can keep the next statement off it.
+          expect(await waiting).toEqual([{ w: "waiting" }]);
           later = await tx
             .execute(
               sql`select current_setting('app.workspace_id', true) as ws`,
@@ -173,7 +184,6 @@ describe("a PostgreSQL session killed while it is in use (#511)", () => {
       expect(LOST_CONNECTION).toContain(code(failure));
       await sleep(200);
       expect(LOST_CONNECTION).toContain(later);
-      expect(await waiting).toEqual([{ w: "waiting" }]);
       await expectPoolWorks(db, 1);
     } finally {
       await db.$client.end({ timeout: 5 });
