@@ -71,3 +71,31 @@ export async function pruneSecurityRecords(
     devicePairingsDeleted: row?.device_pairings_deleted ?? 0,
   };
 }
+
+/**
+ * How long a removed (revoked) screen's record is kept: its name, platform,
+ * last heartbeat values and the admin who approved it. The privacy policy
+ * states it; change both together.
+ */
+export const REVOKED_DEVICE_RETENTION_DAYS = 90;
+
+/**
+ * Deletes devices revoked more than `days` ago as of `now`, with their
+ * pairings and tokens (scheduler role; prune_revoked_devices is SECURITY
+ * DEFINER, migration 0070). A count equal to `batch` means more remain.
+ */
+export async function pruneRevokedDevices(
+  schedulerDb: Db | Transaction,
+  now: Date,
+  days: number = REVOKED_DEVICE_RETENTION_DAYS,
+  batch = 10_000,
+): Promise<number> {
+  const [row] = await schedulerDb.execute<{ deleted: number }>(
+    sql`select prune_revoked_devices(
+          ${now.toISOString()}::timestamptz,
+          make_interval(days => ${days}),
+          ${batch}
+        ) as deleted`,
+  );
+  return row?.deleted ?? 0;
+}
