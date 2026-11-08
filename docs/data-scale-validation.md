@@ -278,8 +278,33 @@ PL/pgSQL caches a generic plan for prune's check for remaining expired
 records, `EXISTS (SELECT 1 FROM data_records WHERE expires_at <= p_now)`.
 That plan is a sequential scan of the whole table, about 0.5 s per call at
 this size. Whether the generic plan wins depends on table statistics, so
-runs differ in how many calls pay for it. It is listed under the follow-ups
-below.
+runs differ in how many calls pay for it
+([#524](https://github.com/netrics-so/netrics/issues/524)).
+
+**After #524.** Prune takes a batch of expired records and checks for
+remaining ones in deadline order (`ORDER BY expires_at` with a limit), which
+only the expiry index answers without sorting, under any cached plan
+(migration 0068). The history suite, rerun on 2026-11-08 on the same machine
+and settings (three fresh processes; other idle containers were running, and
+unrelated timings such as the policy calls differed from 2026-11-07 by up to
+22%):
+
+| Drain                                          | Before #517     | After #523                     | After #524                              |
+| ---------------------------------------------- | --------------- | ------------------------------ | --------------------------------------- |
+| 100 superseded generations (2,002,200 rows)    | 13.4 s, 2 ticks | 101.7 s, 10–11 ticks (p50 515) | 11.4 s [10.3–11.7], 2 ticks (p50 56)    |
+| Whole history after a one-day ceiling (2.16 M) | 46.6 s, 5 ticks | 19.5 s, 2 ticks                | 22.3 s [19.4–23.2], 2–3 ticks (p50 195) |
+
+Call p50 in ms. Superseded generations drain at 175,115 rows/s
+[170,612–193,858] again (call p95 67 ms, max 274 ms). Expired history drains
+at 96,959 rows/s [93,185–111,127] (call p95 366 ms, max 630 ms). No tick ran
+more than 0.15 s over its budget.
+
+Forcing custom plans for the whole function (`plan_cache_mode =
+force_custom_plan`) was tried first. It fixed the superseded drain (11.9 s),
+but the expired drain took 48.8 s [48.2–57.0] over 5 ticks (call p50 439 ms):
+each call re-planned the three statements prune runs for every expired
+generation, about 100 here. One run on the same day with generic plans, as
+on `main`, took 86.6 s and 19.1 s.
 
 ### Concurrent syncs and policy changes
 
@@ -368,9 +393,26 @@ finishes in about 33 s instead of about 108 s, so every loop makes fewer
 calls in that time. Policy and connection-retention calls still wait for the
 ingestion lock behind the sync pages, so their p95 includes that wait. Prune
 calls take about 108 ms because of the generic-plan sequential scan described
-under "Retained history" (see the follow-ups).
+under "Retained history" (see "After #524" below).
 The two scenarios without churn are unchanged: 33,224 records/s
 [33,086–33,680] in eight workspaces, and 16,135 [15,949–16,374] in one.
+
+**After #524.** The churn scenario, rerun on 2026-11-08 on the same machine
+and settings (three fresh processes):
+
+| Concurrent operation      | Calls per run | p50 (ms)      | p95 (ms)            | Failures over 3 runs          |
+| ------------------------- | ------------: | ------------- | ------------------- | ----------------------------- |
+| `admin_set_data_policy`   |         25–26 | 594 [520–619] | 5,010 [4,241–5,493] | none                          |
+| `setConnectionRetention`  |            26 | 579 [566–635] | 4,847 [4,425–4,945] | none                          |
+| `prune_dataset_history`   |       221–243 | 7.5 [7.4–7.5] | 202 [201–207]       | none                          |
+| Model query (10,000 rows) |       162–171 | 108 [108–110] | 147 [133–161]       | none; 0 serialization retries |
+
+Prune calls take 7.5 ms at the median instead of 108 ms, so the loop makes
+about twice as many calls in the same time. Deadlocks: 0, and no transaction
+rolled back. Syncs: 6,694 records/s [6,445–6,960], page p50 559 ms, lock wait
+p95 4,291 ms. The two scenarios without churn, which do not prune, ran 3–4%
+slower than on 2026-11-07 (31,958 and 15,564 records/s): the same machine
+noise as above.
 
 **Pinned first pages.** Since #505, pinned first pages of one model are
 admitted one at a time, through an in-process queue with a wait bounded by
@@ -556,10 +598,10 @@ At the measured sizes, these are expected behaviour, not defects:
   records of the workspace while holding the ingestion lock, and found them by
   scanning every workspace's records; see "After #518" above. A call that
   moves nothing still reads the workspace's records once under the lock.
-- Not filed yet: after five calls in a session, prune's checks for remaining
-  expired records (`EXISTS ... WHERE expires_at <= p_now`) can switch to a
-  cached generic plan that scans all of `data_records`, about 0.5 s per call
-  at 4.16 M records (0065); see "After #518".
+- [#524](https://github.com/netrics-so/netrics/issues/524) (fixed): after
+  five calls in a session, prune's check for remaining expired records could
+  switch to a cached generic plan that scans all of `data_records`, about
+  0.5 s per call at 4.16 M records; see "After #524" above.
 - [#519](https://github.com/netrics-so/netrics/issues/519) (fixed, with
   [#525](https://github.com/netrics-so/netrics/issues/525)): Google Play report
   staging is streamed instead of buffering a whole report task; see "After

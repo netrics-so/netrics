@@ -307,3 +307,102 @@ describe("migration 0065 on history in the previous shape", () => {
     }
   }, 60_000);
 });
+
+describe("prune on a large record table (#524)", () => {
+  let test: TestDatabase, admin: postgres.Sql, generationId: string;
+
+  beforeAll(async () => {
+    test = await createTestDatabase();
+    admin = postgres(test.adminUrl, { max: 1, onnotice: () => undefined });
+    const [ws] =
+      await admin`insert into workspaces(name) values ('Large') returning id`;
+    const workspaceId = ws!.id as string;
+    await admin`insert into connectors(id,version,manifest) values ('prune-fixture','1.0.0','{}')`;
+    const { client, db } = connect(test);
+    try {
+      await history(admin, db, workspaceId);
+    } finally {
+      await client.end({ timeout: 5 });
+    }
+    const [current] =
+      await admin`select id from data_generations where sequence = 2`;
+    generationId = current!.id as string;
+    // Live records without a deadline, as kept without a retention ceiling.
+    await addRecords("live", 200_000, false);
+  }, 60_000);
+
+  afterAll(async () => {
+    await admin?.end({ timeout: 5 });
+    await test?.drop();
+  });
+
+  /** Adds records to the current generation and refreshes statistics. */
+  async function addRecords(prefix: string, count: number, expired: boolean) {
+    await admin`
+      insert into data_records(generation_id,workspace_id,record_key,collected_at,values,expires_at)
+      select g.id, g.workspace_id, ${prefix} || i, now(), '{"id":"x"}'::jsonb,
+             case when ${expired} then now() - interval '1 day' end
+      from data_generations g, generate_series(1, ${count}::int) i
+      where g.id = ${generationId}`;
+    await admin`analyze data_records`;
+  }
+
+  /**
+   * Calls prune `calls` times in one scheduler session and transaction, and
+   * returns the results and the sequential scans of data_records they made.
+   */
+  async function prune(calls: number, batch: number) {
+    const pruner = postgres(roleUrl(test.adminUrl, "netrics_scheduler"), {
+      max: 1,
+    });
+    try {
+      return await pruner.begin(async (sql) => {
+        const seqScans = async () => {
+          const [row] = await sql`
+            select seq_scan::int as n from pg_stat_xact_user_tables
+            where relname = 'data_records'`;
+          return (row?.n as number | undefined) ?? 0;
+        };
+        const before = await seqScans();
+        const results: Array<{ deleted: number; more: boolean }> = [];
+        for (let call = 0; call < calls; call++) {
+          const [row] = await sql`
+            select deleted, more from prune_dataset_history_batch(now(), ${batch})`;
+          results.push(row as { deleted: number; more: boolean });
+        }
+        return { results, seqScans: (await seqScans()) - before };
+      });
+    } finally {
+      await pruner.end({ timeout: 5 });
+    }
+  }
+
+  // After five calls in a session, PL/pgSQL may switch a statement to a
+  // cached generic plan, planned without knowing p_now. For
+  // `expires_at <= p_now` that plan assumes a third of the table matches, and
+  // the check for remaining expired records scanned all of data_records.
+  it("checks for expired records through the expiry index after five calls", async () => {
+    const { results, seqScans } = await prune(8, 10_000);
+    expect(results).toEqual(
+      Array.from({ length: 8 }, () => ({ deleted: 0, more: false })),
+    );
+    expect(seqScans).toBe(0);
+  }, 60_000);
+
+  // When most records have expired, a plan made for the real p_now expects
+  // every row to match, and a sequential scan that stops after one batch
+  // looks cheapest. Each call then reads again past the records earlier calls
+  // deleted and vacuum has not removed yet, so a drain slows down as it goes.
+  it("deletes expired records through the expiry index when most have expired", async () => {
+    // A retention ceiling expires the live records, as a policy change does.
+    await admin`update data_records set expires_at = now() - interval '1 day' where record_key like 'live%'`;
+    await admin`analyze data_records`;
+    // A batch is a small share of the table, as in production (10,000 of
+    // millions), so each batch is deleted through the primary key.
+    const { results, seqScans } = await prune(12, 250);
+    expect(results).toEqual(
+      Array.from({ length: 12 }, () => ({ deleted: 250, more: true })),
+    );
+    expect(seqScans).toBe(0);
+  }, 60_000);
+});
