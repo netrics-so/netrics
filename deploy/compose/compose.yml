@@ -71,6 +71,14 @@ services:
       NETRICS_IMAGE_QUOTA_COUNT: ${NETRICS_IMAGE_QUOTA_COUNT:-100}
       NETRICS_IMAGE_QUOTA_MIB: ${NETRICS_IMAGE_QUOTA_MIB:-50}
       NETRICS_DATA_POLICY: ${NETRICS_DATA_POLICY:-}
+      # Where TVs send people to approve a pairing code; default
+      # <NETRICS_PUBLIC_URL>/devices/approve.
+      NETRICS_PAIRING_URL: ${NETRICS_PAIRING_URL:-}
+      # Sign-in and sign-up rate limits: "on" (default in production) or "off".
+      NETRICS_AUTH_RATE_LIMIT: ${NETRICS_AUTH_RATE_LIMIT:-}
+      # Proxies whose forwarded client address the API believes; default
+      # loopback,linklocal,uniquelocal (the Compose network).
+      NETRICS_TRUSTED_PROXIES: ${NETRICS_TRUSTED_PROXIES:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   worker:
@@ -104,6 +112,10 @@ services:
       NETRICS_API_URL: http://api:3001
       NETRICS_PROXY_SECRET: ${NETRICS_PROXY_SECRET:-}
       NETRICS_DEFAULT_LOCALE: ${NETRICS_DEFAULT_LOCALE:-}
+      # Proxies in front of the web server (Caddy here: 1), or a header one
+      # of them sets with the client address. See README, "Another proxy".
+      NETRICS_TRUSTED_PROXY_HOPS: ${NETRICS_TRUSTED_PROXY_HOPS:-}
+      NETRICS_CLIENT_IP_HEADER: ${NETRICS_CLIENT_IP_HEADER:-}
     depends_on:
       - api
 

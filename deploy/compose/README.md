@@ -153,6 +153,31 @@ Instance administrators can also set workspace overrides through the
 installation API. See [data processing](../../docs/data-processing.md) for
 all settings and retention/deletion behavior.
 
+### Another proxy
+
+Caddy is the only proxy in front of the web app here, and the API trusts the
+Compose network's forwarded client address; sign-in and pairing rate limits
+count per visitor. If another proxy or load balancer sits in front of Caddy,
+tell the web app how many proxies there are, or which header carries the
+client address:
+
+```sh
+NETRICS_TRUSTED_PROXY_HOPS=2          # that proxy plus Caddy
+# or, if the outer proxy sets one header with the client address:
+NETRICS_CLIENT_IP_HEADER=x-real-ip
+```
+
+If the Docker network is shared with containers you do not control, limit
+which addresses the API believes (default
+`loopback,linklocal,uniquelocal`):
+
+```sh
+NETRICS_TRUSTED_PROXIES=172.18.0.0/16
+```
+
+`NETRICS_AUTH_RATE_LIMIT=off` turns the sign-in and sign-up limits off (on by
+default), for example behind a proxy that rate-limits itself.
+
 ### Another port
 
 If the host already serves 443, install with `--https-port 8443`. This sets
@@ -186,10 +211,19 @@ Versions are image tags: `0.2.0` never changes, and `0.2` follows the newest
 `0.2.x` patch. Pin the full version and upgrade deliberately. Only the newest
 minor release gets fixes while netrics is pre-1.0.
 
-`migrate` runs first and the app services start only after it succeeds. If
-a migration fails, the old containers keep running. Migrations only move
-forward; to roll back, restore the backup taken before the upgrade and set
-the previous `NETRICS_VERSION`.
+Expect a short downtime. `docker compose up -d` replaces the app containers
+first; they start once `migrate` has succeeded. Pulling in step 5 before
+`up` keeps that window short.
+
+If a migration fails, the app services stay stopped (`docker compose ps`
+shows them as `Created`). All migrations of an upgrade run in one
+transaction, so a failure leaves the database as it was: set the previous
+`NETRICS_VERSION` and run `docker compose up -d` to start the old release
+again, and report the failure with the `migrate` logs
+(`docker compose logs migrate`).
+
+Migrations only move forward. To go back after a successful upgrade, restore
+the backup taken before it and set the previous `NETRICS_VERSION`.
 
 ## Backup and restore
 
