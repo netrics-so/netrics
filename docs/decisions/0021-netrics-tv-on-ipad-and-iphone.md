@@ -325,8 +325,11 @@ credentials.
   APIs declared (file timestamps for the image cache's eviction; user
   defaults for the debug launch arguments). App Privacy answers: the
   heartbeat sends diagnostics (app version, uptime, last error, screen) to
-  the paired server, not linked to a person; on a self-hosted server netrics
-  collects nothing.
+  the paired server. Device ID and these diagnostics are linked to the user
+  in Apple's sense: the device record belongs to the workspace whose admin
+  approved the pairing (corrected in #548; the manifests and
+  `apps/netrics-tv/README.md` declare them linked). Neither is used for
+  tracking. On a self-hosted server netrics collects nothing.
 - **Export compliance.** Only Apple's HTTPS and hashing (CryptoKit SHA-256
   for image checks and certificate pins): exempt.
   `ITSAppUsesNonExemptEncryption = NO` in both targets.
