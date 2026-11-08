@@ -25,8 +25,9 @@ struct ScrollCardView: View {
     let image: StoredImage?
 
     var body: some View {
-        // Footers ("updated 2 min. ago"), clocks and countdowns are worded anew every minute.
-        TimelineView(.everyMinute) { context in
+        // Footers ("updated 2 min. ago"), clocks and countdowns are worded anew every minute;
+        // values past their retention deadline disappear at it (#539).
+        TimelineView(MinutesAndDeadline(deadline: widget.expirationDate)) { context in
             card(now: context.date)
         }
         .frame(width: CGFloat(width), alignment: .topLeading)
@@ -58,7 +59,8 @@ struct ScrollCardView: View {
             ScrollStatusCard(label: label, options: options, data: data, env: env, now: now)
                 .scrollCard(env)
         case .compare(let options, let data):
-            ScrollCompareCard(label: label, options: options, data: data, units: units, env: env, now: now)
+            ScrollCompareCard(
+                label: label, options: options, data: data.shown(at: now), units: units, env: env, now: now)
                 .scrollCard(env)
         case .gauge(let options, let data):
             ScrollGaugeCard(label: label, options: options, data: data, units: units, env: env, now: now)

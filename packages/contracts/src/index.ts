@@ -3161,6 +3161,13 @@ const deviceCompareOperandSchema = z.object({
  */
 export const deviceCompareDataSchema = z.object({
   ...deviceWidgetDataShape,
+  /**
+   * When the values must no longer be shown (#539): the reading's retention
+   * deadline, so a screen playing a cached payload offline hides them after
+   * it. Only a compare bound to measures (#507) has one; absent otherwise,
+   * which keeps unbound compares' payloads unchanged.
+   */
+  expiresAt: z.iso.datetime().optional(),
   numerator: deviceCompareOperandSchema,
   denominator: deviceCompareOperandSchema,
   ratio: z.object({

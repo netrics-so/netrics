@@ -179,7 +179,8 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
                 [period(data.period, data.aggregation)]
                     + source(data.status, updatedAt: data.updatedAt, conversion: data.conversion),
                 items: items, fallbackTitle: widget.type)
-        case .compare(let options, let data):
+        case .compare(let options, let cached):
+            let data = cached.shown(at: now)
             let ratio = CompareText.ratio(
                 data.ratio.value, format: data.ratio.format, unit: data.unit, language: language)
             let comparison = MetricFormat.comparisonLabel(data.period, language: language)

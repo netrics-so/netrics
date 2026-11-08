@@ -2,6 +2,7 @@
 import { MeasureWidgetView } from "@/components/studio/measure-widget";
 
 import type { DeviceWidget } from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
 
 import { useNow } from "@/components/studio/clock-widget";
 import {
@@ -17,6 +18,7 @@ import {
 import { deviceReviewReading } from "@/components/studio/review-widget";
 import { WidgetFailed } from "@/components/studio/slide-canvas";
 import { useLocale } from "@/lib/i18n/client";
+import { useExpired } from "@/lib/use-expired";
 
 import {
   ScrollBarCard,
@@ -33,6 +35,25 @@ import {
   ScrollTextCard,
   type ScrollCardSize,
 } from "./scroll-widgets";
+
+/** A payload compare card, hidden at its retention deadline (#539). */
+function DeviceScrollCompare({
+  widget,
+  locale,
+  size,
+}: {
+  widget: Extract<DeviceWidget, { type: "compare" }>;
+  locale: Locale;
+  size: ScrollCardSize;
+}) {
+  const expired = useExpired(widget.data.expiresAt);
+  return (
+    <ScrollCompareCard
+      {...deviceCompareReading(widget, locale, expired)}
+      {...size}
+    />
+  );
+}
 
 function DeviceScrollClock({
   widget,
@@ -130,10 +151,7 @@ export function DeviceScrollWidget({
       return <ScrollStatusCard {...deviceStatusReading(widget)} {...size} />;
     case "compare":
       return (
-        <ScrollCompareCard
-          {...deviceCompareReading(widget, locale)}
-          {...size}
-        />
+        <DeviceScrollCompare widget={widget} locale={locale} size={size} />
       );
     case "gauge":
       return (

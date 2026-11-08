@@ -1,10 +1,12 @@
 "use client";
 import { MeasureWidgetView } from "./measure-widget";
 
+import type { ComponentProps } from "react";
 import type { DeviceWidget } from "@netrics/contracts";
 import type { Locale } from "@netrics/domain";
 
 import { useLocale } from "@/lib/i18n/client";
+import { useExpired } from "@/lib/use-expired";
 import type { ScreenPlacement } from "@/lib/studio-render";
 import type { StudioImages } from "@/lib/studio-widgets";
 import { deviceTileNotice } from "@/lib/tile-status";
@@ -197,8 +199,13 @@ export function deviceStatusReading(
 export function deviceCompareReading(
   widget: Extract<DeviceWidget, { type: "compare" }>,
   locale: Locale,
+  /**
+   * Past the payload's `expiresAt` (#539): a screen playing its last
+   * payload offline shows no values, as an empty compare.
+   */
+  expired = false,
 ): CompareReadingProps {
-  const { data } = widget;
+  const data = expired ? expiredCompareData(widget.data) : widget.data;
   const { numerator, denominator } = data;
   return {
     label: widget.label,
@@ -268,6 +275,41 @@ export function deviceGaugeReading(
  * `env.images`). On a screen view canvas the widget carries its placement
  * in the screen's format.
  */
+/** A compare's device data without its values, once they expired (#539). */
+function expiredCompareData(
+  data: Extract<DeviceWidget, { type: "compare" }>["data"],
+): Extract<DeviceWidget, { type: "compare" }>["data"] {
+  return {
+    ...data,
+    status: "no_data",
+    numerator: { ...data.numerator, value: null },
+    denominator: { ...data.denominator, value: null },
+    ratio: { ...data.ratio, value: null, previousValue: null },
+  };
+}
+
+/** A payload compare widget, hidden at its retention deadline (#539). */
+function DeviceCompareView({
+  widget,
+  common,
+  locale,
+}: {
+  widget: Extract<DeviceWidget, { type: "compare" }> & ScreenPlacement;
+  common: Omit<
+    ComponentProps<typeof CompareWidgetView>,
+    keyof CompareReadingProps
+  >;
+  locale: Locale;
+}) {
+  const expired = useExpired(widget.data.expiresAt);
+  return (
+    <CompareWidgetView
+      {...common}
+      {...deviceCompareReading(widget, locale, expired)}
+    />
+  );
+}
+
 export function DeviceWidgetView({
   widget,
   env,
@@ -320,10 +362,7 @@ export function DeviceWidgetView({
       return <StatusWidgetView {...common} {...deviceStatusReading(widget)} />;
     case "compare":
       return (
-        <CompareWidgetView
-          {...common}
-          {...deviceCompareReading(widget, locale)}
-        />
+        <DeviceCompareView widget={widget} common={common} locale={locale} />
       );
     case "gauge":
       return (

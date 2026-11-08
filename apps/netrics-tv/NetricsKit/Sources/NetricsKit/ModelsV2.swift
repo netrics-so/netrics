@@ -841,11 +841,17 @@ public struct CompareWidgetData: Codable, Sendable, Equatable {
     public var updatedAt: String?
     public var conversion: TileConversion?
     public var better: MetricBetter
+    /**
+     * When the values must no longer be shown (#539): the retention deadline
+     * of a compare bound to measures. Nil for unbound compares, which read
+     * data that does not expire.
+     */
+    public var expiresAt: String?
 
     public init(
         period: MetricPeriod, aggregation: MetricAggregation, unit: String?, numerator: CompareOperand,
         denominator: CompareOperand, ratio: CompareRatio, status: DeviceTileStatus, updatedAt: String?,
-        conversion: TileConversion? = nil, better: MetricBetter = .higher
+        conversion: TileConversion? = nil, better: MetricBetter = .higher, expiresAt: String? = nil
     ) {
         self.period = period
         self.aggregation = aggregation
@@ -857,10 +863,12 @@ public struct CompareWidgetData: Codable, Sendable, Equatable {
         self.updatedAt = updatedAt
         self.conversion = conversion
         self.better = better
+        self.expiresAt = expiresAt
     }
 
     private enum CodingKeys: String, CodingKey {
-        case period, aggregation, unit, numerator, denominator, ratio, status, updatedAt, conversion, better
+        case period, aggregation, unit, numerator, denominator, ratio, status, updatedAt, conversion, better,
+            expiresAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -876,6 +884,31 @@ public struct CompareWidgetData: Codable, Sendable, Equatable {
         updatedAt = c.lenient(String.self, .updatedAt)
         conversion = c.lenient(TileConversion.self, .conversion)
         better = c.lenient(MetricBetter.self, .better) ?? .higher
+        expiresAt = c.lenient(String.self, .expiresAt)
+    }
+
+    /** The retention deadline as a date; nil without one or when it is unreadable. */
+    public var expirationDate: Date? { expiresAt.flatMap(ISODate.parse) }
+
+    /** Whether the values are past their retention deadline; an unreadable deadline counts as passed. */
+    public func expired(at now: Date) -> Bool {
+        guard let expiresAt else { return false }
+        return ISODate.parse(expiresAt).map { $0 <= now } ?? true
+    }
+
+    /**
+     * The data as a screen may show it at `now` (#539): once expired, a cached
+     * payload played offline shows no values, as an empty compare does.
+     */
+    public func shown(at now: Date) -> CompareWidgetData {
+        guard expired(at: now) else { return self }
+        var shown = self
+        shown.numerator.value = nil
+        shown.denominator.value = nil
+        shown.ratio.value = nil
+        shown.ratio.previousValue = nil
+        shown.status = .noData
+        return shown
     }
 }
 
@@ -1073,6 +1106,20 @@ public enum WidgetContent: Sendable, Equatable {
     case gauge(GaugeWidgetOptions, GaugeWidgetData)
     /** A type this build does not know, or fields it cannot read. */
     case unsupported
+}
+
+extension DeviceWidget {
+    /**
+     * When the widget's values reach their retention deadline (#539): views
+     * redraw then, not only on their next minute tick.
+     */
+    public var expirationDate: Date? {
+        switch content {
+        case .measure(_, _, _, let data): return data.expirationDate
+        case .compare(_, let data): return data.expirationDate
+        default: return nil
+        }
+    }
 }
 
 public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {

@@ -61,12 +61,16 @@ struct WidgetView: View {
             }
             .surface(env, state: SurfaceState(data.status))
         case .compare(let options, let data):
-            TimelineView(.everyMinute) { context in
+            // Redrawn every minute and at the retention deadline: a cached payload
+            // played offline stops showing a bound compare's values then (#539).
+            TimelineView(MinutesAndDeadline(deadline: data.expirationDate)) { context in
+                let shown = data.shown(at: context.date)
                 CompareWidgetView(
-                    label: widget.label ?? "", placement: placement, options: options, data: data, env: env,
-                    now: context.date)
+                    label: widget.label ?? "", placement: placement, options: options, data: shown, env: env,
+                    now: context.date
+                )
+                .surface(env, state: SurfaceState(shown.status))
             }
-            .surface(env, state: SurfaceState(data.status))
         case .gauge(let options, let data):
             TimelineView(.everyMinute) { context in
                 GaugeWidgetView(

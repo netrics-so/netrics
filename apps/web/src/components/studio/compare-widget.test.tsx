@@ -7,6 +7,7 @@ import type {
   MetricQueryResponse,
 } from "@netrics/contracts";
 
+import { DeviceScrollWidget } from "@/components/scroll/device-scroll-widget";
 import { ScrollCompareCard } from "@/components/scroll/scroll-widgets";
 import { renderI18n } from "@/lib/i18n/test-render";
 import type { StudioEnv } from "@/lib/studio-widgets";
@@ -233,6 +234,36 @@ describe("compare widget", () => {
     expect(html).toContain(">4.62</span>");
     expect(html).toContain(">▲ +5%</span>");
     expect(html).toContain(">2,310</span>");
+
+    // A bound compare's retention deadline (#539): a kiosk playing its last
+    // payload offline shows no values once it has passed.
+    const at = (offsetMs: number) => ({
+      ...widget,
+      data: {
+        ...widget.data,
+        expiresAt: new Date(Date.now() + offsetMs).toISOString(),
+      },
+    });
+    const size = { width: 360, rootPx: 16 };
+    for (const render of [
+      (w: DeviceWidget) => (
+        <DeviceWidgetView widget={{ ...widget, ...w }} env={env} />
+      ),
+      (w: DeviceWidget) => (
+        <DeviceScrollWidget widget={w} env={env} size={size} />
+      ),
+    ]) {
+      const live = renderI18n(render(at(60_000)));
+      expect(live).toContain(">4.62</span>");
+      expect(live).toContain(">2,310</span>");
+      const expired = renderI18n(render(at(-1)));
+      expect(expired).not.toContain("4.62");
+      expect(expired).not.toContain("2,310");
+    }
+    const hidden = deviceCompareReading(at(-1), "en", true);
+    expect(hidden.status).toBe("no_data");
+    expect(hidden.reading?.ratio).toEqual({ value: null, previousValue: null });
+    expect(hidden.reading?.numerator.value).toBeNull();
   });
 });
 

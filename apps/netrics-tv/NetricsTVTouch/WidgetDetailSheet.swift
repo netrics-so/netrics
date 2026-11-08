@@ -17,8 +17,9 @@ struct WidgetDetailSheet: View {
 
     var body: some View {
         NavigationStack {
-            // "updated 5 minutes ago" is worded anew every minute.
-            TimelineView(.everyMinute) { context in
+            // "updated 5 minutes ago" is worded anew every minute; values past
+            // their retention deadline disappear at it (#539).
+            TimelineView(MinutesAndDeadline(deadline: widget.expirationDate)) { context in
                 if let detail = WidgetDetail.make(widget, now: context.date, language: language) {
                     content(detail)
                 }
