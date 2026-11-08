@@ -167,9 +167,12 @@ function requiredColumns(headers: string[], columns: string[]): void {
   if (columns.some((name) => !headers.includes(name)))
     throw new Error("Google Play report is missing required columns");
 }
+// Built once: a schema per parsed row was a large share of a report's
+// garbage (#528).
+const isoDate = z.iso.date();
 function date(raw: string): string {
   const value = raw.trim();
-  if (!z.iso.date().safeParse(value).success)
+  if (!isoDate.safeParse(value).success)
     throw new Error("Google Play report has an invalid reporting date");
   return value;
 }
@@ -179,25 +182,37 @@ function integer(raw: string): string | null {
     throw new Error("Google Play install report has an invalid count");
   return reportDecimal(raw);
 }
-function rowIdentity(
-  original: Record<string, string>,
-  duplicates: Map<string, number>,
-): string {
-  const hash = createHash("sha256")
-    .update(
-      JSON.stringify(
-        Object.entries(original).sort(([a], [b]) => a.localeCompare(b)),
-      ),
-    )
-    .digest("hex");
-  // Ordinals only have to tell identical lines of one file apart, so they are
-  // counted per 96-bit prefix: a third of the memory of the full hash per
-  // line. Two different lines with the same prefix only get different
-  // ordinals; their row_id still differs by the full hash.
-  const prefix = hash.slice(0, 24);
-  const ordinal = duplicates.get(prefix) ?? 0;
-  duplicates.set(prefix, ordinal + 1);
-  return `${hash}-${ordinal}`;
+/**
+ * Row ids for one report file: sha256 of the row's columns as JSON
+ * `[[name, value], ...]` sorted by name with localeCompare, plus an ordinal
+ * among identical lines. Every row of a file has the same columns, so their
+ * order and JSON prefixes are worked out once, from the first row (#528).
+ */
+function rowIdentities(): (original: Record<string, string>) => string {
+  const duplicates = new Map<string, number>();
+  let columns: Array<[name: string, prefix: string]> | undefined;
+  return (original) => {
+    columns ??= Object.keys(original)
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => [name, "[" + JSON.stringify(name) + ","]);
+    // The same bytes as JSON.stringify of the sorted [name, value] entries.
+    let text = "[";
+    for (let i = 0; i < columns.length; i++) {
+      const [name, prefix] = columns[i]!;
+      text += (i ? "," : "") + prefix + JSON.stringify(original[name]) + "]";
+    }
+    const hash = createHash("sha256")
+      .update(text + "]")
+      .digest("hex");
+    // Ordinals only have to tell identical lines of one file apart, so they are
+    // counted per 96-bit prefix: a third of the memory of the full hash per
+    // line. Two different lines with the same prefix only get different
+    // ordinals; their row_id still differs by the full hash.
+    const prefix = hash.slice(0, 24);
+    const ordinal = duplicates.get(prefix) ?? 0;
+    duplicates.set(prefix, ordinal + 1);
+    return `${hash}-${ordinal}`;
+  };
 }
 
 /** Receives each typed row as it is parsed, with the app it belongs to. */
@@ -213,7 +228,7 @@ function installSink(
   generation: string,
   emit: RowSink,
 ): ByteSink {
-  const duplicates = new Map<string, number>();
+  const rowIdentity = rowIdentities();
   return reportCsv(
     (headers) =>
       requiredColumns(headers, [
@@ -236,7 +251,7 @@ function installSink(
         values: {
           app_id: appId,
           day,
-          row_id: rowIdentity(original, duplicates),
+          row_id: rowIdentity(original),
           country: original.Country!.trim().toUpperCase(),
           daily_user_installs: integer(original["Daily User Installs"]!),
           daily_device_installs: integer(original["Daily Device Installs"]!),
@@ -344,7 +359,7 @@ const MONTHS = [
   "Dec",
 ];
 function transactionDay(raw: string): string {
-  if (z.iso.date().safeParse(raw.trim()).success) return raw.trim();
+  if (isoDate.safeParse(raw.trim()).success) return raw.trim();
   const match = /^([A-Z][a-z]{2})\s+(\d{1,2}),\s*(\d{4})$/.exec(raw.trim());
   if (!match)
     throw new Error(
@@ -373,7 +388,7 @@ function earningsSink(
   selected: Set<string> | undefined,
   emit: RowSink,
 ): ByteSink {
-  const duplicates = new Map<string, number>();
+  const rowIdentity = rowIdentities();
   return reportCsv(
     (headers) =>
       requiredColumns(headers, [
@@ -397,7 +412,7 @@ function earningsSink(
           app_id: appId,
           report_month: date(reportMonth),
           transaction_day: transactionDay(original["Transaction Date"]!),
-          row_id: rowIdentity(original, duplicates),
+          row_id: rowIdentity(original),
           transaction_type: original["Transaction Type"]!,
           country: (original["Buyer Country"] ?? "").trim().toUpperCase(),
           merchant_amount: reportDecimal(

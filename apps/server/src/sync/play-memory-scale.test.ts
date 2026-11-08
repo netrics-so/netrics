@@ -159,6 +159,58 @@ afterAll(async () => {
   await owner?.end({ timeout: 5 });
 });
 
+/**
+ * Opt-in (NETRICS_SCALE_PLAY_ALLOC=1): V8's sampling heap profiler over one
+ * turn, keeping collected objects, so it estimates what the turn allocated in
+ * total rather than what it retained (#528). Returns the estimate and the
+ * repository functions that allocated most, including their callees. It
+ * slows the turn down.
+ */
+async function allocationProfile() {
+  const { Session } = await import("node:inspector/promises");
+  const session = new Session();
+  session.connect();
+  await session.post("HeapProfiler.startSampling", {
+    samplingInterval: 16384,
+    includeObjectsCollectedByMajorGC: true,
+    includeObjectsCollectedByMinorGC: true,
+  });
+  return async () => {
+    const { profile } = await session.post("HeapProfiler.stopSampling");
+    session.disconnect();
+    let total = 0;
+    const inclusive = new Map<string, number>();
+    type Node = typeof profile.head;
+    const walk = (node: Node, frames: Set<string>) => {
+      const { functionName, url } = node.callFrame;
+      const at =
+        url.indexOf("/packages/") >= 0
+          ? url.indexOf("/packages/")
+          : url.indexOf("/apps/");
+      const own =
+        at >= 0 && !url.includes("node_modules")
+          ? new Set(frames).add(
+              `${functionName || "(anonymous)"} ${url.slice(at + 1)}`,
+            )
+          : frames;
+      total += node.selfSize;
+      for (const frame of own)
+        inclusive.set(frame, (inclusive.get(frame) ?? 0) + node.selfSize);
+      for (const child of node.children) walk(child, own);
+    };
+    walk(profile.head, new Set());
+    return {
+      allocatedMiB: Math.round(total / MIB),
+      allocatedBy: Object.fromEntries(
+        [...inclusive]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 12)
+          .map(([frame, bytes]) => [frame, Math.round(bytes / MIB)]),
+      ),
+    };
+  };
+}
+
 describe.runIf(enabled)("Google Play first-read memory (#501)", () => {
   it("measures peak memory of one report task's first read and later turns", async () => {
     const fake = fakePlay({ maxResponseBytes: 10 * MIB });
@@ -191,7 +243,7 @@ describe.runIf(enabled)("Google Play first-read memory (#501)", () => {
     gc();
     const baseline = process.memoryUsage();
     const maxRssBefore = process.resourceUsage().maxRSS * 1024;
-    const turns: Array<Record<string, number | boolean>> = [];
+    const turns: Array<Record<string, unknown>> = [];
     let cursor: string | undefined,
       earningsTurns = 0;
     for (let turn = 0; turn < 40 && earningsTurns < 4; turn++) {
@@ -214,6 +266,9 @@ describe.runIf(enabled)("Google Play first-read memory (#501)", () => {
             peakLive = Math.max(peakLive, now.heapUsed + now.arrayBuffers);
           }, 100)
         : undefined;
+      const allocation = process.env.NETRICS_SCALE_PLAY_ALLOC
+        ? await allocationProfile()
+        : undefined;
       const start = performance.now();
       const page = await connector.sync(
         context,
@@ -221,6 +276,7 @@ describe.runIf(enabled)("Google Play first-read memory (#501)", () => {
         runtime,
       );
       const elapsed = performance.now() - start;
+      const allocated = await allocation?.();
       clearInterval(sampler);
       clearInterval(live);
       const after = process.memoryUsage();
@@ -249,6 +305,7 @@ describe.runIf(enabled)("Google Play first-read memory (#501)", () => {
           heapAboveBaselineMiB: Math.round(
             (peakHeap - baseline.heapUsed - baseline.arrayBuffers) / MIB,
           ),
+          ...(allocated ?? {}),
           ...(live
             ? {
                 liveHeapAboveBaselineMiB: Math.round(

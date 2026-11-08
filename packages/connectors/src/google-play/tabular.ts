@@ -114,13 +114,23 @@ export class CsvParser {
     this.#row = [];
     if (row.some((value) => value !== "")) this.onRow(row);
   }
-  /** Consume code units before `limit`; returns the first unconsumed index. */
+  /**
+   * Consume code units before `limit`; returns the first unconsumed index.
+   * Literal characters are taken as slices of `text` from `run` up to the
+   * next special character, not appended one by one: a string per
+   * character was the largest share of a report's garbage (#528).
+   */
   #scan(text: string, limit: number): number {
-    let i = 0;
+    let i = 0,
+      run = 0;
+    const take = () => {
+      if (i > run) this.#field += text.slice(run, i);
+    };
     for (; i < limit; i++) {
       const c = text[i]!;
       if (this.#quoted) {
         if (c === '"') {
+          take();
           if (text[i + 1] === '"') {
             this.#field += '"';
             i++;
@@ -128,20 +138,29 @@ export class CsvParser {
             this.#quoted = false;
             this.#closed = true;
           }
-        } else this.#field += c;
-      } else if (c === ",") this.#endField();
-      else if (c === "\r" || c === "\n") {
+          run = i + 1;
+        }
+      } else if (c === ",") {
+        take();
+        this.#endField();
+        run = i + 1;
+      } else if (c === "\r" || c === "\n") {
+        take();
         this.#endRow();
         if (c === "\r" && text[i + 1] === "\n") i++;
+        run = i + 1;
       } else if (this.#closed) {
         if (c !== " " && c !== "\t")
           throw new Error("Google Play report has malformed quoted CSV");
+        run = i + 1;
       } else if (c === '"') {
-        if (this.#field !== "")
+        if (this.#field !== "" || i > run)
           throw new Error("Google Play report has malformed quoted CSV");
         this.#quoted = true;
-      } else this.#field += c;
+        run = i + 1;
+      }
     }
+    take();
     return i;
   }
 }

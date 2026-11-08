@@ -552,6 +552,64 @@ pages. A report task then costs about one read per app plus one per eight
 pages, instead of one per page (`staging-quota.test.ts` and the connector's
 `staging.test.ts` check this).
 
+#### After #528
+
+The first read allocated about 20 GiB for the 63 MiB all-apps archive, most of
+it short-lived copies of the same rows. V8's sampling heap profiler over the
+turn (`NETRICS_SCALE_PLAY_ALLOC=1`, which keeps collected objects in the
+profile) attributed 12.9 GiB to the host preparing staged pages and 7.5 GiB to
+reading the CSV. Without changing any output, digest or contract:
+
+- The SDK's page validation built a zod schema for every date and timestamp
+  value. It walked each JSON value with a stack of tuples, and walked JSON
+  fields twice. It also encoded every row into a buffer only to measure its
+  byte length. Schemas are now built once, the JSON check allocates nothing,
+  and UTF-8 lengths are counted in place.
+- The host's page digest serialization (`stable`) made entry, sort and join
+  arrays for every object. It now concatenates, and sorts keys in place. The
+  bytes, and so the digests of stored pages, are unchanged.
+- The connector's CSV scanner appended every field one character at a time.
+  It now slices runs. Row ids are hashed from a column order worked out once
+  per file, and dates are checked against one schema.
+
+Tests compare each rewrite with the previous implementation: the digests, the
+bounded-JSON check, UTF-8 lengths, CSV cells over random inputs and chunk
+splits, and row ids.
+
+Same archives, environment and method; `main` and this change rerun on
+2026-11-08 (three runs each):
+
+| Inflated CSV | Scope    | First read on `main` | First read now     | Peak heap on `main` | Peak heap now     |
+| ------------ | -------- | -------------------- | ------------------ | ------------------- | ----------------- |
+| 8 MiB        | all apps | 2.2 s [2.2–2.2]      | 1.9 s [1.8–1.9]    | 91 MiB [69–105]     | 67 MiB [66–74]    |
+| 8 MiB        | one app  | 0.4 s [0.4–0.4]      | 0.4 s [0.3–0.4]    | 50 MiB [50–51]      | 43 MiB [38–44]    |
+| 16 MiB       | all apps | 4.4 s [4.4–4.5]      | 3.6 s [3.6–3.6]    | 98 MiB [94–111]     | 72 MiB [67–74]    |
+| 16 MiB       | one app  | 0.8 s [0.8–0.8]      | 0.7 s [0.7–0.7]    | 53 MiB [53–69]      | 44 MiB [44–57]    |
+| 32 MiB       | all apps | 8.8 s [8.7–8.8]      | 7.1 s [7.1–7.3]    | 111 MiB [111–124]   | 89 MiB [84–90]    |
+| 32 MiB       | one app  | 1.6 s [1.6–1.6]      | 1.3 s [1.3–1.3]    | 57 MiB [57–58]      | 47 MiB [44–49]    |
+| 63 MiB       | all apps | 17.2 s [17.0–17.6]   | 14.0 s [14.0–14.1] | 136 MiB [135–137]   | 131 MiB [110–137] |
+| 63 MiB       | one app  | 3.0 s [3.0–3.1]      | 2.5 s [2.4–2.5]    | 63 MiB [62–65]      | 46 MiB [43–52]    |
+
+For the 63 MiB archive, the profiler's estimate of what the first read
+allocates fell from 20.7 GiB [20.6–20.7] to 12.2 GiB [12.2–12.2] with all
+apps (preparing pages 7.1 GiB, reading the CSV 4.9 GiB), and from 4.4 GiB to
+2.5 GiB for one app. Every first read is 16–20% faster. The stages are the
+same: 300, 539, 1,016 and 1,942 pages, with the same stored bytes.
+
+The sampled peak for the 63 MiB all-apps read barely moved (136 to 131 MiB)
+and stays above #528's 100 MiB target. What it measures there is garbage
+waiting for a collection, not memory the read needs:
+
+- Retained memory is unchanged: 44 MiB in all three runs, against 45 MiB
+  [45–46] on `main` (`NETRICS_SCALE_PLAY_LIVE=1`). With those collections,
+  the 5 ms samples peak at 77 MiB [76–78].
+- The process does not grow by the sampled amount. During the read, RSS
+  rises 39 MiB [39–44] above the baseline, against 48 MiB [48–71] on `main`:
+  about what is retained. The uncollected garbage reuses heap pages the
+  process already holds.
+- The smaller archives now stay under 100 MiB (67–89 MiB, against
+  91–111 MiB on `main`).
+
 ### Confirmed boundaries
 
 At the measured sizes, these are expected behaviour, not defects:
@@ -606,6 +664,16 @@ At the measured sizes, these are expected behaviour, not defects:
   [#525](https://github.com/netrics-so/netrics/issues/525)): Google Play report
   staging is streamed instead of buffering a whole report task; see "After
   #519" above.
+- [#528](https://github.com/netrics-so/netrics/issues/528) (done): the
+  first read of a Google Play report allocated about 20 GiB for 63 MiB of CSV
+  in short-lived copies; 41% less now, and 16–20% faster. The remaining
+  sampled peak is uncollected garbage, not retained memory or RSS; see "After
+  #528" above.
+- [#531](https://github.com/netrics-so/netrics/issues/531) (open): each prune
+  call checks every expired current generation for records. While a drain is
+  deleting records, that check walks primary-key entries of records already
+  deleted but not yet vacuumed (up to 0.67 s in one call of a 2 M-record
+  fixture).
 
 ## Configurable policy versus implementation safeguards
 

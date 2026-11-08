@@ -71,18 +71,50 @@ const expired = (
 const fail = (code: string): never => {
   throw new DatasetStoreError(code);
 };
+/** Own keys in code-unit order; insertion sort, as these arrays are short. */
+function sortedKeys(object: object): string[] {
+  const keys = Object.keys(object);
+  for (let i = 1; i < keys.length; i++) {
+    const key = keys[i]!;
+    let j = i - 1;
+    while (j >= 0 && keys[j]! > key) {
+      keys[j + 1] = keys[j]!;
+      j--;
+    }
+    keys[j + 1] = key;
+  }
+  return keys;
+}
+/**
+ * JSON with object keys in code-unit order and undefined members left out;
+ * stored page digests depend on these exact bytes. Built by concatenation:
+ * per-object entry, sort and join arrays were a quarter of a staged report's
+ * garbage (#528).
+ */
 function stable(value: unknown): string {
-  if (Array.isArray(value)) return "[" + value.map(stable).join(",") + "]";
-  if (value !== null && typeof value === "object")
-    return (
-      "{" +
-      Object.entries(value)
-        .filter(([, v]) => v !== undefined)
-        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-        .map(([k, v]) => JSON.stringify(k) + ":" + stable(v))
-        .join(",") +
-      "}"
-    );
+  if (Array.isArray(value)) {
+    let text = "[";
+    for (let i = 0; i < value.length; i++) {
+      if (i) text += ",";
+      // join() wrote "" where stable() gave undefined (undefined, holes).
+      const part = stable(value[i]) as string | undefined;
+      if (part !== undefined) text += part;
+    }
+    return text + "]";
+  }
+  if (value !== null && typeof value === "object") {
+    const object = value as Record<string, unknown>;
+    let text = "{",
+      first = true;
+    for (const key of sortedKeys(object)) {
+      const member = object[key];
+      if (member === undefined) continue;
+      if (!first) text += ",";
+      first = false;
+      text += JSON.stringify(key) + ":" + stable(member);
+    }
+    return text + "}";
+  }
   return JSON.stringify(value);
 }
 const digest = (value: unknown) =>
