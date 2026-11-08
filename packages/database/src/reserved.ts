@@ -97,9 +97,9 @@ export async function releaseReserved(reserved: ReservedSql): Promise<void> {
     await reserved.unsafe("select pg_advisory_unlock_all()");
   } catch {
     // Cleanup fails when the connection is gone; the server has then ended
-    // the session and released its locks. Terminating the backend from the
-    // client is not an option: postgres.js 3.4 crashes the process when its
-    // own connection is killed (an uncaught write on a closed socket).
+    // the session and released its locks. release() then leaves the
+    // connection to the pool, which reconnects it (#511, see
+    // patches/postgres@3.4.9.patch).
   } finally {
     reserved.release();
   }
