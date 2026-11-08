@@ -366,7 +366,10 @@ lock. A transaction that never waits cannot be part of a deadlock, so prune and
 those changes no longer abort each other; a change waits at most for one prune
 call. Each call also reports whether rows it would prune remain (skipped or
 newly eligible), and a short batch with rows remaining keeps the drain going on
-the next tick. Each hourly maintenance task (dataset history, finished jobs,
+the next tick. Prune takes and checks expired records in deadline order
+(`ORDER BY expires_at` with a limit), so it reads the record expiry index
+whether few or most records have expired and whichever plan PostgreSQL caches,
+instead of scanning the whole table (#524). Each hourly maintenance task (dataset history, finished jobs,
 OAuth authorizations, pending keys, security records, review text) runs on its
 own; a failure is logged and the others still run, and a failed dataset drain
 is retried on the next tick. The scheduler has no direct read access to source
