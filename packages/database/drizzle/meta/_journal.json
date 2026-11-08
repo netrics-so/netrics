@@ -484,6 +484,13 @@
       "when": 1794132000000,
       "tag": "0068_prune_expiry_index",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1794144966326,
+      "tag": "0069_prune_drained_generations",
+      "breakpoints": true
     }
   ]
 }
