@@ -1071,6 +1071,24 @@ describe("bound compare widgets: source retention (#507)", () => {
     expect(reading!.expiresAt).toBe(
       [...expiries].sort((a, b) => Date.parse(a) - Date.parse(b))[0],
     );
+
+    // Screens get the same deadline (#539), so one playing its cached
+    // payload offline hides the values after it. An unbound compare beside
+    // it reads observations, which do not expire, and carries none.
+    const { dashboardId } = await insertCompares(++group, [
+      {
+        period: "last_7_days",
+        ...inline(SIGNUP_RATE),
+        measure,
+      },
+      { period: "last_7_days", ...inline(SIGNUP_RATE) },
+    ]);
+    const [bound, unbound] = compares(
+      (await screen(dashboardId, NOW)).slides[0]!.widgets,
+    );
+    expect(bound!.data.ratio.value).not.toBeNull();
+    expect(bound!.data.expiresAt).toBe(reading!.expiresAt);
+    expect(unbound!.data).not.toHaveProperty("expiresAt");
   }, 60_000);
 });
 

@@ -193,6 +193,61 @@ private func slides(_ widgets: String) -> String {
         #expect(decoded.status == .noData)
     }
 
+    /// A bound compare's retention deadline (#539): a cached payload played
+    /// offline shows no values once it has passed.
+    @Test func aBoundCompareHidesItsValuesAfterItsDeadline() throws {
+        let data = """
+            {"period": "last_7_days", "aggregation": "sum", "unit": null, "status": "ok",
+             "updatedAt": "2026-11-07T06:00:00.000Z", "expiresAt": "2026-12-07T15:30:00.000Z",
+             "numerator": {"label": "Signups", "value": 120, "unit": "count"},
+             "denominator": {"label": "Visitors", "value": 400, "unit": "count"},
+             "ratio": {"value": 0.3, "previousValue": 0.25, "format": "percent"}}
+            """
+        let widget = try #require(
+            v3Payload(primaryFormat: "16x9", slides: slides(compare("c", data: data))).slides.first?.widgets.first)
+        guard case .compare(_, let decoded) = widget.content else {
+            Issue.record("compare")
+            return
+        }
+        let deadline = try #require(ISODate.parse("2026-12-07T15:30:00.000Z"))
+        #expect(decoded.expiresAt == "2026-12-07T15:30:00.000Z")
+
+        let before = decoded.shown(at: deadline.addingTimeInterval(-60))
+        #expect(before == decoded)
+
+        let after = decoded.shown(at: deadline)
+        #expect(after.numerator == CompareOperand(label: "Signups", value: nil, unit: "count"))
+        #expect(after.denominator == CompareOperand(label: "Visitors", value: nil, unit: "count"))
+        #expect(after.ratio == CompareRatio(value: nil, previousValue: nil, format: .percent))
+        #expect(after.status == .noData)
+
+        // The deadline survives the payload cache's round trip.
+        let cached = try JSONDecoder().decode(CompareWidgetData.self, from: JSONEncoder().encode(decoded))
+        #expect(cached.expiresAt == decoded.expiresAt)
+        #expect(cached.shown(at: deadline).ratio.value == nil)
+    }
+
+    @Test func aCompareWithoutADeadlineNeverExpires() throws {
+        let widget = try #require(
+            v3Payload(primaryFormat: "16x9", slides: slides(compare("c"))).slides.first?.widgets.first)
+        guard case .compare(_, let decoded) = widget.content else {
+            Issue.record("compare")
+            return
+        }
+        #expect(decoded.expiresAt == nil)
+        #expect(decoded.shown(at: .distantFuture) == decoded)
+    }
+
+    @Test func anUnreadableDeadlineCountsAsPassed() {
+        var data = CompareWidgetData(
+            period: .today, aggregation: .sum, unit: nil,
+            numerator: CompareOperand(label: "A", value: 1, unit: nil),
+            denominator: CompareOperand(label: "B", value: 2, unit: nil),
+            ratio: CompareRatio(value: 0.5, previousValue: nil, format: .ratio), status: .ok, updatedAt: nil)
+        data.expiresAt = "soon"
+        #expect(data.shown(at: Date(timeIntervalSince1970: 0)).ratio.value == nil)
+    }
+
     @Test func unreadableDataIsAnEmptyCell() throws {
         let payload = v3Payload(primaryFormat: "16x9", slides: slides(compare("c", data: #""not data""#)))
         let widget = try #require(payload.slides.first?.widgets.first)
