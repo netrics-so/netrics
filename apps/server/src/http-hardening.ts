@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyError, FastifyInstance, FastifyRequest } from "fastify";
 
 import { errorResponseSchema } from "@netrics/contracts";
+import { isLostConnection } from "@netrics/database";
 
 import type { Config } from "./env.js";
 
@@ -92,6 +93,15 @@ export function registerHttpHardening(
       typeof error.statusCode === "number" && error.statusCode >= 400
         ? error.statusCode
         : 500;
+    if (status >= 500 && isLostConnection(error)) {
+      // The database session ended under the request (failover, restart,
+      // pg_terminate_backend): transient, so clients may retry (#538).
+      request.log.warn({ err: error }, "database connection lost");
+      return reply
+        .code(503)
+        .header("retry-after", "5")
+        .send(errorResponseSchema.parse({ error: "database_unavailable" }));
+    }
     if (status >= 500) {
       request.log.error({ err: error }, "unhandled error");
       return reply

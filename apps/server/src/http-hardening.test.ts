@@ -30,6 +30,20 @@ beforeAll(async () => {
       'duplicate key value violates unique constraint "memberships_pkey" (workspace 5f1c)',
     );
   });
+  // A lost database connection as postgres.js and PostgreSQL report it,
+  // also wrapped the way drizzle wraps query errors (#538).
+  app.get<{ Params: { code: string } }>("/test/lost/:code", async (request) => {
+    const error = Object.assign(new Error("terminating connection"), {
+      code: request.params.code,
+    });
+    throw request.params.code === "wrapped"
+      ? new Error("Failed query: select 1", {
+          cause: Object.assign(new Error("write CONNECTION_CLOSED"), {
+            code: "CONNECTION_CLOSED",
+          }),
+        })
+      : error;
+  });
   app.get("/test/request-id", async (request) => ({ id: request.id }));
   app.post("/test/echo", async (request) => request.body);
   await app.ready();
@@ -45,6 +59,30 @@ describe("error responses", () => {
     expect(response.statusCode).toBe(500);
     expect(response.json()).toEqual({ error: "internal_error" });
     expect(response.body).not.toContain("memberships_pkey");
+  });
+
+  it("answer 503 with Retry-After when the database connection was lost (#538)", async () => {
+    for (const code of [
+      "CONNECTION_CLOSED",
+      "CONNECTION_DESTROYED",
+      "57P01",
+      "57P02",
+      "57P03",
+      "wrapped",
+    ]) {
+      const response = await app.inject({ url: `/test/lost/${code}` });
+      expect(response.statusCode, code).toBe(503);
+      expect(response.headers["retry-after"]).toBe("5");
+      expect(response.json()).toEqual({ error: "database_unavailable" });
+      expect(response.body).not.toContain("terminating");
+    }
+    // Other database errors stay internal errors.
+    for (const code of ["23505", "40001", "CONNECT_TIMEOUT"]) {
+      const response = await app.inject({ url: `/test/lost/${code}` });
+      expect(response.statusCode, code).toBe(500);
+      expect(response.headers["retry-after"]).toBeUndefined();
+      expect(response.json()).toEqual({ error: "internal_error" });
+    }
   });
 
   it("map client errors to stable codes", async () => {
