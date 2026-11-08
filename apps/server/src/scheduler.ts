@@ -18,6 +18,7 @@ import {
   pruneDatasetHistoryBatch,
   pruneOAuthAuthorizations,
   prunePendingKeys,
+  pruneRevokedDevices,
   pruneSecurityRecords,
   SECURITY_RETENTION,
   setConnectionNextDue,
@@ -286,6 +287,14 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
       );
       if (Object.values(security).some((count) => count > 0)) {
         logger.info(security, "pruned security records");
+      }
+    });
+    // Removed screens 90 days after they were revoked, with their pairings
+    // (privacy policy; REVOKED_DEVICE_RETENTION_DAYS).
+    await runTask("revoked_devices", async () => {
+      const devicesDeleted = await pruneRevokedDevices(schedulerDb, now());
+      if (devicesDeleted > 0) {
+        logger.info({ devicesDeleted }, "pruned revoked devices");
       }
     });
     // Review text (ADR 0019 §11): per app the newest 50, none older than

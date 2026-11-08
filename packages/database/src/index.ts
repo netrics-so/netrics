@@ -55,7 +55,9 @@ export type {
 export {
   AUDIT_EVENT_RETENTION_MONTHS,
   EXPIRED_AUTH_RECORD_HOURS,
+  pruneRevokedDevices,
   pruneSecurityRecords,
+  REVOKED_DEVICE_RETENTION_DAYS,
   SECURITY_RETENTION,
 } from "./security-retention.js";
 export type {

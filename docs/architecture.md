@@ -510,12 +510,13 @@ Their retention follows the privacy policy and is fixed in code
 configuration; the same hourly maintenance applies it through the owner-role
 `prune_security_records` function, at most one batch per table per run:
 
-| Data                                          | Kept                                                                        |
-| --------------------------------------------- | --------------------------------------------------------------------------- |
-| Audit events (workspace and `auth.login`)     | 12 months after creation                                                    |
-| Sign-in sessions                              | Until 24 hours after expiry; IP and browser cleared 12 months after sign-in |
-| Auth rate-limit counters (keyed by client IP) | 24 hours after the last request                                             |
-| Device pairings (hashed client IP)            | 24 hours after expiry                                                       |
+| Data                                                                                                      | Kept                                                                                        |
+| --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Audit events (workspace and `auth.login`)                                                                 | 12 months after creation                                                                    |
+| Sign-in sessions                                                                                          | Until 24 hours after expiry; IP and browser cleared 12 months after sign-in                 |
+| Auth rate-limit counters (keyed by client IP)                                                             | 24 hours after the last request                                                             |
+| Device pairings (hashed client IP)                                                                        | 24 hours after expiry                                                                       |
+| Removed screens (`devices` revoked: name, platform, last heartbeat, approving admin; with their pairings) | 90 days after removal (`REVOKED_DEVICE_RETENTION_DAYS`, owner-role `prune_revoked_devices`) |
 
 App Store review text (ADR 0019 §11) holds reviewer nicknames and text
 customers wrote. Its retention is fixed in code as well

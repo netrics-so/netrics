@@ -8,7 +8,9 @@ import * as authSchema from "./auth-schema.js";
 import * as schema from "./schema.js";
 import {
   AUDIT_EVENT_RETENTION_MONTHS,
+  pruneRevokedDevices,
   pruneSecurityRecords,
+  REVOKED_DEVICE_RETENTION_DAYS,
   SECURITY_RETENTION,
   type SecurityRetentionPolicy,
 } from "./security-retention.js";
@@ -136,6 +138,7 @@ beforeEach(async () => {
   await admin`delete from auth.session`;
   await admin`delete from auth.rate_limit`;
   await admin`delete from device_pairings`;
+  await admin`delete from devices`;
 });
 
 describe("pruneSecurityRecords", () => {
@@ -268,5 +271,66 @@ describe("pruneSecurityRecords", () => {
     await auditEvent(at(-13));
     await appClient`delete from audit_events`.catch(() => undefined);
     expect(await auditEventIds()).toHaveLength(1);
+  });
+});
+
+/** A screen, revoked at `revokedAt` (null: still paired), with a pairing. */
+async function device(revokedAt: Date | null): Promise<string> {
+  const [row] = await admin`
+    insert into devices (workspace_id, name, platform, app_version, revoked_at)
+    values (${workspaceId}, 'Lobby TV', 'tvos', '1.0.0',
+            ${revokedAt?.toISOString() ?? null}::timestamptz)
+    returning id`;
+  const id = row!.id as string;
+  await admin`
+    insert into device_pairings
+      (code_hash, poll_secret_hash, client_key, expires_at, device_id, approved_at)
+    values (${randomUUID()}, 'p', 'hashed-ip', ${NOW.toISOString()}::timestamptz,
+            ${id}, ${NOW.toISOString()}::timestamptz)`;
+  return id;
+}
+
+async function deviceIds(): Promise<string[]> {
+  const rows = await admin`select id from devices order by id`;
+  return rows.map((row) => row.id as string);
+}
+
+describe("pruneRevokedDevices (removed screens, owner decision 2026-11-08)", () => {
+  it("keeps removed screens for 90 days", () => {
+    expect(REVOKED_DEVICE_RETENTION_DAYS).toBe(90);
+  });
+
+  it("deletes screens revoked more than 90 days ago with their pairings, and keeps the rest", async () => {
+    const old = await device(new Date(NOW.getTime() - 90 * DAY - 1000));
+    const recent = await device(new Date(NOW.getTime() - 89 * DAY));
+    const paired = await device(null);
+
+    expect(await pruneRevokedDevices(schedulerDb, NOW)).toBe(1);
+
+    expect(await deviceIds()).toEqual([recent, paired].sort());
+    const pairings = await admin`
+      select device_id from device_pairings where device_id = ${old}`;
+    expect(pairings).toHaveLength(0);
+  });
+
+  it("cuts off by the clock it is given and deletes one batch per call", async () => {
+    for (let i = 0; i < 3; i++)
+      await device(new Date(NOW.getTime() - 100 * DAY));
+    // A year earlier, nothing is old enough yet.
+    expect(
+      await pruneRevokedDevices(
+        schedulerDb,
+        new Date(NOW.getTime() - 365 * DAY),
+      ),
+    ).toBe(0);
+    expect(await pruneRevokedDevices(schedulerDb, NOW, 90, 2)).toBe(2);
+    expect(await pruneRevokedDevices(schedulerDb, NOW, 90, 2)).toBe(1);
+    expect(await deviceIds()).toEqual([]);
+  });
+
+  it("is callable by the scheduler role only", async () => {
+    await expect(
+      appClient`select prune_revoked_devices(now(), '1 day', 1)`,
+    ).rejects.toThrow(/permission denied/);
   });
 });
