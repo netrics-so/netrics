@@ -71,9 +71,15 @@ const expired = (
 const fail = (code: string): never => {
   throw new DatasetStoreError(code);
 };
-/** Own keys in code-unit order; insertion sort, as these arrays are short. */
+/**
+ * Own keys in code-unit order. Most objects have a few keys, which an
+ * insertion sort orders without the default sort's buffers; connector JSON
+ * may hold thousands, which the default sort (the same order) handles in
+ * n log n.
+ */
 function sortedKeys(object: object): string[] {
   const keys = Object.keys(object);
+  if (keys.length > 32) return keys.sort();
   for (let i = 1; i < keys.length; i++) {
     const key = keys[i]!;
     let j = i - 1;

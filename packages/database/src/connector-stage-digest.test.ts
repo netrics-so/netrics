@@ -51,6 +51,23 @@ describe("connector stage page digests (#528)", () => {
         { values: { id: "x" }, deleted: true },
         { values: { nested: { b: [1, null, { d: "q", c: [] }], a: {} } } },
         { values: { Z: 1, a: 2, _: 3, "10": 4, "9": 5, "": 6 } },
+        // Wider than the insertion sort handles: the default sort's path.
+        {
+          values: {
+            wide: Object.fromEntries(
+              Array.from({ length: 5_000 }, (_, i) => [
+                "k" + String(99_999 - i).padStart(5, "0"),
+                i,
+              ]),
+            ),
+            edge: Object.fromEntries(
+              Array.from({ length: 33 }, (_, i) => [
+                "é😀Zz"[i % 4]! + (33 - i),
+                i,
+              ]),
+            ),
+          },
+        },
       ]),
       { ...page([{ values: { a: "1" } }]), stagingId: undefined },
       // Shapes a validated page never has, still serialized the same way.
