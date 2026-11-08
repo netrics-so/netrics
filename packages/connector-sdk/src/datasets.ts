@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { utf8ByteLength } from "./utf8.js";
 
 /** Bounded portable dataset transport. No source values appear in errors. */
 export const DATASET_LIMITS = {
@@ -131,18 +132,18 @@ export type DatasetRecord = {
   values: Record<string, unknown>;
   deleted?: boolean;
 };
+/**
+ * Bounded JSON data: at most 10,000 nodes, nesting depth 8, finite numbers,
+ * plain objects and arrays (own enumerable members). Recursive, so that a
+ * value allocates nothing: the depth bound keeps the recursion shallow (#528).
+ */
 function isDataJson(value: unknown): boolean {
-  const stack: Array<[unknown, number]> = [[value, 0]];
   let nodes = 0;
-  while (stack.length) {
-    const [item, depth] = stack.pop()!;
+  const visit = (item: unknown, depth: number): boolean => {
     if (++nodes > 10_000 || depth > 8) return false;
     if (item === null || typeof item === "string" || typeof item === "boolean")
-      continue;
-    if (typeof item === "number") {
-      if (!Number.isFinite(item)) return false;
-      continue;
-    }
+      return true;
+    if (typeof item === "number") return Number.isFinite(item);
     if (
       typeof item !== "object" ||
       (!Array.isArray(item) &&
@@ -150,9 +151,13 @@ function isDataJson(value: unknown): boolean {
         Object.getPrototypeOf(item) !== null)
     )
       return false;
-    for (const child of Object.values(item)) stack.push([child, depth + 1]);
-  }
-  return true;
+    const object = item as Record<string, unknown>;
+    for (const key in object)
+      if (Object.hasOwn(object, key) && !visit(object[key], depth + 1))
+        return false;
+    return true;
+  };
+  return visit(value, 0);
 }
 const jsonValue = z
   .unknown()
@@ -203,6 +208,11 @@ export function datasetRetentionDays(
 }
 
 const decimal = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
+// Built once: a zod schema per validated value was most of the validation's
+// garbage (#528).
+const isoDate = z.iso.date();
+const isoTimestamp = z.iso.datetime({ offset: false });
+
 function validValue(field: DatasetField, value: unknown): boolean {
   if (value === null) return field.nullable;
   switch (field.type) {
@@ -222,15 +232,15 @@ function validValue(field: DatasetField, value: unknown): boolean {
         (value.split(".")[1]?.length ?? 0) <= (field.scale ?? 18)
       );
     case "date":
-      return typeof value === "string" && z.iso.date().safeParse(value).success;
+      return typeof value === "string" && isoDate.safeParse(value).success;
     case "timestamp":
       return (
         typeof value === "string" &&
-        z.iso.datetime({ offset: false }).safeParse(value).success &&
+        isoTimestamp.safeParse(value).success &&
         (value.match(/\.([0-9]+)Z$/)?.[1]?.length ?? 0) <= 9
       );
     case "json":
-      return jsonValue.safeParse(value).success;
+      return isDataJson(value);
   }
 }
 
@@ -244,10 +254,7 @@ export function validateDatasetPage(
   const page = parsed.data;
   if (page.datasetKey !== schema.key || page.schemaVersion !== schema.version)
     throw new Error("Dataset schema identity mismatch");
-  if (
-    new TextEncoder().encode(JSON.stringify(page)).length >
-    DATASET_LIMITS.pageBytes
-  )
+  if (utf8ByteLength(JSON.stringify(page)) > DATASET_LIMITS.pageBytes)
     throw new Error("Dataset page exceeds byte limit");
   const fields = new Map(schema.fields.map((f) => [f.id, f]));
   if ((schema.mode === "replace_window") !== (page.window !== undefined))
@@ -275,10 +282,7 @@ export function validateDatasetPage(
     }
   }
   for (const row of page.records) {
-    if (
-      new TextEncoder().encode(JSON.stringify(row)).length >
-      DATASET_LIMITS.rowBytes
-    )
+    if (utf8ByteLength(JSON.stringify(row)) > DATASET_LIMITS.rowBytes)
       throw new Error("Dataset row exceeds byte limit");
     const keys = Object.keys(row.values);
     const expected = row.deleted
@@ -291,7 +295,7 @@ export function validateDatasetPage(
     )
       throw new Error("Dataset row fields do not match schema");
     if (
-      new TextEncoder().encode(datasetRecordKey(schema, row.values)).length >
+      utf8ByteLength(datasetRecordKey(schema, row.values)) >
       DATASET_LIMITS.keyBytes
     )
       throw new Error("Dataset key exceeds byte limit");
