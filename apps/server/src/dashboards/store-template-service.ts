@@ -125,10 +125,13 @@ export function createStoreTemplateService(deps: {
   policy?: DataPolicy;
   /** The template definition installs build from; tests pass other versions. */
   template?: StoreTemplateDefinition;
+  /** Template records per insert statement; tests pass small values. */
+  recordChunk?: number;
 }) {
   const now = deps.now ?? (() => new Date()),
     defaults = deps.policy ?? DEFAULT_DATA_POLICY,
-    template = deps.template ?? storeTemplate;
+    template = deps.template ?? storeTemplate,
+    recordChunk = deps.recordChunk ?? 1000;
   return {
     options(actor: Actor): Promise<StoreTemplateOptions> {
       return withWorkspace(
@@ -485,36 +488,46 @@ export function createStoreTemplateService(deps: {
                   ? dashboardRecord.widgetKeys
                   : [],
               );
-              await tx.insert(schema.dataTemplateRecords).values([
-                ...built.map((record) => ({
-                  workspaceId: actor.workspaceId,
-                  requestId: input.requestId,
-                  key: record.key,
-                  kind: record.kind,
-                  recordId: ids[record.key]!,
-                  templateVersion: template.version,
-                  original:
-                    record.kind === "preparation"
-                      ? { graph: record.graph }
-                      : record.kind === "model"
-                        ? { definition: record.definition }
-                        : { request: record.request },
-                  widgetKeys:
-                    record.kind === "dashboard" ? dashboardWidgetKeys : null,
-                })),
-                ...(["dataset:mapping", "dataset:products"] as const).map(
-                  (key) => ({
+              const recordRows: (typeof schema.dataTemplateRecords.$inferInsert)[] =
+                [
+                  ...built.map((record) => ({
                     workspaceId: actor.workspaceId,
                     requestId: input.requestId,
-                    key,
-                    kind: "dataset",
-                    recordId: ids[key],
+                    key: record.key,
+                    kind: record.kind,
+                    recordId: ids[record.key]!,
                     templateVersion: template.version,
-                    original: null,
-                    widgetKeys: null,
-                  }),
-                ),
-              ]);
+                    original:
+                      record.kind === "preparation"
+                        ? { graph: record.graph }
+                        : record.kind === "model"
+                          ? { definition: record.definition }
+                          : { request: record.request },
+                    widgetKeys:
+                      record.kind === "dashboard" ? dashboardWidgetKeys : null,
+                  })),
+                  ...(["dataset:mapping", "dataset:products"] as const).map(
+                    (key) => ({
+                      workspaceId: actor.workspaceId,
+                      requestId: input.requestId,
+                      key,
+                      kind: "dataset",
+                      recordId: ids[key],
+                      templateVersion: template.version,
+                      original: null,
+                      widgetKeys: null,
+                    }),
+                  ),
+                ];
+              // Chunked: Postgres takes at most 65,535 parameters a statement.
+              for (
+                let offset = 0;
+                offset < recordRows.length;
+                offset += recordChunk
+              )
+                await tx
+                  .insert(schema.dataTemplateRecords)
+                  .values(recordRows.slice(offset, offset + recordChunk));
               await insertAuditEvent(tx, {
                 workspaceId: actor.workspaceId,
                 actorUserId: actor.callerId,

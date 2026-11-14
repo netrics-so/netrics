@@ -28,6 +28,8 @@ import {
 
 /** The downloads measure's name in German in version 1, frozen here. */
 const GERMAN_DOWNLOADS_V1 = "Downloads und Nutzerinstallationen";
+/** Key renames per update statement. */
+const RENAME_CHUNK = 1000;
 
 /** The dashboard as the migration stored it: rows as `to_jsonb`. */
 export interface LegacyDashboardSnapshot {
@@ -367,17 +369,19 @@ export async function ensureInstallCompleted(
   // The dashboard original stays `{ legacySnapshot }` here; turning it into
   // the normalized item form belongs with the normalization itself
   // (template updates, Task 5), which reads both shapes.
-  for (const [legacy, key] of Object.entries(done.keys))
-    await tx
-      .update(schema.dataTemplateRecords)
-      .set({ key })
-      .where(
-        and(
-          eq(schema.dataTemplateRecords.workspaceId, workspaceId),
-          eq(schema.dataTemplateRecords.requestId, requestId),
-          eq(schema.dataTemplateRecords.key, legacy),
-        ),
-      );
+  // One statement per chunk (2 parameters a pair, under Postgres' 65,535).
+  const renames = Object.entries(done.keys);
+  for (let offset = 0; offset < renames.length; offset += RENAME_CHUNK)
+    await tx.execute(sql`
+      update data_template_records r set key = v.key
+      from (values ${sql.join(
+        renames
+          .slice(offset, offset + RENAME_CHUNK)
+          .map(([legacy, key]) => sql`(${legacy}::text, ${key}::text)`),
+        sql`, `,
+      )}) as v(legacy, key)
+      where r.workspace_id = ${workspaceId} and r.request_id = ${requestId}
+        and r.key = v.legacy`);
   await tx
     .update(schema.dataTemplateRecords)
     .set({ widgetKeys: done.widgetKeys })

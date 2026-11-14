@@ -8,6 +8,14 @@ import {
   type StoreTemplateInputs,
   type StoreTemplateRecord,
 } from "./store-template.js";
+import {
+  buildStoreAppend,
+  buildStoreDashboard,
+  buildStoreModel,
+  buildStorePreparation,
+  storeTemplateCopy,
+  type StoreMetric,
+} from "./store-portfolio.js";
 import { apple, google } from "./test-helpers.js";
 
 const sha256 = (value: string) =>
@@ -149,4 +157,125 @@ describe("versioned store template", () => {
       fixtureInputs,
     );
   });
+});
+
+/**
+ * The install loop as it was before versions (f1d070d), composing the
+ * builders directly: records in creation order, ids handed out in that order.
+ * Pins version 1 to what installs made before versions actually got.
+ */
+function preVersionInstall(inputs: StoreTemplateInputs) {
+  const metrics: StoreMetric[] = ["downloads", "proceeds", "ratings"];
+  const t = storeTemplateCopy(inputs.locale),
+    created: { name: string; content: unknown }[] = [],
+    nextId = () => uuidFor(`created:${created.length}`);
+  const publish = (
+    name: string,
+    graph: ReturnType<typeof buildStoreAppend>,
+  ) => {
+    const id = nextId();
+    created.push({ name: name.slice(0, 100), content: graph });
+    return `prepared:${id}:${graph.outputs[0]!}`;
+  };
+  const outputs: Record<StoreMetric, string[]> = {
+    downloads: [],
+    proceeds: [],
+    ratings: [],
+  };
+  for (const source of inputs.connections)
+    for (const metric of metrics)
+      outputs[metric].push(
+        publish(
+          `${t[metric]} · ${source.name}`,
+          buildStorePreparation(
+            source,
+            metric,
+            uuidFor("dataset:mapping"),
+            uuidFor("dataset:products"),
+            inputs.locale,
+          ),
+        ),
+      );
+  const combine = (metric: StoreMetric, list: string[]): string => {
+    if (list.length === 1) return list[0]!;
+    const next: string[] = [];
+    for (let offset = 0; offset < list.length; offset += 80)
+      next.push(
+        publish(t[metric], buildStoreAppend(list.slice(offset, offset + 80))),
+      );
+    return next.length === 1 ? next[0]! : combine(metric, next);
+  };
+  const models = {} as Record<StoreMetric, string>;
+  for (const metric of metrics) {
+    const definition = buildStoreModel(
+      metric,
+      combine(metric, outputs[metric]),
+      inputs.locale,
+    );
+    models[metric] = nextId();
+    created.push({
+      name: `${inputs.name} · ${t[metric]}`.slice(0, 100),
+      content: definition,
+    });
+  }
+  created.push({
+    name: inputs.name,
+    content: buildStoreDashboard(
+      inputs.name,
+      models,
+      inputs.locale,
+      inputs.fixedProduct ?? undefined,
+    ),
+  });
+  return created;
+}
+
+describe("version 1 against the install before versions", () => {
+  for (const count of [1, 2, 81])
+    it(`builds byte-identical records for ${count} source(s)`, () => {
+      const inputs: StoreTemplateInputs = {
+        ...fixtureInputs,
+        locale: count === 2 ? "de" : "en",
+        fixedProduct: count === 1 ? "product:x" : null,
+        connections: Array.from({ length: count }, (_, index) => ({
+          ...(index % 2 ? google : appleSource),
+          id: uuidFor(`connection:${String(index).padStart(3, "0")}`),
+          name: `Account ${index}`,
+        })).sort((a, b) => a.id.localeCompare(b.id)),
+      };
+      const expected = preVersionInstall(inputs);
+      // The old loop created per metric its appends and then its model.
+      const keys = storeTemplate.keys(inputs);
+      const metricOf = (key: string) =>
+        key.startsWith("model:") ? key.split(":")[1] : key.split(":")[2];
+      const oldOrder = [
+        ...keys.filter((key) => key.startsWith("preparation:source:")),
+        ...(["downloads", "proceeds", "ratings"] as const).flatMap((metric) =>
+          keys.filter(
+            (key) =>
+              (key.startsWith("preparation:append:") ||
+                key.startsWith("model:")) &&
+              metricOf(key) === metric,
+          ),
+        ),
+        "dashboard:portfolio",
+      ];
+      expect([...oldOrder].sort()).toEqual([...keys].sort());
+      const ids = fakeIds();
+      oldOrder.forEach((key, index) => {
+        ids[key] = uuidFor(`created:${index}`);
+      });
+      for (const key of keys) {
+        const record = storeTemplate.build(key, inputs, ids);
+        const content =
+          record.kind === "preparation"
+            ? record.graph
+            : record.kind === "model"
+              ? record.definition
+              : record.request;
+        expect(JSON.stringify({ name: record.name, content }), key).toBe(
+          JSON.stringify(expected[oldOrder.indexOf(key)]),
+        );
+      }
+    });
 });

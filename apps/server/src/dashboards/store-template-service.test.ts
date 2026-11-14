@@ -632,4 +632,33 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
     for (const preparation of result.preparationIds)
       expect(await projectOf("data_preparations", preparation)).toBe(active);
   });
+  it("writes every template record when they span several insert statements", async () => {
+    const workspace = await createWorkspace(db, {
+      name: "Chunks",
+      ownerUserId: userId,
+    });
+    const connections = [randomUUID(), randomUUID()];
+    for (const [index, id] of connections.entries())
+      await owner`insert into connections(id,workspace_id,connector_id,name,setup_pending)
+        values (${id},${workspace},'google-play',${"Play " + index},false)`;
+    const chunked = createStoreTemplateService({
+      db,
+      registry,
+      now: () => new Date(now),
+      // 15 records: 4 statements, the last one partly filled.
+      recordChunk: 4,
+    });
+    const requestId = randomUUID();
+    const result = await chunked.install(
+      { ...actor(), workspaceId: workspace },
+      { requestId, name: "Chunked", connections, groups: [] },
+    );
+    const records =
+      await owner`select key, record_id from data_template_records where workspace_id=${workspace} and request_id=${requestId}`;
+    expect(records).toHaveLength(6 + 3 + 3 + 1 + 2);
+    expect(new Set(records.map((r) => r.key)).size).toBe(records.length);
+    expect(
+      records.find((r) => r.key === "dashboard:portfolio")!.record_id,
+    ).toBe(result.dashboardId);
+  });
 });
