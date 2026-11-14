@@ -18,6 +18,7 @@ export * from "./goals.js";
 export * from "./source-status.js";
 
 export * from "./data-expression.js";
+export * from "./data-expression-visual.js";
 export * from "./data-preparation.js";
 export * from "./data-model.js";
 export {
